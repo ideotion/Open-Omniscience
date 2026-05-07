@@ -115,7 +115,7 @@ sources:
   - name: "BBC News"
     domain: "bbc.com"
     rss_url: "http://feeds.bbci.co.uk/news/rss.xml"
-    rate_limit_ms: 1000  # 1 second between requests
+    rate_limit_ms: 1000
     enabled: true
     priority: 1
     tags: ["news", "uk"]
