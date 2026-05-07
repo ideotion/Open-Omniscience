@@ -111,22 +111,29 @@ Open-Omniscience/
 ├── README.md               # Project documentation
 ├── ETHICS.md               # Ethical guidelines and compliance
 ├── LICENSE                 # MIT License
+├── CONTRIBUTING.md         # Contribution guidelines
+├── SECURITY.md             # Security policy
 ├── requirements.txt        # Python dependencies
 ├── configs/
 │   ├── sources.yml         # News sources configuration
 │   └── settings.yaml       # User preferences and rate limits
 ├── src/
 │   ├── scraper/            # Web scraping logic
+│   │   ├── __init__.py     # Package init
 │   │   └── scraper.py      # Pure Python scraper (requests + BeautifulSoup)
 │   ├── ingestor/           # Data ingestion pipeline
+│   │   ├── __init__.py     # Package init
 │   │   ├── url_utils.py    # URL canonicalization and hashing
 │   │   └── import.py       # Bulk data import (CSV/JSON)
 │   ├── database/           # Database models and ORM (SQLAlchemy + SQLite)
+│   │   ├── __init__.py     # Package init
 │   │   ├── models.py       # Database models
 │   │   └── migrations/     # Alembic migrations
 │   ├── api/                # FastAPI backend for the GUI
+│   │   ├── __init__.py     # Package init
 │   │   └── main.py         # API endpoints and static file serving
 │   ├── utils/              # Utility modules
+│   │   ├── __init__.py     # Package init
 │   │   └── logging_config.py # Centralized logging
 │   └── static/             # Frontend assets
 │       ├── index.html      # HTML5 frontend
@@ -134,8 +141,12 @@ Open-Omniscience/
 │       └── style.css       # Frontend styles
 ├── data/                  # Local storage for scraped data (SQLite)
 ├── audit/                 # Audit logs and compliance tracking
-└── tests/                 # Unit and integration tests
-    └── test_scraper.py     # Scraper tests
+├── tests/                 # Unit and integration tests
+│   └── test_scraper.py     # Scraper tests
+└── docs/                  # Documentation
+    ├── DATABASE.md        # Database setup and configuration
+    ├── USER_GUIDE.md      # User guide
+    └── DEVELOPER_GUIDE.md  # Developer guide
 ```
 
 ---
