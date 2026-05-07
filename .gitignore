@@ -44,6 +44,7 @@ Thumbs.db
 # Logs and Audit
 audit/*.log
 audit/*.csv
+audit/*.md
 data/*.db
 
 # Frontend (React)
