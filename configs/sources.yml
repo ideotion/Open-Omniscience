@@ -1,0 +1,70 @@
+sources:
+  - name: "BBC News"
+    domain: "bbc.com"
+    rss_url: "https://feeds.bbci.co.uk/news/rss.xml"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "uk"]
+
+  - name: "Reuters"
+    domain: "reuters.com"
+    rss_url: "https://feeds.reuters.com/reuters/topNews"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "global"]
+
+  - name: "The Guardian"
+    domain: "theguardian.com"
+    rss_url: "https://www.theguardian.com/world/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "uk"]
+
+  - name: "Al Jazeera"
+    domain: "aljazeera.com"
+    rss_url: "https://www.aljazeera.com/xml/rss/all.xml"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "middle-east"]
+
+  - name: "Le Monde"
+    domain: "lemonde.fr"
+    rss_url: "http://www.lemonde.fr/rss/une.xml"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "france"]
+
+  - name: "New York Times"
+    domain: "nytimes.com"
+    rss_url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["news", "us"]
+
+  - name: "The Washington Post"
+    domain: "washingtonpost.com"
+    rss_url: "https://feeds.washingtonpost.com/rss/world"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["news", "us"]
+
+  - name: "CNN"
+    domain: "cnn.com"
+    rss_url: "http://rss.cnn.com/rss/cnn_world.rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "us"]
+
+  - name: "Deutsche Welle"
+    domain: "dw.com"
+    rss_url: "https://rss.dw.com/rdf/rss-en-all"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "germany"]
+
+  - name: "El País"
+    domain: "elpais.com"
+    rss_url: "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "spain"]
