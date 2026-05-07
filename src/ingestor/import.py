@@ -35,7 +35,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("import")
 
-
 class ArticleImporter:
     def __init__(self):
         self.session = get_session()
@@ -243,7 +242,6 @@ class ArticleImporter:
     def close(self):
         """Close the database session."""
         self.session.close()
-
 
 # Command-line interface
 if __name__ == "__main__":
