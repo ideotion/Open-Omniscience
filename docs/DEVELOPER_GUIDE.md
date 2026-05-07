@@ -9,6 +9,7 @@ This guide is for **developers** who want to **extend, customize, or contribute*
 - Development setup
 - Adding new features
 - Testing
+- Database migrations
 - Deployment
 
 ---
@@ -22,7 +23,6 @@ This guide is for **developers** who want to **extend, customize, or contribute*
 6. [Database Migrations](#-database-migrations)
 7. [Deployment](#-deployment)
 8. [Contribution Guidelines](#-contribution-guidelines)
-9. [API Documentation](#-api-documentation)
 
 ---
 
@@ -155,14 +155,14 @@ Open-Omniscience/
 │   │   └── scraper.py     # Main scraper class
 │   ├── ingestor/          # Data ingestion
 │   │   ├── url_utils.py   # URL canonicalization, hashing
-│   │   └── import.py      # Bulk data import (CSV/JSON)
+│   │   └── import.py      # Bulk import (CSV/JSON)
 │   ├── database/          # Database layer
 │   │   ├── models.py      # SQLAlchemy models
 │   │   └── migrations/    # Alembic migrations
 │   ├── api/               # FastAPI backend
 │   │   └── main.py        # API endpoints
 │   ├── utils/             # Utilities
-│   │   └── logging_config.py # Centralized logging
+│   │   └── logging_config.py # Logging configuration
 │   └── static/            # Frontend assets
 │       ├── index.html     # HTML template
 │       ├── script.js      # Frontend JavaScript
