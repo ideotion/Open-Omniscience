@@ -39,6 +39,13 @@ async function searchArticles(event) {
         const response = await fetch(`/api/articles?${params.toString()}`);
         
         if (!response.ok) {
+            // Handle rate limiting (429) and other errors
+            if (response.status === 429) {
+                errorMessageElement.textContent = 'Too many requests. Please wait and try again.';
+            } else {
+                errorMessageElement.textContent = `HTTP error! status: ${response.status}`;
+            }
+            errorMessageElement.style.display = 'block';
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
@@ -59,7 +66,6 @@ async function searchArticles(event) {
         
     } catch (error) {
         loadingElement.style.display = 'none';
-        errorMessageElement.textContent = `Error: ${error.message}`;
         errorMessageElement.style.display = 'block';
         console.error('Search error:', error);
     }
@@ -113,7 +119,14 @@ async function exportCSV() {
     
     try {
         const response = await fetch(`/api/articles/export?format=csv&${params.toString()}`);
-        if (!response.ok) throw new Error('Export failed');
+        if (!response.ok) {
+            if (response.status === 429) {
+                alert('Too many requests. Please wait and try again.');
+            } else {
+                alert(`Export failed: HTTP ${response.status}`);
+            }
+            throw new Error('Export failed');
+        }
         
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -144,7 +157,14 @@ async function exportJSON() {
     
     try {
         const response = await fetch(`/api/articles/export?format=json&${params.toString()}`);
-        if (!response.ok) throw new Error('Export failed');
+        if (!response.ok) {
+            if (response.status === 429) {
+                alert('Too many requests. Please wait and try again.');
+            } else {
+                alert(`Export failed: HTTP ${response.status}`);
+            }
+            throw new Error('Export failed');
+        }
         
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
