@@ -416,7 +416,7 @@ async def list_sources(request: Request):
                 "name": s.name,
                 "domain": s.domain,
                 "rss_url": s.rss_url,
-                "rate_limit_ms": s.rate_limit_ms,
+                "rate_limit_ms": s.rss_url,
                 "enabled": s.enabled,
                 "priority": s.priority,
                 "tags": s.tags.split(",") if s.tags else []
