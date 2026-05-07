@@ -48,7 +48,6 @@ def normalize_domain(domain: str) -> str:
         domain = domain[4:]
     return domain.rstrip("/")
 
-
 def is_equivalent_domain(domain1: str, domain2: str) -> bool:
     """
     Check if two domains are equivalent after normalization.
@@ -83,7 +82,6 @@ def is_equivalent_domain(domain1: str, domain2: str) -> bool:
         return True
 
     return False
-
 
 def canonicalize_url(url: str) -> str:
     """
@@ -137,7 +135,6 @@ def canonicalize_url(url: str) -> str:
         logging.error(f"Error canonicalizing URL {url}: {e}")
         return url
 
-
 def resolve_redirects(url: str, max_redirects: int = 5) -> str:
     """
     Resolve all redirects for a URL to get the final destination.
@@ -174,7 +171,6 @@ def resolve_redirects(url: str, max_redirects: int = 5) -> str:
         logging.error(f"Error resolving redirects for {url}: {e}")
         return url
 
-
 def generate_content_hash(content: str) -> str:
     """
     Generate a SHA-256 hash of the content for duplicate detection.
@@ -202,7 +198,7 @@ if __name__ == "__main__":
         "https://www.bbc.com/page?gclid=abc&param=value",
         "https://bbc.co.uk/page"
     ]
-
+    
     for url in test_urls:
         canonical = canonicalize_url(url)
         print(f"Original: {url}")
