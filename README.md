@@ -111,29 +111,22 @@ Open-Omniscience/
 ├── README.md               # Project documentation
 ├── ETHICS.md               # Ethical guidelines and compliance
 ├── LICENSE                 # MIT License
-├── CONTRIBUTING.md         # Contribution guidelines
-├── SECURITY.md             # Security policy
 ├── requirements.txt        # Python dependencies
 ├── configs/
 │   ├── sources.yml         # News sources configuration
 │   └── settings.yaml       # User preferences and rate limits
 ├── src/
 │   ├── scraper/            # Web scraping logic
-│   │   ├── __init__.py     # Package init
-│   │   └── scraper.py      # Pure Python scraper (requests + BeautifulSoup)
+│   │   └── scraper.py      # Pure Python scraper (requests + BeautifulSoup + feedparser)
 │   ├── ingestor/           # Data ingestion pipeline
-│   │   ├── __init__.py     # Package init
 │   │   ├── url_utils.py    # URL canonicalization and hashing
 │   │   └── import.py       # Bulk data import (CSV/JSON)
-│   ├── database/           # Database models and ORM (SQLAlchemy + SQLite)
-│   │   ├── __init__.py     # Package init
+│   ├── database/           # Database models and ORM (SQLAlchemy + SQLite/PostgreSQL)
 │   │   ├── models.py       # Database models
-│   │   └── migrations/     # Alembic migrations
+│   │   └── migrations/      # Alembic migrations
 │   ├── api/                # FastAPI backend for the GUI
-│   │   ├── __init__.py     # Package init
 │   │   └── main.py         # API endpoints and static file serving
 │   ├── utils/              # Utility modules
-│   │   ├── __init__.py     # Package init
 │   │   └── logging_config.py # Centralized logging
 │   └── static/             # Frontend assets
 │       ├── index.html      # HTML5 frontend
@@ -142,11 +135,10 @@ Open-Omniscience/
 ├── data/                  # Local storage for scraped data (SQLite)
 ├── audit/                 # Audit logs and compliance tracking
 ├── tests/                 # Unit and integration tests
-│   └── test_scraper.py     # Scraper tests
 └── docs/                  # Documentation
-    ├── DATABASE.md        # Database setup and configuration
-    ├── USER_GUIDE.md      # User guide
-    └── DEVELOPER_GUIDE.md  # Developer guide
+    ├── USER_GUIDE.md      # User guide (WIP)
+    ├── DEVELOPER_GUIDE.md  # Developer guide (WIP)
+    └── DATABASE.md        # Database setup and configuration
 ```
 
 ---
@@ -159,15 +151,16 @@ Edit `configs/sources.yml` to add, remove, or modify news sources. Example:
 sources:
   - name: "BBC News"
     domain: "bbc.com"
-    rss_url: "https://feeds.bbci.co.uk/news/rss.xml"
-    rate_limit_ms: 2000
+    rss_url: "http://feeds.bbci.co.uk/news/rss.xml"
+    rate_limit_ms: 1000  # 1 second between requests
     enabled: true
+    priority: 1          # 1 = high, 3 = low
     tags: ["news", "uk"]
 ```
 
 ### Rate Limiting
-- Default: **1 request per second per domain**.
-- Adjustable in `configs/sources.yml`.
+- Default: **1 request per second per domain** (adjustable in `sources.yml`).
+- Global rate limiting: **100 requests/hour** for the API (adjustable in `main.py`).
 
 ### Database
 - **SQLite**: Default, portable, no setup required.
