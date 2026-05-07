@@ -7,11 +7,12 @@ including tables for sources and articles, with relationships and indexes.
 Author: Ideotion
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, create_engine
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, create_engine, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 import os
+from pathlib import Path
 
 # Ensure the data directory exists
 os.makedirs("../../data", exist_ok=True)
