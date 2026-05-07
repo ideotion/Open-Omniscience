@@ -49,7 +49,7 @@ class Source(Base):
         articles: Relationship to Article model.
     """
     __tablename__ = "sources"
-
+    
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
     domain = Column(String(255), nullable=False, unique=True)
@@ -61,7 +61,7 @@ class Source(Base):
 
     # Relationship to articles
     articles = relationship("Article", back_populates="source", cascade="all, delete-orphan")
-
+    
     def __repr__(self):
         return f"<Source(name='{self.name}', domain='{self.domain}')>"
 
@@ -84,7 +84,7 @@ class Article(Base):
         source: Relationship to Source model.
     """
     __tablename__ = "articles"
-
+    
     id = Column(Integer, primary_key=True)
     url = Column(String(1000), nullable=False)
     canonical_url = Column(String(1000), nullable=False)
@@ -95,10 +95,10 @@ class Article(Base):
     language = Column(String(10))
     hash = Column(String(64), nullable=False, unique=True)  # SHA-256 hash length is 64
     created_at = Column(DateTime, default=datetime.utcnow)
-
+    
     # Relationship to source
     source = relationship("Source", back_populates="articles")
-
+    
     # Indexes for performance
     __table_args__ = (
         # Index for faster duplicate detection
@@ -110,7 +110,7 @@ class Article(Base):
         # Index for faster text search
         Index("idx_article_content", "content"),
     )
-
+    
     def __repr__(self):
         return f"<Article(title='{self.title[:50]}...', source='{self.source.name if self.source else 'Unknown'}')>"
 
@@ -128,12 +128,12 @@ def get_session():
 if __name__ == "__main__":
     # Test database connection and table creation
     session = get_session()
-
+    
     # Check if tables exist
     from sqlalchemy.inspection import inspect
     inspector = inspect(engine)
     tables = inspector.get_table_names()
     print(f"Tables in database: {tables}")
-
+    
     session.close()
     print("Database setup complete. Tables created if they didn't exist.")
