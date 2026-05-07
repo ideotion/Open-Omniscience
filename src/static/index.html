@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Omniscience</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Open Omniscience</h1>
+            <p class="subtitle">An Open-Source Global Intelligence Platform for Investigative Journalism</p>
+        </header>
+
+        <section class="search-section">
+            <h2>Search Articles</h2>
+            <form id="searchForm" class="search-form">
+                <div class="form-group">
+                    <label for="query">Search Query:</label>
+                    <input type="text" id="query" name="query" placeholder="Enter keywords...">
+                </div>
+                
+                <div class="form-group">
+                    <label for="source">Source:</label>
+                    <select id="source" name="source">
+                        <option value="">All Sources</option>
+                        <option value="BBC News">BBC News</option>
+                        <option value="Reuters">Reuters</option>
+                        <option value="The Guardian">The Guardian</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="startDate">Start Date:</label>
+                    <input type="date" id="startDate" name="startDate">
+                </div>
+                
+                <div class="form-group">
+                    <label for="endDate">End Date:</label>
+                    <input type="date" id="endDate" name="endDate">
+                </div>
+                
+                <div class="form-group button-group">
+                    <button type="submit" id="searchButton">Search</button>
+                    <button type="button" id="exportCSV" class="export-btn">Export CSV</button>
+                    <button type="button" id="exportJSON" class="export-btn">Export JSON</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="results-section">
+            <h2>Results</h2>
+            <div class="loading" id="loading">Loading...</div>
+            <div class="error-message" id="errorMessage"></div>
+            <div class="results-info" id="resultsInfo"></div>
+            <table id="articlesTable" class="articles-table">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Source</th>
+                        <th>Published At</th>
+                        <th>URL</th>
+                    </tr>
+                </thead>
+                <tbody id="articlesTableBody">
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
