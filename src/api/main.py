@@ -8,6 +8,12 @@ It also serves the HTML5 frontend static files and includes rate limiting.
 Author: Ideotion
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directories to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,7 +22,6 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import csv
@@ -25,23 +30,13 @@ import logging
 
 # Import database models and session
 from database.models import Article, Source, get_session
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("../../audit/api.log"),
-        logging.StreamHandler()
-    ]
-)
+# Configure logging using shared config
+from utils.logging_config import setup_logging
+logger = setup_logging("api")
 
 # Database setup
-DATABASE_URL = "sqlite:///../../data/open_omniscience.db"
-engine = create_engine(DATABASE_URL)
-Session = sessionmaker(bind=engine)
+DATABASE_URL = f"sqlite:///{Path(__file__).parent.parent.parent / 'data' / 'open_omniscience.db'}"
 
 # Initialize FastAPI app
 app = FastAPI(title="Open Omniscience API", version="0.1.0")
@@ -61,13 +56,13 @@ app.add_middleware(
 )
 
 # Serve static files (HTML5 frontend)
-app.mount("/", StaticFiles(directory="../static", html=True), name="static")
+app.mount("/", StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True), name="static")
 
 
 # Rate limit exceeded handler
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
-    logging.warning(f"Rate limit exceeded for {get_remote_address(request)}: {request.url}")
+    logger.warning(f"Rate limit exceeded for {get_remote_address(request)}: {request.url}")
     return JSONResponse(
         status_code=429,
         content={"detail": "Too many requests. Please try again later."},
@@ -96,43 +91,57 @@ async def search_articles(
     - end_date: Filter by end date (YYYY-MM-DD).
     - limit: Maximum number of results to return.
     """
-    logging.info(f"Search request: query={query}, source={source}, limit={limit}")
+    logger.info(f"Search request: query={query}, source={source}, limit={limit}")
     
-    session = Session()
-    filters = []
-    
-    if query:
-        filters.append(Article.content.ilike(f"%{query}%"))
-    if source:
-        source_obj = session.query(Source).filter_by(name=source).first()
-        if source_obj:
-            filters.append(Article.source_id == source_obj.id)
+    # Validate date formats
     if start_date:
         try:
-            start_dt = datetime.fromisoformat(start_date)
-            filters.append(Article.published_at >= start_dt)
+            datetime.fromisoformat(start_date)
         except ValueError:
-            pass
+            raise HTTPException(status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD.")
     if end_date:
         try:
-            end_dt = datetime.fromisoformat(end_date)
-            filters.append(Article.published_at <= end_dt)
+            datetime.fromisoformat(end_date)
         except ValueError:
-            pass
+            raise HTTPException(status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD.")
     
-    articles = session.query(Article).filter(*filters).limit(limit).all()
-    session.close()
-    
-    return [
-        {
-            "id": a.id,
-            "title": a.title,
-            "url": a.url,
-            "source": a.source.name if a.source else "Unknown",
-            "published_at": a.published_at.isoformat() if a.published_at else None,
-            "content": a.content
-        } for a in articles
-    ]
+    session = get_session()
+    try:
+        filters = []
+        
+        if query:
+            filters.append(Article.content.ilike(f"%{query}%"))
+        if source:
+            source_obj = session.query(Source).filter_by(name=source).first()
+            if source_obj:
+                filters.append(Article.source_id == source_obj.id)
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date)
+                filters.append(Article.published_at >= start_dt)
+            except ValueError:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date)
+                filters.append(Article.published_at <= end_dt)
+            except ValueError:
+                pass
+        
+        articles = session.query(Article).filter(*filters).limit(limit).all()
+        
+        return [
+            {
+                "id": a.id,
+                "title": a.title,
+                "url": a.url,
+                "source": a.source.name if a.source else "Unknown",
+                "published_at": a.published_at.isoformat() if a.published_at else None,
+                "content": a.content
+            } for a in articles
+        ]
+    finally:
+        session.close()
 
 
 @app.get("/api/articles/export")
@@ -155,83 +164,100 @@ async def export_articles(
     - start_date: Filter by start date (YYYY-MM-DD).
     - end_date: Filter by end date (YYYY-MM-DD).
     """
-    logging.info(f"Export request: format={format}, query={query}, source={source}")
+    logger.info(f"Export request: format={format}, query={query}, source={source}")
     
-    session = Session()
-    filters = []
-    
-    if query:
-        filters.append(Article.content.ilike(f"%{query}%"))
-    if source:
-        source_obj = session.query(Source).filter_by(name=source).first()
-        if source_obj:
-            filters.append(Article.source_id == source_obj.id)
+    # Validate date formats
     if start_date:
         try:
-            start_dt = datetime.fromisoformat(start_date)
-            filters.append(Article.published_at >= start_dt)
+            datetime.fromisoformat(start_date)
         except ValueError:
-            pass
+            raise HTTPException(status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD.")
     if end_date:
         try:
-            end_dt = datetime.fromisoformat(end_date)
-            filters.append(Article.published_at <= end_dt)
+            datetime.fromisoformat(end_date)
         except ValueError:
-            pass
+            raise HTTPException(status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD.")
     
-    articles = session.query(Article).filter(*filters).all()
-    session.close()
-    
-    if format == "csv":
-        stream = io.StringIO()
-        writer = csv.writer(stream)
-        writer.writerow(["ID", "Title", "URL", "Source", "Published At", "Content"])
-        for a in articles:
-            writer.writerow([
-                a.id,
-                a.title or "",
-                a.url or "",
-                a.source.name if a.source else "",
-                a.published_at.isoformat() if a.published_at else "",
-                a.content or ""
-            ])
-        response = StreamingResponse(
-            iter([stream.getvalue()]),
-            media_type="text/csv",
-            headers={"Content-Disposition": "attachment; filename=articles.csv"}
-        )
-        return response
-    
-    elif format == "json":
-        return JSONResponse(
-            content=[
-                {
-                    "id": a.id,
-                    "title": a.title,
-                    "url": a.url,
-                    "source": a.source.name if a.source else "Unknown",
-                    "published_at": a.published_at.isoformat() if a.published_at else None,
-                    "content": a.content
-                } for a in articles
-            ]
-        )
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported format. Use 'csv' or 'json'.")
+    session = get_session()
+    try:
+        filters = []
+        
+        if query:
+            filters.append(Article.content.ilike(f"%{query}%"))
+        if source:
+            source_obj = session.query(Source).filter_by(name=source).first()
+            if source_obj:
+                filters.append(Article.source_id == source_obj.id)
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date)
+                filters.append(Article.published_at >= start_dt)
+            except ValueError:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date)
+                filters.append(Article.published_at <= end_dt)
+            except ValueError:
+                pass
+        
+        articles = session.query(Article).filter(*filters).all()
+        
+        if format == "csv":
+            stream = io.StringIO()
+            writer = csv.writer(stream)
+            writer.writerow(["ID", "Title", "URL", "Source", "Published At", "Content"])
+            for a in articles:
+                writer.writerow([
+                    a.id,
+                    a.title or "",
+                    a.url or "",
+                    a.source.name if a.source else "",
+                    a.published_at.isoformat() if a.published_at else "",
+                    a.content or ""
+                ])
+            response = StreamingResponse(
+                iter([stream.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=articles.csv"}
+            )
+            return response
+        
+        elif format == "json":
+            return JSONResponse(
+                content=[
+                    {
+                        "id": a.id,
+                        "title": a.title,
+                        "url": a.url,
+                        "source": a.source.name if a.source else "Unknown",
+                        "published_at": a.published_at.isoformat() if a.published_at else None,
+                        "content": a.content
+                    } for a in articles
+                ]
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported format. Use 'csv' or 'json'.")
+    finally:
+        session.close()
 
 
 @app.get("/api/sources", response_model=list)
 @limiter.limit("100/hour")
 async def list_sources(request: Request):
     """List all available news sources."""
-    logging.info("List sources request")
-    session = Session()
-    sources = session.query(Source).all()
-    session.close()
-    return [{"id": s.id, "name": s.name, "domain": s.domain} for s in sources]
+    logger.info("List sources request")
+    session = get_session()
+    try:
+        sources = session.query(Source).all()
+        return [{"id": s.id, "name": s.name, "domain": s.domain} for s in sources]
+    finally:
+        session.close()
 
 
 # Root endpoint to serve index.html
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    with open("../static/index.html", "r") as f:
+    index_path = Path(__file__).parent.parent / "static" / "index.html"
+    with open(index_path, "r") as f:
         return HTMLResponse(content=f.read(), status_code=200)
