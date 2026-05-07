@@ -317,3 +317,6 @@ results = session.query(Article).filter(
      session.query(Article).filter(Article.published_at < one_year_ago).delete()
      session.commit()
      ```
+
+---
+**© 2026 Ideotion. All rights reserved.**
