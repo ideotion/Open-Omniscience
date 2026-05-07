@@ -4,9 +4,11 @@
 
 ---
 
-**Author:** Ideotion
+**Author:** [Ideotion](https://github.com/ideotion)
+**Version:** 0.2.0 (MVP)
+**License:** [MIT](LICENSE)
 
-**Fork of:** [HTTrack](https://www.httrack.com/) (Open-Source Web Scraper)
+![Open Omniscience Logo](https://via.placeholder.com/150?text=Open+Omniscience)
 
 ---
 
@@ -18,78 +20,122 @@ Open Omniscience is an **ethically impeccable**, **open-source**, and **portable
 - Identify **complex patterns, disinformation schemes, or emerging trends** across geopolitical boundaries.
 - Preserve **data integrity and provenance** for accountability.
 
-This project is a **Linux-based application** and is built as a fork of HTTrack, leveraging its robust crawling capabilities while adding advanced features for ethical scraping, duplicate detection, and data management.
+This project is a **Linux-based application** built as a fork of [HTTrack](https://www.httrack.com/), leveraging its robust crawling capabilities while adding advanced features for **ethical scraping**, **duplicate detection**, and **data management**.
 
 ---
 
 ## ⚠️ Disclaimer
 
-**Open Omniscience** is a tool designed for **ethical, legal, and responsible** data aggregation and analysis. Users must:
+**Open Omniscience** is a tool designed for **ethical, legal, and responsible** data aggregation and analysis. By using this software, you agree to comply with the following:
 
-- Comply with all applicable laws and regulations in their jurisdiction.
-- Respect the terms of service and `robots.txt` directives of all scraped websites.
-- Use the platform for **non-commercial, non-malicious** purposes only.
-- Ensure that any use of scraped data adheres to **copyright and fair use** principles.
+1. **Respect all applicable laws** in your jurisdiction, including copyright and data protection regulations.
+2. **Adhere to `robots.txt` directives** and terms of service of all scraped websites.
+3. **Use the platform for non-commercial, non-malicious purposes only**.
+4. **Ensure ethical use** as outlined in [ETHICS.md](ETHICS.md).
 
-The maintainers of Open Omniscience **do not endorse or assume responsibility** for any misuse of this tool. By using this software, you agree to use it in compliance with all relevant laws and ethical guidelines.
+The maintainers of Open Omniscience **do not endorse or assume responsibility** for any misuse of this tool.
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- **Operating System:** Linux
+- **Operating System:** Linux (recommended), macOS, or Windows (WSL)
 - **Python:** 3.10+
-- **Dependencies:** `requests`, `beautifulsoup4`, `pyyaml`, `sqlalchemy`, `fastapi`, `uvicorn`
+- **Dependencies:** See [requirements.txt](requirements.txt)
+- **Database:** SQLite (default) or PostgreSQL (recommended for production)
 
 ### Installation
-1. Clone the repository:
+
+#### 1. Clone the Repository
+```bash
+git clone https://github.com/ideotion/Open-Omniscience
+cd Open-Omniscience
+```
+
+#### 2. Set Up a Virtual Environment
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/macOS
+# OR
+.\venv\Scripts\activate   # Windows
+```
+
+#### 3. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+#### 4. Initialize the Database
+For **SQLite** (default):
+```bash
+mkdir -p data/
+# The database will be created automatically on first run
+```
+
+For **PostgreSQL** (recommended for production):
+1. Install PostgreSQL (see [DATABASE.md](docs/DATABASE.md)).
+2. Create a database and user:
    ```bash
-   git clone https://github.com/ideotion/Open-Omniscience
-   cd Open-Omniscience
+   sudo -u postgres psql
+   ```
+   In the PostgreSQL shell:
+   ```sql
+   CREATE DATABASE open_omniscience;
+   CREATE USER open_omniscience WITH PASSWORD 'your_password';
+   GRANT ALL PRIVILEGES ON DATABASE open_omniscience TO open_omniscience;
+   \q
+   ```
+3. Set the `DATABASE_URL` environment variable:
+   ```bash
+   export DATABASE_URL="postgres://open_omniscience:your_password@localhost:5432/open_omniscience"
+   ```
+4. Run the migrations:
+   ```bash
+   cd src/database
+   alembic upgrade head
    ```
 
-2. Set up a virtual environment and install dependencies:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-3. Initialize the database:
-   ```bash
-   python src/database/init_db.py
-   ```
-
-4. Start the application:
-   ```bash
-   uvicorn src.api.main:app --reload
-   ```
-
-5. Access the GUI at `http://localhost:8000`
+#### 5. Start the Application
+```bash
+uvicorn src.api.main:app --reload
+```
+- The GUI will be available at `http://localhost:8000`.
+- The API will be available at `http://localhost:8000/api/`.
 
 ---
 
 ## 📁 Project Structure
 ```
 Open-Omniscience/
-├── README.md            # Project documentation
-├── ETHICS.md            # Ethical guidelines and compliance
-├── LICENSE              # MIT License
-├── requirements.txt     # Python dependencies
+├── README.md               # Project documentation
+├── ETHICS.md               # Ethical guidelines and compliance
+├── LICENSE                 # MIT License
+├── requirements.txt        # Python dependencies
 ├── configs/
-│   ├── sources.yml       # News sources configuration
-│   └── settings.yaml     # User preferences and rate limits
+│   ├── sources.yml         # News sources configuration
+│   └── settings.yaml       # User preferences and rate limits
 ├── src/
-│   ├── scraper/          # Web scraping logic
-│   │   └── scraper.py    # Pure Python scraper (requests + BeautifulSoup)
-│   ├── ingestor/         # Data ingestion pipeline
-│   ├── database/         # Database models and ORM (SQLAlchemy + SQLite)
-│   ├── api/              # FastAPI backend for the GUI
-│   └── frontend/         # React-based GUI
-├── data/                # Local storage for scraped data (SQLite)
-├── audit/               # Audit logs and compliance tracking
-└── tests/               # Unit and integration tests
+│   ├── scraper/            # Web scraping logic
+│   │   └── scraper.py      # Pure Python scraper (requests + BeautifulSoup)
+│   ├── ingestor/           # Data ingestion pipeline
+│   │   ├── url_utils.py    # URL canonicalization and hashing
+│   │   └── import.py       # Bulk data import (CSV/JSON)
+│   ├── database/           # Database models and ORM (SQLAlchemy + SQLite)
+│   │   ├── models.py       # Database models
+│   │   └── migrations/     # Alembic migrations
+│   ├── api/                # FastAPI backend for the GUI
+│   │   └── main.py         # API endpoints and static file serving
+│   ├── utils/              # Utility modules
+│   │   └── logging_config.py # Centralized logging
+│   └── static/             # Frontend assets
+│       ├── index.html      # HTML5 frontend
+│       ├── script.js       # Frontend JavaScript
+│       └── style.css       # Frontend styles
+├── data/                  # Local storage for scraped data (SQLite)
+├── audit/                 # Audit logs and compliance tracking
+└── tests/                 # Unit and integration tests
+    └── test_scraper.py     # Scraper tests
 ```
 
 ---
@@ -109,38 +155,92 @@ sources:
 ```
 
 ### Rate Limiting
-- Default: 1 request per second per source.
-- Adjustable in `configs/settings.yaml`.
+- Default: **1 request per second per domain**.
+- Adjustable in `configs/sources.yml`.
+
+### Database
+- **SQLite**: Default, portable, no setup required.
+- **PostgreSQL**: Recommended for production. See [DATABASE.md](docs/DATABASE.md).
 
 ---
 
 ## 🔍 Features
 
-### Phase 1 (MVP)
-- **Global Scraping:** Ingest articles from 100+ predefined sources.
-- **Ethical Scraping:** Respects `robots.txt` and rate limits.
-- **Duplicate Detection:** URL canonicalization + content hashing.
-- **SQLite Database:** Portable, no server setup required.
-- **Advanced Search:** Full-text search with filters (date, source, language).
-- **Export:** CSV, JSON, and SQLite dump.
-- **GUI:** Modern, responsive web interface (React + FastAPI).
+### ✅ Phase 1 (MVP - Complete)
+| Feature | Description |
+|---------|-------------|
+| **Global Scraping** | Ingest articles from **100+ predefined sources** (RSS and HTML). |
+| **Ethical Scraping** | Respects `robots.txt`, rate limits, and User-Agent identification. |
+| **Duplicate Detection** | URL canonicalization + content hashing (SHA-256). |
+| **SQLite/PostgreSQL** | Portable (SQLite) or scalable (PostgreSQL) storage. |
+| **Advanced Search** | Full-text search with **Boolean operators** (AND, OR, NOT), filters (date, source, language, tags), and pagination. |
+| **Export** | CSV, JSON, and SQLite dump. |
+| **GUI** | Modern, responsive web interface with **visualizations** (Recharts). |
+| **Audit Logging** | Detailed logs for all scraping activities (`audit/` directory). |
+| **Parallel Scraping** | Multi-threaded scraping for improved performance. |
+| **Error Handling** | Retries failed requests with exponential backoff. |
 
-### Phase 2 (Future)
-- AI-powered analysis (sentiment, topic modeling).
-- Real-time monitoring and alerts.
-- Collaborative tagging and shared datasets.
+### 🚧 Phase 2 (Future)
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **AI-Powered Analysis** | Planned | Sentiment analysis, topic modeling, and entity extraction. |
+| **Real-Time Monitoring** | Planned | Alerts for new articles matching saved queries. |
+| **Collaborative Tagging** | Planned | Shared datasets and community tagging. |
+| **API Authentication** | Planned | User accounts and API keys for rate limiting. |
+| **Plugin System** | Planned | Custom scrapers, analyzers, and exporters. |
 
 ---
 
 ## 📜 Ethical Guidelines
-See [ETHICS.md](ETHICS.md) for detailed ethical scraping protocols, compliance checklists, and do-not-scrape lists.
+Open Omniscience is committed to **ethical, legal, and responsible** data aggregation. See [ETHICS.md](ETHICS.md) for:
+- **Munich Charter** principles for journalism.
+- **Compliance checklist** for scraping.
+- **Do Not Scrape List** (paywalled, social media, sensitive data).
+- **Audit and accountability** requirements.
+- **Privacy and data protection** policies.
+
+> **⚠️ Important:** Violating these guidelines may result in **legal consequences** and **revocation of access**.
 
 ---
 
 ## 🤝 Contributing
-This repository is currently **private** during the MVP development phase. Contributions will be opened in the future. Stay tuned!
+We welcome contributions from the community! Please read our [Contribution Guidelines](CONTRIBUTING.md) before getting started.
+
+### How to Contribute:
+1. **Fork the repository** and create a feature branch.
+2. **Follow the code style** (PEP 8 for Python, ESLint for JavaScript).
+3. **Write tests** for new features.
+4. **Document your changes** in the code and README.
+5. **Submit a pull request** with a clear description.
+
+### Areas for Contribution:
+- **New Sources**: Add more news sources to `sources.yml`.
+- **Scraping Improvements**: Better HTML/RSS parsing, anti-blocking measures.
+- **UI/UX**: Improve the frontend (React, charts, accessibility).
+- **Performance**: Optimize database queries, scraping speed.
+- **Documentation**: Improve guides, tutorials, and examples.
+- **Testing**: Add more unit/integration tests.
 
 ---
 
 ## 📄 License
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🙏 Acknowledgments
+- **HTTrack**: For the inspiration and initial crawling logic.
+- **FastAPI**: For the high-performance backend.
+- **SQLAlchemy**: For the flexible ORM.
+- **Recharts**: For the beautiful visualizations.
+- **All Contributors**: For their time, feedback, and support.
+
+---
+
+## 📞 Contact
+- **GitHub Issues**: [https://github.com/ideotion/Open-Omniscience/issues](https://github.com/ideotion/Open-Omniscience/issues)
+- **Email**: `contact@ideotion.org`
+- **Website**: [https://ideotion.org](https://ideotion.org)
+
+---
+**© 2026 Ideotion. All rights reserved.**

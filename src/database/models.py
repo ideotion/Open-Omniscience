@@ -1,8 +1,9 @@
 """
 Database Models for Open Omniscience
 
-This module defines the SQLAlchemy models for the SQLite database,
-including tables for sources and articles, with relationships and indexes.
+This module defines the SQLAlchemy models for the database,
+supporting both SQLite (default) and PostgreSQL.
+Includes tables for sources and articles, with relationships and indexes.
 
 Author: Ideotion
 """
@@ -17,8 +18,10 @@ from pathlib import Path
 # Ensure the data directory exists
 os.makedirs("../../data", exist_ok=True)
 
-# Database URL for SQLite
-DATABASE_URL = "sqlite:///../../data/open_omniscience.db"
+# Database URL: Default to SQLite, but can be overridden for PostgreSQL
+# To use PostgreSQL, set DATABASE_URL to:
+# postgres://username:password@localhost:5432/open_omniscience
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///../../data/open_omniscience.db")
 
 # Create the SQLAlchemy engine
 engine = create_engine(DATABASE_URL, echo=False)
@@ -33,7 +36,7 @@ Base = declarative_base()
 class Source(Base):
     """
     Represents a news source.
-    
+
     Attributes:
         id: Primary key.
         name: Name of the source (e.g., "BBC News").
@@ -41,6 +44,8 @@ class Source(Base):
         rss_url: URL of the RSS feed, if available.
         rate_limit_ms: Delay between requests in milliseconds.
         enabled: Whether the source is active for scraping.
+        priority: Priority level (1 = high, 3 = low).
+        tags: Comma-separated list of tags.
         articles: Relationship to Article model.
     """
     __tablename__ = "sources"
@@ -51,7 +56,9 @@ class Source(Base):
     rss_url = Column(String(500))
     rate_limit_ms = Column(Integer, default=2000)
     enabled = Column(Boolean, default=True)
-    
+    priority = Column(Integer, default=2)
+    tags = Column(String(500))  # Comma-separated tags
+
     # Relationship to articles
     articles = relationship("Article", back_populates="source", cascade="all, delete-orphan")
     
@@ -61,8 +68,8 @@ class Source(Base):
 
 class Article(Base):
     """
-    Represents an scraped article.
-    
+    Represents a scraped article.
+
     Attributes:
         id: Primary key.
         url: Original URL of the article.
@@ -79,7 +86,7 @@ class Article(Base):
     __tablename__ = "articles"
     
     id = Column(Integer, primary_key=True)
-    url = Column(String(1000), nullable=False, unique=True)
+    url = Column(String(1000), nullable=False)
     canonical_url = Column(String(1000), nullable=False)
     source_id = Column(Integer, ForeignKey("sources.id"), nullable=False)
     title = Column(String(500))
@@ -97,9 +104,11 @@ class Article(Base):
         # Index for faster duplicate detection
         Index("idx_article_hash", "hash", unique=True),
         # Index for faster URL lookups
-        Index("idx_article_canonical_url", "canonical_url", unique=True),
+        Index("idx_article_canonical_url", "canonical_url"),
         # Index for faster source-based queries
         Index("idx_article_source_id", "source_id"),
+        # Index for faster text search
+        Index("idx_article_content", "content"),
     )
     
     def __repr__(self):
@@ -126,36 +135,5 @@ if __name__ == "__main__":
     tables = inspector.get_table_names()
     print(f"Tables in database: {tables}")
     
-    # Add a test source if none exists
-    if not session.query(Source).first():
-        test_source = Source(
-            name="Test Source",
-            domain="test-source.example.com",
-            rss_url="https://test-source.example.com/rss",
-            rate_limit_ms=2000,
-            enabled=True
-        )
-        session.add(test_source)
-        session.commit()
-        print(f"Added test source: {test_source}")
-    
-    # Add a test article if none exists
-    if not session.query(Article).first():
-        source = session.query(Source).first()
-        test_article = Article(
-            url="https://test-source.example.com/article1",
-            canonical_url="https://test-source.example.com/article1",
-            source_id=source.id,
-            title="Test Article",
-            content="This is a test article content.",
-            published_at=datetime.utcnow(),
-            language="en",
-            hash="a1b2c3d4e5f6..."  # Replace with actual hash in real usage
-        )
-        session.add(test_article)
-        session.commit()
-        print(f"Added test article: {test_article}")
-    
     session.close()
-    
-    print("Database setup complete. Tables created and test data added if empty.")
+    print("Database setup complete. Tables created if they didn't exist.")

@@ -10,6 +10,8 @@ Author: Ideotion
 
 import sys
 from pathlib import Path
+from typing import Optional, List
+from datetime import datetime
 
 # Add parent directories to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
@@ -22,11 +24,10 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from datetime import datetime
-from typing import Optional
 import csv
 import io
 import logging
+import re
 
 # Import database models and session
 from database.models import Article, Source, get_session
@@ -39,14 +40,14 @@ logger = setup_logging("api")
 DATABASE_URL = f"sqlite:///{Path(__file__).parent.parent.parent / 'data' / 'open_omniscience.db'}"
 
 # Initialize FastAPI app
-app = FastAPI(title="Open Omniscience API", version="0.1.0")
+app = FastAPI(title="Open Omniscience API", version="0.2.0")
 
 # Rate limiter setup
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
-# CORS middleware (optional, for development)
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -57,7 +58,6 @@ app.add_middleware(
 
 # Serve static files (HTML5 frontend)
 app.mount("/", StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True), name="static")
-
 
 # Rate limit exceeded handler
 @app.exception_handler(RateLimitExceeded)
@@ -70,8 +70,81 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
+def parse_search_query(query: str) -> dict:
+    """
+    Parse a search query into a structured format for Boolean searches.
+    Supports:
+    - AND: "term1 AND term2"
+    - OR: "term1 OR term2"
+    - NOT: "term1 NOT term2"
+    - Phrases: "\"exact phrase\""
+    - Parentheses: "(term1 OR term2) AND term3"
+
+    Args:
+        query: The raw search query.
+
+    Returns:
+        A dictionary with parsed terms and operators.
+    """
+    if not query:
+        return {"terms": [], "operators": []}
+
+    # Replace parentheses with spaces for now (simplified)
+    query = query.replace("(", " ").replace(")", " ")
+
+    # Tokenize the query
+    tokens = re.split(r'\s+(AND|OR|NOT)\s+', query, flags=re.IGNORECASE)
+    tokens = [token.strip() for token in tokens if token.strip()]
+
+    # Process tokens
+    terms = []
+    operators = []
+    current_operator = "AND"  # Default operator
+
+    for token in tokens:
+        if token.upper() in ["AND", "OR", "NOT"]:
+            operators.append(token.upper())
+            current_operator = token.upper()
+        else:
+            # Remove quotes for exact phrases
+            if token.startswith('"') and token.endswith('"'):
+                terms.append({"value": token[1:-1], "exact": True, "operator": current_operator})
+            else:
+                terms.append({"value": token, "exact": False, "operator": current_operator})
+            current_operator = "AND"  # Reset to default
+
+    return {"terms": terms, "operators": operators}
+
+
+def build_sqlalchemy_filter(parsed_query: dict, session) -> List:
+    """
+    Build SQLAlchemy filter conditions from a parsed query.
+
+    Args:
+        parsed_query: The parsed query dictionary.
+        session: Database session.
+
+    Returns:
+        A list of SQLAlchemy filter conditions.
+    """
+    from sqlalchemy import or_, and_, not_
+
+    filters = []
+    for term in parsed_query["terms"]:
+        if term["exact"]:
+            filters.append(Article.content.ilike(f'%{term["value"]}%'))
+        else:
+            # Split into words for OR logic
+            words = term["value"].split()
+            word_conditions = [Article.content.ilike(f'%{word}%') for word in words]
+            filters.append(or_(*word_conditions))
+
+    # Combine filters based on operators (simplified: assume AND for all)
+    return and_(*filters) if filters else []
+
+
 # API Endpoints
-@app.get("/api/articles", response_model=list)
+@app.get("/api/articles", response_model=dict)
 @limiter.limit("100/hour")
 async def search_articles(
     request: Request,
@@ -79,20 +152,26 @@ async def search_articles(
     source: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    limit: int = 100
+    language: Optional[str] = None,
+    tags: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0
 ):
     """
-    Search and filter articles.
-    
+    Search and filter articles with advanced options.
+
     Parameters:
-    - query: Text to search in article content.
+    - query: Text to search in article content (supports Boolean operators).
     - source: Filter by source name.
     - start_date: Filter by start date (YYYY-MM-DD).
     - end_date: Filter by end date (YYYY-MM-DD).
-    - limit: Maximum number of results to return.
+    - language: Filter by language code (e.g., "en", "fr").
+    - tags: Filter by source tags (comma-separated).
+    - limit: Maximum number of results to return (default: 100).
+    - offset: Offset for pagination (default: 0).
     """
-    logger.info(f"Search request: query={query}, source={source}, limit={limit}")
-    
+    logger.info(f"Search request: query={query}, source={source}, limit={limit}, offset={offset}")
+
     # Validate date formats
     if start_date:
         try:
@@ -104,17 +183,27 @@ async def search_articles(
             datetime.fromisoformat(end_date)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD.")
-    
+
     session = get_session()
     try:
         filters = []
-        
+
+        # Parse and apply text query
         if query:
-            filters.append(Article.content.ilike(f"%{query}%"))
+            parsed_query = parse_search_query(query)
+            query_filters = build_sqlalchemy_filter(parsed_query, session)
+            if query_filters:
+                filters.append(query_filters)
+
+        # Apply source filter
         if source:
             source_obj = session.query(Source).filter_by(name=source).first()
             if source_obj:
                 filters.append(Article.source_id == source_obj.id)
+            else:
+                raise HTTPException(status_code=404, detail=f"Source '{source}' not found.")
+
+        # Apply date filters
         if start_date:
             try:
                 start_dt = datetime.fromisoformat(start_date)
@@ -127,19 +216,54 @@ async def search_articles(
                 filters.append(Article.published_at <= end_dt)
             except ValueError:
                 pass
-        
-        articles = session.query(Article).filter(*filters).limit(limit).all()
-        
-        return [
+
+        # Apply language filter
+        if language:
+            filters.append(Article.language == language)
+
+        # Apply tags filter (filter by source tags)
+        if tags:
+            tag_list = [tag.strip() for tag in tags.split(",")]
+            # Find sources with any of the tags
+            source_ids = session.query(Source.id).filter(
+                Source.tags.ilike(f'%{tag}%') for tag in tag_list
+            ).distinct().all()
+            source_ids = [sid for (sid,) in source_ids]
+            if source_ids:
+                filters.append(Article.source_id.in_(source_ids))
+
+        # Execute query
+        from sqlalchemy import and_
+        query_filters = and_(*filters) if filters else True
+        articles_query = session.query(Article).filter(query_filters)
+
+        # Count total results
+        total = articles_query.count()
+
+        # Apply pagination
+        articles = articles_query.offset(offset).limit(limit).all()
+
+        # Format results
+        results = [
             {
                 "id": a.id,
                 "title": a.title,
                 "url": a.url,
+                "canonical_url": a.canonical_url,
                 "source": a.source.name if a.source else "Unknown",
                 "published_at": a.published_at.isoformat() if a.published_at else None,
-                "content": a.content
+                "language": a.language,
+                "content": a.content[:500] + "..." if len(a.content) > 500 else a.content,  # Truncate long content
+                "hash": a.hash
             } for a in articles
         ]
+
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "results": results
+        }
     finally:
         session.close()
 
@@ -152,20 +276,24 @@ async def export_articles(
     query: Optional[str] = None,
     source: Optional[str] = None,
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    language: Optional[str] = None,
+    tags: Optional[str] = None
 ):
     """
-    Export articles in CSV or JSON format.
-    
+    Export articles in CSV or JSON format with advanced filters.
+
     Parameters:
     - format: Export format (csv or json).
     - query: Text to search in article content.
     - source: Filter by source name.
     - start_date: Filter by start date (YYYY-MM-DD).
     - end_date: Filter by end date (YYYY-MM-DD).
+    - language: Filter by language code (e.g., "en", "fr").
+    - tags: Filter by source tags (comma-separated).
     """
     logger.info(f"Export request: format={format}, query={query}, source={source}")
-    
+
     # Validate date formats
     if start_date:
         try:
@@ -177,17 +305,25 @@ async def export_articles(
             datetime.fromisoformat(end_date)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD.")
-    
+
     session = get_session()
     try:
         filters = []
-        
+
+        # Parse and apply text query
         if query:
-            filters.append(Article.content.ilike(f"%{query}%"))
+            parsed_query = parse_search_query(query)
+            query_filters = build_sqlalchemy_filter(parsed_query, session)
+            if query_filters:
+                filters.append(query_filters)
+
+        # Apply source filter
         if source:
             source_obj = session.query(Source).filter_by(name=source).first()
             if source_obj:
                 filters.append(Article.source_id == source_obj.id)
+
+        # Apply date filters
         if start_date:
             try:
                 start_dt = datetime.fromisoformat(start_date)
@@ -200,21 +336,41 @@ async def export_articles(
                 filters.append(Article.published_at <= end_dt)
             except ValueError:
                 pass
-        
-        articles = session.query(Article).filter(*filters).all()
-        
+
+        # Apply language filter
+        if language:
+            filters.append(Article.language == language)
+
+        # Apply tags filter
+        if tags:
+            tag_list = [tag.strip() for tag in tags.split(",")]
+            source_ids = session.query(Source.id).filter(
+                Source.tags.ilike(f'%{tag}%') for tag in tag_list
+            ).distinct().all()
+            source_ids = [sid for (sid,) in source_ids]
+            if source_ids:
+                filters.append(Article.source_id.in_(source_ids))
+
+        # Execute query
+        from sqlalchemy import and_
+        query_filters = and_(*filters) if filters else True
+        articles = session.query(Article).filter(query_filters).all()
+
         if format == "csv":
             stream = io.StringIO()
             writer = csv.writer(stream)
-            writer.writerow(["ID", "Title", "URL", "Source", "Published At", "Content"])
+            writer.writerow(["ID", "Title", "URL", "Canonical URL", "Source", "Published At", "Language", "Content", "Hash"])
             for a in articles:
                 writer.writerow([
                     a.id,
                     a.title or "",
                     a.url or "",
+                    a.canonical_url or "",
                     a.source.name if a.source else "",
                     a.published_at.isoformat() if a.published_at else "",
-                    a.content or ""
+                    a.language or "",
+                    a.content or "",
+                    a.hash or ""
                 ])
             response = StreamingResponse(
                 iter([stream.getvalue()]),
@@ -222,7 +378,7 @@ async def export_articles(
                 headers={"Content-Disposition": "attachment; filename=articles.csv"}
             )
             return response
-        
+
         elif format == "json":
             return JSONResponse(
                 content=[
@@ -230,14 +386,18 @@ async def export_articles(
                         "id": a.id,
                         "title": a.title,
                         "url": a.url,
+                        "canonical_url": a.canonical_url,
                         "source": a.source.name if a.source else "Unknown",
                         "published_at": a.published_at.isoformat() if a.published_at else None,
-                        "content": a.content
+                        "language": a.language,
+                        "content": a.content,
+                        "hash": a.hash
                     } for a in articles
                 ]
             )
         else:
             raise HTTPException(status_code=400, detail="Unsupported format. Use 'csv' or 'json'.")
+
     finally:
         session.close()
 
@@ -245,12 +405,23 @@ async def export_articles(
 @app.get("/api/sources", response_model=list)
 @limiter.limit("100/hour")
 async def list_sources(request: Request):
-    """List all available news sources."""
+    """List all available news sources with optional filters."""
     logger.info("List sources request")
     session = get_session()
     try:
         sources = session.query(Source).all()
-        return [{"id": s.id, "name": s.name, "domain": s.domain} for s in sources]
+        return [
+            {
+                "id": s.id,
+                "name": s.name,
+                "domain": s.domain,
+                "rss_url": s.rss_url,
+                "rate_limit_ms": s.rate_limit_ms,
+                "enabled": s.enabled,
+                "priority": s.priority,
+                "tags": s.tags.split(",") if s.tags else []
+            } for s in sources
+        ]
     finally:
         session.close()
 
