@@ -24,7 +24,7 @@ This document outlines how to **contribute** to Open Omniscience, including:
 ### 2. Join the Community
 - **GitHub Discussions**: Ask questions, share ideas, and discuss features in [Discussions](https://github.com/ideotion/Open-Omniscience/discussions).
 - **GitHub Issues**: Report bugs or request features in [Issues](https://github.com/ideotion/Open-Omniscience/issues).
-- **Email**: Contact us at `contact@ideotion.org` for private inquiries.
+- **Email**: Contact us at `open-omniscience@ideotion.com` for private inquiries.
 
 ### 3. Find a Way to Contribute
 - **Browse open issues**: Look for issues labeled [`good first issue`](https://github.com/ideotion/Open-Omniscience/labels/good%20first%20issue) or [`help wanted`](https://github.com/ideotion/Open-Omniscience/labels/help%20wanted).
@@ -201,7 +201,7 @@ Violations of the Code of Conduct may result in:
 - **Temporary or permanent ban** from the project.
 - **Removal of contributions** (e.g., commits, issues, PRs).
 
-To report a violation, contact `conduct@ideotion.org` or open an issue labeled `code-of-conduct`.
+To report a violation, contact `open-omniscience@ideotion.com` or open an issue labeled `code-of-conduct`.
 
 ---
 
