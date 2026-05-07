@@ -651,14 +651,6 @@ sources:
     tags: ["science", "energy", "renewable"]
     priority: 2
 
-  - name: "Energy Storage News"
-    domain: "energy-storage.news"
-    rss_url: "https://www.energy-storage.news/feed"
-    rate_limit_ms: 2000
-    enabled: true
-    tags: ["science", "energy", "storage"]
-    priority: 2
-
   - name: "PV Magazine"
     domain: "pv-magazine.com"
     rss_url: "https://pv-magazine.com/feed"
@@ -673,6 +665,14 @@ sources:
     rate_limit_ms: 2000
     enabled: true
     tags: ["science", "energy", "wind"]
+    priority: 2
+
+  - name: "Energy Storage News"
+    domain: "energy-storage.news"
+    rss_url: "https://www.energy-storage.news/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "energy", "storage"]
     priority: 2
 
   # --- Nanotechnology ---
@@ -911,6 +911,14 @@ sources:
     rate_limit_ms: 3000
     enabled: true
     tags: ["legal", "human-rights", "europe"]
+    priority: 3
+
+  - name: "Inter-American Court of Human Rights News"
+    domain: "corteidh.or.cr"
+    rss_url: "https://www.corteidh.or.cr/rss"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["legal", "human-rights", "americas"]
     priority: 3
 
   - name: "SCOTUSblog"
