@@ -8,28 +8,40 @@ from pathlib import Path
 from datetime import datetime
 import time
 import logging
+import sys
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("audit/scraper.log"),
-        logging.StreamHandler()
-    ]
-)
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+
+# Configure logging using shared config
+from utils.logging_config import setup_logging
+logger = setup_logging("scraper")
 
 
 class Scraper:
-    def __init__(self, config_path="configs/sources.yml"):
-        with open(config_path, "r") as f:
-            self.sources = yaml.safe_load(f)["sources"]
-        self.audit_log = Path("audit/scrape_log.csv")
+    def __init__(self, config_path=None):
+        # Use dynamic path for config
+        if config_path is None:
+            config_path = Path(__file__).parent.parent / "configs" / "sources.yml"
+        
+        try:
+            with open(config_path, "r") as f:
+                self.sources = yaml.safe_load(f)["sources"]
+        except FileNotFoundError:
+            logger.error(f"Config file not found at {config_path}")
+            self.sources = []
+        except yaml.YAMLError as e:
+            logger.error(f"Invalid YAML in config file: {e}")
+            self.sources = []
+        
+        # Use dynamic path for audit log
+        self.audit_log = Path(__file__).parent.parent / "audit" / "scrape_log.csv"
         self._init_audit_log()
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "OpenOmniscience/1.0"})
 
     def _init_audit_log(self):
+        self.audit_log.parent.mkdir(exist_ok=True, parents=True)
         if not self.audit_log.exists():
             with open(self.audit_log, "w") as f:
                 writer = csv.writer(f)
@@ -43,18 +55,18 @@ class Scraper:
             rp.read()
             return rp.can_fetch("OpenOmniscience/1.0", url)
         except Exception as e:
-            logging.warning(f"Could not fetch robots.txt for {domain}: {e}")
+            logger.warning(f"Could not fetch robots.txt for {domain}: {e}")
             return True  # Assume allowed if robots.txt is unreachable
 
     def scrape_source(self, source):
         if not source["enabled"]:
-            logging.info(f"Skipping disabled source: {source['name']}")
+            logger.info(f"Skipping disabled source: {source['name']}")
             return []
 
         domain_url = f"https://{source['domain']}"
         if not self._can_scrape(domain_url):
             self.log_request(domain_url, source["name"], "BLOCKED_BY_ROBOTS", source["rate_limit_ms"])
-            logging.warning(f"Scraping blocked by robots.txt for {source['name']}")
+            logger.warning(f"Scraping blocked by robots.txt for {source['name']}")
             return []
 
         try:
@@ -91,15 +103,16 @@ class Scraper:
                         "source": source["name"]
                     })
 
-            logging.info(f"Scraped {len(articles)} articles from {source['name']}")
+            logger.info(f"Scraped {len(articles)} articles from {source['name']}")
             return articles
 
         except requests.exceptions.RequestException as e:
             self.log_request(domain_url, source["name"], f"ERROR: {str(e)}", source["rate_limit_ms"])
-            logging.error(f"Error scraping {source['name']}: {e}")
+            logger.error(f"Error scraping {source['name']}: {e}")
             return []
 
     def log_request(self, url, source, status, rate_limit_ms):
+        self.audit_log.parent.mkdir(exist_ok=True, parents=True)
         with open(self.audit_log, "a") as f:
             writer = csv.writer(f)
             writer.writerow([
@@ -122,4 +135,4 @@ class Scraper:
 if __name__ == "__main__":
     scraper = Scraper()
     articles = scraper.scrape_all_sources()
-    logging.info(f"Total articles scraped: {len(articles)}")
+    logger.info(f"Total articles scraped: {len(articles)}")
