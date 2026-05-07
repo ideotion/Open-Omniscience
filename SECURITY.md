@@ -78,7 +78,7 @@ If you discover a **security vulnerability** in Open Omniscience, **please repor
 
 ### How to Report a Vulnerability
 1. **Do not open a public GitHub issue** (this could expose the vulnerability to malicious actors).
-2. **Email the security team** at `security@ideotion.org` with:
+2. **Email the security team** at `open-omniscience@ideotion.com` with:
    - A **clear description** of the vulnerability.
    - **Steps to reproduce** the issue.
    - **Impact** of the vulnerability (e.g., data exposure, remote code execution).
@@ -238,7 +238,7 @@ app.add_middleware(
 
 ### 2. Restrict Access
 - **IP Whitelisting**: Restrict access to trusted IPs (e.g., your office, VPN).
-- **Authentication**: Use a reverse proxy with **Basic Auth** or **OAuth2**.
+- **Authentication**: Use a reverse proxy with **Basic Auth** or **OAuth2**. 
 - **Firewall**: Block unnecessary ports (e.g., only allow 80/443).
 
 ### 3. Monitor and Log
@@ -292,12 +292,12 @@ app.add_middleware(
 ## 📞 Contact
 
 For **security-related inquiries**, contact us at:
-- **Email:** `security@ideotion.org`
+- **Email:** `open-omniscience@ideotion.com`
 - **GPG Key:** [Our GPG key](https://ideotion.org/security.asc) (for encrypted reports).
 
 For **general inquiries**, use:
 - **GitHub Issues:** [https://github.com/ideotion/Open-Omniscience/issues](https://github.com/ideotion/Open-Omniscience/issues)
-- **Email:** `contact@ideotion.org`
+- **Email:** `open-omniscience@ideotion.com`
 
 ---
 
