@@ -1,16 +1,42 @@
-from fastapi import FastAPI, Query, HTTPException
+"""
+FastAPI Backend for Open Omniscience
+
+This module provides the FastAPI backend for the Open Omniscience project,
+including endpoints for searching articles, exporting data, and listing sources.
+It also serves the HTML5 frontend static files and includes rate limiting.
+
+Author: Ideotion
+"""
+
+from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import csv
 import io
+import logging
 
 # Import database models and session
-from database.models import Article, Source, Session
+from database.models import Article, Source, get_session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("../../audit/api.log"),
+        logging.StreamHandler()
+    ]
+)
 
 # Database setup
 DATABASE_URL = "sqlite:///../../data/open_omniscience.db"
@@ -18,15 +44,42 @@ engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 
 # Initialize FastAPI app
-app = FastAPI(title="Open Omniscience API")
+app = FastAPI(title="Open Omniscience API", version="0.1.0")
+
+# Rate limiter setup
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+# CORS middleware (optional, for development)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Serve static files (HTML5 frontend)
 app.mount("/", StaticFiles(directory="../static", html=True), name="static")
 
 
+# Rate limit exceeded handler
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    logging.warning(f"Rate limit exceeded for {get_remote_address(request)}: {request.url}")
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests. Please try again later."},
+        headers={"Retry-After": str(exc.retry_after)}
+    )
+
+
 # API Endpoints
 @app.get("/api/articles", response_model=list)
-def search_articles(
+@limiter.limit("100/hour")
+async def search_articles(
+    request: Request,
     query: Optional[str] = None,
     source: Optional[str] = None,
     start_date: Optional[str] = None,
@@ -43,6 +96,8 @@ def search_articles(
     - end_date: Filter by end date (YYYY-MM-DD).
     - limit: Maximum number of results to return.
     """
+    logging.info(f"Search request: query={query}, source={source}, limit={limit}")
+    
     session = Session()
     filters = []
     
@@ -81,7 +136,9 @@ def search_articles(
 
 
 @app.get("/api/articles/export")
-def export_articles(
+@limiter.limit("50/hour")
+async def export_articles(
+    request: Request,
     format: str = "csv",
     query: Optional[str] = None,
     source: Optional[str] = None,
@@ -98,6 +155,8 @@ def export_articles(
     - start_date: Filter by start date (YYYY-MM-DD).
     - end_date: Filter by end date (YYYY-MM-DD).
     """
+    logging.info(f"Export request: format={format}, query={query}, source={source}")
+    
     session = Session()
     filters = []
     
@@ -161,8 +220,10 @@ def export_articles(
 
 
 @app.get("/api/sources", response_model=list)
-def list_sources():
+@limiter.limit("100/hour")
+async def list_sources(request: Request):
     """List all available news sources."""
+    logging.info("List sources request")
     session = Session()
     sources = session.query(Source).all()
     session.close()
@@ -171,6 +232,6 @@ def list_sources():
 
 # Root endpoint to serve index.html
 @app.get("/", response_class=HTMLResponse)
-def read_root():
+async def read_root():
     with open("../static/index.html", "r") as f:
         return HTMLResponse(content=f.read(), status_code=200)
