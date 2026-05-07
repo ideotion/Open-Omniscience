@@ -216,7 +216,7 @@ Open Omniscience supports **Boolean operators** for advanced queries:
 
 ### How to Export
 1. **Apply your search filters** (query, source, date, etc.).
-2. Click **Export CSV** or **Export JSON**.
+2. Click **Export CSV** or **Export JSON**. 
 3. The file will download automatically with a name like `articles_2026-05-07.csv`.
 
 > **⚠️ Note:** Exports are limited to **50 requests/hour** to prevent abuse.
@@ -237,7 +237,7 @@ Open Omniscience is committed to **ethical, legal, and responsible** data aggreg
 - **Scrape paywalled content** (e.g., `nytimes.com`, `ft.com`).
 - **Scrape social media** (e.g., `facebook.com`, `twitter.com`).
 - **Scrape private/sensitive data** (e.g., medical records, government databases).
-- **Use for spam/harassment**: Open Omniscience is for **research and journalism only**.
+- **Use for spam/harassment**: Open Omniscience is for **research and journalism only**. 
 - **Violate terms of service**: Respect the terms of all scraped websites.
 
 ### 📋 Compliance Checklist
@@ -305,7 +305,7 @@ Scraping blocked by robots.txt for {source}
 ```
 **Solution:**
 - Check the domain's `robots.txt` file (e.g., `https://example.com/robots.txt`).
-- If the domain disallows scraping, **remove it from `sources.yml`**.
+- If the domain disallows scraping, **remove it from `sources.yml`**. 
 - If you believe the domain should be scrapable, **open an issue** on GitHub.
 
 #### 5. Rate Limit Exceeded
