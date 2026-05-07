@@ -44,3 +44,895 @@ sources:
     enabled: true
     tags: ["news"]
     priority: 1
+
+  - name: "Xinhua News Agency"
+    domain: "xinhuanet.com"
+    rss_url: "http://www.xinhuanet.com/english/rss.xml"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news"]
+    priority: 2
+
+  - name: "CGTN"
+    domain: "cgtn.com"
+    rss_url: "https://www.cgtn.com/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news"]
+    priority: 2
+
+  - name: "TASS (Russia)"
+    domain: "tass.com"
+    rss_url: "https://tass.com/rss"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["news"]
+    priority: 2
+
+  - name: "Anadolu Agency (Turkey)"
+    domain: "aa.com.tr"
+    rss_url: "https://www.aa.com.tr/en/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news"]
+    priority: 2
+
+  - name: "Kyodo News (Japan)"
+    domain: "kyodonews.net"
+    rss_url: "https://english.kyodonews.net/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news"]
+    priority: 2
+
+  - name: "Yonhap News Agency (South Korea)"
+    domain: "yna.co.kr"
+    rss_url: "https://en.yna.co.kr/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news"]
+    priority: 2
+
+  - name: "Australian Associated Press (AAP)"
+    domain: "aap.com.au"
+    rss_url: "https://www.aap.com.au/rss"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news"]
+    priority: 2
+
+  # --- Regional News ---
+  - name: "African News Agency (ANA)"
+    domain: "africannewsagency.com"
+    rss_url: ""
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "africa"]
+    priority: 3
+
+  - name: "Pan African News Agency (PANA)"
+    domain: "panapress.com"
+    rss_url: ""
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "africa"]
+    priority: 3
+
+  - name: "Nigerian News Agency (NAN)"
+    domain: "nannews.ng"
+    rss_url: ""
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "africa"]
+    priority: 3
+
+  - name: "Middle East News Agency (MENA)"
+    domain: "menafn.com"
+    rss_url: "https://menafn.com/10967/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "middle-east"]
+    priority: 2
+
+  - name: "Emirates News Agency (WAM)"
+    domain: "wam.ae"
+    rss_url: "https://www.wam.ae/en/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "middle-east"]
+    priority: 2
+
+  - name: "Qatar News Agency (QNA)"
+    domain: "qna.org.qa"
+    rss_url: ""
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "middle-east"]
+    priority: 3
+
+  - name: "Bernama (Malaysia)"
+    domain: "bernama.com"
+    rss_url: "https://www.bernama.com/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "asia"]
+    priority: 2
+
+  - name: "Antara (Indonesia)"
+    domain: "antaranews.com"
+    rss_url: "https://en.antaranews.com/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "asia"]
+    priority: 2
+
+  # --- European News ---
+  - name: "ANSA (Italy)"
+    domain: "ansa.it"
+    rss_url: "https://www.ansa.it/english/rss"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 1
+
+  - name: "EFE (Spain)"
+    domain: "efe.com"
+    rss_url: "https://www.efe.com/efe/english/rss"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 1
+
+  - name: "DPA (Germany)"
+    domain: "dpa-international.com"
+    rss_url: ""
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 2
+
+  - name: "Deutsche Welle (Germany)"
+    domain: "dw.com"
+    rss_url: "https://rss.dw.com/rdf/rss-en-all"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 1
+
+  - name: "The Wall Street Journal (USA)"
+    domain: "wsj.com"
+    rss_url: "https://feeds.a.dj.com/rss/WSJcomxmlrss/3_7085.xml"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["news", "financial"]
+    priority: 2
+
+  - name: "The New York Times (USA)"
+    domain: "nytimes.com"
+    rss_url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["news"]
+    priority: 2
+
+  - name: "The Washington Post (USA)"
+    domain: "washingtonpost.com"
+    rss_url: "https://www.washingtonpost.com/newssearch/rss/"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["news"]
+    priority: 2
+
+  - name: "The Moscow Times (Russia)"
+    domain: "themoscowtimes.com"
+    rss_url: "https://www.themoscowtimes.com/rss"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["news"]
+    priority: 2
+
+  - name: "The Japan Times (Japan)"
+    domain: "japantimes.co.jp"
+    rss_url: "https://www.japantimes.co.jp/feed/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "asia"]
+    priority: 2
+
+  - name: "The Sydney Morning Herald (Australia)"
+    domain: "smh.com.au"
+    rss_url: "https://www.smh.com.au/rss/feed.xml"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "australia"]
+    priority: 1
+
+  - name: "The Hindu (India)"
+    domain: "thehindu.com"
+    rss_url: "https://www.thehindu.com/news/international/feeder/default.rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "asia"]
+    priority: 2
+
+  - name: "Folha de S.Paulo (Brazil)"
+    domain: "folha.uol.com.br"
+    rss_url: "https://www1.folha.uol.com.br/rss/feed.rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "south-america"]
+    priority: 2
+
+  - name: "The Globe and Mail (Canada)"
+    domain: "theglobeandmail.com"
+    rss_url: "https://www.theglobeandmail.com/rss/"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "canada"]
+    priority: 1
+
+  - name: "El País (Spain)"
+    domain: "elpais.com"
+    rss_url: "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/section/english/portada"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 1
+
+  - name: "The Independent (UK)"
+    domain: "independent.co.uk"
+    rss_url: "https://www.independent.co.uk/news/world/rss"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "uk"]
+    priority: 1
+
+  - name: "Le Figaro (France)"
+    domain: "lefigaro.fr"
+    rss_url: "http://rss.lefigaro.fr/lefigaro/actualites"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 1
+
+  - name: "Le Monde Diplomatique (France)"
+    domain: "mondediplo.com"
+    rss_url: "https://mondediplo.com/spip.php?page=backend-rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "geopolitical"]
+    priority: 2
+
+  - name: "Courrier International (France)"
+    domain: "courrierinternational.com"
+    rss_url: "https://www.courrierinternational.com/flux-rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 2
+
+  - name: "Der Spiegel (Germany)"
+    domain: "spiegel.de"
+    rss_url: "https://www.spiegel.de/international/index.rss"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 1
+
+  - name: "La Repubblica (Italy)"
+    domain: "repubblica.it"
+    rss_url: "https://www.repubblica.it/rss/english/rss2.0.xml"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 1
+
+  - name: "Le Soir (Belgium)"
+    domain: "lesoir.be"
+    rss_url: "https://www.lesoir.be/rss/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 2
+
+  - name: "NRC Handelsblad (Netherlands)"
+    domain: "nrc.nl"
+    rss_url: "https://www.nrc.nl/rss/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 2
+
+  - name: "Dagens Nyheter (Sweden)"
+    domain: "dn.se"
+    rss_url: "https://www.dn.se/rss/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 2
+
+  - name: "El Mundo (Spain)"
+    domain: "elmundo.es"
+    rss_url: "https://www.elmundo.es/rss/"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 1
+
+  - name: "Der Tagesspiegel (Germany)"
+    domain: "tagesspiegel.de"
+    rss_url: "https://www.tagesspiegel.de/feed/rss.xml"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "europe"]
+    priority: 2
+
+  - name: "O Globo (Brazil)"
+    domain: "oglobo.globo.com"
+    rss_url: "https://oglobo.globo.com/rss/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "south-america"]
+    priority: 2
+
+  - name: "Clarín (Argentina)"
+    domain: "clarin.com"
+    rss_url: "https://www.clarin.com/rss/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "south-america"]
+    priority: 2
+
+  - name: "El Tiempo (Colombia)"
+    domain: "eltiempo.com"
+    rss_url: "https://www.eltiempo.com/rss/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "south-america"]
+    priority: 2
+
+  - name: "El Universal (Mexico)"
+    domain: "eluniversal.com.mx"
+    rss_url: "https://www.eluniversal.com.mx/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "north-america"]
+    priority: 2
+
+  - name: "The Toronto Star (Canada)"
+    domain: "thestar.com"
+    rss_url: "https://www.thestar.com/feeds.articles.news.rss"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "canada"]
+    priority: 1
+
+  - name: "The Australian"
+    domain: "theaustralian.com.au"
+    rss_url: "https://www.theaustralian.com.au/rss/"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["news", "australia"]
+    priority: 1
+
+  - name: "The New Zealand Herald"
+    domain: "nzherald.co.nz"
+    rss_url: "https://www.nzherald.co.nz/rss/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "oceania"]
+    priority: 2
+
+  - name: "O Estado de S. Paulo (Brazil)"
+    domain: "estadao.com.br"
+    rss_url: "https://www.estadao.com.br/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "south-america"]
+    priority: 2
+
+  - name: "La Nación (Argentina)"
+    domain: "lanacion.com.ar"
+    rss_url: "https://www.lanacion.com.ar/rss/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "south-america"]
+    priority: 2
+
+  - name: "El Comercio (Peru)"
+    domain: "elcomercio.pe"
+    rss_url: "https://elcomercio.pe/rss/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["news", "south-america"]
+    priority: 2
+
+  # --- Linguistics & Cognitive Science ---
+  - name: "LSA News"
+    domain: "lsadc.org"
+    rss_url: "https://www.lsadc.org/lsa_news/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "linguistics"]
+    priority: 3
+
+  - name: "Linguist List"
+    domain: "linguistlist.org"
+    rss_url: "https://linguistlist.org/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "linguistics"]
+    priority: 3
+
+  - name: "Journal of Cognitive Neuroscience"
+    domain: "mitpressjournals.org"
+    rss_url: "https://www.mitpressjournals.org/rss/journal/cogj"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["science", "cognitive"]
+    priority: 3
+
+  - name: "Language and Cognitive Processes"
+    domain: "tandfonline.com"
+    rss_url: "https://www.tandfonline.com/rss/journals/plcp20"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["science", "linguistics", "cognitive"]
+    priority: 3
+
+  - name: "Stanford Encyclopedia of Philosophy (SEP)"
+    domain: "plato.stanford.edu"
+    rss_url: "https://plato.stanford.edu/updates.rss"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["science", "philosophy"]
+    priority: 3
+
+  - name: "Internet Encyclopedia of Philosophy (IEP)"
+    domain: "iep.utm.edu"
+    rss_url: "https://iep.utm.edu/rss"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["science", "philosophy"]
+    priority: 3
+
+  - name: "Daily Nous"
+    domain: "dailynous.com"
+    rss_url: "https://dailynous.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "philosophy"]
+    priority: 3
+
+  - name: "Mind & Language Journal"
+    domain: "onlinelibrary.wiley.com"
+    rss_url: "https://onlinelibrary.wiley.com/rss/journal/10.1111/(ISSN)1468-0017"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["science", "cognitive", "linguistics"]
+    priority: 3
+
+  - name: "Journal of Consciousness Studies"
+    domain: "imprint.co.uk"
+    rss_url: "https://www.imprint.co.uk/jcs.rss"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["science", "consciousness"]
+    priority: 3
+
+  - name: "Philosophy of Science (Journal)"
+    domain: "journals.uchicago.edu"
+    rss_url: "https://www.journals.uchicago.edu/rss/journal/philosophy-science"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["science", "philosophy"]
+    priority: 3
+
+  # --- Applied Science & Technology ---
+  - name: "Popular Science"
+    domain: "popsci.com"
+    rss_url: "https://www.popsci.com/rss"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["science", "technology"]
+    priority: 2
+
+  - name: "Wired"
+    domain: "wired.com"
+    rss_url: "https://www.wired.com/feed/rss"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["science", "technology"]
+    priority: 2
+
+  - name: "Ars Technica"
+    domain: "arstechnica.com"
+    rss_url: "https://arstechnica.com/feed/"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["science", "technology"]
+    priority: 2
+
+  - name: "ASME News"
+    domain: "asme.org"
+    rss_url: "https://www.asme.org/news/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "engineering"]
+    priority: 3
+
+  - name: "IMechE News"
+    domain: "imeche.org"
+    rss_url: "https://www.imeche.org/news/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "engineering"]
+    priority: 3
+
+  - name: "Institution of Engineering and Technology (IET) News"
+    domain: "theiet.org"
+    rss_url: "https://www.theiet.org/news/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "engineering"]
+    priority: 3
+
+  # --- Biotechnology ---
+  - name: "Genetic Engineering & Biotechnology News (GEN)"
+    domain: "genengnews.com"
+    rss_url: "https://www.genengnews.com/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "biotechnology"]
+    priority: 2
+
+  - name: "Fierce Biotech"
+    domain: "fiercebiotech.com"
+    rss_url: "https://www.fiercebiotech.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "biotechnology"]
+    priority: 2
+
+  - name: "BioPharma Dive"
+    domain: "biopharmadive.com"
+    rss_url: "https://www.biopharmadive.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "biotechnology", "pharma"]
+    priority: 2
+
+  - name: "Nature Biotechnology"
+    domain: "nature.com"
+    rss_url: "https://www.nature.com/nbt/rss"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["science", "biotechnology"]
+    priority: 3
+
+  # --- Renewable Energy ---
+  - name: "Renewables Now"
+    domain: "renewablesnow.com"
+    rss_url: "https://renewablesnow.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "energy", "renewable"]
+    priority: 2
+
+  - name: "Canary Media"
+    domain: "canarymedia.com"
+    rss_url: "https://www.canarymedia.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "energy", "renewable"]
+    priority: 2
+
+  - name: "Renewable Energy Magazine"
+    domain: "renewableenergymagazine.com"
+    rss_url: "https://www.renewableenergymagazine.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "energy", "renewable"]
+    priority: 2
+
+  - name: "Renewable Energy World"
+    domain: "renewableenergyworld.com"
+    rss_url: "https://www.renewableenergyworld.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "energy", "renewable"]
+    priority: 2
+
+  - name: "Recharge News"
+    domain: "rechargenews.com"
+    rss_url: "https://www.rechargenews.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "energy", "renewable"]
+    priority: 2
+
+  - name: "Energy Storage News"
+    domain: "energy-storage.news"
+    rss_url: "https://www.energy-storage.news/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "energy", "storage"]
+    priority: 2
+
+  - name: "PV Magazine"
+    domain: "pv-magazine.com"
+    rss_url: "https://pv-magazine.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "energy", "solar"]
+    priority: 2
+
+  - name: "Wind Power Engineering"
+    domain: "windpowerengineering.com"
+    rss_url: "https://www.windpowerengineering.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "energy", "wind"]
+    priority: 2
+
+  # --- Nanotechnology ---
+  - name: "Nanowerk"
+    domain: "nanowerk.com"
+    rss_url: "https://www.nanowerk.com/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "nanotechnology"]
+    priority: 3
+
+  - name: "AZoNano"
+    domain: "azonano.com"
+    rss_url: "https://www.azonano.com/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "nanotechnology"]
+    priority: 3
+
+  - name: "Nature Nanotechnology"
+    domain: "nature.com"
+    rss_url: "https://www.nature.com/nnano/rss"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["science", "nanotechnology"]
+    priority: 3
+
+  # --- Medical Technology ---
+  - name: "MassDevice"
+    domain: "massdevice.com"
+    rss_url: "https://www.massdevice.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "medical", "technology"]
+    priority: 2
+
+  - name: "Medical Design & Outsourcing"
+    domain: "medicaldesignandoutsourcing.com"
+    rss_url: "https://www.medicaldesignandoutsourcing.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "medical", "technology"]
+    priority: 2
+
+  - name: "MedTech Dive"
+    domain: "medtechdive.com"
+    rss_url: "https://www.medtechdive.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "medical", "technology"]
+    priority: 2
+
+  - name: "MD+DI"
+    domain: "mddionline.com"
+    rss_url: "https://www.mddionline.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "medical", "technology"]
+    priority: 2
+
+  # --- Agriculture ---
+  - name: "Agri-Pulse"
+    domain: "agri-pulse.com"
+    rss_url: "https://www.agri-pulse.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["agriculture"]
+    priority: 3
+
+  - name: "AgWeb"
+    domain: "agweb.com"
+    rss_url: "https://www.agweb.com/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["agriculture"]
+    priority: 3
+
+  - name: "AGDAILY"
+    domain: "agdaily.com"
+    rss_url: "https://www.agdaily.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["agriculture"]
+    priority: 3
+
+  # --- Robotics ---
+  - name: "IEEE Spectrum - Robotics"
+    domain: "spectrum.ieee.org"
+    rss_url: "https://spectrum.ieee.org/topic/robotics/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "robotics", "technology"]
+    priority: 2
+
+  - name: "The Robot Report"
+    domain: "therobotreport.com"
+    rss_url: "https://www.therobotreport.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "robotics", "technology"]
+    priority: 2
+
+  - name: "Robohub"
+    domain: "robohub.org"
+    rss_url: "https://robohub.org/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["science", "robotics", "technology"]
+    priority: 2
+
+  # --- Geopolitical Organizations ---
+  - name: "ASEAN News"
+    domain: "asean.org"
+    rss_url: "https://asean.org/feed/"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["geopolitical", "asia"]
+    priority: 2
+
+  - name: "African Union News"
+    domain: "au.int"
+    rss_url: "https://au.int/en/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["geopolitical", "africa"]
+    priority: 2
+
+  - name: "Organization of American States (OAS) News"
+    domain: "oas.org"
+    rss_url: "https://www.oas.org/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["geopolitical", "americas"]
+    priority: 2
+
+  - name: "BRICS News"
+    domain: "brics2024.mfa.gov.za"
+    rss_url: "https://brics2024.mfa.gov.za/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["geopolitical", "global"]
+    priority: 2
+
+  - name: "G7/G20 News"
+    domain: "g7uk.com"
+    rss_url: "https://www.g7uk.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["geopolitical", "global"]
+    priority: 2
+
+  - name: "Shanghai Cooperation Organisation (SCO) News"
+    domain: "sectsco.org"
+    rss_url: "https://eng.sectsco.org/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["geopolitical", "asia"]
+    priority: 2
+
+  - name: "Arms Control Association"
+    domain: "armscontrol.org"
+    rss_url: "https://www.armscontrol.org/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["geopolitical", "security"]
+    priority: 2
+
+  - name: "IAEA News"
+    domain: "iaea.org"
+    rss_url: "https://www.iaea.org/news/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["geopolitical", "nuclear", "energy"]
+    priority: 2
+
+  - name: "CyberScoop"
+    domain: "cyberscoop.com"
+    rss_url: "https://www.cyberscoop.com/feed"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["geopolitical", "cybersecurity"]
+    priority: 1
+
+  - name: "The Record by Recorded Future"
+    domain: "therecord.media"
+    rss_url: "https://therecord.media/feed"
+    rate_limit_ms: 1000
+    enabled: true
+    tags: ["geopolitical", "cybersecurity"]
+    priority: 1
+
+  - name: "WTO News"
+    domain: "wto.org"
+    rss_url: "https://www.wto.org/english/news_e/news_e.rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["geopolitical", "trade"]
+    priority: 2
+
+  - name: "OFAC Sanctions News"
+    domain: "home.treasury.gov"
+    rss_url: "https://home.treasury.gov/rss/feed/press-releases"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["geopolitical", "financial", "sanctions"]
+    priority: 2
+
+  - name: "EU Sanctions Map"
+    domain: "sanctionsmap.eu"
+    rss_url: "https://www.sanctionsmap.eu/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["geopolitical", "financial", "sanctions"]
+    priority: 2
+
+  # --- Legal ---
+  - name: "International Court of Justice (ICJ) News"
+    domain: "icj-cij.org"
+    rss_url: "https://www.icj-cij.org/en/rss"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["legal", "international"]
+    priority: 3
+
+  - name: "International Criminal Court (ICC) News"
+    domain: "icc-cpi.int"
+    rss_url: "https://www.icc-cpi.int/feed"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["legal", "international"]
+    priority: 3
+
+  - name: "European Court of Human Rights (ECtHR) News"
+    domain: "echr.coe.int"
+    rss_url: "https://www.echr.coe.int/rss"
+    rate_limit_ms: 3000
+    enabled: true
+    tags: ["legal", "human-rights", "europe"]
+    priority: 3
+
+  - name: "SCOTUSblog"
+    domain: "scotusblog.com"
+    rss_url: "https://www.scotusblog.com/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["legal", "us"]
+    priority: 2
+
+  - name: "Oyez (U.S. Supreme Court)"
+    domain: "oyez.org"
+    rss_url: "https://www.oyez.org/rss"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["legal", "us"]
+    priority: 2
+
+  - name: "UK Supreme Court News"
+    domain: "supremecourt.uk"
+    rss_url: "https://www.supremecourt.uk/feed"
+    rate_limit_ms: 2000
+    enabled: true
+    tags: ["legal", "uk"]
+    priority: 2
