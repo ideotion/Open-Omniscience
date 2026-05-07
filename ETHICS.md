@@ -79,7 +79,7 @@ Users of Open Omniscience claim:
 1. **Respect for Source Terms:** Always comply with the `robots.txt` directives and terms of service of scraped websites.
 2. **Rate Limiting:** Implement and respect configurable delays between requests to avoid overloading servers.
    - Default: **1 request per second per domain** (adjustable in `sources.yml`).
-   - Sensitive domains (e.g., government, small news sites): **3 seconds or more**.
+   - Sensitive domains (e.g., government, small news sites): **3 seconds or more**. 
 3. **Transparency:** Maintain detailed audit logs of all scraping activities in `audit/scrape_log.csv`.
 4. **Data Minimization:** Only collect and store data necessary for the platform's core functionality (URL, title, content, metadata).
 5. **Non-Malicious Use:** Open Omniscience must not be used for:
@@ -150,7 +150,7 @@ The following domains are **explicitly prohibited** from scraping due to legal, 
 - Domains that **block scrapers** (e.g., `cloudflare.com`-protected sites without bypass).
 - **API-only sources** (e.g., `twitter.com/api`, `reddit.com/api` - use official APIs instead).
 
-> **Note:** This list is not exhaustive. Users must exercise **due diligence** and **critical judgment** when adding new sources. When in doubt, **do not scrape**.
+> **Note:** This list is not exhaustive. Users must exercise **due diligence** and **critical judgment** when adding new sources. When in doubt, **do not scrape**. 
 
 ---
 
@@ -246,7 +246,7 @@ If you encounter or suspect unethical use of Open Omniscience:
 2. **Document** the incident (e.g., screenshots, logs, timestamps).
 3. **Report** to the maintainers via:
    - [GitHub Issues](https://github.com/ideotion/Open-Omniscience/issues) (for public reports)
-   - Email: `ethics@ideotion.org` (for sensitive reports)
+   - Email: `open-omniscience@ideotion.com` (for sensitive reports)
 
 ---
 
