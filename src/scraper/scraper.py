@@ -47,6 +47,26 @@ class Scraper:
                 writer = csv.writer(f)
                 writer.writerow(["Timestamp", "URL", "Source", "Status", "Rate_Limit_ms"])
 
+    def _get_domain(self, source):
+        """Extract domain from source config, handling both 'domain' and 'url' fields."""
+        if "domain" in source:
+            return source["domain"]
+        elif "url" in source:
+            # Extract domain from URL
+            parsed = urlparse(source["url"])
+            return parsed.netloc
+        else:
+            logger.warning(f"Source {source.get('name', 'unknown')} has no domain or url field")
+            return ""
+
+    def _get_rate_limit(self, source):
+        """Get rate limit from source config, with default fallback."""
+        return source.get("rate_limit_ms", source.get("scan_config", {}).get("frequency_ms", 2000))
+
+    def _is_enabled(self, source):
+        """Check if source is enabled, with default fallback."""
+        return source.get("enabled", source.get("scan_config", {}).get("enabled", True))
+
     def _can_scrape(self, url):
         rp = RobotFileParser()
         domain = urlparse(url).netloc
@@ -59,20 +79,25 @@ class Scraper:
             return True  # Assume allowed if robots.txt is unreachable
 
     def scrape_source(self, source):
-        if not source["enabled"]:
-            logger.info(f"Skipping disabled source: {source['name']}")
+        if not self._is_enabled(source):
+            logger.info(f"Skipping disabled source: {source.get('name', 'unknown')}")
             return []
 
-        domain_url = f"https://{source['domain']}"
+        domain = self._get_domain(source)
+        if not domain:
+            logger.warning(f"Skipping source {source.get('name', 'unknown')}: no valid domain")
+            return []
+            
+        domain_url = f"https://{domain}"
         if not self._can_scrape(domain_url):
-            self.log_request(domain_url, source["name"], "BLOCKED_BY_ROBOTS", source["rate_limit_ms"])
-            logger.warning(f"Scraping blocked by robots.txt for {source['name']}")
+            self.log_request(domain_url, source.get("name", "unknown"), "BLOCKED_BY_ROBOTS", self._get_rate_limit(source))
+            logger.warning(f"Scraping blocked by robots.txt for {source.get('name', 'unknown')}")
             return []
 
         try:
             response = self.session.get(domain_url, timeout=10)
-            self.log_request(response.url, source["name"], response.status_code, source["rate_limit_ms"])
-            time.sleep(source["rate_limit_ms"] / 1000)  # Rate limiting
+            self.log_request(response.url, source.get("name", "unknown"), response.status_code, self._get_rate_limit(source))
+            time.sleep(self._get_rate_limit(source) / 1000)  # Rate limiting
 
             soup = BeautifulSoup(response.text, "html.parser")
             articles = []
@@ -100,15 +125,15 @@ class Scraper:
                         "content": content,
                         "published_at": published_at,
                         "language": language,
-                        "source": source["name"]
+                        "source": source.get("name", "unknown")
                     })
 
-            logger.info(f"Scraped {len(articles)} articles from {source['name']}")
+            logger.info(f"Scraped {len(articles)} articles from {source.get('name', 'unknown')}")
             return articles
 
         except requests.exceptions.RequestException as e:
-            self.log_request(domain_url, source["name"], f"ERROR: {str(e)}", source["rate_limit_ms"])
-            logger.error(f"Error scraping {source['name']}: {e}")
+            self.log_request(domain_url, source.get("name", "unknown"), f"ERROR: {str(e)}", self._get_rate_limit(source))
+            logger.error(f"Error scraping {source.get('name', 'unknown')}: {e}")
             return []
 
     def log_request(self, url, source, status, rate_limit_ms):
@@ -126,7 +151,7 @@ class Scraper:
     def scrape_all_sources(self):
         all_articles = []
         for source in self.sources:
-            if source["enabled"]:
+            if self._is_enabled(source):
                 articles = self.scrape_source(source)
                 all_articles.extend(articles)
         return all_articles
