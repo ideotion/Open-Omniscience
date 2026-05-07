@@ -26,7 +26,7 @@ class Scraper:
         # Use dynamic path for config
         if config_path is None:
             config_path = Path(__file__).parent.parent / "configs" / "sources.yml"
-        
+
         try:
             with open(config_path, "r") as f:
                 self.sources = yaml.safe_load(f)["sources"]
@@ -36,7 +36,7 @@ class Scraper:
         except yaml.YAMLError as e:
             logger.error(f"Invalid YAML in config file: {e}")
             self.sources = []
-        
+
         # Use dynamic path for audit log
         self.audit_log = Path(__file__).parent.parent / "audit" / "scrape_log.csv"
         self.error_log = Path(__file__).parent.parent / "audit" / "errors.log"
