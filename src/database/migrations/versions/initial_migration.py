@@ -14,7 +14,6 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
-
 def upgrade():
     # Create sources table
     op.create_table(
@@ -50,7 +49,6 @@ def upgrade():
     op.create_index(op.f('idx_article_canonical_url'), 'articles', ['canonical_url'])
     op.create_index(op.f('idx_article_source_id'), 'articles', ['source_id'])
     op.create_index(op.f('idx_article_content'), 'articles', ['content'])
-
 
 def downgrade():
     # Drop indexes
