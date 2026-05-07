@@ -243,7 +243,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## 📞 Contact
 - **GitHub Issues**: [https://github.com/ideotion/Open-Omniscience/issues](https://github.com/ideotion/Open-Omniscience/issues)
-- **Email**: `contact@ideotion.org`
+- **Email**: `open-omniscience@ideotion.com`
 - **Website**: [https://ideotion.org](https://ideotion.org)
 
 ---
