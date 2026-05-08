@@ -1,0 +1,137 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+# Sample debian/rules that uses debhelper.
+# This file was originally written by Joey Hess and Craig Small.
+# As a special exception, when this file is copied by dh-make into a
+# dh-make output file, you may use that file without restriction.
+
+# Uncomment this to turn on verbose mode.
+# export DH_VERBOSE=1
+
+%:
+	dh $@
+
+override_dh_auto_install:
+	# Create directory structure
+	mkdir -p debian/open-omniscience/usr/share/open-omniscience/src
+	mkdir -p debian/open-omniscience/usr/share/open-omniscience/configs
+	mkdir -p debian/open-omniscience/usr/share/open-omniscience/docs
+	mkdir -p debian/open-omniscience/usr/bin
+	mkdir -p debian/open-omniscience/etc/open-omniscience
+	mkdir -p debian/open-omniscience/usr/share/applications
+	mkdir -p debian/open-omniscience/usr/share/pixmaps
+	
+	# Copy source files
+	cp -r src/* debian/open-omniscience/usr/share/open-omniscience/src/
+	
+	# Copy configs
+	cp -r configs/* debian/open-omniscience/usr/share/open-omniscience/configs/
+	
+	# Copy docs
+	cp -r docs/* debian/open-omniscience/usr/share/open-omniscience/docs/
+	cp README.md LICENSE ETHICS.md SECURITY.md CONTRIBUTING.md debian/open-omniscience/usr/share/open-omniscience/
+	
+	# Copy requirements
+	cp requirements.txt debian/open-omniscience/usr/share/open-omniscience/
+	
+	# Create wrapper script
+	cat > debian/open-omniscience/usr/bin/open-omniscience << 'EOF'
+#!/bin/bash
+
+# Open Omniscience Launcher
+APP_DIR="/usr/share/open-omniscience"
+
+# Create local directories if they don't exist
+mkdir -p "$HOME/.open-omniscience/data"
+mkdir -p "$HOME/.open-omniscience/audit"
+mkdir -p "$HOME/.open-omniscience/logs"
+
+# Set environment variables
+export OPEN_OMNISCIENCE_DIR="$APP_DIR"
+export DATABASE_URL="sqlite:///$HOME/.open-omniscience/data/open_omniscience.db"
+export PYTHONPATH="$APP_DIR/src:$PYTHONPATH"
+
+# Check if Python 3 is available
+if command -v python3 &> /dev/null; then
+    PYTHON=python3
+elif command -v python &> /dev/null; then
+    PYTHON=python
+else
+    echo "Error: Python 3 is required but not found."
+    echo "Please install Python 3.10 or later."
+    exit 1
+fi
+
+# Check Python version
+PYTHON_VERSION=$($PYTHON -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+if [ "$(printf '%s\n%s' "3.10" "$PYTHON_VERSION" | sort -V | head -n1)" != "3.10" ]; then
+    echo "Error: Python 3.10 or later is required (found: $PYTHON_VERSION)"
+    exit 1
+fi
+
+# Install dependencies if not already installed
+if [ ! -f "$HOME/.open-omniscience/requirements_installed" ]; then
+    echo "Installing Python dependencies..."
+    $PYTHON -m pip install --user -q -r "$APP_DIR/requirements.txt"
+    touch "$HOME/.open-omniscience/requirements_installed"
+fi
+
+# Initialize database if it doesn't exist
+if [ ! -f "$HOME/.open-omniscience/data/open_omniscience.db" ]; then
+    echo "Initializing database..."
+    $PYTHON -c "
+import sys
+sys.path.insert(0, '$APP_DIR/src')
+from database.models import Base, engine
+Base.metadata.create_all(engine)
+print('Database initialized')
+"
+fi
+
+# Launch the application
+echo "Starting Open Omniscience..."
+echo "Access the application at: http://localhost:8000"
+echo "Press Ctrl+C to stop"
+echo ""
+
+$PYTHON -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+EOF
+	
+	chmod +x debian/open-omniscience/usr/bin/open-omniscience
+	
+	# Create desktop file
+	cat > debian/open-omniscience/usr/share/applications/open-omniscience.desktop << 'EOF'
+[Desktop Entry]
+Name=Open Omniscience
+Exec=/usr/bin/open-omniscience
+Icon=/usr/share/pixmaps/open-omniscience.png
+Type=Application
+Categories=Utility;News;Journalism;
+Terminal=true
+Comment=Global Intelligence Platform for Investigative Journalism
+Version=0.2.0
+EOF
+	
+	# Create a simple icon (placeholder - should be replaced with actual icon)
+	echo "Creating placeholder icon..."
+	convert -size 256x256 xc:white -fill black -pointsize 20 -draw "text 50,120 'Open' text 50,160 'Omniscience'" debian/open-omniscience/usr/share/pixmaps/open-omniscience.png || \
+	# Fallback if convert (ImageMagick) is not available
+	cat > debian/open-omniscience/usr/share/pixmaps/open-omniscience.png << 'ICON'
+This is a placeholder icon. Replace with actual Open Omniscience logo.
+ICON
+	
+	# Copy config files to /etc
+	cp configs/settings.yaml debian/open-omniscience/etc/open-omniscience/settings.yaml
+	
+	# Set permissions
+	find debian/open-omniscience -type d -exec chmod 755 {} \;
+	find debian/open-omniscience -type f -exec chmod 644 {} \;
+	chmod 755 debian/open-omniscience/usr/bin/open-omniscience
+
+override_dh_install:
+	# Install everything
+	dh_install
+
+override_dh_systemd_start:
+	# No systemd service for now (application is user-launched)
+	:

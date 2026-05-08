@@ -29,6 +29,12 @@ help:
 	@echo "  make docker-down      - Stop Docker containers"
 	@echo "  make docker-clean     - Remove Docker containers and volumes"
 	@echo ""
+	@echo "Packages:"
+	@echo "  make package-appimage - Build AppImage package"
+	@echo "  make package-deb      - Build Debian package"
+	@echo "  make package-all      - Build all packages"
+	@echo "  make package-clean    - Clean package build files"
+	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean            - Remove Python cache and temporary files"
 	@echo "  make clean-all        - Full cleanup (includes Docker)"
@@ -126,6 +132,23 @@ clean:
 
 clean-all: clean docker-clean
 	rm -rf .pytest_cache .mypy_cache .coverage htmlcov/
+
+# Package building
+package-appimage:
+	@echo "Building AppImage..."
+	chmod +x package/appimage/OpenOmniscience.AppImageBuilder
+	./package/appimage/OpenOmniscience.AppImageBuilder
+
+package-deb:
+	@echo "Building Debian package..."
+	chmod +x package/deb/build-deb.sh
+	./package/deb/build-deb.sh
+
+package-all: package-appimage package-deb
+
+package-clean:
+	@echo "Cleaning package build files..."
+	rm -rf AppDir build-deb dist *.AppImage *.deb
 
 # Default target
 all: help
