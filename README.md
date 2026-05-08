@@ -44,8 +44,29 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 - **Python:** 3.10+
 - **Dependencies:** See [requirements.txt](requirements.txt)
 - **Database:** SQLite (default) or PostgreSQL (recommended for production)
+- **Docker:** Optional, for containerized deployment
 
-### Installation
+### Quick Start with Docker (Recommended)
+
+The fastest way to get started is using Docker:
+
+```bash
+# Clone the repository
+git clone https://github.com/ideotion/Open-Omniscience
+cd Open-Omniscience
+
+# Copy and configure environment file
+cp .env.example .env
+# Edit .env with your settings (optional)
+
+# Start the application
+docker-compose up -d --build
+
+# Access the application
+# Open http://localhost:8000 in your browser
+```
+
+### Installation (Development)
 
 #### 1. Clone the Repository
 ```bash
@@ -64,6 +85,12 @@ source venv/bin/activate  # Linux/macOS
 #### 3. Install Dependencies
 ```bash
 pip install -r requirements.txt
+```
+
+#### 4. Initialize the Database
+```bash
+mkdir -p data audit logs
+python -c "import sys; sys.path.insert(0, 'src'); from database.models import Base, engine; Base.metadata.create_all(engine); print('Database initialized')"
 ```
 
 #### 4. Initialize the Database
@@ -224,6 +251,88 @@ We welcome contributions from the community! Please read our [Contribution Guide
 - **Performance**: Optimize database queries, scraping speed.
 - **Documentation**: Improve guides, tutorials, and examples.
 - **Testing**: Add more unit/integration tests.
+
+---
+
+## 🚀 Deployment
+
+Open Omniscience can be deployed in multiple ways:
+
+### Docker (Recommended)
+
+The easiest way to deploy is using Docker Compose:
+
+```bash
+# Build and start all services
+docker-compose up -d --build
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f web
+
+# Stop services
+docker-compose down
+```
+
+For production deployment with PostgreSQL:
+```bash
+# Use the production compose file
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+### Using Makefile
+
+Convenient commands for development and deployment:
+
+```bash
+# Install dependencies
+make install
+
+# Run in development mode
+make run-dev
+
+# Run tests
+make test
+
+# Build Docker image
+make docker-build
+
+# Deploy with Docker
+make docker-run
+
+# Clean up
+make clean
+```
+
+See [Makefile](Makefile) for all available commands.
+
+### Manual Deployment
+
+For manual deployment without Docker:
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Initialize database
+mkdir -p data audit logs
+python -c "import sys; sys.path.insert(0, 'src'); from database.models import Base, engine; Base.metadata.create_all(engine)"
+
+# Start the application
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+---
+
+## 📚 Additional Documentation
+
+- **[ANALYSIS_AND_PLAN.md](ANALYSIS_AND_PLAN.md)** - Detailed repository analysis and deployment plan
+- **[DEPLOYMENT_SUMMARY.md](DEPLOYMENT_SUMMARY.md)** - Quick deployment summary
+- **[DATABASE.md](docs/DATABASE.md)** - Database setup and configuration
+- **[USER_GUIDE.md](docs/USER_GUIDE.md)** - User guide (work in progress)
+- **[DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)** - Developer guide (work in progress)
 
 ---
 
