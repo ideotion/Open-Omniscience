@@ -42,10 +42,14 @@ Thumbs.db
 *.sqlite3
 
 # Logs and Audit
-audit/*.log
-audit/*.csv
-audit/*.md
-data/*.db
+audit/
+data/
+logs/
+
+# Local data files
+*.db
+*.sqlite
+*.sqlite3
 
 # Frontend (React)
 node_modules/

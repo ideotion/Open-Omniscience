@@ -23,9 +23,12 @@ logger = setup_logging("scraper")
 
 class Scraper:
     def __init__(self, config_path=None, max_workers=5):
+        # Get the absolute path to the repository root
+        self.repo_root = Path(__file__).parent.parent.parent.resolve()
+        
         # Use dynamic path for config
         if config_path is None:
-            config_path = Path(__file__).parent.parent / "configs" / "sources.yml"
+            config_path = self.repo_root / "configs" / "sources.yml"
         
         try:
             with open(config_path, "r") as f:
@@ -38,22 +41,22 @@ class Scraper:
             self.sources = []
         
         # Use dynamic path for audit log
-        self.audit_log = Path(__file__).parent.parent / "audit" / "scrape_log.csv"
-        self.error_log = Path(__file__).parent.parent / "audit" / "errors.log"
+        self.audit_dir = self.repo_root / "audit"
+        self.audit_dir.mkdir(exist_ok=True, parents=True)
+        self.audit_log = self.audit_dir / "scrape_log.csv"
+        self.error_log = self.audit_dir / "errors.log"
         self._init_audit_log()
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": "OpenOmniscience/1.0"})
+        self.session.headers.update({"User-Agent": "OpenOmniscience/1.0 (+https://github.com/ideotion/Open-Omniscience)"})
         self.max_workers = max_workers  # Number of parallel threads
 
     def _init_audit_log(self):
-        self.audit_log.parent.mkdir(exist_ok=True, parents=True)
         if not self.audit_log.exists():
             with open(self.audit_log, "w") as f:
                 writer = csv.writer(f)
                 writer.writerow(["Timestamp", "URL", "Source", "Status", "Rate_Limit_ms", "Retries"])
 
     def _log_error(self, error_msg):
-        self.error_log.parent.mkdir(exist_ok=True, parents=True)
         with open(self.error_log, "a") as f:
             f.write(f"{datetime.utcnow().isoformat() + 'Z'}, {error_msg}\n")
 
@@ -221,7 +224,6 @@ class Scraper:
         return articles
 
     def log_request(self, url, source, status, rate_limit_ms, retries=0):
-        self.audit_log.parent.mkdir(exist_ok=True, parents=True)
         with open(self.audit_log, "a") as f:
             writer = csv.writer(f)
             writer.writerow([

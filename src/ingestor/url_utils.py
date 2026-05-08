@@ -18,11 +18,18 @@ import logging
 from typing import Optional
 
 # Configure logging
+from pathlib import Path
+
+# Get the absolute path to the repository root
+REPO_ROOT = Path(__file__).parent.parent.parent.resolve()
+AUDIT_DIR = REPO_ROOT / "audit"
+AUDIT_DIR.mkdir(exist_ok=True, parents=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("../../audit/url_utils.log"),
+        logging.FileHandler(str(AUDIT_DIR / "url_utils.log")),
         logging.StreamHandler()
     ]
 )
@@ -104,8 +111,8 @@ def canonicalize_url(url: str) -> str:
     try:
         parsed = urlparse(url)
 
-        # Normalize scheme
-        scheme = parsed.scheme if parsed.scheme else "https"
+        # Normalize scheme (force https)
+        scheme = "https"
 
         # Normalize domain (lowercase, strip www.)
         netloc = normalize_domain(parsed.netloc)

@@ -48,9 +48,12 @@ class IngestionPipeline:
         Args:
             config_path: Path to the sources YAML configuration file.
         """
+        # Get the absolute path to the repository root
+        repo_root = Path(__file__).parent.parent.parent.resolve()
+        
         # Use dynamic path for config
         if config_path is None:
-            config_path = Path(__file__).parent.parent.parent / "configs" / "sources.yml"
+            config_path = repo_root / "configs" / "sources.yml"
         
         self.scraper = Scraper(str(config_path))
         self.session = get_session()

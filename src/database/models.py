@@ -15,13 +15,17 @@ from datetime import datetime
 import os
 from pathlib import Path
 
+# Get the absolute path to the repository root
+REPO_ROOT = Path(__file__).parent.parent.parent.resolve()
+
 # Ensure the data directory exists
-os.makedirs("../../data", exist_ok=True)
+DATA_DIR = REPO_ROOT / "data"
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # Database URL: Default to SQLite, but can be overridden for PostgreSQL
 # To use PostgreSQL, set DATABASE_URL to:
-# postgres://username:password@localhost:5432/open_omniscience
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///../../data/open_omniscience.db")
+# postgresql://user:password@localhost:5432/open_omniscience
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'open_omniscience.db'}")
 
 # Create the SQLAlchemy engine
 engine = create_engine(DATABASE_URL, echo=False)

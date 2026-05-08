@@ -10,9 +10,9 @@ import sys
 from pathlib import Path
 
 # Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from src.ingestor.url_utils import canonicalize_url, generate_content_hash
+from ingestor.url_utils import canonicalize_url, generate_content_hash
 
 
 def test_canonicalize_url():

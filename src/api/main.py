@@ -122,7 +122,7 @@ def build_sqlalchemy_filter(parsed_query: dict, session) -> List:
 
     Args:
         parsed_query: The parsed query dictionary.
-        session: Database session.
+        session: SQLAlchemy session (unused but kept for compatibility).
 
     Returns:
         A list of SQLAlchemy filter conditions.
@@ -225,9 +225,9 @@ async def search_articles(
         if tags:
             tag_list = [tag.strip() for tag in tags.split(",")]
             # Find sources with any of the tags
-            source_ids = session.query(Source.id).filter(
-                Source.tags.ilike(f'%{tag}%') for tag in tag_list
-            ).distinct().all()
+            from sqlalchemy import or_
+            tag_conditions = [Source.tags.ilike(f'%{tag}%') for tag in tag_list]
+            source_ids = session.query(Source.id).filter(or_(*tag_conditions)).distinct().all()
             source_ids = [sid for (sid,) in source_ids]
             if source_ids:
                 filters.append(Article.source_id.in_(source_ids))
@@ -344,9 +344,9 @@ async def export_articles(
         # Apply tags filter
         if tags:
             tag_list = [tag.strip() for tag in tags.split(",")]
-            source_ids = session.query(Source.id).filter(
-                Source.tags.ilike(f'%{tag}%') for tag in tag_list
-            ).distinct().all()
+            from sqlalchemy import or_
+            tag_conditions = [Source.tags.ilike(f'%{tag}%') for tag in tag_list]
+            source_ids = session.query(Source.id).filter(or_(*tag_conditions)).distinct().all()
             source_ids = [sid for (sid,) in source_ids]
             if source_ids:
                 filters.append(Article.source_id.in_(source_ids))
@@ -416,7 +416,7 @@ async def list_sources(request: Request):
                 "name": s.name,
                 "domain": s.domain,
                 "rss_url": s.rss_url,
-                "rate_limit_ms": s.rss_url,
+                "rate_limit_ms": s.rate_limit_ms,
                 "enabled": s.enabled,
                 "priority": s.priority,
                 "tags": s.tags.split(",") if s.tags else []

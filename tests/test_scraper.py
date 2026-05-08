@@ -19,7 +19,7 @@ import csv
 
 # Add parent directory to path
 import sys
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from scraper.scraper import Scraper
 from database.models import Article, Source, get_session
@@ -125,48 +125,64 @@ def test_duplicate_detection():
     """Test that duplicate articles are not added to the database."""
     session = get_session()
 
-    # Create a test source
-    source = Source(
-        name="Test Source",
-        domain="test-source.com",
-        rss_url="",
-        rate_limit_ms=1000,
-        enabled=True
-    )
-    session.add(source)
-    session.commit()
+    try:
+        # Clean up any existing test data
+        existing_source = session.query(Source).filter_by(domain="test-source-dup-detection.com").first()
+        if existing_source:
+            # Delete articles first
+            session.query(Article).filter_by(source_id=existing_source.id).delete()
+            session.delete(existing_source)
+            session.commit()
 
-    # Add a test article
-    content = "This is a test article."
-    article1 = Article(
-        url="https://test-source.com/article1",
-        canonical_url=canonicalize_url("https://test-source.com/article1"),
-        source_id=source.id,
-        title="Test Article",
-        content=content,
-        published_at=datetime.utcnow(),
-        language="en",
-        hash=generate_content_hash(content)
-    )
-    session.add(article1)
-    session.commit()
-
-    # Try to add the same article again
-    article2 = Article(
-        url="https://test-source.com/article1?utm_source=test",
-        canonical_url=canonicalize_url("https://test-source.com/article1?utm_source=test"),
-        source_id=source.id,
-        title="Test Article",
-        content=content,
-        published_at=datetime.utcnow(),
-        language="en",
-        hash=generate_content_hash(content)
-    )
-    session.add(article2)
-    with pytest.raises(Exception):  # SQLite will raise IntegrityError for duplicate hash
+        # Create a test source
+        source = Source(
+            name="Test Source",
+            domain="test-source-dup-detection.com",
+            rss_url="",
+            rate_limit_ms=1000,
+            enabled=True
+        )
+        session.add(source)
         session.commit()
 
-    session.close()
+        # Add a test article
+        content = "This is a test article for duplicate detection."
+        article1 = Article(
+            url="https://test-source-dup-detection.com/article1",
+            canonical_url=canonicalize_url("https://test-source-dup-detection.com/article1"),
+            source_id=source.id,
+            title="Test Article",
+            content=content,
+            published_at=datetime.utcnow(),
+            language="en",
+            hash=generate_content_hash(content)
+        )
+        session.add(article1)
+        session.commit()
+
+        # Try to add the same article with different URL but same content (same hash)
+        article2 = Article(
+            url="https://test-source-dup-detection.com/article2",
+            canonical_url=canonicalize_url("https://test-source-dup-detection.com/article2"),
+            source_id=source.id,
+            title="Test Article 2",
+            content=content,  # Same content = same hash
+            published_at=datetime.utcnow(),
+            language="en",
+            hash=generate_content_hash(content)  # Same hash
+        )
+        session.add(article2)
+        with pytest.raises(Exception):  # SQLite will raise IntegrityError for duplicate hash
+            session.commit()
+        session.rollback()
+    finally:
+        # Clean up
+        source = session.query(Source).filter_by(domain="test-source-dup-detection.com").first()
+        if source:
+            session.query(Article).filter_by(source_id=source.id).delete()
+            session.delete(source)
+            session.commit()
+        session.close()
 
 def test_rate_limiting(scraper):
     """Test that rate limiting is applied."""
