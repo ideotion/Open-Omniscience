@@ -9,3 +9,4 @@ feedparser>=6.0.10
 pytest>=7.0.0
 pytest-mock>=3.11.0
 alembic>=1.11.1
+prometheus-client>=0.17.0

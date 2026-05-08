@@ -24,10 +24,12 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from prometheus_client import make_asgi_app, Counter, Gauge, Histogram
 import csv
 import io
 import logging
 import re
+import time
 
 # Import database models and session
 from database.models import Article, Source, get_session
@@ -41,6 +43,34 @@ DATABASE_URL = f"sqlite:///{Path(__file__).parent.parent.parent / 'data' / 'open
 
 # Initialize FastAPI app
 app = FastAPI(title="Open Omniscience API", version="0.2.0")
+
+# Prometheus metrics
+REQUEST_COUNT = Counter(
+    'open_omniscience_requests_total',
+    'Total HTTP Requests',
+    ['method', 'endpoint', 'http_status']
+)
+REQUEST_LATENCY = Histogram(
+    'open_omniscience_request_latency_seconds',
+    'HTTP request latency in seconds',
+    ['method', 'endpoint']
+)
+ACTIVE_REQUESTS = Gauge(
+    'open_omniscience_active_requests',
+    'Number of active HTTP requests'
+)
+ARTICLES_COUNT = Gauge(
+    'open_omniscience_articles_count',
+    'Total number of articles in database'
+)
+SOURCES_COUNT = Gauge(
+    'open_omniscience_sources_count',
+    'Total number of sources configured'
+)
+
+# Add Prometheus metrics endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
 
 # Rate limiter setup
 limiter = Limiter(key_func=get_remote_address)
@@ -59,10 +89,49 @@ app.add_middleware(
 # Serve static files (HTML5 frontend)
 app.mount("/", StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True), name="static")
 
+# Middleware for Prometheus metrics
+@app.middleware("http")
+async def monitor_requests(request: Request, call_next):
+    method = request.method
+    endpoint = request.url.path
+    
+    ACTIVE_REQUESTS.inc()
+    start_time = time.time()
+    
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        ACTIVE_REQUESTS.dec()
+        raise e
+    
+    process_time = time.time() - start_time
+    status_code = response.status_code
+    
+    REQUEST_COUNT.labels(method=method, endpoint=endpoint, http_status=status_code).inc()
+    REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(process_time)
+    ACTIVE_REQUESTS.dec()
+    
+    return response
+
+# Update metrics on startup
+@app.on_event("startup")
+async def startup_event():
+    session = get_session()
+    try:
+        from database.models import Article, Source
+        articles_count = session.query(Article).count()
+        sources_count = session.query(Source).count()
+        ARTICLES_COUNT.set(articles_count)
+        SOURCES_COUNT.set(sources_count)
+        logger.info(f"Metrics initialized: {articles_count} articles, {sources_count} sources")
+    finally:
+        session.close()
+
 # Rate limit exceeded handler
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     logger.warning(f"Rate limit exceeded for {get_remote_address(request)}: {request.url}")
+    REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, http_status=429).inc()
     return JSONResponse(
         status_code=429,
         content={"detail": "Too many requests. Please try again later."},

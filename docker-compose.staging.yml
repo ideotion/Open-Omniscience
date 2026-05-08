@@ -1,0 +1,166 @@
+version: '3.8'
+
+# Staging environment configuration for Open Omniscience
+# This file extends docker-compose.yml for staging-specific settings
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: open-omniscience-web-staging
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=staging
+      - DATABASE_URL=sqlite:////app/data/open_omniscience.db
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./data:/app/data
+      - ./audit:/app/audit
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.path.insert(0, 'src'); from database.models import engine; print('DB OK')"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - open-omniscience-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.open-omniscience-staging.rule=Host(`staging.open-omniscience.localhost`)"
+      - "traefik.http.services.open-omniscience-staging.loadbalancer.server.port=8000"
+
+  # PostgreSQL for staging (optional)
+  db:
+    image: postgres:15-alpine
+    container_name: open-omniscience-db-staging
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=open_omniscience_staging
+      - POSTGRES_USER=open_omniscience
+      - POSTGRES_PASSWORD=staging_password_change_me
+    volumes:
+      - postgres_data_staging:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"  # Different port to avoid conflict with production
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U open_omniscience -d open_omniscience_staging"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - open-omniscience-network
+    profiles:
+      - postgres
+
+  # Redis for caching in staging
+  redis:
+    image: redis:7-alpine
+    container_name: open-omniscience-redis-staging
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data_staging:/data
+    ports:
+      - "6380:6379"  # Different port to avoid conflict
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - open-omniscience-network
+    profiles:
+      - redis
+
+  # Traefik reverse proxy for staging (optional)
+  traefik:
+    image: traefik:v2.10
+    container_name: open-omniscience-traefik-staging
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "8080:80"
+      - "8081:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - open-omniscience-network
+    profiles:
+      - traefik
+
+  # Prometheus for monitoring (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: open-omniscience-prometheus-staging
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data_staging:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - open-omniscience-network
+    profiles:
+      - monitoring
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: open-omniscience-grafana-staging
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data_staging:/var/lib/grafana
+      - ./monitoring/grafana-provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin_change_me
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - open-omniscience-network
+    profiles:
+      - monitoring
+
+  # Test runner for CI/CD testing
+  test-runner:
+    image: python:3.12-slim
+    container_name: open-omniscience-test-runner
+    volumes:
+      - .:/app
+      - test_data_staging:/app/data
+    working_dir: /app
+    environment:
+      - DATABASE_URL=sqlite:////app/data/test_open_omniscience.db
+      - PYTHONPATH=/app/src
+    command: tail -f /dev/null  # Keep container running
+    networks:
+      - open-omniscience-network
+    profiles:
+      - testing
+
+volumes:
+  postgres_data_staging:
+  redis_data_staging:
+  prometheus_data_staging:
+  grafana_data_staging:
+  test_data_staging:
+
+networks:
+  open-omniscience-network:
+    driver: bridge

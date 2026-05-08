@@ -112,13 +112,18 @@ Comment=Global Intelligence Platform for Investigative Journalism
 Version=0.2.0
 EOF
 	
-	# Create a simple icon (placeholder - should be replaced with actual icon)
-	echo "Creating placeholder icon..."
-	convert -size 256x256 xc:white -fill black -pointsize 20 -draw "text 50,120 'Open' text 50,160 'Omniscience'" debian/open-omniscience/usr/share/pixmaps/open-omniscience.png || \
-	# Fallback if convert (ImageMagick) is not available
-	cat > debian/open-omniscience/usr/share/pixmaps/open-omniscience.png << 'ICON'
-This is a placeholder icon. Replace with actual Open Omniscience logo.
+	# Create icon from SVG
+	echo "Creating icon from SVG..."
+	if command -v convert &> /dev/null; then
+		convert -background none -resize 256x256 package/deb/open-omniscience.svg debian/open-omniscience/usr/share/pixmaps/open-omniscience.png
+	else
+		echo "ImageMagick not found, using SVG directly..."
+		cp package/deb/open-omniscience.svg debian/open-omniscience/usr/share/pixmaps/open-omniscience.svg
+		# Create a placeholder PNG as fallback
+		cat > debian/open-omniscience/usr/share/pixmaps/open-omniscience.png << 'ICON'
+This is a placeholder icon. The SVG version is also included.
 ICON
+	fi
 	
 	# Copy config files to /etc
 	cp configs/settings.yaml debian/open-omniscience/etc/open-omniscience/settings.yaml

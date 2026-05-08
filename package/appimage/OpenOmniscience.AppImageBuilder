@@ -156,12 +156,21 @@ Comment=Global Intelligence Platform for Investigative Journalism
 Version=$APP_VERSION
 EOF
     
-    # Create a simple icon (placeholder)
+    # Create icon from SVG
     mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-    # For now, we'll use a text-based icon. In production, replace with actual icon
-    cat > "$APPDIR/usr/share/icons/hicolor/256x256/apps/open-omniscience.png" << 'ICON'
-This is a placeholder icon. Replace with actual Open Omniscience logo.
+    
+    # Try to convert SVG to PNG using ImageMagick
+    if command -v convert &> /dev/null; then
+        echo -e "${GREEN}Converting SVG icon to PNG...${NC}"
+        convert -background none -resize 256x256 package/appimage/open-omniscience.svg "$APPDIR/usr/share/icons/hicolor/256x256/apps/open-omniscience.png"
+    else
+        echo -e "${YELLOW}ImageMagick not found, using SVG directly...${NC}"
+        cp package/appimage/open-omniscience.svg "$APPDIR/usr/share/icons/hicolor/256x256/apps/open-omniscience.svg"
+        # Create a placeholder PNG as fallback
+        cat > "$APPDIR/usr/share/icons/hicolor/256x256/apps/open-omniscience.png" << 'ICON'
+This is a placeholder icon. The SVG version is also included.
 ICON
+    fi
 }
 
 # Create AppStream metadata
