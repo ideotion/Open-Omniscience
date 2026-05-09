@@ -37,6 +37,9 @@ from database.models import Article, Source, get_session
 # Import source management router
 from api.source_management import router as source_management_router
 
+# Import keyword management router
+from api.keyword_management import router as keyword_management_router
+
 # Configure logging using shared config
 from utils.logging_config import setup_logging
 logger = setup_logging("api")
@@ -91,6 +94,9 @@ app.add_middleware(
 
 # Include source management router
 app.include_router(source_management_router)
+
+# Include keyword management router
+app.include_router(keyword_management_router)
 
 # Serve static files (HTML5 frontend)
 app.mount("/", StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True), name="static")

@@ -8,7 +8,7 @@ Includes tables for sources and articles, with relationships and indexes.
 Author: Ideotion
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, create_engine, Index, Table
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float, create_engine, Index, Table
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -269,6 +269,153 @@ class Article(Base):
     
     def __repr__(self):
         return f"<Article(title='{self.title[:50]}...', source='{self.source.name if self.source else 'Unknown'}')>"
+
+
+
+# Keyword and Category Models for Keyword Extraction
+
+# Association table for many-to-many relationship between Article and Keyword
+article_keyword_association = Table(
+    'article_keyword_association',
+    Base.metadata,
+    Column('article_id', Integer, ForeignKey('articles.id'), primary_key=True),
+    Column('keyword_id', Integer, ForeignKey('keywords.id'), primary_key=True),
+    Column('frequency', Integer, default=1),
+    Column('position', Integer),
+    Column('relevance_score', Float, default=0.0),
+    Column('created_at', DateTime, default=datetime.utcnow),
+    # Indexes for performance
+    Index('idx_article_keyword_article_id', 'article_id'),
+    Index('idx_article_keyword_keyword_id', 'keyword_id'),
+)
+
+
+class KeywordCategory(Base):
+    """
+    Represents a category for classifying keywords.
+    
+    Attributes:
+        id: Primary key.
+        name: Name of the category (e.g., "Politics", "Technology").
+        description: Description of the category.
+        parent_id: Foreign key to parent category (for hierarchical categories).
+        color: Color code for UI display.
+        is_active: Whether the category is active.
+        created_at: Timestamp when the category was created.
+        updated_at: Timestamp when the category was last updated.
+        keywords: Relationship to Keyword model.
+    """
+    __tablename__ = "keyword_categories"
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text)
+    parent_id = Column(Integer, ForeignKey("keyword_categories.id"))
+    color = Column(String(20), default="#666666")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Self-referential relationship for hierarchical categories
+    parent = relationship("KeywordCategory", remote_side=[id], back_populates="children")
+    children = relationship("KeywordCategory", back_populates="parent")
+    
+    # One-to-many relationship with keywords
+    keywords = relationship("Keyword", back_populates="category", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<KeywordCategory(name='{self.name}', id={self.id})>"
+
+
+class Keyword(Base):
+    """
+    Represents a keyword extracted from articles.
+    
+    Attributes:
+        id: Primary key.
+        term: The keyword term (normalized).
+        normalized_term: Fully normalized term (lowercase, stemmed, etc.).
+        language: Language code (e.g., "en", "fr").
+        frequency: Total frequency across all articles.
+        category_id: Foreign key to KeywordCategory.
+        is_ngram: Whether this is an n-gram (multi-word keyword).
+        ngram_size: Size of n-gram (1 for unigram, 2 for bigram, etc.).
+        is_entity: Whether this keyword is a named entity.
+        entity_type: Type of entity (person, organization, location, etc.).
+        relevance_score: Overall relevance score.
+        created_at: Timestamp when the keyword was first extracted.
+        updated_at: Timestamp when the keyword was last updated.
+        category: Relationship to KeywordCategory model.
+        articles: Relationship to Article model (many-to-many).
+    """
+    __tablename__ = "keywords"
+    
+    id = Column(Integer, primary_key=True)
+    term = Column(String(255), nullable=False)
+    normalized_term = Column(String(255), nullable=False)
+    language = Column(String(10), default="en")
+    frequency = Column(Integer, default=0)
+    category_id = Column(Integer, ForeignKey("keyword_categories.id"))
+    is_ngram = Column(Boolean, default=False)
+    ngram_size = Column(Integer, default=1)
+    is_entity = Column(Boolean, default=False)
+    entity_type = Column(String(50))
+    relevance_score = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    category = relationship("KeywordCategory", back_populates="keywords")
+    articles = relationship(
+        "Article",
+        secondary=article_keyword_association,
+        lazy='dynamic'
+    )
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_keyword_term', 'term'),
+        Index('idx_keyword_normalized_term', 'normalized_term'),
+        Index('idx_keyword_language', 'language'),
+        Index('idx_keyword_category_id', 'category_id'),
+        Index('idx_keyword_frequency', 'frequency'),
+        Index('idx_keyword_is_ngram', 'is_ngram'),
+        Index('idx_keyword_is_entity', 'is_entity'),
+    )
+    
+    def __repr__(self):
+        return f"<Keyword(term='{self.term}', frequency={self.frequency})>"
+
+
+class ArticleKeyword(Base):
+    """
+    Represents the relationship between an article and a keyword with additional metadata.
+    
+    This model stores information about how a keyword appears in a specific article,
+    including frequency, position, and relevance score.
+    
+    Attributes:
+        article_id: Foreign key to Article.
+        keyword_id: Foreign key to Keyword.
+        frequency: Number of times the keyword appears in the article.
+        first_position: Position of first occurrence.
+        last_position: Position of last occurrence.
+        relevance_score: Relevance score for this keyword in this article.
+        created_at: Timestamp when the relationship was created.
+    """
+    __tablename__ = "article_keywords"
+    
+    article_id = Column(Integer, ForeignKey('articles.id'), primary_key=True)
+    keyword_id = Column(Integer, ForeignKey('keywords.id'), primary_key=True)
+    frequency = Column(Integer, default=1)
+    first_position = Column(Integer)
+    last_position = Column(Integer)
+    relevance_score = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<ArticleKeyword(article_id={self.article_id}, keyword_id={self.keyword_id}, frequency={self.frequency})>"
+
 
 
 # Create all tables in the database
