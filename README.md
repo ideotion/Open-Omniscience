@@ -14,7 +14,7 @@
 
 ## 🌟 Mission
 
-Open Omniscience is an **ethically impeccable**, **open-source**, and **portable** global intelligence platform designed to aggregate raw news information from diverse worldwide sources into a **unified, highly searchable, and auditable database**. Its primary function is to **empower investigative journalism** by enabling users to:
+Open Omniscience is an **ethically oriented**, **open-source**, and **portable** global intelligence platform designed to aggregate raw news information from diverse worldwide sources into a **unified, highly searchable, and auditable database**. Its primary function is to **empower investigative journalism** by enabling users to:
 
 - Cross-reference disparate pieces of information.
 - Identify **complex patterns, disinformation schemes, or emerging trends** across geopolitical boundaries.
