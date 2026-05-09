@@ -127,8 +127,9 @@ For **PostgreSQL** (recommended for production):
 ```bash
 uvicorn src.api.main:app --reload
 ```
-- The GUI will be available at `http://localhost:8000`.
-- The API will be available at `http://localhost:8000/api/`.
+- The **main GUI** will be available at `http://localhost:8000`.
+- The **Source Manager Dashboard** will be available at `http://localhost:8000/static/source-manager.html`.
+- The **API** will be available at `http://localhost:8000/api/`.
 
 ---
 
@@ -152,16 +153,33 @@ Open-Omniscience/
 │   │   ├── models.py       # Database models
 │   │   └── migrations/      # Alembic migrations
 │   ├── api/                # FastAPI backend for the GUI
-│   │   └── main.py         # API endpoints and static file serving
+│   │   ├── main.py         # API endpoints and static file serving
+│   │   └── source_management.py # Source management API endpoints
+│   ├── services/           # External services integration
+│   │   └── duckduckgo.py   # DuckDuckGo search and RSS discovery
+│   ├── database/           # Database models and ORM (SQLAlchemy + SQLite/PostgreSQL)
+│   │   ├── models.py       # Database models
+│   │   ├── source_manager.py # Source management operations
+│   │   └── migrations/      # Alembic migrations
 │   ├── utils/              # Utility modules
 │   │   └── logging_config.py # Centralized logging
 │   └── static/             # Frontend assets
 │       ├── index.html      # HTML5 frontend
 │       ├── script.js       # Frontend JavaScript
-│       └── style.css       # Frontend styles
+│       ├── style.css       # Frontend styles
+│       ├── source-manager.html   # Source management dashboard
+│       ├── source-manager.js     # Source manager JavaScript
+│       └── source-manager.css    # Source manager styles
 ├── data/                  # Local storage for scraped data (SQLite)
 ├── audit/                 # Audit logs and compliance tracking
+├── package/               # Packaging configuration
+│   ├── deb/               # Debian package configuration
+│   └── appimage/          # AppImage configuration
 ├── tests/                 # Unit and integration tests
+│   ├── test_scraper.py    # Scraper functionality tests
+│   ├── test_url_utils.py  # URL processing tests
+│   ├── test_duckduckgo.py # DuckDuckGo search module tests
+│   └── test_source_manager.py # Source management tests
 └── docs/                  # Documentation
     ├── USER_GUIDE.md      # User guide (WIP)
     ├── DEVELOPER_GUIDE.md  # Developer guide (WIP)
@@ -210,6 +228,13 @@ sources:
 | **Audit Logging** | Detailed logs for all scraping activities (`audit/` directory). |
 | **Parallel Scraping** | Multi-threaded scraping for improved performance. |
 | **Error Handling** | Retries failed requests with exponential backoff. |
+| **Source Management** | Comprehensive source management with **groups, tags, metadata, and batch operations**. |
+| **RSS Discovery** | **DuckDuckGo-powered** RSS feed discovery for sources with missing feeds. |
+| **Source Groups** | Organize sources into **custom groups** with shared settings. |
+| **Source Metadata** | Store **geographic, language, and robots.txt** information for each source. |
+| **Batch Operations** | **Enable/disable, set priority, adjust rate limits** for multiple sources at once. |
+| **Tag-Based Groups** | Auto-populate groups based on **source tags**. |
+| **Statistics Dashboard** | **Visual statistics** for sources, groups, and scraping activity. |
 
 ### 🚧 Phase 2 (Future)
 | Feature | Status | Description |
