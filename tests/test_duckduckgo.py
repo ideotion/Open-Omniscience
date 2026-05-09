@@ -237,15 +237,18 @@ class TestRateLimiting:
     @patch('services.duckduckgo.time.sleep')
     def test_rate_limiting(self, mock_sleep, mock_time):
         """Test that rate limiting is enforced."""
+        # Reset last request time
+        DuckDuckGoSearch.last_request_time = 0
+        
         # Set initial time
         mock_time.side_effect = [100.0, 101.0]  # 1 second elapsed
         
-        # First call should not sleep
+        # First call should not sleep (elapsed > MIN_DELAY_SECONDS)
         DuckDuckGoSearch._enforce_rate_limit()
         mock_sleep.assert_not_called()
         
         # Second call within MIN_DELAY_SECONDS should sleep
-        mock_time.side_effect = [100.0, 100.5]  # 0.5 seconds elapsed
+        mock_time.side_effect = [101.0, 101.5]  # 0.5 seconds elapsed
         DuckDuckGoSearch._enforce_rate_limit()
         mock_sleep.assert_called_once()
         

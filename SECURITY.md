@@ -188,7 +188,7 @@ Open Omniscience undergoes **regular security audits** to identify and fix vulne
 
 When a **security vulnerability** is discovered and fixed, we will:
 1. **Release a patch** as soon as possible (typically within **7 days** for critical vulnerabilities).
-2. **Disclose the vulnerability** in a **security advisory** (GitHub Security Advisories or [our website](https://ideotion.org)).
+2. **Disclose the vulnerability** in a **security advisory** (GitHub Security Advisories or [our website](https://ideotion.com)).
 3. **Notify users** via:
    - GitHub **releases** and **advisories**.
    - **Email** (for registered users, if applicable).
@@ -293,7 +293,7 @@ app.add_middleware(
 
 For **security-related inquiries**, contact us at:
 - **Email:** `open-omniscience@ideotion.com`
-- **GPG Key:** [Our GPG key](https://ideotion.org/security.asc) (for encrypted reports).
+- **GPG Key:** [Our GPG key](https://ideotion.com/security.asc) (for encrypted reports).
 
 For **general inquiries**, use:
 - **GitHub Issues:** [https://github.com/ideotion/Open-Omniscience/issues](https://github.com/ideotion/Open-Omniscience/issues)

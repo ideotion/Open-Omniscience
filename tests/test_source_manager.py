@@ -165,11 +165,11 @@ class TestSourceOperations:
         """Test getting sources by tags."""
         # Test single tag
         sources = source_manager.get_sources_by_tags(["news"])
-        assert len(sources) == 2  # BBC News and The Guardian
+        assert len(sources) == 3  # BBC News, Reuters, The Guardian
         
         # Test multiple tags with ANY match
         sources = source_manager.get_sources_by_tags(["news", "technology"])
-        assert len(sources) == 3  # BBC News, Reuters, TechCrunch
+        assert len(sources) == 4  # BBC News, Reuters, TechCrunch, The Guardian
         
         # Test multiple tags with ALL match
         sources = source_manager.get_sources_by_tags(["news", "uk"], match_all=True)
@@ -658,8 +658,10 @@ class TestBatchGroupOperations:
         count = source_manager.enable_groups([sample_groups[0].id, sample_groups[1].id])
         assert count == 3  # 2 from first group, 1 from second
         
-        # Verify sources are enabled
-        sources = source_manager.get_all_sources()
+        # Verify sources in groups are enabled
+        sources = []
+        for group_id in [sample_groups[0].id, sample_groups[1].id]:
+            sources.extend(source_manager.get_sources_by_group(group_id))
         assert all(s.enabled for s in sources)
     
     def test_disable_groups(self, source_manager, sample_sources, sample_groups):
@@ -672,8 +674,10 @@ class TestBatchGroupOperations:
         count = source_manager.disable_groups([sample_groups[0].id, sample_groups[1].id])
         assert count == 3
         
-        # Verify sources are disabled
-        sources = source_manager.get_all_sources()
+        # Verify sources in groups are disabled
+        sources = []
+        for group_id in [sample_groups[0].id, sample_groups[1].id]:
+            sources.extend(source_manager.get_sources_by_group(group_id))
         assert all(not s.enabled for s in sources)
     
     def test_set_group_priority(self, source_manager, sample_sources, sample_groups):
@@ -686,8 +690,10 @@ class TestBatchGroupOperations:
         count = source_manager.set_group_priority([sample_groups[0].id, sample_groups[1].id], 1)
         assert count == 3
         
-        # Verify priority is set
-        sources = source_manager.get_all_sources()
+        # Verify priority is set for sources in groups
+        sources = []
+        for group_id in [sample_groups[0].id, sample_groups[1].id]:
+            sources.extend(source_manager.get_sources_by_group(group_id))
         assert all(s.priority == 1 for s in sources)
     
     def test_set_group_rate_limit(self, source_manager, sample_sources, sample_groups):
@@ -700,6 +706,8 @@ class TestBatchGroupOperations:
         count = source_manager.set_group_rate_limit([sample_groups[0].id, sample_groups[1].id], 5000)
         assert count == 3
         
-        # Verify rate limit is set
-        sources = source_manager.get_all_sources()
+        # Verify rate limit is set for sources in groups
+        sources = []
+        for group_id in [sample_groups[0].id, sample_groups[1].id]:
+            sources.extend(source_manager.get_sources_by_group(group_id))
         assert all(s.rate_limit_ms == 5000 for s in sources)

@@ -202,7 +202,7 @@ class DuckDuckGoSearch:
             return None
         
         # Remove tracking parameters
-        url = re.sub(r'\/\*[^\/]*\*\/', '', url)
+        url = re.sub(r'\/\*[^*]+\*\/', '/', url)
         url = re.sub(r'\?.*$', '', url)  # Remove query string for now
         
         # Decode URL encoding
@@ -357,8 +357,12 @@ class DuckDuckGoSearch:
             if path.startswith('http://') or path.startswith('https://'):
                 return path
             
+            # Ensure base_url ends with / for proper joining
+            if not base_url.endswith('/'):
+                base_url += '/'
+            
             parsed_base = urlparse(base_url)
-            resolved = urljoin(f"{parsed_base.scheme}://{parsed_base.netloc}", path)
+            resolved = urljoin(f"{parsed_base.scheme}://{parsed_base.netloc}{parsed_base.path}", path)
             return resolved
         except Exception:
             return None
@@ -399,10 +403,14 @@ class DuckDuckGoSearch:
         """Check if content appears to be XML."""
         # Look for XML declaration or RSS/Atom tags
         xml_patterns = [
-            r'<?xml',
-            r'<rss',
-            r'<feed',
-            r'<rdf',
+            r'<?xml\s',  # XML declaration with space/version
+            r'<?xml>',   # XML declaration with >
+            r'<rss\s',
+            r'<rss>',
+            r'<feed\s',
+            r'<feed>',
+            r'<rdf\s',
+            r'<rdf>',
             r'xmlns=',
         ]
         
