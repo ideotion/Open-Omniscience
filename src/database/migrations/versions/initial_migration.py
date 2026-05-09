@@ -41,7 +41,7 @@ def upgrade():
         sa.Column('language', sa.String(length=10), nullable=True),
         sa.Column('hash', sa.String(length=64), nullable=False, unique=True),
         sa.Column('created_at', sa.DateTime(), nullable=True, default=sa.func.now()),
-        sa.ForeignKeyConstraint(['source_id'], ['sources.id'], ),
+        sa.ForeignKeyConstraint(["source_id"], ["sources.id"]),
     )
 
     # Create indexes

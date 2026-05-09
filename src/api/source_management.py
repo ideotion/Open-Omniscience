@@ -1,0 +1,956 @@
+"""
+Source Management API Endpoints for Open Omniscience
+
+This module provides FastAPI endpoints for comprehensive source management,
+including groups, metadata, and discovery functionality.
+
+Author: Ideotion
+"""
+
+import sys
+from pathlib import Path
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+
+# Add parent directories to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+
+from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+# Import database models and SourceManager
+from database.models import Source, SourceGroup, SourceMetadata, get_session
+from database.source_manager import SourceManager
+
+# Import logging config
+from utils.logging_config import setup_logging
+logger = setup_logging("source_management_api")
+
+# Create router
+router = APIRouter(prefix="/api/sources", tags=["Source Management"])
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
+
+# ==================== SOURCE ENDPOINTS ====================
+
+@router.get("/", response_model=List[Dict])
+@limiter.limit("100/hour")
+async def list_sources(
+    request: Request,
+    enabled: Optional[bool] = None,
+    priority: Optional[int] = None,
+    tags: Optional[str] = None,
+    group_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0
+):
+    """
+    List all sources with optional filters.
+    
+    Parameters:
+    - enabled: Filter by enabled status
+    - priority: Filter by priority level
+    - tags: Filter by tags (comma-separated)
+    - group_id: Filter by group ID
+    - limit: Maximum number of results
+    - offset: Offset for pagination
+    """
+    logger.info(f"List sources request: enabled={enabled}, priority={priority}, tags={tags}")
+    
+    with SourceManager() as manager:
+        # Start with all sources
+        if group_id:
+            sources = manager.get_sources_by_group(group_id)
+        else:
+            sources = manager.get_all_sources(limit=limit, offset=offset)
+        
+        # Apply filters
+        if enabled is not None:
+            sources = [s for s in sources if s.enabled == enabled]
+        
+        if priority is not None:
+            sources = [s for s in sources if s.priority == priority]
+        
+        if tags:
+            tag_list = [tag.strip() for tag in tags.split(',') if tag.strip()]
+            if tag_list:
+                filtered_sources = []
+                for source in sources:
+                    source_tags = [t.strip() for t in (source.tags or '').split(',') if t.strip()]
+                    if any(tag in source_tags for tag in tag_list):
+                        filtered_sources.append(source)
+                sources = filtered_sources
+        
+        # Format results
+        results = [
+            {
+                "id": s.id,
+                "name": s.name,
+                "domain": s.domain,
+                "rss_url": s.rss_url,
+                "rate_limit_ms": s.rate_limit_ms,
+                "enabled": s.enabled,
+                "priority": s.priority,
+                "tags": [t.strip() for t in (s.tags or '').split(',') if t.strip()],
+                "article_count": len(s.articles) if s.articles else 0,
+                "groups": [g.name for g in s.groups.all()] if s.groups else [],
+                "has_metadata": s.metadata is not None
+            }
+            for s in sources
+        ]
+        
+        return results
+
+
+@router.get("/{source_id}", response_model=Dict)
+@limiter.limit("100/hour")
+async def get_source(request: Request, source_id: int):
+    """
+    Get a specific source by ID.
+    """
+    logger.info(f"Get source request: source_id={source_id}")
+    
+    with SourceManager() as manager:
+        source = manager.get_source_by_id(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
+        
+        # Get groups for this source
+        groups = manager.get_source_groups(source_id)
+        
+        # Get metadata
+        metadata = manager.get_metadata(source_id)
+        
+        result = {
+            "id": source.id,
+            "name": source.name,
+            "domain": source.domain,
+            "rss_url": source.rss_url,
+            "rate_limit_ms": source.rate_limit_ms,
+            "enabled": source.enabled,
+            "priority": source.priority,
+            "tags": [t.strip() for t in (source.tags or '').split(',') if t.strip()],
+            "article_count": len(source.articles) if source.articles else 0,
+            "groups": [
+                {
+                    "id": g.id,
+                    "name": g.name,
+                    "color": g.color,
+                    "description": g.description
+                }
+                for g in groups
+            ],
+            "metadata": {
+                "language": metadata.language if metadata else None,
+                "country": metadata.country if metadata else None,
+                "region": metadata.region if metadata else None,
+                "city": metadata.city if metadata else None,
+                "timezone": metadata.timezone if metadata else None,
+                "robots_allowed": metadata.robots_allowed if metadata else True,
+                "crawl_delay": metadata.crawl_delay if metadata else None,
+                "robots_txt_url": metadata.robots_txt_url if metadata else None,
+                "sitemap_url": metadata.sitemap_url if metadata else None,
+                "favicon_url": metadata.favicon_url if metadata else None,
+                "logo_url": metadata.logo_url if metadata else None,
+                "contact_email": metadata.contact_email if metadata else None,
+                "social_twitter": metadata.social_twitter if metadata else None,
+                "social_facebook": metadata.social_facebook if metadata else None,
+                "social_linkedin": metadata.social_linkedin if metadata else None,
+                "alexa_rank": metadata.alexa_rank if metadata else None,
+                "notes": metadata.notes if metadata else None
+            }
+        }
+        
+        return result
+
+
+@router.post("/", response_model=Dict)
+@limiter.limit("50/hour")
+async def create_source(request: Request, source_data: Dict):
+    """
+    Create a new source.
+    """
+    logger.info(f"Create source request: {source_data}")
+    
+    required_fields = ['name', 'domain']
+    for field in required_fields:
+        if field not in source_data:
+            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+    
+    with SourceManager() as manager:
+        source = manager.create_source(
+            name=source_data['name'],
+            domain=source_data['domain'],
+            rss_url=source_data.get('rss_url'),
+            rate_limit_ms=source_data.get('rate_limit_ms', 2000),
+            enabled=source_data.get('enabled', True),
+            priority=source_data.get('priority', 2),
+            tags=source_data.get('tags', '')
+        )
+        
+        return {
+            "id": source.id,
+            "name": source.name,
+            "domain": source.domain,
+            "message": "Source created successfully"
+        }
+
+
+@router.put("/{source_id}", response_model=Dict)
+@limiter.limit("50/hour")
+async def update_source(request: Request, source_id: int, source_data: Dict):
+    """
+    Update a source.
+    """
+    logger.info(f"Update source request: source_id={source_id}, data={source_data}")
+    
+    with SourceManager() as manager:
+        source = manager.update_source(source_id, **source_data)
+        if not source:
+            raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
+        
+        return {
+            "id": source.id,
+            "name": source.name,
+            "domain": source.domain,
+            "message": "Source updated successfully"
+        }
+
+
+@router.delete("/{source_id}", response_model=Dict)
+@limiter.limit("20/hour")
+async def delete_source(request: Request, source_id: int):
+    """
+    Delete a source.
+    """
+    logger.info(f"Delete source request: source_id={source_id}")
+    
+    with SourceManager() as manager:
+        success = manager.delete_source(source_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
+        
+        return {"message": f"Source {source_id} deleted successfully"}
+
+
+# ==================== BATCH SOURCE OPERATIONS ====================
+
+@router.post("/batch/enable", response_model=Dict)
+@limiter.limit("50/hour")
+async def batch_enable_sources(request: Request, source_ids: List[int]):
+    """
+    Enable multiple sources.
+    """
+    logger.info(f"Batch enable sources: {source_ids}")
+    
+    with SourceManager() as manager:
+        count = manager.enable_sources(source_ids)
+        return {"message": f"Enabled {count} sources"}
+
+
+@router.post("/batch/disable", response_model=Dict)
+@limiter.limit("50/hour")
+async def batch_disable_sources(request: Request, source_ids: List[int]):
+    """
+    Disable multiple sources.
+    """
+    logger.info(f"Batch disable sources: {source_ids}")
+    
+    with SourceManager() as manager:
+        count = manager.disable_sources(source_ids)
+        return {"message": f"Disabled {count} sources"}
+
+
+@router.post("/batch/priority", response_model=Dict)
+@limiter.limit("50/hour")
+async def batch_set_priority(request: Request, source_ids: List[int], priority: int = Query(..., ge=1, le=3)):
+    """
+    Set priority for multiple sources.
+    """
+    logger.info(f"Batch set priority: {source_ids} to {priority}")
+    
+    with SourceManager() as manager:
+        count = manager.set_source_priority(source_ids, priority)
+        return {"message": f"Set priority {priority} for {count} sources"}
+
+
+@router.post("/batch/rate-limit", response_model=Dict)
+@limiter.limit("50/hour")
+async def batch_set_rate_limit(request: Request, source_ids: List[int], rate_limit_ms: int = Query(..., ge=100, le=60000)):
+    """
+    Set rate limit for multiple sources.
+    """
+    logger.info(f"Batch set rate limit: {source_ids} to {rate_limit_ms}ms")
+    
+    with SourceManager() as manager:
+        count = manager.set_source_rate_limit(source_ids, rate_limit_ms)
+        return {"message": f"Set rate limit {rate_limit_ms}ms for {count} sources"}
+
+
+@router.post("/batch/tags/add", response_model=Dict)
+@limiter.limit("50/hour")
+async def batch_add_tags(request: Request, source_ids: List[int], tags: List[str]):
+    """
+    Add tags to multiple sources.
+    """
+    logger.info(f"Batch add tags: {tags} to {source_ids}")
+    
+    with SourceManager() as manager:
+        count = manager.add_tags_to_sources(source_ids, tags)
+        return {"message": f"Added tags {tags} to {count} sources"}
+
+
+@router.post("/batch/tags/remove", response_model=Dict)
+@limiter.limit("50/hour")
+async def batch_remove_tags(request: Request, source_ids: List[int], tags: List[str]):
+    """
+    Remove tags from multiple sources.
+    """
+    logger.info(f"Batch remove tags: {tags} from {source_ids}")
+    
+    with SourceManager() as manager:
+        count = manager.remove_tags_from_sources(source_ids, tags)
+        return {"message": f"Removed tags {tags} from {count} sources"}
+
+
+# ==================== GROUP ENDPOINTS ====================
+
+@router.get("/groups/", response_model=List[Dict])
+@limiter.limit("100/hour")
+async def list_groups(request: Request, tag_based: Optional[bool] = None):
+    """
+    List all source groups.
+    """
+    logger.info(f"List groups request: tag_based={tag_based}")
+    
+    with SourceManager() as manager:
+        groups = manager.get_all_groups()
+        
+        if tag_based is not None:
+            groups = [g for g in groups if g.is_tag_based == tag_based]
+        
+        results = [
+            {
+                "id": g.id,
+                "name": g.name,
+                "description": g.description,
+                "color": g.color,
+                "is_tag_based": g.is_tag_based,
+                "tag_pattern": g.tag_pattern,
+                "priority": g.priority,
+                "rate_limit_ms": g.rate_limit_ms,
+                "enabled": g.enabled,
+                "source_count": len(g.sources.all()) if g.sources else 0,
+                "created_at": g.created_at.isoformat() if g.created_at else None,
+                "updated_at": g.updated_at.isoformat() if g.updated_at else None
+            }
+            for g in groups
+        ]
+        
+        return results
+
+
+@router.get("/groups/{group_id}", response_model=Dict)
+@limiter.limit("100/hour")
+async def get_group(request: Request, group_id: int):
+    """
+    Get a specific group by ID.
+    """
+    logger.info(f"Get group request: group_id={group_id}")
+    
+    with SourceManager() as manager:
+        group = manager.get_group_by_id(group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
+        
+        sources = group.sources.all() if group.sources else []
+        
+        result = {
+            "id": group.id,
+            "name": group.name,
+            "description": group.description,
+            "color": group.color,
+            "is_tag_based": group.is_tag_based,
+            "tag_pattern": group.tag_pattern,
+            "priority": group.priority,
+            "rate_limit_ms": group.rate_limit_ms,
+            "enabled": group.enabled,
+            "sources": [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "domain": s.domain,
+                    "rss_url": s.rss_url,
+                    "enabled": s.enabled,
+                    "priority": s.priority,
+                    "tags": [t.strip() for t in (s.tags or '').split(',') if t.strip()]
+                }
+                for s in sources
+            ],
+            "source_count": len(sources),
+            "created_at": group.created_at.isoformat() if group.created_at else None,
+            "updated_at": group.updated_at.isoformat() if group.updated_at else None
+        }
+        
+        return result
+
+
+@router.post("/groups/", response_model=Dict)
+@limiter.limit("50/hour")
+async def create_group(request: Request, group_data: Dict):
+    """
+    Create a new source group.
+    """
+    logger.info(f"Create group request: {group_data}")
+    
+    required_fields = ['name']
+    for field in required_fields:
+        if field not in group_data:
+            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+    
+    with SourceManager() as manager:
+        group = manager.create_group(
+            name=group_data['name'],
+            description=group_data.get('description', ''),
+            color=group_data.get('color', '#666666'),
+            is_tag_based=group_data.get('is_tag_based', False),
+            tag_pattern=group_data.get('tag_pattern', ''),
+            priority=group_data.get('priority', 2),
+            rate_limit_ms=group_data.get('rate_limit_ms', 2000),
+            enabled=group_data.get('enabled', True)
+        )
+        
+        return {
+            "id": group.id,
+            "name": group.name,
+            "message": "Group created successfully"
+        }
+
+
+@router.put("/groups/{group_id}", response_model=Dict)
+@limiter.limit("50/hour")
+async def update_group(request: Request, group_id: int, group_data: Dict):
+    """
+    Update a source group.
+    """
+    logger.info(f"Update group request: group_id={group_id}, data={group_data}")
+    
+    with SourceManager() as manager:
+        group = manager.update_group(group_id, **group_data)
+        if not group:
+            raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
+        
+        return {
+            "id": group.id,
+            "name": group.name,
+            "message": "Group updated successfully"
+        }
+
+
+@router.delete("/groups/{group_id}", response_model=Dict)
+@limiter.limit("20/hour")
+async def delete_group(request: Request, group_id: int):
+    """
+    Delete a source group.
+    """
+    logger.info(f"Delete group request: group_id={group_id}")
+    
+    with SourceManager() as manager:
+        success = manager.delete_group(group_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
+        
+        return {"message": f"Group {group_id} deleted successfully"}
+
+
+# ==================== GROUP-SOURCE ASSOCIATION ENDPOINTS ====================
+
+@router.post("/groups/{group_id}/sources", response_model=Dict)
+@limiter.limit("50/hour")
+async def add_sources_to_group(request: Request, group_id: int, source_ids: List[int]):
+    """
+    Add sources to a group.
+    """
+    logger.info(f"Add sources to group: {source_ids} to group {group_id}")
+    
+    with SourceManager() as manager:
+        count = manager.add_sources_to_group(group_id, source_ids)
+        return {"message": f"Added {count} sources to group {group_id}"}
+
+
+@router.delete("/groups/{group_id}/sources", response_model=Dict)
+@limiter.limit("50/hour")
+async def remove_sources_from_group(request: Request, group_id: int, source_ids: List[int]):
+    """
+    Remove sources from a group.
+    """
+    logger.info(f"Remove sources from group: {source_ids} from group {group_id}")
+    
+    with SourceManager() as manager:
+        count = manager.remove_sources_from_group(group_id, source_ids)
+        return {"message": f"Removed {count} sources from group {group_id}"}
+
+
+@router.post("/{source_id}/groups", response_model=Dict)
+@limiter.limit("50/hour")
+async def add_source_to_groups(request: Request, source_id: int, group_ids: List[int]):
+    """
+    Add a source to multiple groups.
+    """
+    logger.info(f"Add source to groups: source {source_id} to groups {group_ids}")
+    
+    with SourceManager() as manager:
+        count = manager.add_source_to_groups(source_id, group_ids)
+        return {"message": f"Added source {source_id} to {count} groups"}
+
+
+@router.delete("/{source_id}/groups", response_model=Dict)
+@limiter.limit("50/hour")
+async def remove_source_from_groups(request: Request, source_id: int, group_ids: List[int]):
+    """
+    Remove a source from multiple groups.
+    """
+    logger.info(f"Remove source from groups: source {source_id} from groups {group_ids}")
+    
+    with SourceManager() as manager:
+        count = manager.remove_source_from_groups(source_id, group_ids)
+        return {"message": f"Removed source {source_id} from {count} groups"}
+
+
+# ==================== TAG-BASED GROUP ENDPOINTS ====================
+
+@router.post("/groups/tag-based", response_model=Dict)
+@limiter.limit("50/hour")
+async def create_tag_based_group(request: Request, name: str, tag_pattern: str, **kwargs):
+    """
+    Create a tag-based group.
+    """
+    logger.info(f"Create tag-based group: {name} with pattern {tag_pattern}")
+    
+    with SourceManager() as manager:
+        group = manager.create_tag_based_group(name, tag_pattern, **kwargs)
+        return {
+            "id": group.id,
+            "name": group.name,
+            "tag_pattern": group.tag_pattern,
+            "message": "Tag-based group created successfully"
+        }
+
+
+@router.post("/groups/{group_id}/refresh", response_model=Dict)
+@limiter.limit("20/hour")
+async def refresh_tag_based_group(request: Request, group_id: int):
+    """
+    Refresh a tag-based group to update its source membership.
+    """
+    logger.info(f"Refresh tag-based group: {group_id}")
+    
+    with SourceManager() as manager:
+        group = manager.update_tag_based_group(group_id, group.tag_pattern if hasattr(group, 'tag_pattern') else '')
+        if not group:
+            raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
+        
+        return {"message": f"Refreshed tag-based group {group_id}"}
+
+
+@router.post("/groups/refresh-all", response_model=Dict)
+@limiter.limit("10/hour")
+async def refresh_all_tag_based_groups(request: Request):
+    """
+    Refresh all tag-based groups.
+    """
+    logger.info("Refresh all tag-based groups")
+    
+    with SourceManager() as manager:
+        count = manager.refresh_tag_based_groups()
+        return {"message": f"Refreshed {count} tag-based groups"}
+
+
+# ==================== METADATA ENDPOINTS ====================
+
+@router.get("/{source_id}/metadata", response_model=Dict)
+@limiter.limit("100/hour")
+async def get_metadata(request: Request, source_id: int):
+    """
+    Get metadata for a source.
+    """
+    logger.info(f"Get metadata request: source_id={source_id}")
+    
+    with SourceManager() as manager:
+        metadata = manager.get_metadata(source_id)
+        if not metadata:
+            raise HTTPException(status_code=404, detail=f"Metadata for source {source_id} not found")
+        
+        return {
+            "source_id": metadata.source_id,
+            "language": metadata.language,
+            "country": metadata.country,
+            "region": metadata.region,
+            "city": metadata.city,
+            "timezone": metadata.timezone,
+            "robots_txt_url": metadata.robots_txt_url,
+            "robots_allowed": metadata.robots_allowed,
+            "crawl_delay": metadata.crawl_delay,
+            "sitemap_url": metadata.sitemap_url,
+            "favicon_url": metadata.favicon_url,
+            "logo_url": metadata.logo_url,
+            "contact_email": metadata.contact_email,
+            "social_twitter": metadata.social_twitter,
+            "social_facebook": metadata.social_facebook,
+            "social_linkedin": metadata.social_linkedin,
+            "alexa_rank": metadata.alexa_rank,
+            "last_checked": metadata.last_checked.isoformat() if metadata.last_checked else None,
+            "notes": metadata.notes
+        }
+
+
+@router.post("/{source_id}/metadata", response_model=Dict)
+@limiter.limit("50/hour")
+async def create_metadata(request: Request, source_id: int, metadata_data: Dict):
+    """
+    Create metadata for a source.
+    """
+    logger.info(f"Create metadata request: source_id={source_id}, data={metadata_data}")
+    
+    with SourceManager() as manager:
+        metadata = manager.create_metadata(source_id, **metadata_data)
+        return {
+            "source_id": metadata.source_id,
+            "message": "Metadata created successfully"
+        }
+
+
+@router.put("/{source_id}/metadata", response_model=Dict)
+@limiter.limit("50/hour")
+async def update_metadata(request: Request, source_id: int, metadata_data: Dict):
+    """
+    Update metadata for a source.
+    """
+    logger.info(f"Update metadata request: source_id={source_id}, data={metadata_data}")
+    
+    with SourceManager() as manager:
+        metadata = manager.update_metadata(source_id, **metadata_data)
+        if not metadata:
+            raise HTTPException(status_code=404, detail=f"Metadata for source {source_id} not found")
+        
+        return {
+            "source_id": metadata.source_id,
+            "message": "Metadata updated successfully"
+        }
+
+
+@router.delete("/{source_id}/metadata", response_model=Dict)
+@limiter.limit("20/hour")
+async def delete_metadata(request: Request, source_id: int):
+    """
+    Delete metadata for a source.
+    """
+    logger.info(f"Delete metadata request: source_id={source_id}")
+    
+    with SourceManager() as manager:
+        success = manager.delete_metadata(source_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Metadata for source {source_id} not found")
+        
+        return {"message": f"Metadata for source {source_id} deleted successfully"}
+
+
+# ==================== BATCH GROUP OPERATIONS ====================
+
+@router.post("/groups/batch/enable", response_model=Dict)
+@limiter.limit("50/hour")
+async def batch_enable_groups(request: Request, group_ids: List[int]):
+    """
+    Enable all sources in multiple groups.
+    """
+    logger.info(f"Batch enable groups: {group_ids}")
+    
+    with SourceManager() as manager:
+        count = manager.enable_groups(group_ids)
+        return {"message": f"Enabled {count} sources in {len(group_ids)} groups"}
+
+
+@router.post("/groups/batch/disable", response_model=Dict)
+@limiter.limit("50/hour")
+async def batch_disable_groups(request: Request, group_ids: List[int]):
+    """
+    Disable all sources in multiple groups.
+    """
+    logger.info(f"Batch disable groups: {group_ids}")
+    
+    with SourceManager() as manager:
+        count = manager.disable_groups(group_ids)
+        return {"message": f"Disabled {count} sources in {len(group_ids)} groups"}
+
+
+@router.post("/groups/batch/priority", response_model=Dict)
+@limiter.limit("50/hour")
+async def batch_set_group_priority(request: Request, group_ids: List[int], priority: int = Query(..., ge=1, le=3)):
+    """
+    Set priority for all sources in multiple groups.
+    """
+    logger.info(f"Batch set group priority: {group_ids} to {priority}")
+    
+    with SourceManager() as manager:
+        count = manager.set_group_priority(group_ids, priority)
+        return {"message": f"Set priority {priority} for {count} sources in {len(group_ids)} groups"}
+
+
+@router.post("/groups/batch/rate-limit", response_model=Dict)
+@limiter.limit("50/hour")
+async def batch_set_group_rate_limit(request: Request, group_ids: List[int], rate_limit_ms: int = Query(..., ge=100, le=60000)):
+    """
+    Set rate limit for all sources in multiple groups.
+    """
+    logger.info(f"Batch set group rate limit: {group_ids} to {rate_limit_ms}ms")
+    
+    with SourceManager() as manager:
+        count = manager.set_group_rate_limit(group_ids, rate_limit_ms)
+        return {"message": f"Set rate limit {rate_limit_ms}ms for {count} sources in {len(group_ids)} groups"}
+
+
+# ==================== SOURCE DISCOVERY ENDPOINTS ====================
+
+@router.post("/discover/rss", response_model=Dict)
+@limiter.limit("20/hour")
+async def discover_rss_feeds(request: Request, source_ids: Optional[List[int]] = None, timeout: int = 10):
+    """
+    Discover RSS feeds for sources that don't have them.
+    
+    Parameters:
+    - source_ids: Optional list of source IDs to check. If None, checks all sources without RSS URLs.
+    - timeout: Request timeout in seconds
+    """
+    logger.info(f"Discover RSS feeds request: source_ids={source_ids}")
+    
+    with SourceManager() as manager:
+        results = manager.discover_rss_feeds(source_ids, timeout=timeout)
+        
+        # Count how many got RSS feeds
+        with_rss = len([r for r in results if r.get('rss_url')])
+        
+        return {
+            "total_checked": len(results),
+            "with_rss_found": with_rss,
+            "results": results,
+            "message": f"Discovered RSS feeds for {with_rss} sources"
+        }
+
+
+@router.post("/discover/topic", response_model=Dict)
+@limiter.limit("20/hour")
+async def discover_sources_by_topic(request: Request, topic: str, max_sources: int = 20, region: str = "wt-wt"):
+    """
+    Discover new sources for a specific topic.
+    
+    Parameters:
+    - topic: The topic to search for
+    - max_sources: Maximum number of sources to return
+    - region: Region code for localized results
+    """
+    logger.info(f"Discover sources by topic: {topic}")
+    
+    with SourceManager() as manager:
+        sources = manager.discover_sources_by_topic(topic, max_sources, region=region)
+        
+        return {
+            "topic": topic,
+            "max_sources": max_sources,
+            "region": region,
+            "sources": sources,
+            "count": len(sources),
+            "message": f"Discovered {len(sources)} sources for topic '{topic}'"
+        }
+
+
+@router.post("/discover/add", response_model=Dict)
+@limiter.limit("20/hour")
+async def add_discovered_sources(request: Request, sources: List[Dict], group_name: Optional[str] = None):
+    """
+    Add discovered sources to the database.
+    
+    Parameters:
+    - sources: List of discovered source dictionaries
+    - group_name: Optional group name to add sources to
+    """
+    logger.info(f"Add discovered sources: {len(sources)} sources, group={group_name}")
+    
+    with SourceManager() as manager:
+        created_sources = manager.add_discovered_sources(sources, group_name)
+        
+        return {
+            "added": len(created_sources),
+            "group_name": group_name,
+            "sources": [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "domain": s.domain,
+                    "rss_url": s.rss_url
+                }
+                for s in created_sources
+            ],
+            "message": f"Added {len(created_sources)} discovered sources"
+        }
+
+
+# ==================== IMPORT/EXPORT ENDPOINTS ====================
+
+@router.post("/import", response_model=Dict)
+@limiter.limit("10/hour")
+async def import_sources(request: Request):
+    """
+    Import sources from YAML configuration.
+    """
+    logger.info("Import sources from YAML")
+    
+    # For now, use the existing sources.yml file
+    yaml_path = Path(__file__).parent.parent.parent.parent / "configs" / "sources.yml"
+    
+    with SourceManager() as manager:
+        result = manager.import_sources_from_yaml(str(yaml_path))
+        
+        return {
+            "added": result['added'],
+            "updated": result['updated'],
+            "skipped": result['skipped'],
+            "message": f"Imported {result['added']} sources, updated {result['updated']}, skipped {result['skipped']}"
+        }
+
+
+@router.get("/export", response_model=Dict)
+@limiter.limit("10/hour")
+async def export_sources(request: Request, group_id: Optional[int] = None):
+    """
+    Export sources to YAML format.
+    
+    Parameters:
+    - group_id: Optional group ID to export only sources from that group
+    """
+    logger.info(f"Export sources: group_id={group_id}")
+    
+    with SourceManager() as manager:
+        # For now, return the data as JSON (YAML export would be a file download)
+        if group_id:
+            sources = manager.get_sources_by_group(group_id)
+        else:
+            sources = manager.get_all_sources()
+        
+        sources_data = [
+            {
+                "name": s.name,
+                "domain": s.domain,
+                "rss_url": s.rss_url,
+                "rate_limit_ms": s.rate_limit_ms,
+                "enabled": s.enabled,
+                "priority": s.priority,
+                "tags": [t.strip() for t in (s.tags or '').split(',') if t.strip()]
+            }
+            for s in sources
+        ]
+        
+        return {
+            "project_name": "OpenOmniscience",
+            "description": "Global Intelligence Platform for Investigative Journalism",
+            "version": "0.2.0",
+            "date_created": datetime.now().isoformat(),
+            "sources": sources_data,
+            "count": len(sources_data)
+        }
+
+
+# ==================== STATISTICS ENDPOINTS ====================
+
+@router.get("/stats", response_model=Dict)
+@limiter.limit("100/hour")
+async def get_source_statistics(request: Request):
+    """
+    Get statistics about sources, groups, and metadata.
+    """
+    logger.info("Get source statistics")
+    
+    with SourceManager() as manager:
+        stats = manager.get_source_statistics()
+        
+        return {
+            "sources": {
+                "total": stats['total_sources'],
+                "enabled": stats['enabled_sources'],
+                "disabled": stats['disabled_sources'],
+                "priority_distribution": stats['priority_counts'],
+                "tag_counts": stats['tag_counts'],
+                "with_rss": stats['with_rss'],
+                "without_rss": stats['without_rss']
+            },
+            "groups": {
+                "total": stats['total_groups'],
+                "tag_based": stats['tag_based_groups']
+            },
+            "metadata": {
+                "with_metadata": stats['with_metadata'],
+                "with_country": stats['with_country'],
+                "with_language": stats['with_language']
+            }
+        }
+
+
+# ==================== SEARCH AND DISCOVERY ENDPOINTS ====================
+
+@router.get("/search", response_model=Dict)
+@limiter.limit("50/hour")
+async def search_sources(
+    request: Request,
+    query: str,
+    limit: int = 20,
+    offset: int = 0
+):
+    """
+    Search for sources by name, domain, or tags.
+    
+    Parameters:
+    - query: Search query (matches against name, domain, and tags)
+    - limit: Maximum number of results
+    - offset: Offset for pagination
+    """
+    logger.info(f"Search sources: query={query}")
+    
+    with SourceManager() as manager:
+        # Search by name, domain, or tags
+        query_lower = query.lower()
+        
+        # Get all sources and filter in memory (for simplicity)
+        all_sources = manager.get_all_sources()
+        
+        results = []
+        for source in all_sources:
+            if (query_lower in source.name.lower() or
+                query_lower in source.domain.lower() or
+                (source.tags and query_lower in source.tags.lower())):
+                results.append(source)
+        
+        # Apply pagination
+        results = results[offset:offset + limit]
+        
+        formatted_results = [
+            {
+                "id": s.id,
+                "name": s.name,
+                "domain": s.domain,
+                "rss_url": s.rss_url,
+                "enabled": s.enabled,
+                "priority": s.priority,
+                "tags": [t.strip() for t in (s.tags or '').split(',') if t.strip()]
+            }
+            for s in results
+        ]
+        
+        return {
+            "query": query,
+            "results": formatted_results,
+            "count": len(formatted_results),
+            "total": len(results)
+        }

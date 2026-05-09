@@ -34,6 +34,9 @@ import time
 # Import database models and session
 from database.models import Article, Source, get_session
 
+# Import source management router
+from api.source_management import router as source_management_router
+
 # Configure logging using shared config
 from utils.logging_config import setup_logging
 logger = setup_logging("api")
@@ -85,6 +88,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include source management router
+app.include_router(source_management_router)
 
 # Serve static files (HTML5 frontend)
 app.mount("/", StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True), name="static")
