@@ -11,7 +11,7 @@ Vcs-Browser: https://github.com/ideotion/Open-Omniscience
 Package: open-omniscience
 Architecture: all
 Depends: python3 (>= 3.10), python3-pip, ${misc:Depends}
-Recommends: python3-uvicorn, python3-fastapi, python3-sqlalchemy, python3-requests, python3-beautifulsoup4, python3-feedparser, python3-pyyaml, python3-slowapi
+Recommends: python3-uvicorn, python3-fastapi, python3-sqlalchemy, python3-requests, python3-beautifulsoup4, python3-feedparser, python3-pyyaml, python3-slowapi, python3-prometheus-client
 Suggests: postgresql, redis-server
 Description: Global Intelligence Platform for Investigative Journalism
  Open Omniscience is an ethically impeccable, open-source, and portable
