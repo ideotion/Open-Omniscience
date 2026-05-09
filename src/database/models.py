@@ -164,7 +164,7 @@ class SourceMetadata(Base):
     notes = Column(Text)
     
     # Relationship to source
-    source = relationship("Source", back_populates="metadata", uselist=False)
+    source = relationship("Source", back_populates="source_metadata", uselist=False)
     
     # Indexes for performance
     __table_args__ = (
@@ -216,7 +216,7 @@ class Source(Base):
     )
     
     # One-to-one relationship with metadata
-    metadata = relationship("SourceMetadata", back_populates="source", uselist=False, cascade="all, delete-orphan")
+    source_metadata = relationship("SourceMetadata", back_populates="source", uselist=False, cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Source(name='{self.name}', domain='{self.domain}')>"

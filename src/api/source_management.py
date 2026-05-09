@@ -98,7 +98,7 @@ async def list_sources(
                 "tags": [t.strip() for t in (s.tags or '').split(',') if t.strip()],
                 "article_count": len(s.articles) if s.articles else 0,
                 "groups": [g.name for g in s.groups.all()] if s.groups else [],
-                "has_metadata": s.metadata is not None
+                "has_metadata": s.source_metadata is not None
             }
             for s in sources
         ]
