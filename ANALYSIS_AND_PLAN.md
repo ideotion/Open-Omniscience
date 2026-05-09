@@ -27,7 +27,7 @@ Open-Omniscience/
 ├── requirements.txt             # Python dependencies
 ├── alembic.ini                  # Alembic configuration
 ├── configs/
-│   ├── sources.yml              # 100+ news sources (needs cleanup)
+│   ├── sources.yml              # 1900+ news sources (verified and enriched)
 │   └── settings.yaml            # Application settings (NEW)
 ├── docs/
 │   ├── USER_GUIDE.md            # User guide (WIP)

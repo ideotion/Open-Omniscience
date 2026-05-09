@@ -25,7 +25,7 @@ This guide will help you **install, configure, and use** Open Omniscience for in
 Open Omniscience is an **open-source global intelligence platform** designed to help journalists, researchers, and analysts **aggregate, search, and analyze news articles** from around the world. It prioritizes **ethical scraping**, **data integrity**, and **user privacy**.
 
 ### Key Features:
-- **Scrape 100+ news sources** (RSS and HTML).
+- **Scrape 1900+ news sources** (RSS and HTML).
 - **Advanced search** with Boolean operators, filters, and pagination.
 - **Visualize data** with interactive charts.
 - **Export data** in CSV, JSON, or SQLite formats.

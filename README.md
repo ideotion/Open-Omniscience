@@ -141,7 +141,7 @@ Open-Omniscience/
 ├── LICENSE                 # MIT License
 ├── requirements.txt        # Python dependencies
 ├── configs/
-│   ├── sources.yml         # News sources configuration
+│   ├── sources.yml         # 1900+ news sources configuration
 │   └── settings.yaml       # User preferences and rate limits
 ├── src/
 │   ├── scraper/            # Web scraping logic
@@ -218,7 +218,7 @@ sources:
 ### ✅ Phase 1 (MVP - Complete)
 | Feature | Description |
 |---------|-------------|
-| **Global Scraping** | Ingest articles from **100+ predefined sources** (RSS and HTML). |
+| **Global Scraping** | Ingest articles from **1900+ predefined sources** (RSS and HTML). |
 | **Ethical Scraping** | Respects `robots.txt`, rate limits, and User-Agent identification. |
 | **Duplicate Detection** | URL canonicalization + content hashing (SHA-256). |
 | **SQLite/PostgreSQL** | Portable (SQLite) or scalable (PostgreSQL) storage. |

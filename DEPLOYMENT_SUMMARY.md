@@ -292,7 +292,7 @@ docker-compose logs -f web
    - These will fall back to HTML scraping (may fail)
    - **Recommendation:** Research and add RSS URLs or remove sources
 
-2. **HTTrack Legacy Code**: 100+ C files from HTTrack fork
+2. **HTTrack Legacy Code**: ~200 C files from HTTrack fork
    - Not used by Python code, just takes up space
    - **Recommendation:** Remove or move to separate directory
 
