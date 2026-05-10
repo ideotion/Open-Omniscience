@@ -1,0 +1,7 @@
+Future Development ideas :
+
+let's add some automated article data and intelligence extracting tools, such as article keyword identification, collection, aggregation, appearance order and recurrence count, keyword cross article analysis, and some other tools useful for investigative journalism, such as article percentage similarity, grouping by similarity, analyzing similarity frequency between sources, and so forth.
+
+Another cool thing that could be very interesting: most articles are referring to other articles through links. It's usually their sources (or commercial banners to avoid scraping?). I'd like you to think of a way to identify, list, and scrap those sources and create an entire "source / link" database showcasing the amount of articles that have referred to that source, the source date, article date, an automated calculation between the article publication date and the source date, and so forth.
+
+Make a very detailed and thorough action plan to add these new functionalities. The app should remain entirely local, portable, automated with an appropriate dashboard with an amazing, useful and customizable GUI. 
