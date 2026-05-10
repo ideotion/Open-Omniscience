@@ -560,3 +560,168 @@ curl "http://localhost:8000/api/sources"
 
 ---
 **© 2026 Ideotion. All rights reserved.**
+
+## 🧠 Article Intelligence Development
+
+This section covers how to work with and extend the article intelligence features.
+
+### Architecture
+
+The article intelligence system consists of:
+
+1. **Service Layer** (`src/services/article_intelligence.py`)
+   - Core analysis logic
+   - Keyword extraction and processing
+   - Similarity calculation algorithms
+   - Clustering and grouping functions
+
+2. **API Layer** (`src/api/keyword_analysis.py`)
+   - REST API endpoints
+   - Request/response handling
+   - Rate limiting
+
+3. **Data Layer** (existing database models)
+   - Article storage
+   - Keyword storage
+   - Source metadata
+
+### Key Classes
+
+#### `ArticleIntelligenceAnalyzer`
+
+Main class providing all intelligence analysis capabilities.
+
+**Methods:**
+
+- `extract_terms_with_metadata(text, language="en")`
+  - Extract keywords with positions, frequencies, and relevance scores
+  - Returns comprehensive metadata about each keyword
+
+- `calculate_similarity(text1, text2, method="cosine", use_tfidf=True)`
+  - Calculate similarity between two texts
+  - Supports multiple algorithms: cosine, jaccard, euclidean, manhattan
+
+- `group_by_similarity(articles, threshold=0.7, method="cosine")`
+  - Group articles by similarity using hierarchical clustering
+  - Returns clusters with average similarity scores
+
+- `analyze_source_similarity(source_ids, time_range_days=30, similarity_threshold=0.5)`
+  - Analyze similarity between multiple sources
+  - Returns source pairs with similarity statistics
+
+- `create_keyword_cooccurrence_network(article_ids, min_cooccurrence=2)`
+  - Create network of keywords that co-occur across articles
+  - Returns graph structure with connection strengths
+
+- `analyze_keyword_trends(keyword, time_range_days=90, time_interval_days=7)`
+  - Track keyword frequency changes over time
+  - Returns trend data with statistical analysis
+
+### Adding New Analysis Methods
+
+To add a new analysis method:
+
+1. **Add to Service Layer:**
+```python
+# In src/services/article_intelligence.py
+
+class ArticleIntelligenceAnalyzer:
+    def new_analysis_method(self, parameters):
+        """Your new analysis method."""
+        # Implementation here
+        return result
+```
+
+2. **Add to API Layer (optional):**
+```python
+# In src/api/keyword_analysis.py
+
+@router.get("/analysis/new-endpoint")
+async def new_endpoint(request: Request, params):
+    result = article_intelligence_analyzer.new_analysis_method(params)
+    return result
+```
+
+3. **Add Tests:**
+```python
+# In tests/test_article_intelligence.py
+
+def test_new_method():
+    result = article_intelligence_analyzer.new_analysis_method(test_params)
+    assert result == expected_result
+```
+
+### Similarity Algorithms
+
+The system supports multiple similarity algorithms:
+
+#### Cosine Similarity (Default)
+- Uses TF-IDF vectorization
+- Most accurate for text comparison
+- Returns values 0.0 (completely different) to 1.0 (identical)
+
+#### Jaccard Similarity
+- Set-based comparison
+- Fast and simple
+- Good for binary presence/absence
+
+#### Euclidean Distance
+- Geometric distance in word frequency space
+- Converted to similarity (1 - normalized_distance)
+
+#### Manhattan Distance
+- Sum of absolute differences
+- Converted to similarity (1 - normalized_distance)
+
+### Performance Considerations
+
+- **Similarity Matrix**: For N articles, similarity calculation is O(N²)
+- **Clustering**: Hierarchical clustering can be expensive for large datasets
+- **TF-IDF**: Vectorization is cached for performance
+- **Batch Processing**: Consider processing articles in batches for large datasets
+
+### Example: Custom Analysis
+
+```python
+from services.article_intelligence import article_intelligence_analyzer
+
+# Custom analysis combining multiple methods
+def analyze_article_cluster(article_ids):
+    # Extract keywords from all articles
+    keywords_by_article = {}
+    for article_id in article_ids:
+        result = article_intelligence_analyzer.extract_terms_with_metadata(
+            get_article_content(article_id)
+        )
+        keywords_by_article[article_id] = result["terms"]
+    
+    # Group articles by similarity
+    articles = [{"id": aid, "content": get_article_content(aid)} for aid in article_ids]
+    clusters = article_intelligence_analyzer.group_by_similarity(articles)
+    
+    # Find common keywords in each cluster
+    cluster_keywords = {}
+    for cluster in clusters:
+        cluster_article_ids = [art["id"] for art in cluster["articles"]]
+        common_keywords = find_common_keywords(keywords_by_article, cluster_article_ids)
+        cluster_keywords[cluster["cluster_id"]] = common_keywords
+    
+    return {"clusters": clusters, "cluster_keywords": cluster_keywords}
+```
+
+### Integration with Existing Features
+
+The article intelligence tools integrate with:
+
+- **Database**: Uses existing Article, Source, Keyword models
+- **Keyword Extractor**: Leverages existing keyword extraction
+- **Text Processor**: Uses existing text processing pipeline
+- **Stopwords**: Respects existing stopword lists
+
+### Best Practices
+
+1. **Use Existing Methods**: Leverage built-in methods before writing custom code
+2. **Batch Processing**: Process large datasets in batches to avoid memory issues
+3. **Caching**: Cache expensive computations (similarity matrices)
+4. **Error Handling**: Handle edge cases (empty texts, missing articles)
+5. **Logging**: Use the existing logging configuration for debugging

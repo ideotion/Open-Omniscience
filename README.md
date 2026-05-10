@@ -149,7 +149,17 @@ Open-Omniscience/
 │   ├── ingestor/           # Data ingestion pipeline
 │   │   ├── url_utils.py    # URL canonicalization and hashing
 │   │   └── import.py       # Bulk data import (CSV/JSON)
-│   ├── database/           # Database models and ORM (SQLAlchemy + SQLite/PostgreSQL)
+│   ├── database/
+│   ├── init_db.py
+│   └── migrations/
+├── services/
+│   ├── article_intelligence.py  # NEW: Article intelligence tools
+│   ├── duckduckgo.py
+│   ├── keyword_extractor.py
+│   ├── stopwords.py
+│   ├── text_processor.py
+│   └── keyword_analysis.py  # NEW: Keyword analysis service
+           # Database models and ORM (SQLAlchemy + SQLite/PostgreSQL)
 │   │   ├── models.py       # Database models
 │   │   └── migrations/      # Alembic migrations
 │   ├── api/                # FastAPI backend for the GUI
@@ -157,7 +167,17 @@ Open-Omniscience/
 │   │   └── source_management.py # Source management API endpoints
 │   ├── services/           # External services integration
 │   │   └── duckduckgo.py   # DuckDuckGo search and RSS discovery
-│   ├── database/           # Database models and ORM (SQLAlchemy + SQLite/PostgreSQL)
+│   ├── database/
+│   ├── init_db.py
+│   └── migrations/
+├── services/
+│   ├── article_intelligence.py  # NEW: Article intelligence tools
+│   ├── duckduckgo.py
+│   ├── keyword_extractor.py
+│   ├── stopwords.py
+│   ├── text_processor.py
+│   └── keyword_analysis.py  # NEW: Keyword analysis service
+           # Database models and ORM (SQLAlchemy + SQLite/PostgreSQL)
 │   │   ├── models.py       # Database models
 │   │   ├── source_manager.py # Source management operations
 │   │   └── migrations/      # Alembic migrations
@@ -215,6 +235,188 @@ sources:
 
 ## 🔍 Features
 
+
+
+
+
+## 📡 API Endpoints
+
+Open Omniscience provides a comprehensive REST API for programmatic access to all features.
+
+### 🧠 Article Intelligence API Endpoints
+
+#### `POST /api/analysis/articles/similarity`
+Calculate similarity between two articles.
+
+**Parameters:**
+- `article_id1` (required): First article ID
+- `article_id2` (required): Second article ID
+- `method` (optional): Similarity method - `cosine` (default), `jaccard`, `euclidean`, `manhattan`
+
+**Response:**
+```json
+{
+  "article_id1": 1,
+  "article_id2": 2,
+  "similarity": 0.85,
+  "method": "cosine"
+}
+```
+
+**Use Case:** Detect duplicate articles, find related content
+
+---
+
+#### `POST /api/analysis/articles/group`
+Group articles by similarity using hierarchical clustering.
+
+**Parameters:**
+- `article_ids` (required): Comma-separated list of article IDs
+- `threshold` (optional): Similarity threshold (0.0-1.0), default: 0.7
+- `method` (optional): Similarity method, default: `cosine`
+
+**Response:**
+```json
+{
+  "clusters": [
+    {
+      "cluster_id": 0,
+      "articles": [{"id": 1, "title": "..."}, {"id": 2, "title": "..."}],
+      "size": 2,
+      "average_similarity": 0.85
+    }
+  ],
+  "total_articles": 5,
+  "total_clusters": 2
+}
+```
+
+**Use Case:** Story clustering, finding related articles
+
+---
+
+#### `POST /api/analysis/keywords/extract`
+Extract keywords from an article with comprehensive metadata.
+
+**Parameters:**
+- `article_id` (required): Article ID to analyze
+
+**Response:**
+```json
+{
+  "article_id": 1,
+  "title": "Article Title",
+  "source": "BBC News",
+  "result": {
+    "terms": [
+      {
+        "term": "election",
+        "frequency": 5,
+        "first_position": 10,
+        "last_position": 200,
+        "all_positions": [10, 50, 100, 150, 200]
+      }
+    ],
+    "frequencies": {"election": 5, "president": 3},
+    "statistics": {"total_terms": 25, "unique_terms": 20}
+  }
+}
+```
+
+**Use Case:** Content analysis, keyword tracking
+
+---
+
+#### `GET /api/analysis/sources/similarity`
+Analyze how frequently sources publish similar articles.
+
+**Parameters:**
+- `source_ids` (required): Comma-separated list of source IDs
+- `time_range_days` (optional): Time range in days, default: 30
+- `similarity_threshold` (optional): Threshold for high similarity, default: 0.5
+
+**Response:**
+```json
+{
+  "source_pairs": [
+    {
+      "source1_id": 1,
+      "source2_id": 2,
+      "source1_name": "BBC News",
+      "source2_name": "Reuters",
+      "article_count_source1": 15,
+      "article_count_source2": 12,
+      "comparisons": 180,
+      "average_similarity": 0.65,
+      "high_similarity_count": 45,
+      "high_similarity_percentage": 25.0
+    }
+  ],
+  "statistics": {
+    "total_source_pairs": 10,
+    "total_articles_analyzed": 75,
+    "avg_similarity_across_pairs": 0.45,
+    "max_similarity": 0.89,
+    "min_similarity": 0.12,
+    "pairs_above_threshold": 3
+  }
+}
+```
+
+**Use Case:** Detect coordinated messaging, find sources with similar focus
+### 🧠 Article Intelligence & Analysis Tools (NEW!)
+
+Open Omniscience now includes comprehensive **automated article data and intelligence extraction tools** specifically designed for investigative journalism:
+
+#### 🔍 Keyword Analysis
+- **Keyword Identification**: Extract meaningful terms from articles with full metadata
+- **Position Tracking**: Track exact positions where keywords appear in text
+- **Frequency Counting**: Count keyword occurrences within single or multiple articles
+- **Recurrence Analysis**: Identify keywords that appear across multiple articles
+- **N-gram Support**: Extract unigrams, bigrams, and trigrams
+- **Relevance Scoring**: TF-IDF based scoring for keyword importance
+
+#### 📊 Similarity Analysis
+- **Article Similarity**: Calculate percentage similarity between articles (0-100%)
+- **Multiple Algorithms**: Cosine, Jaccard, Euclidean, and Manhattan similarity methods
+- **Duplicate Detection**: Identify near-identical articles automatically
+- **Story Clustering**: Group similar articles using hierarchical clustering
+- **Configurable Thresholds**: Adjust similarity thresholds for different use cases
+
+#### 🔗 Cross-Article Analysis
+- **Cross-Article Keywords**: Find keywords appearing in multiple articles
+- **Source Similarity**: Analyze how frequently sources publish similar content
+- **Coordinated Messaging Detection**: Identify potential syndication or coordinated campaigns
+- **Keyword Co-occurrence Networks**: Map relationships between keywords
+- **Trend Analysis**: Track keyword frequency changes over time
+
+#### 📈 Source Relationship Analysis
+- **Source Pair Comparison**: Compare content similarity between any two sources
+- **Time-Based Analysis**: Focus on specific time periods (last 7, 30, 90 days)
+- **Similarity Frequency**: Count how often sources publish similar articles
+- **Statistical Insights**: Comprehensive statistics about source relationships
+- **Threshold Configuration**: Define what constitutes "similar" content
+
+#### 🎯 Investigative Journalism Use Cases
+- **Story Clustering**: Automatically group related articles to find connected stories
+- **Duplicate Detection**: Identify potential duplicate or syndicated content
+- **Source Relationship Mapping**: Discover which sources share similar editorial focus
+- **Trend Tracking**: Monitor emerging topics and fading stories
+- **Pattern Detection**: Find coordinated messaging across multiple sources
+- **Keyword Network Analysis**: Understand how topics and concepts relate to each other
+
+### 🚀 API Endpoints for Intelligence Tools
+
+All article intelligence features are accessible via REST API:
+
+| Endpoint | Method | Description | Rate Limit |
+|----------|--------|-------------|------------|
+| `/api/analysis/articles/similarity` | POST | Calculate similarity between two articles | 50/hour |
+| `/api/analysis/articles/group` | POST | Group articles by similarity | 20/hour |
+| `/api/analysis/keywords/extract` | POST | Extract keywords from an article | 100/hour |
+| `/api/analysis/sources/similarity` | GET | Analyze similarity between sources | 50/hour |
+
+See [API Documentation](#-api-endpoints) below for detailed usage.
 ### ✅ Phase 1 (MVP - Complete)
 | Feature | Description |
 |---------|-------------|

@@ -47,6 +47,53 @@ This document outlines how to **contribute** to Open Omniscience, including:
 | **Community** | Help others, answer questions. | Respond to GitHub Discussions, review PRs. |
 | **Translations** | Translate the UI or docs. | Add support for non-English languages. |
 
+### 🧠 Article Intelligence Development
+
+Help improve the **article intelligence tools** for investigative journalism:
+
+| Contribution Type | Description | Examples |
+|------------------|-------------|----------|
+| **New Algorithms** | Add new similarity or clustering algorithms | Implement LSI, LDA, or word2vec similarity |
+| **Performance** | Optimize existing analysis methods | Cache similarity matrices, parallel processing |
+| **New Features** | Add new analysis capabilities | Entity recognition, sentiment analysis, topic modeling |
+| **API Endpoints** | Add new REST API endpoints | Trend analysis, network visualization |
+| **Testing** | Add tests for intelligence tools | Test edge cases, performance benchmarks |
+| **Documentation** | Improve intelligence tool docs | Add examples, use cases, tutorials |
+
+#### Getting Started with Article Intelligence Development:
+
+1. **Read the [Developer Guide](docs/DEVELOPER_GUIDE.md#-article-intelligence-development)**
+2. **Explore the [ArticleIntelligenceAnalyzer class](src/services/article_intelligence.py)**
+3. **Test with sample data**: Use the existing test articles to try your ideas
+4. **Add API endpoints**: Expose new functionality via REST API
+5. **Document your changes**: Update README.md and developer docs
+
+#### Example Contributions:
+
+- **Add a new similarity algorithm**:
+  ```python
+  def calculate_semantic_similarity(self, text1, text2):
+      # Your implementation using word embeddings
+      pass
+  ```
+
+- **Add a new analysis endpoint**:
+  ```python
+  @router.get("/analysis/new-feature")
+  async def new_feature_endpoint(request: Request, params):
+      result = article_intelligence_analyzer.new_feature(params)
+      return result
+  ```
+
+- **Improve performance**:
+  ```python
+  # Add caching for expensive computations
+  @lru_cache(maxsize=100)
+  def calculate_similarity(self, text1, text2, method="cosine"):
+      # Existing implementation
+  ```
+
+
 ---
 
 ## 💻 Development Setup

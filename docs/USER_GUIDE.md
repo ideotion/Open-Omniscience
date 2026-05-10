@@ -395,3 +395,127 @@ alembic upgrade head
 
 ---
 **© 2026 Ideotion. All rights reserved.**
+
+## Article Intelligence Tools
+
+Open Omniscience includes powerful article intelligence tools for advanced analysis.
+
+### Keyword Analysis
+
+Extract and analyze keywords from articles with comprehensive metadata.
+
+**Via API:**
+POST /api/analysis/keywords/extract?article_id=1
+
+**Use Cases:**
+- Identify main topics in an article
+- Track keyword positions for narrative analysis
+- Count term frequencies for content analysis
+
+---
+
+### Article Similarity
+
+Calculate how similar two articles are using multiple algorithms.
+
+**Via API:**
+POST /api/analysis/articles/similarity?article_id1=1&article_id2=2&method=cosine
+
+**Available Methods:**
+- cosine (default) - Most accurate, uses TF-IDF
+- jaccard - Fast, set-based comparison
+- euclidean - Geometric distance
+- manhattan - Sum of absolute differences
+
+**Interpretation:**
+- 0.0 - 0.3: Very different articles
+- 0.3 - 0.6: Somewhat similar
+- 0.6 - 0.8: Quite similar
+- 0.8 - 1.0: Very similar or identical
+
+**Use Cases:**
+- Detect duplicate or syndicated content
+- Find related articles
+- Identify articles covering the same event
+
+---
+
+### Group Articles by Similarity
+
+Automatically cluster similar articles together.
+
+**Via API:**
+POST /api/analysis/articles/group?article_ids=1,2,3,4,5&threshold=0.7
+
+**Parameters:**
+- article_ids: Comma-separated list of article IDs to group
+- threshold: Similarity threshold (0.0-1.0), default: 0.7
+- method: Similarity method, default: cosine
+
+**Use Cases:**
+- Story clustering - find all articles about the same event
+- Duplicate detection - group near-identical articles
+- Topic organization - categorize articles by content
+
+---
+
+### Source Similarity Analysis
+
+Analyze how frequently different news sources publish similar content.
+
+**Via API:**
+GET /api/analysis/sources/similarity?source_ids=1,2,3&time_range_days=30&similarity_threshold=0.5
+
+**Parameters:**
+- source_ids: Comma-separated list of source IDs to analyze
+- time_range_days: Time range in days, default: 30
+- similarity_threshold: Threshold for high similarity, default: 0.5
+
+**Use Cases:**
+- Detect coordinated messaging
+- Identify syndication
+- Find sources with similar editorial focus
+- Monitor source relationships over time
+
+---
+
+### Practical Examples for Investigative Journalism
+
+#### Example 1: Find All Articles About a Breaking Story
+1. Search for articles containing keywords
+2. Group similar articles to find the main story
+3. Extract keywords from the main cluster
+
+#### Example 2: Detect Coordinated Messaging
+Analyze similarity between political news sources to find sources that publish very similar content, which could indicate coordinated messaging or syndication.
+
+#### Example 3: Track a Developing Story
+Extract keywords from articles about a topic, compare with previous articles, and group recent articles to see how the story is evolving.
+
+#### Example 4: Content Analysis Workflow
+1. Get articles from a specific source
+2. Extract keywords from each article
+3. Find cross-article keywords (keywords appearing in multiple articles)
+4. Calculate similarity between articles to find related stories
+5. Group articles by similarity to organize your research
+
+---
+
+### Understanding the Results
+
+#### Similarity Scores
+- 0.0 - 0.3: Articles are about different topics
+- 0.3 - 0.6: Articles share some common themes or keywords
+- 0.6 - 0.8: Articles are quite similar, likely about the same event
+- 0.8 - 1.0: Articles are very similar or identical
+
+#### Cluster Analysis
+- Cluster Size: Number of articles in the group
+- Average Similarity: How similar the articles are to each other
+- Use larger thresholds (0.8+) for tighter clusters
+- Use smaller thresholds (0.5-0.7) for broader groupings
+
+#### Source Similarity
+- High Similarity Percentage: Percentage of article pairs above the threshold
+- Average Similarity: Overall similarity across all comparisons
+- Look for outliers: Sources with unusually high similarity to others
