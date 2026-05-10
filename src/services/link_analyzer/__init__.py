@@ -15,6 +15,11 @@ Author: Open Omniscience Team
 from .extractor import LinkExtractor
 from .classifier import LinkClassifier
 from .source_identifier import SourceIdentifier
+from .source_scraper import SourceScraper
+from .relationship_tracker import RelationshipTracker
+from .temporal_analyzer import TemporalAnalyzer
+from .network_analyzer import NetworkAnalyzer
+from .credibility_scorer import CredibilityScorer
 
 # Main service class that combines all functionality
 class LinkAnalyzerService:
@@ -30,6 +35,11 @@ class LinkAnalyzerService:
         self.extractor = LinkExtractor()
         self.classifier = LinkClassifier()
         self.source_identifier = SourceIdentifier()
+        self.source_scraper = SourceScraper()
+        self.relationship_tracker = RelationshipTracker()
+        self.temporal_analyzer = TemporalAnalyzer()
+        self.network_analyzer = NetworkAnalyzer()
+        self.credibility_scorer = CredibilityScorer()
     
     def extract_and_analyze_links(self, article_id, html_content, article_url=None, article_published_at=None):
         """
@@ -62,13 +72,55 @@ class LinkAnalyzerService:
         # Identify sources
         identified_sources = self.source_identifier.identify_sources(classified_links)
         
+        # Track relationships
+        relationships = self.relationship_tracker.track_relationships(
+            article_id, 
+            classified_links, 
+            identified_sources,
+            article_published_at=article_published_at
+        )
+        
+        # Perform temporal analysis
+        temporal_analysis = self.temporal_analyzer.analyze_temporal_patterns(
+            article_id, 
+            relationships,
+            article_published_at=article_published_at
+        )
+        
         return {
             'extracted_links': extracted_links,
             'classified_links': classified_links,
-            'identified_sources': identified_sources
+            'identified_sources': identified_sources,
+            'relationships': relationships,
+            'temporal_analysis': temporal_analysis
         }
     
 
+    
+    def analyze_source_network(self, source_ids=None, time_range=None):
+        """
+        Analyze the network of sources and their relationships.
+        
+        Args:
+            source_ids: List of source IDs to analyze (None for all)
+            time_range: Time range for analysis (start_date, end_date)
+            
+        Returns:
+            dict: Network analysis results
+        """
+        return self.network_analyzer.analyze_network(source_ids, time_range)
+    
+    def calculate_credibility_scores(self, source_ids=None):
+        """
+        Calculate credibility scores for sources.
+        
+        Args:
+            source_ids: List of source IDs to score (None for all)
+            
+        Returns:
+            dict: Credibility scores for each source
+        """
+        return self.credibility_scorer.calculate_scores(source_ids)
     
     def get_link_statistics(self, article_ids=None, time_range=None):
         """
@@ -93,5 +145,10 @@ __all__ = [
     'LinkExtractor',
     'LinkClassifier', 
     'SourceIdentifier',
+    'SourceScraper',
+    'RelationshipTracker',
+    'TemporalAnalyzer',
+    'NetworkAnalyzer',
+    'CredibilityScorer',
     'link_analyzer'
 ]
