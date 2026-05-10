@@ -417,6 +417,335 @@ class ArticleKeyword(Base):
 
 
 
+# Link Tracking Models for Source/Link Tracking System
+
+class LinkClassificationRule(Base):
+    """
+    Represents a rule for classifying links.
+    
+    Attributes:
+        id: Primary key.
+        rule_name: Name of the classification rule.
+        pattern: URL pattern to match (regex).
+        classification_type: Type of classification (source, reference, ad, social, navigation, other).
+        priority: Priority of the rule (higher = applied first).
+        is_active: Whether the rule is active.
+        created_at: Timestamp when the rule was created.
+        updated_at: Timestamp when the rule was last updated.
+    """
+    __tablename__ = "link_classification_rules"
+    
+    id = Column(Integer, primary_key=True)
+    rule_name = Column(String(100), nullable=False, unique=True)
+    pattern = Column(String(500), nullable=False)
+    classification_type = Column(String(50), nullable=False)  # source, reference, ad, social, navigation, other
+    priority = Column(Integer, default=1)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_link_classification_rule_name', 'rule_name', unique=True),
+        Index('idx_link_classification_type', 'classification_type'),
+        Index('idx_link_classification_priority', 'priority'),
+        Index('idx_link_classification_active', 'is_active'),
+    )
+    
+    def __repr__(self):
+        return f"<LinkClassificationRule(rule_name='{self.rule_name}', classification_type='{self.classification_type}')>"
+
+
+class ExternalSource(Base):
+    """
+    Represents an external source (website, publication, etc.) that is referenced in articles.
+    
+    Attributes:
+        id: Primary key.
+        domain: Domain of the source (e.g., "nytimes.com").
+        name: Name of the source (e.g., "The New York Times").
+        url: Base URL of the source.
+        source_type: Type of source (news, blog, academic, government, etc.).
+        credibility_score: Credibility score (0-100).
+        political_bias: Political bias score (-100 to 100, left to right).
+        country: Country code (ISO 3166-1 alpha-2).
+        language: Primary language code (ISO 639-1).
+        description: Description of the source.
+        founded_year: Year the source was founded.
+        alexa_rank: Alexa rank of the domain.
+        social_media_followers: Number of social media followers.
+        is_verified: Whether the source has been verified.
+        last_verified_at: Timestamp when the source was last verified.
+        created_at: Timestamp when the source was first added.
+        updated_at: Timestamp when the source was last updated.
+        source_articles: Relationship to SourceArticle model.
+        links: Relationship to ArticleLink model.
+    """
+    __tablename__ = "external_sources"
+    
+    id = Column(Integer, primary_key=True)
+    domain = Column(String(255), nullable=False, unique=True)
+    name = Column(String(200), nullable=False)
+    url = Column(String(500))
+    source_type = Column(String(50), default="unknown")  # news, blog, academic, government, social, etc.
+    credibility_score = Column(Float, default=50.0)  # 0-100
+    political_bias = Column(Float, default=0.0)  # -100 (left) to 100 (right)
+    country = Column(String(2))
+    language = Column(String(10), default="en")
+    description = Column(Text)
+    founded_year = Column(Integer)
+    alexa_rank = Column(Integer)
+    social_media_followers = Column(Integer)
+    is_verified = Column(Boolean, default=False)
+    last_verified_at = Column(DateTime)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    source_articles = relationship("SourceArticle", back_populates="external_source", cascade="all, delete-orphan")
+    links = relationship("ArticleLink", back_populates="external_source", cascade="all, delete-orphan")
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_external_source_domain', 'domain', unique=True),
+        Index('idx_external_source_name', 'name'),
+        Index('idx_external_source_type', 'source_type'),
+        Index('idx_external_source_credibility', 'credibility_score'),
+        Index('idx_external_source_country', 'country'),
+        Index('idx_external_source_verified', 'is_verified'),
+    )
+    
+    def __repr__(self):
+        return f"<ExternalSource(name='{self.name}', domain='{self.domain}', credibility={self.credibility_score})>"
+
+
+class SourceArticle(Base):
+    """
+    Represents an article from an external source that is referenced in our articles.
+    
+    Attributes:
+        id: Primary key.
+        source_id: Foreign key to ExternalSource.
+        url: URL of the source article.
+        title: Title of the source article.
+        published_at: Publication date of the source article.
+        author: Author of the source article.
+        summary: Summary/description of the source article.
+        content_hash: SHA-256 hash of the source article content.
+        word_count: Number of words in the source article.
+        sentiment_score: Sentiment score of the source article.
+        is_accessible: Whether the source article is still accessible.
+        last_accessed_at: Timestamp when the source article was last accessed.
+        created_at: Timestamp when the source article was first added.
+        updated_at: Timestamp when the source article was last updated.
+        source: Relationship to ExternalSource model.
+        article_links: Relationship to ArticleLink model.
+    """
+    __tablename__ = "source_articles"
+    
+    id = Column(Integer, primary_key=True)
+    source_id = Column(Integer, ForeignKey("external_sources.id"), nullable=False)
+    url = Column(String(1000), nullable=False)
+    title = Column(String(500))
+    published_at = Column(DateTime)
+    author = Column(String(255))
+    summary = Column(Text)
+    content_hash = Column(String(64))  # SHA-256 hash
+    word_count = Column(Integer)
+    sentiment_score = Column(Float)
+    is_accessible = Column(Boolean, default=True)
+    last_accessed_at = Column(DateTime)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    external_source = relationship("ExternalSource", back_populates="source_articles")
+    article_links = relationship("ArticleLink", back_populates="source_article", cascade="all, delete-orphan")
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_source_article_source_id', 'source_id'),
+        Index('idx_source_article_url', 'url', unique=True),
+        Index('idx_source_article_published', 'published_at'),
+        Index('idx_source_article_hash', 'content_hash', unique=True),
+        Index('idx_source_article_accessible', 'is_accessible'),
+    )
+    
+    def __repr__(self):
+        return f"<SourceArticle(title='{self.title[:50] if self.title else 'Untitled'}...', source_id={self.source_id})>"
+
+
+class ArticleLink(Base):
+    """
+    Represents a link found in an article, with classification and relationship tracking.
+    
+    Attributes:
+        id: Primary key.
+        article_id: Foreign key to Article.
+        url: The URL of the link.
+        normalized_url: Normalized URL (for duplicate detection).
+        link_text: The text of the link (anchor text).
+        position: Position of the link in the article (character offset).
+        link_type: Type of link (internal, external, image, etc.).
+        classification: Classification of the link (source, reference, ad, social, navigation, other).
+        external_source_id: Foreign key to ExternalSource (if identified).
+        source_article_id: Foreign key to SourceArticle (if the link points to a known article).
+        is_followable: Whether the link should be followed for scraping.
+        is_working: Whether the link is still working (not 404).
+        last_checked_at: Timestamp when the link was last checked.
+        redirect_url: Final URL after following redirects.
+        http_status: HTTP status code of the link.
+        created_at: Timestamp when the link was first extracted.
+        updated_at: Timestamp when the link was last updated.
+        article: Relationship to Article model.
+        external_source: Relationship to ExternalSource model.
+        source_article: Relationship to SourceArticle model.
+    """
+    __tablename__ = "article_links"
+    
+    id = Column(Integer, primary_key=True)
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False)
+    url = Column(String(1000), nullable=False)
+    normalized_url = Column(String(1000), nullable=False)
+    link_text = Column(String(500))
+    position = Column(Integer)
+    link_type = Column(String(50), default="external")  # internal, external, image, script, stylesheet, etc.
+    classification = Column(String(50), default="other")  # source, reference, ad, social, navigation, other
+    external_source_id = Column(Integer, ForeignKey("external_sources.id"))
+    source_article_id = Column(Integer, ForeignKey("source_articles.id"))
+    is_followable = Column(Boolean, default=True)
+    is_working = Column(Boolean, default=True)
+    last_checked_at = Column(DateTime)
+    redirect_url = Column(String(1000))
+    http_status = Column(Integer)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    article = relationship("Article", back_populates="links")
+    external_source = relationship("ExternalSource", back_populates="links")
+    source_article = relationship("SourceArticle", back_populates="article_links")
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_article_link_article_id', 'article_id'),
+        Index('idx_article_link_url', 'url'),
+        Index('idx_article_link_normalized_url', 'normalized_url'),
+        Index('idx_article_link_classification', 'classification'),
+        Index('idx_article_link_source_id', 'external_source_id'),
+        Index('idx_article_link_source_article_id', 'source_article_id'),
+        Index('idx_article_link_working', 'is_working'),
+        Index('idx_article_link_type', 'link_type'),
+    )
+    
+    def __repr__(self):
+        return f"<ArticleLink(url='{self.url[:50]}...', classification='{self.classification}', article_id={self.article_id})>"
+
+
+class ArticleSourceRelationship(Base):
+    """
+    Represents the relationship between an article and its external sources.
+    
+    This table tracks which external sources are referenced in which articles,
+    including temporal analysis (article date vs. source article date).
+    
+    Attributes:
+        id: Primary key.
+        article_id: Foreign key to Article.
+        source_id: Foreign key to ExternalSource.
+        source_article_id: Foreign key to SourceArticle (if specific article is identified).
+        link_id: Foreign key to ArticleLink (the specific link that created this relationship).
+        relationship_type: Type of relationship (citation, reference, source, etc.).
+        time_delta_days: Difference in days between article publication and source publication.
+        is_temporal_anomaly: Whether there's a temporal anomaly (article published before source).
+        confidence_score: Confidence score of the relationship (0-1).
+        notes: Additional notes about the relationship.
+        created_at: Timestamp when the relationship was created.
+        updated_at: Timestamp when the relationship was last updated.
+        article: Relationship to Article model.
+        external_source: Relationship to ExternalSource model.
+        source_article: Relationship to SourceArticle model.
+        link: Relationship to ArticleLink model.
+    """
+    __tablename__ = "article_source_relationships"
+    
+    id = Column(Integer, primary_key=True)
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False)
+    source_id = Column(Integer, ForeignKey("external_sources.id"), nullable=False)
+    source_article_id = Column(Integer, ForeignKey("source_articles.id"))
+    link_id = Column(Integer, ForeignKey("article_links.id"))
+    relationship_type = Column(String(50), default="reference")  # citation, reference, source, mention, etc.
+    time_delta_days = Column(Float)  # Can be negative if article published before source
+    is_temporal_anomaly = Column(Boolean, default=False)
+    confidence_score = Column(Float, default=0.0)  # 0-1
+    notes = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    article = relationship("Article")
+    external_source = relationship("ExternalSource")
+    source_article = relationship("SourceArticle")
+    link = relationship("ArticleLink")
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_article_source_rel_article_id', 'article_id'),
+        Index('idx_article_source_rel_source_id', 'source_id'),
+        Index('idx_article_source_rel_source_article_id', 'source_article_id'),
+        Index('idx_article_source_rel_link_id', 'link_id'),
+        Index('idx_article_source_rel_type', 'relationship_type'),
+        Index('idx_article_source_rel_anomaly', 'is_temporal_anomaly'),
+        Index('idx_article_source_rel_confidence', 'confidence_score'),
+    )
+    
+    def __repr__(self):
+        return f"<ArticleSourceRelationship(article_id={self.article_id}, source_id={self.source_id}, time_delta={self.time_delta_days} days)"
+
+
+class SourceCredibilityRule(Base):
+    """
+    Represents a rule for calculating source credibility scores.
+    
+    Attributes:
+        id: Primary key.
+        rule_name: Name of the credibility rule.
+        factor: Factor to apply (e.g., alexa_rank, social_followers, etc.).
+        weight: Weight of this factor in the overall score (0-1).
+        min_value: Minimum value for normalization.
+        max_value: Maximum value for normalization.
+        is_inverse: Whether higher values should decrease credibility (e.g., alexa rank).
+        is_active: Whether the rule is active.
+        created_at: Timestamp when the rule was created.
+        updated_at: Timestamp when the rule was last updated.
+    """
+    __tablename__ = "source_credibility_rules"
+    
+    id = Column(Integer, primary_key=True)
+    rule_name = Column(String(100), nullable=False, unique=True)
+    factor = Column(String(50), nullable=False)  # alexa_rank, social_followers, age, verification_status, etc.
+    weight = Column(Float, default=1.0)  # 0-1
+    min_value = Column(Float, default=0.0)
+    max_value = Column(Float, default=100.0)
+    is_inverse = Column(Boolean, default=False)  # True for factors where higher = worse (e.g., alexa rank)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_credibility_rule_name', 'rule_name', unique=True),
+        Index('idx_credibility_rule_factor', 'factor'),
+        Index('idx_credibility_rule_active', 'is_active'),
+    )
+    
+    def __repr__(self):
+        return f"<SourceCredibilityRule(rule_name='{self.rule_name}', factor='{self.factor}', weight={self.weight})>"
+
+
+# Add relationships to existing Article model
+Article.links = relationship("ArticleLink", back_populates="article", cascade="all, delete-orphan")
+
 # Create all tables in the database
 Base.metadata.create_all(engine)
 
