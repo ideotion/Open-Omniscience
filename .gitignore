@@ -21,41 +21,58 @@ wheels/
 *.egg
 
 # Virtual environments
-.env
-.venv
-env/
 venv/
 ENV/
+env/
+.venv/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-*~
 
-# Database
-*.sqlite
-*.db
-
-# Logs
-data/logs/
-*.log
-
-# Cache
-data/scraped_content/
-data/exports/
-
-# OS
+# OS (Linux/Unix)
 .DS_Store
 Thumbs.db
 
-# Node.js
-node_modules/
-package-lock.json
-npm-debug.log*
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
-# Frontend build
-frontend/node_modules/
-frontend/build/
-frontend/dist/
+# Logs and Audit
+audit/
+data/
+logs/
+
+# Local data files
+*.db
+*.sqlite
+*.sqlite3
+
+# Frontend (React)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+
+# Windows-specific files (not needed for Linux app)
+*.bat
+*.cmd
+*.exe
+*.dll
+
+# Compiled Python
+*.pyc
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Project-specific
+Open-Omniscience-Initial-Structure.zip

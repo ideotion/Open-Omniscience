@@ -1,0 +1,320 @@
+#!/bin/bash
+# Open Omniscience AppImage Builder
+# This script creates a portable AppImage for the Open Omniscience application
+
+set -e
+
+# Configuration
+APP_NAME="OpenOmniscience"
+APP_VERSION="0.2.0"
+APP_BINARY="open-omniscience"
+APPDIR="AppDir"
+OUTPUT_DIR="dist"
+FINAL_APPIMAGE="${APP_NAME}-${APP_VERSION}-x86_64.AppImage"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Clean up previous builds
+cleanup() {
+    echo -e "${YELLOW}Cleaning up previous builds...${NC}"
+    rm -rf "$APPDIR" "$OUTPUT_DIR" *.AppImage
+    mkdir -p "$OUTPUT_DIR"
+}
+
+# Create directory structure
+create_structure() {
+    echo -e "${GREEN}Creating AppDir structure...${NC}"
+    mkdir -p "$APPDIR/usr/bin"
+    mkdir -p "$APPDIR/usr/lib"
+    mkdir -p "$APPDIR/usr/share/open-omniscience/src"
+    mkdir -p "$APPDIR/usr/share/open-omniscience/configs"
+    mkdir -p "$APPDIR/usr/share/open-omniscience/docs"
+    mkdir -p "$APPDIR/usr/share/open-omniscience/data"
+    mkdir -p "$APPDIR/usr/share/open-omniscience/audit"
+    mkdir -p "$APPDIR/usr/share/open-omniscience/logs"
+}
+
+# Copy application files
+copy_files() {
+    echo -e "${GREEN}Copying application files...${NC}"
+    
+    # Copy Python source
+    cp -r src/* "$APPDIR/usr/share/open-omniscience/src/"
+    
+    # Copy configs
+    cp -r configs/* "$APPDIR/usr/share/open-omniscience/configs/"
+    
+    # Copy docs
+    cp -r docs/* "$APPDIR/usr/share/open-omniscience/docs/"
+    cp README.md LICENSE ETHICS.md SECURITY.md CONTRIBUTING.md "$APPDIR/usr/share/open-omniscience/"
+    
+    # Copy requirements
+    cp requirements.txt "$APPDIR/usr/share/open-omniscience/"
+}
+
+# Create wrapper script
+create_wrapper() {
+    echo -e "${GREEN}Creating wrapper script...${NC}"
+    
+    cat > "$APPDIR/usr/bin/$APP_BINARY" << 'EOF'
+#!/bin/bash
+
+# Open Omniscience Launcher
+# This script sets up the environment and launches the application
+
+APP_DIR="$(dirname "$(dirname "$(readlink -f "$0")")")/share/open-omniscience"
+
+# Create local directories if they don't exist
+mkdir -p "$HOME/.open-omniscience/data"
+mkdir -p "$HOME/.open-omniscience/audit"
+mkdir -p "$HOME/.open-omniscience/logs"
+
+# Set environment variables
+export OPEN_OMNISCIENCE_DIR="$APP_DIR"
+export DATABASE_URL="sqlite:///$HOME/.open-omniscience/data/open_omniscience.db"
+export PYTHONPATH="$APP_DIR/src:$PYTHONPATH"
+
+# Check if Python 3 is available
+if command -v python3 &> /dev/null; then
+    PYTHON=python3
+elif command -v python &> /dev/null; then
+    PYTHON=python
+else
+    echo "Error: Python 3 is required but not found."
+    echo "Please install Python 3.10 or later."
+    exit 1
+fi
+
+# Check Python version
+PYTHON_VERSION=$($PYTHON -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+if [ "$(printf '%s\n%s' "3.10" "$PYTHON_VERSION" | sort -V | head -n1)" != "3.10" ]; then
+    echo "Error: Python 3.10 or later is required (found: $PYTHON_VERSION)"
+    exit 1
+fi
+
+# Install dependencies if not already installed
+if [ ! -f "$HOME/.open-omniscience/requirements_installed" ]; then
+    echo "Installing Python dependencies..."
+    $PYTHON -m pip install --user -q -r "$APP_DIR/requirements.txt"
+    touch "$HOME/.open-omniscience/requirements_installed"
+fi
+
+# Initialize database if it doesn't exist
+if [ ! -f "$HOME/.open-omniscience/data/open_omniscience.db" ]; then
+    echo "Initializing database..."
+    $PYTHON -c "
+import sys
+sys.path.insert(0, '$APP_DIR/src')
+from database.models import Base, engine
+Base.metadata.create_all(engine)
+print('Database initialized')
+"
+fi
+
+# Launch the application
+echo "Starting Open Omniscience..."
+echo "Access the application at: http://localhost:8000"
+echo "Press Ctrl+C to stop"
+echo ""
+
+$PYTHON -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+EOF
+    
+    chmod +x "$APPDIR/usr/bin/$APP_BINARY"
+}
+
+# Create AppRun file
+create_apprun() {
+    echo -e "${GREEN}Creating AppRun file...${NC}"
+    
+    cat > "$APPDIR/AppRun" << 'EOF'
+#!/bin/bash
+HERE="$(dirname "$(readlink -f "${0}")")"
+exec "${HERE}/usr/bin/open-omniscience" "$@"
+EOF
+    
+    chmod +x "$APPDIR/AppRun"
+}
+
+# Create desktop file
+create_desktop() {
+    echo -e "${GREEN}Creating desktop integration...${NC}"
+    
+    cat > "$APPDIR/open-omniscience.desktop" << EOF
+[Desktop Entry]
+Name=Open Omniscience
+Exec=AppRun
+Icon=open-omniscience
+Type=Application
+Categories=Utility;News;Journalism;
+Terminal=true
+Comment=Global Intelligence Platform for Investigative Journalism
+Version=$APP_VERSION
+EOF
+    
+    # Create icon from SVG
+    mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+    
+    # Try to convert SVG to PNG using ImageMagick
+    if command -v convert &> /dev/null; then
+        echo -e "${GREEN}Converting SVG icon to PNG...${NC}"
+        convert -background none -resize 256x256 package/appimage/open-omniscience.svg "$APPDIR/usr/share/icons/hicolor/256x256/apps/open-omniscience.png"
+    else
+        echo -e "${YELLOW}ImageMagick not found, using SVG directly...${NC}"
+        cp package/appimage/open-omniscience.svg "$APPDIR/usr/share/icons/hicolor/256x256/apps/open-omniscience.svg"
+        # Create a placeholder PNG as fallback
+        cat > "$APPDIR/usr/share/icons/hicolor/256x256/apps/open-omniscience.png" << 'ICON'
+This is a placeholder icon. The SVG version is also included.
+ICON
+    fi
+}
+
+# Create AppStream metadata
+create_appstream() {
+    echo -e "${GREEN}Creating AppStream metadata...${NC}"
+    
+    cat > "$APPDIR/usr/share/metainfo/open-omniscience.appdata.xml" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>open-omniscience.desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Open Omniscience</name>
+  <summary>Global Intelligence Platform for Investigative Journalism</summary>
+  <description>
+    <p>Open Omniscience is an ethically impeccable, open-source, and portable global intelligence platform designed to aggregate raw news information from diverse worldwide sources into a unified, highly searchable, and auditable database.</p>
+    <p>Its primary function is to empower investigative journalism by enabling users to cross-reference disparate pieces of information, identify complex patterns, disinformation schemes, or emerging trends across geopolitical boundaries, and preserve data integrity and provenance for accountability.</p>
+  </description>
+  <url type="homepage">https://github.com/ideotion/Open-Omniscience</url>
+  <url type="bugtracker">https://github.com/ideotion/Open-Omniscience/issues</url>
+  <url type="help">https://github.com/ideotion/Open-Omniscience/blob/master/ETHICS.md</url>
+  <url type="donation">https://github.com/ideotion/Open-Omniscience</url>
+  <developer_name>Ideotion</developer_name>
+  <releases>
+    <release version="$APP_VERSION" date="2026-05-08">
+      <description>
+        <p>Initial release of Open Omniscience MVP.</p>
+        <ul>
+          <li>Global scraping from 100+ news sources</li>
+          <li>Ethical scraping with robots.txt compliance</li>
+          <li>Duplicate detection with URL canonicalization and content hashing</li>
+          <li>SQLite and PostgreSQL database support</li>
+          <li>Advanced search with Boolean operators</li>
+          <li>CSV and JSON export</li>
+          <li>Modern web interface with visualizations</li>
+          <li>Audit logging for all scraping activities</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-cartoon">none</content_attribute>
+    <content_attribute id="violence-fantasy">none</content_attribute>
+    <content_attribute id="violence-bloodshed">none</content_attribute>
+    <content_attribute id="violence-sexual">none</content_attribute>
+    <content_attribute id="violence-descriptive">none</content_attribute>
+    <content_attribute id="sex-nudity">none</content_attribute>
+    <content_attribute id="sex-themes">none</content_attribute>
+    <content_attribute id="sex-homosexuality">none</content_attribute>
+    <content_attribute id="sex-prostitution">none</content_attribute>
+    <content_attribute id="sex-adultery">none</content_attribute>
+    <content_attribute id="language-humor">mild</content_attribute>
+    <content_attribute id="language-strong">none</content_attribute>
+    <content_attribute id="language-manipulative">none</content_attribute>
+    <content_attribute id="substance-use">none</content_attribute>
+    <content_attribute id="substance-tobacco">none</content_attribute>
+    <content_attribute id="substance-alcohol">none</content_attribute>
+    <content_attribute id="substance-drugs">none</content_attribute>
+    <content_attribute id="gambling">none</content_attribute>
+  </content_rating>
+</component>
+EOF
+}
+
+# Build AppImage
+build_appimage() {
+    echo -e "${GREEN}Building AppImage...${NC}"
+    
+    # Check if linuxdeploy is available
+    if ! command -v linuxdeploy &> /dev/null; then
+        echo -e "${RED}Error: linuxdeploy not found. Please install it first.${NC}"
+        echo ""
+        echo "To install linuxdeploy on Ubuntu/Debian:"
+        echo "  wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+        echo "  chmod +x linuxdeploy-x86_64.AppImage"
+        echo "  sudo mv linuxdeploy-x86_64.AppImage /usr/local/bin/linuxdeploy"
+        echo ""
+        echo "Or visit: https://github.com/linuxdeploy/linuxdeploy"
+        exit 1
+    fi
+    
+    # Check if appimagetool is available
+    if ! command -v appimagetool &> /dev/null; then
+        echo -e "${RED}Error: appimagetool not found. Please install it first.${NC}"
+        echo ""
+        echo "To install appimagetool on Ubuntu/Debian:"
+        echo "  wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+        echo "  chmod +x appimagetool-x86_64.AppImage"
+        echo "  sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool"
+        echo ""
+        echo "Or visit: https://github.com/AppImage/AppImageKit"
+        exit 1
+    fi
+    
+    # Build the AppImage
+    echo -e "${GREEN}Running linuxdeploy...${NC}"
+    linuxdeploy-x86_64.AppImage \
+        --appdir "$APPDIR" \
+        --desktop-file "$APPDIR/open-omniscience.desktop" \
+        --icon-filename "$APPDIR/usr/share/icons/hicolor/256x256/apps/open-omniscience.png" \
+        --executable "$APPDIR/AppRun" \
+        --output appimage
+    
+    # Move the AppImage to output directory
+    if [ -f "OpenOmniscience-${APP_VERSION}-x86_64.AppImage" ]; then
+        mv "OpenOmniscience-${APP_VERSION}-x86_64.AppImage" "$OUTPUT_DIR/$FINAL_APPIMAGE"
+        chmod +x "$OUTPUT_DIR/$FINAL_APPIMAGE"
+        echo -e "${GREEN}AppImage created: $OUTPUT_DIR/$FINAL_APPIMAGE${NC}"
+    else
+        echo -e "${RED}Error: AppImage was not created. Check for errors above.${NC}"
+        exit 1
+    fi
+}
+
+# Main execution
+main() {
+    echo "=========================================="
+    echo "Open Omniscience AppImage Builder"
+    echo "Version: $APP_VERSION"
+    echo "=========================================="
+    echo ""
+    
+    cleanup
+    create_structure
+    copy_files
+    create_wrapper
+    create_apprun
+    create_desktop
+    create_appstream
+    build_appimage
+    
+    echo ""
+    echo "=========================================="
+    echo -e "${GREEN}AppImage build complete!${NC}"
+    echo ""
+    echo "Output: $OUTPUT_DIR/$FINAL_APPIMAGE"
+    echo ""
+    echo "To run the AppImage:"
+    echo "  ./dist/OpenOmniscience-${APP_VERSION}-x86_64.AppImage"
+    echo ""
+    echo "To make it executable:"
+    echo "  chmod +x dist/OpenOmniscience-${APP_VERSION}-x86_64.AppImage"
+    echo "=========================================="
+}
+
+# Run main function
+main "$@"
