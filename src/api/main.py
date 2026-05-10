@@ -43,6 +43,9 @@ from api.keyword_management import router as keyword_management_router
 # Import keyword analysis router
 from api.keyword_analysis import router as keyword_analysis_router
 
+# Import link analysis router
+from api.link_analysis import router as link_analysis_router
+
 # Configure logging using shared config
 from utils.logging_config import setup_logging
 logger = setup_logging("api")
@@ -103,6 +106,9 @@ app.include_router(keyword_management_router)
 
 # Include keyword analysis router
 app.include_router(keyword_analysis_router)
+
+# Include link analysis router
+app.include_router(link_analysis_router)
 
 # Serve static files (HTML5 frontend)
 app.mount("/", StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True), name="static")
