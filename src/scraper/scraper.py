@@ -6,7 +6,7 @@ import feedparser
 from urllib.robotparser import RobotFileParser
 from urllib.parse import urlparse
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 import logging
 import sys
@@ -58,7 +58,7 @@ class Scraper:
 
     def _log_error(self, error_msg):
         with open(self.error_log, "a") as f:
-            f.write(f"{datetime.utcnow().isoformat() + 'Z'}, {error_msg}\n")
+            f.write(f"{datetime.now(timezone.utc).isoformat() + 'Z'}, {error_msg}\n")
 
     def _get_domain(self, source):
         """Extract domain from source config, handling both 'domain' and 'url' fields."""
@@ -116,7 +116,7 @@ class Scraper:
                     # Extract or default values
                     title = entry.get("title", "No Title")
                     content = entry.get("description", "") or entry.get("summary", "") or "No Content"
-                    published_at = entry.get("published", datetime.utcnow().isoformat())
+                    published_at = entry.get("published", datetime.now(timezone.utc).isoformat())
                     url = entry.get("link", rss_url)
 
                     # Clean content: remove HTML tags if present
@@ -159,7 +159,7 @@ class Scraper:
 
                     # Try to extract publication date
                     time_element = article.select_one("time, .date, .published")
-                    published_at = time_element.get("datetime") if time_element and time_element.has_attr("datetime") else datetime.utcnow().isoformat()
+                    published_at = time_element.get("datetime") if time_element and time_element.has_attr("datetime") else datetime.now(timezone.utc).isoformat()
 
                     # Try to extract language from HTML lang attribute or meta
                     language = soup.html.get("lang", "en") if soup.html else "en"
@@ -227,7 +227,7 @@ class Scraper:
         with open(self.audit_log, "a") as f:
             writer = csv.writer(f)
             writer.writerow([
-                datetime.utcnow().isoformat() + "Z",
+                datetime.now(timezone.utc).isoformat() + "Z",
                 url,
                 source,
                 status,

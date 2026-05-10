@@ -313,7 +313,7 @@ results = session.query(Article).filter(
    - Example: Delete articles older than 1 year:
      ```python
      from datetime import datetime, timedelta
-     one_year_ago = datetime.utcnow() - timedelta(days=365)
+     one_year_ago = datetime.now(timezone.utc) - timedelta(days=365)
      session.query(Article).filter(Article.published_at < one_year_ago).delete()
      session.commit()
      ```

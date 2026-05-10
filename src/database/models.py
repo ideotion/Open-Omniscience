@@ -9,9 +9,8 @@ Author: Ideotion
 """
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float, create_engine, Index, Table
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
-from datetime import datetime
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 
@@ -43,7 +42,7 @@ source_group_association = Table(
     Base.metadata,
     Column('source_id', Integer, ForeignKey('sources.id'), primary_key=True),
     Column('group_id', Integer, ForeignKey('source_groups.id'), primary_key=True),
-    Column('added_at', DateTime, default=datetime.utcnow),
+    Column('added_at', DateTime, default=lambda: datetime.now(timezone.utc)),
     # Indexes for performance
     Index('idx_source_group_source_id', 'source_id'),
     Index('idx_source_group_group_id', 'group_id'),
@@ -82,8 +81,8 @@ class SourceGroup(Base):
     priority = Column(Integer, default=2)
     rate_limit_ms = Column(Integer, default=2000)
     enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Many-to-many relationship with sources
     sources = relationship(
@@ -250,7 +249,7 @@ class Article(Base):
     published_at = Column(DateTime)
     language = Column(String(10))
     hash = Column(String(64), nullable=False, unique=True)  # SHA-256 hash length is 64
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationship to source
     source = relationship("Source", back_populates="articles")
@@ -283,7 +282,7 @@ article_keyword_association = Table(
     Column('frequency', Integer, default=1),
     Column('position', Integer),
     Column('relevance_score', Float, default=0.0),
-    Column('created_at', DateTime, default=datetime.utcnow),
+    Column('created_at', DateTime, default=lambda: datetime.now(timezone.utc)),
     # Indexes for performance
     Index('idx_article_keyword_article_id', 'article_id'),
     Index('idx_article_keyword_keyword_id', 'keyword_id'),
@@ -313,8 +312,8 @@ class KeywordCategory(Base):
     parent_id = Column(Integer, ForeignKey("keyword_categories.id"))
     color = Column(String(20), default="#666666")
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Self-referential relationship for hierarchical categories
     parent = relationship("KeywordCategory", remote_side=[id], back_populates="children")
@@ -361,8 +360,8 @@ class Keyword(Base):
     is_entity = Column(Boolean, default=False)
     entity_type = Column(String(50))
     relevance_score = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     category = relationship("KeywordCategory", back_populates="keywords")
@@ -411,7 +410,7 @@ class ArticleKeyword(Base):
     first_position = Column(Integer)
     last_position = Column(Integer)
     relevance_score = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     def __repr__(self):
         return f"<ArticleKeyword(article_id={self.article_id}, keyword_id={self.keyword_id}, frequency={self.frequency})>"

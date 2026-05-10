@@ -15,7 +15,7 @@ import sys
 import logging
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 # Add parent directories to path for imports
@@ -155,7 +155,7 @@ class IngestionPipeline:
                     try:
                         published_at = datetime.fromisoformat(published_at)
                     except ValueError:
-                        published_at = datetime.utcnow()
+                        published_at = datetime.now(timezone.utc)
                         logger.warning(f"Invalid date format for article: {article.get('url', 'unknown')}")
                 
                 # Create new article record

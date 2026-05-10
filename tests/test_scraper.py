@@ -13,7 +13,7 @@ import pytest
 import tempfile
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import yaml
 import csv
 
@@ -153,7 +153,7 @@ def test_duplicate_detection():
             source_id=source.id,
             title="Test Article",
             content=content,
-            published_at=datetime.utcnow(),
+            published_at=datetime.now(timezone.utc),
             language="en",
             hash=generate_content_hash(content)
         )
@@ -167,7 +167,7 @@ def test_duplicate_detection():
             source_id=source.id,
             title="Test Article 2",
             content=content,  # Same content = same hash
-            published_at=datetime.utcnow(),
+            published_at=datetime.now(timezone.utc),
             language="en",
             hash=generate_content_hash(content)  # Same hash
         )
