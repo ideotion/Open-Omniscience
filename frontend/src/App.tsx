@@ -1,141 +1,207 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Paper, CircularProgress, Alert, Grid, Card, CardContent } from '@mui/material';
-import { Check as CheckIcon, Error as ErrorIcon, Info as InfoIcon } from '@mui/icons-material';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
+import {
+  AppBar,
+  Toolbar,
+  Typography,
+  Box,
+  Drawer,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  IconButton,
+  Container,
+  CssBaseline,
+  ThemeProvider,
+  createTheme
+} from '@mui/material';
+import {
+  Menu as MenuIcon,
+  Dashboard as DashboardIcon,
+  Article as ArticleIcon,
+  Search as SearchIcon,
+  Analytics as AnalyticsIcon,
+  Share as ShareIcon,
+  Settings as SettingsIcon,
+  BarChart as BarChartIcon,
+  Timeline as TimelineIcon
+} from '@mui/icons-material';
+
+// Import pages
+import DashboardPage from './pages/DashboardPage';
+import ArticlesPage from './pages/ArticlesPage';
+import KeywordsPage from './pages/KeywordsPage';
+import SourcesPage from './pages/SourcesPage';
+import SimilarityPage from './pages/SimilarityPage';
+import SettingsPage from './pages/SettingsPage';
+
+const drawerWidth = 240;
+
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#1976d2',
+    },
+    secondary: {
+      main: '#9c27b0',
+    },
+    background: {
+      default: '#f5f5f5',
+    },
+  },
+});
+
+interface NavItem {
+  text: string;
+  path: string;
+  icon: React.ReactNode;
+}
+
+const navItems: NavItem[] = [
+  { text: 'Dashboard', path: '/', icon: <DashboardIcon /> },
+  { text: 'Articles', path: '/articles', icon: <ArticleIcon /> },
+  { text: 'Keywords', path: '/keywords', icon: <SearchIcon /> },
+  { text: 'Sources', path: '/sources', icon: <ShareIcon /> },
+  { text: 'Similarity', path: '/similarity', icon: <AnalyticsIcon /> },
+  { text: 'Timeline', path: '/timeline', icon: <TimelineIcon /> },
+  { text: 'Statistics', path: '/stats', icon: <BarChartIcon /> },
+  { text: 'Settings', path: '/settings', icon: <SettingsIcon /> },
+];
 
 function App() {
-  const [backendStatus, setBackendStatus] = useState<'checking' | 'healthy' | 'unhealthy' | 'error'>('checking');
-  const [apiInfo, setApiInfo] = useState<any>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<string>('checking...');
 
+  // Check backend health
   useEffect(() => {
-    // Check backend health
-    fetch('http://localhost:8000/health')
-      .then(response => response.json())
-      .then(data => {
-        setBackendStatus(data.status === 'healthy' ? 'healthy' : 'unhealthy');
-        setAPIInfo(data);
-      })
-      .catch(error => {
-        setBackendStatus('error');
-      });
+    const checkBackend = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/health');
+        if (response.ok) {
+          const data = await response.json();
+          setBackendStatus(`✓ Backend: ${data.status}`);
+        } else {
+          setBackendStatus('✗ Backend not responding');
+        }
+      } catch (error) {
+        setBackendStatus('✗ Backend not available');
+      }
+    };
+
+    checkBackend();
+    const interval = setInterval(checkBackend, 30000);
+    return () => clearInterval(interval);
   }, []);
 
-  const features = [
-    {
-      icon: '🔍',
-      title: 'Keyword Extraction',
-      description: 'Automatically extract important keywords from articles with relevance scoring and sentiment analysis.'
-    },
-    {
-      icon: '🔗',
-      title: 'Source Tracking',
-      description: 'Detect and track all links/sources referenced in articles, building a citation network.'
-    },
-    {
-      icon: '📊',
-      title: 'Article Similarity',
-      description: 'Find similar articles using multiple algorithms including TF-IDF, cosine similarity, and more.'
-    },
-    {
-      icon: '📈',
-      title: 'Temporal Analysis',
-      description: 'Track relationships between article publication dates and source dates for investigative insights.'
-    },
-    {
-      icon: '🎨',
-      title: 'Customizable Dashboard',
-      description: 'Drag-and-drop widgets with real-time updates and multiple visualization options.'
-    },
-    {
-      icon: '💾',
-      title: 'Local Storage',
-      description: 'All data stored locally in SQLite database. No cloud dependencies, completely portable.'
-    }
-  ];
-
-  const getStatusComponent = () => {
-    switch (backendStatus) {
-      case 'checking':
-        return (
-          <Alert icon={<CircularProgress size={20} />} severity="info">
-            Checking backend connection...
-          </Alert>
-        );
-      case 'healthy':
-        return (
-          <Alert icon={<CheckIcon />} severity="success">
-            Backend is running and healthy
-          </Alert>
-        );
-      case 'unhealthy':
-        return (
-          <Alert icon={<ErrorIcon />} severity="warning">
-            Backend is running but unhealthy
-          </Alert>
-        );
-      case 'error':
-        return (
-          <Alert icon={<ErrorIcon />} severity="error">
-            Backend is not running. Please start the backend server.
-          </Alert>
-        );
-      default:
-        return null;
-    }
+  const handleDrawerToggle = () => {
+    setMobileOpen(!mobileOpen);
   };
 
+  const drawer = (
+    <div>
+      <Toolbar />
+      <List>
+        {navItems.map((item) => (
+          <ListItem key={item.text} disablePadding>
+            <ListItemButton component={Link} to={item.path}>
+              <ListItemIcon>{item.icon}</ListItemIcon>
+              <ListItemText primary={item.text} />
+            </ListItemButton>
+          </ListItem>
+        ))}
+      </List>
+    </div>
+  );
+
   return (
-    <Box sx={{ 
-      minHeight: '100vh', 
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      p: 3
-    }}>
-      <Paper sx={{ 
-        maxWidth: 1000, 
-        margin: '0 auto',
-        p: 4,
-        borderRadius: 2
-      }}>
-        <Typography variant="h3" component="h1" gutterBottom sx={{ textAlign: 'center' }}>
-          🌐 Open-Omniscience
-        </Typography>
-        
-        <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center', mb: 3 }}>
-          Local Article Intelligence & Source Tracking System
-        </Typography>
-
-        {getStatusComponent()}
-
-        <Grid container spacing={3} sx={{ mt: 3, mb: 4 }}>
-          {features.map((feature, index) => (
-            <Grid item xs={12} sm={6} md={4} key={index}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h5" component="h3" gutterBottom>
-                    {feature.icon} {feature.title}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {feature.description}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-
-        <Paper sx={{ p: 3, backgroundColor: 'background.default' }}>
-          <Typography variant="subtitle1" gutterBottom>
-            <InfoIcon color="primary" sx={{ verticalAlign: 'middle', mr: 1 }} />
-            API Information
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Backend API is running at <code>http://localhost:8000</code>
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            API Documentation: <code>http://localhost:8000/api/docs</code>
-          </Typography>
-        </Paper>
-      </Paper>
-    </Box>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Router>
+        <Box sx={{ display: 'flex' }}>
+          <AppBar
+            position="fixed"
+            sx={{
+              width: { sm: `calc(100% - ${drawerWidth}px)` },
+              ml: { sm: `${drawerWidth}px` },
+            }}
+          >
+            <Toolbar>
+              <IconButton
+                color="inherit"
+                aria-label="open drawer"
+                edge="start"
+                onClick={handleDrawerToggle}
+                sx={{ mr: 2, display: { sm: 'none' } }}
+              >
+                <MenuIcon />
+              </IconButton>
+              <Typography variant="h6" noWrap component="div">
+                Open-Omniscience
+              </Typography>
+              <Box sx={{ flexGrow: 1 }} />
+              <Typography variant="caption" color="inherit">
+                {backendStatus}
+              </Typography>
+            </Toolbar>
+          </AppBar>
+          <Box
+            component="nav"
+            sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
+            aria-label="mailbox folders"
+          >
+            <Drawer
+              variant="temporary"
+              open={mobileOpen}
+              onClose={handleDrawerToggle}
+              ModalProps={{
+                keepMounted: true,
+              }}
+              sx={{
+                display: { xs: 'block', sm: 'none' },
+                '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+              }}
+            >
+              {drawer}
+            </Drawer>
+            <Drawer
+              variant="permanent"
+              sx={{
+                display: { xs: 'none', sm: 'block' },
+                '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+              }}
+              open
+            >
+              {drawer}
+            </Drawer>
+          </Box>
+          <Box
+            component="main"
+            sx={{
+              flexGrow: 1,
+              p: 3,
+              width: { sm: `calc(100% - ${drawerWidth}px)` },
+            }}
+          >
+            <Toolbar />
+            <Container maxWidth="xl">
+              <Routes>
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/articles" element={<ArticlesPage />} />
+                <Route path="/keywords" element={<KeywordsPage />} />
+                <Route path="/sources" element={<SourcesPage />} />
+                <Route path="/similarity" element={<SimilarityPage />} />
+                <Route path="/timeline" element={<DashboardPage />} />
+                <Route path="/stats" element={<DashboardPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Container>
+          </Box>
+        </Box>
+      </Router>
+    </ThemeProvider>
   );
 }
 

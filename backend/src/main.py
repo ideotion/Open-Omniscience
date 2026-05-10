@@ -71,6 +71,16 @@ async def root():
     }
 
 
+
+# Import and include API routers
+from .api import articles, keywords, sources, similarity, dashboard, export
+app.include_router(articles.router, prefix="/api/articles")
+app.include_router(keywords.router, prefix="/api/keywords")
+app.include_router(sources.router, prefix="/api/sources")
+app.include_router(similarity.router, prefix="/api/similarity")
+app.include_router(dashboard.router, prefix="/api/dashboard")
+app.include_router(export.router, prefix="/api/export")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)
