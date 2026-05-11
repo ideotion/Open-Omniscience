@@ -76,3 +76,15 @@ htmlcov/
 
 # Project-specific
 Open-Omniscience-Initial-Structure.zip
+
+# LLM Models (large files, should not be committed)
+.ollama/
+ollama_models/
+*.gguf
+*.safetensors
+*.bin
+*.pth
+
+# Model cache
+~/.ollama/
+/root/.ollama/
