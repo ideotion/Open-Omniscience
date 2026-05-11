@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 
-from ...llm.llm_service import LLMService
-from ...llm.model_manager import ModelManager
-from ...llm.config import get_llm_config
-from ...llm.exceptions import (
+from src.llm.llm_service import LLMService
+from src.llm.model_manager import ModelManager
+from src.llm.config import get_llm_config
+from src.llm.exceptions import (
     OllamaNotInstalledError,
     OllamaNotRunningError,
     ModelNotFoundError,
@@ -220,3 +220,141 @@ async def get_capabilities():
             "available": list(get_llm_config().default_models.keys())
         }
     }
+
+
+# POST endpoints for LLM operations
+@router.post("/generate")
+async def generate_text(
+    request: TextGenerationRequest,
+    service: LLMService = Depends(get_llm_service)
+):
+    """Generate text based on a prompt"""
+    try:
+        result = service.generate_text(
+            prompt=request.prompt,
+            model_id=request.model_id,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+            top_p=getattr(request, 'top_p', 0.9)
+        )
+        return {"result": result, "model": request.model_id or service.config.get_default_model().model_id}
+    except LLMProcessingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat")
+async def chat_completion(
+    request: ChatRequest,
+    service: LLMService = Depends(get_llm_service)
+):
+    """Chat completion with conversation memory"""
+    try:
+        result = service.chat(
+            messages=request.messages,
+            model_id=request.model_id,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens
+        )
+        return {"result": result, "model": request.model_id or service.config.get_default_model().model_id}
+    except LLMProcessingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/extract")
+async def extract_text(
+    request: ExtractionRequest,
+    service: LLMService = Depends(get_llm_service)
+):
+    """Extract structured information from text"""
+    try:
+        result = service.extract_text(
+            text=request.content,
+            extraction_type=request.extraction_type,
+            model_id=request.model_id
+        )
+        return {"result": result, "model": request.model_id or service.config.get_default_model().model_id}
+    except LLMProcessingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/translate")
+async def translate_text(
+    request: TranslationRequest,
+    service: LLMService = Depends(get_llm_service)
+):
+    """Translate text between languages"""
+    try:
+        result = service.translate_text(
+            text=request.text,
+            target_language=request.target_language,
+            source_language=request.source_language,
+            model_id=request.model_id
+        )
+        return {"result": result, "model": request.model_id or service.config.get_default_model().model_id}
+    except LLMProcessingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/analyze")
+async def analyze_text(
+    request: AnalysisRequest,
+    service: LLMService = Depends(get_llm_service)
+):
+    """Analyze text for various characteristics"""
+    try:
+        result = service.analyze_text(
+            text=request.text,
+            analysis_type=request.analysis_type,
+            model_id=request.model_id
+        )
+        return {"result": result, "model": request.model_id or service.config.get_default_model().model_id}
+    except LLMProcessingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/synthesize")
+async def synthesize_text(
+    request: SynthesisRequest,
+    service: LLMService = Depends(get_llm_service)
+):
+    """Synthesize information from multiple sources"""
+    try:
+        result = service.synthesize_text(
+            sources=request.sources,
+            synthesis_type=request.synthesis_type,
+            model_id=request.model_id
+        )
+        return {"result": result, "model": request.model_id or service.config.get_default_model().model_id}
+    except LLMProcessingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/batch")
+async def batch_process(
+    request: BatchProcessRequest,
+    service: LLMService = Depends(get_llm_service)
+):
+    """Process multiple items in batch"""
+    try:
+        result = service.batch_process(
+            items=request.items,
+            operation=request.operation,
+            model_id=request.model_id
+        )
+        return {"result": result, "model": request.model_id or service.config.get_default_model().model_id}
+    except LLMProcessingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

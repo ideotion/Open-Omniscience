@@ -38,6 +38,20 @@ def llm_service(model_manager):
     return LLMService(model_manager)
 
 
+@pytest.fixture
+def config_no_ollama():
+    """Create a test configuration with Ollama disabled"""
+    from src.llm.config import LLMConfig, OllamaConfig
+    config = LLMConfig()
+    config.ollama.enabled = False
+    return config
+
+@pytest.fixture
+def model_manager_no_ollama(config_no_ollama):
+    """Create a model manager with Ollama disabled"""
+    return ModelManager(config_no_ollama)
+
+
 class TestLLMConfig:
     """Tests for LLM configuration"""
     
@@ -89,6 +103,9 @@ class TestModelManager:
     
     def test_list_local_models(self, model_manager):
         """Test listing local models"""
+        import pytest
+        if not model_manager.is_ollama_installed():
+            pytest.skip("Ollama not installed")
         models = model_manager.list_local_models()
         assert isinstance(models, list)
     
@@ -109,6 +126,9 @@ class TestModelManager:
     
     def test_get_disk_usage(self, model_manager):
         """Test getting disk usage"""
+        import pytest
+        if not model_manager.is_ollama_installed():
+            pytest.skip("Ollama not installed")
         usage = model_manager.get_disk_usage()
         assert "total_gb" in usage
         assert "models" in usage
@@ -124,7 +144,11 @@ class TestLLMService:
     
     def test_get_model_info(self, llm_service):
         """Test getting model information"""
+        import pytest
+        if not llm_service.model_manager.is_ollama_installed():
+            pytest.skip("Ollama not installed")
         info = llm_service.get_model_info()
+        assert isinstance(info, dict)
         assert "ollama_running" in info
         assert "ollama_installed" in info
         assert "local_models" in info

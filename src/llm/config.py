@@ -131,8 +131,15 @@ class LLMConfig:
         return None
     
     def get_model_by_id(self, model_id: str) -> Optional[ModelConfig]:
-        """Get model configuration by ID"""
-        return self.default_models.get(model_id)
+        """Get model configuration by ID or model_id"""
+        # First try direct key lookup
+        if model_id in self.default_models:
+            return self.default_models[model_id]
+        # Then try to find by model_id attribute
+        for model in self.default_models.values():
+            if model.model_id == model_id:
+                return model
+        return None
     
     def get_models_for_capability(self, capability: str) -> List[ModelConfig]:
         """Get all models that support a specific capability"""
