@@ -1,0 +1,185 @@
+Open Omniscience ChangeLog
+==========================
+
+This file documents the major changes between versions of Open Omniscience.
+
+---
+
+Version 0.02 (2024-12-19)
+------------------------
+
+**MAJOR FEATURE: Local LLM Support**
+
+This release introduces comprehensive local LLM (Large Language Model) support,
+enabling advanced text processing capabilities while maintaining full data privacy.
+
+### New Features
+
+#### LLM Core Capabilities
+- **Text Generation**: Generate text from prompts with configurable parameters
+- **Chat Completion**: Multi-turn conversations with context memory
+- **Text Extraction**: Extract structured information including:
+  - General text cleaning
+  - Named entities (people, organizations, locations, dates)
+  - Keywords and key phrases
+  - Summaries
+  - Metadata (author, date, title, source)
+  - Direct quotes with speakers
+  - URLs and links
+- **Translation**: Translate text between 11+ languages (en, fr, es, de, it, pt, ru, zh, ja, ar, hi)
+- **Text Analysis**: Comprehensive analysis including:
+  - Sentiment analysis (positive/negative/neutral)
+  - Tone detection (formal, casual, urgent, sarcastic)
+  - Bias detection (political, gender, racial)
+  - Readability metrics (Flesch reading ease, grade level, etc.)
+  - Emotion analysis (joy, anger, sadness, etc.)
+  - Disinformation risk assessment
+- **Information Synthesis**: Combine information from multiple sources into:
+  - Summaries
+  - Comparisons
+  - Chronological timelines
+  - Comprehensive reports
+  - FAQs
+- **Batch Processing**: Efficient processing of multiple items in a single request
+
+#### Model Management
+- Automatic model downloading from Ollama registry
+- Model listing (local and remote)
+- Model removal
+- Model verification and integrity checking
+- Disk usage monitoring
+- Storage optimization features
+
+#### API Endpoints
+Added 10 new REST API endpoints under `/api/llm` prefix:
+- `GET /api/llm/health` - Service health check
+- `GET /api/llm/models` - List available models and status
+- `GET /api/llm/capabilities` - List supported capabilities
+- `POST /api/llm/generate` - Text generation
+- `POST /api/llm/chat` - Chat completion
+- `POST /api/llm/extract` - Text extraction
+- `POST /api/llm/translate` - Translation
+- `POST /api/llm/analyze` - Text analysis
+- `POST /api/llm/synthesize` - Information synthesis
+- `POST /api/llm/batch` - Batch processing
+
+#### Default Models
+Added support for 9 pre-configured open-source models via Ollama:
+- `llama3:8b` (default) - Meta Llama 3 8B, 4.7GB
+- `mistral:7b` - Mistral AI 7B, 4.1GB
+- `phi3:3.8b` - Microsoft Phi-3 3.8B, 2.3GB
+- `qwen2.5:7b` - Alibaba Qwen 2.5 7B, 4.8GB
+- `gemma:7b` - Google Gemma 7B, 4.8GB
+- `llama3:70b` - Meta Llama 3 70B, 40GB
+- `llava:7b` - LLaVA 7B (multimodal), 4.5GB
+- `bart-large` - Facebook BART Large, 1.4GB
+
+### Architecture
+- **Modular Design**: Clean separation of concerns with LLM service layer
+- **Extensible**: Easy to add new model backends (HuggingFace, llama.cpp)
+- **Portable**: Full Docker support for LLM deployment
+- **Open-Source**: 100% open-source models and runtime
+
+### Infrastructure
+- `Dockerfile.llm` - Docker image with Ollama integration
+- `docker-compose.llm.yml` - Docker Compose configuration for LLM
+- `docker-entrypoint.sh` - Custom entrypoint for LLM services
+- `requirements-llm.txt` - Python dependencies for LLM module
+- `scripts/setup_llm.py` - Automated setup script
+
+### Documentation
+- Updated `README.md` with comprehensive LLM section
+- Added `docs/LLM_SETUP_GUIDE.md` - Complete setup guide
+- Added `LLM_README.md` - Detailed LLM documentation
+- Added `LLM_IMPLEMENTATION_SUMMARY.md` - Implementation details
+- Added `FRONTEND_LLM_SUMMARY.md` - Frontend integration guide
+- Added `COMPLETE_IMPLEMENTATION_REPORT.md` - Full report
+
+### Testing
+- Added `tests/test_llm.py` - Unit tests for LLM functionality
+- Added `tests/test_llm_integration.py` - Integration tests
+- Comprehensive test coverage for all LLM capabilities
+
+### Configuration
+- Added environment variables for LLM configuration:
+  - `OLLAMA_HOST`
+  - `OLLAMA_ORIGINS`
+  - `DOWNLOAD_DEFAULT_MODELS`
+  - `AUTO_DOWNLOAD_MODELS`
+  - `MAX_CONTEXT_LENGTH`
+  - `MAX_TOKENS`
+  - `MODEL_LIBRARY_PATH`
+
+### Security
+- All LLM processing happens locally - no data leaves your system
+- Input validation via Pydantic models
+- Proper error handling and graceful degradation
+- No hardcoded credentials or secrets
+
+### Performance
+- Model caching for downloaded models
+- GPU acceleration (automatic when available)
+- Batch processing for efficient multi-item handling
+- Configurable timeouts and retries
+
+### Breaking Changes
+None - All changes are additive. Existing functionality remains unchanged.
+
+### Migration Notes
+No migration required. LLM features are opt-in and disabled by default.
+
+### Known Issues
+- Ollama must be installed and running for LLM features to work
+- Large models require significant RAM and storage
+- CPU-only operation is slow for models >7B parameters
+- GPU acceleration requires NVIDIA GPU with CUDA support
+
+### Dependencies
+- Python 3.8+ (required for LLM support)
+- Ollama (required for LLM features)
+- New Python packages in `requirements-llm.txt`
+
+---
+
+Version 0.2.0 (2024-XX-XX)
+------------------------
+
+Initial MVP release of Open Omniscience.
+
+### Features
+- Core web scraping and crawling capabilities (HTTrack integration)
+- Ethical scraping with robots.txt compliance
+- Duplicate detection and filtering
+- Multi-source aggregation
+- Incremental updates and resume capabilities
+- Unified database for scraped content
+- Advanced search with Boolean operators
+- Metadata extraction
+- Content deduplication
+- Data export in various formats
+- Keyword analysis
+- Link analysis
+- Source management
+- Category classification
+
+### Infrastructure
+- FastAPI backend
+- SQLite and PostgreSQL support
+- Docker support
+- CI/CD pipeline
+- Comprehensive logging
+- Rate limiting
+- Security features
+
+---
+
+For more detailed information, see:
+- [README.md](README.md) - Project overview
+- [LLM_README.md](LLM_README.md) - LLM documentation
+- [docs/LLM_SETUP_GUIDE.md](docs/LLM_SETUP_GUIDE.md) - Setup guide
+- [GitHub Releases](https://github.com/ideotion/Open-Omniscience/releases)
+
+---
+
+*This ChangeLog follows a simple format and may be updated as the project evolves.*
+*For the most up-to-date information, check the Git commit history.*

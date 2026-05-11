@@ -1,0 +1,33 @@
+# LLM-specific dependencies for Open-Omniscience
+# These are in addition to the main requirements.txt
+
+# Core dependencies
+requests>=2.28.0
+pydantic>=2.0.0
+
+# For better JSON handling
+orjson>=3.8.0
+
+# For async support (optional)
+httpx>=0.24.0
+
+# For progress bars when downloading models (optional)
+tqdm>=4.64.0
+
+# For better error handling
+tenacity>=8.2.0
+
+# For type hints
+typing-extensions>=4.5.0
+
+# For configuration management (optional)
+pydantic-settings>=2.0.0
+
+# For logging
+structlog>=23.0.0
+
+# For caching (optional)
+cachetools>=5.3.0
+
+# For rate limiting (optional)
+limits>=3.0.0

@@ -1,11 +1,11 @@
 # Open Omniscience
 
-**An Open-Source, Ethical, Global Intelligence Platform for Investigative Journalism**
+**An Open-Source, Ethical, Global Intelligence Platform for Investigative Journalism with Local LLM Support**
 
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.2.0 (MVP)
+**Version:** 0.02 (with Local LLM Support)
 **License:** [MIT](LICENSE)
 
 ![Open Omniscience Logo](https://via.placeholder.com/150?text=Open+Omniscience)
@@ -19,8 +19,9 @@ Open Omniscience is an **ethically oriented**, **open-source**, and **portable**
 - Cross-reference disparate pieces of information.
 - Identify **complex patterns, disinformation schemes, or emerging trends** across geopolitical boundaries.
 - Preserve **data integrity and provenance** for accountability.
+- **NEW:** Analyze, translate, and synthesize content using **local LLM capabilities**
 
-This project is a **Linux-based application** built as a fork of [HTTrack](https://www.httrack.com/), leveraging its robust crawling capabilities while adding advanced features for **ethical scraping**, **duplicate detection**, and **data management**.
+This project is a **Linux-based application** built as a fork of [HTTrack](https://www.httrack.com/), leveraging its robust crawling capabilities while adding advanced features for **ethical scraping**, **duplicate detection**, **data management**, and now **AI-powered analysis**.
 
 ---
 
@@ -32,6 +33,7 @@ This project is a **Linux-based application** built as a fork of [HTTrack](https
 2. **Adhere to `robots.txt` directives** and terms of service of all scraped websites.
 3. **Use the platform for non-commercial, non-malicious purposes only**.
 4. **Ensure ethical use** as outlined in [ETHICS.md](ETHICS.md).
+5. **All LLM processing happens locally** - no data is sent to external services.
 
 The maintainers of Open Omniscience **do not endorse or assume responsibility** for any misuse of this tool.
 
@@ -39,29 +41,7 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 
 ## 🚀 Getting Started
 
-### One-Line Installation (Recommended)
-
-The easiest way to install Open Omniscience is with our one-line installer:
-
-```bash
-curl -fsSL https://github.com/ideotion/Open-Omniscience/raw/0.01/install | bash
-```
-
-This script will:
-- Detect your operating system
-- Install prerequisites (git, curl, docker, docker-compose)
-- Clone the repository
-- Start the application with Docker
-- Verify the installation
-
-### Prerequisites
-- **Operating System:** Linux (recommended), macOS, or Windows (WSL)
-- **Python:** 3.10+
-- **Dependencies:** See [requirements.txt](requirements.txt)
-- **Database:** SQLite (default) or PostgreSQL (recommended for production)
-- **Docker:** Optional, for containerized deployment
-
-### Quick Start with Docker
+### Quick Start with Docker (Recommended)
 
 The fastest way to get started is using Docker:
 
@@ -74,14 +54,223 @@ cd Open-Omniscience
 cp .env.example .env
 # Edit .env with your settings (optional)
 
-# Start the application
+# Start the application (without LLM)
 docker-compose up -d --build
+
+# OR start with LLM support (requires more resources)
+docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
 
 # Access the application
 # Open http://localhost:8000 in your browser
 ```
 
-### Installation (Development)
+### One-Line Installation (Development)
+
+For development environments:
+
+```bash
+# Clone the repository
+git clone https://github.com/ideotion/Open-Omniscience
+cd Open-Omniscience
+
+# Set up virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux/macOS
+# OR
+.\venv\Scripts\activate   # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# For LLM support (optional)
+pip install -r requirements-llm.txt
+
+# Initialize the database
+mkdir -p data audit logs
+python -c "import sys; sys.path.insert(0, 'src'); from database.models import Base, engine; Base.metadata.create_all(engine); print('Database initialized')"
+
+# Start the application
+uvicorn api.main:app --reload
+
+# Access at http://localhost:8000
+```
+
+---
+
+## 🤖 Local LLM Support (NEW!)
+
+Open Omniscience now includes **comprehensive local LLM support** for text processing, enabling advanced analysis capabilities while maintaining full data privacy.
+
+### 🎯 LLM Capabilities
+
+| Capability | Description | Endpoint | Use Cases |
+|------------|-------------|----------|----------|
+| **Text Generation** | Generate text from prompts | `POST /api/llm/generate` | Content creation, brainstorming |
+| **Chat Completion** | Multi-turn conversations | `POST /api/llm/chat` | Interactive Q&A, decision support |
+| **Text Extraction** | Extract structured information | `POST /api/llm/extract` | Entity extraction, summarization |
+| **Translation** | Translate between languages | `POST /api/llm/translate` | Multilingual content processing |
+| **Text Analysis** | Comprehensive text analysis | `POST /api/llm/analyze` | Sentiment, bias, readability |
+| **Synthesis** | Combine multiple sources | `POST /api/llm/synthesize` | Summaries, comparisons, reports |
+| **Batch Processing** | Process multiple items | `POST /api/llm/batch` | Efficient bulk operations |
+
+### 📚 Supported Models
+
+We support 9 pre-configured open-source models via [Ollama](https://ollama.com):
+
+| Model | Size | VRAM Required | Best For | Default |
+|-------|------|---------------|----------|---------|
+| `phi3:3.8b` | 2.3GB | 3GB | Lightweight tasks | ❌ |
+| `bart-large` | 1.4GB | 3GB | Translation, summarization | ❌ |
+| `mistral:7b` | 4.1GB | 5GB | General purpose | ❌ |
+| **`llama3:8b`** | **4.7GB** | **5GB** | **All tasks** | ✅ |
+| `gemma:7b` | 4.8GB | 5GB | CPU-optimized | ❌ |
+| `qwen2.5:7b` | 4.8GB | 5GB | Multilingual | ❌ |
+| `llava:7b` | 4.5GB | 6GB | Multimodal (text + vision) | ❌ |
+| `llama3:70b` | 40GB | 42GB | High capability | ❌ |
+
+### 🚀 LLM Quick Start
+
+#### Option 1: Automated Setup (Recommended)
+
+```bash
+# Run the setup script to install Ollama and download default models
+python scripts/setup_llm.py --all
+
+# This will:
+# 1. Install Ollama
+# 2. Start Ollama server
+# 3. Download the default model (llama3:8b)
+```
+
+#### Option 2: Manual Setup
+
+```bash
+# 1. Install Ollama
+# Linux/macOS:
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Windows (PowerShell as admin):
+irm https://ollama.com/install.ps1 | iex
+
+# 2. Start Ollama server
+ollama serve
+
+# 3. Download a model
+ollama pull llama3:8b
+
+# 4. Install Python dependencies
+pip install -r requirements-llm.txt
+
+# 5. Start Open Omniscience
+uvicorn api.main:app --reload
+```
+
+#### Verify Installation
+
+```bash
+# Check LLM service health
+curl http://localhost:8000/api/llm/health
+
+# List available models
+curl http://localhost:8000/api/llm/models
+
+# Get capabilities
+curl http://localhost:8000/api/llm/capabilities
+```
+
+### 📖 LLM Usage Examples
+
+#### Text Generation
+
+```bash
+curl -X POST http://localhost:8000/api/llm/generate \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "What are the key trends in investigative journalism in 2024?", "temperature": 0.7}'
+```
+
+#### Translation
+
+```bash
+curl -X POST http://localhost:8000/api/llm/translate \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello, how are you?", "target_language": "fr", "source_language": "en"}'
+```
+
+#### Text Extraction
+
+```bash
+curl -X POST http://localhost:8000/api/llm/extract \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Apple Inc. was founded by Steve Jobs in 1976...", "extraction_type": "entities"}'
+```
+
+#### Text Analysis
+
+```bash
+curl -X POST http://localhost:8000/api/llm/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"text": "This product is amazing and works perfectly!", "analysis_type": "sentiment"}'
+```
+
+For more details, see [LLM_README.md](LLM_README.md)
+
+---
+
+## 🏗️ Architecture
+
+### Core Components
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Open Omniscience                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────┐  │
+│  │   Crawler   │    │   Database  │    │   API Server    │  │
+│  │  (HTTrack)  │    │  (SQLite/   │    │   (FastAPI)     │  │
+│  │             │    │  PostgreSQL)│    │                 │  │
+│  └──────┬──────┘    └──────┬──────┘    └────────┬────────┘  │
+│         │                  │                   │            │
+│         ▼                  ▼                   ▼            │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │                    LLM Service Layer                       │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │  │
+│  │  │  LLMService │  │ ModelManager│  │   Ollama API     │  │  │
+│  │  │             │  │             │  │  (External)       │  │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Technology Stack
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| **Web Crawler** | HTTrack | Website scraping and mirroring |
+| **Backend** | Python 3.8+ | Core application logic |
+| **API Framework** | FastAPI | REST API endpoints |
+| **Database** | SQLite / PostgreSQL | Data storage |
+| **LLM Runtime** | Ollama | Local LLM execution |
+| **LLM Models** | Llama, Mistral, Phi, Qwen, Gemma | Text processing |
+| **Frontend** | HTML5, CSS, JavaScript | User interface |
+| **Containerization** | Docker | Deployment and portability |
+
+---
+
+## 📦 Installation
+
+### Prerequisites
+
+- **Operating System:** Linux (recommended), macOS, or Windows (WSL)
+- **Python:** 3.8+ (required for LLM support)
+- **Dependencies:** See [requirements.txt](requirements.txt)
+- **LLM Dependencies:** See [requirements-llm.txt](requirements-llm.txt)
+- **Database:** SQLite (default) or PostgreSQL (recommended for production)
+- **Docker:** Optional, for containerized deployment
+- **Ollama:** Required for LLM features (optional for core functionality)
+
+### Development Setup
 
 #### 1. Clone the Repository
 ```bash
@@ -89,7 +278,7 @@ git clone https://github.com/ideotion/Open-Omniscience
 cd Open-Omniscience
 ```
 
-#### 2. Set Up a Virtual Environment
+#### 2. Set Up Virtual Environment
 ```bash
 python -m venv venv
 source venv/bin/activate  # Linux/macOS
@@ -99,16 +288,15 @@ source venv/bin/activate  # Linux/macOS
 
 #### 3. Install Dependencies
 ```bash
+# Core dependencies
 pip install -r requirements.txt
+
+# LLM dependencies (optional)
+pip install -r requirements-llm.txt
 ```
 
 #### 4. Initialize the Database
-```bash
-mkdir -p data audit logs
-python -c "import sys; sys.path.insert(0, 'src'); from database.models import Base, engine; Base.metadata.create_all(engine); print('Database initialized')"
-```
 
-#### 4. Initialize the Database
 For **SQLite** (default):
 ```bash
 mkdir -p data/
@@ -130,498 +318,322 @@ For **PostgreSQL** (recommended for production):
    ```
 3. Set the `DATABASE_URL` environment variable:
    ```bash
-   export DATABASE_URL="postgres://open_omniscience:your_password@localhost:5432/open_omniscience"
-   ```
-4. Run the migrations:
-   ```bash
-   cd src/database
-   alembic upgrade head
+   export DATABASE_URL="postgresql://open_omniscience:your_password@localhost:5432/open_omniscience"
    ```
 
 #### 5. Start the Application
 ```bash
-uvicorn src.api.main:app --reload
-```
-- The **main GUI** will be available at `http://localhost:8000`.
-- The **Source Manager Dashboard** will be available at `http://localhost:8000/static/source-manager.html`.
-- The **API** will be available at `http://localhost:8000/api/`.
+# Without LLM support
+uvicorn api.main:app --reload
 
----
-
-## 📁 Project Structure
+# With LLM support (requires Ollama running)
+uvicorn api.main:app --reload
 ```
-Open-Omniscience/
-├── README.md               # Project documentation
-├── ETHICS.md               # Ethical guidelines and compliance
-├── LICENSE                 # MIT License
-├── requirements.txt        # Python dependencies
-├── configs/
-│   ├── sources.yml         # 1900+ news sources configuration
-│   └── settings.yaml       # User preferences and rate limits
-├── src/
-│   ├── scraper/            # Web scraping logic
-│   │   └── scraper.py      # Pure Python scraper (requests + BeautifulSoup + feedparser)
-│   ├── ingestor/           # Data ingestion pipeline
-│   │   ├── url_utils.py    # URL canonicalization and hashing
-│   │   └── import.py       # Bulk data import (CSV/JSON)
-│   ├── database/
-│   ├── init_db.py
-│   └── migrations/
-├── services/
-│   ├── article_intelligence.py  # NEW: Article intelligence tools
-│   ├── duckduckgo.py
-│   ├── keyword_extractor.py
-│   ├── stopwords.py
-│   ├── text_processor.py
-│   └── keyword_analysis.py  # NEW: Keyword analysis service
-           # Database models and ORM (SQLAlchemy + SQLite/PostgreSQL)
-│   │   ├── models.py       # Database models
-│   │   └── migrations/      # Alembic migrations
-│   ├── api/                # FastAPI backend for the GUI
-│   │   ├── main.py         # API endpoints and static file serving
-│   │   └── source_management.py # Source management API endpoints
-│   ├── services/           # External services integration
-│   │   └── duckduckgo.py   # DuckDuckGo search and RSS discovery
-│   ├── database/
-│   ├── init_db.py
-│   └── migrations/
-├── services/
-│   ├── article_intelligence.py  # NEW: Article intelligence tools
-│   ├── duckduckgo.py
-│   ├── keyword_extractor.py
-│   ├── stopwords.py
-│   ├── text_processor.py
-│   └── keyword_analysis.py  # NEW: Keyword analysis service
-           # Database models and ORM (SQLAlchemy + SQLite/PostgreSQL)
-│   │   ├── models.py       # Database models
-│   │   ├── source_manager.py # Source management operations
-│   │   └── migrations/      # Alembic migrations
-│   ├── utils/              # Utility modules
-│   │   └── logging_config.py # Centralized logging
-│   └── static/             # Frontend assets
-│       ├── index.html      # HTML5 frontend
-│       ├── script.js       # Frontend JavaScript
-│       ├── style.css       # Frontend styles
-│       ├── source-manager.html   # Source management dashboard
-│       ├── source-manager.js     # Source manager JavaScript
-│       └── source-manager.css    # Source manager styles
-├── data/                  # Local storage for scraped data (SQLite)
-├── audit/                 # Audit logs and compliance tracking
-├── package/               # Packaging configuration
-│   ├── deb/               # Debian package configuration
-│   └── appimage/          # AppImage configuration
-├── tests/                 # Unit and integration tests
-│   ├── test_scraper.py    # Scraper functionality tests
-│   ├── test_url_utils.py  # URL processing tests
-│   ├── test_duckduckgo.py # DuckDuckGo search module tests
-│   └── test_source_manager.py # Source management tests
-└── docs/                  # Documentation
-    ├── USER_GUIDE.md      # User guide (WIP)
-    ├── DEVELOPER_GUIDE.md  # Developer guide (WIP)
-    └── DATABASE.md        # Database setup and configuration
+
+### Docker Setup
+
+#### Standard Deployment (without LLM)
+```bash
+docker-compose up -d --build
+```
+
+#### LLM-Enabled Deployment
+```bash
+# Start with both standard and LLM services
+docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
+
+# OR use the dedicated LLM Dockerfile
+docker build -t open-omniscience-llm -f Dockerfile.llm .
+docker run -p 8000:8000 -p 11434:11434 open-omniscience-llm
 ```
 
 ---
 
-## 🔒 Security Features
+## 🎯 Features
 
-Open Omniscience includes comprehensive security features to protect against common web vulnerabilities:
+### Core Features
 
-### ✅ Implemented Security Measures
-- **Input Validation**: All user inputs are validated and sanitized
-- **SQL Injection Prevention**: Uses SQLAlchemy ORM with parameterized queries
-- **XSS Prevention**: HTML sanitization and escaping for all user-generated content
-- **Path Traversal Protection**: Safe path handling and filename validation
-- **Security Headers**: HTTP security headers (CSP, XSS Protection, HSTS, etc.)
-- **CORS Configuration**: Configurable CORS with secure defaults
-- **Rate Limiting**: Built-in rate limiting to prevent abuse
-- **Password Hashing**: Secure bcrypt-based password hashing (with fallback)
+#### Web Scraping & Crawling
+- **HTTrack Integration**: Robust website mirroring capabilities
+- **Ethical Scraping**: Respects `robots.txt` and rate limits
+- **Duplicate Detection**: Identifies and filters duplicate content
+- **Multi-Source Aggregation**: Combines data from diverse sources
+- **Incremental Updates**: Resumes interrupted downloads, updates existing mirrors
 
-### 🛡️ Security Utilities
-The project includes a comprehensive security utilities module (`src/utils/security.py`) with functions for:
-- HTML/XSS sanitization
-- SQL injection prevention
-- URL and filename validation
-- Secure token generation
-- Password hashing and verification
+#### Data Management
+- **Unified Database**: Centralized storage for all scraped content
+- **Advanced Search**: Full-text search with Boolean operators
+- **Metadata Extraction**: Automatic extraction of titles, authors, dates, etc.
+- **Content Deduplication**: Prevents storage of duplicate articles
+- **Data Export**: Export data in various formats (JSON, CSV, etc.)
 
-See [SECURITY.md](SECURITY.md) for detailed security documentation and best practices.
+#### Analysis & Processing
+- **Keyword Analysis**: Identify and track keywords across sources
+- **Link Analysis**: Analyze link structures and relationships
+- **Source Management**: Configure and manage news sources
+- **Category Classification**: Automatic categorization of content
+
+### LLM-Powered Features (NEW!)
+
+#### Text Processing
+- **Text Generation**: Create content based on prompts
+- **Chat Completion**: Interactive conversations with context memory
+- **Text Extraction**: Extract entities, keywords, summaries, metadata, quotes, links
+- **Translation**: Translate text between 11+ languages
+- **Text Analysis**: Comprehensive analysis including:
+  - Sentiment analysis (positive/negative/neutral)
+  - Tone detection (formal, casual, urgent, sarcastic)
+  - Bias detection (political, gender, racial)
+  - Readability metrics (Flesch reading ease, grade level)
+  - Emotion analysis (joy, anger, sadness, etc.)
+  - Disinformation risk assessment
+
+#### Information Synthesis
+- **Summarization**: Create concise summaries from multiple sources
+- **Comparison**: Identify similarities and differences between sources
+- **Timeline Creation**: Generate chronological timelines from unstructured text
+- **Report Generation**: Create comprehensive reports with structured output
+- **FAQ Generation**: Generate frequently asked questions and answers
+
+#### Batch Processing
+- **Efficient Multi-Item Processing**: Process multiple texts in a single request
+- **Error Handling**: Graceful handling of failures for individual items
+- **Status Tracking**: Track progress and results for each item
 
 ---
 
-## 🛠️ Configuration
+## 🔌 API Documentation
 
-### Sources
-Edit `configs/sources.yml` to add, remove, or modify news sources. Example:
-```yaml
-sources:
-  - name: "BBC News"
-    domain: "bbc.com"
-    rss_url: "http://feeds.bbci.co.uk/news/rss.xml"
-    rate_limit_ms: 1000  # 1 second between requests
-    enabled: true
-    priority: 1          # 1 = high, 3 = low
-    tags: ["news", "uk"]
+### Base URL
+```
+http://localhost:8000
 ```
 
-### Rate Limiting
-- Default: **1 request per second per domain** (adjustable in `sources.yml`).
-- Global rate limiting: **100 requests/hour** for the API (adjustable in `main.py`).
+### Core API Endpoints
 
-### Database
-- **SQLite**: Default, portable, no setup required.
-- **PostgreSQL**: Recommended for production. See [DATABASE.md](docs/DATABASE.md).
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/sources` | List all configured sources |
+| POST | `/api/sources` | Add a new source |
+| GET | `/api/sources/{id}` | Get source details |
+| PUT | `/api/sources/{id}` | Update a source |
+| DELETE | `/api/sources/{id}` | Delete a source |
+| GET | `/api/articles` | Search and list articles |
+| GET | `/api/articles/{id}` | Get article details |
+| GET | `/api/keywords` | List and analyze keywords |
+| GET | `/api/links` | Analyze link structures |
+| GET | `/api/export` | Export data in various formats |
 
----
+### LLM API Endpoints
 
-## 🔍 Features
+All LLM endpoints are prefixed with `/api/llm`:
 
+| Method | Endpoint | Description | Parameters |
+|--------|----------|-------------|------------|
+| GET | `/api/llm/health` | Check LLM service health | - |
+| GET | `/api/llm/models` | List available models and status | - |
+| GET | `/api/llm/capabilities` | List supported capabilities | - |
+| POST | `/api/llm/generate` | Generate text from prompt | prompt, model_id, temperature, max_tokens |
+| POST | `/api/llm/chat` | Chat completion | messages, model_id, temperature, max_tokens |
+| POST | `/api/llm/extract` | Extract structured information | content, extraction_type, model_id |
+| POST | `/api/llm/translate` | Translate text | text, target_language, source_language, model_id |
+| POST | `/api/llm/analyze` | Analyze text | text, analysis_type, model_id |
+| POST | `/api/llm/synthesize` | Synthesize information | sources, synthesis_type, model_id |
+| POST | `/api/llm/batch` | Batch process multiple items | items, operation, model_id, options |
 
+### Request Examples
 
-
-
-## 📡 API Endpoints
-
-Open Omniscience provides a comprehensive REST API for programmatic access to all features.
-
-### 🧠 Article Intelligence API Endpoints
-
-#### `POST /api/analysis/articles/similarity`
-Calculate similarity between two articles.
-
-**Parameters:**
-- `article_id1` (required): First article ID
-- `article_id2` (required): Second article ID
-- `method` (optional): Similarity method - `cosine` (default), `jaccard`, `euclidean`, `manhattan`
-
-**Response:**
-```json
-{
-  "article_id1": 1,
-  "article_id2": 2,
-  "similarity": 0.85,
-  "method": "cosine"
-}
+#### Search Articles
+```bash
+curl "http://localhost:8000/api/articles?q=investigation&limit=10"
 ```
 
-**Use Case:** Detect duplicate articles, find related content
-
----
-
-#### `POST /api/analysis/articles/group`
-Group articles by similarity using hierarchical clustering.
-
-**Parameters:**
-- `article_ids` (required): Comma-separated list of article IDs
-- `threshold` (optional): Similarity threshold (0.0-1.0), default: 0.7
-- `method` (optional): Similarity method, default: `cosine`
-
-**Response:**
-```json
-{
-  "clusters": [
-    {
-      "cluster_id": 0,
-      "articles": [{"id": 1, "title": "..."}, {"id": 2, "title": "..."}],
-      "size": 2,
-      "average_similarity": 0.85
-    }
-  ],
-  "total_articles": 5,
-  "total_clusters": 2
-}
+#### Generate Text
+```bash
+curl -X POST http://localhost:8000/api/llm/generate \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Summarize the latest trends in AI", "temperature": 0.7}'
 ```
 
-**Use Case:** Story clustering, finding related articles
-
----
-
-#### `POST /api/analysis/keywords/extract`
-Extract keywords from an article with comprehensive metadata.
-
-**Parameters:**
-- `article_id` (required): Article ID to analyze
-
-**Response:**
-```json
-{
-  "article_id": 1,
-  "title": "Article Title",
-  "source": "BBC News",
-  "result": {
-    "terms": [
-      {
-        "term": "election",
-        "frequency": 5,
-        "first_position": 10,
-        "last_position": 200,
-        "all_positions": [10, 50, 100, 150, 200]
-      }
-    ],
-    "frequencies": {"election": 5, "president": 3},
-    "statistics": {"total_terms": 25, "unique_terms": 20}
-  }
-}
+#### Extract Entities
+```bash
+curl -X POST http://localhost:8000/api/llm/extract \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Apple was founded by Steve Jobs...", "extraction_type": "entities"}'
 ```
 
-**Use Case:** Content analysis, keyword tracking
-
----
-
-#### `GET /api/analysis/sources/similarity`
-Analyze how frequently sources publish similar articles.
-
-**Parameters:**
-- `source_ids` (required): Comma-separated list of source IDs
-- `time_range_days` (optional): Time range in days, default: 30
-- `similarity_threshold` (optional): Threshold for high similarity, default: 0.5
-
-**Response:**
-```json
-{
-  "source_pairs": [
-    {
-      "source1_id": 1,
-      "source2_id": 2,
-      "source1_name": "BBC News",
-      "source2_name": "Reuters",
-      "article_count_source1": 15,
-      "article_count_source2": 12,
-      "comparisons": 180,
-      "average_similarity": 0.65,
-      "high_similarity_count": 45,
-      "high_similarity_percentage": 25.0
-    }
-  ],
-  "statistics": {
-    "total_source_pairs": 10,
-    "total_articles_analyzed": 75,
-    "avg_similarity_across_pairs": 0.45,
-    "max_similarity": 0.89,
-    "min_similarity": 0.12,
-    "pairs_above_threshold": 3
-  }
-}
+#### Translate Text
+```bash
+curl -X POST http://localhost:8000/api/llm/translate \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello world", "target_language": "fr", "source_language": "en"}'
 ```
 
-**Use Case:** Detect coordinated messaging, find sources with similar focus
-### 🧠 Article Intelligence & Analysis Tools (NEW!)
-
-Open Omniscience now includes comprehensive **automated article data and intelligence extraction tools** specifically designed for investigative journalism:
-
-#### 🔍 Keyword Analysis
-- **Keyword Identification**: Extract meaningful terms from articles with full metadata
-- **Position Tracking**: Track exact positions where keywords appear in text
-- **Frequency Counting**: Count keyword occurrences within single or multiple articles
-- **Recurrence Analysis**: Identify keywords that appear across multiple articles
-- **N-gram Support**: Extract unigrams, bigrams, and trigrams
-- **Relevance Scoring**: TF-IDF based scoring for keyword importance
-
-#### 📊 Similarity Analysis
-- **Article Similarity**: Calculate percentage similarity between articles (0-100%)
-- **Multiple Algorithms**: Cosine, Jaccard, Euclidean, and Manhattan similarity methods
-- **Duplicate Detection**: Identify near-identical articles automatically
-- **Story Clustering**: Group similar articles using hierarchical clustering
-- **Configurable Thresholds**: Adjust similarity thresholds for different use cases
-
-#### 🔗 Cross-Article Analysis
-- **Cross-Article Keywords**: Find keywords appearing in multiple articles
-- **Source Similarity**: Analyze how frequently sources publish similar content
-- **Coordinated Messaging Detection**: Identify potential syndication or coordinated campaigns
-- **Keyword Co-occurrence Networks**: Map relationships between keywords
-- **Trend Analysis**: Track keyword frequency changes over time
-
-#### 📈 Source Relationship Analysis
-- **Source Pair Comparison**: Compare content similarity between any two sources
-- **Time-Based Analysis**: Focus on specific time periods (last 7, 30, 90 days)
-- **Similarity Frequency**: Count how often sources publish similar articles
-- **Statistical Insights**: Comprehensive statistics about source relationships
-- **Threshold Configuration**: Define what constitutes "similar" content
-
-#### 🎯 Investigative Journalism Use Cases
-- **Story Clustering**: Automatically group related articles to find connected stories
-- **Duplicate Detection**: Identify potential duplicate or syndicated content
-- **Source Relationship Mapping**: Discover which sources share similar editorial focus
-- **Trend Tracking**: Monitor emerging topics and fading stories
-- **Pattern Detection**: Find coordinated messaging across multiple sources
-- **Keyword Network Analysis**: Understand how topics and concepts relate to each other
-
-### 🚀 API Endpoints for Intelligence Tools
-
-All article intelligence features are accessible via REST API:
-
-| Endpoint | Method | Description | Rate Limit |
-|----------|--------|-------------|------------|
-| `/api/analysis/articles/similarity` | POST | Calculate similarity between two articles | 50/hour |
-| `/api/analysis/articles/group` | POST | Group articles by similarity | 20/hour |
-| `/api/analysis/keywords/extract` | POST | Extract keywords from an article | 100/hour |
-| `/api/analysis/sources/similarity` | GET | Analyze similarity between sources | 50/hour |
-
-See [API Documentation](#-api-endpoints) below for detailed usage.
-### ✅ Phase 1 (MVP - Complete)
-| Feature | Description |
-|---------|-------------|
-| **Global Scraping** | Ingest articles from **1900+ predefined sources** (RSS and HTML). |
-| **Ethical Scraping** | Respects `robots.txt`, rate limits, and User-Agent identification. |
-| **Duplicate Detection** | URL canonicalization + content hashing (SHA-256). |
-| **SQLite/PostgreSQL** | Portable (SQLite) or scalable (PostgreSQL) storage. |
-| **Advanced Search** | Full-text search with **Boolean operators** (AND, OR, NOT), filters (date, source, language, tags), and pagination. |
-| **Export** | CSV, JSON, and SQLite dump. |
-| **GUI** | Modern, responsive web interface with **visualizations** (Recharts). |
-| **Audit Logging** | Detailed logs for all scraping activities (`audit/` directory). |
-| **Parallel Scraping** | Multi-threaded scraping for improved performance. |
-| **Error Handling** | Retries failed requests with exponential backoff. |
-| **Source Management** | Comprehensive source management with **groups, tags, metadata, and batch operations**. |
-| **RSS Discovery** | **DuckDuckGo-powered** RSS feed discovery for sources with missing feeds. |
-| **Source Groups** | Organize sources into **custom groups** with shared settings. |
-| **Source Metadata** | Store **geographic, language, and robots.txt** information for each source. |
-| **Batch Operations** | **Enable/disable, set priority, adjust rate limits** for multiple sources at once. |
-| **Tag-Based Groups** | Auto-populate groups based on **source tags**. |
-| **Statistics Dashboard** | **Visual statistics** for sources, groups, and scraping activity. |
-
-### 🚧 Phase 2 (Future)
-| Feature | Status | Description |
-|---------|--------|-------------|
-| **AI-Powered Analysis** | Planned | Sentiment analysis, topic modeling, and entity extraction. |
-| **Real-Time Monitoring** | Planned | Alerts for new articles matching saved queries. |
-| **Collaborative Tagging** | Planned | Shared datasets and community tagging. |
-| **API Authentication** | Planned | User accounts and API keys for rate limiting. |
-| **Plugin System** | Planned | Custom scrapers, analyzers, and exporters. |
+For complete API documentation, see [API Documentation](docs/API.md) (if available) or explore the interactive API docs at `/docs` when the server is running.
 
 ---
 
-## 📜 Ethical Guidelines
-Open Omniscience is committed to **ethical, legal, and responsible** data aggregation. See [ETHICS.md](ETHICS.md) for:
-- **Munich Charter** principles for journalism.
-- **Compliance checklist** for scraping.
-- **Do Not Scrape List** (paywalled, social media, sensitive data).
-- **Audit and accountability** requirements.
-- **Privacy and data protection** policies.
+## 📊 Configuration
 
-> **⚠️ Important:** Violating these guidelines may result in **legal consequences** and **revocation of access**.
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `sqlite:///./data/open_omniscience.db` | Database connection URL |
+| `ALLOWED_ORIGINS` | `http://localhost:8000,http://127.0.0.1:8000` | CORS allowed origins |
+| `OLLAMA_HOST` | `0.0.0.0` | Ollama server host |
+| `OLLAMA_ORIGINS` | `*` | Ollama CORS origins |
+| `DOWNLOAD_DEFAULT_MODELS` | `false` | Auto-download default models |
+| `AUTO_DOWNLOAD_MODELS` | `true` | Auto-download models on first use |
+| `MAX_CONTEXT_LENGTH` | `8192` | Maximum context length for LLM |
+| `MAX_TOKENS` | `4096` | Maximum tokens to generate |
+
+### Configuration Files
+
+- `configs/settings.yaml` - Main application settings
+- `configs/sources.yml` - News source configurations
+- `.env` - Environment variables (not committed to repo)
+
+---
+
+## 🛡️ Security
+
+### Best Practices
+
+1. **Data Privacy**: All LLM processing happens locally - no data leaves your system
+2. **Rate Limiting**: Built-in rate limiting prevents API abuse
+3. **Input Validation**: All inputs are validated and sanitized
+4. **CORS**: Configurable CORS settings for secure cross-origin requests
+5. **HTTPS**: Recommended for production deployments
+
+### Security Features
+
+- **Sanitization**: All user inputs are sanitized to prevent XSS
+- **Rate Limiting**: Prevents brute force and DoS attacks
+- **Authentication**: Can be added for sensitive endpoints
+- **Audit Logging**: Comprehensive logging for security auditing
+
+---
+
+## 📈 Performance
+
+### System Requirements
+
+#### Minimum (Core Features Only)
+- **CPU:** 2 cores
+- **RAM:** 4GB
+- **Storage:** 10GB
+- **OS:** Linux, macOS, or Windows (WSL)
+
+#### Recommended (With LLM Support)
+- **CPU:** 8 cores
+- **RAM:** 16GB
+- **Storage:** 50GB (for 3-4 models)
+- **GPU:** NVIDIA with 8GB VRAM (recommended for better performance)
+- **OS:** Linux (recommended), macOS, or Windows (WSL)
+
+#### High-End (Full LLM Capabilities)
+- **CPU:** 16+ cores
+- **RAM:** 32GB+
+- **Storage:** 100GB+ (for multiple large models)
+- **GPU:** NVIDIA with 24GB+ VRAM
+- **OS:** Linux
+
+### Performance Optimizations
+
+- **Model Caching**: Downloaded models are persisted for reuse
+- **GPU Acceleration**: Automatic GPU utilization when available
+- **Batch Processing**: Efficient handling of multiple items
+- **Connection Pooling**: Database connection pooling
+- **Response Caching**: (Planned) Caching for repeated queries
 
 ---
 
 ## 🤝 Contributing
-We welcome contributions from the community! Please read our [Contribution Guidelines](CONTRIBUTING.md) before getting started.
 
-### How to Contribute:
-1. **Fork the repository** and create a feature branch.
-2. **Follow the code style** (PEP 8 for Python, ESLint for JavaScript).
-3. **Write tests** for new features.
-4. **Document your changes** in the code and README.
-5. **Submit a pull request** with a clear description.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-### Areas for Contribution:
-- **New Sources**: Add more news sources to `sources.yml`.
-- **Scraping Improvements**: Better HTML/RSS parsing, anti-blocking measures.
-- **UI/UX**: Improve the frontend (React, charts, accessibility).
-- **Performance**: Optimize database queries, scraping speed.
-- **Documentation**: Improve guides, tutorials, and examples.
-- **Testing**: Add more unit/integration tests.
+### Development Workflow
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Make your changes
+4. Run tests (`pytest`)
+5. Commit your changes (`git commit -m 'Add some feature'`)
+6. Push to the branch (`git push origin feature/your-feature`)
+7. Open a Pull Request
+
+### Code Standards
+
+- Follow PEP 8 style guide
+- Use type hints
+- Write comprehensive docstrings
+- Add tests for new functionality
+- Keep commits atomic and well-described
 
 ---
 
-## 🚀 Deployment
+## 📜 License
 
-Open Omniscience can be deployed in multiple ways:
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-### Docker (Recommended)
+---
 
-The easiest way to deploy is using Docker Compose:
+## 🙏 Acknowledgments
 
-```bash
-# Build and start all services
-docker-compose up -d --build
-
-# Check status
-docker-compose ps
-
-# View logs
-docker-compose logs -f web
-
-# Stop services
-docker-compose down
-```
-
-For production deployment with PostgreSQL:
-```bash
-# Use the production compose file
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-```
-
-### Using Makefile
-
-Convenient commands for development and deployment:
-
-```bash
-# Install dependencies
-make install
-
-# Run in development mode
-make run-dev
-
-# Run tests
-make test
-
-# Build Docker image
-make docker-build
-
-# Deploy with Docker
-make docker-run
-
-# Clean up
-make clean
-```
-
-See [Makefile](Makefile) for all available commands.
-
-### Manual Deployment
-
-For manual deployment without Docker:
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Initialize database
-mkdir -p data audit logs
-python -c "import sys; sys.path.insert(0, 'src'); from database.models import Base, engine; Base.metadata.create_all(engine)"
-
-# Start the application
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
-```
+- **HTTrack**: For the robust web crawling foundation
+- **Ollama**: For the excellent local LLM runtime
+- **Meta, Mistral AI, Microsoft, Alibaba, Google**: For the open-source models
+- **FastAPI**: For the excellent API framework
+- **All Contributors**: For their valuable contributions and feedback
 
 ---
 
 ## 📚 Additional Documentation
 
-- **[ANALYSIS_AND_PLAN.md](ANALYSIS_AND_PLAN.md)** - Detailed repository analysis and deployment plan
-- **[DEPLOYMENT_SUMMARY.md](DEPLOYMENT_SUMMARY.md)** - Quick deployment summary
-- **[DATABASE.md](docs/DATABASE.md)** - Database setup and configuration
-- **[USER_GUIDE.md](docs/USER_GUIDE.md)** - User guide (work in progress)
-- **[DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)** - Developer guide (work in progress)
+- [LLM_README.md](LLM_README.md) - Detailed LLM documentation
+- [LLM_IMPLEMENTATION_SUMMARY.md](LLM_IMPLEMENTATION_SUMMARY.md) - Implementation details
+- [FRONTEND_LLM_SUMMARY.md](FRONTEND_LLM_SUMMARY.md) - Frontend integration guide
+- [COMPLETE_IMPLEMENTATION_REPORT.md](COMPLETE_IMPLEMENTATION_REPORT.md) - Full implementation report
+- [DATABASE.md](docs/DATABASE.md) - Database setup guide
+- [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) - Development guide
+- [USER_GUIDE.md](docs/USER_GUIDE.md) - User guide
+- [ETHICS.md](ETHICS.md) - Ethical guidelines
+- [SECURITY.md](SECURITY.md) - Security best practices
 
 ---
 
-## 📄 License
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+## 🆘 Support
+
+- **GitHub Issues**: Report bugs and request features
+- **Discussions**: Ask questions and share ideas
+- **Documentation**: Check the docs first!
+- **Email**: contact@ideotion.com
 
 ---
 
-## 🙏 Acknowledgments
-- **HTTrack**: For the inspiration and initial crawling logic.
-- **FastAPI**: For the high-performance backend.
-- **SQLAlchemy**: For the flexible ORM.
-- **Recharts**: For the beautiful visualizations.
-- **All Contributors**: For their time, feedback, and support.
+## 📅 Changelog
+
+### Version 0.02 (Current)
+- **NEW:** Local LLM support with comprehensive text processing capabilities
+- **NEW:** 9 pre-configured open-source models
+- **NEW:** 10+ API endpoints for LLM operations
+- **NEW:** Docker support for LLM deployment
+- **NEW:** Automated setup scripts
+- **NEW:** Comprehensive test suite for LLM features
+- Updated API version to 0.02
+- Enhanced documentation with LLM guides
+
+### Version 0.2.0 (Previous)
+- Initial MVP release
+- Core web scraping and data management
+- Basic API endpoints
+- SQLite and PostgreSQL support
+
+For detailed changelog, see [ChangeLog](ChangeLog) or [GitHub Releases](https://github.com/ideotion/Open-Omniscience/releases).
 
 ---
 
-## 📞 Contact
-- **GitHub Issues**: [https://github.com/ideotion/Open-Omniscience/issues](https://github.com/ideotion/Open-Omniscience/issues)
-- **Email**: `open-omniscience@ideotion.com`
-- **Website**: [https://ideotion.com](https://ideotion.com)
+**© 2024 Ideotion. All rights reserved.**
 
----
-**© 2026 Ideotion. All rights reserved.**
+*Built with ❤️ for investigative journalism and ethical data analysis.*

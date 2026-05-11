@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open-Omniscience - Local LLM</title>
+    <link rel="stylesheet" href="css/llm.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="llm-container">
+        <!-- Header -->
+        <header class="llm-header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-brain"></i>
+                    <span>Local LLM</span>
+                </div>
+                <nav class="header-nav">
+                    <button class="nav-btn active" data-section="dashboard">
+                        <i class="fas fa-home"></i> Dashboard
+                    </button>
+                    <button class="nav-btn" data-section="text-generation">
+                        <i class="fas fa-edit"></i> Generate
+                    </button>
+                    <button class="nav-btn" data-section="chat">
+                        <i class="fas fa-comments"></i> Chat
+                    </button>
+                    <button class="nav-btn" data-section="extraction">
+                        <i class="fas fa-search"></i> Extract
+                    </button>
+                    <button class="nav-btn" data-section="translation">
+                        <i class="fas fa-language"></i> Translate
+                    </button>
+                    <button class="nav-btn" data-section="analysis">
+                        <i class="fas fa-chart-bar"></i> Analyze
+                    </button>
+                    <button class="nav-btn" data-section="synthesis">
+                        <i class="fas fa-project-diagram"></i> Synthesize
+                    </button>
+                    <button class="nav-btn" data-section="models">
+                        <i class="fas fa-cube"></i> Models
+                    </button>
+                </nav>
+                <div class="header-actions">
+                    <button id="toggleTheme" class="action-btn">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <button id="refreshStatus" class="action-btn">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="llm-main">
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="section active">
+                <div class="section-header">
+                    <h1><i class="fas fa-home"></i> LLM Dashboard</h1>
+                    <p class="section-description">Overview of your local LLM setup and capabilities</p>
+                </div>
+                
+                <div class="dashboard-grid">
+                    <!-- Status Cards -->
+                    <div class="status-card">
+                        <div class="card-icon">
+                            <i class="fas fa-cube"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3>Ollama Status</h3>
+                            <div id="ollamaStatus" class="status-badge">
+                                <span class="badge dot"></span>
+                                <span>Checking...</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="status-card">
+                        <div class="card-icon">
+                            <i class="fas fa-download"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3>Downloaded Models</h3>
+                            <div id="downloadedModelsCount" class="status-value">0</div>
+                        </div>
+                    </div>
+                    
+                    <div class="status-card">
+                        <div class="card-icon">
+                            <i class="fas fa-hdd"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3>Storage Usage</h3>
+                            <div id="storageUsage" class="status-value">0 GB</div>
+                        </div>
+                    </div>
+                    
+                    <div class="status-card">
+                        <div class="card-icon">
+                            <i class="fas fa-bolt"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3>API Status</h3>
+                            <div id="apiStatus" class="status-badge">
+                                <span class="badge dot"></span>
+                                <span>Checking...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="quick-actions">
+                    <h2><i class="fas fa-rocket"></i> Quick Actions</h2>
+                    <div class="actions-grid">
+                        <button id="startOllama" class="action-card">
+                            <div class="action-icon"><i class="fas fa-play"></i></div>
+                            <div class="action-text">
+                                <h4>Start Ollama</h4>
+                                <p>Start the Ollama server</p>
+                            </div>
+                        </button>
+                        <button id="downloadDefaultModel" class="action-card">
+                            <div class="action-icon"><i class="fas fa-download"></i></div>
+                            <div class="action-text">
+                                <h4>Download Default Model</h4>
+                                <p>Download Llama 3 8B</p>
+                            </div>
+                        </button>
+                        <button id="testGeneration" class="action-card">
+                            <div class="action-icon"><i class="fas fa-magic"></i></div>
+                            <div class="action-text">
+                                <h4>Test Generation</h4>
+                                <p>Test text generation</p>
+                            </div>
+                        </button>
+                        <button id="viewAllModels" class="action-card">
+                            <div class="action-icon"><i class="fas fa-list"></i></div>
+                            <div class="action-text">
+                                <h4>View All Models</h4>
+                                <p>Browse available models</p>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="recent-activity">
+                    <h2><i class="fas fa-clock"></i> Recent Activity</h2>
+                    <div id="activityLog" class="activity-list">
+                        <div class="activity-item">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Waiting for activity...</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Text Generation Section -->
+            <section id="text-generation" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-edit"></i> Text Generation</h1>
+                    <p class="section-description">Generate text based on prompts using local LLMs</p>
+                </div>
+                
+                <div class="generation-container">
+                    <div class="input-panel">
+                        <div class="form-group">
+                            <label for="genModel">Model</label>
+                            <select id="genModel" class="form-select">
+                                <option value="llama3:8b">Llama 3 8B (Default)</option>
+                                <option value="mistral:7b">Mistral 7B</option>
+                                <option value="phi3:3.8b">Phi-3 3.8B</option>
+                                <option value="qwen2.5:7b">Qwen 2.5 7B</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="genPrompt">Prompt</label>
+                            <textarea id="genPrompt" class="form-textarea" placeholder="Enter your prompt here..." rows="6"></textarea>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="genTemperature">Temperature</label>
+                                <input type="range" id="genTemperature" min="0" max="1" step="0.1" value="0.7">
+                                <span id="genTemperatureValue">0.7</span>
+                            </div>
+                            <div class="form-group">
+                                <label for="genMaxTokens">Max Tokens</label>
+                                <input type="number" id="genMaxTokens" min="1" max="4096" value="512">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="genSystemPrompt">System Prompt (Optional)</label>
+                            <input type="text" id="genSystemPrompt" class="form-input" placeholder="You are a helpful assistant.">
+                        </div>
+                        
+                        <button id="generateTextBtn" class="btn btn-primary">
+                            <i class="fas fa-magic"></i> Generate
+                        </button>
+                    </div>
+                    
+                    <div class="output-panel">
+                        <div class="output-header">
+                            <h3><i class="fas fa-file-alt"></i> Output</h3>
+                            <div class="output-actions">
+                                <button id="copyGenOutput" class="btn-icon" title="Copy">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <button id="clearGenOutput" class="btn-icon" title="Clear">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="genOutput" class="output-content">
+                            <p class="placeholder-text">Generated text will appear here...</p>
+                        </div>
+                        <div id="genStats" class="output-stats">
+                            <span><i class="fas fa-clock"></i> Time: <span id="genTime">0</span>ms</span>
+                            <span><i class="fas fa-font"></i> Tokens: <span id="genTokens">0</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Examples -->
+                <div class="examples-panel">
+                    <h3><i class="fas fa-lightbulb"></i> Examples</h3>
+                    <div class="examples-grid">
+                        <button class="example-btn" data-prompt="Write a haiku about open source software.">
+                            <i class="fas fa-code"></i> Haiku
+                        </button>
+                        <button class="example-btn" data-prompt="Explain quantum computing in simple terms.">
+                            <i class="fas fa-atom"></i> Quantum
+                        </button>
+                        <button class="example-btn" data-prompt="Write a Python function to reverse a string.">
+                            <i class="fas fa-file-code"></i> Python
+                        </button>
+                        <button class="example-btn" data-prompt="Summarize the importance of privacy in the digital age.">
+                            <i class="fas fa-lock"></i> Privacy
+                        </button>
+                        <button class="example-btn" data-prompt="Create a story about a robot who learns to feel emotions.">
+                            <i class="fas fa-robot"></i> Story
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Chat Section -->
+            <section id="chat" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-comments"></i> Chat</h1>
+                    <p class="section-description">Multi-turn conversations with local LLMs</p>
+                </div>
+                
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-welcome">
+                            <i class="fas fa-comment-dots"></i>
+                            <p>Start a new conversation</p>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-panel">
+                        <div class="form-group">
+                            <label for="chatModel">Model</label>
+                            <select id="chatModel" class="form-select">
+                                <option value="llama3:8b">Llama 3 8B (Default)</option>
+                                <option value="mistral:7b">Mistral 7B</option>
+                                <option value="phi3:3.8b">Phi-3 3.8B</option>
+                            </select>
+                        </div>
+                        
+                        <div class="chat-input-wrapper">
+                            <textarea id="chatInput" class="form-textarea" placeholder="Type your message here..." rows="3"></textarea>
+                            <button id="sendChatBtn" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i> Send
+                            </button>
+                        </div>
+                        
+                        <div class="chat-actions">
+                            <button id="clearChat" class="btn btn-secondary">
+                                <i class="fas fa-trash"></i> Clear Chat
+                            </button>
+                            <button id="exportChat" class="btn btn-secondary">
+                                <i class="fas fa-download"></i> Export
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Text Extraction Section -->
+            <section id="extraction" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-search"></i> Text Extraction</h1>
+                    <p class="section-description">Extract structured information from text</p>
+                </div>
+                
+                <div class="extraction-container">
+                    <div class="input-panel">
+                        <div class="form-group">
+                            <label for="extModel">Model</label>
+                            <select id="extModel" class="form-select">
+                                <option value="llama3:8b">Llama 3 8B (Default)</option>
+                                <option value="mistral:7b">Mistral 7B</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="extType">Extraction Type</label>
+                            <select id="extType" class="form-select">
+                                <option value="general">General Text</option>
+                                <option value="entities">Named Entities</option>
+                                <option value="keywords">Keywords</option>
+                                <option value="summary">Summary</option>
+                                <option value="metadata">Metadata</option>
+                                <option value="quotes">Quotes</option>
+                                <option value="links">Links</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="extContent">Content</label>
+                            <textarea id="extContent" class="form-textarea" placeholder="Paste your text here..." rows="8"></textarea>
+                        </div>
+                        
+                        <button id="extractTextBtn" class="btn btn-primary">
+                            <i class="fas fa-search"></i> Extract
+                        </button>
+                    </div>
+                    
+                    <div class="output-panel">
+                        <div class="output-header">
+                            <h3><i class="fas fa-file-alt"></i> Extracted Data</h3>
+                            <div class="output-actions">
+                                <button id="copyExtOutput" class="btn-icon" title="Copy">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <button id="clearExtOutput" class="btn-icon" title="Clear">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="extOutput" class="output-content">
+                            <p class="placeholder-text">Extracted data will appear here...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Extraction Examples -->
+                <div class="examples-panel">
+                    <h3><i class="fas fa-lightbulb"></i> Example Texts</h3>
+                    <div class="examples-grid">
+                        <button class="example-btn" data-content="Apple Inc. was founded by Steve Jobs, Steve Wozniak, and Ronald Wayne in 1976. The company is headquartered in Cupertino, California. Apple designs, develops, and sells consumer electronics, computer software, and online services.">
+                            <i class="fas fa-building"></i> Company
+                        </button>
+                        <button class="example-btn" data-content="The quick brown fox jumps over the lazy dog. This sentence contains all the letters in the English alphabet.">
+                            <i class="fas fa-font"></i> Pangram
+                        </button>
+                        <button class="example-btn" data-content="On July 20, 1969, Apollo 11 landed on the Moon. Neil Armstrong and Buzz Aldrin walked on the lunar surface while Michael Collins orbited above.">
+                            <i class="fas fa-rocket"></i> History
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Translation Section -->
+            <section id="translation" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-language"></i> Translation</h1>
+                    <p class="section-description">Translate text between languages</p>
+                </div>
+                
+                <div class="translation-container">
+                    <div class="input-panel">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="transSourceLang">Source Language</label>
+                                <select id="transSourceLang" class="form-select">
+                                    <option value="auto">Auto Detect</option>
+                                    <option value="en">English</option>
+                                    <option value="fr">French</option>
+                                    <option value="es">Spanish</option>
+                                    <option value="de">German</option>
+                                    <option value="it">Italian</option>
+                                    <option value="pt">Portuguese</option>
+                                    <option value="ru">Russian</option>
+                                    <option value="zh">Chinese</option>
+                                    <option value="ja">Japanese</option>
+                                    <option value="ar">Arabic</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="transTargetLang">Target Language</label>
+                                <select id="transTargetLang" class="form-select">
+                                    <option value="en">English</option>
+                                    <option value="fr">French</option>
+                                    <option value="es">Spanish</option>
+                                    <option value="de">German</option>
+                                    <option value="it">Italian</option>
+                                    <option value="pt">Portuguese</option>
+                                    <option value="ru">Russian</option>
+                                    <option value="zh">Chinese</option>
+                                    <option value="ja">Japanese</option>
+                                    <option value="ar">Arabic</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="transText">Text to Translate</label>
+                            <textarea id="transText" class="form-textarea" placeholder="Enter text to translate..." rows="6"></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="transModel">Model</label>
+                            <select id="transModel" class="form-select">
+                                <option value="llama3:8b">Llama 3 8B (Default)</option>
+                                <option value="mistral:7b">Mistral 7B</option>
+                                <option value="qwen2.5:7b">Qwen 2.5 7B</option>
+                            </select>
+                        </div>
+                        
+                        <button id="translateBtn" class="btn btn-primary">
+                            <i class="fas fa-exchange-alt"></i> Translate
+                        </button>
+                    </div>
+                    
+                    <div class="output-panel">
+                        <div class="output-header">
+                            <h3><i class="fas fa-file-alt"></i> Translation</h3>
+                            <div class="output-actions">
+                                <button id="copyTransOutput" class="btn-icon" title="Copy">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <button id="clearTransOutput" class="btn-icon" title="Clear">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="transOutput" class="output-content">
+                            <p class="placeholder-text">Translation will appear here...</p>
+                        </div>
+                        <div id="transStats" class="output-stats">
+                            <span><i class="fas fa-language"></i> From: <span id="transFromLang">Auto</span></span>
+                            <span><i class="fas fa-language"></i> To: <span id="transToLang">English</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Translation Examples -->
+                <div class="examples-panel">
+                    <h3><i class="fas fa-lightbulb"></i> Example Phrases</h3>
+                    <div class="examples-grid">
+                        <button class="example-btn" data-text="Hello, how are you today?" data-from="en" data-to="fr">
+                            <i class="fas fa-comment"></i> Greeting
+                        </button>
+                        <button class="example-btn" data-text="The quick brown fox jumps over the lazy dog." data-from="en" data-to="es">
+                            <i class="fas fa-font"></i> Pangram
+                        </button>
+                        <button class="example-btn" data-text="Open source software is software with source code that anyone can inspect, modify, and enhance." data-from="en" data-to="de">
+                            <i class="fas fa-code"></i> Definition
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Text Analysis Section -->
+            <section id="analysis" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-chart-bar"></i> Text Analysis</h1>
+                    <p class="section-description">Analyze text for various characteristics</p>
+                </div>
+                
+                <div class="analysis-container">
+                    <div class="input-panel">
+                        <div class="form-group">
+                            <label for="analysisModel">Model</label>
+                            <select id="analysisModel" class="form-select">
+                                <option value="llama3:8b">Llama 3 8B (Default)</option>
+                                <option value="mistral:7b">Mistral 7B</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="analysisType">Analysis Type</label>
+                            <select id="analysisType" class="form-select">
+                                <option value="sentiment">Sentiment</option>
+                                <option value="tone">Tone</option>
+                                <option value="bias">Bias Detection</option>
+                                <option value="readability">Readability</option>
+                                <option value="emotion">Emotion</option>
+                                <option value="comprehensive">Comprehensive</option>
+                                <option value="disinformation">Disinformation</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="analysisText">Text to Analyze</label>
+                            <textarea id="analysisText" class="form-textarea" placeholder="Enter text to analyze..." rows="8"></textarea>
+                        </div>
+                        
+                        <button id="analyzeTextBtn" class="btn btn-primary">
+                            <i class="fas fa-chart-line"></i> Analyze
+                        </button>
+                    </div>
+                    
+                    <div class="output-panel">
+                        <div class="output-header">
+                            <h3><i class="fas fa-file-alt"></i> Analysis Results</h3>
+                            <div class="output-actions">
+                                <button id="copyAnalysisOutput" class="btn-icon" title="Copy">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <button id="clearAnalysisOutput" class="btn-icon" title="Clear">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="analysisOutput" class="output-content">
+                            <p class="placeholder-text">Analysis results will appear here...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analysis Examples -->
+                <div class="examples-panel">
+                    <h3><i class="fas fa-lightbulb"></i> Example Texts</h3>
+                    <div class="examples-grid">
+                        <button class="example-btn" data-text="I am extremely happy and satisfied with this amazing product! It has exceeded all my expectations.">
+                            <i class="fas fa-smile"></i> Positive
+                        </button>
+                        <button class="example-btn" data-text="This is the worst experience I've ever had. The service is terrible and I would never recommend it to anyone.">
+                            <i class="fas fa-angry"></i> Negative
+                        </button>
+                        <button class="example-btn" data-text="The article presents a balanced view of the situation, considering both the advantages and disadvantages.">
+                            <i class="fas fa-balance-scale"></i> Neutral
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Synthesis Section -->
+            <section id="synthesis" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-project-diagram"></i> Synthesis</h1>
+                    <p class="section-description">Combine information from multiple sources</p>
+                </div>
+                
+                <div class="synthesis-container">
+                    <div class="input-panel">
+                        <div class="form-group">
+                            <label for="synthesisModel">Model</label>
+                            <select id="synthesisModel" class="form-select">
+                                <option value="llama3:8b">Llama 3 8B (Default)</option>
+                                <option value="mistral:7b">Mistral 7B</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="synthesisType">Synthesis Type</label>
+                            <select id="synthesisType" class="form-select">
+                                <option value="summary">Summary</option>
+                                <option value="comparison">Comparison</option>
+                                <option value="timeline">Timeline</option>
+                                <option value="report">Report</option>
+                                <option value="faq">FAQ</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Sources</label>
+                            <div id="sourcesList" class="sources-list">
+                                <div class="source-item">
+                                    <textarea class="form-textarea source-text" placeholder="Enter source text..." rows="3"></textarea>
+                                    <button class="btn-icon remove-source" title="Remove">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <button id="addSourceBtn" class="btn btn-secondary">
+                                <i class="fas fa-plus"></i> Add Source
+                            </button>
+                        </div>
+                        
+                        <button id="synthesizeBtn" class="btn btn-primary">
+                            <i class="fas fa-project-diagram"></i> Synthesize
+                        </button>
+                    </div>
+                    
+                    <div class="output-panel">
+                        <div class="output-header">
+                            <h3><i class="fas fa-file-alt"></i> Synthesis Result</h3>
+                            <div class="output-actions">
+                                <button id="copySynthesisOutput" class="btn-icon" title="Copy">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <button id="clearSynthesisOutput" class="btn-icon" title="Clear">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="synthesisOutput" class="output-content">
+                            <p class="placeholder-text">Synthesis result will appear here...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Models Section -->
+            <section id="models" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-cube"></i> Model Management</h1>
+                    <p class="section-description">Download, manage, and configure LLM models</p>
+                </div>
+                
+                <div class="models-container">
+                    <!-- Model Status -->
+                    <div class="model-status-panel">
+                        <h2><i class="fas fa-info-circle"></i> Model Status</h2>
+                        <div class="status-grid">
+                            <div class="status-item">
+                                <i class="fas fa-cube"></i>
+                                <div class="status-info">
+                                    <span class="status-label">Ollama Installed</span>
+                                    <span id="ollamaInstalledStatus" class="status-value">Checking...</span>
+                                </div>
+                            </div>
+                            <div class="status-item">
+                                <i class="fas fa-play-circle"></i>
+                                <div class="status-info">
+                                    <span class="status-label">Ollama Running</span>
+                                    <span id="ollamaRunningStatus" class="status-value">Checking...</span>
+                                </div>
+                            </div>
+                            <div class="status-item">
+                                <i class="fas fa-database"></i>
+                                <div class="status-info">
+                                    <span class="status-label">Local Models</span>
+                                    <span id="localModelsCount" class="status-value">0</span>
+                                </div>
+                            </div>
+                            <div class="status-item">
+                                <i class="fas fa-cloud-download-alt"></i>
+                                <div class="status-info">
+                                    <span class="status-label">Available Models</span>
+                                    <span id="availableModelsCount" class="status-value">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="model-actions">
+                            <button id="refreshModels" class="btn btn-secondary">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                            <button id="checkStorage" class="btn btn-secondary">
+                                <i class="fas fa-hdd"></i> Check Storage
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Local Models -->
+                    <div class="models-panel">
+                        <h2><i class="fas fa-download"></i> Local Models</h2>
+                        <div id="localModelsList" class="models-list">
+                            <div class="empty-state">
+                                <i class="fas fa-inbox"></i>
+                                <p>No models downloaded yet</p>
+                                <button id="downloadFirstModel" class="btn btn-primary">
+                                    <i class="fas fa-download"></i> Download Default Model
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Available Models -->
+                    <div class="models-panel">
+                        <h2><i class="fas fa-globe"></i> Available Models</h2>
+                        <div class="models-filter">
+                            <input type="text" id="modelsSearch" class="form-input" placeholder="Search models...">
+                            <select id="modelsFilter" class="form-select">
+                                <option value="all">All Models</option>
+                                <option value="downloaded">Downloaded</option>
+                                <option value="not-downloaded">Not Downloaded</option>
+                            </select>
+                        </div>
+                        <div id="availableModelsList" class="models-list">
+                            <div class="loading-state">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <p>Loading models...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Settings Panel -->
+        <div class="settings-panel">
+            <button id="toggleSettings" class="settings-toggle">
+                <i class="fas fa-cog"></i>
+            </button>
+            <div class="settings-content">
+                <h3><i class="fas fa-cog"></i> Settings</h3>
+                <div class="settings-form">
+                    <div class="form-group">
+                        <label for="apiBaseUrl">API Base URL</label>
+                        <input type="text" id="apiBaseUrl" class="form-input" value="http://localhost:8000">
+                    </div>
+                    <div class="form-group">
+                        <label for="defaultModel">Default Model</label>
+                        <select id="defaultModel" class="form-select">
+                            <option value="llama3:8b">Llama 3 8B</option>
+                            <option value="mistral:7b">Mistral 7B</option>
+                            <option value="phi3:3.8b">Phi-3 3.8B</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="autoDownloadModels"> Auto-download models
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="timeout">API Timeout (seconds)</label>
+                        <input type="number" id="timeout" class="form-input" value="120" min="10" max="600">
+                    </div>
+                    <button id="saveSettings" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div id="toastContainer" class="toast-container"></div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay hidden">
+            <div class="loading-content">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/llm.js"></script>
+</body>
+</html>
