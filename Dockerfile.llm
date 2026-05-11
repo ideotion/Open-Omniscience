@@ -1,0 +1,44 @@
+# Dockerfile for Open-Omniscience with Local LLM Support
+# This Dockerfile extends the base image with Ollama and LLM capabilities
+
+FROM ideotion/open-omniscience:latest
+
+# Install dependencies for Ollama and GPU support (if available)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
+
+# Add Ollama to PATH
+ENV PATH="/usr/local/bin:${PATH}"
+
+# Create directory for models
+RUN mkdir -p /root/.ollama
+
+# Set environment variables for Ollama
+ENV OLLAMA_HOST=0.0.0.0
+ENV OLLAMA_ORIGINS=*
+
+# Copy the LLM setup script
+COPY scripts/setup_llm.py /app/scripts/setup_llm.py
+
+# Install Python dependencies for LLM module
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
+    pip install requests
+
+# Create a startup script that starts Ollama and then the main app
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Expose Ollama port in addition to the main app port
+EXPOSE 8000 11434
+
+# Use the custom entrypoint
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["python", "-m", "api.main"]
