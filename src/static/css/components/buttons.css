@@ -1,0 +1,631 @@
+/* Open Omniscience - Button Components */
+
+/* ============================================
+   BASE BUTTON STYLES
+   ============================================ */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+    text-decoration: none;
+    border: 1px solid transparent;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+}
+
+.btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.btn:not(:disabled):active {
+    transform: scale(0.98);
+}
+
+/* Button sizes */
+.btn-sm {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-xs);
+    gap: var(--space-1);
+}
+
+.btn-lg {
+    padding: var(--space-3) var(--space-6);
+    font-size: var(--text-base);
+    gap: var(--space-3);
+}
+
+.btn-xl {
+    padding: var(--space-4) var(--space-8);
+    font-size: var(--text-lg);
+    gap: var(--space-4);
+}
+
+.btn-block {
+    width: 100%;
+}
+
+.btn-icon {
+    padding: var(--space-2);
+    width: var(--space-10);
+    height: var(--space-10);
+}
+
+.btn-icon-sm {
+    width: var(--space-8);
+    height: var(--space-8);
+}
+
+.btn-icon-lg {
+    width: var(--space-12);
+    height: var(--space-12);
+}
+
+/* ============================================
+   BUTTON VARIANTS
+   ============================================ */
+
+/* Primary Button - Main actions */
+.btn-primary {
+    background-color: var(--primary-color);
+    color: var(--text-inverse);
+    border-color: var(--primary-color);
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: var(--color-primary-700);
+    border-color: var(--color-primary-700);
+    box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);
+}
+
+.btn-primary:active:not(:disabled) {
+    background-color: var(--color-primary-800);
+    border-color: var(--color-primary-800);
+}
+
+/* Secondary Button - Less prominent actions */
+.btn-secondary {
+    background-color: var(--color-gray-100);
+    color: var(--text-primary);
+    border-color: var(--color-gray-200);
+}
+
+[data-theme="dark"] .btn-secondary {
+    background-color: var(--color-gray-800);
+    color: var(--text-primary);
+    border-color: var(--color-gray-700);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background-color: var(--color-gray-200);
+    border-color: var(--color-gray-300);
+}
+
+[data-theme="dark"] .btn-secondary:hover:not(:disabled) {
+    background-color: var(--color-gray-700);
+    border-color: var(--color-gray-600);
+}
+
+/* Tertiary Button - Subtle actions */
+.btn-tertiary {
+    background-color: transparent;
+    color: var(--text-primary);
+    border-color: transparent;
+}
+
+.btn-tertiary:hover:not(:disabled) {
+    background-color: var(--hover-bg);
+    color: var(--primary-color);
+}
+
+/* Success Button - Positive actions */
+.btn-success {
+    background-color: var(--color-success);
+    color: var(--text-inverse);
+    border-color: var(--color-success);
+}
+
+.btn-success:hover:not(:disabled) {
+    background-color: var(--color-success-dark);
+    border-color: var(--color-success-dark);
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+}
+
+/* Warning Button - Caution actions */
+.btn-warning {
+    background-color: var(--color-warning);
+    color: var(--text-inverse);
+    border-color: var(--color-warning);
+}
+
+.btn-warning:hover:not(:disabled) {
+    background-color: var(--color-warning-dark);
+    border-color: var(--color-warning-dark);
+    box-shadow: 0 2px 8px rgba(255, 152, 0, 0.3);
+}
+
+/* Danger Button - Destructive actions */
+.btn-danger {
+    background-color: var(--color-error);
+    color: var(--text-inverse);
+    border-color: var(--color-error);
+}
+
+.btn-danger:hover:not(:disabled) {
+    background-color: var(--color-error-dark);
+    border-color: var(--color-error-dark);
+    box-shadow: 0 2px 8px rgba(244, 67, 54, 0.3);
+}
+
+/* Info Button - Informational actions */
+.btn-info {
+    background-color: var(--color-info);
+    color: var(--text-inverse);
+    border-color: var(--color-info);
+}
+
+.btn-info:hover:not(:disabled) {
+    background-color: var(--color-info-dark);
+    border-color: var(--color-info-dark);
+    box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+}
+
+/* Light Button - For dark backgrounds */
+.btn-light {
+    background-color: var(--text-inverse);
+    color: var(--text-primary);
+    border-color: var(--text-inverse);
+}
+
+[data-theme="dark"] .btn-light {
+    background-color: var(--color-gray-800);
+    color: var(--text-primary);
+    border-color: var(--color-gray-700);
+}
+
+.btn-light:hover:not(:disabled) {
+    background-color: var(--color-gray-200);
+    border-color: var(--color-gray-300);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .btn-light:hover:not(:disabled) {
+    background-color: var(--color-gray-700);
+    border-color: var(--color-gray-600);
+}
+
+/* Dark Button - For light backgrounds */
+.btn-dark {
+    background-color: var(--text-primary);
+    color: var(--text-inverse);
+    border-color: var(--text-primary);
+}
+
+.btn-dark:hover:not(:disabled) {
+    background-color: var(--color-gray-800);
+    border-color: var(--color-gray-800);
+}
+
+/* Outline Button Variants */
+.btn-outline-primary {
+    background-color: transparent;
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-outline-primary:hover:not(:disabled) {
+    background-color: var(--color-primary-50);
+    color: var(--color-primary-700);
+}
+
+.btn-outline-secondary {
+    background-color: transparent;
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+}
+
+.btn-outline-secondary:hover:not(:disabled) {
+    background-color: var(--hover-bg);
+    color: var(--text-primary);
+}
+
+/* Ghost Button - Minimal styling */
+.btn-ghost {
+    background-color: transparent;
+    color: var(--text-secondary);
+    border-color: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+    background-color: var(--hover-bg);
+    color: var(--text-primary);
+}
+
+/* ============================================
+   ICON BUTTONS
+   ============================================ */
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-2);
+    font-size: var(--text-base);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    background-color: transparent;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+}
+
+.icon-btn:hover:not(:disabled) {
+    background-color: var(--hover-bg);
+    color: var(--text-primary);
+}
+
+.icon-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.icon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* Icon button sizes */
+.icon-btn-sm {
+    padding: var(--space-1);
+    font-size: var(--text-sm);
+}
+
+.icon-btn-lg {
+    padding: var(--space-3);
+    font-size: var(--text-lg);
+}
+
+/* Colored icon buttons */
+.icon-btn-primary {
+    color: var(--primary-color);
+}
+
+.icon-btn-primary:hover:not(:disabled) {
+    background-color: var(--color-primary-50);
+    color: var(--color-primary-700);
+}
+
+.icon-btn-success {
+    color: var(--color-success);
+}
+
+.icon-btn-success:hover:not(:disabled) {
+    background-color: var(--color-success-light);
+    color: var(--color-success-dark);
+}
+
+.icon-btn-warning {
+    color: var(--color-warning);
+}
+
+.icon-btn-warning:hover:not(:disabled) {
+    background-color: var(--color-warning-light);
+    color: var(--color-warning-dark);
+}
+
+.icon-btn-danger {
+    color: var(--color-error);
+}
+
+.icon-btn-danger:hover:not(:disabled) {
+    background-color: var(--color-error-light);
+    color: var(--color-error-dark);
+}
+
+/* ============================================
+   BUTTON GROUPS
+   ============================================ */
+
+.btn-group {
+    display: inline-flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.btn-group-vertical {
+    flex-direction: column;
+}
+
+.btn-group .btn:not(:first-child) {
+    margin-left: 0;
+}
+
+.btn-group-vertical .btn:not(:first-child) {
+    margin-top: 0;
+}
+
+/* ============================================
+   TOGGLE BUTTONS
+   ============================================ */
+
+.toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-medium);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    background-color: var(--color-gray-200);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .toggle-btn {
+    background-color: var(--color-gray-700);
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+}
+
+.toggle-btn:hover:not(:disabled) {
+    background-color: var(--color-gray-300);
+}
+
+[data-theme="dark"] .toggle-btn:hover:not(:disabled) {
+    background-color: var(--color-gray-600);
+}
+
+.toggle-btn.active {
+    background-color: var(--primary-color);
+    color: var(--text-inverse);
+    border-color: var(--primary-color);
+}
+
+.toggle-btn.active:hover:not(:disabled) {
+    background-color: var(--color-primary-700);
+    border-color: var(--color-primary-700);
+}
+
+.toggle-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.toggle-btn-group {
+    display: inline-flex;
+    gap: var(--space-1);
+    background-color: var(--color-gray-100);
+    padding: var(--space-1);
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .toggle-btn-group {
+    background-color: var(--color-gray-800);
+    border-color: var(--border-color);
+}
+
+.toggle-btn-group .toggle-btn {
+    background-color: transparent;
+    border: none;
+    margin: 0;
+}
+
+.toggle-btn-group .toggle-btn:hover:not(:disabled) {
+    background-color: var(--color-gray-200);
+}
+
+[data-theme="dark"] .toggle-btn-group .toggle-btn:hover:not(:disabled) {
+    background-color: var(--color-gray-700);
+}
+
+.toggle-btn-group .toggle-btn.active {
+    background-color: var(--primary-color);
+    color: var(--text-inverse);
+}
+
+/* ============================================
+   FLOATING ACTION BUTTON
+   ============================================ */
+
+.fab {
+    position: fixed;
+    bottom: var(--space-6);
+    right: var(--space-6);
+    width: var(--space-14);
+    height: var(--space-14);
+    border-radius: var(--radius-full);
+    background-color: var(--primary-color);
+    color: var(--text-inverse);
+    border: none;
+    cursor: pointer;
+    box-shadow: var(--shadow-lg);
+    transition: all var(--transition-normal);
+    z-index: var(--z-fixed);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-xl);
+}
+
+.fab:hover {
+    background-color: var(--color-primary-700);
+    transform: scale(1.05);
+    box-shadow: var(--shadow-xl);
+}
+
+.fab:active {
+    transform: scale(0.95);
+}
+
+.fab:focus-visible {
+    outline: 2px solid var(--text-inverse);
+    outline-offset: 4px;
+}
+
+/* ============================================
+   DROPDOWN BUTTONS
+   ============================================ */
+
+.dropdown-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background-color: var(--container-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.dropdown-btn:hover {
+    background-color: var(--hover-bg);
+    border-color: var(--color-gray-400);
+}
+
+.dropdown-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.dropdown-btn::after {
+    content: '\F078';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    transition: transform var(--transition-fast);
+}
+
+.dropdown-btn[aria-expanded="true"]::after {
+    transform: rotate(180deg);
+}
+
+.dropdown-btn[aria-expanded="true"] {
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+/* ============================================
+   SPLIT BUTTONS
+   ============================================ */
+
+.split-btn {
+    display: inline-flex;
+    position: relative;
+}
+
+.split-btn .btn-main {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    z-index: 1;
+}
+
+.split-btn .btn-dropdown {
+    padding: var(--space-2) var(--space-2);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    margin-left: -1px;
+    background-color: var(--container-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.split-btn .btn-dropdown:hover {
+    background-color: var(--hover-bg);
+}
+
+.split-btn .btn-dropdown::after {
+    content: '\F078';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: var(--text-xs);
+}
+
+/* ============================================
+   LOADING BUTTON STATE
+   ============================================ */
+
+.btn-loading {
+    position: relative;
+    color: transparent;
+    pointer-events: none;
+}
+
+.btn-loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 16px;
+    height: 16px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: btn-spin 0.75s linear infinite;
+}
+
+@keyframes btn-spin {
+    to {
+        transform: translate(-50%, -50%) rotate(360deg);
+    }
+}
+
+/* ============================================
+   RESPONSIVE BUTTONS
+   ============================================ */
+
+@media (max-width: 768px) {
+    .btn {
+        padding: var(--space-2) var(--space-3);
+        font-size: var(--text-sm);
+    }
+    
+    .btn-lg {
+        padding: var(--space-3) var(--space-4);
+    }
+    
+    .btn-group {
+        flex-direction: column;
+    }
+    
+    .btn-group .btn {
+        width: 100%;
+    }
+}
+
+@media (hover: none) {
+    .btn:active:not(:disabled) {
+        transform: scale(0.98);
+    }
+    
+    .icon-btn:active:not(:disabled) {
+        transform: scale(0.95);
+    }
+}

@@ -1,0 +1,295 @@
+/* Open Omniscience Design System - CSS Variables */
+/* Using only open-source fonts and colors */
+
+:root {
+    /* ============================================
+       COLOR PALETTE
+       Professional, trustworthy colors for investigative journalism
+       ============================================ */
+    
+    /* Primary Colors - Deep blue for trust and professionalism */
+    --color-primary-50: #e8f5fd;
+    --color-primary-100: #cce7fa;
+    --color-primary-200: #99cef7;
+    --color-primary-300: #66b5f4;
+    --color-primary-400: #339af1;
+    --color-primary-500: #1976d2;
+    --color-primary-600: #1565c0;
+    --color-primary-700: #1051a0;
+    --color-primary-800: #0a3d80;
+    --color-primary-900: #032960;
+    
+    /* Secondary Colors - Teal for data and analytics */
+    --color-secondary-50: #e0f7fa;
+    --color-secondary-100: #b2ebf2;
+    --color-secondary-200: #80deea;
+    --color-secondary-300: #4dd0e1;
+    --color-secondary-400: #26c6da;
+    --color-secondary-500: #00bcd4;
+    --color-secondary-600: #00acc1;
+    --color-secondary-700: #0097a7;
+    --color-secondary-800: #00838f;
+    --color-secondary-900: #006064;
+    
+    /* Accent Colors - Warm orange for calls to action */
+    --color-accent-50: #fff3e0;
+    --color-accent-100: #ffe0b2;
+    --color-accent-200: #ffcc80;
+    --color-accent-300: #ffb74d;
+    --color-accent-400: #ffa726;
+    --color-accent-500: #ff9800;
+    --color-accent-600: #fb8c00;
+    --color-accent-700: #f57c00;
+    --color-accent-800: #ef6c00;
+    --color-accent-900: #e65100;
+    
+    /* Semantic Colors */
+    --color-success: #4caf50;
+    --color-success-light: #c8e6c9;
+    --color-success-dark: #388e3c;
+    
+    --color-warning: #ff9800;
+    --color-warning-light: #fff3e0;
+    --color-warning-dark: #f57c00;
+    
+    --color-error: #f44336;
+    --color-error-light: #ffebee;
+    --color-error-dark: #d32f2f;
+    
+    --color-info: #2196f3;
+    --color-info-light: #e3f2fd;
+    --color-info-dark: #1976d2;
+    
+    /* Neutral Colors */
+    --color-gray-50: #fafafa;
+    --color-gray-100: #f5f5f5;
+    --color-gray-200: #eeeeee;
+    --color-gray-300: #e0e0e0;
+    --color-gray-400: #bdbdbd;
+    --color-gray-500: #9e9e9e;
+    --color-gray-600: #757575;
+    --color-gray-700: #616161;
+    --color-gray-800: #424242;
+    --color-gray-900: #212121;
+    
+    /* ============================================
+       TYPOGRAPHY
+       Using Inter (open-source) as primary font
+       ============================================ */
+    --font-family-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    --font-family-mono: 'IBM Plex Mono', 'Fira Code', 'Courier New', monospace;
+    --font-family-fallback: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    
+    /* Font Weights */
+    --font-weight-light: 300;
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+    
+    /* Font Sizes - Using rem for scalability */
+    --text-xs: 0.75rem;    /* 12px */
+    --text-sm: 0.875rem;   /* 14px */
+    --text-base: 1rem;     /* 16px */
+    --text-lg: 1.125rem;   /* 18px */
+    --text-xl: 1.25rem;    /* 20px */
+    --text-2xl: 1.5rem;    /* 24px */
+    --text-3xl: 1.875rem;  /* 30px */
+    --text-4xl: 2.25rem;   /* 36px */
+    
+    /* Line Heights */
+    --line-height-tight: 1.25;
+    --line-height-normal: 1.5;
+    --line-height-relaxed: 1.75;
+    --line-height-loose: 2;
+    
+    /* Letter Spacing */
+    --letter-spacing-tight: -0.02em;
+    --letter-spacing-normal: 0;
+    --letter-spacing-wide: 0.02em;
+    
+    /* ============================================
+       SPACING SYSTEM
+       Consistent spacing using 4px base unit
+       ============================================ */
+    --space-1: 0.25rem;   /* 4px */
+    --space-2: 0.5rem;    /* 8px */
+    --space-3: 0.75rem;   /* 12px */
+    --space-4: 1rem;      /* 16px */
+    --space-5: 1.25rem;   /* 20px */
+    --space-6: 1.5rem;    /* 24px */
+    --space-8: 2rem;      /* 32px */
+    --space-10: 2.5rem;   /* 40px */
+    --space-12: 3rem;     /* 48px */
+    --space-16: 4rem;     /* 64px */
+    --space-20: 5rem;     /* 80px */
+    --space-24: 6rem;     /* 96px */
+    
+    /* ============================================
+       BORDER RADIUS
+       Consistent rounded corners
+       ============================================ */
+    --radius-sm: 0.25rem;   /* 4px */
+    --radius-md: 0.375rem;  /* 6px */
+    --radius-lg: 0.5rem;    /* 8px */
+    --radius-xl: 0.75rem;   /* 12px */
+    --radius-2xl: 1rem;     /* 16px */
+    --radius-full: 9999px;  /* Pill shape */
+    
+    /* ============================================
+       SHADOWS
+       Layered shadow system for depth
+       ============================================ */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+    
+    /* ============================================
+       TRANSITIONS
+       Smooth animations
+       ============================================ */
+    --transition-fast: 150ms ease;
+    --transition-normal: 250ms ease;
+    --transition-slow: 350ms ease;
+    --transition-timing: cubic-bezier(0.4, 0, 0.2, 1);
+    
+    /* ============================================
+       Z-INDEX SCALE
+       Consistent layering
+       ============================================ */
+    --z-dropdown: 100;
+    --z-sticky: 200;
+    --z-fixed: 300;
+    --z-modal-backdrop: 400;
+    --z-modal: 500;
+    --z-popover: 600;
+    --z-tooltip: 700;
+    --z-toast: 800;
+    --z-loading: 900;
+    --z-max: 9999;
+    
+    /* ============================================
+       THEME: LIGHT (Default)
+       ============================================ */
+    --bg-color: #f8f9fa;
+    --container-bg: #ffffff;
+    --card-bg: #ffffff;
+    --surface-bg: #ffffff;
+    --hover-bg: #f5f7fa;
+    --active-bg: #e9ecef;
+    
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --text-tertiary: #adb5bd;
+    --text-inverse: #ffffff;
+    
+    --border-color: #dee2e6;
+    --border-light: #e9ecef;
+    --border-dark: #adb5bd;
+    
+    --input-bg: #ffffff;
+    --input-border: #ced4da;
+    --input-text: #495057;
+    --input-placeholder: #adb5bd;
+    
+    --table-header-bg: #f1f3f5;
+    --table-row-hover: #f5f7fa;
+    --table-row-selected: #e9ecef;
+    
+    --primary-color: var(--color-primary-600);
+    --secondary-color: var(--color-secondary-500);
+    --accent-color: var(--color-accent-500);
+}
+
+/* ============================================
+   THEME: DARK
+   ============================================ */
+[data-theme="dark"] {
+    --bg-color: #1a1d21;
+    --container-bg: #212529;
+    --card-bg: #2b3035;
+    --surface-bg: #343a40;
+    --hover-bg: #2f353a;
+    --active-bg: #3d4449;
+    
+    --text-primary: #e1e5eb;
+    --text-secondary: #a8adb1;
+    --text-tertiary: #6c757d;
+    --text-inverse: #212529;
+    
+    --border-color: #495057;
+    --border-light: #6c757d;
+    --border-dark: #343a40;
+    
+    --input-bg: #2b3035;
+    --input-border: #495057;
+    --input-text: #e1e5eb;
+    --input-placeholder: #a8adb1;
+    
+    --table-header-bg: #343a40;
+    --table-row-hover: #2f353a;
+    --table-row-selected: #3d4449;
+    
+    --primary-color: var(--color-primary-400);
+    --secondary-color: var(--color-secondary-400);
+    --accent-color: var(--color-accent-400);
+}
+
+/* ============================================
+   HIGH CONTRAST MODE
+   ============================================ */
+@media (prefers-contrast: high) {
+    :root {
+        --primary-color: #0044cc;
+        --secondary-color: #0066ff;
+        --accent-color: #ff5500;
+        
+        --text-primary: #000000;
+        --text-secondary: #000000;
+        --text-tertiary: #333333;
+        
+        --bg-color: #ffffff;
+        --container-bg: #ffffff;
+        --card-bg: #ffffff;
+        
+        --border-color: #000000;
+        --input-border: #000000;
+        
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+        --shadow-md: 0 2px 4px 0 rgba(0, 0, 0, 0.2);
+        --shadow-lg: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
+    }
+    
+    [data-theme="dark"] {
+        --text-primary: #ffffff;
+        --text-secondary: #ffffff;
+        --text-tertiary: #cccccc;
+        
+        --bg-color: #000000;
+        --container-bg: #000000;
+        --card-bg: #000000;
+        
+        --border-color: #ffffff;
+        --input-border: #ffffff;
+    }
+    
+    button {
+        border: 2px solid currentColor !important;
+    }
+}
+
+/* ============================================
+   REDUCED MOTION
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
