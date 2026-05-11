@@ -286,6 +286,12 @@ async def search_articles(
     """
     logger.info(f"Search request: query={query}, source={source}, limit={limit}, offset={offset}")
 
+    # Validate pagination parameters
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be non-negative")
+
     # Validate date formats
     if start_date:
         try:
