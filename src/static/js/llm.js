@@ -52,6 +52,62 @@ function truncateText(text, length = 100) {
 }
 
 // ============================================
+// Model Management
+// ============================================
+
+/**
+ * Populate all model dropdown selects with available models
+ */
+async function populateModelDropdowns() {
+    try {
+        const response = await llmApi.getCapabilities();
+        const availableModels = response.models.available || [];
+        const defaultModel = response.models.default || LLMConfig.defaultModel;
+        
+        // Get all select elements that should have model options
+        const modelSelects = document.querySelectorAll('select[id*="Model"][id*="model"], select[id*="Model"]');
+        
+        modelSelects.forEach(select => {
+            const currentValue = select.value;
+            select.innerHTML = '';
+            
+            // Add models sorted by name
+            const sortedModels = [...availableModels].sort();
+            
+            sortedModels.forEach(modelId => {
+                const option = document.createElement('option');
+                option.value = modelId;
+                
+                // Try to get a display name from the model ID
+                let displayName = modelId.replace(':', ' ').replace(/-/g, ' ').replace(/\w/g, l => l.toUpperCase());
+                
+                // Clean up display name
+                displayName = displayName.replace('Llama', 'Llama').replace('Phi', 'Phi').replace('Gemma', 'Gemma');
+                
+                // Add default indicator
+                if (modelId === defaultModel) {
+                    displayName += ' (Default)';
+                    option.selected = true;
+                }
+                
+                option.textContent = displayName;
+                select.appendChild(option);
+            });
+            
+            // Restore previous selection if it exists in the new list
+            if (currentValue && sortedModels.includes(currentValue)) {
+                select.value = currentValue;
+            }
+        });
+        
+        console.log(`Populated ${modelSelects.length} model dropdowns with ${sortedModels.length} models`);
+    } catch (error) {
+        console.error('Error populating model dropdowns:', error);
+        // Fallback: keep existing options if any
+    }
+}
+
+// ============================================
 // API Client
 // ============================================
 
@@ -999,10 +1055,14 @@ function initSettings() {
 // Initialization
 // ============================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initNavigation();
     initThemeToggle();
     initDashboard();
+    
+    // Load models dynamically before initializing feature-specific functions
+    await populateModelDropdowns();
+    
     initTextGeneration();
     initChat();
     initTextExtraction();
