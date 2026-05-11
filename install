@@ -97,6 +97,17 @@ install_prerequisites() {
     
     log "Installing prerequisites..."
     
+    # Ask if user wants LLM support
+    read -p "Install with Local LLM Support? (Y/n): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]] || [ -z "$REPLY" ]; then
+        INSTALL_LLM=true
+        log "LLM Support: Enabled"
+    else
+        INSTALL_LLM=false
+        log "LLM Support: Disabled (can be added later)"
+    fi
+    
     # Common prerequisites
     local prerequisites=("git" "curl" "docker" "docker-compose")
     local missing=()
@@ -120,22 +131,42 @@ install_prerequisites() {
             log "Installing prerequisites for Debian/Ubuntu-based system..."
             sudo apt-get update -y
             sudo apt-get install -y git curl docker.io docker-compose
+            if [ "$INSTALL_LLM" = true ]; then
+                log "Installing Ollama for LLM support..."
+                curl -fsSL https://ollama.com/install.sh | sh
+            fi
             ;;
         *CentOS*|*RHEL*|*Fedora*|*AlmaLinux*|*Rocky*)
             log "Installing prerequisites for RHEL-based system..."
             sudo yum install -y git curl docker docker-compose
+            if [ "$INSTALL_LLM" = true ]; then
+                log "Installing Ollama for LLM support..."
+                curl -fsSL https://ollama.com/install.sh | sh
+            fi
             ;;
         *Arch*Linux*|*Manjaro*|*EndeavourOS*)
             log "Installing prerequisites for Arch-based system..."
             sudo pacman -Syu --noconfirm git curl docker docker-compose
+            if [ "$INSTALL_LLM" = true ]; then
+                log "Installing Ollama for LLM support..."
+                sudo pacman -Syu --noconfirm ollama
+            fi
             ;;
         *openSUSE*|*SUSE*)
             log "Installing prerequisites for openSUSE..."
             sudo zypper install -y git curl docker docker-compose
+            if [ "$INSTALL_LLM" = true ]; then
+                log "Installing Ollama for LLM support..."
+                curl -fsSL https://ollama.com/install.sh | sh
+            fi
             ;;
         *Alpine*|*alpine*)
             log "Installing prerequisites for Alpine Linux..."
             sudo apk add --no-cache git curl docker docker-compose
+            if [ "$INSTALL_LLM" = true ]; then
+                warning "Ollama not available for Alpine Linux via official installer."
+                warning "Please install Ollama manually or use Docker-based LLM deployment."
+            fi
             ;;
         *macOS*|*Darwin*)
             log "Installing prerequisites for macOS..."
@@ -144,10 +175,17 @@ install_prerequisites() {
                 exit 1
             fi
             brew install git curl docker docker-compose
+            if [ "$INSTALL_LLM" = true ]; then
+                log "Installing Ollama for LLM support..."
+                brew install ollama
+            fi
             ;;
         *)
             error "Unsupported operating system: $os"
             error "Please install the following manually: git, curl, docker, docker-compose"
+            if [ "$INSTALL_LLM" = true ]; then
+                error "For LLM support, also install Ollama from https://ollama.com"
+            fi
             exit 1
             ;;
     esac
@@ -232,15 +270,34 @@ setup_and_start() {
         success "Created .env file from template."
     fi
     
+    # Enable LLM in environment if requested
+    if [ "$INSTALL_LLM" = true ]; then
+        if [ -f ".env" ]; then
+            # Enable LLM settings in .env
+            if ! grep -q "AUTO_DOWNLOAD_MODELS" ".env"; then
+                echo "" >> .env
+                echo "# LLM Settings" >> .env
+                echo "AUTO_DOWNLOAD_MODELS=true" >> .env
+                echo "DOWNLOAD_DEFAULT_MODELS=true" >> .env
+            fi
+        fi
+    fi
+    
     # Create required directories
     mkdir -p data audit logs
     
     # Build and start Docker containers
     log "Building Docker images..."
-    docker-compose build
-    
-    log "Starting containers..."
-    docker-compose up -d
+    if [ "$INSTALL_LLM" = true ]; then
+        log "Building with LLM support..."
+        docker-compose -f docker-compose.yml -f docker-compose.llm.yml build
+        log "Starting containers with LLM support..."
+        docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d
+    else
+        docker-compose build
+        log "Starting containers..."
+        docker-compose up -d
+    fi
     
     # Wait for services to be healthy
     log "Waiting for services to start..."
@@ -273,10 +330,18 @@ verify_installation() {
     cd "$INSTALL_DIR"
     
     # Check if containers are running
-    if ! docker-compose ps | grep -q "Up"; then
-        error "Containers are not running."
-        docker-compose logs
-        exit 1
+    if [ "$INSTALL_LLM" = true ]; then
+        if ! docker-compose -f docker-compose.yml -f docker-compose.llm.yml ps | grep -q "Up"; then
+            error "Containers are not running."
+            docker-compose -f docker-compose.yml -f docker-compose.llm.yml logs
+            exit 1
+        fi
+    else
+        if ! docker-compose ps | grep -q "Up"; then
+            error "Containers are not running."
+            docker-compose logs
+            exit 1
+        fi
     fi
     
     # Test API endpoint
@@ -297,6 +362,28 @@ verify_installation() {
         warning "API endpoint not responding. Check container logs with: docker-compose logs"
     else
         success "API endpoint is responding!"
+        
+        # Test LLM endpoint if LLM is enabled
+        if [ "$INSTALL_LLM" = true ]; then
+            local llm_healthy=false
+            local llm_attempt=1
+            
+            while [ $llm_attempt -le $max_attempts ]; do
+                if curl -s http://localhost:8000/api/llm/health >/dev/null 2>&1; then
+                    llm_healthy=true
+                    break
+                fi
+                sleep 3
+                llm_attempt=$((llm_attempt + 1))
+            done
+            
+            if [ "$llm_healthy" = false ]; then
+                warning "LLM endpoint not responding yet. It may take a few minutes for Ollama to start."
+                warning "Check LLM status with: curl http://localhost:8000/api/llm/health"
+            else
+                success "LLM endpoint is responding!"
+            fi
+        fi
     fi
 }
 
@@ -312,17 +399,42 @@ show_completion() {
     echo "Access Points:"
     echo "  - Web Interface: http://localhost:8000"
     echo "  - API: http://localhost:8000/api/"
+    
+    if [ "$INSTALL_LLM" = true ]; then
+        echo "  - LLM API: http://localhost:8000/api/llm/"
+        echo "  - Ollama: http://localhost:11434"
+    fi
+    
     echo ""
     echo "Commands:"
-    echo "  - Start services: cd $INSTALL_DIR && docker-compose up -d"
-    echo "  - Stop services: cd $INSTALL_DIR && docker-compose down"
-    echo "  - View logs: cd $INSTALL_DIR && docker-compose logs -f"
-    echo "  - Update: cd $INSTALL_DIR && git pull && docker-compose up -d --build"
+    if [ "$INSTALL_LLM" = true ]; then
+        echo "  - Start services: cd $INSTALL_DIR && docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d"
+        echo "  - Stop services: cd $INSTALL_DIR && docker-compose -f docker-compose.yml -f docker-compose.llm.yml down"
+        echo "  - View logs: cd $INSTALL_DIR && docker-compose -f docker-compose.yml -f docker-compose.llm.yml logs -f"
+        echo "  - Update: cd $INSTALL_DIR && git pull && docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build"
+    else
+        echo "  - Start services: cd $INSTALL_DIR && docker-compose up -d"
+        echo "  - Stop services: cd $INSTALL_DIR && docker-compose down"
+        echo "  - View logs: cd $INSTALL_DIR && docker-compose logs -f"
+        echo "  - Update: cd $INSTALL_DIR && git pull && docker-compose up -d --build"
+    fi
+    
+    if [ "$INSTALL_LLM" = true ]; then
+        echo ""
+        echo "LLM Features:"
+        echo "  - To download models: docker exec -it open-omniscience-llm ollama pull llama3:8b"
+        echo "  - View available models: docker exec -it open-omniscience-llm ollama list"
+        echo "  - Access LLM GUI: http://localhost:8000/llm.html"
+    fi
+    
     echo ""
     echo "Log file: $LOG_FILE"
     echo ""
     echo "=========================================="
 }
+
+# Global variable for LLM support
+INSTALL_LLM=false
 
 # Main installation function
 main() {
