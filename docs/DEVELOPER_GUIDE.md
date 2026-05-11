@@ -19,10 +19,11 @@ This guide is for **developers** who want to **extend, customize, or contribute*
 2. [Development Setup](#-development-setup)
 3. [Code Structure](#-code-structure)
 4. [Adding New Features](#-adding-new-features)
-5. [Testing](#-testing)
-6. [Database Migrations](#-database-migrations)
-7. [Deployment](#-deployment)
-8. [Contribution Guidelines](#-contribution-guidelines)
+5. [Local LLM Development](#-local-llm-development)
+6. [Testing](#-testing)
+7. [Database Migrations](#-database-migrations)
+8. [Deployment](#-deployment)
+9. [Contribution Guidelines](#-contribution-guidelines)
 
 ---
 
@@ -64,6 +65,15 @@ Open Omniscience follows a **modular, layered architecture**:
 │  - data/open_omniscience.db (SQLite)                     │
 │  - PostgreSQL (configurable)                            │
 └───────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌───────────────────────────────────────────────────────┐
+│                      LLM Processing                        │
+│  (Ollama + Local Models)                                 │
+│  - src/llm/ (LLM module)                                │
+│  - src/api/routes/llm.py (LLM API endpoints)            │
+│  - Ollama (local LLM runtime)                           │
+└───────────────────────────────────────────────────────┘
 ```
 
 ### Key Components:
@@ -73,6 +83,7 @@ Open Omniscience follows a **modular, layered architecture**:
 | **Backend** | FastAPI, SQLAlchemy | REST API, database ORM, and business logic. |
 | **Scraper** | Python (requests, BeautifulSoup, feedparser) | Fetch and parse articles from news sources. |
 | **Database** | SQLite (default), PostgreSQL | Store articles, sources, and metadata. |
+| **LLM Processing** | Ollama + Local Models | Text generation, analysis, translation, and synthesis. |
 | **Audit Logs** | CSV, Markdown | Track scraping activities for compliance. |
 
 ---
@@ -233,6 +244,74 @@ Open-Omniscience/
 1. Edit `src/static/index.html` to add new UI elements.
 2. Edit `src/static/script.js` to add new functionality.
 3. Edit `src/static/style.css` to style the new elements.
+
+---
+
+## 🤖 Local LLM Development
+
+Open Omniscience includes comprehensive **Local LLM Support** for text processing. This section covers how to extend and work with LLM features.
+
+### Architecture
+The LLM module is organized as follows:
+```
+src/llm/
+├── __init__.py          # Module initialization
+├── config.py           # Configuration and model definitions
+├── exceptions.py       # Custom LLM exceptions
+├── model_manager.py    # Model downloading and management
+└── llm_service.py      # Main LLM service with all capabilities
+
+src/api/routes/
+└── llm.py              # REST API endpoints for LLM features
+
+src/static/
+├── llm.html            # LLM web interface
+├── css/llm.css         # LLM-specific styles
+└── js/llm.js           # LLM frontend JavaScript
+```
+
+### Adding a New LLM Model
+1. Edit `src/llm/config.py` and add to `default_models`:
+   ```python
+   "my-model": ModelConfig(
+       name="My Model",
+       model_id="my-model:latest",
+       description="Description of my model",
+       capabilities=["text-generation", "analysis"],
+       size_gb=5.0,
+       default=False
+   )
+   ```
+
+### Adding a New LLM Capability
+1. Add a new method to `src/llm/llm_service.py`:
+   ```python
+   def my_new_capability(self, text: str, **kwargs) -> Dict[str, Any]:
+       # Your implementation here
+       pass
+   ```
+2. Add a new API endpoint in `src/api/routes/llm.py`:
+   ```python
+   @router.post("/my-capability")
+   async def my_capability_endpoint(request: MyRequest, service: LLMService = Depends(get_llm_service)):
+       return service.my_new_capability(request.text)
+   ```
+3. Add UI in `src/static/llm.html` and `src/static/js/llm.js`
+
+### Adding a New Extraction/Analysis Type
+1. Add a new prompt to the appropriate dictionary in `llm_service.py`:
+   ```python
+   extraction_prompts = {
+       ...
+       "my_type": "My custom extraction prompt...",
+   }
+   ```
+2. Add the type to the capabilities list in the API
+
+### Testing LLM Features
+- Unit tests: `tests/test_llm.py`
+- Integration tests: `tests/test_llm_integration.py`
+- Tests require Ollama to be installed for full functionality
 
 ---
 

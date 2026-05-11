@@ -212,7 +212,7 @@ curl -X POST http://localhost:8000/api/llm/analyze \
   -d '{"text": "This product is amazing and works perfectly!", "analysis_type": "sentiment"}'
 ```
 
-For more details, see [LLM_README.md](LLM_README.md)
+For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 
 ---
 
@@ -591,15 +591,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📚 Additional Documentation
 
-- [LLM_README.md](LLM_README.md) - Detailed LLM documentation
-- [LLM_IMPLEMENTATION_SUMMARY.md](LLM_IMPLEMENTATION_SUMMARY.md) - Implementation details
-- [FRONTEND_LLM_SUMMARY.md](FRONTEND_LLM_SUMMARY.md) - Frontend integration guide
-- [COMPLETE_IMPLEMENTATION_REPORT.md](COMPLETE_IMPLEMENTATION_REPORT.md) - Full implementation report
-- [DATABASE.md](docs/DATABASE.md) - Database setup guide
-- [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) - Development guide
-- [USER_GUIDE.md](docs/USER_GUIDE.md) - User guide
-- [ETHICS.md](ETHICS.md) - Ethical guidelines
-- [SECURITY.md](SECURITY.md) - Security best practices
+- [docs/LLM_SETUP_GUIDE.md](docs/LLM_SETUP_GUIDE.md) - Local LLM setup, configuration, and usage
+- [docs/DATABASE.md](docs/DATABASE.md) - Database setup guide
+- [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) - Development guide (includes LLM development)
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) - User guide (includes LLM features)
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
+- [ETHICS.md](ETHICS.md) - Ethical guidelines and compliance
+- [SECURITY.md](SECURITY.md) - Security practices and recommendations
 
 ---
 

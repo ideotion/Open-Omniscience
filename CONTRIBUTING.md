@@ -46,6 +46,8 @@ This document outlines how to **contribute** to Open Omniscience, including:
 | **Ethical Reviews** | Audit sources for compliance. | Check `robots.txt`, update the Do Not Scrape List. |
 | **Community** | Help others, answer questions. | Respond to GitHub Discussions, review PRs. |
 | **Translations** | Translate the UI or docs. | Add support for non-English languages. |
+| **LLM Development** | Improve local LLM capabilities. | Add new models, improve prompts, optimize LLM integration. |
+| **LLM Testing** | Test LLM features with different models. | Validate model performance, test edge cases. |
 
 ### 🧠 Article Intelligence Development
 
@@ -351,6 +353,7 @@ All contributions are **valued and recognized**. Here’s how we say thanks:
 | [USER_GUIDE.md](docs/USER_GUIDE.md) | User guide for Open Omniscience. |
 | [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) | Development setup, architecture, and API docs. |
 | [DATABASE.md](docs/DATABASE.md) | Database setup and configuration. |
+| [LLM_SETUP_GUIDE.md](docs/LLM_SETUP_GUIDE.md) | Local LLM setup, configuration, and usage. |
 | [GitHub Issues](https://github.com/ideotion/Open-Omniscience/issues) | Report bugs or request features. |
 | [GitHub Discussions](https://github.com/ideotion/Open-Omniscience/discussions) | Ask questions or share ideas. |
 

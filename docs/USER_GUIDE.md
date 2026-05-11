@@ -13,10 +13,11 @@ This guide will help you **install, configure, and use** Open Omniscience for in
 3. [Configuration](#-configuration)
 4. [Using the GUI](#-using-the-gui)
 5. [Advanced Search](#-advanced-search)
-6. [Exporting Data](#-exporting-data)
-7. [Ethical Guidelines](#-ethical-guidelines)
-8. [Troubleshooting](#-troubleshooting)
-9. [FAQ](#-faq)
+6. [Using Local LLM Features](#-using-local-llm-features)
+7. [Exporting Data](#-exporting-data)
+8. [Ethical Guidelines](#-ethical-guidelines)
+9. [Troubleshooting](#-troubleshooting)
+10. [FAQ](#-faq)
 
 ---
 
@@ -30,6 +31,7 @@ Open Omniscience is an **open-source global intelligence platform** designed to 
 - **Visualize data** with interactive charts.
 - **Export data** in CSV, JSON, or SQLite formats.
 - **Audit logging** for transparency and compliance.
+- **Local LLM Support** for text generation, analysis, translation, and synthesis.
 
 ---
 
@@ -202,6 +204,144 @@ Open Omniscience supports **Boolean operators** for advanced queries:
 | `climate NOT politics` | Articles about climate but not politics. |
 | `"climate change" AND (impact OR effect)` | Articles about the impact or effect of climate change. |
 | `source:BBC AND language:en` | Articles from BBC in English. |
+
+---
+
+## 🤖 Using Local LLM Features
+
+Open Omniscience includes **Local LLM Support** for advanced text processing. All LLM operations happen **locally on your machine**, ensuring **full data privacy**.
+
+### Accessing LLM Features
+1. Click the **🧠 (brain) icon** in the header of any page.
+2. This opens the **Local LLM Dashboard** with all available features.
+
+### Available LLM Capabilities
+
+#### 📝 Text Generation
+Generate text based on prompts using local language models.
+
+**How to use:**
+1. Navigate to the **Generate** tab in the LLM interface.
+2. Select a model (e.g., Llama 3 8B).
+3. Enter your prompt.
+4. Adjust settings (temperature, max tokens).
+5. Click **Generate**.
+
+**Use cases:**
+- Content creation
+- Brainstorming ideas
+- Drafting articles
+
+#### 💬 Chat Completion
+Have interactive conversations with the LLM.
+
+**How to use:**
+1. Navigate to the **Chat** tab.
+2. Select a model.
+3. Type your message and press Enter.
+4. The LLM will respond, maintaining conversation context.
+
+**Use cases:**
+- Q&A sessions
+- Decision support
+- Interactive analysis
+
+#### 🔍 Text Extraction
+Extract structured information from text.
+
+**Available extraction types:**
+- **General** - Clean text extraction
+- **Entities** - Named entities (people, organizations, locations)
+- **Keywords** - Key terms and phrases
+- **Summary** - Concise summaries
+- **Metadata** - Author, date, title, source
+- **Quotes** - Direct quotes with speakers
+- **Links** - URLs and references
+
+**How to use:**
+1. Navigate to the **Extract** tab.
+2. Paste or upload your text.
+3. Select extraction type.
+4. Click **Extract**.
+
+#### 🌍 Translation
+Translate text between languages.
+
+**Supported languages:** English, French, Spanish, German, Italian, Portuguese, Russian, Chinese, Japanese, Arabic, Hindi, and more.
+
+**How to use:**
+1. Navigate to the **Translate** tab.
+2. Select source and target languages.
+3. Enter text to translate.
+4. Click **Translate**.
+
+#### 📊 Text Analysis
+Analyze text for various characteristics.
+
+**Available analysis types:**
+- **Sentiment** - Positive/negative/neutral sentiment
+- **Tone** - Formal, casual, urgent, sarcastic, etc.
+- **Bias** - Political, gender, racial biases
+- **Readability** - Reading ease, grade level
+- **Emotion** - Joy, anger, sadness, etc.
+- **Comprehensive** - All analysis types combined
+- **Disinformation** - Potential misleading content
+
+**How to use:**
+1. Navigate to the **Analyze** tab.
+2. Paste your text.
+3. Select analysis type.
+4. Click **Analyze**.
+
+#### 🔗 Synthesis
+Combine information from multiple sources.
+
+**Available synthesis types:**
+- **Summary** - Concise summary of all sources
+- **Comparison** - Compare sources, find similarities/differences
+- **Timeline** - Create chronological timeline
+- **Report** - Comprehensive report with structure
+- **FAQ** - Generate frequently asked questions
+
+**How to use:**
+1. Navigate to the **Synthesize** tab.
+2. Add multiple text sources.
+3. Select synthesis type.
+4. Click **Synthesize**.
+
+### Managing Models
+
+#### View Available Models
+1. Navigate to the **Models** tab.
+2. See all **pre-configured models** (9 models available).
+3. Check which models are **downloaded** on your system.
+
+#### Download a Model
+1. Navigate to the **Models** tab.
+2. Click **Download** next to the model you want.
+3. Wait for the download to complete (can take several minutes).
+4. The model will be available for use.
+
+#### Remove a Model
+1. Navigate to the **Models** tab.
+2. Click **Remove** next to the downloaded model.
+3. Confirm the removal.
+
+> **⚠️ Note:** Models can be large (2-40GB). Ensure you have enough disk space.
+
+### LLM Settings
+
+#### Configuration Options
+- **Auto-download models** - Automatically download required models
+- **Model library path** - Where to store downloaded models
+- **Ollama base URL** - Custom Ollama server URL
+- **Timeout** - Request timeout in seconds
+- **Max tokens** - Maximum tokens to generate
+
+#### Changing Settings
+1. Navigate to the **Settings** tab in the LLM interface.
+2. Adjust the settings as needed.
+3. Click **Save**.
 
 ---
 
