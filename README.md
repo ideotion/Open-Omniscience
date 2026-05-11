@@ -208,6 +208,32 @@ Open-Omniscience/
 
 ---
 
+## 🔒 Security Features
+
+Open Omniscience includes comprehensive security features to protect against common web vulnerabilities:
+
+### ✅ Implemented Security Measures
+- **Input Validation**: All user inputs are validated and sanitized
+- **SQL Injection Prevention**: Uses SQLAlchemy ORM with parameterized queries
+- **XSS Prevention**: HTML sanitization and escaping for all user-generated content
+- **Path Traversal Protection**: Safe path handling and filename validation
+- **Security Headers**: HTTP security headers (CSP, XSS Protection, HSTS, etc.)
+- **CORS Configuration**: Configurable CORS with secure defaults
+- **Rate Limiting**: Built-in rate limiting to prevent abuse
+- **Password Hashing**: Secure bcrypt-based password hashing (with fallback)
+
+### 🛡️ Security Utilities
+The project includes a comprehensive security utilities module (`src/utils/security.py`) with functions for:
+- HTML/XSS sanitization
+- SQL injection prevention
+- URL and filename validation
+- Secure token generation
+- Password hashing and verification
+
+See [SECURITY.md](SECURITY.md) for detailed security documentation and best practices.
+
+---
+
 ## 🛠️ Configuration
 
 ### Sources

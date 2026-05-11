@@ -10,13 +10,14 @@ Author: Ideotion
 
 import sys
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Any, Dict
 from datetime import datetime
+import os
 
 # Add parent directories to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
-from fastapi import FastAPI, Query, HTTPException, Request
+from fastapi import FastAPI, Query, HTTPException, Request, Depends, Header
 from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,6 +35,12 @@ import time
 # Import database models and session
 from database.models import Article, Source, get_session
 
+# Import security utilities
+from utils.security import (
+    sanitize_html, escape_html, validate_and_sanitize_search_query,
+    get_security_headers, SecurityError
+)
+
 # Import source management router
 from api.source_management import router as source_management_router
 
@@ -50,8 +57,8 @@ from api.link_analysis import router as link_analysis_router
 from utils.logging_config import setup_logging
 logger = setup_logging("api")
 
-# Database setup
-DATABASE_URL = f"sqlite:///{Path(__file__).parent.parent.parent / 'data' / 'open_omniscience.db'}"
+# Database setup - use environment variable or default
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{Path(__file__).parent.parent.parent / 'data' / 'open_omniscience.db'}")
 
 # Initialize FastAPI app
 app = FastAPI(title="Open Omniscience API", version="0.2.0")
@@ -89,13 +96,18 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
-# CORS middleware
+# CORS middleware - more secure configuration
+# In production, set ALLOWED_ORIGINS environment variable with comma-separated origins
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "User-Agent"],
+    expose_headers=["Content-Length", "Content-Type"],
+    max_age=86400,  # 24 hours
 )
 
 # Include source management router
@@ -178,9 +190,18 @@ def parse_search_query(query: str) -> dict:
 
     Returns:
         A dictionary with parsed terms and operators.
+        
+    Raises:
+        HTTPException: If the query contains potentially dangerous content.
     """
     if not query:
         return {"terms": [], "operators": []}
+
+    # Validate and sanitize the search query
+    try:
+        query = validate_and_sanitize_search_query(query)
+    except SecurityError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Replace parentheses with spaces for now (simplified)
     query = query.replace("(", " ").replace(")", " ")
@@ -264,6 +285,12 @@ async def search_articles(
     - offset: Offset for pagination (default: 0).
     """
     logger.info(f"Search request: query={query}, source={source}, limit={limit}, offset={offset}")
+
+    # Validate pagination parameters
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be non-negative")
 
     # Validate date formats
     if start_date:

@@ -70,6 +70,60 @@ All **user inputs** (API requests, form submissions, etc.) are **validated and s
 | `User-Agent` | `OpenOmniscience/1.0` | Identifiable User-Agent string. |
 | `CORS` | `*` | Open CORS for development (restrict in production). |
 
+### 8. Security Utilities Module
+Open Omniscience now includes a **comprehensive security utilities module** (`src/utils/security.py`) that provides:
+
+#### Input Validation & Sanitization
+- **HTML Sanitization**: `sanitize_html()` - Removes dangerous HTML tags and attributes using `bleach`
+- **XSS Prevention**: `escape_html()` - Escapes HTML special characters
+- **SQL Injection Prevention**: `sanitize_sql_input()` - Removes SQL keywords and patterns
+- **URL Sanitization**: `sanitize_url()` - Removes dangerous URL schemes (javascript:, data:, etc.)
+- **Filename Validation**: `validate_and_sanitize_filename()` - Prevents path traversal attacks
+- **Email Validation**: `validate_email()` - Validates email address format
+- **Search Query Validation**: `validate_and_sanitize_search_query()` - Sanitizes search inputs
+- **Dictionary Sanitization**: `sanitize_dict_input()` - Recursively sanitizes dictionary inputs
+
+#### Security Utilities
+- **Secure Token Generation**: `generate_secure_token()` - Generates cryptographically secure random tokens
+- **Password Hashing**: `hash_password()` - Secure password hashing using bcrypt (with SHA-256 fallback)
+- **Password Verification**: `verify_password()` - Verifies passwords against hashes
+- **Safe Path Joining**: `safe_path_join()` - Prevents path traversal when joining paths
+
+#### HTTP Security
+- **Security Headers**: `get_security_headers()` - Returns a dictionary of security headers including:
+  - `X-Content-Type-Options: nosniff`
+  - `X-Frame-Options: DENY`
+  - `X-XSS-Protection: 1; mode=block`
+  - `Content-Security-Policy: default-src 'self'`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+  - `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`
+  - `Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()`
+
+#### Usage Examples
+```python
+from utils.security import (
+    sanitize_html, escape_html, validate_and_sanitize_filename,
+    safe_path_join, sanitize_url, validate_email, get_security_headers
+)
+
+# Sanitize user input
+user_html = "<script>alert('xss')</script>"
+safe_html = sanitize_html(user_html)  # Removes script tags
+
+# Validate filename
+filename = validate_and_sanitize_filename("safe_file.txt")  # OK
+filename = validate_and_sanitize_filename("../malicious.txt")  # Raises SecurityError
+
+# Safe path joining
+safe_path = safe_path_join("/base/dir", "subdir", "file.txt")  # OK
+safe_path = safe_path_join("/base/dir", "../escape")  # Raises SecurityError
+
+# Add security headers to responses
+security_headers = get_security_headers()
+for header, value in security_headers.items():
+    response.headers[header] = value
+```
+
 ---
 
 ## 🚨 Vulnerability Reporting
