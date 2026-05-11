@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open-Omniscience UI Test</title>
+    <link rel="stylesheet" href="src/static/css/variables.css">
+    <link rel="stylesheet" href="src/static/css/main.css">
+    <link rel="stylesheet" href="src/static/css/utilities.css">
+    <link rel="stylesheet" href="src/static/css/components/buttons.css">
+    <link rel="stylesheet" href="src/static/css/components/forms.css">
+    <link rel="stylesheet" href="src/static/css/components/tables.css">
+    <link rel="stylesheet" href="src/static/css/components/modals.css">
+    <link rel="stylesheet" href="src/static/css/components/notifications.css">
+    <link rel="stylesheet" href="src/static/css/layouts/main.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            padding: 20px;
+            font-family: 'Inter', sans-serif;
+        }
+        .test-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #1976d2;
+        }
+        .test-results {
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 4px;
+            border: 1px solid #e9ecef;
+        }
+        .test-pass {
+            color: #198754;
+        }
+        .test-fail {
+            color: #dc3545;
+        }
+        .test-info {
+            color: #0d6efd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-vial me-2"></i> Open-Omniscience UI Test Suite</h1>
+        <p class="text-muted">Testing all UI components and functionality</p>
+
+        <!-- Test Results Summary -->
+        <div class="test-section">
+            <h2><i class="fas fa-chart-pie me-2"></i> Test Summary</h2>
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">Total Tests</h5>
+                            <p class="card-text" id="totalTests">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title text-success">Passed</h5>
+                            <p class="card-text text-success" id="passedTests">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title text-danger">Failed</h5>
+                            <p class="card-text text-danger" id="failedTests">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title text-info">Success Rate</h5>
+                            <p class="card-text text-info" id="successRate">0%</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CSS Tests -->
+        <div class="test-section">
+            <h2><i class="fas fa-palette me-2"></i> CSS Tests</h2>
+            <div class="test-results" id="cssTests">
+                <p>Testing CSS functionality...</p>
+            </div>
+        </div>
+
+        <!-- JavaScript Utility Tests -->
+        <div class="test-section">
+            <h2><i class="fas fa-cogs me-2"></i> JavaScript Utility Tests</h2>
+            <div class="test-results" id="utilityTests">
+                <p>Testing JavaScript utilities...</p>
+            </div>
+        </div>
+
+        <!-- Component Tests -->
+        <div class="test-section">
+            <h2><i class="fas fa-puzzle-piece me-2"></i> Component Tests</h2>
+            <div class="test-results" id="componentTests">
+                <p>Testing UI components...</p>
+            </div>
+        </div>
+
+        <!-- Notification Test -->
+        <div class="test-section">
+            <h2><i class="fas fa-bell me-2"></i> Notification Test</h2>
+            <div class="mb-3">
+                <button class="btn btn-primary me-2" onclick="testSuccessNotification()">
+                    <i class="fas fa-check me-1"></i> Test Success
+                </button>
+                <button class="btn btn-danger me-2" onclick="testErrorNotification()">
+                    <i class="fas fa-exclamation me-1"></i> Test Error
+                </button>
+                <button class="btn btn-warning me-2" onclick="testWarningNotification()">
+                    <i class="fas fa-exclamation-triangle me-1"></i> Test Warning
+                </button>
+                <button class="btn btn-info me-2" onclick="testInfoNotification()">
+                    <i class="fas fa-info me-1"></i> Test Info
+                </button>
+            </div>
+            <div class="test-results" id="notificationTests">
+                <p>Click buttons above to test notifications</p>
+            </div>
+        </div>
+
+        <!-- Table Test -->
+        <div class="test-section">
+            <h2><i class="fas fa-table me-2"></i> Table Test</h2>
+            <div class="mb-3">
+                <button class="btn btn-primary me-2" onclick="testTable()">
+                    <i class="fas fa-table me-1"></i> Load Test Data
+                </button>
+                <button class="btn btn-secondary me-2" onclick="testTableSorting()">
+                    <i class="fas fa-sort me-1"></i> Test Sorting
+                </button>
+                <button class="btn btn-secondary me-2" onclick="testTableFiltering()">
+                    <i class="fas fa-filter me-1"></i> Test Filtering
+                </button>
+            </div>
+            <div class="table-wrapper">
+                <table id="testTable" class="table table-hover table-striped">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" id="selectAllTest" class="form-check-input">
+                            </th>
+                            <th class="sortable" data-sort="name">Name</th>
+                            <th class="sortable" data-sort="category">Category</th>
+                            <th class="sortable" data-sort="priority">Priority</th>
+                            <th class="sortable" data-sort="date">Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="testTableBody">
+                        <!-- Data will be loaded dynamically -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="test-results" id="tableTests">
+                <p>Table functionality test results will appear here</p>
+            </div>
+        </div>
+
+        <!-- Form Validation Test -->
+        <div class="test-section">
+            <h2><i class="fas fa-check-circle me-2"></i> Form Validation Test</h2>
+            <form id="testForm" class="form">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="testName" class="form-label">Name *</label>
+                            <input type="text" id="testName" name="name" class="form-control" required>
+                            <div class="invalid-feedback">Please provide a name</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="testEmail" class="form-label">Email *</label>
+                            <input type="email" id="testEmail" name="email" class="form-control" required>
+                            <div class="invalid-feedback">Please provide a valid email</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="testUrl" class="form-label">URL</label>
+                            <input type="url" id="testUrl" name="url" class="form-control">
+                            <div class="invalid-feedback">Please provide a valid URL</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-check me-1"></i> Submit
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="testFormValidation()">
+                        <i class="fas fa-test me-1"></i> Test Validation
+                    </button>
+                </div>
+            </form>
+            <div class="test-results" id="formTests">
+                <p>Form validation test results will appear here</p>
+            </div>
+        </div>
+
+        <!-- Theme Test -->
+        <div class="test-section">
+            <h2><i class="fas fa-moon me-2"></i> Theme Test</h2>
+            <div class="mb-3">
+                <button class="btn btn-outline-secondary me-2" onclick="setTheme('light')">
+                    <i class="fas fa-sun me-1"></i> Light Theme
+                </button>
+                <button class="btn btn-outline-secondary me-2" onclick="setTheme('dark')">
+                    <i class="fas fa-moon me-1"></i> Dark Theme
+                </button>
+                <button class="btn btn-outline-secondary me-2" onclick="setTheme('system')">
+                    <i class="fas fa-desktop me-1"></i> System Theme
+                </button>
+            </div>
+            <div class="test-results" id="themeTests">
+                <p>Theme test results will appear here</p>
+            </div>
+        </div>
+
+        <!-- Run All Tests Button -->
+        <div class="text-center my-4">
+            <button class="btn btn-primary btn-lg" onclick="runAllTests()">
+                <i class="fas fa-play me-1"></i> Run All Tests
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+    <!-- Load JavaScript -->
+    <script src="src/static/js/utils/storage.js"></script>
+    <script src="src/static/js/utils/dom.js"></script>
+    <script src="src/static/js/utils/format.js"></script>
+    <script src="src/static/js/utils/validation.js"></script>
+    <script src="src/static/js/utils/lazy-load.js"></script>
+    <script src="src/static/js/components/notifications.js"></script>
+    <script src="src/static/js/components/tables.js"></script>
+    <script src="src/static/js/api.js"></script>
+    <script>
+        // Test suite
+        let testResults = {
+            total: 0,
+            passed: 0,
+            failed: 0,
+            results: []
+        };
+
+        // Initialize notification manager
+        const notificationManager = getNotificationManager();
+
+        // Test functions
+        function addTestResult(name, passed, message = '') {
+            testResults.total++;
+            if (passed) {
+                testResults.passed++;
+            } else {
+                testResults.failed++;
+            }
+            testResults.results.push({ name, passed, message });
+            updateTestSummary();
+        }
+
+        function updateTestSummary() {
+            document.getElementById('totalTests').textContent = testResults.total;
+            document.getElementById('passedTests').textContent = testResults.passed;
+            document.getElementById('failedTests').textContent = testResults.failed;
+            
+            const successRate = testResults.total > 0 ? 
+                Math.round((testResults.passed / testResults.total) * 100) : 0;
+            document.getElementById('successRate').textContent = `${successRate}%`;
+        }
+
+        function addTestResultToSection(sectionId, name, passed, message = '') {
+            const section = document.getElementById(sectionId);
+            const resultClass = passed ? 'test-pass' : 'test-fail';
+            const icon = passed ? 'fa-check-circle' : 'fa-times-circle';
+            
+            const resultEl = document.createElement('div');
+            resultEl.className = `test-result ${resultClass} mb-2`;
+            resultEl.innerHTML = `
+                <i class="fas ${icon} me-2"></i>
+                <strong>${name}</strong>
+                ${message ? `: ${message}` : ''}
+            `;
+            section.appendChild(resultEl);
+            
+            addTestResult(name, passed, message);
+        }
+
+        // CSS Tests
+        function runCSSTests() {
+            const section = document.getElementById('cssTests');
+            section.innerHTML = '<p>Testing CSS functionality...</p>';
+
+            // Test 1: Check if CSS variables are loaded
+            const root = document.documentElement;
+            const primaryColor = getComputedStyle(root).getPropertyValue('--color-primary');
+            addTestResultToSection('cssTests', 'CSS Variables Loaded', 
+                primaryColor && primaryColor.trim() !== '', 
+                `Primary color: ${primaryColor}`);
+
+            // Test 2: Check if Inter font is loaded
+            const bodyFont = getComputedStyle(document.body).fontFamily;
+            addTestResultToSection('cssTests', 'Inter Font Loaded', 
+                bodyFont.includes('Inter'), 
+                `Font family: ${bodyFont}`);
+
+            // Test 3: Check if utility classes work
+            const testDiv = document.createElement('div');
+            testDiv.className = 'd-none';
+            document.body.appendChild(testDiv);
+            const isHidden = testDiv.offsetParent === null;
+            document.body.removeChild(testDiv);
+            addTestResultToSection('cssTests', 'Utility Classes Work', isHidden, 'd-none class hides element');
+
+            // Test 4: Check if button classes work
+            const testBtn = document.createElement('button');
+            testBtn.className = 'btn btn-primary';
+            document.body.appendChild(testBtn);
+            const btnColor = getComputedStyle(testBtn).backgroundColor;
+            document.body.removeChild(testBtn);
+            addTestResultToSection('cssTests', 'Button Classes Work', 
+                btnColor && btnColor !== 'rgba(0, 0, 0, 0)', 
+                `Button background: ${btnColor}`);
+
+            // Test 5: Check if form classes work
+            const testInput = document.createElement('input');
+            testInput.className = 'form-control';
+            document.body.appendChild(testInput);
+            const inputBorder = getComputedStyle(testInput).border;
+            document.body.removeChild(testInput);
+            addTestResultToSection('cssTests', 'Form Classes Work', 
+                inputBorder && inputBorder !== '0px none rgb(0, 0, 0)', 
+                `Input border: ${inputBorder}`);
+        }
+
+        // Utility Tests
+        function runUtilityTests() {
+            const section = document.getElementById('utilityTests');
+            section.innerHTML = '<p>Testing JavaScript utilities...</p>';
+
+            // Test StorageUtils
+            try {
+                StorageUtils.set('testKey', 'testValue');
+                const value = StorageUtils.get('testKey');
+                StorageUtils.remove('testKey');
+                addTestResultToSection('utilityTests', 'StorageUtils Works', 
+                    value === 'testValue', 
+                    'Set and get values correctly');
+            } catch (e) {
+                addTestResultToSection('utilityTests', 'StorageUtils Works', false, e.message);
+            }
+
+            // Test FormatUtils
+            try {
+                const date = new Date('2024-01-15');
+                const formatted = FormatUtils.formatDate(date);
+                addTestResultToSection('utilityTests', 'FormatUtils.formatDate Works', 
+                    formatted && formatted.length > 0, 
+                    `Formatted date: ${formatted}`);
+
+                const truncated = FormatUtils.truncate('This is a long text', 10);
+                addTestResultToSection('utilityTests', 'FormatUtils.truncate Works', 
+                    truncated === 'This is a...', 
+                    `Truncated: ${truncated}`);
+
+                const fileSize = FormatUtils.formatFileSize(1024 * 1024);
+                addTestResultToSection('utilityTests', 'FormatUtils.formatFileSize Works', 
+                    fileSize === '1 MB', 
+                    `File size: ${fileSize}`);
+            } catch (e) {
+                addTestResultToSection('utilityTests', 'FormatUtils Works', false, e.message);
+            }
+
+            // Test ValidationUtils
+            try {
+                const isValidEmail = ValidationUtils.isValidEmail('test@example.com');
+                addTestResultToSection('utilityTests', 'ValidationUtils.isValidEmail Works', 
+                    isValidEmail === true, 
+                    'Valid email detected');
+
+                const isInvalidEmail = ValidationUtils.isValidEmail('invalid-email');
+                addTestResultToSection('utilityTests', 'ValidationUtils.isValidEmail (Invalid) Works', 
+                    isInvalidEmail === false, 
+                    'Invalid email detected');
+
+                const isValidUrl = ValidationUtils.isValidUrl('https://example.com');
+                addTestResultToSection('utilityTests', 'ValidationUtils.isValidUrl Works', 
+                    isValidUrl === true, 
+                    'Valid URL detected');
+            } catch (e) {
+                addTestResultToSection('utilityTests', 'ValidationUtils Works', false, e.message);
+            }
+
+            // Test DOMUtils
+            try {
+                const testEl = DOMUtils.createElement('div', {
+                    className: 'test-element',
+                    textContent: 'Test content'
+                });
+                document.body.appendChild(testEl);
+                const exists = document.querySelector('.test-element') !== null;
+                document.body.removeChild(testEl);
+                addTestResultToSection('utilityTests', 'DOMUtils.createElement Works', exists, 'Element created');
+
+                const toast = DOMUtils.createToast({ message: 'Test toast' });
+                addTestResultToSection('utilityTests', 'DOMUtils.createToast Works', 
+                    toast !== null, 'Toast created');
+            } catch (e) {
+                addTestResultToSection('utilityTests', 'DOMUtils Works', false, e.message);
+            }
+        }
+
+        // Component Tests
+        function runComponentTests() {
+            const section = document.getElementById('componentTests');
+            section.innerHTML = '<p>Testing UI components...</p>';
+
+            // Test NotificationManager
+            try {
+                const notificationManager = getNotificationManager();
+                addTestResultToSection('componentTests', 'NotificationManager Initialized', 
+                    notificationManager !== null, 'Manager created');
+
+                const toastId = notificationManager.info('Test notification');
+                addTestResultToSection('componentTests', 'NotificationManager.show Works', 
+                    toastId !== null, 'Notification shown');
+            } catch (e) {
+                addTestResultToSection('componentTests', 'NotificationManager Works', false, e.message);
+            }
+
+            // Test TableManager
+            try {
+                const tableEl = document.getElementById('testTable');
+                if (tableEl) {
+                    const tableManager = new TableManager(tableEl, {
+                        sortable: true,
+                        paginate: true
+                    });
+                    addTestResultToSection('componentTests', 'TableManager Initialized', 
+                        tableManager !== null, 'Manager created');
+                } else {
+                    addTestResultToSection('componentTests', 'TableManager Initialized', false, 'Table element not found');
+                }
+            } catch (e) {
+                addTestResultToSection('componentTests', 'TableManager Works', false, e.message);
+            }
+
+            // Test APIClient
+            try {
+                const apiClient = getAPIClient();
+                addTestResultToSection('componentTests', 'APIClient Initialized', 
+                    apiClient !== null, 'Client created');
+
+                // Check if methods exist
+                const hasGet = typeof apiClient.get === 'function';
+                const hasPost = typeof apiClient.post === 'function';
+                addTestResultToSection('componentTests', 'APIClient Methods Exist', 
+                    hasGet && hasPost, 'GET and POST methods exist');
+            } catch (e) {
+                addTestResultToSection('componentTests', 'APIClient Works', false, e.message);
+            }
+        }
+
+        // Notification Tests
+        function testSuccessNotification() {
+            notificationManager.success('This is a success notification!');
+            addTestResultToSection('notificationTests', 'Success Notification', true);
+        }
+
+        function testErrorNotification() {
+            notificationManager.error('This is an error notification!');
+            addTestResultToSection('notificationTests', 'Error Notification', true);
+        }
+
+        function testWarningNotification() {
+            notificationManager.warning('This is a warning notification!');
+            addTestResultToSection('notificationTests', 'Warning Notification', true);
+        }
+
+        function testInfoNotification() {
+            notificationManager.info('This is an info notification!');
+            addTestResultToSection('notificationTests', 'Info Notification', true);
+        }
+
+        // Table Tests
+        let testTableManager = null;
+
+        function testTable() {
+            const tableEl = document.getElementById('testTable');
+            if (!tableEl) {
+                addTestResultToSection('tableTests', 'Table Test', false, 'Table element not found');
+                return;
+            }
+
+            // Create test data
+            const testData = [
+                { id: 1, name: 'Test Item 1', category: 'Category A', priority: 1, date: '2024-01-01' },
+                { id: 2, name: 'Test Item 2', category: 'Category B', priority: 2, date: '2024-01-02' },
+                { id: 3, name: 'Test Item 3', category: 'Category A', priority: 3, date: '2024-01-03' },
+                { id: 4, name: 'Test Item 4', category: 'Category C', priority: 1, date: '2024-01-04' },
+                { id: 5, name: 'Test Item 5', category: 'Category B', priority: 2, date: '2024-01-05' }
+            ];
+
+            if (!testTableManager) {
+                testTableManager = new TableManager(tableEl, {
+                    sortable: true,
+                    paginate: true,
+                    pageSize: 3,
+                    emptyMessage: 'No test data available'
+                });
+            }
+
+            testTableManager.loadData(testData);
+            addTestResultToSection('tableTests', 'Table Load Data', true, '5 items loaded');
+        }
+
+        function testTableSorting() {
+            if (!testTableManager) {
+                addTestResultToSection('tableTests', 'Table Sorting', false, 'Table manager not initialized');
+                return;
+            }
+
+            // Sort by name
+            testTableManager.sortBy('name', 'asc');
+            addTestResultToSection('tableTests', 'Table Sorting (Name ASC)', true, 'Sorted by name ascending');
+
+            // Sort by priority
+            testTableManager.sortBy('priority', 'desc');
+            addTestResultToSection('tableTests', 'Table Sorting (Priority DESC)', true, 'Sorted by priority descending');
+        }
+
+        function testTableFiltering() {
+            if (!testTableManager) {
+                addTestResultToSection('tableTests', 'Table Filtering', false, 'Table manager not initialized');
+                return;
+            }
+
+            // Filter by category
+            testTableManager.filterBy('category', 'Category A');
+            addTestResultToSection('tableTests', 'Table Filtering (Category A)', true, 'Filtered by Category A');
+
+            // Clear filters
+            testTableManager.clearFilters();
+            addTestResultToSection('tableTests', 'Table Clear Filters', true, 'Filters cleared');
+        }
+
+        // Form Tests
+        function testFormValidation() {
+            const form = document.getElementById('testForm');
+            if (!form) {
+                addTestResultToSection('formTests', 'Form Validation', false, 'Form not found');
+                return;
+            }
+
+            // Test with empty form
+            const isValidEmpty = form.checkValidity();
+            addTestResultToSection('formTests', 'Form Validation (Empty)', !isValidEmpty, 'Form is invalid when empty');
+
+            // Test with valid data
+            document.getElementById('testName').value = 'John Doe';
+            document.getElementById('testEmail').value = 'john@example.com';
+            const isValid = form.checkValidity();
+            addTestResultToSection('formTests', 'Form Validation (Valid)', isValid, 'Form is valid with correct data');
+
+            // Test with invalid email
+            document.getElementById('testEmail').value = 'invalid-email';
+            const isInvalidEmail = form.checkValidity();
+            addTestResultToSection('formTests', 'Form Validation (Invalid Email)', !isInvalidEmail, 'Form is invalid with bad email');
+
+            // Reset form
+            form.reset();
+        }
+
+        // Theme Tests
+        function setTheme(theme) {
+            localStorage.setItem('theme', theme);
+            document.documentElement.classList.remove('theme-light', 'theme-dark');
+            
+            if (theme === 'light') {
+                document.documentElement.classList.add('theme-light');
+            } else if (theme === 'dark') {
+                document.documentElement.classList.add('theme-dark');
+            }
+
+            addTestResultToSection('themeTests', `Theme Set to ${theme}`, true, `Theme changed to ${theme}`);
+        }
+
+        // Run all tests
+        function runAllTests() {
+            // Reset test results
+            testResults = {
+                total: 0,
+                passed: 0,
+                failed: 0,
+                results: []
+            };
+            updateTestSummary();
+
+            // Clear all test sections
+            document.getElementById('cssTests').innerHTML = '<p>Testing CSS functionality...</p>';
+            document.getElementById('utilityTests').innerHTML = '<p>Testing JavaScript utilities...</p>';
+            document.getElementById('componentTests').innerHTML = '<p>Testing UI components...</p>';
+            document.getElementById('notificationTests').innerHTML = '<p>Click buttons above to test notifications</p>';
+            document.getElementById('tableTests').innerHTML = '<p>Table functionality test results will appear here</p>';
+            document.getElementById('formTests').innerHTML = '<p>Form validation test results will appear here</p>';
+            document.getElementById('themeTests').innerHTML = '<p>Theme test results will appear here</p>';
+
+            // Run tests
+            runCSSTests();
+            runUtilityTests();
+            runComponentTests();
+
+            // Show completion message
+            setTimeout(() => {
+                notificationManager.success(`All tests completed! ${testResults.passed}/${testResults.total} passed`);
+            }, 500);
+        }
+
+        // Setup form submission
+        document.getElementById('testForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const form = e.target;
+            if (form.checkValidity()) {
+                notificationManager.success('Form submitted successfully!');
+                form.reset();
+            }
+        });
+
+        // Auto-run tests on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            // Small delay to allow everything to load
+            setTimeout(() => {
+                runAllTests();
+            }, 200);
+        });
+    </script>
+</body>
+</html>
