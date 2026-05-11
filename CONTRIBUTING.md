@@ -64,7 +64,7 @@ Help improve the **article intelligence tools** for investigative journalism:
 
 #### Getting Started with Article Intelligence Development:
 
-1. **Read the [Developer Guide](docs/DEVELOPER_GUIDE.md#-article-intelligence-development)**
+1. **Read the [Developer Guide](docs/DEVELOPER_GUIDE.md#article-intelligence-development)**
 2. **Explore the [ArticleIntelligenceAnalyzer class](src/services/article_intelligence.py)**
 3. **Test with sample data**: Use the existing test articles to try your ideas
 4. **Add API endpoints**: Expose new functionality via REST API

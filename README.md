@@ -469,7 +469,7 @@ curl -X POST http://localhost:8000/api/llm/translate \
   -d '{"text": "Hello world", "target_language": "fr", "source_language": "en"}'
 ```
 
-For complete API documentation, see [API Documentation](docs/API.md) (if available) or explore the interactive API docs at `/docs` when the server is running.
+For complete API documentation, see [API Documentation](#api-endpoints) (if available) or explore the interactive API docs at `/docs` when the server is running.
 
 ---
 

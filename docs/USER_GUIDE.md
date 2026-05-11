@@ -123,7 +123,7 @@ sources:
     tags: ["news", "uk"]
 ```
 
-> **⚠️ Note:** Always check `robots.txt` for a domain before adding it. See [ETHICS.md](../ETHICS.md) for the **Do Not Scrape List**.
+> **⚠️ Note:** Always check `robots.txt` for a domain before adding it. See [ETHICS.md](ETHICS.md) for the **Do Not Scrape List**.
 
 ### Adjusting Rate Limits
 - **Per-source rate limits**: Set in `sources.yml` (e.g., `rate_limit_ms: 2000`).
@@ -382,7 +382,7 @@ Open Omniscience is committed to **ethical, legal, and responsible** data aggreg
 
 ### 📋 Compliance Checklist
 Before scraping a new source, ask yourself:
-- [ ] Is the domain **not** in the [Do Not Scrape List](../ETHICS.md#do-not-scrape-list)?
+- [ ] Is the domain **not** in the [Do Not Scrape List](ETHICS.md#do-not-scrape-list)?
 - [ ] Does `robots.txt` allow scraping?
 - [ ] Is the source **publicly accessible** (no paywall or authentication)?
 - [ ] Are rate limits **configured appropriately**?
@@ -483,7 +483,7 @@ sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to serve
 ## ❓ FAQ
 
 ### Q: Can I scrape any website?
-**A:** No. You must comply with `robots.txt`, terms of service, and copyright laws. See [ETHICS.md](../ETHICS.md) for the **Do Not Scrape List**.
+**A:** No. You must comply with `robots.txt`, terms of service, and copyright laws. See [ETHICS.md](ETHICS.md) for the **Do Not Scrape List**.
 
 ### Q: How do I add a new news source?
 **A:**
@@ -513,7 +513,7 @@ alembic upgrade head
 ```
 
 ### Q: Can I contribute to Open Omniscience?
-**A:** Yes! See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
+**A:** Yes! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ### Q: How do I report a bug or request a feature?
 **A:** Open an issue on [GitHub](https://github.com/ideotion/Open-Omniscience/issues).
@@ -527,9 +527,9 @@ alembic upgrade head
 ---
 
 ## 📚 Additional Resources
-- [ETHICS.md](../ETHICS.md): Ethical guidelines and compliance.
-- [DATABASE.md](../docs/DATABASE.md): Database setup and configuration.
-- [DEVELOPER_GUIDE.md](../docs/DEVELOPER_GUIDE.md): Guide for developers.
+- [ETHICS.md](ETHICS.md): Ethical guidelines and compliance.
+- [DATABASE.md](DATABASE.md): Database setup and configuration.
+- [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md): Guide for developers.
 - [GitHub Repository](https://github.com/ideotion/Open-Omniscience): Source code and issues.
 - [GitHub Discussions](https://github.com/ideotion/Open-Omniscience/discussions): Community Q&A.
 

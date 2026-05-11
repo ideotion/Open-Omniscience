@@ -648,8 +648,8 @@ curl -X POST http://localhost:8000/api/llm/generate \
 ### Documentation
 
 - [Main README](../README.md) - Project overview
-- [User Guide](../USER_GUIDE.md) - Complete user guide with LLM features
-- [Developer Guide](../DEVELOPER_GUIDE.md) - Development guide with LLM development
+- [User Guide](USER_GUIDE.md) - Complete user guide with LLM features
+- [Developer Guide](DEVELOPER_GUIDE.md) - Development guide with LLM development
 - [Contributing Guide](../CONTRIBUTING.md) - Contribution guidelines
 
 ### Community
