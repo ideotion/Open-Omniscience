@@ -115,7 +115,9 @@ def sanitize_sql_input(value: Any) -> str:
         r'\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|EXEC|EXECUTE)\b',
         r'\b(UNION|JOIN|WHERE|FROM|GROUP BY|HAVING|ORDER BY)\b',
         r'\b(OR\s+1=1|AND\s+1=1|OR\s+\"\"=\"\")\b',
-        r'\b(;|--|\/\*|\*\/|\\x)\b',
+        r'[;]',  # Remove all semicolons
+        r'--.*?$',  # Remove SQL comments (already handled above but included for completeness)
+        r'/\*.*?\*/',  # Remove multi-line comments
         r'\b(DROP\s+TABLE|DROP\s+DATABASE)\b',
         r'\b(LOAD_FILE|INTO\s+OUTFILE|INTO\s+DUMPFILE)\b'
     ]
@@ -246,8 +248,11 @@ def validate_email(email: str) -> bool:
     if not email:
         return False
     
-    # Simple email validation regex
+    # Simple email validation regex - more strict
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    # Additional check for consecutive dots
+    if '..' in email:
+        return False
     return bool(re.match(pattern, email))
 
 
