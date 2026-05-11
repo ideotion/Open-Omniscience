@@ -90,10 +90,10 @@ Added support for 9 pre-configured open-source models via Ollama:
 ### Documentation
 - Updated `README.md` with comprehensive LLM section
 - Added `docs/LLM_SETUP_GUIDE.md` - Complete setup guide
-- Added `LLM_README.md` - Detailed LLM documentation
-- Added `LLM_IMPLEMENTATION_SUMMARY.md` - Implementation details
-- Added `FRONTEND_LLM_SUMMARY.md` - Frontend integration guide
-- Added `COMPLETE_IMPLEMENTATION_REPORT.md` - Full report
+- Updated `CONTRIBUTING.md` with LLM contribution guidelines
+- Updated `docs/DEVELOPER_GUIDE.md` with LLM development section
+- Updated `docs/USER_GUIDE.md` with LLM usage instructions
+- Updated `.env.example` with LLM environment variables
 
 ### Testing
 - Added `tests/test_llm.py` - Unit tests for LLM functionality
@@ -175,8 +175,9 @@ Initial MVP release of Open Omniscience.
 
 For more detailed information, see:
 - [README.md](README.md) - Project overview
-- [LLM_README.md](LLM_README.md) - LLM documentation
-- [docs/LLM_SETUP_GUIDE.md](docs/LLM_SETUP_GUIDE.md) - Setup guide
+- [docs/LLM_SETUP_GUIDE.md](docs/LLM_SETUP_GUIDE.md) - LLM setup and usage guide
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) - User guide with LLM features
+- [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) - Development guide with LLM development
 - [GitHub Releases](https://github.com/ideotion/Open-Omniscience/releases)
 
 ---

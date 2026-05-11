@@ -648,9 +648,9 @@ curl -X POST http://localhost:8000/api/llm/generate \
 ### Documentation
 
 - [Main README](../README.md) - Project overview
-- [LLM_README.md](../LLM_README.md) - Detailed LLM documentation
-- [LLM_IMPLEMENTATION_SUMMARY.md](../LLM_IMPLEMENTATION_SUMMARY.md) - Implementation details
-- [FRONTEND_LLM_SUMMARY.md](../FRONTEND_LLM_SUMMARY.md) - Frontend integration
+- [User Guide](../USER_GUIDE.md) - Complete user guide with LLM features
+- [Developer Guide](../DEVELOPER_GUIDE.md) - Development guide with LLM development
+- [Contributing Guide](../CONTRIBUTING.md) - Contribution guidelines
 
 ### Community
 
