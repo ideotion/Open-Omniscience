@@ -26,7 +26,7 @@ This document outlines a **comprehensive action plan** for the next major update
 
 ### What We Have (v0.01)
 - ✅ Local LLM support via Ollama integration
-- ✅ 9 pre-configured LLM models
+- ✅ 40 pre-configured LLM models (Gemma 4, Llama 4, Phi-4, Qwen 3, etc.)
 - ✅ 7 core capabilities (text generation, chat, extraction, translation, analysis, synthesis, batch)
 - ✅ RESTful API with 10 endpoints
 - ✅ Complete web-based GUI

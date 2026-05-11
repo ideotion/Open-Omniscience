@@ -64,7 +64,7 @@ Added 10 new REST API endpoints under `/api/llm` prefix:
 - `POST /api/llm/batch` - Batch processing
 
 #### Default Models
-Added support for 9 pre-configured open-source models via Ollama:
+Added support for 40 pre-configured models (Gemma 4, Llama 4, Phi-4, Qwen 3, NLLB, T5, BERT, etc.) via Ollama and other backends:
 - `llama3:8b` (default) - Meta Llama 3 8B, 4.7GB
 - `mistral:7b` - Mistral AI 7B, 4.1GB
 - `phi3:3.8b` - Microsoft Phi-3 3.8B, 2.3GB

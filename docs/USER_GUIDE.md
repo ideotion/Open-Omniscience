@@ -313,7 +313,7 @@ Combine information from multiple sources.
 
 #### View Available Models
 1. Navigate to the **Models** tab.
-2. See all **pre-configured models** (9 models available).
+2. See all **pre-configured models** (40 models available across multiple providers).
 3. Check which models are **downloaded** on your system.
 
 #### Download a Model

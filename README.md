@@ -115,18 +115,67 @@ Open Omniscience now includes **comprehensive local LLM support** for text proce
 
 ### 📚 Supported Models
 
-We support 9 pre-configured open-source models via [Ollama](https://ollama.com):
+We support **40 pre-configured models** across multiple providers (Ollama, Hugging Face, etc.):
 
+#### 🆕 Newest Models (2025-2026)
+| Model | Size | VRAM Required | Best For | Provider |
+|-------|------|---------------|----------|----------|
+| `gemma4:9b` | 5.5GB | 6GB | Latest generation, reasoning | Google |
+| `gemma4:27b` | 17GB | 18GB | High capability, reasoning | Google |
+| `llama4:9b` | 5.2GB | 6GB | Next generation | Meta |
+| `llama4:70b` | 40GB | 42GB | Flagship, state-of-the-art | Meta |
+| `mistral-large-2` | 24GB | 26GB | Latest flagship | Mistral |
+| `phi4` | 14GB | 15GB | Latest Phi, reasoning | Microsoft |
+| `qwen3:8b` | 5GB | 6GB | Improved multilingual | Alibaba |
+| `qwen3:72b` | 45GB | 48GB | High-capacity multilingual | Alibaba |
+
+#### ⚡ Lightweight Models (<4GB)
+| Model | Size | VRAM Required | Best For | Provider |
+|-------|------|---------------|----------|----------|
+| `tinyllama:1.1b` | 0.7GB | 1GB | Extremely lightweight | Community |
+| `phi3:mini-4k` | 1.8GB | 2GB | Compact with 4K context | Microsoft |
+| `phi3:small-8k` | 2.7GB | 3GB | 8K context | Microsoft |
+| `gemma2:2b` | 1.4GB | 2GB | Ultra-lightweight | Google |
+| `llama3.2:1b` | 0.6GB | 1GB | Compact | Meta |
+| `llama3.2:3b` | 1.8GB | 2GB | Balanced | Meta |
+| `qwen2.5:0.5b` | 0.6GB | 1GB | Ultra-lightweight multilingual | Alibaba |
+| `qwen2.5:1.5b` | 1.8GB | 2GB | Compact multilingual | Alibaba |
+| `bart-large` | 1.4GB | 3GB | Translation, summarization | Facebook |
+
+#### 📊 Text Analysis Specialized
+| Model | Size | VRAM Required | Best For | Provider |
+|-------|------|---------------|----------|----------|
+| `bert-base-uncased` | 0.5GB | 1GB | Classification, embeddings | Hugging Face |
+| `distilbert-base-uncased` | 0.25GB | 0.5GB | Fast classification | Hugging Face |
+| `roberta-base` | 0.5GB | 1GB | Robust analysis | Hugging Face |
+| `all-mpnet-base-v2` | 0.4GB | 1GB | Semantic similarity | Hugging Face |
+| `sentence-t5-base` | 0.5GB | 1GB | Sentence embeddings | Hugging Face |
+
+#### 🌍 Translation Specialized
+| Model | Size | VRAM Required | Best For | Languages | Provider |
+|-------|------|---------------|----------|-----------|----------|
+| `nllb-200-distilled-600m` | 1.1GB | 2GB | Translation | 200+ | Meta |
+| `nllb-200-1.3b` | 2.5GB | 3GB | Translation | 200+ | Meta |
+| `mbart-large-50-many-to-many` | 1.4GB | 3GB | Translation, summarization | 50 | Facebook |
+| `t5-small` | 0.3GB | 0.5GB | Translation, summarization | Multiple | Google |
+| `t5-base` | 0.9GB | 1GB | Translation, summarization | Multiple | Google |
+| `t5-large` | 3GB | 4GB | High-quality translation | Multiple | Google |
+
+#### 🎯 General Purpose (Original)
 | Model | Size | VRAM Required | Best For | Default |
 |-------|------|---------------|----------|---------|
 | `phi3:3.8b` | 2.3GB | 3GB | Lightweight tasks | ❌ |
-| `bart-large` | 1.4GB | 3GB | Translation, summarization | ❌ |
 | `mistral:7b` | 4.1GB | 5GB | General purpose | ❌ |
 | **`llama3:8b`** | **4.7GB** | **5GB** | **All tasks** | ✅ |
 | `gemma:7b` | 4.8GB | 5GB | CPU-optimized | ❌ |
 | `qwen2.5:7b` | 4.8GB | 5GB | Multilingual | ❌ |
 | `llava:7b` | 4.5GB | 6GB | Multimodal (text + vision) | ❌ |
 | `llama3:70b` | 40GB | 42GB | High capability | ❌ |
+| `mistral-7b-instruct` | 4.1GB | 5GB | Instruction fine-tuned | ❌ |
+| `llama3.2:11b` | 6.5GB | 7GB | High performance | ❌ |
+| `llama3.2:90b` | 55GB | 58GB | Flagship | ❌ |
+| `gemma2:9b` | 5GB | 6GB | Improved v1 | ❌ |
+| `phi3:medium-16k` | 4.2GB | 5GB | 16K context | ❌ |
 
 ### 🚀 LLM Quick Start
 
@@ -614,7 +663,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Version 0.02 (Current)
 - **NEW:** Local LLM support with comprehensive text processing capabilities
-- **NEW:** 9 pre-configured open-source models
+- **NEW:** 40 pre-configured models (Gemma 4, Llama 4, Phi-4, Qwen 3, NLLB, T5, BERT, etc.)
 - **NEW:** 10+ API endpoints for LLM operations
 - **NEW:** Docker support for LLM deployment
 - **NEW:** Automated setup scripts
