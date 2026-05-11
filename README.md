@@ -39,6 +39,21 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 
 ## 🚀 Getting Started
 
+### One-Line Installation (Recommended)
+
+The easiest way to install Open Omniscience is with our one-line installer:
+
+```bash
+curl -fsSL https://github.com/ideotion/Open-Omniscience/raw/0.01/install | bash
+```
+
+This script will:
+- Detect your operating system
+- Install prerequisites (git, curl, docker, docker-compose)
+- Clone the repository
+- Start the application with Docker
+- Verify the installation
+
 ### Prerequisites
 - **Operating System:** Linux (recommended), macOS, or Windows (WSL)
 - **Python:** 3.10+
@@ -46,7 +61,7 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 - **Database:** SQLite (default) or PostgreSQL (recommended for production)
 - **Docker:** Optional, for containerized deployment
 
-### Quick Start with Docker (Recommended)
+### Quick Start with Docker
 
 The fastest way to get started is using Docker:
 

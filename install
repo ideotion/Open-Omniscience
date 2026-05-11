@@ -1,0 +1,369 @@
+#!/bin/bash
+# Open Omniscience - One-Line Installation Script
+# Usage: curl -fsSL https://github.com/ideotion/Open-Omniscience/raw/0.01/install | bash
+# This script provides a convenient way to install and run Open Omniscience
+
+# Ensure we're running with bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "Please run this script with bash, not sh."
+    exit 1
+fi
+
+set -e
+
+# Configuration
+REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
+BRANCH="0.01"
+INSTALL_DIR="${HOME}/open-omniscience"
+LOG_FILE="/tmp/open-omniscience-install-$(date +%Y%m%d-%H%M%S).log"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Logging functions
+log() {
+    echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
+}
+
+success() {
+    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
+}
+
+warning() {
+    echo -e "${YELLOW}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
+}
+
+error() {
+    echo -e "${RED}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
+}
+
+# Check if running as root
+default_user() {
+    if [ "$(id -u)" -eq 0 ]; then
+        warning "Running as root. It's recommended to run this as a regular user."
+        read -p "Continue as root? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            error "Installation cancelled. Please run as a regular user."
+            exit 1
+        fi
+    fi
+}
+
+# Detect OS and distribution
+detect_os() {
+    log "Detecting operating system..."
+    
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$NAME
+        VER=$VERSION_ID
+    elif type lsb_release >/dev/null 2>&1; then
+        OS=$(lsb_release -si)
+        VER=$(lsb_release -sr)
+    elif [ -f /etc/lsb-release ]; then
+        . /etc/lsb-release
+        OS=$DISTRIB_ID
+        VER=$DISTRIB_RELEASE
+    elif [ -f /etc/debian_version ]; then
+        OS=Debian
+        VER=$(cat /etc/debian_version)
+    elif [ -f /etc/redhat-release ]; then
+        OS=$(cat /etc/redhat-release | head -1 | awk '{print $1}')
+        VER=$(cat /etc/redhat-release | head -1 | awk '{print $3}')
+    else
+        OS=$(uname -s)
+        VER=$(uname -r)
+    fi
+    
+    ARCH=$(uname -m)
+    
+    log "Detected: $OS $VER ($ARCH)"
+    echo "$OS"
+}
+
+# Check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Install prerequisites based on OS
+install_prerequisites() {
+    local os=$1
+    
+    log "Installing prerequisites..."
+    
+    # Common prerequisites
+    local prerequisites=("git" "curl" "docker" "docker-compose")
+    local missing=()
+    
+    for cmd in "${prerequisites[@]}"; do
+        if ! command_exists "$cmd"; then
+            missing+=("$cmd")
+        fi
+    done
+    
+    if [ ${#missing[@]} -eq 0 ]; then
+        success "All prerequisites are already installed."
+        return 0
+    fi
+    
+    warning "Missing prerequisites: ${missing[*]}"
+    
+    # Install based on OS
+    case "$os" in
+        *Ubuntu*|*Debian*|*Pop*|*Linux*Mint*)
+            log "Installing prerequisites for Debian/Ubuntu-based system..."
+            sudo apt-get update -y
+            sudo apt-get install -y git curl docker.io docker-compose
+            ;;
+        *CentOS*|*RHEL*|*Fedora*|*AlmaLinux*|*Rocky*)
+            log "Installing prerequisites for RHEL-based system..."
+            sudo yum install -y git curl docker docker-compose
+            ;;
+        *Arch*Linux*|*Manjaro*|*EndeavourOS*)
+            log "Installing prerequisites for Arch-based system..."
+            sudo pacman -Syu --noconfirm git curl docker docker-compose
+            ;;
+        *openSUSE*|*SUSE*)
+            log "Installing prerequisites for openSUSE..."
+            sudo zypper install -y git curl docker docker-compose
+            ;;
+        *Alpine*|*alpine*)
+            log "Installing prerequisites for Alpine Linux..."
+            sudo apk add --no-cache git curl docker docker-compose
+            ;;
+        *macOS*|*Darwin*)
+            log "Installing prerequisites for macOS..."
+            if ! command_exists "brew"; then
+                warning "Homebrew not found. Please install Homebrew first: /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                exit 1
+            fi
+            brew install git curl docker docker-compose
+            ;;
+        *)
+            error "Unsupported operating system: $os"
+            error "Please install the following manually: git, curl, docker, docker-compose"
+            exit 1
+            ;;
+    esac
+    
+    # Verify installation
+    for cmd in "${prerequisites[@]}"; do
+        if ! command_exists "$cmd"; then
+            error "Failed to install $cmd"
+            exit 1
+        fi
+    done
+    
+    success "All prerequisites installed successfully."
+}
+
+# Start Docker service
+start_docker() {
+    log "Starting Docker service..."
+    
+    if command_exists "systemctl"; then
+        if ! systemctl is-active --quiet docker; then
+            sudo systemctl start docker
+            sudo systemctl enable docker
+        fi
+    elif command_exists "service"; then
+        if ! service docker status >/dev/null 2>&1; then
+            sudo service docker start
+        fi
+    fi
+    
+    # Add current user to docker group if needed
+    if ! groups | grep -q docker; then
+        warning "Adding current user to docker group..."
+        sudo usermod -aG docker "$USER"
+        warning "You may need to log out and back in for Docker to work without sudo."
+    fi
+    
+    # Verify Docker is running
+    if ! docker info >/dev/null 2>&1; then
+        error "Docker is not running. Please start Docker manually."
+        exit 1
+    fi
+    
+    success "Docker is running."
+}
+
+# Clone the repository
+clone_repo() {
+    log "Cloning Open Omniscience repository..."
+    
+    if [ -d "$INSTALL_DIR" ]; then
+        warning "Installation directory $INSTALL_DIR already exists."
+        read -p "Overwrite existing installation? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            error "Installation cancelled."
+            exit 1
+        fi
+        rm -rf "$INSTALL_DIR"
+    fi
+    
+    mkdir -p "$INSTALL_DIR"
+    git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
+    
+    if [ ! -d "$INSTALL_DIR/.git" ]; then
+        error "Failed to clone repository."
+        exit 1
+    fi
+    
+    success "Repository cloned to $INSTALL_DIR"
+}
+
+# Setup and start the application
+setup_and_start() {
+    log "Setting up and starting Open Omniscience..."
+    
+    cd "$INSTALL_DIR"
+    
+    # Copy environment file
+    if [ -f ".env.example" ] && [ ! -f ".env" ]; then
+        cp .env.example .env
+        success "Created .env file from template."
+    fi
+    
+    # Create required directories
+    mkdir -p data audit logs
+    
+    # Build and start Docker containers
+    log "Building Docker images..."
+    docker-compose build
+    
+    log "Starting containers..."
+    docker-compose up -d
+    
+    # Wait for services to be healthy
+    log "Waiting for services to start..."
+    local max_attempts=30
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        if docker-compose ps | grep -q "Up (healthy)"; then
+            success "Services are running and healthy!"
+            break
+        fi
+        
+        if [ $((attempt % 5)) -eq 0 ]; then
+            log "Waiting for services... (attempt $attempt/$max_attempts)"
+        fi
+        
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+    
+    if [ $attempt -gt $max_attempts ]; then
+        warning "Services started but may still be initializing."
+    fi
+}
+
+# Verify installation
+verify_installation() {
+    log "Verifying installation..."
+    
+    cd "$INSTALL_DIR"
+    
+    # Check if containers are running
+    if ! docker-compose ps | grep -q "Up"; then
+        error "Containers are not running."
+        docker-compose logs
+        exit 1
+    fi
+    
+    # Test API endpoint
+    local max_attempts=10
+    local attempt=1
+    local api_healthy=false
+    
+    while [ $attempt -le $max_attempts ]; do
+        if curl -s http://localhost:8000/api/sources >/dev/null 2>&1; then
+            api_healthy=true
+            break
+        fi
+        sleep 3
+        attempt=$((attempt + 1))
+    done
+    
+    if [ "$api_healthy" = false ]; then
+        warning "API endpoint not responding. Check container logs with: docker-compose logs"
+    else
+        success "API endpoint is responding!"
+    fi
+}
+
+# Show completion message
+show_completion() {
+    echo ""
+    echo "=========================================="
+    echo "Open Omniscience Installation Complete!"
+    echo "=========================================="
+    echo ""
+    echo "Installation Directory: $INSTALL_DIR"
+    echo ""
+    echo "Access Points:"
+    echo "  - Web Interface: http://localhost:8000"
+    echo "  - API: http://localhost:8000/api/"
+    echo ""
+    echo "Commands:"
+    echo "  - Start services: cd $INSTALL_DIR && docker-compose up -d"
+    echo "  - Stop services: cd $INSTALL_DIR && docker-compose down"
+    echo "  - View logs: cd $INSTALL_DIR && docker-compose logs -f"
+    echo "  - Update: cd $INSTALL_DIR && git pull && docker-compose up -d --build"
+    echo ""
+    echo "Log file: $LOG_FILE"
+    echo ""
+    echo "=========================================="
+}
+
+# Main installation function
+main() {
+    echo ""
+    echo "=========================================="
+    echo "Open Omniscience - One-Line Installer"
+    echo "=========================================="
+    echo ""
+    
+    # Initialize log file
+    echo "Open Omniscience Installation Log" > "$LOG_FILE"
+    echo "Started: $(date)" >> "$LOG_FILE"
+    echo "" >> "$LOG_FILE"
+    
+    # Check user
+    default_user
+    
+    # Detect OS
+    OS=$(detect_os)
+    
+    # Install prerequisites
+    install_prerequisites "$OS"
+    
+    # Start Docker
+    start_docker
+    
+    # Clone repository
+    clone_repo
+    
+    # Setup and start
+    setup_and_start
+    
+    # Verify
+    verify_installation
+    
+    # Show completion
+    show_completion
+    
+    echo ""
+    log "Installation completed successfully!"
+}
+
+# Run main function
+main "$@"
