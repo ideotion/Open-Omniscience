@@ -142,9 +142,9 @@ print(f"Status: {result.status}")
   - Phase inconsistency detection
   - Temporal artifact detection
 
-### Phase 3.3: Propaganda & Cognitive Bias Detection 🔄
+### Phase 3.3: Propaganda & Cognitive Bias Detection ✅
 
-**Status:** Partially Implemented
+**Status:** Implemented
 
 - **Propaganda Detection** (`propaganda.py`)
   - 15+ propaganda technique detection
@@ -161,11 +161,17 @@ print(f"Status: {result.status}")
   - Availability bias
   - And more...
 
-### Phase 3.4: Disinformation Campaign Tracking 📅
+- **Bot Detection** (`bot_detector.py`)
+  - Behavioral analysis
+  - Content similarity detection
+  - Posting pattern analysis
+  - Network-based detection
 
-**Status:** Planned
+### Phase 3.4: Disinformation Campaign Tracking ✅
 
-- **Network Analysis** (Planned)
+**Status:** Implemented
+
+- **Network Analysis** (`network_analyzer.py`)
   - Co-occurrence graph construction
   - Community detection (Louvain, Leiden)
   - Centrality analysis
