@@ -1,0 +1,250 @@
+# Open-Omniscience Legal Configuration
+# This file defines legal compliance settings
+# Format: YAML
+
+# General legal settings
+legal:
+  jurisdiction: "EU"  # Primary jurisdiction for compliance
+  data_protection_officer: "dpo@ideotion.com"
+  organization: "Ideotion"
+  
+  # Data retention policies
+  retention:
+    audit_logs: 365  # days
+    system_logs: 90
+    raw_data: 30
+    processed_data: 90
+    
+  # Compliance standards
+  compliance:
+    gdpr: true
+    ccpa: false
+    hipaa: false
+    pci_dss: false
+
+# GDPR Configuration
+gdpr:
+  enabled: true
+  
+  # Personal data categories
+  personal_data_categories:
+    - "name"
+    - "email"
+    - "phone"
+    - "address"
+    - "ip_address"
+    - "cookies"
+    - "location"
+    - "biometric"
+    - "genetic"
+    - "health"
+    - "financial"
+    - "racial_ethnic"
+    - "political"
+    - "religious"
+    - "sexual_orientation"
+    - "trade_union"
+  
+  # Lawful bases for processing
+  lawful_bases:
+    - "consent"
+    - "contract"
+    - "legal_obligation"
+    - "vital_interests"
+    - "public_task"
+    - "legitimate_interests"
+  
+  # Special category data
+  special_categories:
+    - "racial_ethnic"
+    - "political"
+    - "religious"
+    - "sexual_orientation"
+    - "health"
+    - "genetic"
+    - "biometric"
+  
+  # Rights of data subjects
+  data_subject_rights:
+    - "right_to_be_informed"
+    - "right_of_access"
+    - "right_to_rectification"
+    - "right_to_erasure"
+    - "right_to_restrict_processing"
+    - "right_to_data_portability"
+    - "right_to_object"
+    - "rights_in_relation_to_automated_decision_making"
+  
+  # DPIA (Data Protection Impact Assessment) threshold
+  dpia_threshold:
+    large_scale_processing: 10000  # Number of data subjects
+    large_scale_special_category: 1000
+    systematic_monitoring: true
+    public_area_surveillance: true
+    
+  # Data breach notification
+  breach_notification:
+    authority: "CNIL"  # French data protection authority
+    authority_email: "notification@cnil.fr"
+    notification_deadline_hours: 72
+
+# Copyright Configuration
+copyright:
+  enabled: true
+  
+  # Copyright notice patterns
+  notice_patterns:
+    - "copyright"
+    - "©"
+    - "all rights reserved"
+    - "intellectual property"
+    - "trademark"
+    - "™"
+    - "®"
+    - "patent"
+    - "licensed"
+    - "terms of use"
+    - "privacy policy"
+    - "do not reproduce"
+    - "confidential"
+  
+  # Fair use considerations
+  fair_use:
+    purpose: ["criticism", "comment", "news_reporting", "teaching", "scholarship", "research"]
+    nature: ["factual", "published", "unpublished"]
+    amount: ["small", "substantial"]
+    effect: ["no_market_effect", "market_effect"]
+  
+  # DMCA (Digital Millennium Copyright Act)
+  dmca:
+    agent_name: "DMCA Agent"
+    agent_email: "dmca@ideotion.com"
+    agent_address: "123 Main St, Paris, France"
+    response_time_hours: 24
+
+# Robots.txt Configuration
+robots:
+  enabled: true
+  user_agent: "OpenOmniscience/1.0"
+  respect_robots_txt: true
+  cache_ttl: 3600  # seconds
+  
+  # Default behavior if robots.txt is unavailable
+  default_allow: true
+  
+  # Crawl delay
+  crawl_delay: 5.0  # seconds between requests to the same domain
+
+# Chain of Custody Configuration
+chain_of_custody:
+  enabled: true
+  
+  # Required fields for custody records
+  required_fields:
+    - "timestamp"
+    - "action"
+    - "user_id"
+    - "data_hash"
+    - "source"
+  
+  # Hash algorithm
+  hash_algorithm: "SHA-256"
+  
+  # Storage
+  storage:
+    type: "sqlite"  # or "postgresql"
+    path: "audit/chain_of_custody.db"
+    
+  # Retention
+  retention_days: 365
+
+# Audit Trail Configuration
+audit_trail:
+  enabled: true
+  
+  # Log file format
+  format: "markdown"  # or "json"
+  
+  # Log file naming
+  naming: "YYYYMMDD_OpenOmniscience_AUDIT_TRAIL"
+  
+  # Log rotation
+  rotation:
+    enabled: true
+    max_size_mb: 100
+    max_files: 10
+    
+  # What to log
+  log_activities:
+    - "data_ingestion"
+    - "data_processing"
+    - "data_analysis"
+    - "data_export"
+    - "data_deletion"
+    - "configuration_change"
+    - "user_access"
+    - "system_event"
+
+# Ethical Scraping Configuration
+ethical_scraping:
+  enabled: true
+  
+  # Rate limiting
+  rate_limiting:
+    enabled: true
+    default_rate: 10  # requests per minute
+    per_domain: true
+    
+  # User agent
+  user_agent: "OpenOmniscience/1.0 (+https://github.com/ideotion/Open-Omniscience)"
+  
+  # Request headers
+  headers:
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    Accept-Language: "en-US,en;q=0.5"
+    Accept-Encoding: "gzip, deflate"
+    Connection: "keep-alive"
+  
+  # Timeout
+  timeout: 30  # seconds
+  
+  # Retry
+  retry:
+    enabled: true
+    max_retries: 3
+    delay: 5.0
+    backoff_factor: 2.0
+  
+  # Respect cache headers
+  respect_cache: true
+  
+  # Maximum depth
+  max_depth: 3
+  
+  # Excluded domains
+  excluded_domains:
+    - "example.com"
+    - "test.com"
+    - "localhost"
+
+# Legal Disclaimer
+legal_disclaimer: |
+  Open-Omniscience is an open-source data intelligence platform designed for 
+  research and analysis purposes. The system is configured to respect all 
+  applicable laws and ethical guidelines regarding data collection, processing, 
+  and storage.
+  
+  Users of this system are responsible for ensuring that their use complies with 
+  all relevant legal and ethical requirements. The maintainers of Open-Omniscience 
+  are not liable for any misuse of the system or violations of law or ethics 
+  committed by users.
+  
+  This system includes features for:
+  - Respecting robots.txt and website terms of service
+  - Detecting and handling copyrighted content
+  - Complying with GDPR and other data protection regulations
+  - Maintaining chain of custody for legal admissibility
+  - Logging all activities for audit purposes
+  
+  If you have any legal concerns or questions about the system's compliance 
+  features, please contact legal@ideotion.com.
