@@ -180,8 +180,8 @@ class SourceMonitor:
         if cache_file.exists():
             try:
                 with open(cache_file, "r") as f:
-                self._response_cache = json.load(f)
-                logger.info(f"Loaded {len(self._response_cache)} cached responses")
+                    self._response_cache = json.load(f)
+                    logger.info(f"Loaded {len(self._response_cache)} cached responses")
             except (json.JSONDecodeError, Exception) as e:
                 logger.error(f"Error loading cache: {e}")
     
