@@ -1,0 +1,84 @@
+# Grafana Prometheus Datasource Configuration
+# 
+# This file configures Prometheus as a datasource in Grafana
+#
+# Usage: Mount this file to /etc/grafana/provisioning/datasources/prometheus.yml
+#
+# Author: Open-Omniscience Team
+# License: Open Source (MIT)
+
+# List of datasources to insert/update depending on what's available in the database
+apiVersion: 1
+
+# List of datasources that should be deleted from the database
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
+# List of datasources to insert/update
+datasources:
+  # Prometheus datasource
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    
+    # JSON data for Prometheus datasource
+    jsonData:
+      # Time interval for queries
+      timeInterval: "15s"
+      
+      # Query timeout
+      queryTimeout: "30s"
+      
+      # HTTP method
+      httpMethod: "GET"
+      
+      # Custom HTTP headers
+      httpHeaderName1: "Accept"
+      httpHeaderValue1: "application/json"
+      
+      # TLS/SSL settings
+      tlsAuth: false
+      tlsAuthWithCACert: false
+      
+      # Basic auth (if enabled in Prometheus)
+      basicAuth: false
+      basicAuthUser: ""
+      basicAuthPassword: ""
+      
+      # With credentials
+      withCredentials: false
+      
+      # Keep cookies
+      keepCookies: []
+      
+    # Secure JSON data (sensitive information)
+    secureJsonData:
+      # Basic auth password (if used)
+      basicAuthPassword: ""
+      
+      # TLS client cert and key (if used)
+      tlsClientCert: ""
+      tlsClientKey: ""
+      
+    # Version
+    version: 1
+    
+    # Read only
+    readOnly: false
+
+  # Optional: Additional Prometheus datasource for long-term storage
+  # - name: Prometheus-LongTerm
+  #   type: prometheus
+  #   access: proxy
+  #   orgId: 1
+  #   url: http://prometheus-longterm:9090
+  #   isDefault: false
+  #   editable: true
+  #   jsonData:
+  #     timeInterval: "1m"
+  #     queryTimeout: "60s"
