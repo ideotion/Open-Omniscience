@@ -190,6 +190,13 @@ class Source(Base):
         enabled: Whether the source is active for scraping.
         priority: Priority level (1 = high, 3 = low).
         tags: Comma-separated list of tags.
+        reliability_score: Reliability score (1-10, 10 = most reliable).
+        language: Primary language of the source (ISO 639-1 code).
+        region: Geographic region (e.g., "global", "europe", "asia").
+        country: Country code (ISO 3166-1 alpha-2).
+        source_type: Type of source (e.g., "news", "financial", "scientific").
+        update_frequency: How often source updates (in minutes).
+        cacheability: Whether responses can be cached.
         articles: Relationship to Article model.
     """
     __tablename__ = "sources"
@@ -202,6 +209,15 @@ class Source(Base):
     enabled = Column(Boolean, default=True)
     priority = Column(Integer, default=2)
     tags = Column(String(500))  # Comma-separated tags
+    
+    # Enhanced metadata fields
+    reliability_score = Column(Integer, default=5)  # 1-10 scale
+    language = Column(String(10), default="en")  # ISO 639-1 code
+    region = Column(String(50), default="global")
+    country = Column(String(2), default="US")  # ISO 3166-1 alpha-2
+    source_type = Column(String(50), default="news")  # news, financial, scientific, etc.
+    update_frequency = Column(Integer, default=60)  # minutes
+    cacheability = Column(Boolean, default=True)
 
     # Relationship to articles
     articles = relationship("Article", back_populates="source", cascade="all, delete-orphan")
@@ -216,6 +232,18 @@ class Source(Base):
     
     # One-to-one relationship with metadata
     source_metadata = relationship("SourceMetadata", back_populates="source", uselist=False, cascade="all, delete-orphan")
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_source_domain', 'domain', unique=True),
+        Index('idx_source_enabled', 'enabled'),
+        Index('idx_source_priority', 'priority'),
+        Index('idx_source_reliability', 'reliability_score'),
+        Index('idx_source_language', 'language'),
+        Index('idx_source_region', 'region'),
+        Index('idx_source_country', 'country'),
+        Index('idx_source_type', 'source_type'),
+    )
     
     def __repr__(self):
         return f"<Source(name='{self.name}', domain='{self.domain}')>"
@@ -236,6 +264,9 @@ class Article(Base):
         language: Language code (e.g., "en", "fr").
         hash: SHA-256 hash of the content (for duplicate detection).
         created_at: Timestamp when the article was ingested.
+        region: Geographic region detected from content.
+        country: Country code detected from content.
+        author: Author of the article.
         source: Relationship to Source model.
     """
     __tablename__ = "articles"
@@ -251,6 +282,11 @@ class Article(Base):
     hash = Column(String(64), nullable=False, unique=True)  # SHA-256 hash length is 64
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
+    # Enhanced metadata fields
+    region = Column(String(50))  # Geographic region
+    country = Column(String(2))  # ISO 3166-1 alpha-2 country code
+    author = Column(String(255))  # Article author
+    
     # Relationship to source
     source = relationship("Source", back_populates="articles")
     
@@ -264,6 +300,14 @@ class Article(Base):
         Index("idx_article_source_id", "source_id"),
         # Index for faster text search
         Index("idx_article_content", "content"),
+        # Index for faster language queries
+        Index("idx_article_language", "language"),
+        # Index for faster region queries
+        Index("idx_article_region", "region"),
+        # Index for faster country queries
+        Index("idx_article_country", "country"),
+        # Index for faster author queries
+        Index("idx_article_author", "author"),
     )
     
     def __repr__(self):
