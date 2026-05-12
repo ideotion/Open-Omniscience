@@ -1,0 +1,224 @@
+# Open-Omniscience Models Configuration
+# This file defines the machine learning models used by the system
+# Format: YAML
+
+# Model directories
+model_dirs:
+  pillar3: "pillar3/data/models"
+  pillar4: "pillar4/data/models"
+  shared: "data/models"
+
+# Pillar 3: Deception Defense Models
+pillar3:
+  deepfake_detection:
+    description: "Models for detecting deepfake images, videos, and audio"
+    models:
+      - name: "faceforensics_image"
+        type: "onnx"
+        file: "faceforensics_image.onnx"
+        input_shape: [1, 3, 224, 224]
+        output_classes: ["real", "fake"]
+        accuracy: 0.96
+        size_mb: 500
+        source: "https://github.com/ondyari/FaceForensics"
+        enabled: true
+        
+      - name: "wilddeepfake_image"
+        type: "onnx"
+        file: "wilddeepfake_image.onnx"
+        input_shape: [1, 3, 224, 224]
+        output_classes: ["real", "fake"]
+        accuracy: 0.94
+        size_mb: 300
+        source: "https://github.com/deepware/wilddeepfake"
+        enabled: true
+        
+      - name: "dfdc_video"
+        type: "tflite"
+        file: "dfdc_video.tflite"
+        input_shape: [1, 16, 224, 224, 3]
+        output_classes: ["real", "fake"]
+        accuracy: 0.92
+        size_mb: 200
+        source: "https://www.kaggle.com/c/deepfake-detection-challenge"
+        enabled: true
+        
+      - name: "audio_deepfake"
+        type: "onnx"
+        file: "audio_deepfake.onnx"
+        input_shape: [1, 16000]
+        output_classes: ["real", "fake"]
+        accuracy: 0.88
+        size_mb: 150
+        source: "https://github.com/resemble-ai/Resemble"
+        enabled: true
+
+  propaganda_detection:
+    description: "Models for detecting propaganda techniques in text"
+    models:
+      - name: "propaganda_classifier"
+        type: "sklearn"
+        file: "propaganda_classifier.pkl"
+        input_type: "text"
+        output_classes: [
+          "appeal_to_emotion", "bandwagon", "black_and_white_fallacy",
+          "circular_reasoning", "false_cause", "hasty_generalization",
+          "red_herring", "straw_man", "ad_hominem", "appeal_to_authority",
+          "loaded_language", "repetition", "slogans", "testimonials",
+          "fear_mongering"
+        ]
+        accuracy: 0.88
+        size_mb: 10
+        source: "custom"
+        enabled: true
+        
+      - name: "bias_classifier"
+        type: "sklearn"
+        file: "bias_classifier.pkl"
+        input_type: "text"
+        output_classes: [
+          "confirmation_bias", "anchoring_bias", "framing_bias",
+          "availability_bias", "dunning_kruger", "halo_effect",
+          "horn_effect", "recency_bias", "primacy_effect",
+          "stereotyping", "in_group_bias", "out_group_homogeneity",
+          "self_serving_bias", "optimism_bias", "pessimism_bias",
+          "status_quo_bias", "loss_aversion", "sunk_cost_fallacy",
+          "gamblers_fallacy", "clustering_illusion", "illusory_correlation"
+        ]
+        accuracy: 0.85
+        size_mb: 15
+        source: "custom"
+        enabled: true
+
+  nlp_models:
+    description: "NLP models for text analysis"
+    models:
+      - name: "bert_base_uncased"
+        type: "pytorch"
+        file: "bert_base_uncased"
+        input_type: "text"
+        max_length: 512
+        size_mb: 400
+        source: "huggingface"
+        enabled: false  # Large model, disabled by default
+        
+      - name: "distilbert_base_uncased"
+        type: "onnx"
+        file: "distilbert_base_uncased.onnx"
+        input_type: "text"
+        max_length: 512
+        size_mb: 250
+        source: "huggingface"
+        enabled: true
+        
+      - name: "vader_sentiment"
+        type: "python"
+        file: null
+        input_type: "text"
+        package: "vaderSentiment"
+        size_mb: 1
+        source: "nltk"
+        enabled: true
+
+# Pillar 4: Real-Time Monitoring Models
+pillar4:
+  anomaly_detection:
+    description: "Models for detecting anomalies in data streams"
+    models:
+      - name: "isolation_forest"
+        type: "sklearn"
+        file: "isolation_forest.pkl"
+        n_estimators: 100
+        contamination: 0.01
+        size_mb: 5
+        source: "scikit-learn"
+        enabled: true
+        
+      - name: "one_class_svm"
+        type: "sklearn"
+        file: "one_class_svm.pkl"
+        kernel: "rbf"
+        nu: 0.01
+        size_mb: 5
+        source: "scikit-learn"
+        enabled: true
+
+  trend_analysis:
+    description: "Models for trend prediction"
+    models:
+      - name: "linear_regression"
+        type: "sklearn"
+        file: "linear_regression.pkl"
+        lookback_window: 10
+        forecast_horizon: 5
+        size_mb: 1
+        source: "scikit-learn"
+        enabled: true
+        
+      - name: "polynomial_regression"
+        type: "sklearn"
+        file: "polynomial_regression.pkl"
+        degree: 2
+        lookback_window: 10
+        forecast_horizon: 5
+        size_mb: 1
+        source: "scikit-learn"
+        enabled: true
+        
+      - name: "bayesian_ridge"
+        type: "sklearn"
+        file: "bayesian_ridge.pkl"
+        lookback_window: 10
+        forecast_horizon: 5
+        size_mb: 1
+        source: "scikit-learn"
+        enabled: true
+
+  threat_classification:
+    description: "Models for classifying threats"
+    models:
+      - name: "threat_classifier"
+        type: "sklearn"
+        file: "threat_classifier.pkl"
+        input_type: "text"
+        output_classes: ["malware", "phishing", "botnet", "spam", "scanning", "exploit", "disinformation"]
+        size_mb: 10
+        source: "custom"
+        enabled: true
+
+# Model download configuration
+download:
+  # Sources for downloading models
+  sources:
+    huggingface:
+      base_url: "https://huggingface.co"
+      cache_dir: "data/models/huggingface"
+      
+    onnx:
+      base_url: "https://github.com/onnx/models/raw/main"
+      cache_dir: "data/models/onnx"
+      
+    custom:
+      base_url: "https://github.com/ideotion/Open-Omniscience/raw/main/data/models"
+      cache_dir: "data/models/custom"
+  
+  # Retry configuration for downloads
+  retries: 3
+  timeout: 30
+  
+  # Verify model integrity
+  verify_checksums: true
+  checksums:
+    faceforensics_image.onnx: "a1b2c3d4e5f6..."
+    wilddeepfake_image.onnx: "f6e5d4c3b2a1..."
+
+# Model performance requirements
+performance:
+  min_accuracy: 0.85
+  max_size_mb: 500
+  max_inference_time_ms: 100
+
+# Model versioning
+versioning:
+  enabled: true
+  version_file: "model_versions.json"
