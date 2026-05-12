@@ -129,7 +129,7 @@ app.include_router(link_analysis_router)
 app.include_router(llm_router)
 
 # Serve static files (HTML5 frontend)
-app.mount("/", StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True), name="static")
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True), name="static")
 
 # Middleware for Prometheus metrics
 @app.middleware("http")
@@ -323,8 +323,12 @@ async def search_articles(
         if query:
             parsed_query = parse_search_query(query)
             query_filters = build_sqlalchemy_filter(parsed_query, session)
-            if query_filters:
-                filters.append(query_filters)
+            # query_filters is either a SQLAlchemy clause or empty list
+            if not (isinstance(query_filters, list) and len(query_filters) == 0):
+                if isinstance(query_filters, list):
+                    filters.extend(query_filters)
+                else:
+                    filters.append(query_filters)
 
         # Apply source filter
         if source:
@@ -448,8 +452,12 @@ async def export_articles(
         if query:
             parsed_query = parse_search_query(query)
             query_filters = build_sqlalchemy_filter(parsed_query, session)
-            if query_filters:
-                filters.append(query_filters)
+            # query_filters is either a SQLAlchemy clause or empty list
+            if not (isinstance(query_filters, list) and len(query_filters) == 0):
+                if isinstance(query_filters, list):
+                    filters.extend(query_filters)
+                else:
+                    filters.append(query_filters)
 
         # Apply source filter
         if source:
@@ -567,5 +575,8 @@ async def list_sources(request: Request):
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     index_path = Path(__file__).parent.parent / "static" / "index.html"
-    with open(index_path, "r") as f:
-        return HTMLResponse(content=f.read(), status_code=200)
+    if index_path.exists():
+        with open(index_path, "r") as f:
+            return HTMLResponse(content=f.read(), status_code=200)
+    else:
+        return HTMLResponse(content="<h1>Welcome to Open Omniscience</h1><p>API is running. See <a href='/docs'>API Documentation</a></p>", status_code=200)

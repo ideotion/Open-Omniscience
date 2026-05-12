@@ -33,7 +33,7 @@ class LLMService:
     def _ensure_model_available(self, model_id: str):
         """Ensure the requested model is available"""
         if not self.model_manager.is_model_downloaded(model_id):
-            if self.config.ollama.auto_download_models:
+            if self.config.auto_download_models:
                 self.model_manager.download_model(model_id)
             else:
                 raise ModelNotFoundError(model_id)
@@ -652,7 +652,7 @@ Return only the translated text, without any additional commentary or formatting
             ],
             "config": {
                 "base_url": self.config.ollama.base_url,
-                "auto_download": self.config.ollama.auto_download_models,
+                "auto_download": self.config.auto_download_models,
                 "model_library_path": self.config.model_library_path
             }
         }

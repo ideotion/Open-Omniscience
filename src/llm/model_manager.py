@@ -98,8 +98,14 @@ class ModelManager:
     
     def list_local_models(self) -> List[str]:
         """List all locally available models"""
+        if not self.is_ollama_installed():
+            return []
+            
         if not self.is_ollama_running():
-            self.start_ollama()
+            try:
+                self.start_ollama()
+            except (OllamaNotInstalledError, OllamaNotRunningError):
+                return []
         
         try:
             response = requests.get(
