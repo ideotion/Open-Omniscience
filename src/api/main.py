@@ -128,6 +128,16 @@ app.include_router(link_analysis_router)
 # Include LLM router
 app.include_router(llm_router)
 
+# General health check endpoint
+@app.get("/api/health")
+async def health_check():
+    """Check API health status"""
+    return {
+        "status": "healthy",
+        "version": "0.02",
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
 # Serve static files (HTML5 frontend)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True), name="static")
 
