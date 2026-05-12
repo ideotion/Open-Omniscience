@@ -698,6 +698,98 @@ PYTHONPATH=pillar2 python examples/peer_review_demo.py
 | Phase | Tests | Status |
 |-------|-------|--------|
 | 2.1 | 60 | ✅ All passing |
+
+---
+
+## 🛡️ Pillar 3: Deception Defense (FOSS)
+
+**Pillar 3** implements comprehensive **Deception Defense** capabilities for Open-Omniscience, providing detection of deepfakes, propaganda, and cognitive biases using 100% open-source models that work completely offline.
+
+### Overview
+
+Pillar 3 consists of four phases, with Phases 3.1 and 3.2 fully implemented:
+
+#### ✅ Phase 3.1: Multi-Modal Verification
+Cross-media consistency checking and metadata validation:
+- **Metadata Validation**: EXIF data extraction and validation for images, ID3 tags for audio, video metadata using OpenCV
+- **Cross-Media Consistency**: Check consistency across images, audio, video, and text
+- **Tampering Detection**: Detect stripped metadata, editing software signatures, GPS inconsistencies
+- **Timestamp Analysis**: Verify timestamp consistency across multiple media items
+- **Tech Stack**: Pillow, OpenCV, pydub, ffmpeg-python
+
+#### ✅ Phase 3.2: Deepfake Detection
+AI-generated media detection using artifact analysis:
+- **Image Deepfake Detection**: Blurring detection, compression artifacts, face-specific artifacts, unnatural colors
+- **Video Deepfake Detection**: Frame-by-frame analysis, temporal consistency, optical flow analysis, flickering detection
+- **Audio Deepfake Detection**: Spectral anomaly detection, noise patterns, phase inconsistencies, temporal artifacts
+- **Model Support**: ONNX Runtime (FaceForensics++, WildDeepfake), TensorFlow models
+- **Tech Stack**: OpenCV, ONNX Runtime, TensorFlow (optional), librosa, pydub
+
+#### 🔄 Phase 3.3: Propaganda & Cognitive Bias Detection (In Progress)
+Text-based manipulation detection:
+- **Propaganda Detection**: 15+ propaganda techniques (appeal to emotion, bandwagon, false dilemma, etc.)
+- **Loaded Language**: Emotional and manipulative term detection
+- **Logical Fallacies**: False cause, hasty generalization, circular reasoning detection
+- **Cognitive Bias Detection**: 20+ cognitive biases (confirmation, anchoring, framing, etc.)
+- **Tech Stack**: spaCy, NLTK, VADER, TextBlob
+
+#### 📅 Phase 3.4: Disinformation Campaign Tracking (Planned)
+Network analysis and bot detection:
+- **Network Analysis**: Co-occurrence graph construction, community detection, centrality analysis
+- **Bot Detection**: Behavioral analysis, content similarity, posting patterns, network-based detection
+- **Narrative Tracking**: Temporal analysis of disinformation campaigns
+- **Tech Stack**: NetworkX, igraph, python-louvain, leidenalg, scikit-learn
+
+### Quick Start
+
+```bash
+# Navigate to Pillar 3 directory
+cd pillar3
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run tests
+PYTHONPATH=pillar3 python -m pytest tests/ -v
+
+# Run metadata validation demo
+PYTHONPATH=pillar3 python examples/metadata_validation_demo.py
+
+# Use in Python
+from pillar3.src.analysis import MetadataValidator, DeepfakeDetector
+
+validator = MetadataValidator()
+result = validator.validate_image("photo.jpg")
+print(f"Validation score: {result.score:.1f}/100")
+
+detector = DeepfakeDetector()
+result = detector.detect_image("suspect.jpg")
+print(f"Deepfake confidence: {result.confidence:.2%}")
+```
+
+### Documentation
+
+- [Pillar 3 README](pillar3/README.md) - Detailed documentation
+- [PILLAR3_SUMMARY.md](pillar3/PILLAR3_SUMMARY.md) - Comprehensive implementation summary
+- [requirements.txt](pillar3/requirements.txt) - Complete dependency list
+
+### Current Status
+
+| Phase | Status | Files | Lines of Code |
+|-------|--------|-------|---------------|
+| 3.1 Multi-Modal Verification | ✅ Complete | 2 files | ~2,500 |
+| 3.2 Deepfake Detection | ✅ Complete | 1 file | ~700 |
+| 3.3 Propaganda & Bias | 🔄 In Progress | 1 file | ~800 |
+| 3.4 Campaign Tracking | 📅 Planned | 0 files | 0 |
+
+### Key Features
+
+✅ **100% FOSS** - All dependencies are open-source  
+✅ **Offline Capable** - All functions work offline with no cloud dependencies  
+✅ **Modular** - Clean, reusable components  
+✅ **Well-Documented** - Complete documentation and examples  
+✅ **Tested** - Comprehensive test suite foundation  
+
 | 2.2 | 51 | ✅ All passing |
 | 2.3 | 17 | ✅ All passing |
 | **Total** | **101** | ✅ All passing |
