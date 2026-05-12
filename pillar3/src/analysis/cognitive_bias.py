@@ -136,46 +136,45 @@ class CognitiveBiasDetector:
     def _initialize_patterns(self) -> None:
         # Confirmation bias patterns
         self.confirmation_patterns = [
-            r'\(I knew it|as I suspected|this proves|just as I thought)\',
-            r'\(see|told you|always knew)\',
+            r'(I knew it|as I suspected|this proves|just as I thought)',
+            r'(see|told you|always knew)',
         ]
         
         # Anchoring bias patterns
         self.anchoring_patterns = [
-            r'\(first|initial|original)\.*\(estimate|impression|judgment)\',
-            r'\(based on the first|starting from)\',
+            r'(first|initial|original).*\(estimate|impression|judgment\)',
+            r'(based on the first|starting from)',
         ]
         
         # Framing bias patterns
         self.framing_patterns = [
-            r'\(positive|negative|good|bad)\.*\(spin|frame|perspective)\',
-            r'\(glass half full|glass half empty)\',
+            r'(positive|negative|good|bad).*\(spin|frame|perspective\)',
+            r'(glass half full|glass half empty)',
         ]
         
         # Availability bias patterns
         self.availability_patterns = [
-            r'\(easily remember|comes to mind|recently heard)\',
-            r'\(vivid|dramatic|memorable)\.*\(example|instance|case)\',
+            r'(easily remember|comes to mind|recently heard)',
+            r'(vivid|dramatic|memorable).*\(example|instance|case\)',
         ]
         
         # Dunning-Kruger patterns
         self.dunning_kruger_patterns = [
-            r'\(overestimate|overconfident|more skilled than)\',
-            r'\(everyone else is|most people don't understand)\',
+            r'(overestimate|overconfident|more skilled than)',
+            r"(everyone else is|most people don't understand)",
         ]
         
         # Halo effect patterns
         self.halo_patterns = [
-            r'\(one good thing|positive aspect)\.*\(overall good|great person)\',
-            r'\(because of|due to)\.*\(one feature|single aspect)\',
+            r'(one good thing|positive aspect).*\(overall good|great person\)',
+            r'(because of|due to).*\(one feature|single aspect\)',
         ]
         
         # Stereotyping patterns
         self.stereotyping_patterns = [
-            r'\(all|every|most)\.*\(group|category|type)\.*\(are|is|have)\',
-            r'\(typical|stereotypical)\',
+            r'(all|every|most|some).*\(group|category|type\).*\(are|is|have|has\)',
+            r'(typical|stereotypical)',
         ]
-    
     def _get_timestamp(self) -> str:
         return datetime.utcnow().isoformat() + 'Z'
     

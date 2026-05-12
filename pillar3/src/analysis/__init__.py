@@ -15,6 +15,7 @@ from .multimodal import MultiModalAnalyzer
 from .metadata_validator import MetadataValidator
 from .deepfake_detector import DeepfakeDetector
 from .propaganda import PropagandaDetector
+from .cognitive_bias import CognitiveBiasDetector
 from .network_analyzer import NetworkAnalyzer
 from .bot_detector import BotDetector
 
@@ -41,6 +42,12 @@ from .propaganda import (
     PropagandaTechnique,
     PropagandaStatus,
 )
+from .cognitive_bias import (
+    CognitiveBiasResult,
+    CognitiveBias,
+    CognitiveBiasStatus,
+    BiasInstance,
+)
 from .network_analyzer import (
     NetworkAnalysisResult,
     NetworkNode,
@@ -63,6 +70,7 @@ __all__ = [
     "MetadataValidator",
     "DeepfakeDetector",
     "PropagandaDetector",
+    "CognitiveBiasDetector",
     "NetworkAnalyzer",
     "BotDetector",
     # Data classes and enums
@@ -80,6 +88,10 @@ __all__ = [
     "PropagandaResult",
     "PropagandaTechnique",
     "PropagandaStatus",
+    "CognitiveBiasResult",
+    "CognitiveBias",
+    "CognitiveBiasStatus",
+    "BiasInstance",
     "NetworkAnalysisResult",
     "NetworkNode",
     "NetworkEdge",
