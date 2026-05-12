@@ -7,7 +7,7 @@ import tempfile
 import pytest
 from pathlib import Path
 
-from pillar3.src.analysis.metadata_validator import (
+from src.analysis.metadata_validator import (
     MetadataValidator,
     MetadataType,
     ValidationStatus,

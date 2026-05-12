@@ -6,6 +6,4 @@ FOSS deepfake detection models.
 """
 
 __version__ = "0.1.0"
-__all__ = ["model_loader", "model_registry"]
-
-from . import model_loader, model_registry
+__all__ = []

@@ -38,6 +38,6 @@ Available modules:
 Example usage:
     from pillar3.analysis import DeepfakeDetector
     detector = DeepfakeDetector()
-    result = detector.detect_image("path/to/image.jpg")
-    print(f"Deepfake confidence: {result.confidence:.2%}")
+    # result = detector.detect_image("path/to/image.jpg")
+    # print(f"Deepfake confidence: {{result.confidence:.2%}}")
 """

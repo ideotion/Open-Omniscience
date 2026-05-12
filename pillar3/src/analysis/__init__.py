@@ -15,7 +15,6 @@ from .multimodal import MultiModalAnalyzer
 from .metadata_validator import MetadataValidator
 from .deepfake_detector import DeepfakeDetector
 from .propaganda import PropagandaDetector
-from .cognitive_bias import CognitiveBiasDetector
 from .network_analyzer import NetworkAnalyzer
 from .bot_detector import BotDetector
 
@@ -23,8 +22,9 @@ from .bot_detector import BotDetector
 from .multimodal import (
     MediaType,
     MediaItem,
+    CrossModalResult,
     MultiModalResult,
-    ConsistencyResult,
+    ConsistencyStatus,
 )
 from .metadata_validator import (
     ValidationResult,
@@ -41,22 +41,20 @@ from .propaganda import (
     PropagandaTechnique,
     PropagandaStatus,
 )
-from .cognitive_bias import (
-    CognitiveBiasResult,
-    CognitiveBias,
-    CognitiveBiasStatus,
-)
 from .network_analyzer import (
-    NetworkResult,
+    NetworkAnalysisResult,
+    NetworkNode,
+    NetworkEdge,
     Community,
-    Influencer,
-    NarrativeEvolution,
+    NetworkStatus,
+    NetworkType,
 )
 from .bot_detector import (
     BotResult,
     BotStatus,
-    BehaviorAnalysis,
-    SimilarityResult,
+    BotDetectionMethod,
+    UserActivity,
+    BotIndicator,
 )
 
 __all__ = [
@@ -65,14 +63,14 @@ __all__ = [
     "MetadataValidator",
     "DeepfakeDetector",
     "PropagandaDetector",
-    "CognitiveBiasDetector",
     "NetworkAnalyzer",
     "BotDetector",
     # Data classes and enums
     "MediaType",
     "MediaItem", 
+    "CrossModalResult",
     "MultiModalResult",
-    "ConsistencyResult",
+    "ConsistencyStatus",
     "ValidationResult",
     "MetadataType",
     "ValidationStatus",
@@ -82,15 +80,15 @@ __all__ = [
     "PropagandaResult",
     "PropagandaTechnique",
     "PropagandaStatus",
-    "CognitiveBiasResult",
-    "CognitiveBias",
-    "CognitiveBiasStatus",
-    "NetworkResult",
+    "NetworkAnalysisResult",
+    "NetworkNode",
+    "NetworkEdge",
     "Community",
-    "Influencer",
-    "NarrativeEvolution",
+    "NetworkStatus",
+    "NetworkType",
     "BotResult",
     "BotStatus",
-    "BehaviorAnalysis",
-    "SimilarityResult",
+    "BotDetectionMethod",
+    "UserActivity",
+    "BotIndicator",
 ]
