@@ -6,9 +6,9 @@ set -e
 
 echo "Starting Open-Omniscience with LLM support..."
 
-# Function to check if a port is in use
+# Function to check if a port is in use (without nc)
 port_in_use() {
-    nc -z localhost $1 && echo "yes" || echo "no"
+    python3 -c "import socket; s = socket.socket(); s.settimeout(1); result = s.connect_ex(('localhost', $1)); s.close(); print('yes' if result == 0 else 'no')"
 }
 
 # Start Ollama server in the background

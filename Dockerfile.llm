@@ -1,7 +1,33 @@
 # Dockerfile for Open-Omniscience with Local LLM Support
 # This Dockerfile extends the base image with Ollama and LLM capabilities
 
-FROM ideotion/open-omniscience:latest
+# Use the base Python image instead of non-existent custom image
+FROM python:3.12-slim as base
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt /tmp/requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --user -r /tmp/requirements.txt
+
+# Stage 2: Runtime stage
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash appuser
+
+# Copy installed packages from builder
+COPY --from=base /root/.local /home/appuser/.local
+
+# Make sure scripts in .local are usable
+ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Install dependencies for Ollama and GPU support (if available)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -24,21 +50,34 @@ RUN mkdir -p /root/.ollama
 ENV OLLAMA_HOST=0.0.0.0
 ENV OLLAMA_ORIGINS=*
 
+# Copy application code
+COPY . .
+
+# Change ownership to non-root user
+RUN chown -R appuser:appuser /app
+
+# Create necessary directories
+RUN mkdir -p /app/data /app/audit /app/logs
+RUN chown -R appuser:appuser /app/data /app/audit /app/logs
+
+# Switch to non-root user
+USER appuser
+
 # Copy the LLM setup script
 COPY scripts/setup_llm.py /app/scripts/setup_llm.py
 
-# Install Python dependencies for LLM module
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
-    pip install requests
-
-# Create a startup script that starts Ollama and then the main app
+# Copy entrypoint script
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
 # Expose Ollama port in addition to the main app port
 EXPOSE 8000 11434
 
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DATABASE_URL=sqlite:////app/data/open_omniscience.db
+
 # Use the custom entrypoint
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["python", "-m", "api.main"]
+CMD ["python", "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

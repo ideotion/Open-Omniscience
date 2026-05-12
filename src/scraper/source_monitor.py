@@ -11,7 +11,7 @@ Author: Ideotion
 import sys
 import time
 import hashlib
-import pickle
+import json
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -176,21 +176,21 @@ class SourceMonitor:
     
     def _load_cache(self):
         """Load cached responses from disk."""
-        cache_file = self.cache_dir / "response_cache.pkl"
+        cache_file = self.cache_dir / "response_cache.json"
         if cache_file.exists():
             try:
-                with open(cache_file, "rb") as f:
-                    self._response_cache = pickle.load(f)
+                with open(cache_file, "r") as f:
+                self._response_cache = json.load(f)
                 logger.info(f"Loaded {len(self._response_cache)} cached responses")
-            except Exception as e:
+            except (json.JSONDecodeError, Exception) as e:
                 logger.error(f"Error loading cache: {e}")
     
     def _save_cache(self):
         """Save cached responses to disk."""
-        cache_file = self.cache_dir / "response_cache.pkl"
+        cache_file = self.cache_dir / "response_cache.json"
         try:
-            with open(cache_file, "wb") as f:
-                pickle.dump(self._response_cache, f)
+            with open(cache_file, "w") as f:
+                json.dump(self._response_cache, f)
         except Exception as e:
             logger.error(f"Error saving cache: {e}")
     

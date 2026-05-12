@@ -247,16 +247,21 @@ def build_sqlalchemy_filter(parsed_query: dict, session) -> List:
     Returns:
         A list of SQLAlchemy filter conditions.
     """
-    from sqlalchemy import or_, and_, not_
+    from sqlalchemy import or_, and_, not_, bindparam
 
     filters = []
     for term in parsed_query["terms"]:
         if term["exact"]:
-            filters.append(Article.content.ilike(f'%{term["value"]}%'))
+            # Use bindparam for safe parameter binding to prevent SQL injection
+            param = bindparam('search_term', term["value"])
+            filters.append(Article.content.ilike('%' + param + '%'))
         else:
             # Split into words for OR logic
             words = term["value"].split()
-            word_conditions = [Article.content.ilike(f'%{word}%') for word in words]
+            word_conditions = []
+            for word in words:
+                param = bindparam('search_word', word)
+                word_conditions.append(Article.content.ilike('%' + param + '%'))
             filters.append(or_(*word_conditions))
 
     # Combine filters based on operators (simplified: assume AND for all)
@@ -352,7 +357,10 @@ async def search_articles(
             tag_list = [tag.strip() for tag in tags.split(",")]
             # Find sources with any of the tags
             from sqlalchemy import or_
-            tag_conditions = [Source.tags.ilike(f'%{tag}%') for tag in tag_list]
+            tag_conditions = []
+            for tag in tag_list:
+                param = bindparam('tag_param', tag)
+                tag_conditions.append(Source.tags.ilike('%' + param + '%'))
             source_ids = session.query(Source.id).filter(or_(*tag_conditions)).distinct().all()
             source_ids = [sid for (sid,) in source_ids]
             if source_ids:
@@ -471,7 +479,10 @@ async def export_articles(
         if tags:
             tag_list = [tag.strip() for tag in tags.split(",")]
             from sqlalchemy import or_
-            tag_conditions = [Source.tags.ilike(f'%{tag}%') for tag in tag_list]
+            tag_conditions = []
+            for tag in tag_list:
+                param = bindparam('tag_param', tag)
+                tag_conditions.append(Source.tags.ilike('%' + param + '%'))
             source_ids = session.query(Source.id).filter(or_(*tag_conditions)).distinct().all()
             source_ids = [sid for (sid,) in source_ids]
             if source_ids:
