@@ -1,15 +1,3 @@
-#
-# This script provides a fully automatic, non-interactive installation of Open-Omniscience
-# with all prerequisites, dependencies, and configurations.
-#
-# Usage: curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.01/install | bash
-#
-# Author: Open-Omniscience Team
-# License: GPLv3
-#
-
-set -euo pipefail
-=======
 #!/bin/bash
 #
 # Open-Omniscience One-Line Installer
@@ -24,10 +12,7 @@ set -euo pipefail
 # License: GPLv3
 #
 
-#
-=======
 set -uo pipefail
-
 # Check if running interactively (not piped)
 if [ ! -t 0 ]; then
     INTERACTIVE=false
@@ -35,18 +20,6 @@ else
     INTERACTIVE=true
 fi
 
-#================================
-#
-# This script provides a fully automatic, non-interactive installation of Open-Omniscience
-# with all prerequisites, dependencies, and configurations.
-#
-# Usage: curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.01/install | bash
-#
-# Author: Open-Omniscience Team
-# License: GPLv3
-#
-
-set -euo pipefail
 
 # =============================================================================
 # Configuration
@@ -341,7 +314,7 @@ install_docker_compose() {
         log_info "Docker Compose plugin detected"
         # Create docker-compose symlink if it doesn't exist
         if ! command_exists docker-compose; then
-            DOCKER_PATH=$(which docker)
+            DOCKER_PATH=$(which docker 2>/dev/null || echo "/usr/bin/docker")
             run_with_sudo ln -sf "$DOCKER_PATH" /usr/local/bin/docker-compose 2>/dev/null || true
             log_info "Created docker-compose symlink"
         fi
