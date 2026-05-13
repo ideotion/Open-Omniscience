@@ -39,7 +39,9 @@ class TestLLMConfigIntegration:
         """Test that default models are populated"""
         config = get_llm_config()
         assert len(config.default_models) > 0
-        assert 'llama3:8b' in config.default_models
+        # Check that llama3:8b model exists (key is llama3-8b, model_id is llama3:8b)
+        assert 'llama3-8b' in config.default_models
+        assert config.default_models['llama3-8b'].model_id == 'llama3:8b'
     
     def test_get_default_model(self):
         """Test getting default model"""
