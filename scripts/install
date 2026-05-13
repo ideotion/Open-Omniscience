@@ -645,7 +645,7 @@ main() {
     
     # Show header
     header "Open Omniscience - Universal Installer"
-    log "Detected: $OS ($ARCH)"
+    log "Detected: $OS ($Debian)"
     log "Install directory: $INSTALL_DIR"
     echo ""
     
