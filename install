@@ -1,7 +1,41 @@
+#
+# This script provides a fully automatic, non-interactive installation of Open-Omniscience
+# with all prerequisites, dependencies, and configurations.
+#
+# Usage: curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.01/install | bash
+#
+# Author: Open-Omniscience Team
+# License: GPLv3
+#
+
+set -euo pipefail
+=======
 #!/bin/bash
 #
 # Open-Omniscience One-Line Installer
 # ================================
+#
+# This script provides a fully automatic, non-interactive installation of Open-Omniscience
+# with all prerequisites, dependencies, and configurations.
+#
+# Usage: curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.01/install | bash
+#
+# Author: Open-Omniscience Team
+# License: GPLv3
+#
+
+#
+=======
+set -uo pipefail
+
+# Check if running interactively (not piped)
+if [ ! -t 0 ]; then
+    INTERACTIVE=false
+else
+    INTERACTIVE=true
+fi
+
+#================================
 #
 # This script provides a fully automatic, non-interactive installation of Open-Omniscience
 # with all prerequisites, dependencies, and configurations.
@@ -687,12 +721,18 @@ main() {
     install_docker_compose
     
     # Ask user if they want to install Ollama
-    read -p "Do you want to install Ollama for LLM support? (Y/n): " -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-        install_ollama || log_warning "Ollama installation skipped or failed"
+    if [ "$INTERACTIVE" = true ]; then
+        read -p "Do you want to install Ollama for LLM support? (Y/n): " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+            install_ollama || log_warning "Ollama installation skipped or failed"
+        else
+            log_info "Skipping Ollama installation. You can install it later from https://ollama.com"
+        fi
     else
-        log_info "Skipping Ollama installation. You can install it later from https://ollama.com"
+        # Non-interactive mode: install Ollama by default
+        log_info "Non-interactive mode: Installing Ollama by default..."
+        install_ollama || log_warning "Ollama installation skipped or failed"
     fi
     
     # Clone repository
@@ -724,35 +764,45 @@ main() {
     echo ""
     
     # Ask if user wants to launch the program
-    read -p "Do you want to launch Open-Omniscience now? (Y/n): " -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+    if [ "$INTERACTIVE" = true ]; then
+        read -p "Do you want to launch Open-Omniscience now? (Y/n): " -n 1 -r
         echo ""
-        log_info "Launching Open-Omniscience..."
-        cd "$INSTALL_DIR"
-        docker-compose up -d --build
-        
-        # Check if it started successfully
-        if docker ps | grep -q open-omniscience 2>/dev/null; then
-            log_success "Open-Omniscience is running!"
+        if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
             echo ""
-            echo "  Access the application at: http://localhost:8000"
-            echo ""
+            log_info "Launching Open-Omniscience..."
+            cd "$INSTALL_DIR"
+            docker-compose up -d --build
             
-            # Ask if user wants to open in browser
-            if command_exists xdg-open; then
-                read -p "Do you want to open it in your browser? (Y/n): " -n 1 -r
+            # Check if it started successfully
+            if docker ps | grep -q open-omniscience 2>/dev/null; then
+                log_success "Open-Omniscience is running!"
                 echo ""
-                if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-                    xdg-open http://localhost:8000
+                echo "  Access the application at: http://localhost:8000"
+                echo ""
+                
+                # Ask if user wants to open in browser
+                if command_exists xdg-open; then
+                    read -p "Do you want to open it in your browser? (Y/n): " -n 1 -r
+                    echo ""
+                    if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+                        xdg-open http://localhost:8000
+                    fi
                 fi
+            else
+                log_warning "Open-Omniscience may not have started. Check with: docker ps"
             fi
         else
-            log_warning "Open-Omniscience may not have started. Check with: docker ps"
+            echo ""
+            log_info "To start Open-Omniscience manually:"
+            echo "    cd $INSTALL_DIR"
+            echo "    source venv/bin/activate"
+            echo "    docker-compose up -d --build"
+            echo ""
+            echo "  Then access at: http://localhost:8000"
         fi
     else
         echo ""
-        log_info "To start Open-Omniscience manually:"
+        log_info "To start Open-Omniscience:"
         echo "    cd $INSTALL_DIR"
         echo "    source venv/bin/activate"
         echo "    docker-compose up -d --build"
