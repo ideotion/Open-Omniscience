@@ -844,6 +844,6 @@ For detailed changelog, see [ChangeLog](ChangeLog) or [GitHub Releases](https://
 
 ---
 
-**© 2024 Ideotion. All rights reserved.**
+**© 2026 Ideotion. All rights reserved.**
 
 *Built with ❤️ for investigative journalism and ethical data analysis.*
