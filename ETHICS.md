@@ -87,7 +87,7 @@ Users of Open Omniscience claim:
    - Illegal activities (e.g., hacking, copyright infringement).
    - Commercial exploitation without permission.
 6. **User-Agent Rotation:** Use a clear, identifiable User-Agent string (e.g., `OpenOmniscience/1.0 (+https://github.com/ideotion/Open-Omniscience)`).
-7. **IP Throttling:** Avoid rapid-fire requests from a single IP. Use proxies or distributed scraping if scaling up.
+7. **IP Throttling:** Avoid rapid-fire requests from a single IP. Respect server fair use.
 
 ---
 
@@ -108,42 +108,16 @@ Before scraping a new source, verify the following:
 The following domains are **explicitly prohibited** from scraping due to legal, ethical, or technical restrictions:
 
 ### Paywalled Content
-- `nytimes.com` (New York Times)
-- `ft.com` (Financial Times)
-- `wsj.com` (Wall Street Journal - partial paywall)
-- `thetimes.co.uk` (The Times)
-- `bloomberg.com` (Bloomberg - partial paywall)
-- `economist.com` (The Economist)
-- `washingtonpost.com` (partial paywall)
-- `latimes.com` (Los Angeles Times)
-- `chicagotribune.com` (Chicago Tribune)
-- `bostonglobe.com` (Boston Globe)
+
 
 ### Social Media Platforms
-- `facebook.com`
-- `twitter.com` (X)
-- `instagram.com`
-- `linkedin.com`
-- `reddit.com`
-- `tiktok.com`
-- `youtube.com` (for video content; metadata may be allowed via API)
-- `whatsapp.com`
-- `telegram.org`
+
 
 ### Private or Sensitive Data
 - Government databases (e.g., `*.gov`, `*.mil` unless explicitly public)
 - Medical records (e.g., `*.health`, `*.medical`)
 - Financial records (e.g., `*.bank`, `*.finance` unless public)
 - Personal data repositories (e.g., `*.personal`, `*.private`)
-
-### Known for Disinformation or Illegal Content
-- `infowars.com`
-- `breitbart.com`
-- `dailymail.co.uk` (controversial, often sensationalist)
-- `sputniknews.com` (state-sponsored propaganda)
-- `rt.com` (state-sponsored propaganda)
-- `4chan.org`
-- `8kun.top` (formerly 8chan)
 
 ### Technical Restrictions
 - Domains with **aggressive rate-limiting** (e.g., `github.com`, `stackoverflow.com`).
