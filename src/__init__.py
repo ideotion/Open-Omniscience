@@ -1,15 +1,32 @@
 """
-Open-Omniscience - Pillar 4: Legal Admissibility
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
 
-This package provides cryptographic provenance, digital signatures,
-chain of custody tracking, and compliance checking for legal admissibility.
+Copyright (C) 2026 Ideotion
 
-All components work offline without cloud dependencies.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+For inquiries, contact: open-omniscience@ideotion.com
 """
+
+# Open-Omniscience - Pillar 4: Legal Admissibility
+# This package provides cryptographic provenance, digital signatures,
+# chain of custody tracking, and compliance checking for legal admissibility.
+# All components work offline without cloud dependencies.
 
 __version__ = "0.1.0"
 __author__ = "Open-Omniscience Team"
-__license__ = "MIT"
+__license__ = "GPLv3"
 
 # Pillar 4 modules
 from . import crypto
@@ -18,8 +35,3 @@ from . import compliance
 from . import reports
 
 __all__ = ['crypto', 'audit', 'compliance', 'reports']
-
-# Version info
-__version__ = "0.1.0"
-__author__ = "Open-Omniscience Team"
-__license__ = "MIT"

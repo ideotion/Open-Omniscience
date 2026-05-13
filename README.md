@@ -6,7 +6,7 @@
 
 **Author:** [Ideotion](https://github.com/ideotion)
 **Version:** 0.02 (with Local LLM Support)
-**License:** [MIT](LICENSE)
+**License:** [GNU GPLv3](LICENSE)
 
 ![Open Omniscience Logo](https://via.placeholder.com/150?text=Open+Omniscience)
 
