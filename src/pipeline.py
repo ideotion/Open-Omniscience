@@ -179,19 +179,10 @@ class OpenOmnisciencePipeline:
 
     def _init_pillar1(self):
         """Initialize Pillar 1 (Data Ingestion)."""
-        try:
-            # Try to import HTTrack wrapper
-            from pillar1.src.httrack_wrapper import HTTrackWrapper, HTTrackConfig
-            config = HTTrackConfig(
-                user_agent="OpenOmniscience/1.0",
-                respect_robots_txt=True,
-                **self.config.pillar1,
-            )
-            return HTTrackWrapper(config)
-        except ImportError as e:
-            self.logger.warning(f"Could not import Pillar 1: {e}")
-            # Fallback to requests-based ingestion
-            return None
+        # Pillar 1 uses the built-in scraper (src/scraper/scraper.py)
+        # No external HTTrack dependency required
+        from scraper.scraper import Scraper
+        return Scraper()
 
     def _init_pillar2(self):
         """Initialize Pillar 2 (Data Processing)."""

@@ -21,9 +21,9 @@ Open Omniscience is an **ethically oriented**, **open-source**, and **portable**
 - Preserve **data integrity and provenance** for accountability.
 - **NEW:** Analyze, translate, and synthesize content using **local LLM capabilities**
 
-This project is a **Linux-based application** that uses [HTTrack](https://www.httrack.com/) as an external dependency, leveraging its robust crawling capabilities while adding advanced features for **ethical scraping**, **duplicate detection**, **data management**, and now **AI-powered analysis**.
+This project is a **Linux-based application** built on Python, leveraging robust crawling capabilities for **ethical scraping**, **duplicate detection**, **data management**, and now **AI-powered analysis**.
 
-**Note on HTTrack:** Open Omniscience does not contain HTTrack source code. It uses HTTrack as an external tool via the `pillar1/src/httrack_wrapper.py` module. HTTrack is licensed under GNU GPLv3, and Open Omniscience complies with this license by also using GPLv3. See [NOTICES.md](NOTICES.md) for full attribution details.
+**Note:** Earlier versions of this documentation incorrectly stated that Open Omniscience was a "fork of HTTrack". This has been corrected. Open Omniscience is a **separate project** that does not contain any HTTrack source code. It can optionally interface with HTTrack as an external tool via the `pillar1/src/httrack_wrapper.py` module, but this is not required for basic functionality.
 
 ---
 
@@ -298,7 +298,7 @@ For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| **Web Crawler** | HTTrack (External) | Website scraping and mirroring |
+| **Web Crawler** | Custom Python | Website scraping and mirroring |
 | **Backend** | Python 3.8+ | Core application logic |
 | **API Framework** | FastAPI | REST API endpoints |
 | **Database** | SQLite / PostgreSQL | Data storage |
@@ -405,7 +405,7 @@ docker run -p 8000:8000 -p 11434:11434 open-omniscience-llm
 ### Core Features
 
 #### Web Scraping & Crawling
-- **HTTrack Integration**: Uses HTTrack (external dependency) for robust website mirroring capabilities
+- **Custom Web Crawler**: Robust website scraping and mirroring capabilities
 - **Ethical Scraping**: Respects `robots.txt` and rate limits
 - **Duplicate Detection**: Identifies and filters duplicate content
 - **Multi-Source Aggregation**: Combines data from diverse sources

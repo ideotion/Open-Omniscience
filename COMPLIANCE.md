@@ -1,6 +1,6 @@
 # GPLv3 Compliance Guide
 
-This document outlines Open Omniscience's compliance with the GNU General Public License Version 3 (GPLv3) and its relationship with HTTrack.
+This document outlines Open Omniscience's compliance with the GNU General Public License Version 3 (GPLv3).
 
 ---
 
@@ -19,35 +19,6 @@ Open Omniscience is fully licensed under GPLv3, which provides users with the fo
 
 ---
 
-## 🔗 Relationship with HTTrack
-
-### Current Status
-
-**Open Omniscience does NOT contain HTTrack source code.**
-
-The project uses HTTrack in the following ways:
-
-1. **As an External Command-Line Tool**
-   - The `pillar1/src/httrack_wrapper.py` module calls HTTrack as an external program
-   - HTTrack must be installed separately on the user's system
-   - No HTTrack source code is included in Open Omniscience
-
-2. **Optional C Library Integration**
-   - The wrapper can optionally load HTTrack's C library (`libhttrack.so`, `httrack.dll`, etc.)
-   - This is for direct integration but still uses HTTrack as an external dependency
-
-### Historical Context
-
-Earlier versions of Open Omniscience may have included HTTrack C source code in the repository. This code has been **moved to the archive directory** (`archive/outdated/httrack_source/`) and is **no longer part of the active project**.
-
-### HTTrack License
-
-- **HTTrack Website:** https://www.httrack.com/
-- **HTTrack Repository:** https://github.com/xroche/httrack
-- **HTTrack License:** GNU General Public License Version 3 (GPLv3)
-
----
-
 ## ✅ GPLv3 Compliance Checklist
 
 ### For Open Omniscience Project
@@ -59,23 +30,6 @@ Earlier versions of Open Omniscience may have included HTTrack C source code in 
 - [x] **No Additional Restrictions**: No further restrictions beyond GPLv3 are imposed
 - [x] **Modified Versions**: All modifications carry prominent notices (Section 5a)
 - [x] **Installation Information**: Not applicable (not a User Product as defined in GPLv3)
-
-### For HTTrack Compliance
-
-Since Open Omniscience uses HTTrack as an external dependency:
-
-- [x] **License Compatibility**: Open Omniscience uses GPLv3, which is compatible with HTTrack's GPLv3
-- [x] **No Source Code Distribution**: Open Omniscience does not distribute HTTrack source code
-- [x] **Attribution**: Proper attribution is given to HTTrack in [NOTICES.md](NOTICES.md)
-- [x] **Separate Work**: Open Omniscience is a separate work that uses HTTrack, not a modification of HTTrack
-
-### For Users
-
-When using Open Omniscience:
-
-- [x] **HTTrack Installation**: Users must install HTTrack separately (not bundled)
-- [x] **HTTrack License**: Users must comply with HTTrack's GPLv3 license when using it
-- [x] **No Redistribution**: Open Omniscience does not redistribute HTTrack
 
 ---
 
@@ -129,28 +83,23 @@ If Open Omniscience is distributed as part of a User Product (consumer device):
 
 3. **Check NOTICES File**
    ```bash
-   cat NOTICES.md | grep -A 5 "HTTrack"
+   cat NOTICES.md
    ```
 
-4. **Verify No HTTrack Source Code**
+4. **Verify No Proprietary Code**
    ```bash
-   find . -name "*.c" -o -name "*.h" | grep -v archive | grep -v ".git"
+   # Check for any non-GPLv3 licensed code in active project
+   find . -path "./.git" -prune -o -path "./archive" -prune -o -type f -print
    ```
-   (Should return no results)
 
 ### For Users
 
-1. **Verify HTTrack Installation**
-   ```bash
-   httrack --version
-   ```
-
-2. **Check License**
+1. **Check License**
    ```bash
    cat LICENSE | head -5
    ```
 
-3. **Review Attributions**
+2. **Review Attributions**
    ```bash
    cat NOTICES.md
    ```
@@ -159,21 +108,14 @@ If Open Omniscience is distributed as part of a User Product (consumer device):
 
 ## 📝 Common Compliance Questions
 
-### Q: Can I use Open Omniscience without HTTrack?
-**A:** Yes. While Open Omniscience is designed to work with HTTrack, the HTTrack wrapper is optional. You can use other scraping methods or implement your own crawler.
+### Q: Can I use Open Omniscience for commercial purposes?
+**A:** Yes! GPLv3 allows commercial use. However, any modified versions you distribute must also be licensed under GPLv3, and you must provide source code.
 
-### Q: Do I need to install HTTrack to use Open Omniscience?
-**A:** Only if you want to use the HTTrack-based crawling functionality. The `pillar1/src/httrack_wrapper.py` module requires HTTrack to be installed. Other parts of Open Omniscience (API, database, etc.) do not require HTTrack.
-
-### Q: Can I distribute a modified version of Open Omniscience?
-**A:** Yes, as long as you comply with GPLv3 requirements:
-- Include the full GPLv3 license
-- Provide source code for your modifications
-- Document your changes
-- Do not add additional restrictions
-
-### Q: Can I use Open Omniscience in a proprietary application?
+### Q: Can I use Open Omniscience in proprietary software?
 **A:** No. GPLv3 requires that derivative works also be licensed under GPLv3. You cannot incorporate Open Omniscience into a closed-source proprietary application.
+
+### Q: Do I need to release my modifications?
+**A:** Only if you distribute them. If you modify Open Omniscience for your own use and don't distribute it, you don't need to release your modifications.
 
 ### Q: What about the Python dependencies?
 **A:** Python dependencies (FastAPI, SQLAlchemy, etc.) are separate works with their own licenses. Open Omniscience's GPLv3 license does not affect them. See [NOTICES.md](NOTICES.md) for details.
@@ -198,8 +140,6 @@ If you have questions or concerns about GPLv3 compliance:
 - [Full GPLv3 License Text](LICENSE)
 - [GNU GPLv3 Official Website](https://www.gnu.org/licenses/gpl-3.0.html)
 - [GNU GPLv3 FAQ](https://www.gnu.org/licenses/gpl-faq.html)
-- [HTTrack Website](https://www.httrack.com/)
-- [HTTrack Repository](https://github.com/xroche/httrack)
 - [Third-Party Notices](NOTICES.md)
 
 ---

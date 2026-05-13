@@ -4,57 +4,6 @@ This file contains notices and attributions for third-party software and librari
 
 ---
 
-## 📜 HTTrack Web Crawler
-
-**Project:** HTTrack (https://www.httrack.com/)
-**License:** GNU General Public License Version 3 (GPLv3)
-**Source:** https://github.com/xroche/httrack
-**Our Use:** External dependency (command-line tool and optional C library)
-
-### Description
-
-Open Omniscience uses HTTrack as an **external dependency** for web crawling and website mirroring capabilities. HTTrack is a free (GPLv3) and easy-to-use offline browser utility.
-
-### Compliance
-
-Open Omniscience complies with HTTrack's GPLv3 license by:
-
-1. ✅ **Using GPLv3 License**: Open Omniscience is licensed under GNU GPLv3, which is compatible with HTTrack's license
-2. ✅ **Providing Source Code**: All Open Omniscience source code is available under GPLv3
-3. ✅ **Attribution**: Proper attribution is given to HTTrack in this file and in the project documentation
-4. ✅ **No Modifications to HTTrack**: Open Omniscience does not modify or distribute HTTrack source code
-
-### Usage in Open Omniscience
-
-Open Omniscience interacts with HTTrack in two ways:
-
-1. **Command-Line Interface**: The `pillar1/src/httrack_wrapper.py` module calls HTTrack as an external command-line tool
-2. **Optional C Library**: The wrapper can optionally load HTTrack's C library (`libhttrack.so`, `httrack.dll`, etc.) for direct integration
-
-### Installation
-
-To use Open Omniscience with HTTrack functionality:
-
-```bash
-# On Debian/Ubuntu
-sudo apt-get install httrack
-
-# On Fedora/RHEL
-sudo dnf install httrack
-
-# On macOS (using Homebrew)
-brew install httrack
-
-# Or download from official website
-wget https://www.httrack.com/page/2/en/index.html
-```
-
-### HTTrack License Text
-
-HTTrack is licensed under the GNU General Public License Version 3. The full text of the GPLv3 license can be found in the [LICENSE](LICENSE) file of this project, which is the same license used by HTTrack.
-
----
-
 ## 📦 Python Dependencies
 
 Open Omniscience uses various Python packages, each with their own licenses. The following is a summary of the main dependencies and their licenses:
@@ -107,9 +56,8 @@ Open Omniscience aggregates data from various news sources. Users are responsibl
 
 To verify compliance with third-party licenses:
 
-1. **HTTrack**: Ensure HTTrack is installed and accessible in your system PATH
-2. **Python Dependencies**: Run `pip list` to see all installed packages and their licenses
-3. **Source Code**: All Open Omniscience source code is available in this repository
+1. **Python Dependencies**: Run `pip list` to see all installed packages and their licenses
+2. **Source Code**: All Open Omniscience source code is available in this repository
 
 ---
 
