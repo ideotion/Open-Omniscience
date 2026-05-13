@@ -416,6 +416,20 @@ install_python_deps() {
     # Create virtual environment
     if [ ! -d "venv" ]; then
         log_info "Creating virtual environment..."
+        # Check if python3-venv is available
+        if ! python3 -m venv --help >/dev/null 2>&1; then
+            # On Debian/Ubuntu, python3-venv package might be needed
+            log_info "python3-venv not available, installing..."
+            if command_exists apt-get; then
+                PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+                run_with_sudo apt-get install -y python3-venv 2>/dev/null || \
+                run_with_sudo apt-get install -y "python3.${PYTHON_VERSION//./}-venv" 2>/dev/null || \
+                { log_error "Failed to install python3-venv. Please run: sudo apt install python3-venv"; exit 1; }
+            else
+                log_error "python3-venv is required but not installed. Please install it manually."
+                exit 1
+            fi
+        fi
         python3 -m venv venv
     fi
     
