@@ -1,0 +1,128 @@
+#!/bin/bash
+# Post-installation script for Open Omniscience
+# This script runs after the package is installed
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Configuration
+LAUNCHER_DIR="/usr/share/open-omniscience/launcher"
+DESKTOP_FILE="open-omniscience-user.desktop"
+INSTALL_SCRIPT="install-desktop-launcher.sh"
+
+# Function to install desktop launcher for current user
+export HOME
+
+install_desktop_launcher() {
+    echo -e "${BLUE}Installing Open Omniscience desktop launcher...${NC}"
+    
+    # Check if we're running as root
+    if [ "$(id -u)" = "0" ]; then
+        echo -e "${YELLOW}Running as root, installing for all users...${NC}"
+        
+        # Install for all users by copying to system locations
+        if [ -d "/usr/share/applications" ]; then
+            echo -e "${GREEN}Copying desktop file to /usr/share/applications/${DESKTOP_FILE}${NC}"
+            cp "${LAUNCHER_DIR}/${DESKTOP_FILE}" "/usr/share/applications/${DESKTOP_FILE}"
+            chmod +x "/usr/share/applications/${DESKTOP_FILE}"
+        fi
+        
+        # Try to install for the current user if HOME is set
+        if [ -n "$HOME" ] && [ "$HOME" != "/" ] && [ "$HOME" != "/root" ]; then
+            install_for_user
+        fi
+    else
+        # Running as regular user
+        install_for_user
+    fi
+    
+    echo -e "${GREEN}Desktop launcher installation complete!${NC}"
+}
+
+install_for_user() {
+    local user_desktop
+    local user_apps
+    local user_icons
+    
+    # Get user directories
+    if [ -n "$XDG_DESKTOP_DIR" ] && [ -d "$XDG_DESKTOP_DIR" ]; then
+        user_desktop="$XDG_DESKTOP_DIR"
+    elif [ -d "$HOME/Desktop" ]; then
+        user_desktop="$HOME/Desktop"
+    else
+        mkdir -p "$HOME/Desktop"
+        user_desktop="$HOME/Desktop"
+    fi
+    
+    if [ -n "$XDG_DATA_HOME" ]; then
+        user_apps="$XDG_DATA_HOME/applications"
+        user_icons="$XDG_DATA_HOME/icons"
+    else
+        user_apps="$HOME/.local/share/applications"
+        user_icons="$HOME/.local/share/icons"
+    fi
+    
+    # Create directories
+    mkdir -p "$user_desktop" "$user_apps" "$user_icons"
+    
+    # Copy desktop file to user's desktop
+    echo -e "${GREEN}Copying desktop file to user desktop...${NC}"
+    cp "${LAUNCHER_DIR}/${DESKTOP_FILE}" "$user_desktop/${DESKTOP_FILE}"
+    chmod +x "$user_desktop/${DESKTOP_FILE}"
+    
+    # Copy desktop file to user's applications
+    cp "${LAUNCHER_DIR}/${DESKTOP_FILE}" "$user_apps/${DESKTOP_FILE}"
+    chmod +x "$user_apps/${DESKTOP_FILE}"
+    
+    # Copy icon
+    if [ -f "/usr/share/pixmaps/open-omniscience.png" ]; then
+        cp "/usr/share/pixmaps/open-omniscience.png" "$user_icons/open-omniscience.png"
+        # Update desktop files to use local icon
+        sed -i "s|Icon=/usr/share/pixmaps/open-omniscience.png|Icon=$user_icons/open-omniscience.png|" \
+            "$user_desktop/${DESKTOP_FILE}"
+        sed -i "s|Icon=/usr/share/pixmaps/open-omniscience.png|Icon=$user_icons/open-omniscience.png|" \
+            "$user_apps/${DESKTOP_FILE}"
+    fi
+}
+
+# Main execution
+case "$1" in
+    configure)
+        echo ""
+        echo "=========================================="
+        echo "Open Omniscience - Post-Installation Setup"
+        echo "=========================================="
+        echo ""
+        
+        # Install desktop launcher
+        if [ -f "${LAUNCHER_DIR}/${DESKTOP_FILE}" ] && [ -f "${LAUNCHER_DIR}/${INSTALL_SCRIPT}" ]; then
+            install_desktop_launcher
+        else
+            echo -e "${YELLOW}Desktop launcher files not found, skipping desktop launcher installation.${NC}"
+        fi
+        
+        echo ""
+        echo "=========================================="
+        echo "Open Omniscience installation complete!"
+        echo ""
+        echo "To start the application:"
+        echo "  - Click the desktop launcher icon"
+        echo "  - Or run: open-omniscience"
+        echo "  - Or run: /usr/bin/open-omniscience"
+        echo ""
+        echo "Access the application at: http://localhost:8000"
+        echo "=========================================="
+        echo ""
+        ;;
+    *)
+        # For other cases (abort-upgrade, abort-remove, abort-deconfigure), do nothing
+        ;;
+esac
+
+exit 0

@@ -20,10 +20,17 @@ override_dh_auto_install:
 	mkdir -p debian/open-omniscience/etc/open-omniscience
 	mkdir -p debian/open-omniscience/usr/share/applications
 	mkdir -p debian/open-omniscience/usr/share/pixmaps
+	mkdir -p debian/open-omniscience/usr/share/open-omniscience/launcher
 	
 	# Copy source files
 	cp -r src/* debian/open-omniscience/usr/share/open-omniscience/src/
 	
+	# Copy launcher files
+	cp package/launcher/open-omniscience-user.desktop debian/open-omniscience/usr/share/open-omniscience/launcher/
+	cp package/launcher/install-desktop-launcher.sh debian/open-omniscience/usr/share/open-omniscience/launcher/
+	chmod +x debian/open-omniscience/usr/share/open-omniscience/launcher/install-desktop-launcher.sh
+	chmod +x debian/open-omniscience/usr/share/open-omniscience/launcher/open-omniscience-user.desktop
+
 	# Copy configs
 	cp -r configs/* debian/open-omniscience/usr/share/open-omniscience/configs/
 	

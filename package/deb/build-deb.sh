@@ -119,6 +119,14 @@ main() {
     echo ""
     echo "Or from the terminal:"
     echo "  /usr/bin/open-omniscience"
+    echo ""
+    echo "Desktop launcher:"
+    echo "  The package will automatically install a desktop launcher"
+    echo "  to the user's desktop and applications menu during installation."
+    echo ""
+    echo "To manually install/remove desktop launcher after installation:"
+    echo "  Install: /usr/share/open-omniscience/launcher/install-desktop-launcher.sh install"
+    echo "  Remove:  /usr/share/open-omniscience/launcher/install-desktop-launcher.sh uninstall"
     echo "=========================================="
 }
 

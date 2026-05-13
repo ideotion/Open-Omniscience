@@ -1,0 +1,27 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Open Omniscience
+GenericName=Global Intelligence Platform
+Comment=Global Intelligence Platform for Investigative Journalism
+Exec=/usr/bin/open-omniscience
+Icon=/usr/share/pixmaps/open-omniscience.png
+Terminal=true
+Categories=Utility;News;Journalism;InformationManagement;
+Path=
+StartupNotify=false
+Encoding=UTF-8
+MimeType=
+Keywords=news;intelligence;journalism;research;data;analysis;
+StartupWMClass=OpenOmniscience
+X-Desktop-File-Install-Version=0.22
+
+[Desktop Action new-window]
+Name=Open New Window
+Exec=/usr/bin/open-omniscience
+OnlyShowIn=Unity;
+
+[Desktop Action settings]
+Name=Settings
+Exec=/usr/bin/open-omniscience --config
+OnlyShowIn=Unity;

@@ -1,7 +1,7 @@
 # Open Omniscience Makefile
 # Provides convenient commands for development, testing, and deployment
 
-.PHONY: help install test lint run clean docker-build docker-run docker-down
+.PHONY: help install test lint run clean docker-build docker-run docker-down desktop-launcher-install desktop-launcher-uninstall
 
 # Default target
 help:
@@ -43,6 +43,10 @@ help:
 	@echo "  make scrape           - Run the scraper"
 	@echo "  make scrape-all       - Scrape all sources"
 	@echo "  make ingest           - Run the ingestion pipeline"
+	@echo ""
+	@echo "Desktop Launcher:"
+	@echo "  make desktop-launcher-install   - Install desktop launcher to user's desktop"
+	@echo "  make desktop-launcher-uninstall - Remove desktop launcher from user's desktop"
 
 # Python environment
 PYTHON ?= python3
@@ -149,6 +153,17 @@ package-all: package-appimage package-deb
 package-clean:
 	@echo "Cleaning package build files..."
 	rm -rf AppDir build-deb dist *.AppImage *.deb
+
+# Desktop launcher installation
+desktop-launcher-install:
+	@echo "Installing desktop launcher..."
+	chmod +x package/launcher/install-desktop-launcher.sh
+	./package/launcher/install-desktop-launcher.sh install
+
+desktop-launcher-uninstall:
+	@echo "Uninstalling desktop launcher..."
+	chmod +x package/launcher/install-desktop-launcher.sh
+	./package/launcher/install-desktop-launcher.sh uninstall
 
 # Default target
 all: help
