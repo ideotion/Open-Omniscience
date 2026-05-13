@@ -1,0 +1,616 @@
+#!/bin/bash
+#
+# Open-Omniscience One-Line Installer
+# ================================
+#
+# This script provides a fully automatic, non-interactive installation of Open-Omniscience
+# with all prerequisites, dependencies, and configurations.
+#
+# Usage: curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.01/install | bash
+#
+# Author: Open-Omniscience Team
+# License: GPLv3
+#
+
+set -euo pipefail
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Version
+VERSION="0.02"
+REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
+REPO_BRANCH="0.01"
+INSTALL_DIR="${HOME}/open-omniscience"
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+# Print colored messages
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+}
+
+# Check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Check OS type
+detect_os() {
+    case "$(uname -s)" in
+        Linux*)     OS="linux" ;;
+        Darwin*)    OS="macos" ;;
+        CYGWIN*|MINGW32*|MSYS*|MINGW*) OS="windows" ;;
+        *)          OS="unknown" ;;
+    esac
+    echo "$OS"
+}
+
+# Check if running on WSL
+is_wsl() {
+    grep -q -i microsoft /proc/version 2>/dev/null && return 0 || return 1
+}
+
+# Check if running as root
+is_root() {
+    [ "$(id -u)" -eq 0 ]
+}
+
+# Run command with sudo if not root
+run_with_sudo() {
+    if is_root; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+# =============================================================================
+# Pre-Installation Checks
+# =============================================================================
+
+check_prerequisites() {
+    log_info "Checking prerequisites..."
+    
+    # Check for curl
+    if ! command_exists curl; then
+        log_error "curl is required but not installed. Please install curl first."
+        exit 1
+    fi
+    
+    # Check for bash
+    if ! command_exists bash; then
+        log_error "bash is required but not installed."
+        exit 1
+    fi
+    
+    # Check architecture
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64|amd64|aarch64|arm64)
+            log_info "Supported architecture: $ARCH"
+            ;;
+        *)
+            log_warning "Unsupported architecture: $ARCH. Installation may fail."
+            ;;
+    esac
+    
+    log_success "Prerequisites check passed"
+}
+
+# =============================================================================
+# OS Detection and Setup
+# =============================================================================
+
+setup_linux() {
+    log_info "Detected Linux system"
+    
+    # Check distribution
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        DISTRO="$ID"
+        DISTRO_VERSION="$VERSION_ID"
+        log_info "Distribution: $DISTRO $DISTRO_VERSION"
+    fi
+    
+    # Install basic packages
+    log_info "Installing basic packages..."
+    if command_exists apt-get; then
+        run_with_sudo apt-get update -qq
+        run_with_sudo apt-get install -y -qq git curl wget ca-certificates gnupg lsb-release
+    elif command_exists dnf; then
+        run_with_sudo dnf install -y git curl wget ca-certificates
+    elif command_exists yum; then
+        run_with_sudo yum install -y git curl wget ca-certificates
+    elif command_exists zypper; then
+        run_with_sudo zypper install -y git curl wget ca-certificates
+    elif command_exists pacman; then
+        run_with_sudo pacman -Sy --noconfirm git curl wget ca-certificates
+    else
+        log_error "Unsupported package manager. Please install git and curl manually."
+        exit 1
+    fi
+    
+    log_success "Basic packages installed"
+}
+
+setup_macos() {
+    log_info "Detected macOS system"
+    
+    # Check for Homebrew
+    if ! command_exists brew; then
+        log_info "Installing Homebrew..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        
+        # Add Homebrew to PATH
+        if [ -f "$HOME/.zprofile" ]; then
+            echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
+            eval "$(/opt/homebrew/bin/brew shellenv)"
+        fi
+    fi
+    
+    # Install basic packages
+    log_info "Installing basic packages via Homebrew..."
+    brew install git curl wget
+    
+    log_success "Basic packages installed"
+}
+
+setup_windows() {
+    log_info "Detected Windows system (WSL assumed)"
+    
+    # Check if WSL
+    if ! is_wsl; then
+        log_error "Native Windows is not supported. Please use WSL (Windows Subsystem for Linux)."
+        exit 1
+    fi
+    
+    log_info "Running on WSL - proceeding with Linux installation"
+    setup_linux
+}
+
+# =============================================================================
+# Install Docker
+# =============================================================================
+
+install_docker() {
+    if command_exists docker && docker --version >/dev/null 2>&1; then
+        log_info "Docker is already installed: $(docker --version)"
+        return 0
+    fi
+    
+    log_info "Installing Docker..."
+    
+    case "$OS" in
+        linux)
+            # Remove old versions
+            run_with_sudo apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
+            
+            # Install Docker using official script
+            curl -fsSL https://get.docker.com | sh
+            
+            # Add current user to docker group
+            if [ -n "${USER:-}" ] && ! grep -q "^docker:" /etc/group || ! grep -qw "$USER" /etc/group; then
+                run_with_sudo usermod -aG docker "$USER"
+                log_info "Added $USER to docker group. You may need to log out and back in."
+            fi
+            ;;
+        macos)
+            # Install Docker Desktop for macOS
+            if ! command_exists brew; then
+                log_error "Homebrew is required for Docker on macOS"
+                exit 1
+            fi
+            
+            brew install --cask docker
+            
+            log_info "Docker Desktop installed. Please start it manually from Applications."
+            log_info "After starting Docker Desktop, run this script again."
+            exit 0
+            ;;
+        windows)
+            log_error "Docker installation on WSL requires manual setup."
+            log_error "Please install Docker Desktop for Windows first."
+            exit 1
+            ;;
+    esac
+    
+    # Verify Docker installation
+    if ! command_exists docker || ! docker --version >/dev/null 2>&1; then
+        log_error "Docker installation failed"
+        exit 1
+    fi
+    
+    log_success "Docker installed: $(docker --version)"
+}
+
+# =============================================================================
+# Install Docker Compose
+# =============================================================================
+
+install_docker_compose() {
+    if command_exists docker-compose && docker-compose --version >/dev/null 2>&1; then
+        log_info "Docker Compose is already installed: $(docker-compose --version)"
+        return 0
+    fi
+    
+    log_info "Installing Docker Compose..."
+    
+    # Docker Compose is now included with Docker Desktop on macOS/Windows
+    # For Linux, we install it separately
+    case "$OS" in
+        linux)
+            # Get latest version
+            COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+            
+            # Install Docker Compose
+            run_with_sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            run_with_sudo chmod +x /usr/local/bin/docker-compose
+            ;;
+        macos|windows)
+            # Docker Compose is included with Docker Desktop
+            log_info "Docker Compose is included with Docker Desktop"
+            ;;
+    esac
+    
+    # Verify installation
+    if ! command_exists docker-compose || ! docker-compose --version >/dev/null 2>&1; then
+        log_error "Docker Compose installation failed"
+        exit 1
+    fi
+    
+    log_success "Docker Compose installed: $(docker-compose --version)"
+}
+
+# =============================================================================
+# Install Ollama (for LLM support)
+# =============================================================================
+
+install_ollama() {
+    if command_exists ollama && ollama --version >/dev/null 2>&1; then
+        log_info "Ollama is already installed: $(ollama --version)"
+        return 0
+    fi
+    
+    log_info "Installing Ollama for local LLM support..."
+    
+    case "$OS" in
+        linux)
+            curl -fsSL https://ollama.com/install.sh | sh
+            ;;
+        macos)
+            curl -fsSL https://ollama.com/install.sh | sh
+            ;;
+        windows)
+            log_error "Ollama on WSL requires manual installation"
+            log_info "Please install Ollama manually from https://ollama.com"
+            return 1
+            ;;
+    esac
+    
+    # Verify installation
+    if ! command_exists ollama || ! ollama --version >/dev/null 2>&1; then
+        log_warning "Ollama installation may have failed or is not in PATH"
+        return 1
+    fi
+    
+    log_success "Ollama installed: $(ollama --version)"
+    return 0
+}
+
+# =============================================================================
+# Clone Repository
+# =============================================================================
+
+clone_repository() {
+    if [ -d "$INSTALL_DIR" ]; then
+        log_info "Repository already exists at $INSTALL_DIR"
+        cd "$INSTALL_DIR"
+        git fetch origin
+        git checkout "$REPO_BRANCH"
+        git pull origin "$REPO_BRANCH"
+        return 0
+    fi
+    
+    log_info "Cloning Open-Omniscience repository..."
+    git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
+    
+    if [ ! -d "$INSTALL_DIR" ]; then
+        log_error "Failed to clone repository"
+        exit 1
+    fi
+    
+    cd "$INSTALL_DIR"
+    log_success "Repository cloned to $INSTALL_DIR"
+}
+
+# =============================================================================
+# Install Python Dependencies
+# =============================================================================
+
+install_python_deps() {
+    log_info "Installing Python dependencies..."
+    
+    # Check for Python 3.8+
+    if ! command_exists python3; then
+        log_error "Python 3 is required but not installed"
+        exit 1
+    fi
+    
+    PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    log_info "Detected Python: $PYTHON_VERSION"
+    
+    # Check Python version
+    if ! python3 -c "import sys; assert sys.version_info >= (3, 8)" 2>/dev/null; then
+        log_error "Python 3.8 or higher is required"
+        exit 1
+    fi
+    
+    # Create virtual environment
+    if [ ! -d "venv" ]; then
+        log_info "Creating virtual environment..."
+        python3 -m venv venv
+    fi
+    
+    # Activate and install dependencies
+    source venv/bin/activate
+    
+    # Install core dependencies
+    log_info "Installing core dependencies..."
+    pip install --upgrade pip setuptools wheel
+    pip install -r requirements.txt
+    
+    # Install LLM dependencies
+    if [ -f "requirements-llm.txt" ]; then
+        log_info "Installing LLM dependencies..."
+        pip install -r requirements-llm.txt
+    fi
+    
+    # Install all pillar dependencies
+    for pillar in pillar2 pillar3 pillar4; do
+        if [ -d "$pillar" ] && [ -f "$pillar/requirements.txt" ]; then
+            log_info "Installing $pillar dependencies..."
+            pip install -r "$pillar/requirements.txt"
+        fi
+    done
+    
+    # Install development dependencies
+    if [ -f "requirements-all.txt" ]; then
+        log_info "Installing development dependencies..."
+        pip install -r requirements-all.txt
+    fi
+    
+    log_success "All Python dependencies installed"
+}
+
+# =============================================================================
+# Configure Environment
+# =============================================================================
+
+configure_environment() {
+    log_info "Configuring environment..."
+    
+    # Copy example environment file
+    if [ -f ".env.example" ] && [ ! -f ".env" ]; then
+        cp .env.example .env
+        log_info "Created .env from .env.example"
+    fi
+    
+    # Create data directories
+    for dir in data audit logs; do
+        if [ ! -d "$dir" ]; then
+            mkdir -p "$dir"
+            log_info "Created directory: $dir"
+        fi
+    done
+    
+    # Set default configuration
+    if [ ! -f "configs/settings.yaml" ]; then
+        mkdir -p configs
+        cat > configs/settings.yaml << 'EOF'
+# Open-Omniscience Settings
+database:
+  url: sqlite:///./data/open_omniscience.db
+
+scraping:
+  rate_limit_ms: 1000
+  user_agent: "OpenOmniscience/1.0 (+https://github.com/ideotion/Open-Omniscience)"
+  respect_robots_txt: true
+
+llm:
+  enabled: true
+  ollama_host: "http://localhost:11434"
+  default_model: "llama3:8b"
+  auto_download: false
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+EOF
+        log_info "Created default settings.yaml"
+    fi
+    
+    log_success "Environment configured"
+}
+
+# =============================================================================
+# Verification
+# =============================================================================
+
+verify_installation() {
+    log_info "Verifying installation..."
+    
+    local all_passed=true
+    
+    # Check Docker
+    if ! command_exists docker || ! docker --version >/dev/null 2>&1; then
+        log_error "Docker verification failed"
+        all_passed=false
+    else
+        log_success "Docker: $(docker --version)"
+    fi
+    
+    # Check Docker Compose
+    if ! command_exists docker-compose || ! docker-compose --version >/dev/null 2>&1; then
+        log_error "Docker Compose verification failed"
+        all_passed=false
+    else
+        log_success "Docker Compose: $(docker-compose --version)"
+    fi
+    
+    # Check Git
+    if ! command_exists git || ! git --version >/dev/null 2>&1; then
+        log_error "Git verification failed"
+        all_passed=false
+    else
+        log_success "Git: $(git --version)"
+    fi
+    
+    # Check Python
+    if ! command_exists python3 || ! python3 -c "import sys; assert sys.version_info >= (3, 8)" 2>/dev/null; then
+        log_error "Python verification failed"
+        all_passed=false
+    else
+        log_success "Python: $(python3 --version)"
+    fi
+    
+    # Check repository
+    if [ ! -d ".git" ]; then
+        log_error "Repository verification failed"
+        all_passed=false
+    else
+        log_success "Repository: $(git rev-parse --abbrev-ref HEAD)"
+    fi
+    
+    # Check Python dependencies
+    if ! python3 -c "import fastapi; import sqlalchemy; import beautifulsoup4" 2>/dev/null; then
+        log_error "Python dependencies verification failed"
+        all_passed=false
+    else
+        log_success "Python dependencies: OK"
+    fi
+    
+    # Check Ollama (optional)
+    if command_exists ollama && ollama --version >/dev/null 2>&1; then
+        log_success "Ollama: $(ollama --version)"
+    else
+        log_warning "Ollama: Not installed (LLM features will be limited)"
+    fi
+    
+    if [ "$all_passed" = true ]; then
+        log_success "All verification checks passed!"
+        return 0
+    else
+        log_error "Some verification checks failed"
+        return 1
+    fi
+}
+
+# =============================================================================
+# Main Installation
+# =============================================================================
+
+main() {
+    echo ""
+    echo "  ██████╗ ██████╗  ██████╗ ███╗   ██╗███████╗██╗   ██╗███╗   ██╗"
+    echo "  ██╔══██╗██╔══██╗██╔═══██╗████╗  ██║██╔════╝██║   ██║████╗  ██║"
+    echo "  ██████╔╝██████╔╝██║   ██║██╔██╗ ██║█████╗  ██║   ██║██╔██╗ ██║"
+    echo "  ██╔═══╝ ██╔══██╗██║   ██║██║╚██╗██║██╔══╝  ╚██╗ ██╔╝██║╚██╗██║"
+    echo "  ██║     ██║  ██║╚██████╔╝██║ ╚████║███████╗ ╚████╔╝ ██║ ╚████║"
+    echo "  ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝  ╚═══╝  ╚═╝  ╚═══╝"
+    echo ""
+    echo "  Open-Omniscience v$VERSION Installer"
+    echo "  ===================================="
+    echo ""
+    
+    # Detect OS
+    OS=$(detect_os)
+    log_info "Detected OS: $OS"
+    
+    # Check prerequisites
+    check_prerequisites
+    
+    # Setup based on OS
+    case "$OS" in
+        linux)   setup_linux ;;
+        macos)   setup_macos ;;
+        windows) setup_windows ;;
+        *)       log_error "Unsupported OS: $OS"; exit 1 ;;
+    esac
+    
+    # Install Docker
+    install_docker
+    
+    # Install Docker Compose
+    install_docker_compose
+    
+    # Install Ollama (optional, may fail on WSL)
+    install_ollama || log_warning "Ollama installation skipped or failed"
+    
+    # Clone repository
+    clone_repository
+    
+    # Install Python dependencies
+    install_python_deps
+    
+    # Configure environment
+    configure_environment
+    
+    # Verify installation
+    echo ""
+    log_info "Running verification..."
+    verify_installation
+    
+    # Final message
+    echo ""
+    echo "  ██████╗ ██████╗  ██████╗ ███╗   ██╗███████╗██╗   ██╗███╗   ██╗"
+    echo "  ██╔══██╗██╔══██╗██╔═══██╗████╗  ██║██╔════╝██║   ██║████╗  ██║"
+    echo "  ██████╔╝██████╔╝██║   ██║██╔██╗ ██║█████╗  ██║   ██║██╔██╗ ██║"
+    echo "  ██╔═══╝ ██╔══██╗██║   ██║██║╚██╗██║██╔══╝  ╚██╗ ██╔╝██║╚██╗██║"
+    echo "  ██║     ██║  ██║╚██████╔╝██║ ╚████║███████╗ ╚████╔╝ ██║ ╚████║"
+    echo "  ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝  ╚═══╝  ╚═╝  ╚═══╝"
+    echo ""
+    echo "  Installation Complete!"
+    echo ""
+    echo "  Open-Omniscience has been installed to: $INSTALL_DIR"
+    echo ""
+    echo "  To start Open-Omniscience:"
+    echo "    cd $INSTALL_DIR"
+    echo "    source venv/bin/activate"
+    echo "    docker-compose up -d --build"
+    echo ""
+    echo "  Access the application at: http://localhost:8000"
+    echo ""
+    echo "  For LLM support (if Ollama installed):"
+    echo "    ollama pull llama3:8b"
+    echo "    docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build"
+    echo ""
+    echo "  Documentation: https://github.com/ideotion/Open-Omniscience"
+    echo ""
+}
+
+# Run main function
+main "$@"
