@@ -180,7 +180,6 @@ class OpenOmnisciencePipeline:
     def _init_pillar1(self):
         """Initialize Pillar 1 (Data Ingestion)."""
         # Pillar 1 uses the built-in scraper (src/scraper/scraper.py)
-        # No external HTTrack dependency required
         from scraper.scraper import Scraper
         return Scraper()
 
