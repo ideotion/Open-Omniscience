@@ -41,9 +41,40 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 
 ## 🚀 Getting Started
 
-### Quick Start with Docker (Recommended)
+### ⚡ One-Line Installation (Recommended)
 
-The fastest way to get started is using Docker:
+The **fastest and easiest** way to install Open-Omniscience with all prerequisites:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.01/install | bash
+```
+
+**What this installs:**
+- ✅ Automatically detects your OS (Linux, macOS, Windows/WSL)
+- ✅ Installs all prerequisites (curl, git, Docker, Docker Compose, Ollama)
+- ✅ Clones the Open-Omniscience repository to `~/open-omniscience`
+- ✅ Installs all Python dependencies (core + all pillars + LLM)
+- ✅ Configures the environment with default settings
+- ✅ Verifies each step and the final installation
+- ✅ Works in fully non-interactive mode
+
+**After installation:**
+```bash
+# Navigate to the installation directory
+cd ~/open-omniscience
+
+# Start the application (without LLM)
+docker-compose up -d --build
+
+# OR start with LLM support (requires more resources)
+docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
+
+# Access the application at: http://localhost:8000
+```
+
+### Manual Installation with Docker
+
+If you prefer to install manually:
 
 ```bash
 # Clone the repository
@@ -64,9 +95,9 @@ docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
 # Open http://localhost:8000 in your browser
 ```
 
-### One-Line Installation (Development)
+### Manual Installation (Development)
 
-For development environments:
+For development environments without Docker:
 
 ```bash
 # Clone the repository
@@ -85,6 +116,9 @@ pip install -r requirements.txt
 # For LLM support (optional)
 pip install -r requirements-llm.txt
 
+# For all pillars (optional)
+pip install -r requirements-all.txt
+
 # Initialize the database
 mkdir -p data audit logs
 python -c "import sys; sys.path.insert(0, 'src'); from database.models import Base, engine; Base.metadata.create_all(engine); print('Database initialized')"
@@ -94,6 +128,26 @@ uvicorn api.main:app --reload
 
 # Access at http://localhost:8000
 ```
+
+### Verification
+
+After installation, verify everything is working correctly:
+
+```bash
+# Run the verification script
+./scripts/verify_installation.sh
+```
+
+This will check:
+- Docker and Docker Compose installation
+- Git installation
+- Python and pip installation
+- Repository integrity
+- Python dependencies
+- LLM dependencies (Ollama)
+- Docker images
+- Environment configuration
+- Port availability
 
 ---
 
