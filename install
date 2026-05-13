@@ -413,9 +413,6 @@ install_python_deps() {
         exit 1
     fi
     
-    # Change to install directory for venv creation
-    cd "$INSTALL_DIR"
-    
     # Create virtual environment
     if [ ! -d "venv" ]; then
         log_info "Creating virtual environment..."
@@ -628,6 +625,9 @@ main() {
     
     # Clone repository
     clone_repository
+    
+    # Ensure we're in the install directory
+    cd "$INSTALL_DIR"
     
     # Install Python dependencies
     install_python_deps
