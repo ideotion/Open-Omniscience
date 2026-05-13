@@ -83,7 +83,7 @@ class LLMConfig:
                     description="Meta Llama 3 8B - General purpose model",
                     capabilities=["text-generation", "analysis", "summarization"],
                     size_gb=4.7,
-                    default=True
+                    default=False
                 ),
                 "mistral-7b": ModelConfig(
                     name="Mistral 7B",
@@ -188,6 +188,54 @@ class LLMConfig:
                     description="Microsoft Phi-4 - Latest in Phi series with reasoning",
                     capabilities=["text-generation", "analysis", "reasoning", "coding"],
                     size_gb=14.0,
+                    default=False
+                ),
+                "translategemma-4b": ModelConfig(
+                    name="TranslateGemma 4B",
+                    model_id="translategemma:4b",
+                    description="Google TranslateGemma 4B - Specialized for translation tasks",
+                    capabilities=["translation", "text-generation"],
+                    size_gb=2.5,
+                    default=False
+                ),
+                "nemotron-3-nano-4b": ModelConfig(
+                    name="Nemotron 3 Nano 4B",
+                    model_id="nemotron-3-nano:4b",
+                    description="NVIDIA Nemotron 3 Nano 4B - Optimized for efficiency",
+                    capabilities=["text-generation", "analysis", "coding"],
+                    size_gb=2.8,
+                    default=False
+                ),
+                "qwen3.5-4b": ModelConfig(
+                    name="Qwen 3.5 4B",
+                    model_id="qwen3.5:4b",
+                    description="Alibaba Qwen 3.5 4B - Latest with improved reasoning",
+                    capabilities=["text-generation", "analysis", "translation", "summarization", "reasoning"],
+                    size_gb=2.5,
+                    default=False
+                ),
+                "gemma4-e2b": ModelConfig(
+                    name="Gemma 4 E2B",
+                    model_id="gemma4:e2b",
+                    description="Google Gemma 4 E2B - Latest generation with improved reasoning",
+                    capabilities=["text-generation", "analysis", "translation", "summarization", "reasoning", "coding"],
+                    size_gb=2.7,
+                    default=True
+                ),
+                "ministral-3-3b": ModelConfig(
+                    name="MiniStral 3 3B",
+                    model_id="ministral-3:3b",
+                    description="MiniStral 3 3B - Compact and efficient",
+                    capabilities=["text-generation", "analysis", "translation", "summarization"],
+                    size_gb=1.8,
+                    default=False
+                ),
+                "ministral-3-8b": ModelConfig(
+                    name="MiniStral 3 8B",
+                    model_id="ministral-3:8b",
+                    description="MiniStral 3 8B - Balanced performance and efficiency",
+                    capabilities=["text-generation", "analysis", "translation", "summarization", "reasoning"],
+                    size_gb=4.5,
                     default=False
                 ),
                 "qwen3-8b": ModelConfig(

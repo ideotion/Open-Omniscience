@@ -512,7 +512,7 @@ scraping:
 llm:
   enabled: true
   ollama_host: "http://localhost:11434"
-  default_model: "llama3:8b"
+  default_model: "gemma4:e2b"
   auto_download: false
 
 server:
@@ -717,7 +717,7 @@ main() {
     echo "  Access the application at: http://localhost:8000"
     echo ""
     echo "  For LLM support (if Ollama installed):"
-    echo "    ollama pull llama3:8b"
+    echo "    ollama pull gemma4:e2b"
     echo "    docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build"
     echo ""
     echo "  Documentation: https://github.com/ideotion/Open-Omniscience"

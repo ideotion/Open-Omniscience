@@ -236,7 +236,7 @@ async def get_capabilities():
             }
         ],
         "models": {
-            "default": "llama3:8b",
+            "default": "gemma4:e2b",
             "available": list(get_llm_config().default_models.keys())
         }
     }

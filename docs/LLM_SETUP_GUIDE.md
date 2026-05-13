@@ -104,8 +104,8 @@ curl http://localhost:8000/api/llm/models
 
 #### Step 5: Download Models (Optional)
 ```bash
-# Download the default model (llama3:8b)
-docker exec open-omniscience-llm ollama pull llama3:8b
+# Download the default model (gemma4:e2b)
+docker exec open-omniscience-llm ollama pull gemma4:e2b
 
 # Or download multiple models
 docker exec open-omniscience-llm ollama pull mistral:7b
@@ -177,7 +177,7 @@ curl http://localhost:11434/api/tags
 #### Step 7: Download Models
 ```bash
 # Download the default model
-ollama pull llama3:8b
+ollama pull gemma4:e2b
 
 # Optional: Download additional models
 ollama pull mistral:7b
@@ -216,7 +216,7 @@ python scripts/setup_llm.py --all
 # This will:
 # 1. Install Ollama (if not already installed)
 # 2. Start Ollama server
-# 3. Download the default model (llama3:8b)
+# 3. Download the default model (gemma4:e2b)
 # 4. Verify the installation
 ```
 
@@ -230,7 +230,7 @@ python scripts/setup_llm.py --install-ollama
 python scripts/setup_llm.py --download-models
 
 # Download specific models
-python scripts/setup_llm.py --model llama3:8b --model mistral:7b
+python scripts/setup_llm.py --model gemma4:e2b --model mistral:7b
 
 # Show current status
 python scripts/setup_llm.py --status
@@ -249,7 +249,7 @@ Open-Omniscience comes with 9 pre-configured models:
 | `phi3:3.8b` | Microsoft Phi-3 3.8B | 2.3GB | 3GB | 4GB | Lightweight tasks, fast inference |
 | `bart-large` | Facebook BART Large | 1.4GB | 3GB | 4GB | Translation, summarization |
 | `mistral:7b` | Mistral AI 7B | 4.1GB | 5GB | 8GB | General purpose, balanced |
-| `llama3:8b` | Meta Llama 3 8B | 4.7GB | 5GB | 8GB | **All tasks (DEFAULT)** |
+| `gemma4:e2b` | Google Gemma 4 E2B | 2.7GB | 3GB | 4GB | **All tasks (DEFAULT)** |
 | `gemma:7b` | Google Gemma 7B | 4.8GB | 5GB | 8GB | CPU-optimized |
 | `qwen2.5:7b` | Alibaba Qwen 2.5 7B | 4.8GB | 5GB | 8GB | Multilingual support |
 | `llava:7b` | LLaVA 7B | 4.5GB | 6GB | 10GB | Multimodal (text + vision) |
@@ -260,10 +260,10 @@ Open-Omniscience comes with 9 pre-configured models:
 #### Using Ollama CLI
 ```bash
 # Download a specific model
-ollama pull llama3:8b
+ollama pull gemma4:e2b
 
 # Download multiple models
-ollama pull llama3:8b mistral:7b phi3:3.8b
+ollama pull gemma4:e2b mistral:7b phi3:3.8b
 
 # List downloaded models
 ollama list
@@ -284,7 +284,7 @@ To free up disk space, you can remove downloaded models:
 
 ```bash
 # Remove a specific model
-ollama rm llama3:8b
+ollama rm gemma4:e2b
 
 # List downloaded models
 ollama list
@@ -446,12 +446,12 @@ curl http://localhost:11434/api/tags
 
 #### Issue 3: Model Not Downloaded
 
-**Error:** `ModelNotFoundError: Model 'llama3:8b' not found or not downloaded`
+**Error:** `ModelNotFoundError: Model 'gemma4:e2b' not found or not downloaded`
 
 **Solution:**
 ```bash
 # Download the model
-ollama pull llama3:8b
+ollama pull gemma4:e2b
 
 # Verify download
 ollama list
@@ -525,7 +525,7 @@ curl http://localhost:11434/api/tags
 # Test model generation
 curl -X POST http://localhost:11434/api/generate \
   -H "Content-Type: application/json" \
-  -d '{"model": "llama3:8b", "prompt": "Hello"}'
+  -d '{"model": "gemma4:e2b", "prompt": "Hello"}'
 ```
 
 ---
@@ -550,7 +550,7 @@ Choose the right model for your needs:
 | Use Case | Recommended Model | Reason |
 |----------|------------------|--------|
 | Quick testing | `phi3:3.8b` | Fast, lightweight |
-| General use | `llama3:8b` | Balanced performance |
+| General use | `gemma4:e2b` | Balanced performance |
 | Multilingual | `qwen2.5:7b` | Best language support |
 | Translation | `bart-large` | Optimized for translation |
 | High accuracy | `llama3:70b` | Most capable (requires more resources) |
@@ -605,7 +605,7 @@ curl https://registry.ollama.ai/api/v1/models | jq
 
 ```bash
 # Pull the latest version of a model
-ollama pull llama3:8b
+ollama pull gemma4:e2b
 
 # This will download the latest version if available
 ```
