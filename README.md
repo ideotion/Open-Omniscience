@@ -23,8 +23,6 @@ Open Omniscience is an **ethically oriented**, **open-source**, and **portable**
 
 This project is a **Linux-based application** built on Python, leveraging robust crawling capabilities for **ethical scraping**, **duplicate detection**, **data management**, and now **AI-powered analysis**.
 
-**Note:** Earlier versions of this documentation incorrectly stated that Open Omniscience was a "fork of HTTrack". This has been corrected. Open Omniscience is a **separate project** that does not contain any HTTrack source code. It can optionally interface with HTTrack as an external tool via the `pillar1/src/httrack_wrapper.py` module, but this is not required for basic functionality.
-
 ---
 
 ## ⚠️ Disclaimer
@@ -272,26 +270,26 @@ For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 ### Core Components
 
 ```
-┌─────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────┐
 │                      Open Omniscience                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────┐  │
-│  │   Crawler   │    │   Database  │    │   API Server    │  │
-│  │  (HTTrack)  │    │  (SQLite/   │    │   (FastAPI)     │  │
-│  │             │    │  PostgreSQL)│    │                 │  │
-│  └──────┬──────┘    └──────┬──────┘    └────────┬────────┘  │
-│         │                  │                   │            │
-│         ▼                  ▼                   ▼            │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │                    LLM Service Layer                       │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │  │
-│  │  │  LLMService │  │ ModelManager│  │   Ollama API     │  │  │
-│  │  │             │  │             │  │  (External)       │  │  │
-│  │  └─────────────┘  └─────────────┘  └─────────────────┘  │  │
-│  └─────────────────────────────────────────────────────────┘  │
-│                                                                  │
-└─────────────────────────────────────────────────────────────┘
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│  ┌────────────────┐    ┌─────────────┐    ┌─────────────────┐  │
+│  │    Ingestion   │    │   Database  │    │   API Server    │  │
+│  │(Beautifullsoup)│    │  (SQLite/   │    │   (FastAPI)     │  │
+│  │                │    │  PostgreSQL)│    │                 │  │
+│  └─────────┬──────┘    └──────┬──────┘    └────────┬────────┘  │
+│            │                  │                    │           │
+│            ▼                  ▼                    ▼           │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                    LLM Service Layer                    │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │   │
+│  │  │  LLMService │  │ ModelManager│  │   Ollama API    │  │   │
+│  │  │             │  │             │  │  (External)     │  │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────────┘  │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ### Technology Stack
