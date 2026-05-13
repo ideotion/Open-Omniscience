@@ -624,13 +624,12 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GPLv3 License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
 ## 🙏 Acknowledgments
 
-- **HTTrack**: For the robust web crawling foundation
 - **Ollama**: For the excellent local LLM runtime
 - **Meta, Mistral AI, Microsoft, Alibaba, Google**: For the open-source models
 - **FastAPI**: For the excellent API framework
