@@ -302,12 +302,28 @@ install_docker() {
             run_with_sudo apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
             
             # Install Docker using official script
-            curl -fsSL https://get.docker.com | sh
+            log_info "Installing Docker (this may take a few minutes)..."
+            if ! curl -fsSL https://get.docker.com | sh; then
+                log_error "Docker installation failed. Please install Docker manually from https://get.docker.com"
+                exit 1
+            fi
             
             # Add current user to docker group
             if [ -n "${USER:-}" ] && ! grep -q "^docker:" /etc/group || ! grep -qw "$USER" /etc/group; then
                 run_with_sudo usermod -aG docker "$USER"
-                log_info "Added $USER to docker group. You may need to log out and back in."
+                log_info "Added $USER to docker group. You may need to log out and back in for this to take effect."
+            fi
+            
+            # Start Docker daemon if not running
+            if command_exists systemctl; then
+                run_with_sudo systemctl start docker 2>/dev/null || true
+                run_with_sudo systemctl enable docker 2>/dev/null || true
+            fi
+            
+            # Verify Docker is working
+            if ! command_exists docker || ! docker --version >/dev/null 2>&1; then
+                log_error "Docker installation failed. Please install Docker manually and re-run this script."
+                exit 1
             fi
             ;;
         macos)
