@@ -22,14 +22,10 @@ orjson>=3.9.0
 structlog>=21.5.0
 
 # ============================================================================
-# PILLAR 1: DATA INGESTION (HTTrack)
+# PILLAR 1: DATA INGESTION
 # ============================================================================
 
-# HTTrack is a C library, Python bindings are optional
-# For Python wrapper (if implemented):
-# httrack-python>=1.0.0
-
-# Alternative: Use requests for web scraping
+# Use requests for web scraping
 beautifulsoup4>=4.10.0
 lxml>=4.6.0
 
