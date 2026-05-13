@@ -405,11 +405,20 @@ install_python_deps() {
             log_info "python3-venv not available, installing..."
             if command_exists apt-get; then
                 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-                run_with_sudo apt-get install -y python3-venv 2>/dev/null || \
-                run_with_sudo apt-get install -y "python3.${PYTHON_VERSION//./}-venv" 2>/dev/null || \
-                { log_error "Failed to install python3-venv. Please run: sudo apt install python3-venv"; exit 1; }
+                # Try generic package first
+                if run_with_sudo apt-get install -y python3-venv; then
+                    log_success "Installed python3-venv"
+                # Try version-specific package
+                elif run_with_sudo apt-get install -y "python3.${PYTHON_VERSION//./}-venv"; then
+                    log_success "Installed python3.${PYTHON_VERSION//./}-venv"
+                else
+                    log_error "Failed to install python3-venv automatically."
+                    log_error "Please run manually: sudo apt install python3-venv"
+                    exit 1
+                fi
             else
-                log_error "python3-venv is required but not installed. Please install it manually."
+                log_error "python3-venv is required but not installed."
+                log_error "Please install it manually for your package manager."
                 exit 1
             fi
         fi
