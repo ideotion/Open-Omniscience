@@ -296,8 +296,21 @@ install_docker() {
 # =============================================================================
 
 install_docker_compose() {
+    # Check for standalone docker-compose first
     if command_exists docker-compose && docker-compose --version >/dev/null 2>&1; then
         log_info "Docker Compose is already installed: $(docker-compose --version)"
+        return 0
+    fi
+    
+    # Check if docker compose plugin is available (Docker v20.10+)
+    if docker compose version >/dev/null 2>&1; then
+        log_info "Docker Compose plugin detected"
+        # Create docker-compose symlink if it doesn't exist
+        if ! command_exists docker-compose; then
+            DOCKER_PATH=$(which docker)
+            run_with_sudo ln -sf "$DOCKER_PATH" /usr/local/bin/docker-compose 2>/dev/null || true
+            log_info "Created docker-compose symlink"
+        fi
         return 0
     fi
     
@@ -321,7 +334,7 @@ install_docker_compose() {
     esac
     
     # Verify installation
-    if ! command_exists docker-compose || ! docker-compose --version >/dev/null 2>&1; then
+    if ! command_exists docker-compose; then
         log_error "Docker Compose installation failed"
         exit 1
     fi
@@ -709,12 +722,44 @@ main() {
     echo ""
     echo "  Open-Omniscience has been installed to: $INSTALL_DIR"
     echo ""
-    echo "  To start Open-Omniscience:"
-    echo "    cd $INSTALL_DIR"
-    echo "    source venv/bin/activate"
-    echo "    docker-compose up -d --build"
+    
+    # Ask if user wants to launch the program
+    read -p "Do you want to launch Open-Omniscience now? (Y/n): " -n 1 -r
     echo ""
-    echo "  Access the application at: http://localhost:8000"
+    if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+        echo ""
+        log_info "Launching Open-Omniscience..."
+        cd "$INSTALL_DIR"
+        docker-compose up -d --build
+        
+        # Check if it started successfully
+        if docker ps | grep -q open-omniscience 2>/dev/null; then
+            log_success "Open-Omniscience is running!"
+            echo ""
+            echo "  Access the application at: http://localhost:8000"
+            echo ""
+            
+            # Ask if user wants to open in browser
+            if command_exists xdg-open; then
+                read -p "Do you want to open it in your browser? (Y/n): " -n 1 -r
+                echo ""
+                if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+                    xdg-open http://localhost:8000
+                fi
+            fi
+        else
+            log_warning "Open-Omniscience may not have started. Check with: docker ps"
+        fi
+    else
+        echo ""
+        log_info "To start Open-Omniscience manually:"
+        echo "    cd $INSTALL_DIR"
+        echo "    source venv/bin/activate"
+        echo "    docker-compose up -d --build"
+        echo ""
+        echo "  Then access at: http://localhost:8000"
+    fi
+    
     echo ""
     echo "  For LLM support (if Ollama installed):"
     echo "    ollama pull gemma4:e2b"
