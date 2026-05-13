@@ -9,7 +9,7 @@
 
 const LLMConfig = {
     apiBaseUrl: localStorage.getItem('llmApiBaseUrl') || 'http://localhost:8000',
-    defaultModel: localStorage.getItem('llmDefaultModel') || 'llama3:8b',
+    defaultModel: localStorage.getItem('llmDefaultModel') || 'gemma4:e2b',
     autoDownloadModels: localStorage.getItem('llmAutoDownload') !== 'false',
     timeout: parseInt(localStorage.getItem('llmTimeout')) || 120000,
     theme: localStorage.getItem('llmTheme') || 'dark'

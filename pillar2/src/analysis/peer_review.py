@@ -119,7 +119,7 @@ class PeerReviewSession:
 class PeerReviewSimulator:
     def __init__(self, ollama_base_url="http://localhost:11434", default_models=None, timeout=120):
         self.ollama_base_url = ollama_base_url.rstrip("/")
-        self.default_models = default_models or ["llama3.2:3b", "mistral:7b"]
+        self.default_models = default_models or ["gemma4:e2b", "mistral:7b"]
         self.timeout = timeout
 
     def _generate_hash(self, content):

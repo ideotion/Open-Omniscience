@@ -220,7 +220,7 @@ We support **40 pre-configured models** across multiple providers (Ollama, Huggi
 |-------|------|---------------|----------|---------|
 | `phi3:3.8b` | 2.3GB | 3GB | Lightweight tasks | ❌ |
 | `mistral:7b` | 4.1GB | 5GB | General purpose | ❌ |
-| **`llama3:8b`** | **4.7GB** | **5GB** | **All tasks** | ✅ |
+| **`gemma4:e2b`** | **4.7GB** | **5GB** | **All tasks** | ✅ |
 | `gemma:7b` | 4.8GB | 5GB | CPU-optimized | ❌ |
 | `qwen2.5:7b` | 4.8GB | 5GB | Multilingual | ❌ |
 | `llava:7b` | 4.5GB | 6GB | Multimodal (text + vision) | ❌ |
@@ -242,7 +242,7 @@ python scripts/setup_llm.py --all
 # This will:
 # 1. Install Ollama
 # 2. Start Ollama server
-# 3. Download the default model (llama3:8b)
+# 3. Download the default model (gemma4:e2b)
 ```
 
 #### Option 2: Manual Setup
@@ -259,7 +259,7 @@ irm https://ollama.com/install.ps1 | iex
 ollama serve
 
 # 3. Download a model
-ollama pull llama3:8b
+ollama pull gemma4:e2b
 
 # 4. Install Python dependencies
 pip install -r requirements-llm.txt
