@@ -18,12 +18,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 For inquiries, contact: open-omniscience@ideotion.com
 """
-"""
-Pillar 1: Data Ingestion - HTTrack Python Wrapper
-
-Provides a Python interface to the HTTrack C library for web scraping and data collection.
-This wrapper enables Python code to use HTTrack's powerful web crawling capabilities.
-"""
+# Pillar 1: Data Ingestion - HTTrack Python Wrapper
+#
+# This module provides a Python interface to HTTrack (https://www.httrack.com/),
+# which is licensed under GNU GPLv3. Open Omniscience uses HTTrack as an external
+# dependency and complies with its license by also using GPLv3.
+#
+# HTTrack is a free and easy-to-use offline browser utility. This wrapper enables
+# Python code to use HTTrack's powerful web crawling capabilities.
 
 import os
 import sys
