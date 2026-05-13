@@ -612,8 +612,14 @@ main() {
     # Install Docker Compose
     install_docker_compose
     
-    # Install Ollama (optional, may fail on WSL)
-    install_ollama || log_warning "Ollama installation skipped or failed"
+    # Ask user if they want to install Ollama
+    read -p "Do you want to install Ollama for LLM support? (Y/n): " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+        install_ollama || log_warning "Ollama installation skipped or failed"
+    else
+        log_info "Skipping Ollama installation. You can install it later from https://ollama.com"
+    fi
     
     # Clone repository
     clone_repository
