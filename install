@@ -1,71 +1,6 @@
 #!/bin/bash
 #
-# Configure Environment
-# =============================================================================
-
-configure_environment() {
-    log_info "Configuring environment..."
-    
-    # Copy example environment file
-    if [ -f ".env.example" ] && [ ! -f ".env" ]; then
-        cp .env.example .env
-        log_info "Created .env from .env.example"
-    fi
-=======
-# =============================================================================
-# Create Desktop Launcher (Linux)
-# =============================================================================
-
-create_desktop_launcher() {
-    if [ "$OS" = "linux" ]; then
-        log_info "Creating desktop launcher..."
-        
-        # Create desktop file
-        DESKTOP_FILE="$HOME/.local/share/applications/open-omniscience.desktop"
-        
-        # Create directory if it doesn't exist
-        mkdir -p "$HOME/.local/share/applications"
-        
-        # Create the desktop file
-        cat > "$DESKTOP_FILE" << 'EOF'
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Open-Omniscience
-GenericName=Investigative Journalism Platform
-Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd $INSTALL_DIR && docker-compose up -d --build && xdg-open http://localhost:8000"
-Icon=$INSTALL_DIR/docs/open-omniscience-icon.png
-Terminal=true
-Categories=Development;Journalism;Research;Utility;
-StartupWMClass=Open-Omniscience
-EOF
-        
-        # Make it executable
-        chmod +x "$DESKTOP_FILE"
-        
-        # Update database
-        if command_exists update-desktop-database; then
-            update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
-        fi
-        
-        log_success "Desktop launcher created at $DESKTOP_FILE"
-        log_info "You can now find 'Open-Omniscience' in your application menu"
-    fi
-}
-
-# =============================================================================
-# Configure Environment
-# =============================================================================
-
-configure_environment() {
-    log_info "Configuring environment..."
-    
-    # Copy example environment file
-    if [ -f ".env.example" ] && [ ! -f ".env" ]; then
-        cp .env.example .env
-        log_info "Created .env from .env.example"
-    fiOpen-Omniscience One-Line Installer
+# Open-Omniscience One-Line Installer
 # ================================
 #
 # This script provides a fully automatic, non-interactive installation of Open-Omniscience
@@ -153,12 +88,11 @@ command_exists() {
 # Check OS type
 detect_os() {
     case "$(uname -s)" in
-        Linux*)     OS="linux" ;;
-        Darwin*)    OS="macos" ;;
-        CYGWIN*|MINGW32*|MSYS*|MINGW*) OS="windows" ;;
-        *)          OS="unknown" ;;
+        Linux*)     echo "linux" ;;
+        Darwin*)    echo "macos" ;;
+        CYGWIN*|MINGW32*|MSYS*|MINGW*) echo "windows" ;;
+        *)          echo "unknown" ;;
     esac
-    echo "$OS"
 }
 
 # Check if running on WSL
@@ -309,9 +243,11 @@ install_docker() {
             fi
             
             # Add current user to docker group
-            if [ -n "${USER:-}" ] && ! grep -q "^docker:" /etc/group || ! grep -qw "$USER" /etc/group; then
-                run_with_sudo usermod -aG docker "$USER"
-                log_info "Added $USER to docker group. You may need to log out and back in for this to take effect."
+            if [ -n "${USER:-}" ] && [ ! -z "$USER" ]; then
+                if ! grep -qw "$USER" /etc/group 2>/dev/null || ! grep -q "^docker:" /etc/group 2>/dev/null; then
+                    run_with_sudo usermod -aG docker "$USER"
+                    log_info "Added $USER to docker group. You may need to log out and back in for this to take effect."
+                fi
             fi
             
             # Start Docker daemon if not running
@@ -485,13 +421,14 @@ install_python_deps() {
             # On Debian/Ubuntu, python3-venv package might be needed
             log_info "python3-venv not available, installing..."
             if command_exists apt-get; then
-                PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+                PYTHON_MAJOR=$(python3 -c "import sys; print(sys.version_info.major)")
+                PYTHON_MINOR=$(python3 -c "import sys; print(sys.version_info.minor)")
                 # Try generic package first
                 if run_with_sudo apt-get install -y python3-venv; then
                     log_success "Installed python3-venv"
                 # Try version-specific package
-                elif run_with_sudo apt-get install -y "python3.${PYTHON_VERSION//./}-venv"; then
-                    log_success "Installed python3.${PYTHON_VERSION//./}-venv"
+                elif run_with_sudo apt-get install -y "python3.${PYTHON_MAJOR}${PYTHON_MINOR}-venv"; then
+                    log_success "Installed python3.${PYTHON_MAJOR}${PYTHON_MINOR}-venv"
                 else
                     log_error "Failed to install python3-venv automatically."
                     log_error "Please run manually: sudo apt install python3-venv"
@@ -507,6 +444,7 @@ install_python_deps() {
     fi
     
     # Activate and install dependencies
+    cd "$INSTALL_DIR"
     source venv/bin/activate
     
     # Install core dependencies
@@ -586,6 +524,48 @@ EOF
     fi
     
     log_success "Environment configured"
+}
+
+# =============================================================================
+# Create Desktop Launcher (Linux)
+# =============================================================================
+
+create_desktop_launcher() {
+    if [ "$OS" = "linux" ]; then
+        log_info "Creating desktop launcher..."
+        
+        # Create desktop file
+        DESKTOP_FILE="$HOME/.local/share/applications/open-omniscience.desktop"
+        
+        # Create directory if it doesn't exist
+        mkdir -p "$HOME/.local/share/applications"
+        
+        # Create the desktop file
+        cat > "$DESKTOP_FILE" << EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Open-Omniscience
+GenericName=Investigative Journalism Platform
+Comment=Ethical Global Intelligence Platform for Investigative Journalism
+Exec=bash -c "cd $INSTALL_DIR && docker-compose up -d --build && xdg-open http://localhost:8000"
+Icon=$INSTALL_DIR/docs/open-omniscience-icon.png
+Terminal=true
+Categories=Development;Journalism;Research;Utility;
+StartupWMClass=Open-Omniscience
+EOF
+        
+        # Make it executable
+        chmod +x "$DESKTOP_FILE"
+        
+        # Update database
+        if command_exists update-desktop-database; then
+            update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+        fi
+        
+        log_success "Desktop launcher created at $DESKTOP_FILE"
+        log_info "You can now find 'Open-Omniscience' in your application menu"
+    fi
 }
 
 # =============================================================================
