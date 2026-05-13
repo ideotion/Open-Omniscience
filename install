@@ -1,6 +1,71 @@
 #!/bin/bash
 #
-# Open-Omniscience One-Line Installer
+# Configure Environment
+# =============================================================================
+
+configure_environment() {
+    log_info "Configuring environment..."
+    
+    # Copy example environment file
+    if [ -f ".env.example" ] && [ ! -f ".env" ]; then
+        cp .env.example .env
+        log_info "Created .env from .env.example"
+    fi
+=======
+# =============================================================================
+# Create Desktop Launcher (Linux)
+# =============================================================================
+
+create_desktop_launcher() {
+    if [ "$OS" = "linux" ]; then
+        log_info "Creating desktop launcher..."
+        
+        # Create desktop file
+        DESKTOP_FILE="$HOME/.local/share/applications/open-omniscience.desktop"
+        
+        # Create directory if it doesn't exist
+        mkdir -p "$HOME/.local/share/applications"
+        
+        # Create the desktop file
+        cat > "$DESKTOP_FILE" << 'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Open-Omniscience
+GenericName=Investigative Journalism Platform
+Comment=Ethical Global Intelligence Platform for Investigative Journalism
+Exec=bash -c "cd $INSTALL_DIR && docker-compose up -d --build && xdg-open http://localhost:8000"
+Icon=$INSTALL_DIR/docs/open-omniscience-icon.png
+Terminal=true
+Categories=Development;Journalism;Research;Utility;
+StartupWMClass=Open-Omniscience
+EOF
+        
+        # Make it executable
+        chmod +x "$DESKTOP_FILE"
+        
+        # Update database
+        if command_exists update-desktop-database; then
+            update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+        fi
+        
+        log_success "Desktop launcher created at $DESKTOP_FILE"
+        log_info "You can now find 'Open-Omniscience' in your application menu"
+    fi
+}
+
+# =============================================================================
+# Configure Environment
+# =============================================================================
+
+configure_environment() {
+    log_info "Configuring environment..."
+    
+    # Copy example environment file
+    if [ -f ".env.example" ] && [ ! -f ".env" ]; then
+        cp .env.example .env
+        log_info "Created .env from .env.example"
+    fiOpen-Omniscience One-Line Installer
 # ================================
 #
 # This script provides a fully automatic, non-interactive installation of Open-Omniscience
@@ -632,6 +697,9 @@ main() {
     
     # Configure environment
     configure_environment
+    
+    # Create desktop launcher
+    create_desktop_launcher
     
     # Verify installation
     echo ""
