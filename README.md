@@ -72,6 +72,45 @@ docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
 # Access the application at: http://localhost:8000
 ```
 
+### 📦 Debian Package Installation
+
+For Debian-based systems (Ubuntu, Debian, etc.), you can install Open-Omniscience using our .deb package:
+
+```bash
+# Download and install the .deb package
+wget https://github.com/ideotion/Open-Omniscience/raw/main/packages/deb/open-omniscience_0.02-1_all.deb
+sudo dpkg -i open-omniscience_0.02-1_all.deb
+
+# Fix any missing dependencies
+sudo apt-get install -f
+```
+
+**What this installs:**
+- ✅ All Open-Omniscience files to `/opt/open-omniscience/`
+- ✅ Automatically runs the installer for dependencies (Docker, Docker Compose, etc.)
+- ✅ Creates a symlink at `/usr/local/bin/open-omniscience`
+- ✅ All required dependencies (docker.io, docker-compose, git, curl, python3, python3-venv, python3-pip)
+
+**After installation:**
+```bash
+# Navigate to the installation directory
+cd /opt/open-omniscience
+
+# Start the application (without LLM)
+docker-compose up -d --build
+
+# OR start with LLM support (requires more resources)
+docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
+
+# Access the application at: http://localhost:8000
+```
+
+**Alternative:** If you've cloned the repository, you can install directly from the local package:
+```bash
+sudo dpkg -i packages/deb/open-omniscience_0.02-1_all.deb
+sudo apt-get install -f
+```
+
 ### Manual Installation with Docker
 
 If you prefer to install manually:

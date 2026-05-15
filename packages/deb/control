@@ -1,0 +1,21 @@
+Package: open-omniscience
+Version: 0.02-1
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: Open-Omniscience Team <team@ideotion.com>
+Description: Open-Omniscience - Ethical Global Intelligence Platform
+ Open-Omniscience is an open-source, ethical, global intelligence platform
+ for investigative journalism. It aggregates raw news information from
+ diverse worldwide sources into a unified, highly searchable, and
+ auditable database.
+ .
+ Features:
+  - Cross-reference disparate pieces of information
+  - Identify complex patterns and disinformation schemes
+  - Preserve data integrity and provenance
+  - Local LLM support for analysis and synthesis
+  - Built on Python with Docker support
+
+Depends: docker.io, docker-compose, git, curl, python3, python3-venv, python3-pip
+Homepage: https://github.com/ideotion/Open-Omniscience
