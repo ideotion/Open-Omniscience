@@ -1,0 +1,250 @@
+# Email & Newsletter Intelligence Configuration
+# ================================================
+# This file configures email sources for Open-Omniscience's email intelligence module.
+# 
+# IMPORTANT: This is an example file. Copy to email_sources.yaml and configure with your actual settings.
+#
+# Security Note: Sensitive information like passwords and API keys should be stored in environment variables
+# and referenced using ${VARIABLE_NAME} syntax.
+
+# Example environment variables to set:
+# export EMAIL_PASSWORD="your-email-password"
+# export GMAIL_APP_PASSWORD="your-app-specific-password"
+# export SUBSTACK_API_KEY="your-substack-api-key"
+# export MAILCHIMP_API_KEY="your-mailchimp-api-key"
+
+# Global settings for email intelligence module
+data_dir: "data/emails"
+attachments_dir: "data/attachments"
+raw_emails_dir: "data/raw_emails"
+
+# Processing configuration
+processing:
+  store_raw_emails: false  # Set to true to store raw email files
+  extract_attachments: true
+  max_attachment_size_mb: 10  # Maximum attachment size in MB
+  supported_attachment_types:
+    - text/plain
+    - text/html
+    - application/pdf
+    - application/msword
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    - application/vnd.ms-excel
+    - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    - application/vnd.ms-powerpoint
+    - application/vnd.openxmlformats-officedocument.presentationml.presentation
+    - image/jpeg
+    - image/png
+    - image/gif
+  perform_ocr: false  # Set to true to enable OCR for images
+  ocr_languages:
+    - eng
+
+# Analysis configuration
+analysis:
+  extract_entities: true
+  perform_sentiment_analysis: true
+  detect_language: true
+  extract_keywords: true
+  analyze_network: true
+  entity_types:
+    - PERSON
+    - ORG
+    - GPE
+    - LOC
+    - DATE
+    - EMAIL
+    - URL
+
+# Scheduler settings
+scheduler_enabled: true
+max_concurrent_fetches: 3
+retry_attempts: 3
+retry_delay_seconds: 300  # 5 minutes
+
+# Security settings
+encrypt_credentials: true
+audit_logging: true
+
+# Email Sources Configuration
+# ==========================
+# Each source defines where to retrieve emails/newsletters from.
+# Supported types: imap, pop3, api, rss
+
+email_sources:
+
+  # Example 1: Gmail account (IMAP)
+  - name: "Personal Gmail"
+    type: imap
+    enabled: true
+    description: "Personal Gmail account for newsletters"
+    config:
+      server: imap.gmail.com
+      port: 993
+      username: "your.email@gmail.com"
+      password: "${EMAIL_PASSWORD}"  # Use environment variable
+      ssl: true
+    folders:
+      - INBOX
+      - Newsletters
+      - Subscriptions
+    fetch_since: "2024-01-01"  # Only fetch emails from this date onwards
+    interval_minutes: 60  # Check every 60 minutes
+    max_emails_per_fetch: 50
+
+  # Example 2: Outlook account (IMAP)
+  - name: "Work Outlook"
+    type: imap
+    enabled: false  # Disabled by default
+    description: "Work Outlook account"
+    config:
+      server: outlook.office365.com
+      port: 993
+      username: "your.email@company.com"
+      password: "${OUTLOOK_PASSWORD}"
+      ssl: true
+    folders:
+      - Inbox
+      - Newsletters
+    interval_minutes: 120
+    max_emails_per_fetch: 30
+
+  # Example 3: Substack Newsletter (API)
+  - name: "The Investigator Newsletter"
+    type: api
+    enabled: false
+    description: "Substack newsletter via API"
+    config:
+      provider: substack
+      publication: "the-investigator"
+      api_key: "${SUBSTACK_API_KEY}"
+      # For Substack, you might need to use their RSS feed instead
+      rss_url: "https://theinvestigator.substack.com/feed"
+    interval_minutes: 1440  # Check once per day
+    max_emails_per_fetch: 10
+
+  # Example 4: Mailchimp List (API)
+  - name: "Company Mailchimp"
+    type: api
+    enabled: false
+    description: "Mailchimp newsletter list"
+    config:
+      provider: mailchimp
+      list_id: "abc123def456"
+      api_key: "${MAILCHIMP_API_KEY}"
+      region: "us12"  # Mailchimp data center region
+    interval_minutes: 720  # Check every 12 hours
+    max_emails_per_fetch: 25
+
+  # Example 5: RSS Feed converted to email format
+  - name: "Tech News RSS"
+    type: rss
+    enabled: false
+    description: "Convert RSS feed to email format"
+    config:
+      rss_url: "https://example.com/news/feed.xml"
+      # Optional: Custom parser settings
+      title_as_subject: true
+      description_as_body: true
+      link_in_footer: true
+    interval_minutes: 60
+    max_emails_per_fetch: 20
+
+  # Example 6: POP3 Account
+  - name: "Legacy POP3 Account"
+    type: pop3
+    enabled: false
+    description: "Legacy email account using POP3"
+    config:
+      server: pop.example.com
+      port: 995
+      username: "your.email@example.com"
+      password: "${POP3_PASSWORD}"
+      ssl: true
+    folders:
+      - INBOX
+    interval_minutes: 360  # Check every 6 hours
+    max_emails_per_fetch: 10
+
+  # Example 7: Custom API Newsletter
+  - name: "Custom Newsletter API"
+    type: api
+    enabled: false
+    description: "Custom newsletter service"
+    config:
+      provider: custom
+      api_url: "https://api.newsletter-service.com/v1/messages"
+      api_key: "${CUSTOM_API_KEY}"
+      headers:
+        Content-Type: application/json
+        Accept: application/json
+      # Custom parameters for the API
+      params:
+        since: "2024-01-01"
+        limit: 50
+    interval_minutes: 1440  # Check once per day
+    max_emails_per_fetch: 50
+
+# Additional Settings
+# ==================
+
+# Content filtering (optional)
+content_filter:
+  # Block emails with these subjects
+  blocked_subjects:
+    - "unsubscribe"
+    - "promotion"
+    - "advertisement"
+  
+  # Block emails from these domains
+  blocked_domains:
+    - "spam.com"
+    - "ads.example.com"
+  
+  # Only process emails with these domains
+  allowed_domains:
+    - "trusted-news.com"
+    - "investigative-journalism.org"
+
+# Processing rules
+processing_rules:
+  # Automatically mark as newsletter
+  newsletter_domains:
+    - "substack.com"
+    - "mailchimp.com"
+    - "revue.com"
+  
+  # Automatically archive after processing
+  auto_archive: false
+  
+  # Maximum age of emails to keep (in days)
+  max_age_days: 365
+
+# Notification settings
+notifications:
+  # Notify on new emails
+  new_email_notification: false
+  
+  # Notify on errors
+  error_notification: true
+  
+  # Notification method (email, webhook, etc.)
+  method: "email"
+  
+  # Notification recipients
+  recipients:
+    - "admin@open-omniscience.local"
+
+# Performance settings
+performance:
+  # Maximum memory usage for processing (in MB)
+  max_memory_mb: 512
+  
+  # Timeout for email retrieval (in seconds)
+  retrieval_timeout: 30
+  
+  # Timeout for processing (in seconds)
+  processing_timeout: 60
+  
+  # Number of worker threads
+  worker_threads: 4
