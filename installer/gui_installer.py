@@ -976,6 +976,10 @@ StartupWMClass=Open-Omniscience
                            style='Success.TLabel', font=('Arial', 12))
         success.pack(pady=20)
         
+        # Status label for launch feedback
+        self.launch_status_label = ttk.Label(frame, text="", background='#f0f0f0', foreground='blue')
+        self.launch_status_label.pack(pady=5)
+        
         # Summary
         summary_frame = ttk.Frame(frame)
         summary_frame.pack(fill=tk.X, pady=20)
@@ -1026,13 +1030,15 @@ StartupWMClass=Open-Omniscience
     def launch_application(self):
         """Launch the application and open browser when ready."""
         os.chdir(self.config['install_dir'])
+        self.launch_status_label.config(text="Starting services...")
+        self.root.update_idletasks()
         CommandRunner.run_command("docker-compose up -d --build")
-        self.log_message("Starting services...")
         # Start services and open browser when ready
         # Don't destroy the window - let the health check open the browser
         self.start_services(open_browser=True)
         # Show a message that services are starting
-        self.log_message("Please wait while services start... The browser will open automatically when ready.")
+        self.launch_status_label.config(text="Please wait while services start... The browser will open automatically when ready.")
+        self.root.update_idletasks()
     
     def show_welcome_page(self):
         """Show the welcome page initially."""
