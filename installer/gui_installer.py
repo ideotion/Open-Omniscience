@@ -997,8 +997,9 @@ StartupWMClass=Open-Omniscience
         """Start Open-Omniscience services and optionally open browser."""
         # Check if Docker Compose is available
         if not SystemChecker.check_docker_compose():
-            self.log_message("Error: Docker Compose is not installed. Cannot start services.")
-            self.log_message("Please install Docker and Docker Compose first.")
+            self.log_message("Error: Docker Compose is not installed.")
+            self.log_message("Please install Docker Engine and Docker Compose plugin first.")
+            self.log_message("See: https://docs.docker.com/engine/install/ for installation instructions")
             return False
         
         os.chdir(self.config['install_dir'])
@@ -1145,7 +1146,7 @@ StartupWMClass=Open-Omniscience
         """Launch the application and open browser when ready."""
         # Check if Docker Compose is available
         if not SystemChecker.check_docker_compose():
-            self.launch_status_label.config(text="Error: Docker Compose is not installed. Please install Docker first.")
+            self.launch_status_label.config(text="Error: Docker Compose is not installed. Please install Docker Engine first.")
             return
         
         os.chdir(self.config['install_dir'])
