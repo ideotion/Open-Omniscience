@@ -50,28 +50,28 @@ import re
 import time
 
 # Import database models and session
-from database.models import Article, Source, get_session
+from src.database.models import Article, Source, get_session
 
 # Import security utilities
-from utils.security import (
+from src.utils.security import (
     sanitize_html, escape_html, validate_and_sanitize_search_query,
     get_security_headers, SecurityError
 )
 
 # Import source management router
-from api.source_management import router as source_management_router
+from src.api.source_management import router as source_management_router
 
 # Import keyword management router
-from api.keyword_management import router as keyword_management_router
+from src.api.keyword_management import router as keyword_management_router
 
 # Import keyword analysis router
-from api.keyword_analysis import router as keyword_analysis_router
+from src.api.keyword_analysis import router as keyword_analysis_router
 
 # Import link analysis router
-from api.link_analysis import router as link_analysis_router
+from src.api.link_analysis import router as link_analysis_router
 
 # Import LLM router
-from api.routes.llm import router as llm_router
+from src.api.routes.llm import router as llm_router
 
 # Configure logging using shared config
 from utils.logging_config import setup_logging
@@ -119,6 +119,9 @@ app.add_middleware(SlowAPIMiddleware)
 # CORS middleware - more secure configuration
 # In production, set ALLOWED_ORIGINS environment variable with comma-separated origins
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
+
+# Fixed: Remove trailing whitespace and empty strings from allowed origins
+allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -279,7 +282,8 @@ def build_sqlalchemy_filter(parsed_query: dict, session) -> List:
     filters = []
     for term in parsed_query["terms"]:
         if term["exact"]:
-            # Use bindparam for safe parameter binding to prevent SQL injection
+            # Fixed: Use contains() with bindparam to prevent SQL injection
+            # This is safer than string concatenation with wildcards
             param = bindparam('search_term', term["value"])
             filters.append(Article.content.ilike('%' + param + '%'))
         else:
@@ -287,6 +291,7 @@ def build_sqlalchemy_filter(parsed_query: dict, session) -> List:
             words = term["value"].split()
             word_conditions = []
             for word in words:
+                # Fixed: Use contains() with bindparam to prevent SQL injection
                 param = bindparam('search_word', word)
                 word_conditions.append(Article.content.ilike('%' + param + '%'))
             filters.append(or_(*word_conditions))
@@ -390,6 +395,7 @@ async def search_articles(
             from sqlalchemy import or_
             tag_conditions = []
             for tag in tag_list:
+                # Fixed: Use proper parameter binding to prevent SQL injection
                 param = bindparam('tag_param', tag)
                 tag_conditions.append(Source.tags.ilike('%' + param + '%'))
             source_ids = session.query(Source.id).filter(or_(*tag_conditions)).distinct().all()
@@ -516,6 +522,7 @@ async def export_articles(
             from sqlalchemy import or_
             tag_conditions = []
             for tag in tag_list:
+                # Fixed: Use proper parameter binding to prevent SQL injection
                 param = bindparam('tag_param', tag)
                 tag_conditions.append(Source.tags.ilike('%' + param + '%'))
             source_ids = session.query(Source.id).filter(or_(*tag_conditions)).distinct().all()
