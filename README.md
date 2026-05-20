@@ -77,9 +77,9 @@ docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
 For Debian-based systems (Ubuntu, Debian, etc.), you can install Open-Omniscience using our .deb package:
 
 ```bash
-# Download and install the .deb package
-wget https://github.com/ideotion/Open-Omniscience/raw/main/packages/deb/open-omniscience_0.02-1_all.deb
-sudo dpkg -i open-omniscience_0.02-1_all.deb
+# Download and install the latest .deb package from releases
+wget https://github.com/ideotion/Open-Omniscience/releases/download/v0.02/open-omniscience_0.02_amd64.deb
+sudo dpkg -i open-omniscience_0.02_amd64.deb
 
 # Fix any missing dependencies
 sudo apt-get install -f
@@ -93,6 +93,10 @@ sudo apt-get install -f
 
 **After installation:**
 ```bash
+# Launch the application
+open-omniscience
+
+# Or manually:
 # Navigate to the installation directory
 cd /opt/open-omniscience
 
@@ -105,10 +109,55 @@ docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
 # Access the application at: http://localhost:8000
 ```
 
-**Alternative:** If you've cloned the repository, you can install directly from the local package:
+**Alternative:** If you've cloned the repository, you can build and install the .deb package:
 ```bash
-sudo dpkg -i packages/deb/open-omniscience_0.02-1_all.deb
+# Build the package
+chmod +x package/deb/build-deb.sh
+./package/deb/build-deb.sh
+
+# Install the generated package
+sudo dpkg -i dist/open-omniscience_0.02_all.deb
 sudo apt-get install -f
+```
+
+### 📦 AppImage Installation
+
+For a portable installation that works on most Linux distributions:
+
+```bash
+# Download the AppImage
+wget https://github.com/ideotion/Open-Omniscience/raw/main/packages/appimage/OpenOmniscience-0.02-x86_64.AppImage
+
+# Make it executable
+chmod +x OpenOmniscience-0.02-x86_64.AppImage
+
+# Run it
+./OpenOmniscience-0.02-x86_64.AppImage
+```
+
+**What this provides:**
+- ✅ Portable - runs on any Linux system without installation
+- ✅ Self-contained - includes all dependencies
+- ✅ No root access required
+- ✅ Easy to update - just replace the file
+
+**After download:**
+```bash
+# Make executable (one-time)
+chmod +x OpenOmniscience-0.02-x86_64.AppImage
+
+# Run from anywhere
+./OpenOmniscience-0.02-x86_64.AppImage
+
+# Or create a desktop shortcut
+ln -s $(pwd)/OpenOmniscience-0.02-x86_64.AppImage ~/Desktop/OpenOmniscience
+```
+
+**Alternative:** If you've cloned the repository, you can build the AppImage yourself:
+```bash
+chmod +x package/appimage/OpenOmniscience.AppImageBuilder
+./package/appimage/OpenOmniscience.AppImageBuilder
+# The AppImage will be created in the dist/ directory
 ```
 
 ### Manual Installation with Docker
