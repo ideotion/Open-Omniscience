@@ -803,19 +803,40 @@ class GUIInstaller:
         """Clone the Open-Omniscience repository."""
         install_dir = self.config['install_dir']
         
+        # Check if repository already exists
+        git_dir = os.path.join(install_dir, '.git')
+        if os.path.exists(git_dir):
+            self.log_message("Repository already exists at: " + install_dir)
+            # Ask for permission to remove and replace
+            response = messagebox.askyesno(
+                "Repository Exists",
+                f"A repository already exists at:\n{install_dir}\n\n"
+                "Would you like to remove the existing repository and download a fresh copy?"
+            )
+            if response:
+                self.log_message("Removing existing repository...")
+                # Remove the entire directory
+                try:
+                    import shutil
+                    shutil.rmtree(install_dir)
+                    self.log_message("Existing repository removed successfully.")
+                except Exception as e:
+                    self.log_message(f"Failed to remove existing repository: {str(e)}")
+                    raise
+            else:
+                self.log_message("Using existing repository.")
+                os.chdir(install_dir)
+                CommandRunner.run_command("git fetch origin")
+                CommandRunner.run_command(f"git checkout {InstallerConfig.REPO_BRANCH}")
+                CommandRunner.run_command("git pull origin")
+                return
+        
         # Create directory if it doesn't exist
         os.makedirs(install_dir, exist_ok=True)
         
-        # Clone or update repository
-        if os.path.exists(os.path.join(install_dir, '.git')):
-            self.log_message("Repository already exists, updating...")
-            os.chdir(install_dir)
-            CommandRunner.run_command("git fetch origin")
-            CommandRunner.run_command(f"git checkout {InstallerConfig.REPO_BRANCH}")
-            CommandRunner.run_command("git pull origin")
-        else:
-            self.log_message("Cloning repository...")
-            CommandRunner.run_command(f"git clone --branch {InstallerConfig.REPO_BRANCH} --depth 1 {InstallerConfig.REPO_URL} {install_dir}")
+        # Clone fresh repository
+        self.log_message("Cloning repository...")
+        CommandRunner.run_command(f"git clone --branch {InstallerConfig.REPO_BRANCH} --depth 1 {InstallerConfig.REPO_URL} {install_dir}")
         
         os.chdir(install_dir)
     
