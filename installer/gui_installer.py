@@ -669,6 +669,12 @@ class GUIInstaller:
         header = ttk.Label(frame, text="Installing Open-Omniscience", style='Header.TLabel')
         header.pack(pady=20)
         
+        # Logo
+        logo_frame = ttk.Frame(frame)
+        logo_frame.pack(fill=tk.X, pady=10)
+        logo_label = ttk.Label(logo_frame, text=self.LOGO, font=('Courier', 8), background='#f0f0f0', anchor=tk.CENTER)
+        logo_label.pack()
+        
         # Progress bar
         self.progress = ttk.Progressbar(frame, orient=tk.HORIZONTAL, length=700, mode='determinate')
         self.progress.pack(pady=20)
@@ -944,6 +950,12 @@ StartupWMClass=Open-Omniscience
         # Header
         header = ttk.Label(frame, text="Installation Complete!", style='Header.TLabel')
         header.pack(pady=20)
+        
+        # Logo
+        logo_frame = ttk.Frame(frame)
+        logo_frame.pack(fill=tk.X, pady=10)
+        logo_label = ttk.Label(logo_frame, text=self.LOGO, font=('Courier', 8), background='#f0f0f0', anchor=tk.CENTER)
+        logo_label.pack()
         
         # Success message
         success = ttk.Label(frame, text="✓ Open-Omniscience has been successfully installed!", 
