@@ -1016,6 +1016,29 @@ class GUIInstaller:
                 self.log_message("Adding current user to docker group...")
                 CommandRunner.run_command(f"sudo usermod -aG docker {os.getenv('USER', 'root')}", 
                                           check=False, capture=True, text=True)
+                
+                # Start Docker daemon
+                self.log_message("Starting Docker daemon...")
+                result = CommandRunner.run_command("sudo systemctl start docker", 
+                                                  check=False, capture=True, text=True)
+                if result.returncode != 0:
+                    self.log_message(f"Warning: Failed to start Docker daemon: {result.stderr}")
+                    self.log_message("Trying alternative method...")
+                    # Try dockerd directly
+                    result = CommandRunner.run_command("sudo dockerd &", 
+                                                      check=False, capture=True, text=True, shell=True)
+                    if result.returncode != 0:
+                        self.log_message(f"Warning: Failed to start Docker with dockerd: {result.stderr}")
+                
+                # Verify Docker daemon is running
+                result = CommandRunner.run_command("docker info", 
+                                                  check=False, capture=True, text=True)
+                if result.returncode == 0:
+                    self.log_message("Docker daemon is running!")
+                else:
+                    self.log_message("Warning: Docker daemon may not be running.")
+                    self.log_message("You may need to start it manually with: sudo systemctl start docker")
+                
                 self.log_message("Note: You may need to log out and back in for docker group changes to take effect.")
                 return True
             else:
@@ -1134,6 +1157,26 @@ StartupWMClass=Open-Omniscience
             self.log_message("Please install Docker Engine and Docker Compose plugin first.")
             self.log_message("See: https://docs.docker.com/engine/install/ for installation instructions")
             return False
+        
+        # Check if Docker daemon is running
+        self.log_message("Checking Docker daemon...")
+        result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
+        if result.returncode != 0:
+            self.log_message("Docker daemon is not running. Attempting to start it...")
+            result = CommandRunner.run_command("sudo systemctl start docker", 
+                                              check=False, capture=True, text=True)
+            if result.returncode != 0:
+                self.log_message(f"Failed to start Docker daemon: {result.stderr}")
+                self.log_message("Please start Docker manually with: sudo systemctl start docker")
+                return False
+            # Wait a moment for daemon to start
+            import time
+            time.sleep(2)
+            # Verify again
+            result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
+            if result.returncode != 0:
+                self.log_message("Docker daemon still not running. Please start it manually.")
+                return False
         
         try:
             os.chdir(self.config['install_dir'])
@@ -1301,6 +1344,28 @@ StartupWMClass=Open-Omniscience
         if not SystemChecker.check_docker_compose():
             self.launch_status_label.config(text="Error: Docker Compose is not installed. Please install Docker Engine first.")
             return
+        
+        # Check if Docker daemon is running
+        self.launch_status_label.config(text="Checking Docker daemon...")
+        self.root.update_idletasks()
+        result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
+        if result.returncode != 0:
+            self.launch_status_label.config(text="Docker daemon is not running. Attempting to start it...")
+            self.root.update_idletasks()
+            result = CommandRunner.run_command("sudo systemctl start docker", 
+                                              check=False, capture=True, text=True)
+            if result.returncode != 0:
+                self.launch_status_label.config(text=f"Failed to start Docker daemon: {result.stderr}")
+                self.launch_status_label.config(text="Please start Docker manually with: sudo systemctl start docker")
+                return
+            # Wait a moment for daemon to start
+            import time
+            time.sleep(2)
+            # Verify again
+            result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
+            if result.returncode != 0:
+                self.launch_status_label.config(text="Docker daemon still not running. Please start it manually.")
+                return
         
         try:
             os.chdir(self.config['install_dir'])
