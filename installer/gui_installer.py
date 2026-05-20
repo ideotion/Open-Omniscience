@@ -936,39 +936,57 @@ StartupWMClass=Open-Omniscience
                                           check=False, capture=True, text=True)
         if result.returncode != 0:
             self.log_message(f"Warning: Failed to start services: {result.stderr}")
+            # Try to see what containers are running
+            result2 = CommandRunner.run_command("docker-compose ps", check=False, capture=True, text=True)
+            self.log_message(f"Container status:\n{result2.stdout}")
             return False
         
-        self.log_message("Services started. Waiting for application to be ready...")
-        self.check_service_ready(open_browser, attempt=0)
+        # Wait a bit for containers to initialize
+        self.log_message("Waiting for containers to initialize...")
+        self.root.after(10000, lambda: self.check_service_ready(open_browser, attempt=0))
         return True
     
     def check_service_ready(self, open_browser, attempt):
         """Check if service is ready, with non-blocking retry."""
         max_attempts = 24  # 120 seconds / 5 seconds per attempt
         
+        # First check if containers are actually running
+        result_ps = CommandRunner.run_command("docker-compose ps", check=False, capture=True, text=True)
+        if result_ps.returncode == 0:
+            containers_running = "Up" in result_ps.stdout or "running" in result_ps.stdout.lower()
+        else:
+            containers_running = False
+        
+        if not containers_running:
+            self.log_message(f"Containers not running. Status:\n{result_ps.stdout}")
+            # Try to see logs
+            result_logs = CommandRunner.run_command("docker-compose logs web 2>&1 | tail -20", 
+                                                     check=False, capture=True, text=True, shell=True)
+            self.log_message(f"Web container logs:\n{result_logs.stdout}")
+        
+        # Check if the web service is responding
+        service_ready = False
         try:
-            # Check if the web service is responding
             import requests
             try:
                 response = requests.get("http://localhost:8000", timeout=5)
                 if response.status_code in [200, 301, 302, 307, 308]:
-                    self.log_message("Application is ready!")
-                    if open_browser:
-                        import webbrowser
-                        webbrowser.open_new("http://localhost:8000")
-                    return
-            except requests.exceptions.RequestException:
-                pass
+                    service_ready = True
+            except requests.exceptions.RequestException as e:
+                self.log_message(f"Connection error: {str(e)}")
         except ImportError:
             # requests not available, use curl
             result = CommandRunner.run_command("curl -s -o /dev/null -w '%{http_code}' http://localhost:8000",
                                               check=False, capture=True, text=True)
             if result.returncode == 0 and '200' in result.stdout:
-                self.log_message("Application is ready!")
-                if open_browser:
-                    import webbrowser
-                    webbrowser.open_new("http://localhost:8000")
-                return
+                service_ready = True
+        
+        if service_ready:
+            self.log_message("Application is ready!")
+            if open_browser:
+                import webbrowser
+                webbrowser.open_new("http://localhost:8000")
+            return
         
         # Not ready yet, schedule next check
         if attempt < max_attempts - 1:
@@ -977,6 +995,10 @@ StartupWMClass=Open-Omniscience
         else:
             self.log_message("Warning: Application did not become ready within the timeout period")
             self.log_message("You can manually check if it's running and open http://localhost:8000")
+            # Show container logs for debugging
+            result_logs = CommandRunner.run_command("docker-compose logs web 2>&1 | tail -30", 
+                                                     check=False, capture=True, text=True, shell=True)
+            self.log_message(f"Web container logs:\n{result_logs.stdout}")
     
     def create_complete_page(self):
         """Create installation complete page."""
