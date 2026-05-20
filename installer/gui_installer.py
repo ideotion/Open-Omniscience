@@ -27,7 +27,7 @@ import stat
 import time
 import threading
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 from pathlib import Path
 import platform
 import socket
@@ -812,7 +812,8 @@ class GUIInstaller:
             if self.config['start_services']:
                 self.update_progress(98, "Starting services...")
                 self.log_message("Starting Open-Omniscience services...")
-                self.start_services(open_browser=True)
+                if not self.start_services(open_browser=True):
+                    self.log_message("Warning: Services failed to start. You can start them manually later.")
             
             self.update_progress(100, "Installation complete!")
             self.log_message("Installation completed successfully!")
@@ -865,9 +866,15 @@ class GUIInstaller:
             else:
                 self.log_message("Using existing repository.")
                 os.chdir(install_dir)
-                CommandRunner.run_command("git fetch origin")
-                CommandRunner.run_command(f"git checkout {InstallerConfig.REPO_BRANCH}")
-                CommandRunner.run_command("git pull origin")
+                result = CommandRunner.run_command("git fetch origin", check=False, capture=True, text=True)
+                if result.returncode != 0:
+                    self.log_message(f"Warning: git fetch failed: {result.stderr}")
+                result = CommandRunner.run_command(f"git checkout {InstallerConfig.REPO_BRANCH}", check=False, capture=True, text=True)
+                if result.returncode != 0:
+                    self.log_message(f"Warning: git checkout failed: {result.stderr}")
+                result = CommandRunner.run_command("git pull origin", check=False, capture=True, text=True)
+                if result.returncode != 0:
+                    self.log_message(f"Warning: git pull failed: {result.stderr}")
                 return
         
         # Create directory if it doesn't exist
@@ -900,16 +907,36 @@ class GUIInstaller:
         # Create virtual environment
         if not os.path.exists('venv'):
             self.log_message("Creating virtual environment...")
-            CommandRunner.run_command("python3 -m venv venv")
+            result = CommandRunner.run_command("python3 -m venv venv", check=False, capture=True, text=True)
+            if result.returncode != 0:
+                self.log_message(f"Warning: Failed to create virtual environment: {result.stderr}")
+                return
         
-        # Install dependencies
+        # Install dependencies using venv python directly
+        venv_pip = os.path.join(self.config['install_dir'], 'venv', 'bin', 'pip')
+        venv_python = os.path.join(self.config['install_dir'], 'venv', 'bin', 'python')
+        
         self.log_message("Installing core dependencies...")
-        CommandRunner.run_command("source venv/bin/activate && pip install --upgrade pip setuptools wheel")
-        CommandRunner.run_command("source venv/bin/activate && pip install -r requirements.txt")
+        result = CommandRunner.run_command(f"{venv_pip} install --upgrade pip setuptools wheel", 
+                                            check=False, capture=True, text=True)
+        if result.returncode != 0:
+            self.log_message(f"Warning: Failed to upgrade pip: {result.stderr}")
+        
+        result = CommandRunner.run_command(f"{venv_pip} install -r requirements.txt", 
+                                            check=False, capture=True, text=True)
+        if result.returncode != 0:
+            self.log_message(f"Warning: Failed to install core dependencies: {result.stderr}")
         
         if self.config['install_ollama']:
             self.log_message("Installing LLM dependencies...")
-            CommandRunner.run_command("source venv/bin/activate && pip install -r requirements-llm.txt")
+            llm_reqs = os.path.join(self.config['install_dir'], 'requirements-llm.txt')
+            if os.path.exists(llm_reqs):
+                result = CommandRunner.run_command(f"{venv_pip} install -r {llm_reqs}", 
+                                                    check=False, capture=True, text=True)
+                if result.returncode != 0:
+                    self.log_message(f"Warning: Failed to install LLM dependencies: {result.stderr}")
+            else:
+                self.log_message("LLM requirements file not found, skipping...")
     
     def configure_environment(self):
         """Configure the environment."""
@@ -1142,8 +1169,9 @@ StartupWMClass=Open-Omniscience
                         import webbrowser
                         webbrowser.open_new("http://localhost:8000")
                     return
-            except requests.exceptions.RequestException:
-                pass
+            except requests.exceptions.RequestException as e:
+                self.launch_status_label.config(text=f"Connection error: {str(e)}")
+                self.root.update_idletasks()
         except ImportError:
             # requests not available, use curl
             result = CommandRunner.run_command("curl -s -o /dev/null -w '%{http_code}' http://localhost:8000",
@@ -1154,6 +1182,9 @@ StartupWMClass=Open-Omniscience
                     import webbrowser
                     webbrowser.open_new("http://localhost:8000")
                 return
+            elif result.returncode != 0:
+                self.launch_status_label.config(text=f"Curl error: {result.stderr}")
+                self.root.update_idletasks()
         
         # Not ready yet, schedule next check
         if attempt < max_attempts - 1:
