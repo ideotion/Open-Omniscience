@@ -875,11 +875,20 @@ class GUIInstaller:
             )
             if response:
                 self.log_message("Removing existing repository...")
-                # Make sure we're not in the directory we're about to delete
+                # Make sure we're NOT in the directory we're about to delete
+                # Check if original_dir is inside install_dir
                 try:
-                    os.chdir(original_dir)
+                    original_dir = os.path.abspath(original_dir)
+                    install_dir = os.path.abspath(install_dir)
+                    if original_dir.startswith(install_dir + os.sep) or original_dir == install_dir:
+                        # We're inside the directory to be deleted, move to parent
+                        parent_dir = os.path.dirname(install_dir)
+                        os.chdir(parent_dir)
+                    else:
+                        os.chdir(original_dir)
                 except:
-                    pass
+                    # If all else fails, go to root
+                    os.chdir('/')
                 # Remove the entire directory
                 try:
                     import shutil
