@@ -860,6 +860,9 @@ class GUIInstaller:
         """Clone the Open-Omniscience repository."""
         install_dir = self.config['install_dir']
         
+        # Save current directory to return to it safely
+        original_dir = os.getcwd()
+        
         # Check if repository already exists
         git_dir = os.path.join(install_dir, '.git')
         if os.path.exists(git_dir):
@@ -872,6 +875,11 @@ class GUIInstaller:
             )
             if response:
                 self.log_message("Removing existing repository...")
+                # Make sure we're not in the directory we're about to delete
+                try:
+                    os.chdir(original_dir)
+                except:
+                    pass
                 # Remove the entire directory
                 try:
                     import shutil
@@ -892,6 +900,8 @@ class GUIInstaller:
                 result = CommandRunner.run_command("git pull origin", check=False, capture=True, text=True)
                 if result.returncode != 0:
                     self.log_message(f"Warning: git pull failed: {result.stderr}")
+                # Return to original directory
+                os.chdir(original_dir)
                 return
         
         # Create directory if it doesn't exist
@@ -914,6 +924,9 @@ class GUIInstaller:
             raise Exception("docker-compose.yml not found after cloning")
         
         self.log_message("Repository cloned successfully. docker-compose.yml found.")
+        
+        # Return to original directory
+        os.chdir(original_dir)
     
     def install_ollama(self):
         """Install Ollama."""
