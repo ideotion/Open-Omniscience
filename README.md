@@ -198,13 +198,13 @@ source venv/bin/activate  # Linux/macOS
 # OR
 .\venv\Scripts\activate   # Windows
 
-# Install dependencies
-pip install -r requirements.txt
+# Install core dependencies (minimal)
+pip install -r requirements-core.txt
 
-# For LLM support (optional)
+# For LLM support (includes core)
 pip install -r requirements-llm.txt
 
-# For all pillars (optional)
+# For all pillars and full functionality
 pip install -r requirements-all.txt
 
 # Initialize the database
