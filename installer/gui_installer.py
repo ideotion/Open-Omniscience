@@ -283,6 +283,9 @@ class GUIInstaller:
         # System checks
         self.system_checks = SystemChecker.get_all_checks()
         
+        # Next page target
+        self.next_page_target = None
+        
         # Setup UI
         self.setup_styles()
         self.create_widgets()
@@ -355,8 +358,11 @@ class GUIInstaller:
     
     def next_page(self):
         """Go to next page."""
-        # This will be overridden by specific page handlers
-        pass
+        if self.next_page_target:
+            if callable(self.next_page_target):
+                self.next_page_target()
+            else:
+                self.show_page(self.next_page_target)
     
     def update_navigation(self, page_name):
         """Update navigation buttons based on current page."""
@@ -365,7 +371,9 @@ class GUIInstaller:
         
         # Hide Next button for certain pages
         hide_next = page_name in ['installing', 'complete']
-        self.next_button.config(state=tk.DISABLED if hide_next else tk.NORMAL)
+        # Preserve the command when updating state
+        current_command = self.next_button.cget('command')
+        self.next_button.config(state=tk.DISABLED if hide_next else tk.NORMAL, command=current_command)
     
     def cancel_installation(self):
         """Cancel installation and exit."""
@@ -426,8 +434,8 @@ class GUIInstaller:
                                    style='Warning.TLabel', wraplength=700)
         platform_label.pack(pady=20)
         
-        # Next button override
-        self.next_button.config(command=lambda: self.show_page('requirements'))
+        # Set next page target
+        self.next_page_target = 'requirements'
         
         return frame
     
@@ -466,8 +474,8 @@ class GUIInstaller:
         # Check requirements
         self.check_system_requirements(scrollable_frame)
         
-        # Next button override
-        self.next_button.config(command=lambda: self.show_page('options'))
+        # Set next page target
+        self.next_page_target = 'options'
         
         return frame
     
@@ -552,7 +560,9 @@ class GUIInstaller:
                                text="⚠️  Some critical requirements are missing. Please install them before continuing.",
                                style='Warning.TLabel', wraplength=700)
             warning.pack(pady=20)
-            self.next_button.config(state=tk.DISABLED)
+            # Preserve the command when disabling
+            current_command = self.next_button.cget('command')
+            self.next_button.config(state=tk.DISABLED, command=current_command)
     
     def create_options_page(self):
         """Create installation options page."""
@@ -633,8 +643,8 @@ class GUIInstaller:
         ttk.Label(launcher_frame, text="Creates a .desktop file for easy launching from your application menu", 
                  background='#f0f0f0', font=('Arial', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
         
-        # Next button override
-        self.next_button.config(command=self.start_installation)
+        # Set next page target
+        self.next_page_target = self.start_installation
         
         return frame
     
