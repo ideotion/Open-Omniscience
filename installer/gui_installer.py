@@ -1041,7 +1041,7 @@ class GUIInstaller:
                 # Method 3: dockerd directly
                 if not daemon_started:
                     result = CommandRunner.run_command("sudo dockerd &", 
-                                                      check=False, capture=True, text=True, shell=True)
+                                                      check=False, capture=True, text=True)
                     if result.returncode == 0:
                         daemon_started = True
                 
@@ -1204,7 +1204,7 @@ StartupWMClass=Open-Omniscience
             # Method 3: dockerd directly
             if not daemon_started:
                 result = CommandRunner.run_command("sudo dockerd &", 
-                                                  check=False, capture=True, text=True, shell=True)
+                                                  check=False, capture=True, text=True)
                 if result.returncode == 0:
                     daemon_started = True
             
@@ -1416,7 +1416,7 @@ StartupWMClass=Open-Omniscience
             # Method 3: dockerd directly
             if not daemon_started:
                 result = CommandRunner.run_command("sudo dockerd &", 
-                                                  check=False, capture=True, text=True, shell=True)
+                                                  check=False, capture=True, text=True)
                 if result.returncode == 0:
                     daemon_started = True
             
