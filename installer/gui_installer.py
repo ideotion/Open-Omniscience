@@ -727,7 +727,7 @@ class GUIInstaller:
             if self.config['start_services']:
                 self.update_progress(98, "Starting services...")
                 self.log_message("Starting Open-Omniscience services...")
-                self.start_services()
+                self.start_services(open_browser=True)
             
             self.update_progress(100, "Installation complete!")
             self.log_message("Installation completed successfully!")
@@ -840,7 +840,7 @@ Type=Application
 Name=Open-Omniscience
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd {install_dir} && docker-compose up -d --build && xdg-open http://localhost:8000"
+Exec=bash -c "cd {install_dir} && docker-compose up -d --build && sleep 10 && xdg-open http://localhost:8000"
 Icon={install_dir}/docs/open-omniscience-icon.png
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
@@ -860,22 +860,55 @@ StartupWMClass=Open-Omniscience
         self.log_message(f"Created desktop launcher at {desktop_file}")
         self.log_message("You can now find 'Open-Omniscience' in your application menu")
     
-    def start_services(self):
-        """Start Open-Omniscience services."""
+    def start_services(self, open_browser=True):
+        """Start Open-Omniscience services and optionally open browser."""
         os.chdir(self.config['install_dir'])
         
         # Start with Docker Compose
+        self.log_message("Starting services with Docker Compose...")
         result = CommandRunner.run_command("docker-compose up -d --build", 
                                           check=False, capture=True, text=True)
         if result.returncode != 0:
             self.log_message(f"Warning: Failed to start services: {result.stderr}")
-        else:
-            self.log_message("Services started successfully")
+            return False
+        
+        self.log_message("Services started. Waiting for application to be ready...")
+        
+        # Wait for services to be ready (max 120 seconds)
+        max_attempts = 24  # 120 seconds / 5 seconds per attempt
+        for attempt in range(max_attempts):
+            try:
+                # Check if the web service is responding
+                import requests
+                try:
+                    response = requests.get("http://localhost:8000", timeout=5)
+                    if response.status_code in [200, 301, 302, 307, 308]:
+                        self.log_message("Application is ready!")
+                        if open_browser:
+                            import webbrowser
+                            webbrowser.open_new("http://localhost:8000")
+                        return True
+                except requests.exceptions.RequestException:
+                    pass
+            except ImportError:
+                # requests not available, use curl
+                result = CommandRunner.run_command("curl -s -o /dev/null -w '%{http_code}' http://localhost:8000",
+                                                  check=False, capture=True, text=True)
+                if result.returncode == 0 and '200' in result.stdout:
+                    self.log_message("Application is ready!")
+                    if open_browser:
+                        import webbrowser
+                        webbrowser.open_new("http://localhost:8000")
+                    return True
             
-            # Check if services are running
-            result = CommandRunner.run_command("docker ps", check=False, capture=True, text=True)
-            if "open-omniscience" in result.stdout:
-                self.log_message("Open-Omniscience is running!")
+            # Wait 5 seconds before retrying
+            import time
+            time.sleep(5)
+            self.log_message(f"Waiting... (attempt {attempt + 1}/{max_attempts})")
+        
+        self.log_message("Warning: Application did not become ready within the timeout period")
+        self.log_message("You can manually check if it's running and open http://localhost:8000")
+        return False
     
     def create_complete_page(self):
         """Create installation complete page."""

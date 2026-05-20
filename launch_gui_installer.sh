@@ -243,6 +243,19 @@ main() {
         cd "$INSTALL_DIR"
         python3 installer/gui_installer.py
         
+        # Wait for services to be ready before opening browser
+        if [ "$INSTALL_DIR" = "$(pwd)" ]; then
+            log_info "Waiting for services to start..."
+            for i in {1..24}; do
+                if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000 | grep -q "200"; then
+                    log_success "Application is ready at http://localhost:8000"
+                    break
+                fi
+                sleep 5
+                log_info "Waiting... ($i/24)"
+            done
+        fi
+        
     else
         log_info "No GUI environment detected"
         log_info "Falling back to text-based installer..."
