@@ -890,7 +890,11 @@ class GUIInstaller:
                     raise
             else:
                 self.log_message("Using existing repository.")
-                os.chdir(install_dir)
+                try:
+                    os.chdir(install_dir)
+                except Exception as e:
+                    self.log_message(f"Warning: Failed to change to repository directory: {e}")
+                    return
                 result = CommandRunner.run_command("git fetch origin", check=False, capture=True, text=True)
                 if result.returncode != 0:
                     self.log_message(f"Warning: git fetch failed: {result.stderr}")
@@ -901,7 +905,10 @@ class GUIInstaller:
                 if result.returncode != 0:
                     self.log_message(f"Warning: git pull failed: {result.stderr}")
                 # Return to original directory
-                os.chdir(original_dir)
+                try:
+                    os.chdir(original_dir)
+                except:
+                    pass
                 return
         
         # Create directory if it doesn't exist
@@ -915,7 +922,11 @@ class GUIInstaller:
             self.log_message(f"Error: Failed to clone repository: {result.stderr}")
             raise Exception(f"Failed to clone repository: {result.stderr}")
         
-        os.chdir(install_dir)
+        try:
+            os.chdir(install_dir)
+        except Exception as e:
+            self.log_message(f"Error: Failed to change to repository directory: {e}")
+            raise Exception(f"Failed to change to repository directory: {e}")
         
         # Verify docker-compose.yml exists
         if not os.path.exists('docker-compose.yml'):
@@ -926,7 +937,10 @@ class GUIInstaller:
         self.log_message("Repository cloned successfully. docker-compose.yml found.")
         
         # Return to original directory
-        os.chdir(original_dir)
+        try:
+            os.chdir(original_dir)
+        except:
+            pass
     
     def install_ollama(self):
         """Install Ollama."""
@@ -944,63 +958,71 @@ class GUIInstaller:
     
     def install_docker(self):
         """Install Docker Engine and Docker Compose plugin."""
-        # Check if we have sudo privileges
-        if not SystemChecker.check_root():
-            self.log_message("Note: Docker installation requires sudo privileges. You may be prompted for your password.")
-        
-        if SystemChecker.check_docker() and SystemChecker.check_docker_compose():
-            self.log_message("Docker and Docker Compose are already installed")
-            return True
-        
-        self.log_message("Installing Docker Engine and Docker Compose...")
-        
-        # Remove old docker-compose if it exists (conflicts with plugin)
-        if SystemChecker.check_command('docker-compose'):
-            self.log_message("Removing old docker-compose standalone...")
-            CommandRunner.run_command("sudo apt-get remove -y docker-compose", 
-                                      check=False, capture=True, text=True)
-        
-        # Install Docker Engine
-        self.log_message("Installing Docker Engine...")
-        commands = [
-            # Remove old versions
-            "sudo apt-get remove -y docker docker-engine docker.io containerd runc",
-            # Install dependencies
-            "sudo apt-get update",
-            "sudo apt-get install -y ca-certificates curl gnupg",
-            # Add Docker's official GPG key
-            "sudo install -m 0755 -d /etc/apt/keyrings",
-            'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg',
-            # Set up the repository
-            'sudo chmod a+r /etc/apt/keyrings/docker.gpg',
-            'echo "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null',
+        try:
+            # Check if we have sudo privileges
+            if not SystemChecker.check_root():
+                self.log_message("Note: Docker installation requires sudo privileges. You may be prompted for your password.")
+            
+            if SystemChecker.check_docker() and SystemChecker.check_docker_compose():
+                self.log_message("Docker and Docker Compose are already installed")
+                return True
+            
+            self.log_message("Installing Docker Engine and Docker Compose...")
+            
+            # Remove old docker-compose if it exists (conflicts with plugin)
+            if SystemChecker.check_command('docker-compose'):
+                self.log_message("Removing old docker-compose standalone...")
+                CommandRunner.run_command("sudo apt-get remove -y docker-compose", 
+                                          check=False, capture=True, text=True)
+            
             # Install Docker Engine
-            "sudo apt-get update",
-            "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
-        ]
-        
-        for cmd in commands:
-            self.log_message(f"Running: {cmd}")
-            result = CommandRunner.run_command(cmd, check=False, capture=True, text=True)
-            if result.returncode != 0:
-                self.log_message(f"Warning: {result.stderr}")
-        
-        # Verify installation
-        if SystemChecker.check_docker() and SystemChecker.check_docker_compose():
-            self.log_message("Docker and Docker Compose installed successfully!")
-            # Add current user to docker group to avoid sudo
-            self.log_message("Adding current user to docker group...")
-            CommandRunner.run_command(f"sudo usermod -aG docker {os.getenv('USER', 'root')}", 
-                                      check=False, capture=True, text=True)
-            self.log_message("Note: You may need to log out and back in for docker group changes to take effect.")
-            return True
-        else:
-            self.log_message("Warning: Docker installation may have failed. Please install manually.")
+            self.log_message("Installing Docker Engine...")
+            commands = [
+                # Remove old versions
+                "sudo apt-get remove -y docker docker-engine docker.io containerd runc",
+                # Install dependencies
+                "sudo apt-get update",
+                "sudo apt-get install -y ca-certificates curl gnupg",
+                # Add Docker's official GPG key
+                "sudo install -m 0755 -d /etc/apt/keyrings",
+                'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg',
+                # Set up the repository
+                'sudo chmod a+r /etc/apt/keyrings/docker.gpg',
+                'echo "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null',
+                # Install Docker Engine
+                "sudo apt-get update",
+                "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+            ]
+            
+            for cmd in commands:
+                self.log_message(f"Running: {cmd}")
+                result = CommandRunner.run_command(cmd, check=False, capture=True, text=True)
+                if result.returncode != 0:
+                    self.log_message(f"Warning: {result.stderr}")
+            
+            # Verify installation
+            if SystemChecker.check_docker() and SystemChecker.check_docker_compose():
+                self.log_message("Docker and Docker Compose installed successfully!")
+                # Add current user to docker group to avoid sudo
+                self.log_message("Adding current user to docker group...")
+                CommandRunner.run_command(f"sudo usermod -aG docker {os.getenv('USER', 'root')}", 
+                                          check=False, capture=True, text=True)
+                self.log_message("Note: You may need to log out and back in for docker group changes to take effect.")
+                return True
+            else:
+                self.log_message("Warning: Docker installation may have failed. Please install manually.")
+                return False
+        except Exception as e:
+            self.log_message(f"Error during Docker installation: {e}")
             return False
     
     def install_python_deps(self):
         """Install Python dependencies."""
-        os.chdir(self.config['install_dir'])
+        try:
+            os.chdir(self.config['install_dir'])
+        except Exception as e:
+            self.log_message(f"Error: Failed to change to install directory: {e}")
+            raise
         
         # Create virtual environment
         if not os.path.exists('venv'):
@@ -1038,7 +1060,11 @@ class GUIInstaller:
     
     def configure_environment(self):
         """Configure the environment."""
-        os.chdir(self.config['install_dir'])
+        try:
+            os.chdir(self.config['install_dir'])
+        except Exception as e:
+            self.log_message(f"Error: Failed to change to install directory: {e}")
+            raise
         
         # Copy example environment file
         if not os.path.exists('.env'):
@@ -1100,7 +1126,11 @@ StartupWMClass=Open-Omniscience
             self.log_message("See: https://docs.docker.com/engine/install/ for installation instructions")
             return False
         
-        os.chdir(self.config['install_dir'])
+        try:
+            os.chdir(self.config['install_dir'])
+        except Exception as e:
+            self.log_message(f"Error: Failed to change to install directory: {e}")
+            return False
         
         # Check if docker-compose.yml exists
         compose_file = os.path.join(self.config['install_dir'], 'docker-compose.yml')
@@ -1263,7 +1293,11 @@ StartupWMClass=Open-Omniscience
             self.launch_status_label.config(text="Error: Docker Compose is not installed. Please install Docker Engine first.")
             return
         
-        os.chdir(self.config['install_dir'])
+        try:
+            os.chdir(self.config['install_dir'])
+        except Exception as e:
+            self.launch_status_label.config(text=f"Error: Failed to change to install directory: {e}")
+            return
         
         # Check if docker-compose.yml exists
         compose_file = os.path.join(self.config['install_dir'], 'docker-compose.yml')
