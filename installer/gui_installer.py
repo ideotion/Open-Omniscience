@@ -1045,20 +1045,23 @@ class GUIInstaller:
                     if result.returncode == 0:
                         daemon_started = True
                 
-                # Wait for daemon to initialize
+                # Wait for daemon to initialize and verify it's running
                 if daemon_started:
                     import time
-                    time.sleep(3)
-                
-                # Verify Docker daemon is running
-                result = CommandRunner.run_command("docker info", 
-                                                  check=False, capture=True, text=True)
-                if result.returncode == 0:
-                    self.log_message("Docker daemon is running!")
+                    max_attempts = 10
+                    for attempt in range(max_attempts):
+                        time.sleep(2)  # Wait 2 seconds between checks
+                        result = CommandRunner.run_command("docker info", 
+                                                          check=False, capture=True, text=True)
+                        if result.returncode == 0:
+                            self.log_message("Docker daemon is running!")
+                            break
+                    else:
+                        # All attempts failed
+                        self.log_message("Warning: Docker daemon started but not responding after 20 seconds.")
+                        self.log_message("The installer will continue, but Docker may need more time to initialize.")
                 else:
                     self.log_message("Warning: Docker daemon could not be started automatically.")
-                    self.log_message("The installer will continue, but you need to start Docker manually.")
-                    self.log_message("Run: sudo systemctl start docker")
                 
                 self.log_message("Note: You may need to log out and back in for docker group changes to take effect.")
                 return True
@@ -1212,14 +1215,17 @@ StartupWMClass=Open-Omniscience
                 self.log_message("Warning: Could not start Docker daemon automatically.")
                 return False
             
-            # Wait for daemon to initialize
+            # Wait for daemon to initialize and verify it's running
             import time
-            time.sleep(3)
-            
-            # Verify again
-            result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
-            if result.returncode != 0:
-                self.log_message("Warning: Docker daemon started but not responding.")
+            max_attempts = 10
+            for attempt in range(max_attempts):
+                time.sleep(2)  # Wait 2 seconds between checks
+                result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
+                if result.returncode == 0:
+                    break
+            else:
+                # All attempts failed
+                self.log_message("Warning: Docker daemon started but not responding after 20 seconds.")
                 return False
         
         try:
@@ -1424,14 +1430,17 @@ StartupWMClass=Open-Omniscience
                 self.launch_status_label.config(text="Error: Could not start Docker daemon automatically.")
                 return
             
-            # Wait for daemon to initialize
+            # Wait for daemon to initialize and verify it's running
             import time
-            time.sleep(3)
-            
-            # Verify again
-            result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
-            if result.returncode != 0:
-                self.launch_status_label.config(text="Error: Docker daemon started but not responding.")
+            max_attempts = 10
+            for attempt in range(max_attempts):
+                time.sleep(2)  # Wait 2 seconds between checks
+                result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
+                if result.returncode == 0:
+                    break
+            else:
+                # All attempts failed
+                self.launch_status_label.config(text="Error: Docker daemon started but not responding after 20 seconds.")
                 return
         
         try:
