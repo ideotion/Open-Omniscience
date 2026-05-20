@@ -1017,18 +1017,38 @@ class GUIInstaller:
                 CommandRunner.run_command(f"sudo usermod -aG docker {os.getenv('USER', 'root')}", 
                                           check=False, capture=True, text=True)
                 
-                # Start Docker daemon
+                # Start Docker daemon (try multiple methods)
                 self.log_message("Starting Docker daemon...")
+                daemon_started = False
+                
+                # Method 1: systemctl (preferred)
                 result = CommandRunner.run_command("sudo systemctl start docker", 
                                                   check=False, capture=True, text=True)
-                if result.returncode != 0:
-                    self.log_message(f"Warning: Failed to start Docker daemon: {result.stderr}")
-                    self.log_message("Trying alternative method...")
-                    # Try dockerd directly
+                if result.returncode == 0:
+                    daemon_started = True
+                else:
+                    self.log_message(f"systemctl start failed, trying alternative methods...")
+                
+                # Method 2: service command
+                if not daemon_started:
+                    result = CommandRunner.run_command("sudo service docker start", 
+                                                      check=False, capture=True, text=True)
+                    if result.returncode == 0:
+                        daemon_started = True
+                    else:
+                        self.log_message(f"service start failed, trying dockerd directly...")
+                
+                # Method 3: dockerd directly
+                if not daemon_started:
                     result = CommandRunner.run_command("sudo dockerd &", 
                                                       check=False, capture=True, text=True, shell=True)
-                    if result.returncode != 0:
-                        self.log_message(f"Warning: Failed to start Docker with dockerd: {result.stderr}")
+                    if result.returncode == 0:
+                        daemon_started = True
+                
+                # Wait for daemon to initialize
+                if daemon_started:
+                    import time
+                    time.sleep(3)
                 
                 # Verify Docker daemon is running
                 result = CommandRunner.run_command("docker info", 
@@ -1036,8 +1056,9 @@ class GUIInstaller:
                 if result.returncode == 0:
                     self.log_message("Docker daemon is running!")
                 else:
-                    self.log_message("Warning: Docker daemon may not be running.")
-                    self.log_message("You may need to start it manually with: sudo systemctl start docker")
+                    self.log_message("Warning: Docker daemon could not be started automatically.")
+                    self.log_message("The installer will continue, but you need to start Docker manually.")
+                    self.log_message("Run: sudo systemctl start docker")
                 
                 self.log_message("Note: You may need to log out and back in for docker group changes to take effect.")
                 return True
@@ -1163,19 +1184,42 @@ StartupWMClass=Open-Omniscience
         result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
         if result.returncode != 0:
             self.log_message("Docker daemon is not running. Attempting to start it...")
+            
+            # Try multiple methods to start Docker daemon
+            daemon_started = False
+            
+            # Method 1: systemctl
             result = CommandRunner.run_command("sudo systemctl start docker", 
                                               check=False, capture=True, text=True)
-            if result.returncode != 0:
-                self.log_message(f"Failed to start Docker daemon: {result.stderr}")
-                self.log_message("Please start Docker manually with: sudo systemctl start docker")
+            if result.returncode == 0:
+                daemon_started = True
+            
+            # Method 2: service command
+            if not daemon_started:
+                result = CommandRunner.run_command("sudo service docker start", 
+                                                  check=False, capture=True, text=True)
+                if result.returncode == 0:
+                    daemon_started = True
+            
+            # Method 3: dockerd directly
+            if not daemon_started:
+                result = CommandRunner.run_command("sudo dockerd &", 
+                                                  check=False, capture=True, text=True, shell=True)
+                if result.returncode == 0:
+                    daemon_started = True
+            
+            if not daemon_started:
+                self.log_message("Warning: Could not start Docker daemon automatically.")
                 return False
-            # Wait a moment for daemon to start
+            
+            # Wait for daemon to initialize
             import time
-            time.sleep(2)
+            time.sleep(3)
+            
             # Verify again
             result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
             if result.returncode != 0:
-                self.log_message("Docker daemon still not running. Please start it manually.")
+                self.log_message("Warning: Docker daemon started but not responding.")
                 return False
         
         try:
@@ -1350,21 +1394,44 @@ StartupWMClass=Open-Omniscience
         self.root.update_idletasks()
         result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
         if result.returncode != 0:
-            self.launch_status_label.config(text="Docker daemon is not running. Attempting to start it...")
+            self.launch_status_label.config(text="Docker daemon is not running. Starting it...")
             self.root.update_idletasks()
+            
+            # Try multiple methods to start Docker daemon
+            daemon_started = False
+            
+            # Method 1: systemctl
             result = CommandRunner.run_command("sudo systemctl start docker", 
                                               check=False, capture=True, text=True)
-            if result.returncode != 0:
-                self.launch_status_label.config(text=f"Failed to start Docker daemon: {result.stderr}")
-                self.launch_status_label.config(text="Please start Docker manually with: sudo systemctl start docker")
+            if result.returncode == 0:
+                daemon_started = True
+            
+            # Method 2: service command
+            if not daemon_started:
+                result = CommandRunner.run_command("sudo service docker start", 
+                                                  check=False, capture=True, text=True)
+                if result.returncode == 0:
+                    daemon_started = True
+            
+            # Method 3: dockerd directly
+            if not daemon_started:
+                result = CommandRunner.run_command("sudo dockerd &", 
+                                                  check=False, capture=True, text=True, shell=True)
+                if result.returncode == 0:
+                    daemon_started = True
+            
+            if not daemon_started:
+                self.launch_status_label.config(text="Error: Could not start Docker daemon automatically.")
                 return
-            # Wait a moment for daemon to start
+            
+            # Wait for daemon to initialize
             import time
-            time.sleep(2)
+            time.sleep(3)
+            
             # Verify again
             result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
             if result.returncode != 0:
-                self.launch_status_label.config(text="Docker daemon still not running. Please start it manually.")
+                self.launch_status_label.config(text="Error: Docker daemon started but not responding.")
                 return
         
         try:
