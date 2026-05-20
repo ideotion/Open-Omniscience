@@ -824,8 +824,13 @@ class GUIInstaller:
             if self.config['start_services']:
                 self.update_progress(98, "Starting services...")
                 self.log_message("Starting Open-Omniscience services...")
-                if not self.start_services(open_browser=True):
-                    self.log_message("Warning: Services failed to start. You can start them manually later.")
+                # Re-check Docker Compose in case it was just installed
+                if not (SystemChecker.check_docker() and SystemChecker.check_docker_compose()):
+                    self.log_message("Warning: Docker Compose is not available. Services cannot be started.")
+                    self.log_message("If Docker was just installed, you may need to log out and back in for group changes to take effect.")
+                else:
+                    if not self.start_services(open_browser=True):
+                        self.log_message("Warning: Services failed to start. You can start them manually later.")
             
             self.update_progress(100, "Installation complete!")
             self.log_message("Installation completed successfully!")
@@ -914,6 +919,10 @@ class GUIInstaller:
     
     def install_docker(self):
         """Install Docker Engine and Docker Compose plugin."""
+        # Check if we have sudo privileges
+        if not SystemChecker.check_root():
+            self.log_message("Note: Docker installation requires sudo privileges. You may be prompted for your password.")
+        
         if SystemChecker.check_docker() and SystemChecker.check_docker_compose():
             self.log_message("Docker and Docker Compose are already installed")
             return True
