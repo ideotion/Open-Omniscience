@@ -400,22 +400,22 @@ class GUIInstaller:
         
         # Header
         header = ttk.Label(frame, text="Welcome to Open-Omniscience", style='Header.TLabel')
-        header.pack(pady=20)
+        header.pack(pady=10)
         
-        # Logo
+        # Logo (compact)
         logo_frame = ttk.Frame(frame)
-        logo_frame.pack(fill=tk.X, pady=10)
+        logo_frame.pack(fill=tk.X, pady=5)
         
-        logo_label = ttk.Label(logo_frame, text=self.LOGO, font=('Courier', 8), background='#f0f0f0', anchor=tk.CENTER)
+        logo_label = ttk.Label(logo_frame, text=self.LOGO, font=('Courier', 7), background='#f0f0f0', anchor=tk.CENTER)
         logo_label.pack()
         
         # Description
         desc = ttk.Label(frame, text="Open-Omniscience is an ethical, open-source global intelligence platform\nfor investigative journalism with local LLM support.", wraplength=700)
-        desc.pack(pady=20)
+        desc.pack(pady=10)
         
         # Features
         features_label = ttk.Label(frame, text="Key Features:", style='Header.TLabel')
-        features_label.pack(anchor=tk.W, padx=20, pady=(10, 5))
+        features_label.pack(anchor=tk.W, padx=20, pady=(5, 2))
         
         features = [
             "• Scrape 1900+ news sources (RSS and HTML)",
@@ -427,13 +427,13 @@ class GUIInstaller:
         ]
         
         for feature in features:
-            ttk.Label(frame, text=feature, background='#f0f0f0').pack(anchor=tk.W, padx=40, pady=2)
+            ttk.Label(frame, text=feature, background='#f0f0f0').pack(anchor=tk.W, padx=40, pady=1)
         
         # Platform notice
         platform_label = ttk.Label(frame, 
                                    text="⚠️  This installer is designed for Debian-based Linux systems only (Ubuntu, Debian, etc.)",
                                    style='Warning.TLabel', wraplength=700)
-        platform_label.pack(pady=20)
+        platform_label.pack(pady=10)
         
         # Set next page target
         self.next_page_target = 'requirements'
