@@ -41,176 +41,33 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 
 ## 🚀 Getting Started
 
-### ⚡ One-Line Installation (Recommended)
+### Unified Installation (Recommended)
 
-The **fastest and easiest** way to install Open-Omniscience with all prerequisites:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install | bash
-```
-
-**What this installs:**
-- ✅ Automatically detects your Debian-based system
-- ✅ Installs all prerequisites (curl, git, Docker, Docker Compose, Ollama)
-- ✅ Clones the Open-Omniscience repository to `~/open-omniscience`
-- ✅ Installs all Python dependencies (core + all pillars + LLM)
-- ✅ Configures the environment with default settings
-- ✅ Verifies each step and the final installation
-- ✅ Works in fully non-interactive mode
-
-### 🎨 GUI Installer (For Non-Technical Users)
-
-For a graphical installation experience that automatically detects your environment:
+The **only** way to install Open-Omniscience - a single command that launches the GUI installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/launch_gui_installer.sh | bash
 ```
 
-**Features:**
-- ✅ Automatic GUI detection (works in XEN, VMs, Docker with X11)
-- ✅ Automatic installation of `python3-tk` and `psutil` dependencies
-- ✅ Interactive 5-step installation wizard
+**What this does:**
+- ✅ Automatically detects your Debian-based system
+- ✅ Detects if GUI environment is available (works in XEN, VMs, Docker with X11)
+- ✅ Automatically installs `python3-tk` and `psutil` if needed
+- ✅ Launches the graphical installer with 5-step wizard
 - ✅ System requirements check with visual feedback
 - ✅ Progress tracking and real-time logs
 - ✅ Creates application launcher for your OS app menu
 - ✅ Falls back to text-based installer if GUI not available
+- ✅ Clones the repository to `~/open-omniscience`
+- ✅ Installs all dependencies (Docker, Docker Compose, Ollama, Python packages)
+- ✅ Configures the environment automatically
 
 **After installation:**
-```bash
-# Navigate to the installation directory
-cd ~/open-omniscience
+- Open-Omniscience will be running at: **http://localhost:8000**
+- Application launcher created in your OS app menu
+- All services started automatically
 
-# Start the application (without LLM)
-docker-compose up -d --build
-
-# OR start with LLM support (requires more resources)
-docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
-
-# Access the application at: http://localhost:8000
-```
-
-### 📦 Debian Package Installation
-
-For Debian-based systems (Ubuntu, Debian, etc.), you can install Open-Omniscience using our .deb package:
-
-```bash
-# Download and install the latest .deb package from releases
-wget https://github.com/ideotion/Open-Omniscience/releases/download/v0.02/open-omniscience_0.02_amd64.deb
-sudo dpkg -i open-omniscience_0.02_amd64.deb
-
-# Fix any missing dependencies
-sudo apt-get install -f
-```
-
-**What this installs:**
-- ✅ All Open-Omniscience files to `/opt/open-omniscience/`
-- ✅ Automatically runs the installer for dependencies (Docker, Docker Compose, etc.)
-- ✅ Creates a symlink at `/usr/local/bin/open-omniscience`
-- ✅ All required dependencies (docker.io, docker-compose, git, curl, python3, python3-venv, python3-pip)
-
-**After installation:**
-```bash
-# Launch the application
-open-omniscience
-
-# Or manually:
-# Navigate to the installation directory
-cd /opt/open-omniscience
-
-# Start the application (without LLM)
-docker-compose up -d --build
-
-# OR start with LLM support (requires more resources)
-docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
-
-# Access the application at: http://localhost:8000
-```
-
-**Alternative:** If you've cloned the repository, you can build and install the .deb package:
-```bash
-# Build the package
-chmod +x package/deb/build-deb.sh
-./package/deb/build-deb.sh
-
-# Install the generated package
-sudo dpkg -i dist/open-omniscience_0.02_all.deb
-sudo apt-get install -f
-```
-
-### Manual Installation with Docker
-
-If you prefer to install manually:
-
-```bash
-# Clone the repository
-git clone https://github.com/ideotion/Open-Omniscience
-cd Open-Omniscience
-
-# Copy and configure environment file
-cp .env.example .env
-# Edit .env with your settings (optional)
-
-# Start the application (without LLM)
-docker-compose up -d --build
-
-# OR start with LLM support (requires more resources)
-docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
-
-# Access the application
-# Open http://localhost:8000 in your browser
-```
-
-### Manual Installation (Development)
-
-For development environments without Docker:
-
-```bash
-# Clone the repository
-git clone https://github.com/ideotion/Open-Omniscience
-cd Open-Omniscience
-
-# Set up virtual environment
-python -m venv venv
-source venv/bin/activate
-
-# Install core dependencies (minimal)
-pip install -r requirements-core.txt
-
-# For LLM support (includes core)
-pip install -r requirements-llm.txt
-
-# For all pillars and full functionality
-pip install -r requirements-all.txt
-
-# Initialize the database
-mkdir -p data audit logs
-python -c "import sys; sys.path.insert(0, 'src'); from database.models import Base, engine; Base.metadata.create_all(engine); print('Database initialized')"
-
-# Start the application
-uvicorn api.main:app --reload
-
-# Access at http://localhost:8000
-```
-
-### Verification
-
-After installation, verify everything is working correctly:
-
-```bash
-# Run the verification script
-./scripts/verify_installation.sh
-```
-
-This will check:
-- Docker and Docker Compose installation
-- Git installation
-- Python and pip installation
-- Repository integrity
-- Python dependencies
-- LLM dependencies (Ollama)
-- Docker images
-- Environment configuration
-- Port availability
+For advanced users who need manual installation options, see [LAUNCHER_README.md](LAUNCHER_README.md).
 
 ---
 
@@ -426,89 +283,10 @@ For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 ### Prerequisites
 
 - **Operating System:** Debian-based Linux (Ubuntu, Debian, etc.)
-- **Python:** 3.8+ (required for LLM support)
-- **Dependencies:** See [requirements.txt](requirements.txt)
-- **LLM Dependencies:** See [requirements-llm.txt](requirements-llm.txt)
-- **Database:** SQLite (default) or PostgreSQL (recommended for production)
-- **Docker:** Optional, for containerized deployment
-- **Ollama:** Required for LLM features (optional for core functionality)
+- **Platform:** GUI environment recommended (X11 or Wayland)
+- **Dependencies:** All dependencies are installed automatically by the GUI installer
 
-### Development Setup
-
-#### 1. Clone the Repository
-```bash
-git clone https://github.com/ideotion/Open-Omniscience
-cd Open-Omniscience
-```
-
-#### 2. Set Up Virtual Environment
-```bash
-python -m venv venv
-source venv/bin/activate
-```
-
-#### 3. Install Dependencies
-```bash
-# Core dependencies
-pip install -r requirements.txt
-
-# LLM dependencies (optional)
-pip install -r requirements-llm.txt
-```
-
-#### 4. Initialize the Database
-
-For **SQLite** (default):
-```bash
-mkdir -p data/
-# The database will be created automatically on first run
-```
-
-For **PostgreSQL** (recommended for production):
-1. Install PostgreSQL (see [DATABASE.md](docs/DATABASE.md)).
-2. Create a database and user:
-   ```bash
-   sudo -u postgres psql
-   ```
-   In the PostgreSQL shell:
-   ```sql
-   CREATE DATABASE open_omniscience;
-   CREATE USER open_omniscience WITH PASSWORD 'your_password';
-   GRANT ALL PRIVILEGES ON DATABASE open_omniscience TO open_omniscience;
-   \q
-   ```
-3. Set the `DATABASE_URL` environment variable:
-   ```bash
-   export DATABASE_URL="postgresql://open_omniscience:your_password@localhost:5432/open_omniscience"
-   ```
-
-#### 5. Start the Application
-```bash
-# Without LLM support
-uvicorn api.main:app --reload
-
-# With LLM support (requires Ollama running)
-uvicorn api.main:app --reload
-```
-
-### Docker Setup
-
-#### Standard Deployment (without LLM)
-```bash
-docker-compose up -d --build
-```
-
-#### LLM-Enabled Deployment
-```bash
-# Start with both standard and LLM services
-docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
-
-# OR use the dedicated LLM Dockerfile
-docker build -t open-omniscience-llm -f Dockerfile.llm .
-docker run -p 8000:8000 -p 11434:11434 open-omniscience-llm
-```
-
----
+For advanced users who need manual installation options, see [LAUNCHER_README.md](LAUNCHER_README.md).
 
 ## 🎯 Features
 
