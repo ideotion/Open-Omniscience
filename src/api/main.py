@@ -25,14 +25,10 @@ For inquiries, contact: open-omniscience@ideotion.com
 # It also serves the HTML5 frontend static files and includes rate limiting.
 # Author: Ideotion
 
-import sys
 from pathlib import Path
 from typing import Optional, List, Any, Dict
 from datetime import datetime
 import os
-
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
 
 from fastapi import FastAPI, Query, HTTPException, Request, Depends, Header
 from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse

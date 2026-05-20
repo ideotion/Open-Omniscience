@@ -39,12 +39,8 @@ from typing import List, Dict, Optional, Tuple
 from urllib.parse import urlparse, urljoin
 from pathlib import Path
 import logging
-import sys
 
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("duckduckgo")
 
 

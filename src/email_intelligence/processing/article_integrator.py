@@ -169,7 +169,7 @@ class ArticleIntegrator:
         """
         try:
             from src.database.models import Article
-            from src.utils.security import canonicalize_url
+            from src.utils.url_utils import canonicalize_url
             
             # Generate a unique URL for this email
             email_url = f"email://{email_message.email_source.source_type}/{email_message.email_source_id}/{email_message.id}"
@@ -215,7 +215,7 @@ class ArticleIntegrator:
         """
         try:
             from src.database.models import ArticleLink
-            from src.utils.security import canonicalize_url
+            from src.utils.url_utils import canonicalize_url
             import re
             
             # Find all URLs in the email content
@@ -341,7 +341,7 @@ class ArticleIntegrator:
         """
         try:
             from src.database.models import ArticleLink, ExternalSource, SourceArticle
-            from src.utils.security import canonicalize_url
+            from src.utils.url_utils import canonicalize_url
             import re
             
             for attachment in email_message.attachments:

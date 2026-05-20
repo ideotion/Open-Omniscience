@@ -46,7 +46,7 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 The **fastest and easiest** way to install Open-Omniscience with all prerequisites:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.01/install | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install | bash
 ```
 
 **What this installs:**
@@ -198,13 +198,13 @@ source venv/bin/activate  # Linux/macOS
 # OR
 .\venv\Scripts\activate   # Windows
 
-# Install dependencies
-pip install -r requirements.txt
+# Install core dependencies (minimal)
+pip install -r requirements-core.txt
 
-# For LLM support (optional)
+# For LLM support (includes core)
 pip install -r requirements-llm.txt
 
-# For all pillars (optional)
+# For all pillars and full functionality
 pip install -r requirements-all.txt
 
 # Initialize the database

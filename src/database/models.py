@@ -51,7 +51,6 @@ os.makedirs(LOGS_DIR, exist_ok=True)
 # Database URL: Default to SQLite, but can be overridden for PostgreSQL
 # To use PostgreSQL, set DATABASE_URL to:
 # postgresql://user:password@localhost:5432/open_omniscience
-# Fixed: Use absolute path for SQLite database to ensure it's found correctly
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'open_omniscience.db'}")
 
 # Create the SQLAlchemy engine

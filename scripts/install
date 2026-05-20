@@ -793,7 +793,7 @@ show_completion_message() {
     
     if [ "$INSTALL_MONITORING" = "true" ]; then
         warning "Monitoring services may take a few minutes to initialize."
-        warning "Access Grafana at http://localhost:3000 (username: admin, password: admin)"
+        warning "Access Grafana at http://localhost:3000 (credentials configured via environment variables)"
     fi
     
     success "Open Omniscience is ready to use!"

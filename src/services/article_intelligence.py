@@ -25,7 +25,6 @@ Article Intelligence Analysis for Open Omniscience
 Author: Open Omniscience Team
 """
 
-import sys
 from pathlib import Path
 from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
@@ -35,12 +34,10 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-sys.path.append(str(Path(__file__).parent.parent))
-
-from database.models import get_session, Article, Source
-from services.keyword_extractor import keyword_extractor
-from services.text_processor import text_processor
-from utils.logging_config import setup_logging
+from src.database.models import get_session, Article, Source
+from src.services.keyword_extractor import keyword_extractor
+from src.services.text_processor import text_processor
+from src.utils.logging_config import setup_logging
 
 logger = setup_logging("services.article_intelligence")
 

@@ -45,7 +45,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-open_omniscience}
       POSTGRES_USER: ${POSTGRES_USER:-omniscience}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_this_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --data-checksums"
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -105,7 +105,7 @@ services:
     restart: unless-stopped
     environment:
       # Database Configuration
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-omniscience}:${POSTGRES_PASSWORD:-change_this_password}@postgres:5432/${POSTGRES_DB:-open_omniscience}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-omniscience}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-open_omniscience}
       
       # Redis Configuration
       REDIS_HOST: redis
@@ -114,7 +114,7 @@ services:
       # API Configuration
       ENVIRONMENT: production
       DEBUG: "false"
-      SECRET_KEY: ${SECRET_KEY:-generate_a_strong_secret_key_here}
+      SECRET_KEY: ${SECRET_KEY:-}
       
       # Rate Limiting
       RATE_LIMIT: "100/minute"
@@ -216,8 +216,8 @@ services:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
       GF_USERS_ALLOW_SIGN_UP: "false"
     depends_on:
       - prometheus

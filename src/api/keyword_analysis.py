@@ -25,21 +25,18 @@ Keyword Analysis API for Open Omniscience
 Author: Open Omniscience Team
 """
 
-import sys
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime, timezone, timedelta
-
-sys.path.append(str(Path(__file__).parent.parent))
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from database.models import get_session, Article, Source
-from services.article_intelligence import article_intelligence_analyzer
+from src.database.models import get_session, Article, Source
+from src.services.article_intelligence import article_intelligence_analyzer
 
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("api.keyword_analysis")
 
 router = APIRouter(prefix="/api/analysis", tags=["Analysis"])

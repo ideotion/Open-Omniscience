@@ -29,7 +29,6 @@ to avoid redundant external calls.
 Author: Ideotion
 """
 
-import sys
 import time
 import hashlib
 import json
@@ -43,11 +42,8 @@ import requests
 import feedparser
 from bs4 import BeautifulSoup
 
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
 # Configure logging
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("source_monitor")
 
 

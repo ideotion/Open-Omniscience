@@ -28,13 +28,9 @@ including groups, metadata, and discovery functionality.
 Author: Ideotion
 """
 
-import sys
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
 
 from fastapi import APIRouter, HTTPException, Request, Query
 from fastapi.responses import JSONResponse
@@ -42,11 +38,11 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 # Import database models and SourceManager
-from database.models import Source, SourceGroup, SourceMetadata, get_session
-from database.source_manager import SourceManager
+from src.database.models import Source, SourceGroup, SourceMetadata, get_session
+from src.database.source_manager import SourceManager
 
 # Import logging config
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("source_management_api")
 
 # Create router

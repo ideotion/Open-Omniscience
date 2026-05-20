@@ -84,7 +84,15 @@ init-dirs:
 
 # Install dependencies
 install:
-	$(PIP) install -r requirements.txt
+	$(PIP) install -r requirements-core.txt
+
+# Install with LLM support
+install-llm:
+	$(PIP) install -r requirements-llm.txt
+
+# Install all dependencies
+install-all:
+	$(PIP) install -r requirements-all.txt
 
 # Run the application
 run:

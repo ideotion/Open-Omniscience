@@ -30,12 +30,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 import time
 import logging
-import sys
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
 
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging

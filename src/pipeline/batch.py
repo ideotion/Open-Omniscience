@@ -32,7 +32,6 @@ It handles:
 Author: Ideotion
 """
 
-import sys
 import time
 import logging
 from pathlib import Path
@@ -45,9 +44,6 @@ import json
 import yaml
 from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
 import threading
-
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
 
 # Configure logging
 from utils.logging_config import setup_logging
@@ -195,8 +191,8 @@ class BatchProcessor:
             Tuple of (success, result_dict).
         """
         try:
-            from ingestor.url_utils import canonicalize_url, generate_content_hash
-            from database.models import Article, Source
+            from src.utils.url_utils import canonicalize_url, generate_content_hash
+            from src.database.models import Article, Source
             from datetime import datetime
             
             # Validate required fields

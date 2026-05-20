@@ -60,9 +60,9 @@ services:
     container_name: open-omniscience-db-staging
     restart: unless-stopped
     environment:
-      - POSTGRES_DB=open_omniscience_staging
-      - POSTGRES_USER=open_omniscience
-      - POSTGRES_PASSWORD=staging_password_change_me
+      - POSTGRES_DB=${POSTGRES_DB:-open_omniscience_staging}
+      - POSTGRES_USER=${POSTGRES_USER:-open_omniscience}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
     volumes:
       - postgres_data_staging:/var/lib/postgresql/data
     ports:
@@ -76,6 +76,15 @@ services:
       - open-omniscience-network
     profiles:
       - postgres
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
 
   # Redis for caching in staging
   redis:
@@ -96,6 +105,13 @@ services:
       - open-omniscience-network
     profiles:
       - redis
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
 
   # Traefik reverse proxy for staging (optional)
   traefik:
@@ -137,6 +153,10 @@ services:
       - open-omniscience-network
     profiles:
       - monitoring
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   # Grafana for visualization (optional)
   grafana:
@@ -149,12 +169,16 @@ services:
       - grafana_data_staging:/var/lib/grafana
       - ./monitoring/grafana-provisioning:/etc/grafana/provisioning
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin_change_me
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-}
       - GF_USERS_ALLOW_SIGN_UP=false
     networks:
       - open-omniscience-network
     profiles:
       - monitoring
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   # Test runner for CI/CD testing
   test-runner:

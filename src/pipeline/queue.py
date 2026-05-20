@@ -50,11 +50,8 @@ from enum import Enum
 import uuid
 import json
 
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
 # Configure logging
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("queue")
 
 
