@@ -1051,7 +1051,8 @@ class GUIInstaller:
                     max_attempts = 10
                     for attempt in range(max_attempts):
                         time.sleep(2)  # Wait 2 seconds between checks
-                        result = CommandRunner.run_command("docker info", 
+                        # Use sudo to check docker info in case user isn't in docker group yet
+                        result = CommandRunner.run_command("sudo docker info", 
                                                           check=False, capture=True, text=True)
                         if result.returncode == 0:
                             self.log_message("Docker daemon is running!")
@@ -1186,7 +1187,7 @@ StartupWMClass=Open-Omniscience
         
         # Check if Docker daemon is running
         self.log_message("Checking Docker daemon...")
-        result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
+        result = CommandRunner.run_command("sudo docker info", check=False, capture=True, text=True)
         if result.returncode != 0:
             self.log_message("Docker daemon is not running. Attempting to start it...")
             
@@ -1222,7 +1223,8 @@ StartupWMClass=Open-Omniscience
             max_attempts = 10
             for attempt in range(max_attempts):
                 time.sleep(2)  # Wait 2 seconds between checks
-                result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
+                # Use sudo to check docker info in case user isn't in docker group yet
+                result = CommandRunner.run_command("sudo docker info", check=False, capture=True, text=True)
                 if result.returncode == 0:
                     self.log_message("Docker daemon is running!")
                     break
@@ -1403,7 +1405,7 @@ StartupWMClass=Open-Omniscience
         # Check if Docker daemon is running
         self.launch_status_label.config(text="Checking Docker daemon...")
         self.root.update_idletasks()
-        result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
+        result = CommandRunner.run_command("sudo docker info", check=False, capture=True, text=True)
         if result.returncode != 0:
             self.launch_status_label.config(text="Docker daemon is not running. Starting it...")
             self.root.update_idletasks()
@@ -1440,7 +1442,8 @@ StartupWMClass=Open-Omniscience
             max_attempts = 10
             for attempt in range(max_attempts):
                 time.sleep(2)  # Wait 2 seconds between checks
-                result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
+                # Use sudo to check docker info in case user isn't in docker group yet
+                result = CommandRunner.run_command("sudo docker info", check=False, capture=True, text=True)
                 if result.returncode == 0:
                     self.launch_status_label.config(text="Docker daemon is running!")
                     self.root.update_idletasks()
