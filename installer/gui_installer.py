@@ -262,8 +262,9 @@ class GUIInstaller:
     def __init__(self, root):
         self.root = root
         self.root.title("Open-Omniscience Installer")
-        self.root.geometry("800x600")
-        self.root.resizable(False, False)
+        self.root.geometry("800x700")
+        self.root.resizable(True, True)
+        self.root.minsize(800, 700)
         
         # Set window icon (if available)
         try:
