@@ -1,0 +1,196 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 2 * * *'  # Run daily at 2 AM UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linting:
+    name: Code Linting
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: 'pip'
+
+      - name: Install linting tools
+        run: |
+          pip install black isort flake8 mypy pylint
+
+      - name: Run Black formatting check
+        run: |
+          echo "Checking Black formatting..."
+          black --check src/ tests/ pillar2/ pillar3/ pillar4/ || exit 1
+
+      - name: Run isort check
+        run: |
+          echo "Checking import sorting..."
+          isort --check-only src/ tests/ pillar2/ pillar3/ pillar4/ || exit 1
+
+      - name: Run flake8
+        run: |
+          echo "Running flake8..."
+          flake8 src/ tests/ pillar2/ pillar3/ pillar4/ || exit 1
+
+      - name: Run mypy type checking
+        run: |
+          echo "Running mypy type checking..."
+          mypy src/ pillar2/ pillar3/ pillar4/ --ignore-missing-imports || exit 1
+
+  pre-commit:
+    name: Pre-commit Hooks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pre-commit
+        run: |
+          pip install pre-commit
+
+      - name: Install pre-commit hooks
+        run: |
+          pre-commit install
+
+      - name: Run pre-commit on all files
+        run: |
+          pre-commit run --all-files || exit 1
+
+  code-coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-all.txt
+          pip install pytest pytest-cov
+
+      - name: Run tests with coverage
+        run: |
+          python -m pytest tests/ -v --cov=src --cov-report=xml --cov-report=html
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependency tools
+        run: |
+          pip install pip-audit pipdeptree
+
+      - name: Audit dependencies for vulnerabilities
+        run: |
+          echo "Auditing dependencies for vulnerabilities..."
+          pip-audit --format json --output pip-audit-report.json || true
+
+      - name: Check for outdated dependencies
+        run: |
+          echo "Checking for outdated dependencies..."
+          pip list --outdated --format json > outdated-deps.json || true
+
+      - name: Generate dependency tree
+        run: |
+          echo "Generating dependency tree..."
+          pipdeptree --json-tree > dependency-tree.json || true
+
+      - name: Upload dependency reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-reports
+          path: |
+            pip-audit-report.json
+            outdated-deps.json
+            dependency-tree.json
+
+  code-analysis:
+    name: Static Code Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install analysis tools
+        run: |
+          pip install pylint radon vulture
+
+      - name: Run Pylint
+        run: |
+          echo "Running Pylint..."
+          pylint src/ --disable=all --enable=E,F --max-line-length=100 --output-format=json > pylint-report.json || true
+
+      - name: Run Radon complexity analysis
+        run: |
+          echo "Running Radon complexity analysis..."
+          radon cc src/ --json --output radon-report.json || true
+          radon mi src/ --json --output radon-mi-report.json || true
+
+      - name: Run Vulture for dead code detection
+        run: |
+          echo "Running Vulture for dead code detection..."
+          vulture src/ tests/ --make-whitelist --output vulture-report.json || true
+
+      - name: Upload analysis reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: code-analysis-reports
+          path: |
+            pylint-report.json
+            radon-report.json
+            radon-mi-report.json
+            vulture-report.json

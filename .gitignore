@@ -1,7 +1,125 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-.DS_Store
-*.db
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Database
 *.sqlite
+*.db
+*.sqlite3
+
+# Logs
+*.log
+logs/
 audit/
 data/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project specific
+open_omniscience.db
+open_omniscience.db-journal
+open_omniscience.db-wal
+open_omniscience.db-shm
+
+# Local configuration
+.env.local
+.env.*.local
+config.local.yaml
+settings.local.yaml
+
+# Temporary files
+tmp/
+.temp
+*.tmp
+
+# Cache directories
+.cache/
+.mypy_cache/
+.pytest_cache/
+
+# Build artifacts
+*.AppImage
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# Docker
+.docker/
+
+# Security
+*.pem
+*.key
+*.crt
+*.cer
+
+# Data files that shouldn't be committed
+data/
+audit/
+logs/

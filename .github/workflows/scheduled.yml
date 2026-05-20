@@ -1,0 +1,197 @@
+name: Scheduled Tasks
+
+on:
+  schedule:
+    # Run database backup every day at 1 AM UTC
+    - cron: '0 1 * * *'
+    
+    # Run data cleanup every Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+    
+    # Run health checks every 6 hours
+    - cron: '0 */6 * * *'
+  
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  database-backup:
+    name: Database Backup
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-all.txt
+
+      - name: Create database backup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Creating database backup..."
+          timestamp=$(date +%Y%m%d_%H%M%S)
+          backup_file="backup_${timestamp}.sql"
+          
+          if [[ "$DATABASE_URL" == sqlite* ]]; then
+            # SQLite backup
+            db_path=$(echo "$DATABASE_URL" | sed 's/sqlite:\/\/\///')
+            if [ -f "$db_path" ]; then
+              sqlite3 "$db_path" ".backup backup_${timestamp}.db"
+              echo "SQLite backup created: backup_${timestamp}.db"
+            fi
+          elif [[ "$DATABASE_URL" == postgresql* ]]; then
+            # PostgreSQL backup
+            pg_dump $DATABASE_URL > "$backup_file"
+            echo "PostgreSQL backup created: $backup_file"
+          fi
+
+      - name: Upload backup
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: database-backup
+          path: backup_*
+          retention-days: 7
+
+  data-cleanup:
+    name: Data Cleanup
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-all.txt
+
+      - name: Run data cleanup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Running data cleanup..."
+          python -c "
+            import os
+            from datetime import datetime, timedelta
+            from pathlib import Path
+            
+            # Clean up old audit logs (older than 30 days)
+            audit_dir = Path('audit')
+            if audit_dir.exists():
+                cutoff = datetime.now() - timedelta(days=30)
+                for file in audit_dir.glob('*.log'):
+                    if file.stat().st_mtime < cutoff.timestamp():
+                        print(f'Removing old audit log: {file}')
+                        file.unlink()
+            
+            # Clean up old data files (older than 90 days)
+            data_dir = Path('data')
+            if data_dir.exists():
+                cutoff = datetime.now() - timedelta(days=90)
+                for file in data_dir.glob('*.db*'):
+                    if file.stat().st_mtime < cutoff.timestamp():
+                        print(f'Removing old data file: {file}')
+                        file.unlink()
+            
+            print('Data cleanup completed')
+          " || true
+
+  health-check:
+    name: Health Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-all.txt requests
+
+      - name: Check API health
+        env:
+          API_URL: ${{ secrets.API_URL || 'http://localhost:8000' }}
+        run: |
+          echo "Checking API health..."
+          response=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/api/health")
+          if [ "$response" = "200" ]; then
+            echo "✅ API is healthy"
+          else
+            echo "❌ API health check failed with status: $response"
+            exit 1
+          fi
+
+      - name: Check database connectivity
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Checking database connectivity..."
+          python -c "
+            import os
+            from sqlalchemy import create_engine
+            
+            db_url = os.getenv('DATABASE_URL', 'sqlite:///./data/open_omniscience.db')
+            try:
+                engine = create_engine(db_url)
+                with engine.connect() as conn:
+                    conn.execute('SELECT 1')
+                print('✅ Database connection successful')
+            except Exception as e:
+                print(f'❌ Database connection failed: {e}')
+                exit(1)
+          " || true
+
+  update-check:
+    name: Update Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check for updates
+        run: |
+          echo "Checking for dependency updates..."
+          pip install pip-audit pipdeptree
+          
+          # Check for vulnerable dependencies
+          echo "=== Vulnerability Check ==="
+          pip-audit --format json || true
+          
+          # Check for outdated dependencies
+          echo "=== Outdated Dependencies ==="
+          pip list --outdated || true
+          
+          # Generate dependency tree
+          echo "=== Dependency Tree ==="
+          pipdeptree || true

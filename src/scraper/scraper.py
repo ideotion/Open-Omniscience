@@ -25,9 +25,10 @@ import yaml
 import csv
 import feedparser
 from urllib.robotparser import RobotFileParser
-from urllib.parse import urlparse
+from urllib.parse import urlparse, ParseResult
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 import time
 import logging
 import concurrent.futures
@@ -39,67 +40,110 @@ logger = setup_logging("scraper")
 
 
 class Scraper:
-    def __init__(self, config_path=None, max_workers=5):
+    def __init__(self, config_path: Optional[str] = None, max_workers: int = 5) -> None:
+        """
+        Initialize the Scraper with configuration and settings.
+        
+        Args:
+            config_path: Path to the sources configuration YAML file.
+                        Defaults to configs/sources.yml in the repository root.
+            max_workers: Maximum number of parallel threads for scraping.
+        """
         # Get the absolute path to the repository root
-        self.repo_root = Path(__file__).parent.parent.parent.resolve()
+        self.repo_root: Path = Path(__file__).parent.parent.parent.resolve()
         
         # Use dynamic path for config
         if config_path is None:
-            config_path = self.repo_root / "configs" / "sources.yml"
+            config_path = str(self.repo_root / "configs" / "sources.yml")
         
         try:
             with open(config_path, "r") as f:
-                self.sources = yaml.safe_load(f)["sources"]
+                self.sources: List[Dict[str, Any]] = yaml.safe_load(f)["sources"]
         except FileNotFoundError:
             logger.error(f"Config file not found at {config_path}")
-            self.sources = []
+            self.sources: List[Dict[str, Any]] = []
         except yaml.YAMLError as e:
             logger.error(f"Invalid YAML in config file: {e}")
-            self.sources = []
+            self.sources: List[Dict[str, Any]] = []
         
         # Use dynamic path for audit log
-        self.audit_dir = self.repo_root / "audit"
+        self.audit_dir: Path = self.repo_root / "audit"
         self.audit_dir.mkdir(exist_ok=True, parents=True)
-        self.audit_log = self.audit_dir / "scrape_log.csv"
-        self.error_log = self.audit_dir / "errors.log"
+        self.audit_log: Path = self.audit_dir / "scrape_log.csv"
+        self.error_log: Path = self.audit_dir / "errors.log"
         self._init_audit_log()
-        self.session = requests.Session()
+        self.session: requests.Session = requests.Session()
         self.session.headers.update({"User-Agent": "OpenOmniscience/1.0 (+https://github.com/ideotion/Open-Omniscience)"})
-        self.max_workers = max_workers  # Number of parallel threads
+        self.max_workers: int = max_workers  # Number of parallel threads
 
-    def _init_audit_log(self):
+    def _init_audit_log(self) -> None:
+        """Initialize the audit log CSV file with headers if it doesn't exist."""
         if not self.audit_log.exists():
-            with open(self.audit_log, "w") as f:
-                writer = csv.writer(f)
+            with open(self.audit_log, "w", newline="") as f:
+                writer: csv.Writer = csv.writer(f)
                 writer.writerow(["Timestamp", "URL", "Source", "Status", "Rate_Limit_ms", "Retries"])
 
-    def _log_error(self, error_msg):
+    def _log_error(self, error_msg: str) -> None:
+        """Log an error message to the error log file."""
         with open(self.error_log, "a") as f:
             f.write(f"{datetime.now(timezone.utc).isoformat() + 'Z'}, {error_msg}\n")
 
-    def _get_domain(self, source):
-        """Extract domain from source config, handling both 'domain' and 'url' fields."""
+    def _get_domain(self, source: Dict[str, Any]) -> str:
+        """
+        Extract domain from source config, handling both 'domain' and 'url' fields.
+        
+        Args:
+            source: Source configuration dictionary.
+            
+        Returns:
+            The domain name as a string, or empty string if not found.
+        """
         if "domain" in source:
-            return source["domain"]
+            return str(source["domain"])
         elif "url" in source:
             # Extract domain from URL
-            parsed = urlparse(source["url"])
+            parsed: ParseResult = urlparse(source["url"])
             return parsed.netloc
         else:
             logger.warning(f"Source {source.get('name', 'unknown')} has no domain or url field")
             return ""
 
-    def _get_rate_limit(self, source):
-        """Get rate limit from source config, with default fallback."""
+    def _get_rate_limit(self, source: Dict[str, Any]) -> int:
+        """
+        Get rate limit from source config, with default fallback.
+        
+        Args:
+            source: Source configuration dictionary.
+            
+        Returns:
+            Rate limit in milliseconds.
+        """
         return source.get("rate_limit_ms", source.get("scan_config", {}).get("frequency_ms", 2000))
 
-    def _is_enabled(self, source):
-        """Check if source is enabled, with default fallback."""
+    def _is_enabled(self, source: Dict[str, Any]) -> bool:
+        """
+        Check if source is enabled, with default fallback.
+        
+        Args:
+            source: Source configuration dictionary.
+            
+        Returns:
+            True if source is enabled, False otherwise.
+        """
         return source.get("enabled", source.get("scan_config", {}).get("enabled", True))
 
-    def _can_scrape(self, url):
-        rp = RobotFileParser()
-        domain = urlparse(url).netloc
+    def _can_scrape(self, url: str) -> bool:
+        """
+        Check if a URL can be scraped according to robots.txt.
+        
+        Args:
+            url: The URL to check.
+            
+        Returns:
+            True if scraping is allowed, False otherwise.
+        """
+        rp: RobotFileParser = RobotFileParser()
+        domain: str = urlparse(url).netloc
         rp.set_url(f"https://{domain}/robots.txt")
         try:
             rp.read()
@@ -108,21 +152,34 @@ class Scraper:
             logger.warning(f"Could not fetch robots.txt for {domain}: {e}")
             return True  # Assume allowed if robots.txt is unreachable
 
-    def _retry_request(self, url, max_retries=3, initial_delay=1):
-        """Retry a request with exponential backoff."""
+    def _retry_request(self, url: str, max_retries: int = 3, initial_delay: float = 1) -> Optional[requests.Response]:
+        """
+        Retry a request with exponential backoff.
+        
+        Args:
+            url: The URL to request.
+            max_retries: Maximum number of retry attempts.
+            initial_delay: Initial delay in seconds between retries.
+            
+        Returns:
+            The response object if successful, None otherwise.
+            
+        Raises:
+            requests.exceptions.RequestException: If all retries fail.
+        """
         for retry in range(max_retries):
             try:
-                response = self.session.get(url, timeout=10)
+                response: requests.Response = self.session.get(url, timeout=10)
                 return response
             except requests.exceptions.RequestException as e:
                 if retry == max_retries - 1:
                     raise e
-                delay = initial_delay * (2 ** retry)
+                delay: float = initial_delay * (2 ** retry)
                 logger.warning(f"Retry {retry + 1}/{max_retries} for {url} after {delay}s. Error: {e}")
                 time.sleep(delay)
         return None
 
-    def download_page(self, url):
+    def download_page(self, url: str) -> "DownloadResult":
         """
         Download a single page from a URL.
         
@@ -132,7 +189,7 @@ class Scraper:
             url: URL to download.
             
         Returns:
-            An object with status and content, or None on failure.
+            DownloadResult object with status, content, and metadata.
         """
         from dataclasses import dataclass
         from enum import Enum
@@ -147,7 +204,7 @@ class Scraper:
             status: Status
             content: str = ""
             url: str = ""
-            headers: dict = None
+            headers: Optional[Dict[str, str]] = None
             error: str = ""
         
         # Check robots.txt first
@@ -159,13 +216,13 @@ class Scraper:
             )
         
         try:
-            response = self._retry_request(url)
+            response: Optional[requests.Response] = self._retry_request(url)
             if response and response.status_code == 200:
                 return DownloadResult(
                     status=Status.SUCCESS,
                     content=response.text,
                     url=url,
-                    headers=dict(response.headers)
+                    headers=dict(response.headers) if response.headers else None
                 )
             else:
                 return DownloadResult(

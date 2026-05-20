@@ -32,6 +32,8 @@ Author: Ideotion
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float, create_engine, Index, Table
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime, timezone
+from typing import Any, Dict
+from contextlib import contextmanager
 import os
 from pathlib import Path
 
@@ -53,11 +55,105 @@ os.makedirs(LOGS_DIR, exist_ok=True)
 # postgresql://user:password@localhost:5432/open_omniscience
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'open_omniscience.db'}")
 
-# Create the SQLAlchemy engine
-engine = create_engine(DATABASE_URL, echo=False)
+# Database configuration for performance optimization
+DATABASE_CONFIG = {
+    # SQLite specific optimizations
+    "sqlite": {
+        "connect_args": {
+            "check_same_thread": False,  # Allow access from multiple threads
+            "timeout": 30,  # Connection timeout in seconds
+        },
+        "poolclass": None,  # SQLite doesn't need connection pooling
+        "pool_size": 0,
+        "max_overflow": 0,
+    },
+    # PostgreSQL specific optimizations
+    "postgresql": {
+        "pool_size": 10,  # Number of connections to keep open
+        "max_overflow": 20,  # Number of connections to allow beyond pool_size
+        "pool_timeout": 30,  # Seconds to wait for a connection
+        "pool_recycle": 3600,  # Recycle connections after 1 hour
+        "pool_pre_ping": True,  # Test connections for liveness before use
+        "echo": False,
+    },
+    # Common optimizations
+    "common": {
+        "echo": False,
+        "future": True,  # Use SQLAlchemy 2.0 style
+    }
+}
 
-# Session factory
-Session = sessionmaker(bind=engine)
+# Determine database type and apply appropriate configuration
+def get_database_config() -> Dict[str, Any]:
+    """Get database-specific configuration based on the URL."""
+    config = DATABASE_CONFIG["common"].copy()
+    
+    if DATABASE_URL.startswith("sqlite"):
+        config.update(DATABASE_CONFIG["sqlite"])
+    elif DATABASE_URL.startswith("postgresql"):
+        config.update(DATABASE_CONFIG["postgresql"])
+    
+    return config
+
+# Create the SQLAlchemy engine with performance optimizations
+engine = create_engine(DATABASE_URL, **get_database_config())
+
+# Session factory with performance optimizations
+Session = sessionmaker(
+    bind=engine,
+    autocommit=False,  # Use explicit commits for better control
+    autoflush=False,  # Use explicit flushes for better performance
+    expire_on_commit=False,  # Keep objects usable after commit
+)
+
+# Performance utility functions
+def get_session() -> "Session":
+    """
+    Get a new database session with performance optimizations.
+    
+    Returns:
+        A new SQLAlchemy session.
+    """
+    session = Session()
+    return session
+
+def close_session(session: "Session") -> None:
+    """
+    Close a database session properly.
+    
+    Args:
+        session: The session to close.
+    """
+    try:
+        session.close()
+    except Exception:
+        pass
+
+# Context manager for database sessions
+from contextlib import contextmanager
+
+@contextmanager
+def session_scope():
+    """
+    Provide a transactional scope around a series of operations.
+    
+    Usage:
+        with session_scope() as session:
+            # Do database operations
+            session.add(some_object)
+            session.commit()
+    
+    This ensures that the session is properly closed even if an error occurs.
+    """
+    session = Session()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 # Base class for declarative models
 Base = declarative_base()
