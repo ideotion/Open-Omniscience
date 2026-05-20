@@ -368,13 +368,17 @@ class GUIInstaller:
     def update_navigation(self, page_name):
         """Update navigation buttons based on current page."""
         can_go_back = len(self.page_history) > 1
-        self.prev_button.config(state=tk.NORMAL if can_go_back else tk.DISABLED)
         
-        # Hide Next button for certain pages
-        hide_next = page_name in ['installing', 'complete']
+        # Hide all navigation buttons on installing and complete pages
+        # (these pages have their own buttons)
+        hide_nav = page_name in ['installing', 'complete']
+        
+        self.prev_button.config(state=tk.DISABLED if hide_nav else (tk.NORMAL if can_go_back else tk.DISABLED))
+        
         # Preserve the command when updating state
         current_command = self.next_button.cget('command')
-        self.next_button.config(state=tk.DISABLED if hide_next else tk.NORMAL, command=current_command)
+        self.next_button.config(state=tk.DISABLED if hide_nav else tk.NORMAL, command=current_command)
+        self.cancel_button.config(state=tk.DISABLED if hide_nav else tk.NORMAL)
     
     def cancel_installation(self):
         """Cancel installation and exit."""
@@ -882,8 +886,7 @@ Type=Application
 Name=Open-Omniscience
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd {install_dir} && docker-compose up -d --build && sleep 10 && xdg-open http://localhost:8000"
-Icon={install_dir}/docs/open-omniscience-icon.png
+Exec=bash -c "cd {install_dir} && docker-compose up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
 StartupWMClass=Open-Omniscience
@@ -1025,9 +1028,11 @@ StartupWMClass=Open-Omniscience
         os.chdir(self.config['install_dir'])
         CommandRunner.run_command("docker-compose up -d --build")
         self.log_message("Starting services...")
-        # Wait for services to be ready
+        # Start services and open browser when ready
+        # Don't destroy the window - let the health check open the browser
         self.start_services(open_browser=True)
-        self.root.destroy()
+        # Show a message that services are starting
+        self.log_message("Please wait while services start... The browser will open automatically when ready.")
     
     def show_welcome_page(self):
         """Show the welcome page initially."""
