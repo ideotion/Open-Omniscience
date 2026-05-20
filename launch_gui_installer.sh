@@ -206,12 +206,38 @@ main() {
         echo ""
         
         # Clone repository if not already present
-        if [ ! -d "$INSTALL_DIR" ]; then
-            log_info "Cloning repository..."
-            git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR" 2>/dev/null || {
-                log_error "Failed to clone repository"
+        if [ ! -d "$INSTALL_DIR/.git" ]; then
+            log_info "Cloning repository to $INSTALL_DIR..."
+            # Create directory if it doesn't exist
+            mkdir -p "$INSTALL_DIR" 2>/dev/null || {
+                log_error "Cannot create directory $INSTALL_DIR"
+                log_error "Check if you have write permissions in your home directory"
                 exit 1
             }
+            # Check if we can write to the directory
+            if [ ! -w "$INSTALL_DIR" ]; then
+                log_error "No write permission in $INSTALL_DIR"
+                log_error "Try running with: sudo mkdir -p $INSTALL_DIR && sudo chown $USER:$USER $INSTALL_DIR"
+                exit 1
+            fi
+            if git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR" 2>&1; then
+                log_success "Repository cloned"
+            else
+                log_error "Failed to clone repository. Check your internet connection and git installation."
+                log_info "Trying to use current directory..."
+                # Try to use current directory if it's already a git repo
+                if [ -d ".git" ]; then
+                    INSTALL_DIR="$(pwd)"
+                    log_info "Using current directory: $INSTALL_DIR"
+                else
+                    log_error "Cannot proceed without repository"
+                    log_info "You can manually clone the repository first:"
+                    log_info "  git clone --branch 0.02 --depth 1 https://github.com/ideotion/Open-Omniscience.git ~/open-omniscience"
+                    exit 1
+                fi
+            fi
+        else
+            log_info "Repository already exists at $INSTALL_DIR"
         fi
         
         cd "$INSTALL_DIR"
