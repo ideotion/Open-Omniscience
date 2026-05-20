@@ -21,7 +21,7 @@ Open Omniscience is an **ethically oriented**, **open-source**, and **portable**
 - Preserve **data integrity and provenance** for accountability.
 - **NEW:** Analyze, translate, and synthesize content using **local LLM capabilities**
 
-This project is a **Linux-based application** built on Python, leveraging robust crawling capabilities for **ethical scraping**, **duplicate detection**, **data management**, and now **AI-powered analysis**.
+This project is a **Debian-based Linux application** built on Python, leveraging robust crawling capabilities for **ethical scraping**, **duplicate detection**, **data management**, and now **AI-powered analysis**.
 
 ---
 
