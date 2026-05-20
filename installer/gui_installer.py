@@ -201,6 +201,27 @@ class InstallerConfig:
 class CommandRunner:
     """Run shell commands with output capture."""
     
+    # Cache for docker compose command
+    _docker_compose_cmd = None
+    
+    @classmethod
+    def get_docker_compose_cmd(cls):
+        """Get the correct docker compose command (docker-compose or docker compose)."""
+        if cls._docker_compose_cmd is None:
+            if SystemChecker.check_command('docker-compose'):
+                cls._docker_compose_cmd = 'docker-compose'
+            elif SystemChecker.check_command('docker'):
+                # Check if docker compose plugin is available
+                result = subprocess.run(['docker', 'compose', 'version'], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    cls._docker_compose_cmd = 'docker compose'
+                else:
+                    cls._docker_compose_cmd = 'docker-compose'
+            else:
+                cls._docker_compose_cmd = 'docker-compose'
+        return cls._docker_compose_cmd
+    
     @staticmethod
     def run_command(cmd, check=False, capture=True, text=True, sudo=False):
         """Run a command and return result."""
@@ -213,6 +234,13 @@ class CommandRunner:
             return result
         except subprocess.CalledProcessError as e:
             return e
+    
+    @staticmethod
+    def run_docker_compose(args, check=False, capture=True, text=True, sudo=False):
+        """Run docker-compose command, trying both variants."""
+        cmd = CommandRunner.get_docker_compose_cmd()
+        full_cmd = f"{cmd} {args}"
+        return CommandRunner.run_command(full_cmd, check=check, capture=capture, text=text, sudo=sudo)
     
     @staticmethod
     def run_async(cmd, output_callback=None, error_callback=None):
@@ -901,13 +929,14 @@ class GUIInstaller:
         desktop_file = os.path.expanduser("~/.local/share/applications/open-omniscience.desktop")
         os.makedirs(os.path.dirname(desktop_file), exist_ok=True)
         
+        dc_cmd = CommandRunner.get_docker_compose_cmd()
         desktop_content = f"""[Desktop Entry]
 Version=1.0
 Type=Application
 Name=Open-Omniscience
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd {install_dir} && docker-compose up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
+Exec=bash -c "cd {install_dir} && {dc_cmd} up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
 StartupWMClass=Open-Omniscience
@@ -932,12 +961,12 @@ StartupWMClass=Open-Omniscience
         
         # Start with Docker Compose
         self.log_message("Starting services with Docker Compose...")
-        result = CommandRunner.run_command("docker-compose up -d --build", 
-                                          check=False, capture=True, text=True)
+        result = CommandRunner.run_docker_compose("up -d --build", 
+                                                  check=False, capture=True, text=True)
         if result.returncode != 0:
             self.log_message(f"Warning: Failed to start services: {result.stderr}")
             # Try to see what containers are running
-            result2 = CommandRunner.run_command("docker-compose ps", check=False, capture=True, text=True)
+            result2 = CommandRunner.run_docker_compose("ps", check=False, capture=True, text=True)
             self.log_message(f"Container status:\n{result2.stdout}")
             return False
         
@@ -951,7 +980,7 @@ StartupWMClass=Open-Omniscience
         max_attempts = 24  # 120 seconds / 5 seconds per attempt
         
         # First check if containers are actually running
-        result_ps = CommandRunner.run_command("docker-compose ps", check=False, capture=True, text=True)
+        result_ps = CommandRunner.run_docker_compose("ps", check=False, capture=True, text=True)
         if result_ps.returncode == 0:
             containers_running = "Up" in result_ps.stdout or "running" in result_ps.stdout.lower()
         else:
@@ -960,8 +989,7 @@ StartupWMClass=Open-Omniscience
         if not containers_running:
             self.log_message(f"Containers not running. Status:\n{result_ps.stdout}")
             # Try to see logs
-            result_logs = CommandRunner.run_command("docker-compose logs web 2>&1 | tail -20", 
-                                                     check=False, capture=True, text=True, shell=True)
+            result_logs = CommandRunner.run_docker_compose("logs web", check=False, capture=True, text=True)
             self.log_message(f"Web container logs:\n{result_logs.stdout}")
         
         # Check if the web service is responding
@@ -996,8 +1024,7 @@ StartupWMClass=Open-Omniscience
             self.log_message("Warning: Application did not become ready within the timeout period")
             self.log_message("You can manually check if it's running and open http://localhost:8000")
             # Show container logs for debugging
-            result_logs = CommandRunner.run_command("docker-compose logs web 2>&1 | tail -30", 
-                                                     check=False, capture=True, text=True, shell=True)
+            result_logs = CommandRunner.run_docker_compose("logs web", check=False, capture=True, text=True)
             self.log_message(f"Web container logs:\n{result_logs.stdout}")
     
     def create_complete_page(self):
@@ -1049,7 +1076,7 @@ StartupWMClass=Open-Omniscience
         steps = [
             "1. Access the application at: http://localhost:8000",
             "2. If you installed Ollama, download models with: ollama pull gemma4:e2b",
-            "3. For LLM support, start with: docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build",
+            "3. For LLM support, start with: docker compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build",
             "4. Check the documentation at: https://github.com/ideotion/Open-Omniscience",
         ]
         
@@ -1077,8 +1104,8 @@ StartupWMClass=Open-Omniscience
         self.root.update_idletasks()
         
         # Start services with docker-compose
-        result = CommandRunner.run_command("docker-compose up -d --build", 
-                                          check=False, capture=True, text=True)
+        result = CommandRunner.run_docker_compose("up -d --build", 
+                                                  check=False, capture=True, text=True)
         if result.returncode != 0:
             self.launch_status_label.config(text=f"Failed to start services: {result.stderr}")
             return
@@ -1139,13 +1166,14 @@ class AppLauncher:
         desktop_file = os.path.expanduser(f"~/.local/share/applications/{name.lower()}.desktop")
         os.makedirs(os.path.dirname(desktop_file), exist_ok=True)
         
+        dc_cmd = CommandRunner.get_docker_compose_cmd()
         content = f"""[Desktop Entry]
 Version=1.0
 Type=Application
 Name={name}
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd {install_dir} && docker-compose up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
+Exec=bash -c "cd {install_dir} && {dc_cmd} up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
 StartupWMClass={name}
