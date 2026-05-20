@@ -66,14 +66,17 @@ USER appuser
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src \
     DATABASE_URL=sqlite:////app/data/open_omniscience.db
 
 # Expose port
 EXPOSE 8000
 
 # Health check
+# Fixed: Use PYTHONPATH and proper import path
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.path.insert(0, 'src'); from database.models import engine; print('DB OK')" || exit 1
+    CMD python -c "from src.database.models import engine; print('DB OK')" || exit 1
 
 # Default command
+# Fixed: Use proper module path with PYTHONPATH
 CMD ["python", "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

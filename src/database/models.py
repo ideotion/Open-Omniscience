@@ -42,9 +42,16 @@ REPO_ROOT = Path(__file__).parent.parent.parent.resolve()
 DATA_DIR = REPO_ROOT / "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# Also ensure audit and logs directories exist
+AUDIT_DIR = REPO_ROOT / "audit"
+LOGS_DIR = REPO_ROOT / "logs"
+os.makedirs(AUDIT_DIR, exist_ok=True)
+os.makedirs(LOGS_DIR, exist_ok=True)
+
 # Database URL: Default to SQLite, but can be overridden for PostgreSQL
 # To use PostgreSQL, set DATABASE_URL to:
 # postgresql://user:password@localhost:5432/open_omniscience
+# Fixed: Use absolute path for SQLite database to ensure it's found correctly
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'open_omniscience.db'}")
 
 # Create the SQLAlchemy engine

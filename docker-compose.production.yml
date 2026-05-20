@@ -129,6 +129,8 @@ services:
       # Logging
       LOG_LEVEL: INFO
       LOG_FORMAT: json
+      # Python path for imports
+      PYTHONPATH: /app/src
     depends_on:
       postgres:
         condition: service_healthy

@@ -38,7 +38,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.append(str(Path(__file__).parent.parent))
 
 # Configure logging using shared config
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("scraper")
 
 
@@ -125,6 +125,64 @@ class Scraper:
                 logger.warning(f"Retry {retry + 1}/{max_retries} for {url} after {delay}s. Error: {e}")
                 time.sleep(delay)
         return None
+
+    def download_page(self, url):
+        """
+        Download a single page from a URL.
+        
+        This method is used by the pipeline to ingest data from URLs.
+        
+        Args:
+            url: URL to download.
+            
+        Returns:
+            An object with status and content, or None on failure.
+        """
+        from dataclasses import dataclass
+        from enum import Enum
+        
+        class Status(Enum):
+            SUCCESS = "SUCCESS"
+            FAILED = "FAILED"
+            BLOCKED = "BLOCKED"
+        
+        @dataclass
+        class DownloadResult:
+            status: Status
+            content: str = ""
+            url: str = ""
+            headers: dict = None
+            error: str = ""
+        
+        # Check robots.txt first
+        if not self._can_scrape(url):
+            return DownloadResult(
+                status=Status.BLOCKED,
+                url=url,
+                error="Blocked by robots.txt"
+            )
+        
+        try:
+            response = self._retry_request(url)
+            if response and response.status_code == 200:
+                return DownloadResult(
+                    status=Status.SUCCESS,
+                    content=response.text,
+                    url=url,
+                    headers=dict(response.headers)
+                )
+            else:
+                return DownloadResult(
+                    status=Status.FAILED,
+                    url=url,
+                    error=f"HTTP {response.status_code if response else 'N/A'}"
+                )
+        except Exception as e:
+            return DownloadResult(
+                status=Status.FAILED,
+                url=url,
+                error=str(e)
+            )
 
     def _parse_rss(self, rss_url, source_name):
         """Parse an RSS feed and return articles."""
