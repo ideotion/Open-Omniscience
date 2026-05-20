@@ -1056,6 +1056,8 @@ class GUIInstaller:
                         if result.returncode == 0:
                             self.log_message("Docker daemon is running!")
                             break
+                        else:
+                            self.log_message(f"Waiting for Docker daemon to start... (attempt {attempt + 1}/{max_attempts})")
                     else:
                         # All attempts failed
                         self.log_message("Warning: Docker daemon started but not responding after 20 seconds.")
@@ -1222,7 +1224,10 @@ StartupWMClass=Open-Omniscience
                 time.sleep(2)  # Wait 2 seconds between checks
                 result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
                 if result.returncode == 0:
+                    self.log_message("Docker daemon is running!")
                     break
+                else:
+                    self.log_message(f"Waiting for Docker daemon to start... (attempt {attempt + 1}/{max_attempts})")
             else:
                 # All attempts failed
                 self.log_message("Warning: Docker daemon started but not responding after 20 seconds.")
@@ -1437,7 +1442,12 @@ StartupWMClass=Open-Omniscience
                 time.sleep(2)  # Wait 2 seconds between checks
                 result = CommandRunner.run_command("docker info", check=False, capture=True, text=True)
                 if result.returncode == 0:
+                    self.launch_status_label.config(text="Docker daemon is running!")
+                    self.root.update_idletasks()
                     break
+                else:
+                    self.launch_status_label.config(text=f"Waiting for Docker daemon... ({attempt + 1}/10)")
+                    self.root.update_idletasks()
             else:
                 # All attempts failed
                 self.launch_status_label.config(text="Error: Docker daemon started but not responding after 20 seconds.")
