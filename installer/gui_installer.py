@@ -237,6 +237,28 @@ class CommandRunner:
 class GUIInstaller:
     """Main GUI installer application."""
     
+    # Open-Omniscience ASCII Logo
+    LOGO = (
+        "                                 .-=+*#%@@@@@@@@@@%#*+-:                                         \n"
+        "                            .-+#@@@@@@%%@@@@@@@@@%%%@@@@@@#+:                                   \n"
+        "                         -+%@@@#*=:.-*#*#@*-@=+@#*#*-.:-+*%@@@#=:                                \n"
+        "                      -*@@%+-.    +%+. *#.  @: .*#..=%+     :=#@@%+:                             \n"
+        "                   .+@%*-       :%+##+%*    @:   *%=*#+%-       :=#@%=                           \n"
+        "                 :#%+.         -@:   ##+****@#***+#@   .%=          -*%+.                        \n"
+        "               :*+.           .@:   :@.     @:     @-   .@:            -**.                      \n"
+        "             .=-              *#    *#      @:     *#    *#              .==                     \n"
+        "            :-                #%****@%******@#*****%@****%%                 =                    \n"
+        "             .=:              *#    *#      @:     +#    +#               --                     \n"
+        "               -*=.           :@.   -@      @:     %=   .@-            :++.                      \n"
+        "                 -##-          +%.   %*=+**#@#**+=*%    #*          .=%*.                        \n"
+        "                   :*@#=.       =%=+#*%#.   @:  .*@*#*=%+        :+%%=.                          \n"
+        "                      =#@@*=.    .*%- .#*   @:  +%. :%#:     :=#@@*:                             \n"
+        "                        .=#@@@#+-: .+#*=*@=.@--%#=*#+. .:=*%@@%*-                                \n"
+        "                            :+#@@@@@%**%@@@@@@@@@%**#%@@@@%*=.                                   \n"
+        "                                .-+*%@@@@@@@@@@@@@@@%#+=:                                        \n"
+        "                                       .::-----::.                                              \n"
+    )
+    
     def __init__(self, root):
         self.root = root
         self.root.title("Open-Omniscience Installer")
@@ -371,13 +393,16 @@ class GUIInstaller:
         header = ttk.Label(frame, text="Welcome to Open-Omniscience", style='Header.TLabel')
         header.pack(pady=20)
         
+        # Logo
+        logo_frame = ttk.Frame(frame)
+        logo_frame.pack(fill=tk.X, pady=10)
+        
+        logo_label = ttk.Label(logo_frame, text=self.LOGO, font=('Courier', 8), background='#f0f0f0', anchor=tk.CENTER)
+        logo_label.pack()
+        
         # Description
         desc = ttk.Label(frame, text="Open-Omniscience is an ethical, open-source global intelligence platform\nfor investigative journalism with local LLM support.", wraplength=700)
-        desc.pack(pady=10)
-        
-        # Logo (placeholder)
-        logo_frame = ttk.Frame(frame, height=100)
-        logo_frame.pack(fill=tk.X, pady=20)
+        desc.pack(pady=20)
         
         # Features
         features_label = ttk.Label(frame, text="Key Features:", style='Header.TLabel')
@@ -873,42 +898,44 @@ StartupWMClass=Open-Omniscience
             return False
         
         self.log_message("Services started. Waiting for application to be ready...")
-        
-        # Wait for services to be ready (max 120 seconds)
+        self.check_service_ready(open_browser, attempt=0)
+        return True
+    
+    def check_service_ready(self, open_browser, attempt):
+        """Check if service is ready, with non-blocking retry."""
         max_attempts = 24  # 120 seconds / 5 seconds per attempt
-        for attempt in range(max_attempts):
+        
+        try:
+            # Check if the web service is responding
+            import requests
             try:
-                # Check if the web service is responding
-                import requests
-                try:
-                    response = requests.get("http://localhost:8000", timeout=5)
-                    if response.status_code in [200, 301, 302, 307, 308]:
-                        self.log_message("Application is ready!")
-                        if open_browser:
-                            import webbrowser
-                            webbrowser.open_new("http://localhost:8000")
-                        return True
-                except requests.exceptions.RequestException:
-                    pass
-            except ImportError:
-                # requests not available, use curl
-                result = CommandRunner.run_command("curl -s -o /dev/null -w '%{http_code}' http://localhost:8000",
-                                                  check=False, capture=True, text=True)
-                if result.returncode == 0 and '200' in result.stdout:
+                response = requests.get("http://localhost:8000", timeout=5)
+                if response.status_code in [200, 301, 302, 307, 308]:
                     self.log_message("Application is ready!")
                     if open_browser:
                         import webbrowser
                         webbrowser.open_new("http://localhost:8000")
-                    return True
-            
-            # Wait 5 seconds before retrying
-            import time
-            time.sleep(5)
-            self.log_message(f"Waiting... (attempt {attempt + 1}/{max_attempts})")
+                    return
+            except requests.exceptions.RequestException:
+                pass
+        except ImportError:
+            # requests not available, use curl
+            result = CommandRunner.run_command("curl -s -o /dev/null -w '%{http_code}' http://localhost:8000",
+                                              check=False, capture=True, text=True)
+            if result.returncode == 0 and '200' in result.stdout:
+                self.log_message("Application is ready!")
+                if open_browser:
+                    import webbrowser
+                    webbrowser.open_new("http://localhost:8000")
+                return
         
-        self.log_message("Warning: Application did not become ready within the timeout period")
-        self.log_message("You can manually check if it's running and open http://localhost:8000")
-        return False
+        # Not ready yet, schedule next check
+        if attempt < max_attempts - 1:
+            self.log_message(f"Waiting... (attempt {attempt + 1}/{max_attempts})")
+            self.root.after(5000, lambda: self.check_service_ready(open_browser, attempt + 1))
+        else:
+            self.log_message("Warning: Application did not become ready within the timeout period")
+            self.log_message("You can manually check if it's running and open http://localhost:8000")
     
     def create_complete_page(self):
         """Create installation complete page."""
@@ -971,10 +998,12 @@ StartupWMClass=Open-Omniscience
         return frame
     
     def launch_application(self):
-        """Launch the application."""
+        """Launch the application and open browser when ready."""
         os.chdir(self.config['install_dir'])
         CommandRunner.run_command("docker-compose up -d --build")
-        webbrowser.open_new("http://localhost:8000")
+        self.log_message("Starting services...")
+        # Wait for services to be ready
+        self.start_services(open_browser=True)
         self.root.destroy()
     
     def show_welcome_page(self):
