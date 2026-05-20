@@ -899,9 +899,21 @@ class GUIInstaller:
         
         # Clone fresh repository
         self.log_message("Cloning repository...")
-        CommandRunner.run_command(f"git clone --branch {InstallerConfig.REPO_BRANCH} --depth 1 {InstallerConfig.REPO_URL} {install_dir}")
+        result = CommandRunner.run_command(f"git clone --branch {InstallerConfig.REPO_BRANCH} --depth 1 {InstallerConfig.REPO_URL} {install_dir}",
+                                          check=False, capture=True, text=True)
+        if result.returncode != 0:
+            self.log_message(f"Error: Failed to clone repository: {result.stderr}")
+            raise Exception(f"Failed to clone repository: {result.stderr}")
         
         os.chdir(install_dir)
+        
+        # Verify docker-compose.yml exists
+        if not os.path.exists('docker-compose.yml'):
+            self.log_message("Error: docker-compose.yml not found in cloned repository!")
+            self.log_message("The repository may not have been cloned correctly.")
+            raise Exception("docker-compose.yml not found after cloning")
+        
+        self.log_message("Repository cloned successfully. docker-compose.yml found.")
     
     def install_ollama(self):
         """Install Ollama."""
