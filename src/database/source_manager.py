@@ -33,7 +33,6 @@ This module provides comprehensive source management functionality including:
 Author: Ideotion
 """
 
-import sys
 import yaml
 import logging
 from pathlib import Path
@@ -42,19 +41,15 @@ from datetime import datetime
 from sqlalchemy import and_, or_, not_, func, desc, asc
 from sqlalchemy.orm import Session
 
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent))
-
 # Import database models
-from models import Source, SourceGroup, SourceMetadata, source_group_association, get_session
+from src.database.models import Source, SourceGroup, SourceMetadata, source_group_association, get_session
 
 # Import logging config
 from utils.logging_config import setup_logging
 logger = setup_logging("source_manager")
 
 # Import DuckDuckGo search
-sys.path.append(str(Path(__file__).parent.parent))
-from services.duckduckgo import DuckDuckGoSearch
+from src.services.duckduckgo import DuckDuckGoSearch
 
 
 class SourceManager:

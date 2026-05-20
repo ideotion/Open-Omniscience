@@ -35,7 +35,6 @@ Features:
 Author: Ideotion
 """
 
-import sys
 import re
 import unicodedata
 from pathlib import Path
@@ -44,11 +43,8 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 import string
 
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
 # Configure logging
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("normalizer")
 
 
@@ -610,46 +606,8 @@ class URLNormalizer:
         Returns:
             Canonicalized URL.
         """
-        from urllib.parse import urlparse, urlunparse
-        
-        if not url:
-            return url
-        
-        try:
-            parsed = urlparse(url)
-            
-            # Lowercase scheme and netloc
-            scheme = parsed.scheme.lower()
-            netloc = parsed.netloc.lower()
-            
-            # Remove default ports
-            if (scheme == 'http' and netloc.endswith(':80')) or \
-               (scheme == 'https' and netloc.endswith(':443')):
-                netloc = netloc.split(':')[0]
-            
-            # Remove www prefix
-            if netloc.startswith('www.'):
-                netloc = netloc[4:]
-            
-            # Remove empty path
-            path = parsed.path
-            if not path:
-                path = '/'
-            
-            # Remove trailing slash from path (except root)
-            if len(path) > 1 and path.endswith('/'):
-                path = path[:-1]
-            
-            # Remove query string and fragment
-            query = ''
-            fragment = ''
-            
-            # Reconstruct URL
-            return urlunparse((scheme, netloc, path, '', query, fragment))
-            
-        except Exception as e:
-            logger.warning(f"Error canonicalizing URL {url}: {e}")
-            return url
+        from src.utils.url_utils import canonicalize_url as utils_canonicalize_url
+        return utils_canonicalize_url(url)
     
     @staticmethod
     def extract_domain(url: str) -> str:

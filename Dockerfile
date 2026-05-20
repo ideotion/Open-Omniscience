@@ -41,8 +41,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Create non-root user for security
-RUN useradd --create-home --shell /bin/bash appuser
+# Create non-root user and group for security
+RUN groupadd -r appgroup && useradd -r --create-home --shell /bin/bash -g appgroup appuser
 
 # Copy installed packages from builder
 COPY --from=builder /root/.local /home/appuser/.local
@@ -54,11 +54,14 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 COPY . .
 
 # Change ownership to non-root user
-RUN chown -R appuser:appuser /app
+RUN chown -R appuser:appgroup /app
 
 # Create necessary directories
-RUN mkdir -p /app/data /app/audit /app/logs
-RUN chown -R appuser:appuser /app/data /app/audit /app/logs
+RUN mkdir -p /app/data /app/audit /app/logs /app/tmp
+RUN chown -R appuser:appgroup /app/data /app/audit /app/logs /app/tmp
+
+# Set proper permissions
+RUN chmod -R 750 /app/data /app/audit /app/logs /app/tmp
 
 # Switch to non-root user
 USER appuser
@@ -67,16 +70,21 @@ USER appuser
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/src \
-    DATABASE_URL=sqlite:////app/data/open_omniscience.db
+    DATABASE_URL=sqlite:////app/data/open_omniscience.db \
+    TMPDIR=/app/tmp
+
+# Security labels
+LABEL maintainer="Ideotion <open-omniscience@ideotion.com>" \
+      description="Open Omniscience - Global Intelligence Platform" \
+      version="0.02" \
+      license="GPLv3"
 
 # Expose port
 EXPOSE 8000
 
 # Health check
-# Fixed: Use PYTHONPATH and proper import path
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "from src.database.models import engine; print('DB OK')" || exit 1
 
 # Default command
-# Fixed: Use proper module path with PYTHONPATH
 CMD ["python", "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

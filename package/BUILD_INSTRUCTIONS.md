@@ -86,15 +86,15 @@ linuxdeploy \
 ```
 
 ### Output
-- `dist/OpenOmniscience-0.2.0-x86_64.AppImage`
+- `dist/OpenOmniscience-0.02-x86_64.AppImage`
 
 ### Running the AppImage
 ```bash
 # Make executable
-chmod +x OpenOmniscience-0.2.0-x86_64.AppImage
+chmod +x OpenOmniscience-0.02-x86_64.AppImage
 
 # Run
-./OpenOmniscience-0.2.0-x86_64.AppImage
+./OpenOmniscience-0.02-x86_64.AppImage
 
 # Access at: http://localhost:8000
 ```
@@ -115,11 +115,11 @@ chmod +x package/deb/build-deb.sh
 ### Manual Build
 ```bash
 # Create build directory
-mkdir -p build-deb/open-omniscience-0.2.0
-cp -r package/deb/debian build-deb/open-omniscience-0.2.0/
+mkdir -p build-deb/open-omniscience-0.02
+cp -r package/deb/debian build-deb/open-omniscience-0.02/
 
 # Build the package
-cd build-deb/open-omniscience-0.2.0
+cd build-deb/open-omniscience-0.02
 dpkg-buildpackage -us -uc -b
 
 # The .deb will be created in the parent directory
@@ -127,12 +127,12 @@ cd ../..
 ```
 
 ### Output
-- `dist/open-omniscience_0.2.0_all.deb`
+- `dist/open-omniscience_0.02_all.deb`
 
 ### Installing the .deb Package
 ```bash
 # Install the package
-sudo dpkg -i open-omniscience_0.2.0_all.deb
+sudo dpkg -i open-omniscience_0.02_all.deb
 
 # Fix any missing dependencies
 sudo apt-get install -f
@@ -291,7 +291,7 @@ Edit:
 ./package/appimage/OpenOmniscience.AppImageBuilder
 
 # Run
-./dist/OpenOmniscience-0.2.0-x86_64.AppImage &
+./dist/OpenOmniscience-0.02-x86_64.AppImage &
 
 # Wait a few seconds, then test
 curl http://localhost:8000/api/sources
@@ -306,7 +306,7 @@ pkill -f uvicorn
 ./package/deb/build-deb.sh
 
 # Install
-sudo dpkg -i dist/open-omniscience_0.2.0_all.deb
+sudo dpkg -i dist/open-omniscience_0.02_all.deb
 
 # Run
 open-omniscience &

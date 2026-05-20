@@ -46,6 +46,12 @@ services:
       start_period: 5s
     networks:
       - open-omniscience-network
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
 
   # PostgreSQL database (optional, for production)
   db:
@@ -69,6 +75,15 @@ services:
       - open-omniscience-network
     profiles:
       - production
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
 
   # Redis for caching (optional)
   redis:
@@ -89,6 +104,13 @@ services:
       - open-omniscience-network
     profiles:
       - production
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
 
   # Nginx reverse proxy (optional, for production)
   nginx:
@@ -107,6 +129,12 @@ services:
       - open-omniscience-network
     profiles:
       - production
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
 
 volumes:
   postgres_data:

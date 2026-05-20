@@ -30,7 +30,6 @@ This module provides advanced deduplication capabilities using:
 Author: Ideotion
 """
 
-import sys
 import hashlib
 import numpy as np
 from pathlib import Path
@@ -40,11 +39,8 @@ from collections import defaultdict
 import re
 import string
 
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
 # Configure logging
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("deduplicator")
 
 

@@ -46,7 +46,7 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 The **fastest and easiest** way to install Open-Omniscience with all prerequisites:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.01/install | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install | bash
 ```
 
 **What this installs:**

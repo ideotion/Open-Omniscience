@@ -28,19 +28,15 @@ sources from the configs/sources.yml file.
 Author: Ideotion
 """
 
-import sys
 import yaml
 import logging
 from pathlib import Path
 
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent))
-
 # Import database models
-from models import Base, engine, Session, Source
+from src.database.models import Base, engine, Session, Source
 
 # Configure logging using shared config
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("init_db")
 
 

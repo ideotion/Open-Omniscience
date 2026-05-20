@@ -48,7 +48,18 @@ from .security import (
     SECURITY_HEADERS,
 )
 
+from .url_utils import (
+    normalize_domain,
+    is_equivalent_domain,
+    canonicalize_url,
+    resolve_redirects,
+    generate_content_hash,
+    get_domain_from_url,
+    get_base_url,
+)
+
 __all__ = [
+    # Security utilities
     'SecurityError',
     'sanitize_html',
     'escape_html',
@@ -64,4 +75,12 @@ __all__ = [
     'verify_password',
     'get_security_headers',
     'SECURITY_HEADERS',
+    # URL utilities
+    'normalize_domain',
+    'is_equivalent_domain',
+    'canonicalize_url',
+    'resolve_redirects',
+    'generate_content_hash',
+    'get_domain_from_url',
+    'get_base_url',
 ]

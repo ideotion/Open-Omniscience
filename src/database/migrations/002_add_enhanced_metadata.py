@@ -31,14 +31,9 @@ Usage:
     python3 src/database/migrations/002_add_enhanced_metadata.py
 """
 
-import sys
 from pathlib import Path
 
-# Add parent directory to path
-repo_root = Path(__file__).parent.parent.parent
-sys.path.append(str(repo_root))
-
-from database.models import Base, engine
+from src.database.models import Base, engine
 from sqlalchemy import inspect
 
 def migration_needed():

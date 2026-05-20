@@ -76,6 +76,15 @@ services:
       - open-omniscience-network
     profiles:
       - postgres
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
 
   # Redis for caching in staging
   redis:
@@ -96,6 +105,13 @@ services:
       - open-omniscience-network
     profiles:
       - redis
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
 
   # Traefik reverse proxy for staging (optional)
   traefik:
@@ -137,6 +153,10 @@ services:
       - open-omniscience-network
     profiles:
       - monitoring
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   # Grafana for visualization (optional)
   grafana:
@@ -155,6 +175,10 @@ services:
       - open-omniscience-network
     profiles:
       - monitoring
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   # Test runner for CI/CD testing
   test-runner:

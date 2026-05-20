@@ -33,13 +33,9 @@ including endpoints for:
 Author: Open Omniscience Team
 """
 
-import sys
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
-
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
 
 from fastapi import APIRouter, HTTPException, Query, Request, Body
 from fastapi.responses import JSONResponse

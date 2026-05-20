@@ -345,7 +345,7 @@ class EmailMessage(Base):
         """
         try:
             from src.database.models import Article
-            from src.utils.security import canonicalize_url
+            from src.utils.url_utils import canonicalize_url
             
             # Generate a unique URL for this email
             # Format: email://<source_type>/<source_id>/<message_id>

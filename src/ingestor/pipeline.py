@@ -33,21 +33,17 @@ This module orchestrates the end-to-end ingestion workflow:
 Author: Ideotion
 """
 
-import sys
 import logging
 import time
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
 # Import local modules
-from scraper.scraper import Scraper
-from scraper.source_monitor import SourceMonitor
-from ingestor.url_utils import canonicalize_url, resolve_redirects, generate_content_hash
-from ingestor.normalizer import ArticleNormalizer
+from src.scraper.scraper import Scraper
+from src.scraper.source_monitor import SourceMonitor
+from src.utils.url_utils import canonicalize_url, resolve_redirects, generate_content_hash
+from src.ingestor.normalizer import ArticleNormalizer
 from ingestor.deduplicator import Deduplicator, DeduplicationConfig
 from database.models import Article, Source, get_session
 

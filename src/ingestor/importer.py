@@ -37,13 +37,9 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Union
-import sys
 
-# Add parent directories to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
-from database.models import Article, Source, get_session
-from ingestor.url_utils import canonicalize_url, generate_content_hash
+from src.database.models import Article, Source, get_session
+from src.utils.url_utils import canonicalize_url, generate_content_hash
 
 # Configure logging
 logging.basicConfig(
