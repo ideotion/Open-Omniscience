@@ -20,7 +20,7 @@
 # Open Omniscience Makefile
 # Provides convenient commands for development, testing, and deployment
 
-.PHONY: help install test lint run clean docker-build docker-run docker-down desktop-launcher-install desktop-launcher-uninstall
+.PHONY: help install test lint format run clean docker-build docker-run docker-down desktop-launcher-install desktop-launcher-uninstall
 
 # Default target
 help:
@@ -29,13 +29,25 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make install          - Install Python dependencies"
+	@echo "  make install-dev      - Install development dependencies"
 	@echo "  make run              - Run the application"
 	@echo "  make run-dev          - Run with auto-reload for development"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  make lint             - Run all linting and type checking"
+	@echo "  make format           - Format code with black and isort"
+	@echo "  make lint-black       - Check Black formatting"
+	@echo "  make lint-isort       - Check import sorting"
+	@echo "  make lint-flake8      - Run flake8 linting"
+	@echo "  make lint-mypy        - Run mypy type checking"
+	@echo "  make quality-check     - Run comprehensive quality checks"
+	@echo "  make pre-commit-install - Install pre-commit hooks"
+	@echo "  make pre-commit-run   - Run pre-commit hooks on all files"
+	@echo "  make install-hooks    - Install and update pre-commit hooks"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test             - Run all tests"
 	@echo "  make test-quick       - Run tests without slow tests"
-	@echo "  make lint             - Run linting and type checking"
 	@echo ""
 	@echo "Database:"
 	@echo "  make db-init          - Initialize the database"
@@ -110,11 +122,69 @@ test-quick:
 
 # Linting and type checking
 lint:
-	$(PYTHON) -m pip install -q pylint mypy black isort
-	black --check $(SRC_DIR)/ tests/ || echo "Black formatting issues found"
-	isort --check-only $(SRC_DIR)/ tests/ || echo "Import sorting issues found"
-	pylint $(SRC_DIR)/ --disable=all --enable=E,F --max-line-length=120 || echo "Linting issues found"
-	mypy $(SRC_DIR)/ --ignore-missing-imports --allow-incomplete-defs || echo "Type checking issues found"
+	$(PYTHON) -m pip install -q black isort flake8 mypy
+	@echo "Running code style checks..."
+	black --check $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/ || echo "❌ Black formatting issues found"
+	isort --check-only $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/ || echo "❌ Import sorting issues found"
+	flake8 $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/ || echo "❌ Linting issues found"
+	mypy $(SRC_DIR)/ pillar2/ pillar3/ pillar4/ || echo "❌ Type checking issues found"
+
+# Code formatting
+format:
+	@echo "Formatting code with black and isort..."
+	black $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/
+	isort $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/
+
+# Individual quality checks
+lint-black:
+	@echo "Checking Black formatting..."
+	black --check $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/
+
+lint-isort:
+	@echo "Checking import sorting..."
+	isort --check-only $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/
+
+lint-flake8:
+	@echo "Running flake8..."
+	flake8 $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/
+
+lint-mypy:
+	@echo "Running mypy type checking..."
+	mypy $(SRC_DIR)/ pillar2/ pillar3/ pillar4/
+
+# Pre-commit setup
+pre-commit-install:
+	@echo "Installing pre-commit hooks..."
+	$(PIP) install -q pre-commit
+	pre-commit install
+
+pre-commit-run:
+	@echo "Running pre-commit hooks on all files..."
+	pre-commit run --all-files
+
+# Code quality metrics
+quality-check:
+	@echo "Running comprehensive code quality checks..."
+	@echo "=== Black ==="
+	black --check $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/ 2>/dev/null || echo "Black: FAILED"
+	@echo "=== isort ==="
+	isort --check-only $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/ 2>/dev/null || echo "isort: FAILED"
+	@echo "=== flake8 ==="
+	flake8 $(SRC_DIR)/ tests/ pillar2/ pillar3/ pillar4/ 2>/dev/null || echo "flake8: FAILED"
+	@echo "=== mypy ==="
+	mypy $(SRC_DIR)/ pillar2/ pillar3/ pillar4/ 2>/dev/null || echo "mypy: FAILED"
+	@echo "=== Quality check complete ==="
+
+# Install development dependencies
+install-dev:
+	$(PIP) install -r requirements-all.txt
+	$(PIP) install -e ".[dev]"
+
+# Install pre-commit hooks
+install-hooks:
+	$(PIP) install -q pre-commit
+	pre-commit install
+	pre-commit autoupdate
 
 # Database operations
 db-init:

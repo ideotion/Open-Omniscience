@@ -1,0 +1,174 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-omniscience"
+version = "0.02"
+description = "Global Intelligence Platform for Investigative Journalism with Local LLM Support"
+readme = "README.md"
+license = {text = "GPLv3"}
+requires-python = ">=3.12"
+authors = [
+    {name = "Ideotion", email = "open-omniscience@ideotion.com"}
+]
+keywords = ["intelligence", "journalism", "scraping", "llm", "analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "sqlalchemy>=2.0.25",
+    "psycopg2-binary>=2.9.9",
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.2",
+    "python-multipart>=0.0.6",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+]
+
+[project.optional-dependencies]
+llm = [
+    "ollama>=0.1.0",
+    "transformers>=4.38.0",
+    "sentence-transformers>=2.2.2",
+    "torch>=2.1.0",
+]
+dev = [
+    "black>=24.0.0",
+    "isort>=5.13.0",
+    "flake8>=6.1.0",
+    "mypy>=1.8.0",
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "bandit>=1.7.7",
+    "safety>=2.3.5",
+    "pre-commit>=3.6.0",
+]
+test = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "httpx>=0.26.0",
+]
+
+[project.scripts]
+open-omniscience = "src.api.main:main"
+
+[project.urls]
+Homepage = "https://github.com/ideotion/Open-Omniscience"
+Documentation = "https://github.com/ideotion/Open-Omniscience#readme"
+Repository = "https://github.com/ideotion/Open-Omniscience.git"
+Issues = "https://github.com/ideotion/Open-Omniscience/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "pillar2*", "pillar3*", "pillar4*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+    | migrations
+    | __pycache__
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["src", "pillar2", "pillar3", "pillar4"]
+known_third_party = [
+    "fastapi", "uvicorn", "sqlalchemy", "psycopg2", "requests", "beautifulsoup4",
+    "python_multipart", "python_jose", "passlib", "pydantic", "pyyaml", "feedparser",
+    "prometheus_client", "slowapi", "structlog", "numpy", "scikit_learn", "pandas",
+    "ollama", "transformers", "sentence_transformers", "torch", "bleach",
+    "concurrent", "pathlib", "datetime", "typing", "logging", "dataclasses",
+    "pytest", "pytest_mock", "httpx"
+]
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
+[tool.flake8]
+max-line-length = 100
+extend-exclude = [
+    "migrations/*",
+    "__pycache__/*",
+    ".venv/*",
+    "venv/*",
+    "node_modules/*",
+]
+ignore = [
+    "E203",  # Whitespace before ':' (conflicts with black)
+    "W503",  # Line break before binary operator (conflicts with black)
+    "E501",  # Line too long (handled by black)
+]
+per-file-ignores = [
+    "src/database/migrations/*: E302,E305",
+    "tests/*: E302,E305",
+]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["sqlalchemy.*", "fastapi.*", "pydantic.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --cov=src --cov-report=term-missing"
+testpaths = ["tests", "pillar2/tests", "pillar3/tests", "pillar4/tests"]
+
+[tool.bandit]
+skips = ["B101", "B301", "B303", "B403", "B608"]
+
+[tool.coverage.run]
+source = ["src", "pillar2", "pillar3", "pillar4"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+ignore_errors = true
+
+[tool.coverage.html]
+directory = "htmlcov"
