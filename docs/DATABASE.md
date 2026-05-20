@@ -56,16 +56,11 @@ Open Omniscience supports both **SQLite** (default) and **PostgreSQL** for data 
 ### Setup:
 
 #### 1. Install PostgreSQL
-- **Linux (Debian/Ubuntu)**:
+- **Debian-based Linux (Ubuntu, Debian, etc.)**:
   ```bash
   sudo apt update
   sudo apt install postgresql postgresql-contrib
   ```
-- **MacOS (Homebrew)**:
-  ```bash
-  brew install postgresql
-  ```
-- **Windows**: Download from [PostgreSQL.org](https://www.postgresql.org/download/).
 
 #### 2. Create a Database and User
 ```bash
