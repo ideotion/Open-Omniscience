@@ -58,6 +58,23 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/inst
 - ✅ Verifies each step and the final installation
 - ✅ Works in fully non-interactive mode
 
+### 🎨 GUI Installer (For Non-Technical Users)
+
+For a graphical installation experience that automatically detects your environment:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/launch_gui_installer.sh | bash
+```
+
+**Features:**
+- ✅ Automatic GUI detection (works in XEN, VMs, Docker with X11)
+- ✅ Automatic installation of `python3-tk` and `psutil` dependencies
+- ✅ Interactive 5-step installation wizard
+- ✅ System requirements check with visual feedback
+- ✅ Progress tracking and real-time logs
+- ✅ Creates application launcher for your OS app menu
+- ✅ Falls back to text-based installer if GUI not available
+
 **After installation:**
 ```bash
 # Navigate to the installation directory

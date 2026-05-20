@@ -65,18 +65,43 @@ class SystemChecker:
     def check_memory():
         """Check available memory in GB."""
         try:
+            import psutil
             mem = psutil.virtual_memory()
             return mem.total / (1024**3)
         except:
+            # Fallback: try to read from /proc/meminfo
+            try:
+                with open('/proc/meminfo', 'r') as f:
+                    for line in f:
+                        if line.startswith('MemTotal:'):
+                            # MemTotal:       8018840 kB
+                            total_kb = int(line.split()[1])
+                            return total_kb / (1024 * 1024)  # Convert KB to GB
+            except:
+                pass
             return 0
     
     @staticmethod
     def check_disk_space(path='/'):
         """Check available disk space in GB."""
         try:
+            import psutil
             disk = psutil.disk_usage(path)
             return disk.free / (1024**3)
         except:
+            # Fallback: use df command
+            try:
+                import subprocess
+                result = subprocess.run(['df', '-k', path], capture_output=True, text=True)
+                for line in result.stdout.split('\n'):
+                    if path in line or line.startswith('Filesystem'):
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        available_kb = int(parts[3])
+                        return available_kb / (1024 * 1024)  # Convert KB to GB
+            except:
+                pass
             return 0
     
     @staticmethod
@@ -981,6 +1006,8 @@ def main():
         import psutil
     except ImportError:
         print("Warning: psutil not available. Some system checks will be limited.")
+        print("Install it with: pip install psutil")
+        # Continue anyway - psutil is optional
     
     # Create and run GUI
     root = tk.Tk()
