@@ -310,9 +310,9 @@ class GUIInstaller:
         self.main_frame = ttk.Frame(self.root)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Navigation buttons
+        # Navigation buttons - pack at the bottom
         self.nav_frame = ttk.Frame(self.root)
-        self.nav_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.nav_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=10, pady=5)
         
         self.prev_button = ttk.Button(self.nav_frame, text="Back", command=self.prev_page)
         self.prev_button.pack(side=tk.LEFT, padx=5)
