@@ -774,6 +774,18 @@ class GUIInstaller:
             self.install_dependencies()
             self.update_progress(10, "Dependencies installed")
             
+            # Step 1.5: Install Docker (if not already installed)
+            if not (SystemChecker.check_docker() and SystemChecker.check_docker_compose()):
+                self.update_progress(12, "Installing Docker...")
+                self.log_message("Installing Docker Engine and Docker Compose...")
+                if not self.install_docker():
+                    self.log_message("Warning: Docker installation failed. Services will not be started automatically.")
+                    self.config['start_services'] = False
+                self.update_progress(15, "Docker installed")
+            else:
+                self.log_message("Docker and Docker Compose are already installed")
+                self.update_progress(15, "Docker verified")
+            
             # Step 2: Clone repository
             self.update_progress(20, "Cloning repository...")
             self.log_message("Cloning Open-Omniscience repository...")
@@ -899,6 +911,58 @@ class GUIInstaller:
             self.log_message(f"Warning: Ollama installation may have failed: {result.stderr}")
         else:
             self.log_message("Ollama installed successfully")
+    
+    def install_docker(self):
+        """Install Docker Engine and Docker Compose plugin."""
+        if SystemChecker.check_docker() and SystemChecker.check_docker_compose():
+            self.log_message("Docker and Docker Compose are already installed")
+            return True
+        
+        self.log_message("Installing Docker Engine and Docker Compose...")
+        
+        # Remove old docker-compose if it exists (conflicts with plugin)
+        if SystemChecker.check_command('docker-compose'):
+            self.log_message("Removing old docker-compose standalone...")
+            CommandRunner.run_command("sudo apt-get remove -y docker-compose", 
+                                      check=False, capture=True, text=True)
+        
+        # Install Docker Engine
+        self.log_message("Installing Docker Engine...")
+        commands = [
+            # Remove old versions
+            "sudo apt-get remove -y docker docker-engine docker.io containerd runc",
+            # Install dependencies
+            "sudo apt-get update",
+            "sudo apt-get install -y ca-certificates curl gnupg",
+            # Add Docker's official GPG key
+            "sudo install -m 0755 -d /etc/apt/keyrings",
+            'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg',
+            # Set up the repository
+            'sudo chmod a+r /etc/apt/keyrings/docker.gpg',
+            'echo "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null',
+            # Install Docker Engine
+            "sudo apt-get update",
+            "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+        ]
+        
+        for cmd in commands:
+            self.log_message(f"Running: {cmd}")
+            result = CommandRunner.run_command(cmd, check=False, capture=True, text=True)
+            if result.returncode != 0:
+                self.log_message(f"Warning: {result.stderr}")
+        
+        # Verify installation
+        if SystemChecker.check_docker() and SystemChecker.check_docker_compose():
+            self.log_message("Docker and Docker Compose installed successfully!")
+            # Add current user to docker group to avoid sudo
+            self.log_message("Adding current user to docker group...")
+            CommandRunner.run_command(f"sudo usermod -aG docker {os.getenv('USER', 'root')}", 
+                                      check=False, capture=True, text=True)
+            self.log_message("Note: You may need to log out and back in for docker group changes to take effect.")
+            return True
+        else:
+            self.log_message("Warning: Docker installation may have failed. Please install manually.")
+            return False
     
     def install_python_deps(self):
         """Install Python dependencies."""
