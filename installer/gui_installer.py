@@ -995,6 +995,12 @@ StartupWMClass=Open-Omniscience
     
     def start_services(self, open_browser=True):
         """Start Open-Omniscience services and optionally open browser."""
+        # Check if Docker Compose is available
+        if not SystemChecker.check_docker_compose():
+            self.log_message("Error: Docker Compose is not installed. Cannot start services.")
+            self.log_message("Please install Docker and Docker Compose first.")
+            return False
+        
         os.chdir(self.config['install_dir'])
         
         # Start with Docker Compose
@@ -1137,6 +1143,11 @@ StartupWMClass=Open-Omniscience
     
     def launch_application(self):
         """Launch the application and open browser when ready."""
+        # Check if Docker Compose is available
+        if not SystemChecker.check_docker_compose():
+            self.launch_status_label.config(text="Error: Docker Compose is not installed. Please install Docker first.")
+            return
+        
         os.chdir(self.config['install_dir'])
         self.launch_status_label.config(text="Starting services...")
         self.root.update_idletasks()
