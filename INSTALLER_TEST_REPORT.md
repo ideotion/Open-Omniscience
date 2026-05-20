@@ -277,15 +277,19 @@ All requested features have been successfully implemented and tested:
 - [x] Install script updated to be Debian-only
 - [x] Test suite created and passing
 - [x] All files committed to GitHub
-- [x] All changes pushed to origin/0.01
+- [x] All changes pushed to origin/0.02
 
 ---
 
 ## 📚 References
 
 - **Repository**: https://github.com/ideotion/Open-Omniscience
-- **Branch**: 0.01
+- **Branch**: 0.02
 - **Commits**:
+  - `c14d6df` - Fix: Improve error handling in smart launcher for clone failures
+  - `6103cbd` - Fix: Rewrite requirements-core.txt cleanly and add smart GUI launcher
+  - `60d318d` - Add smart GUI installer launcher with automatic dependency handling
+  - `ef55eb9` - Add comprehensive test report for GUI installer and Debian-only support
   - `4d20e23` - Fix: Remove remaining macOS/Windows references and add test suite
   - `535bbc6` - Fix: Update Linux reference to Debian-based Linux
   - `86d119d` - Add GUI installer for Debian-only support and update documentation
