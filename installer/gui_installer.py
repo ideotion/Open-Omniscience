@@ -963,18 +963,18 @@ StartupWMClass=Open-Omniscience
         
         # Header
         header = ttk.Label(frame, text="Installation Complete!", style='Header.TLabel')
-        header.pack(pady=20)
+        header.pack(pady=10)
         
         # Logo
         logo_frame = ttk.Frame(frame)
-        logo_frame.pack(fill=tk.X, pady=10)
-        logo_label = ttk.Label(logo_frame, text=self.LOGO, font=('Courier', 8), background='#f0f0f0', anchor=tk.CENTER)
+        logo_frame.pack(fill=tk.X, pady=5)
+        logo_label = ttk.Label(logo_frame, text=self.LOGO, font=('Courier', 7), background='#f0f0f0', anchor=tk.CENTER)
         logo_label.pack()
         
         # Success message
         success = ttk.Label(frame, text="✓ Open-Omniscience has been successfully installed!", 
-                           style='Success.TLabel', font=('Arial', 12))
-        success.pack(pady=20)
+                           style='Success.TLabel', font=('Arial', 11))
+        success.pack(pady=10)
         
         # Status label for launch feedback
         self.launch_status_label = ttk.Label(frame, text="", background='#f0f0f0', foreground='blue')
@@ -982,9 +982,9 @@ StartupWMClass=Open-Omniscience
         
         # Summary
         summary_frame = ttk.Frame(frame)
-        summary_frame.pack(fill=tk.X, pady=20)
+        summary_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Label(summary_frame, text="Installation Summary:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 10))
+        ttk.Label(summary_frame, text="Installation Summary:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 5))
         
         summary_items = [
             ("Installation Directory", self.config['install_dir']),
@@ -995,13 +995,13 @@ StartupWMClass=Open-Omniscience
         ]
         
         for label, value in summary_items:
-            ttk.Label(summary_frame, text=f"  {label}: {value}", background='#f0f0f0').pack(anchor=tk.W, padx=20, pady=2)
+            ttk.Label(summary_frame, text=f"  {label}: {value}", background='#f0f0f0').pack(anchor=tk.W, padx=20, pady=1)
         
         # Next steps
         next_steps_frame = ttk.Frame(frame)
-        next_steps_frame.pack(fill=tk.X, pady=20)
+        next_steps_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Label(next_steps_frame, text="Next Steps:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 10))
+        ttk.Label(next_steps_frame, text="Next Steps:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 5))
         
         steps = [
             "1. Access the application at: http://localhost:8000",
@@ -1011,11 +1011,11 @@ StartupWMClass=Open-Omniscience
         ]
         
         for step in steps:
-            ttk.Label(next_steps_frame, text=f"  {step}", background='#f0f0f0').pack(anchor=tk.W, padx=20, pady=2)
+            ttk.Label(next_steps_frame, text=f"  {step}", background='#f0f0f0').pack(anchor=tk.W, padx=20, pady=1)
         
         # Buttons
         button_frame = ttk.Frame(frame)
-        button_frame.pack(pady=20)
+        button_frame.pack(pady=15)
         
         ttk.Button(button_frame, text="Open Documentation", 
                   command=lambda: webbrowser.open_new("https://github.com/ideotion/Open-Omniscience")).pack(side=tk.LEFT, padx=10)
@@ -1032,13 +1032,55 @@ StartupWMClass=Open-Omniscience
         os.chdir(self.config['install_dir'])
         self.launch_status_label.config(text="Starting services...")
         self.root.update_idletasks()
-        CommandRunner.run_command("docker-compose up -d --build")
-        # Start services and open browser when ready
-        # Don't destroy the window - let the health check open the browser
-        self.start_services(open_browser=True)
-        # Show a message that services are starting
-        self.launch_status_label.config(text="Please wait while services start... The browser will open automatically when ready.")
+        
+        # Start services with docker-compose
+        result = CommandRunner.run_command("docker-compose up -d --build", 
+                                          check=False, capture=True, text=True)
+        if result.returncode != 0:
+            self.launch_status_label.config(text=f"Failed to start services: {result.stderr}")
+            return
+        
+        self.launch_status_label.config(text="Services started. Waiting for application to be ready...")
         self.root.update_idletasks()
+        
+        # Check if service is ready with non-blocking retry
+        self.check_service_ready_from_complete(open_browser=True, attempt=0)
+    
+    def check_service_ready_from_complete(self, open_browser, attempt):
+        """Check if service is ready from complete page, updates status label."""
+        max_attempts = 24  # 120 seconds / 5 seconds per attempt
+        
+        try:
+            # Check if the web service is responding
+            import requests
+            try:
+                response = requests.get("http://localhost:8000", timeout=5)
+                if response.status_code in [200, 301, 302, 307, 308]:
+                    self.launch_status_label.config(text="Application is ready!")
+                    if open_browser:
+                        import webbrowser
+                        webbrowser.open_new("http://localhost:8000")
+                    return
+            except requests.exceptions.RequestException:
+                pass
+        except ImportError:
+            # requests not available, use curl
+            result = CommandRunner.run_command("curl -s -o /dev/null -w '%{http_code}' http://localhost:8000",
+                                              check=False, capture=True, text=True)
+            if result.returncode == 0 and '200' in result.stdout:
+                self.launch_status_label.config(text="Application is ready!")
+                if open_browser:
+                    import webbrowser
+                    webbrowser.open_new("http://localhost:8000")
+                return
+        
+        # Not ready yet, schedule next check
+        if attempt < max_attempts - 1:
+            self.launch_status_label.config(text=f"Waiting... (attempt {attempt + 1}/{max_attempts})")
+            self.root.update_idletasks()
+            self.root.after(5000, lambda: self.check_service_ready_from_complete(open_browser, attempt + 1))
+        else:
+            self.launch_status_label.config(text="Warning: Application did not become ready. Check if services are running at http://localhost:8000")
     
     def show_welcome_page(self):
         """Show the welcome page initially."""
