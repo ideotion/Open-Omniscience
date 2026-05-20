@@ -1047,7 +1047,7 @@ Type=Application
 Name=Open-Omniscience
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd {install_dir} && {dc_cmd} up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
+Exec=bash -c "cd {install_dir} && {dc_cmd} -f {install_dir}/docker-compose.yml up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
 StartupWMClass=Open-Omniscience
@@ -1077,15 +1077,31 @@ StartupWMClass=Open-Omniscience
         
         os.chdir(self.config['install_dir'])
         
+        # Check if docker-compose.yml exists
+        compose_file = os.path.join(self.config['install_dir'], 'docker-compose.yml')
+        if not os.path.exists(compose_file):
+            self.log_message(f"Error: docker-compose.yml not found at {compose_file}")
+            self.log_message("Cannot start services without a Docker Compose configuration file.")
+            return False
+        
         # Start with Docker Compose
         self.log_message("Starting services with Docker Compose...")
-        result = CommandRunner.run_docker_compose("up -d --build", 
+        result = CommandRunner.run_docker_compose(f"-f {compose_file} up -d --build", 
                                                   check=False, capture=True, text=True)
         if result.returncode != 0:
             self.log_message(f"Warning: Failed to start services: {result.stderr}")
             # Try to see what containers are running
             result2 = CommandRunner.run_docker_compose("ps", check=False, capture=True, text=True)
             self.log_message(f"Container status:\n{result2.stdout}")
+            # Also check if the file is readable
+            if os.path.exists(compose_file):
+                self.log_message(f"docker-compose.yml exists at: {compose_file}")
+                try:
+                    with open(compose_file, 'r') as f:
+                        content = f.read()
+                    self.log_message(f"docker-compose.yml is readable ({len(content)} bytes)")
+                except Exception as e:
+                    self.log_message(f"Error reading docker-compose.yml: {e}")
             return False
         
         # Wait a bit for containers to initialize
@@ -1223,11 +1239,18 @@ StartupWMClass=Open-Omniscience
             return
         
         os.chdir(self.config['install_dir'])
+        
+        # Check if docker-compose.yml exists
+        compose_file = os.path.join(self.config['install_dir'], 'docker-compose.yml')
+        if not os.path.exists(compose_file):
+            self.launch_status_label.config(text=f"Error: docker-compose.yml not found at {compose_file}")
+            return
+        
         self.launch_status_label.config(text="Starting services...")
         self.root.update_idletasks()
         
         # Start services with docker-compose
-        result = CommandRunner.run_docker_compose("up -d --build", 
+        result = CommandRunner.run_docker_compose(f"-f {compose_file} up -d --build", 
                                                   check=False, capture=True, text=True)
         if result.returncode != 0:
             self.launch_status_label.config(text=f"Failed to start services: {result.stderr}")
@@ -1300,7 +1323,7 @@ Type=Application
 Name={name}
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd {install_dir} && {dc_cmd} up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
+Exec=bash -c "cd {install_dir} && {dc_cmd} -f {install_dir}/docker-compose.yml up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
 StartupWMClass={name}
