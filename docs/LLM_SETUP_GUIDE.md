@@ -17,14 +17,14 @@ This guide provides step-by-step instructions for setting up Local LLM (Large La
 ### System Requirements
 
 #### Minimum (Core Features Only)
-- **Operating System:** Linux (recommended), macOS, or Windows (WSL)
+- **Operating System:** Debian-based Linux (Ubuntu, Debian, etc.)
 - **CPU:** 2 cores
 - **RAM:** 4GB
 - **Storage:** 10GB free disk space
 - **Python:** 3.8+
 
 #### Recommended (With LLM Support)
-- **Operating System:** Linux (Ubuntu 20.04+ recommended)
+- **Operating System:** Debian-based Linux (Ubuntu 20.04+ recommended)
 - **CPU:** 8 cores
 - **RAM:** 16GB
 - **Storage:** 50GB+ free disk space (for 3-4 models)
@@ -32,7 +32,7 @@ This guide provides step-by-step instructions for setting up Local LLM (Large La
 - **Python:** 3.8+
 
 #### High-End (Full LLM Capabilities)
-- **Operating System:** Linux
+- **Operating System:** Debian-based Linux (Ubuntu, Debian, etc.)
 - **CPU:** 16+ cores
 - **RAM:** 32GB+
 - **Storage:** 100GB+ free disk space (for multiple large models)
@@ -128,9 +128,7 @@ cd Open-Omniscience
 python -m venv venv
 
 # Activate it
-source venv/bin/activate  # Linux/macOS
-# OR
-.\venv\Scripts\activate   # Windows
+source venv/bin/activate
 ```
 
 #### Step 3: Install Core Dependencies
@@ -145,25 +143,14 @@ pip install -r requirements-llm.txt
 
 #### Step 5: Install Ollama
 
-Choose the appropriate command for your operating system:
+For Debian-based Linux systems:
 
-**Linux (Debian/Ubuntu):**
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
-**macOS (Homebrew):**
-```bash
-brew install ollama
-```
-
-**Windows (PowerShell as Administrator):**
-```powershell
-irm https://ollama.com/install.ps1 | iex
-```
-
 **Manual Installation:**
-If the above methods don't work, download Ollama manually from [https://ollama.com](https://ollama.com)
+If the above method doesn't work, download Ollama manually from [https://ollama.com](https://ollama.com)
 
 #### Step 6: Start Ollama Server
 ```bash
@@ -293,8 +280,7 @@ ollama list
 ### Model Storage
 
 Ollama stores models in:
-- **Linux/macOS:** `~/.ollama/models/`
-- **Windows:** `%USERPROFILE%\.ollama\models\`
+- **Debian-based Linux:** `~/.ollama/models/`
 
 To check disk usage:
 ```bash
@@ -487,7 +473,7 @@ OLLAMA_HOST=0.0.0.0:11435 ollama serve
 
 **Solution:**
 ```bash
-# Use sudo (Linux/macOS)
+# Use sudo for Debian-based Linux
 sudo curl -fsSL https://ollama.com/install.sh | sh
 
 # Or fix permissions

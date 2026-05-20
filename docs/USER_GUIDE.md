@@ -38,7 +38,7 @@ Open Omniscience is an **open-source global intelligence platform** designed to 
 ## 💻 Installation
 
 ### Prerequisites
-- **Operating System:** Linux (recommended), macOS, or Windows (WSL).
+- **Operating System:** Debian-based Linux (Ubuntu, Debian, etc.)
 - **Python:** 3.10 or higher.
 - **Hardware:** At least 4GB RAM and 10GB free disk space (for large datasets).
 
@@ -53,9 +53,7 @@ cd Open-Omniscience
 #### 2. Set Up a Virtual Environment
 ```bash
 python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# OR
-.\venv\Scripts\activate   # Windows
+source venv/bin/activate
 ```
 
 #### 3. Install Dependencies

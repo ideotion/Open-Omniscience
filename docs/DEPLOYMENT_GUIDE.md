@@ -1128,13 +1128,9 @@ scrot -s screenshot_area.png
 ```
 
 **Mac:**
-- Press `Cmd + Shift + 4` to select area
-- Press `Cmd + Shift + 3` for full screen
-- Screenshots save to Desktop by default
-
-**Windows:**
-- Press `Win + Shift + S` for snipping tool
-- Press `PrtScn` for full screen (saves to clipboard)
+- Press `Shift + PrtScn` to select area
+- Press `PrtScn` for full screen (saves to Pictures/Screenshots)
+- Screenshots save to Pictures/Screenshots by default
 
 ### 🎨 Expected Screens
 

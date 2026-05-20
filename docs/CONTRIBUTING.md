@@ -114,9 +114,7 @@ Help improve the **article intelligence tools** for investigative journalism:
 2. **Set up a virtual environment**:
    ```bash
    python -m venv venv
-   source venv/bin/activate  # Linux/macOS
-   # OR
-   .\venv\Scripts\activate   # Windows
+   source venv/bin/activate
    ```
 3. **Install dependencies**:
    ```bash

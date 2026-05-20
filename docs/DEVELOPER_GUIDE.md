@@ -107,9 +107,7 @@ cd Open-Omniscience
 #### 2. Set Up a Virtual Environment
 ```bash
 python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# OR
-.\venv\Scripts\activate   # Windows
+source venv/bin/activate
 ```
 
 #### 3. Install Dependencies

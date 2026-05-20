@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/inst
 ```
 
 **What this installs:**
-- ✅ Automatically detects your OS (Linux, macOS, Windows/WSL)
+- ✅ Automatically detects your Debian-based system
 - ✅ Installs all prerequisites (curl, git, Docker, Docker Compose, Ollama)
 - ✅ Clones the Open-Omniscience repository to `~/open-omniscience`
 - ✅ Installs all Python dependencies (core + all pillars + LLM)
@@ -120,46 +120,6 @@ sudo dpkg -i dist/open-omniscience_0.02_all.deb
 sudo apt-get install -f
 ```
 
-### 📦 AppImage Installation
-
-For a portable installation that works on most Linux distributions:
-
-```bash
-# Download the AppImage
-wget https://github.com/ideotion/Open-Omniscience/raw/main/packages/appimage/OpenOmniscience-0.02-x86_64.AppImage
-
-# Make it executable
-chmod +x OpenOmniscience-0.02-x86_64.AppImage
-
-# Run it
-./OpenOmniscience-0.02-x86_64.AppImage
-```
-
-**What this provides:**
-- ✅ Portable - runs on any Linux system without installation
-- ✅ Self-contained - includes all dependencies
-- ✅ No root access required
-- ✅ Easy to update - just replace the file
-
-**After download:**
-```bash
-# Make executable (one-time)
-chmod +x OpenOmniscience-0.02-x86_64.AppImage
-
-# Run from anywhere
-./OpenOmniscience-0.02-x86_64.AppImage
-
-# Or create a desktop shortcut
-ln -s $(pwd)/OpenOmniscience-0.02-x86_64.AppImage ~/Desktop/OpenOmniscience
-```
-
-**Alternative:** If you've cloned the repository, you can build the AppImage yourself:
-```bash
-chmod +x package/appimage/OpenOmniscience.AppImageBuilder
-./package/appimage/OpenOmniscience.AppImageBuilder
-# The AppImage will be created in the dist/ directory
-```
-
 ### Manual Installation with Docker
 
 If you prefer to install manually:
@@ -194,9 +154,7 @@ cd Open-Omniscience
 
 # Set up virtual environment
 python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# OR
-.\venv\Scripts\activate   # Windows
+source venv/bin/activate
 
 # Install core dependencies (minimal)
 pip install -r requirements-core.txt
@@ -337,11 +295,7 @@ python scripts/setup_llm.py --all
 
 ```bash
 # 1. Install Ollama
-# Linux/macOS:
 curl -fsSL https://ollama.com/install.sh | sh
-
-# Windows (PowerShell as admin):
-irm https://ollama.com/install.ps1 | iex
 
 # 2. Start Ollama server
 ollama serve
@@ -446,6 +400,7 @@ For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 | **LLM Models** | Llama, Mistral, Phi, Qwen, Gemma | Text processing |
 | **Frontend** | HTML5, CSS, JavaScript | User interface |
 | **Containerization** | Docker | Deployment and portability |
+| **Platform** | Debian-based Linux | Primary supported platform |
 
 ---
 
@@ -453,7 +408,7 @@ For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 
 ### Prerequisites
 
-- **Operating System:** Linux (recommended), macOS, or Windows (WSL)
+- **Operating System:** Debian-based Linux (Ubuntu, Debian, etc.)
 - **Python:** 3.8+ (required for LLM support)
 - **Dependencies:** See [requirements.txt](requirements.txt)
 - **LLM Dependencies:** See [requirements-llm.txt](requirements-llm.txt)
@@ -472,9 +427,7 @@ cd Open-Omniscience
 #### 2. Set Up Virtual Environment
 ```bash
 python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# OR
-.\venv\Scripts\activate   # Windows
+source venv/bin/activate
 ```
 
 #### 3. Install Dependencies
@@ -714,21 +667,21 @@ For complete API documentation, see [API Documentation](#api-endpoints) (if avai
 - **CPU:** 2 cores
 - **RAM:** 4GB
 - **Storage:** 10GB
-- **OS:** Linux, macOS, or Windows (WSL)
+- **OS:** Debian-based Linux (Ubuntu, Debian, etc.)
 
 #### Recommended (With LLM Support)
 - **CPU:** 8 cores
 - **RAM:** 16GB
 - **Storage:** 50GB (for 3-4 models)
 - **GPU:** NVIDIA with 8GB VRAM (recommended for better performance)
-- **OS:** Linux (recommended), macOS, or Windows (WSL)
+- **OS:** Debian-based Linux (Ubuntu, Debian, etc.)
 
 #### High-End (Full LLM Capabilities)
 - **CPU:** 16+ cores
 - **RAM:** 32GB+
 - **Storage:** 100GB+ (for multiple large models)
 - **GPU:** NVIDIA with 24GB+ VRAM
-- **OS:** Linux
+- **OS:** Debian-based Linux (Ubuntu, Debian, etc.)
 
 ### Performance Optimizations
 
