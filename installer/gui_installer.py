@@ -117,7 +117,18 @@ class SystemChecker:
     @staticmethod
     def check_docker_compose():
         """Check Docker Compose installation."""
-        return SystemChecker.check_command('docker-compose') or SystemChecker.check_command('docker')
+        # Check for docker-compose standalone
+        if SystemChecker.check_command('docker-compose'):
+            return True
+        # Check for docker compose plugin
+        if SystemChecker.check_command('docker'):
+            try:
+                result = subprocess.run(['docker', 'compose', 'version'], 
+                                      capture_output=True, text=True, timeout=5)
+                return result.returncode == 0
+            except:
+                pass
+        return False
     
     @staticmethod
     def check_git():
