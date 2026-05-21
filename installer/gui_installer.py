@@ -282,7 +282,7 @@ class GUIInstaller:
         # Configuration
         self.config = {
             'install_dir': InstallerConfig.INSTALL_DIR,
-            'install_ollama': True,
+            'install_ollama': False,
             'database_type': InstallerConfig.DEFAULT_DB,
             'start_services': True,
             'create_launcher': True,
