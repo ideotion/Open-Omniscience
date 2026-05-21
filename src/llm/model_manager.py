@@ -182,6 +182,12 @@ class ModelManager:
         if self.is_model_downloaded(model_id):
             return True
         
+        # Validate model_id to prevent command injection
+        # Only allow alphanumeric, hyphens, underscores, and dots
+        import re
+        if not re.match(r'^[a-zA-Z0-9\-_.]+$', model_id):
+            raise ModelDownloadError(model_id, "Invalid model ID - contains disallowed characters")
+        
         try:
             # Use ollama pull command
             cmd = ["ollama", "pull", model_id]

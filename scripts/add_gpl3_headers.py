@@ -76,7 +76,7 @@ GPL3_MAKEFILE_HEADER = '''# Open Omniscience - Global Intelligence Platform for 
 
 '''
 
-# GPLv3 header for YAML/Docker files
+# GPLv3 header for YAML files
 GPL3_YAML_HEADER = '''# Open Omniscience - Global Intelligence Platform for Investigative Journalism
 #
 # Copyright (C) 2026 Ideotion
@@ -182,19 +182,19 @@ def process_makefiles(root_dir):
 
 
 def process_yaml_files(root_dir):
-    """Process YAML and Docker files."""
-    print("\nProcessing YAML and Docker files...")
+    """Process YAML files."""
+    print("\nProcessing YAML files...")
     count = 0
-    yaml_extensions = ['.yml', '.yaml', '.dockerfile']
+    yaml_extensions = ['.yml', '.yaml']
     for root, dirs, files in os.walk(root_dir):
         if '.git' in root or 'archive' in root:
             continue
         for file in files:
-            if any(file.lower().endswith(ext) for ext in yaml_extensions) or file == 'Dockerfile':
+            if any(file.lower().endswith(ext) for ext in yaml_extensions):
                 filepath = os.path.join(root, file)
                 if add_header_to_file(filepath, GPL3_YAML_HEADER):
                     count += 1
-    print(f"  Total YAML/Docker files updated: {count}")
+    print(f"  Total YAML files updated: {count}")
     return count
 
 

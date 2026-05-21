@@ -175,16 +175,6 @@ def main():
     print("\nProcessing YAML files...")
     total += process_directory(project_root, ['.yml', '.yaml'])
     
-    # Process Docker files
-    print("\nProcessing Docker files...")
-    docker_files = ['Dockerfile', 'Dockerfile.llm']
-    for df in docker_files:
-        df_path = os.path.join(project_root, df)
-        if os.path.exists(df_path):
-            if update_file_content(df_path):
-                total += 1
-                print(f"  ✓ {df_path}")
-    
     # Process other config files
     print("\nProcessing config files...")
     total += process_directory(project_root, ['.txt', '.conf', '.ini'])
