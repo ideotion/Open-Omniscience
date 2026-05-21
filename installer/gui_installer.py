@@ -14,6 +14,8 @@ Features:
 - Automatic service startup
 - Application launcher creation
 - Progress tracking
+- Feature availability check with color coding
+- On-demand dependency installation
 
 Author: Open-Omniscience Team
 License: GNU GPLv3
@@ -36,19 +38,22 @@ import json
 import webbrowser
 
 # Import modern theme
-import sys
-import os
-
-# Determine the correct import path
 try:
-    # Try package import first (when running as module)
     from installer.modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
 except ImportError:
-    # Fallback to direct import (when running script directly)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     if script_dir not in sys.path:
         sys.path.insert(0, script_dir)
     from modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
+
+# Import feature checker
+try:
+    from installer.feature_checker import FeatureChecker
+except ImportError:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    from feature_checker import FeatureChecker
 
 
 class SystemChecker:
@@ -56,105 +61,80 @@ class SystemChecker:
     
     @staticmethod
     def check_root():
-        """Check if running as root."""
         return os.geteuid() == 0
     
     @staticmethod
     def check_debian():
-        """Check if running on Debian-based system."""
         try:
             with open('/etc/os-release', 'r') as f:
                 content = f.read()
-                if 'debian' in content.lower() or 'ubuntu' in content.lower():
-                    return True
+                return 'debian' in content.lower() or 'ubuntu' in content.lower()
         except FileNotFoundError:
-            pass
-        return False
+            return False
     
     @staticmethod
     def check_architecture():
-        """Check system architecture."""
         return platform.machine()
     
     @staticmethod
     def check_memory():
-        """Check available memory in GB."""
         try:
-            import psutil
             mem = psutil.virtual_memory()
             return mem.total / (1024**3)
         except:
-            # Fallback: try to read from /proc/meminfo
             try:
                 with open('/proc/meminfo', 'r') as f:
                     for line in f:
                         if line.startswith('MemTotal:'):
-                            # MemTotal:       8018840 kB
-                            total_kb = int(line.split()[1])
-                            return total_kb / (1024 * 1024)  # Convert KB to GB
+                            return int(line.split()[1]) / (1024 * 1024)
             except:
-                pass
-            return 0
+                return 0
     
     @staticmethod
     def check_disk_space(path='/'):
-        """Check available disk space in GB."""
         try:
-            import psutil
             disk = psutil.disk_usage(path)
             return disk.free / (1024**3)
         except:
-            # Fallback: use df command
             try:
-                import subprocess
                 result = subprocess.run(['df', '-k', path], capture_output=True, text=True)
                 for line in result.stdout.split('\n'):
                     if path in line or line.startswith('Filesystem'):
                         continue
                     parts = line.split()
                     if len(parts) >= 4:
-                        available_kb = int(parts[3])
-                        return available_kb / (1024 * 1024)  # Convert KB to GB
+                        return int(parts[3]) / (1024 * 1024)
             except:
-                pass
-            return 0
+                return 0
     
     @staticmethod
     def check_command(cmd):
-        """Check if command is available."""
         return shutil.which(cmd) is not None
     
-
     @staticmethod
     def check_git():
-        """Check Git installation."""
         return SystemChecker.check_command('git')
     
     @staticmethod
     def check_curl():
-        """Check cURL installation."""
         return SystemChecker.check_command('curl')
     
     @staticmethod
     def check_python():
-        """Check Python 3.8+ installation."""
         try:
             result = subprocess.run(['python3', '-c', 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'],
                                   capture_output=True, text=True)
-            version = result.stdout.strip()
-            major, minor = map(int, version.split('.'))
+            major, minor = map(int, result.stdout.strip().split('.'))
             return major >= 3 and minor >= 8
         except:
             return False
-    
+
     @staticmethod
     def check_ollama():
-        """Check Ollama installation."""
         return SystemChecker.check_command('ollama')
     
     @staticmethod
     def check_port(port):
-        """Check if port is available."""
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(('0.0.0.0', port))
@@ -164,26 +144,22 @@ class SystemChecker:
     
     @staticmethod
     def get_all_checks():
-        """Run all system checks and return results."""
-        checks = {
+        return {
             'is_debian': SystemChecker.check_debian(),
             'is_root': SystemChecker.check_root(),
             'architecture': SystemChecker.check_architecture(),
             'memory_gb': SystemChecker.check_memory(),
             'disk_space_gb': SystemChecker.check_disk_space(),
-                        'has_git': SystemChecker.check_git(),
+            'has_git': SystemChecker.check_git(),
             'has_curl': SystemChecker.check_curl(),
             'has_python': SystemChecker.check_python(),
             'has_ollama': SystemChecker.check_ollama(),
             'port_8000_available': SystemChecker.check_port(8000),
             'port_11434_available': SystemChecker.check_port(11434),
         }
-        return checks
 
 
 class InstallerConfig:
-    """Configuration for the installer."""
-    
     REPO_URL = "https://github.com/ideotion/Open-Omniscience.git"
     REPO_BRANCH = "0.02"
     INSTALL_DIR = os.path.expanduser("~/open-omniscience")
@@ -192,7 +168,6 @@ class InstallerConfig:
     
     @classmethod
     def get_config(cls):
-        """Get current configuration."""
         return {
             'repo_url': cls.REPO_URL,
             'repo_branch': cls.REPO_BRANCH,
@@ -203,48 +178,31 @@ class InstallerConfig:
 
 
 class CommandRunner:
-    """Run shell commands with output capture."""
-    
-    
-
     @staticmethod
     def run_command(cmd, check=False, capture=True, text=True, sudo=False):
-        """Run a command and return result."""
         if sudo and not SystemChecker.check_root():
             cmd = f"sudo {cmd}"
-        
         try:
-            result = subprocess.run(cmd, shell=True, check=check, 
-                                  capture_output=capture, text=text)
-            return result
+            return subprocess.run(cmd, shell=True, check=check, capture_output=capture, text=text)
         except subprocess.CalledProcessError as e:
             return e
     
-
     @staticmethod
     def run_async(cmd, output_callback=None, error_callback=None):
-        """Run command asynchronously with callbacks."""
         def run():
             try:
-                result = subprocess.run(cmd, shell=True, 
-                                      stdout=subprocess.PIPE, 
-                                      stderr=subprocess.PIPE,
-                                      text=True)
+                result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 if output_callback:
                     output_callback(result.stdout)
             except Exception as e:
                 if error_callback:
                     error_callback(str(e))
-        
         thread = threading.Thread(target=run, daemon=True)
         thread.start()
         return thread
 
 
 class GUIInstaller:
-    """Main GUI installer application."""
-    
-    # Open-Omniscience ASCII Logo
     LOGO = (
         "                                 .-=+*#%@@@@@@@@@@%#*+-:                                         \n"
         "                            .-+#@@@@@@%%@@@@@@@@@%%%@@@@@@#+:                                   \n"
@@ -273,13 +231,11 @@ class GUIInstaller:
         self.root.resizable(True, True)
         self.root.minsize(800, 700)
         
-        # Set window icon (if available)
         try:
             self.root.iconbitmap(default='installer/icon.xbm')
         except:
             pass
         
-        # Configuration
         self.config = {
             'install_dir': InstallerConfig.INSTALL_DIR,
             'install_ollama': False,
@@ -288,32 +244,33 @@ class GUIInstaller:
             'create_launcher': True,
         }
         
-        # System checks
         self.system_checks = SystemChecker.get_all_checks()
-        
-        # Next page target
         self.next_page_target = None
+        self.feature_availability = {}
         
-        # Setup UI
         self.setup_styles()
         self.create_widgets()
         self.show_welcome_page()
     
     def setup_styles(self):
-        """Setup modern custom styles."""
         self.style = ttk.Style()
         apply_modern_styles(self.style)
-        
-        # Configure root window background
         self.root.configure(background=ModernTheme.BG_PRIMARY)
+        
+        # Custom styles for feature buttons
+        self.style.configure('Available.TButton', 
+                            foreground=ModernTheme.TEXT_LIGHT,
+                            background=ModernTheme.SUCCESS,
+                            font=('Segoe UI', 10, 'bold'))
+        self.style.configure('Missing.TButton', 
+                            foreground=ModernTheme.TEXT_DARK,
+                            background=ModernTheme.WARNING,
+                            font=('Segoe UI', 10, 'bold'))
     
     def create_widgets(self):
-        """Create all widgets."""
-        # Main container
         self.main_frame = ttk.Frame(self.root, style='TFrame')
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
-        # Navigation buttons - pack at the bottom
         self.nav_frame = ttk.Frame(self.root, style='TFrame')
         self.nav_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=20, pady=10)
         
@@ -326,41 +283,32 @@ class GUIInstaller:
         self.cancel_button = ttk.Button(self.nav_frame, text="Cancel", command=self.cancel_installation, style='TButton')
         self.cancel_button.pack(side=tk.RIGHT, padx=5)
         
-        # Page containers
         self.pages = {}
         self.current_page = None
         self.page_history = []
     
     def show_page(self, page_name):
-        """Show a specific page."""
-        # Hide current page
         if self.current_page:
             self.current_page.pack_forget()
         
-        # Show new page
         if page_name not in self.pages:
             self.create_page(page_name)
         
         self.pages[page_name].pack(fill=tk.BOTH, expand=True)
         self.current_page = self.pages[page_name]
-        
-        # Update navigation
         self.update_navigation(page_name)
         
-        # Add to history
         if self.page_history and self.page_history[-1] != page_name:
             self.page_history.append(page_name)
         else:
             self.page_history = [page_name]
     
     def prev_page(self):
-        """Go to previous page."""
         if len(self.page_history) > 1:
             self.page_history.pop()
             self.show_page(self.page_history[-1])
     
     def next_page(self):
-        """Go to next page."""
         if self.next_page_target:
             if callable(self.next_page_target):
                 self.next_page_target()
@@ -368,58 +316,47 @@ class GUIInstaller:
                 self.show_page(self.next_page_target)
     
     def update_navigation(self, page_name):
-        """Update navigation buttons based on current page."""
         can_go_back = len(self.page_history) > 1
-        
-        # Hide all navigation buttons on installing and complete pages
-        # (these pages have their own buttons)
-        hide_nav = page_name in ['installing', 'complete']
+        hide_nav = page_name in ['installing', 'complete', 'features']
         
         self.prev_button.config(state=tk.DISABLED if hide_nav else (tk.NORMAL if can_go_back else tk.DISABLED))
-        
-        # Preserve the command when updating state
         current_command = self.next_button.cget('command')
         self.next_button.config(state=tk.DISABLED if hide_nav else tk.NORMAL, command=current_command)
         self.cancel_button.config(state=tk.DISABLED if hide_nav else tk.NORMAL)
     
     def cancel_installation(self):
-        """Cancel installation and exit."""
         if messagebox.askyesno("Cancel Installation", "Are you sure you want to cancel the installation?"):
             self.root.destroy()
     
     def create_page(self, page_name):
-        """Create a page based on name."""
         if page_name == 'welcome':
             self.pages['welcome'] = self.create_welcome_page()
         elif page_name == 'requirements':
             self.pages['requirements'] = self.create_requirements_page()
         elif page_name == 'options':
             self.pages['options'] = self.create_options_page()
+        elif page_name == 'features':
+            self.pages['features'] = self.create_features_page()
         elif page_name == 'installing':
             self.pages['installing'] = self.create_installing_page()
         elif page_name == 'complete':
             self.pages['complete'] = self.create_complete_page()
     
     def create_welcome_page(self):
-        """Create welcome page."""
         frame = ttk.Frame(self.main_frame)
         
-        # Header
         header = ttk.Label(frame, text="🌍 Open-Omniscience", style='Header.TLabel')
         header.pack(pady=20)
         
-        # Subtitle
         subtitle = ttk.Label(frame, text="Ethical Global Intelligence Platform", 
                            style='Subheader.TLabel', font=('Segoe UI', 14))
         subtitle.pack(pady=5)
         
-        # Description
         desc = ttk.Label(frame, 
                         text="A modern, open-source platform for investigative journalism with local LLM support.", 
                         style='TLabel', wraplength=700, justify=tk.CENTER)
         desc.pack(pady=20)
         
-        # Features
         features_label = ttk.Label(frame, text="✨ Key Features:", style='Subheader.TLabel')
         features_label.pack(anchor=tk.W, padx=20, pady=(10, 5))
         
@@ -435,998 +372,319 @@ class GUIInstaller:
         for icon, feature in features:
             feature_frame = ttk.Frame(frame)
             feature_frame.pack(anchor=tk.W, padx=40, pady=2)
-            
             icon_label = ttk.Label(feature_frame, text=icon, font=('Segoe UI', 12))
             icon_label.pack(side=tk.LEFT, padx=(0, 10))
-            
             text_label = ttk.Label(feature_frame, text=feature)
             text_label.pack(side=tk.LEFT)
         
-        # Platform notice
         platform_label = ttk.Label(frame, 
                                    text="📱 This installer is designed for Debian-based Linux systems only (Ubuntu, Debian, etc.)",
                                    style='Warning.TLabel', wraplength=700, justify=tk.CENTER)
         platform_label.pack(pady=20)
         
-        # Set next page target
         self.next_page_target = 'requirements'
-        
         return frame
     
     def create_requirements_page(self):
-        """Create system requirements check page."""
         frame = ttk.Frame(self.main_frame)
         
-        # Header
         header = ttk.Label(frame, text="🔧 System Requirements Check", style='Header.TLabel')
         header.pack(pady=20)
         
-        # Description
         desc = ttk.Label(frame, text="Checking your system for required dependencies...", wraplength=700)
         desc.pack(pady=10)
         
-        # Requirements list
         requirements_frame = ttk.Frame(frame)
         requirements_frame.pack(fill=tk.BOTH, expand=True, pady=10)
         
-        # Scrollable area
         canvas = tk.Canvas(requirements_frame)
         scrollbar = ttk.Scrollbar(requirements_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Check requirements
         self.check_system_requirements(scrollable_frame)
-        
-        # Set next page target
         self.next_page_target = 'options'
-        
         return frame
     
     def check_system_requirements(self, parent_frame):
-        """Check and display system requirements."""
         checks = self.system_checks
         
-        # Critical checks
         critical_checks = [
-            ('Debian-based System', checks.get('is_debian', False), True, 
-             "This installer only works on Debian-based Linux"),
-            ('Python 3.8+', checks.get('has_python', False), True,
-             "Required for running Open-Omniscience"),
-            ('Git', checks.get('has_git', False), True,
-             "Required for cloning the repository"),
-            ('cURL', checks.get('has_curl', False), True,
-             "Required for downloading dependencies"),
+            ('Debian-based System', checks.get('is_debian', False), True, "This installer only works on Debian-based Linux"),
+            ('Python 3.8+', checks.get('has_python', False), True, "Required for running Open-Omniscience"),
+            ('Git', checks.get('has_git', False), True, "Required for cloning the repository"),
+            ('cURL', checks.get('has_curl', False), True, "Required for downloading dependencies"),
         ]
         
-        # Recommended checks
         recommended_checks = [
-            ('Ollama', checks.get('has_ollama', False), False,
-             "Required for LLM features"),
+            ('Ollama', checks.get('has_ollama', False), False, "Required for LLM features"),
         ]
         
-        # System resource checks
         resource_checks = [
-            (f"Memory ({checks.get('memory_gb', 0):.1f} GB)", checks.get('memory_gb', 0) >= 4, False,
-             "Recommended: 4GB+ for core, 16GB+ for LLM"),
-            (f"Disk Space ({checks.get('disk_space_gb', 0):.1f} GB)", checks.get('disk_space_gb', 0) >= 10, False,
-             "Recommended: 10GB+ for core, 50GB+ for LLM"),
-            ('Port 8000 Available', checks.get('port_8000_available', False), False,
-             "Required for web interface"),
-            ('Port 11434 Available', checks.get('port_11434_available', False), False,
-             "Required for Ollama server"),
+            (f"Memory ({checks.get('memory_gb', 0):.1f} GB)", checks.get('memory_gb', 0) >= 4, False, "Recommended: 4GB+ for core, 16GB+ for LLM"),
+            (f"Disk Space ({checks.get('disk_space_gb', 0):.1f} GB)", checks.get('disk_space_gb', 0) >= 10, False, "Recommended: 10GB+ for core, 50GB+ for LLM"),
+            ('Port 8000 Available', checks.get('port_8000_available', False), False, "Required for web interface"),
+            ('Port 11434 Available', checks.get('port_11434_available', False), False, "Required for Ollama server"),
         ]
         
-        # Display critical checks
         ttk.Label(parent_frame, text="🔴 Critical Requirements:", style='Subheader.TLabel').pack(anchor=tk.W, pady=(0, 10))
-        
         all_critical_passed = True
         for name, passed, critical, description in critical_checks:
             status = get_status_icon('success' if passed else 'error')
             color = get_status_color('success' if passed else 'error')
-            label = ttk.Label(parent_frame, text=f"{status} {name}: {'OK' if passed else 'MISSING'}", 
-                             foreground=color, background=ModernTheme.BG_PRIMARY)
+            label = ttk.Label(parent_frame, text=f"{status} {name}: {'OK' if passed else 'MISSING'}", foreground=color, background=ModernTheme.BG_PRIMARY)
             label.pack(anchor=tk.W, padx=20, pady=2)
             ttk.Label(parent_frame, text=f"   {description}", background=ModernTheme.BG_PRIMARY).pack(anchor=tk.W, padx=40)
-            
             if critical and not passed:
                 all_critical_passed = False
         
-        # Display recommended checks
         ttk.Label(parent_frame, text="🟡 Recommended:", style='Subheader.TLabel').pack(anchor=tk.W, pady=(10, 10))
-        
         for name, passed, critical, description in recommended_checks:
             status = get_status_icon('success' if passed else 'pending')
             color = get_status_color('success' if passed else 'pending')
-            label = ttk.Label(parent_frame, text=f"{status} {name}: {'Installed' if passed else 'Not installed'}", 
-                             foreground=color, background=ModernTheme.BG_PRIMARY)
+            label = ttk.Label(parent_frame, text=f"{status} {name}: {'Installed' if passed else 'Not installed'}", foreground=color, background=ModernTheme.BG_PRIMARY)
             label.pack(anchor=tk.W, padx=20, pady=2)
             ttk.Label(parent_frame, text=f"   {description}", background=ModernTheme.BG_PRIMARY).pack(anchor=tk.W, padx=40)
         
-        # Display resource checks
         ttk.Label(parent_frame, text="💾 System Resources:", style='Subheader.TLabel').pack(anchor=tk.W, pady=(10, 10))
-        
         for name, passed, critical, description in resource_checks:
             status = get_status_icon('success' if passed else 'warning')
             color = get_status_color('success' if passed else 'warning')
-            label = ttk.Label(parent_frame, text=f"{status} {name}", 
-                             foreground=color, background=ModernTheme.BG_PRIMARY)
+            label = ttk.Label(parent_frame, text=f"{status} {name}", foreground=color, background=ModernTheme.BG_PRIMARY)
             label.pack(anchor=tk.W, padx=20, pady=2)
             ttk.Label(parent_frame, text=f"   {description}", background=ModernTheme.BG_PRIMARY).pack(anchor=tk.W, padx=40)
         
-        # Warning if critical checks failed
         if not all_critical_passed:
-            warning = ttk.Label(parent_frame, 
-                               text="⚠️  Some critical requirements are missing. Please install them before continuing.",
-                               style='Warning.TLabel', wraplength=700)
+            warning = ttk.Label(parent_frame, text="⚠️  Some critical requirements are missing. Please install them before continuing.", style='Warning.TLabel', wraplength=700)
             warning.pack(pady=20)
-            # Preserve the command when disabling
             current_command = self.next_button.cget('command')
             self.next_button.config(state=tk.DISABLED, command=current_command)
     
     def create_options_page(self):
-        """Create installation options page."""
         frame = ttk.Frame(self.main_frame)
         
-        # Header
         header = ttk.Label(frame, text="⚙️ Installation Options", style='Header.TLabel')
         header.pack(pady=20)
         
-        # Description
         desc = ttk.Label(frame, text="Please select your installation preferences:", wraplength=700)
         desc.pack(pady=10)
         
-        # Options frame
         options_frame = ttk.Frame(frame)
         options_frame.pack(fill=tk.BOTH, expand=True, pady=20)
         
         # Installation directory
         dir_frame = ttk.Frame(options_frame, style='TFrame')
         dir_frame.pack(fill=tk.X, pady=15)
-        
         ttk.Label(dir_frame, text="📁 Installation Directory:", style='Subheader.TLabel').pack(anchor=tk.W)
         self.dir_entry = ttk.Entry(dir_frame, width=50)
         self.dir_entry.insert(0, self.config['install_dir'])
         self.dir_entry.pack(fill=tk.X, padx=20, pady=5)
-        
         ttk.Button(dir_frame, text="Browse...", command=self.browse_directory).pack(anchor=tk.W, padx=20)
         
         # Ollama installation
         ollama_frame = ttk.Frame(options_frame, style='TFrame')
         ollama_frame.pack(fill=tk.X, pady=15)
-        
         self.ollama_var = tk.BooleanVar(value=self.config['install_ollama'])
-        ollama_check = ttk.Checkbutton(ollama_frame, text="🤖 Install Ollama for LLM support", 
-                                      variable=self.ollama_var, onvalue=True, offvalue=False,
-                                      style='TCheckbutton')
+        ollama_check = ttk.Checkbutton(ollama_frame, text="🤖 Install Ollama for LLM support", variable=self.ollama_var, onvalue=True, offvalue=False, style='TCheckbutton')
         ollama_check.pack(anchor=tk.W, padx=20)
-        
-        ttk.Label(ollama_frame, text="   Ollama enables local LLM features (text generation, translation, analysis)", 
-                 style='TLabel', foreground=ModernTheme.TEXT_SECONDARY, font=('Segoe UI', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
+        ttk.Label(ollama_frame, text="   Ollama enables local LLM features (text generation, translation, analysis)", style='TLabel', foreground=ModernTheme.TEXT_SECONDARY, font=('Segoe UI', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
         
         # Database type
         db_frame = ttk.Frame(options_frame, style='TFrame')
         db_frame.pack(fill=tk.X, pady=15)
-        
         ttk.Label(db_frame, text="🗃️ Database Type:", style='Subheader.TLabel').pack(anchor=tk.W, padx=20)
-        
         self.db_var = tk.StringVar(value=self.config['database_type'])
-        
-        sqlite_radio = ttk.Radiobutton(db_frame, text="SQLite (Recommended for beginners)", 
-                                       variable=self.db_var, value='sqlite',
-                                       style='TRadiobutton')
+        sqlite_radio = ttk.Radiobutton(db_frame, text="SQLite (Recommended for beginners)", variable=self.db_var, value='sqlite', style='TRadiobutton')
         sqlite_radio.pack(anchor=tk.W, padx=40, pady=5)
-        
-        postgres_radio = ttk.Radiobutton(db_frame, text="PostgreSQL (Recommended for production)", 
-                                         variable=self.db_var, value='postgresql',
-                                         style='TRadiobutton')
+        postgres_radio = ttk.Radiobutton(db_frame, text="PostgreSQL (Recommended for production)", variable=self.db_var, value='postgresql', style='TRadiobutton')
         postgres_radio.pack(anchor=tk.W, padx=40, pady=5)
-        
-        ttk.Label(db_frame, text="   SQLite is file-based and requires no setup. PostgreSQL requires separate installation.", 
-                 style='TLabel', foreground=ModernTheme.TEXT_SECONDARY, font=('Segoe UI', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
+        ttk.Label(db_frame, text="   SQLite is file-based and requires no setup. PostgreSQL requires separate installation.", style='TLabel', foreground=ModernTheme.TEXT_SECONDARY, font=('Segoe UI', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
         
         # Start services
         services_frame = ttk.Frame(options_frame, style='TFrame')
         services_frame.pack(fill=tk.X, pady=15)
-        
         self.services_var = tk.BooleanVar(value=self.config['start_services'])
-        services_check = ttk.Checkbutton(services_frame, text="▶️ Start services automatically after installation", 
-                                        variable=self.services_var, onvalue=True, offvalue=False,
-                                        style='TCheckbutton')
+        services_check = ttk.Checkbutton(services_frame, text="▶️ Start services automatically after installation", variable=self.services_var, onvalue=True, offvalue=False, style='TCheckbutton')
         services_check.pack(anchor=tk.W, padx=20)
         
         # Create launcher
         launcher_frame = ttk.Frame(options_frame, style='TFrame')
         launcher_frame.pack(fill=tk.X, pady=15)
-        
         self.launcher_var = tk.BooleanVar(value=self.config['create_launcher'])
-        launcher_check = ttk.Checkbutton(launcher_frame, text="🎯 Create application launcher", 
-                                         variable=self.launcher_var, onvalue=True, offvalue=False,
-                                         style='TCheckbutton')
+        launcher_check = ttk.Checkbutton(launcher_frame, text="🎯 Create application launcher", variable=self.launcher_var, onvalue=True, offvalue=False, style='TCheckbutton')
         launcher_check.pack(anchor=tk.W, padx=20)
+        ttk.Label(launcher_frame, text="   Creates a .desktop file for easy launching from your application menu", style='TLabel', foreground=ModernTheme.TEXT_SECONDARY, font=('Segoe UI', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
         
-        ttk.Label(launcher_frame, text="   Creates a .desktop file for easy launching from your application menu", 
-                 style='TLabel', foreground=ModernTheme.TEXT_SECONDARY, font=('Segoe UI', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
+        # Features button
+        features_button_frame = ttk.Frame(options_frame, style='TFrame')
+        features_button_frame.pack(fill=tk.X, pady=15)
+        ttk.Button(features_button_frame, text="🎨 Manage Optional Features", command=lambda: self.show_page('features')).pack(pady=10)
+        ttk.Label(features_button_frame, text="   Review and install additional features (LLM, Text Analysis, Audio Processing, etc.)", style='TLabel', foreground=ModernTheme.TEXT_SECONDARY, font=('Segoe UI', 8), wraplength=700).pack(anchor=tk.W, padx=20)
         
-        # Set next page target
         self.next_page_target = self.start_installation
+        return frame
+    
+    def create_features_page(self):
+        """Create features selection page with color coding."""
+        frame = ttk.Frame(self.main_frame)
+        
+        header = ttk.Label(frame, text="🎨 Optional Features", style='Header.TLabel')
+        header.pack(pady=20)
+        
+        desc = ttk.Label(frame, text="Click on features below to manage their dependencies. Green = Ready, Orange = Needs Download", wraplength=700, justify=tk.CENTER)
+        desc.pack(pady=10)
+        
+        features_frame = ttk.Frame(frame)
+        features_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        canvas = tk.Canvas(features_frame)
+        scrollbar = ttk.Scrollbar(features_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        self.create_feature_buttons(scrollable_frame)
+        
+        back_frame = ttk.Frame(frame)
+        back_frame.pack(fill=tk.X, pady=20)
+        ttk.Button(back_frame, text="← Back to Options", command=lambda: self.show_page('options')).pack()
         
         return frame
     
+    def create_feature_buttons(self, parent_frame):
+        """Create buttons for each feature with color coding."""
+        venv_path = os.path.join(self.config.get('install_dir', ''), 'venv')
+        
+        for feature_name, feature_info in FeatureChecker.FEATURE_DEPENDENCIES.items():
+            is_available = FeatureChecker.check_feature_availability(feature_name, venv_path)
+            button_style = 'Available.TButton' if is_available else 'Missing.TButton'
+            
+            button_frame = ttk.Frame(parent_frame)
+            button_frame.pack(fill=tk.X, padx=20, pady=10)
+            
+            button = ttk.Button(
+                button_frame,
+                text=f"{feature_info.get('icon', '•')} {feature_name}",
+                style=button_style,
+                command=lambda fn=feature_name: self.handle_feature_click(fn),
+                wraplength=600,
+                anchor=tk.W
+            )
+            button.pack(fill=tk.X, pady=5)
+            
+            desc_label = ttk.Label(
+                button_frame,
+                text=f"   {feature_info['description']}",
+                background=ModernTheme.BG_PRIMARY,
+                foreground=ModernTheme.TEXT_SECONDARY,
+                font=('Segoe UI', 8),
+                wraplength=600,
+                anchor=tk.W
+            )
+            desc_label.pack(fill=tk.X, padx=25)
+            
+            self.feature_availability[feature_name] = is_available
+    
+    def handle_feature_click(self, feature_name):
+        """Handle click on a feature button."""
+        venv_path = os.path.join(self.config.get('install_dir', ''), 'venv')
+        is_available = FeatureChecker.check_feature_availability(feature_name, venv_path)
+        
+        if is_available:
+            messagebox.showinfo("Feature Available", f"✅ {feature_name} is ready to use!\n\nAll required dependencies are installed.")
+        else:
+            install_cmd = FeatureChecker.get_install_command(feature_name)
+            if install_cmd:
+                response = messagebox.askyesno("Install Dependencies", f"⚠️ {feature_name} requires additional dependencies.\n\nInstall command:\n{install_cmd}\n\nWould you like to install them now?")
+                if response:
+                    self.install_feature_dependencies(feature_name, install_cmd)
+            else:
+                messagebox.showwarning("Cannot Install", f"⚠️ No installation command available for {feature_name}.")
+    
+    def install_feature_dependencies(self, feature_name, install_command):
+        """Install dependencies for a feature."""
+        self.show_page('installing')
+        self.log_message(f"Installing dependencies for {feature_name}...")
+        self.log_message(f"Command: {install_command}")
+        self.update_progress(0, f"Installing {feature_name} dependencies...")
+        
+        def run_install():
+            try:
+                result = CommandRunner.run_command(install_command, check=True, capture=True, text=True)
+                if result.returncode == 0:
+                    self.log_message(f"✅ Successfully installed {feature_name} dependencies")
+                    venv_path = os.path.join(self.config.get('install_dir', ''), 'venv')
+                    if FeatureChecker.check_feature_availability(feature_name, venv_path):
+                        self.log_message(f"✅ {feature_name} is now ready to use!")
+                        messagebox.showinfo("Success", f"✅ {feature_name} dependencies installed successfully!")
+                    else:
+                        self.log_message(f"⚠️ Some dependencies may have failed to install")
+                        messagebox.showwarning("Partial Installation", f"⚠️ Some dependencies for {feature_name} may not have installed correctly.")
+                else:
+                    self.log_message(f"❌ Failed to install {feature_name} dependencies")
+                    self.log_message(result.stderr)
+                    messagebox.showerror("Installation Failed", f"❌ Failed to install dependencies for {feature_name}:\n\n{result.stderr}")
+            except Exception as e:
+                self.log_message(f"❌ Error installing {feature_name} dependencies: {str(e)}")
+                messagebox.showerror("Error", f"❌ Error installing dependencies: {str(e)}")
+            self.show_page('features')
+        
+        threading.Thread(target=run_install, daemon=True).start()
+    
     def browse_directory(self):
-        """Open directory browser."""
-        # Simple implementation - in a real app, use tkinter.filedialog
         dir_path = tk.filedialog.askdirectory(initialdir=self.config['install_dir'])
         if dir_path:
             self.dir_entry.delete(0, tk.END)
             self.dir_entry.insert(0, dir_path)
     
     def start_installation(self):
-        """Start the installation process."""
-        # Save configuration
         self.config['install_dir'] = self.dir_entry.get()
         self.config['install_ollama'] = self.ollama_var.get()
         self.config['database_type'] = self.db_var.get()
         self.config['start_services'] = self.services_var.get()
         self.config['create_launcher'] = self.launcher_var.get()
-        
-        # Show installing page
         self.show_page('installing')
-        
-        # Start installation in background
         self.root.after(100, self.run_installation)
     
     def create_installing_page(self):
-        """Create installation progress page."""
         frame = ttk.Frame(self.main_frame)
-        
-        # Header
         header = ttk.Label(frame, text="🚀 Installing Open-Omniscience", style='Header.TLabel')
         header.pack(pady=20)
-        
-        # Logo
         logo_frame = ttk.Frame(frame)
         logo_frame.pack(fill=tk.X, pady=10)
         logo_label = ttk.Label(logo_frame, text=self.LOGO, font=('Courier', 8), background='#f0f0f0', anchor=tk.CENTER)
         logo_label.pack()
-        
-        # Progress bar
         self.progress = ttk.Progressbar(frame, orient=tk.HORIZONTAL, length=700, mode='determinate')
         self.progress.pack(pady=20)
         self.progress['value'] = 0
-        
-        # Status label
         self.status_label = ttk.Label(frame, text="Starting installation...", background='#f0f0f0')
         self.status_label.pack(pady=10)
-        
-        # Log area
         log_frame = ttk.Frame(frame)
         log_frame.pack(fill=tk.BOTH, expand=True, pady=10)
-        
         self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, width=80, height=15)
         self.log_text.pack(fill=tk.BOTH, expand=True)
-        
-        # Add initial log message
         self.log_message("Open-Omniscience Installer v1.0")
         self.log_message(f"Installation directory: {self.config['install_dir']}")
         self.log_message(f"Install Ollama: {self.config['install_ollama']}")
         self.log_message(f"Database type: {self.config['database_type']}")
-        
         return frame
     
     def log_message(self, message):
-        """Add a message to the log."""
         self.log_text.insert(tk.END, message + "\n")
         self.log_text.see(tk.END)
         self.root.update_idletasks()
     
     def update_progress(self, value, status):
-        """Update progress bar and status."""
         self.progress['value'] = value
         self.status_label.config(text=status)
         self.root.update_idletasks()
     
     def run_installation(self):
-        """Run the installation steps."""
-        try:
-            # Step 1: Install dependencies
-            self.update_progress(0, "Installing system dependencies...")
-            self.log_message("Installing system dependencies...")
-            self.install_dependencies()
-            self.update_progress(10, "Dependencies installed")
-            
-
-            # Step 2: Clone repository
-            self.update_progress(20, "Cloning repository...")
-            self.log_message("Cloning Open-Omniscience repository...")
-            self.clone_repository()
-            self.update_progress(30, "Repository cloned")
-            
-            # Step 3: Install Ollama (if requested)
-            if self.config['install_ollama']:
-                self.update_progress(40, "Installing Ollama...")
-                self.log_message("Installing Ollama for LLM support...")
-                self.install_ollama()
-                self.update_progress(50, "Ollama installed")
-            else:
-                self.update_progress(50, "Skipping Ollama installation")
-                self.log_message("Skipping Ollama installation (user choice)")
-            
-            # Step 4: Install Python dependencies
-            self.update_progress(60, "Installing Python dependencies...")
-            self.log_message("Installing Python dependencies...")
-            self.install_python_deps()
-            self.update_progress(70, "Python dependencies installed")
-            
-            # Step 5: Configure environment
-            self.update_progress(80, "Configuring environment...")
-            self.log_message("Configuring environment...")
-            self.configure_environment()
-            self.update_progress(90, "Environment configured")
-            
-            # Step 6: Create launcher (if requested)
-            if self.config['create_launcher']:
-                self.update_progress(95, "Creating application launcher...")
-                self.log_message("Creating application launcher...")
-                self.create_launcher()
-            
-            # Step 7: Start services (if requested)
-            if self.config['start_services']:
-                self.update_progress(98, "Starting services...")
-                self.log_message("Starting Open-Omniscience services...")
-                if not self.start_services(open_browser=True):
-                    self.log_message("Warning: Services failed to start. You can start them manually later.")
-            
-            self.update_progress(100, "Installation complete!")
-            self.log_message("Installation completed successfully!")
-            
-            # Show completion page
-            self.root.after(1000, lambda: self.show_page('complete'))
-            
-        except Exception as e:
-            self.log_message(f"Error: {str(e)}")
-            self.update_progress(0, "Installation failed")
-            messagebox.showerror("Installation Error", f"An error occurred: {str(e)}")
-    
-    def install_dependencies(self):
-        """Install system dependencies."""
-        commands = [
-            "sudo apt-get update -qq",
-            "sudo apt-get install -y -qq git curl wget ca-certificates gnupg lsb-release",
-        ]
-        
-        for cmd in commands:
-            self.log_message(f"Running: {cmd}")
-            result = CommandRunner.run_command(cmd, check=False, capture=True, text=True)
-            if result.returncode != 0:
-                self.log_message(f"Warning: {result.stderr}")
-    
-    def clone_repository(self):
-        """Clone the Open-Omniscience repository."""
-        install_dir = self.config['install_dir']
-        
-        # Save current directory to return to it safely
-        original_dir = os.getcwd()
-        
-        # Check if we were launched by the smart launcher (which already cloned the repo)
-        if os.environ.get('OPEN_OMNISCIENCE_ALREADY_CLONED') == '1':
-            # Skip the clone prompt since the launcher already handled it
-            self.log_message("Repository already cloned by launcher, using existing repository")
-            try:
-                os.chdir(install_dir)
-                return
-            except Exception as e:
-                self.log_message(f"Warning: Failed to change to repository directory: {e}")
-                return
-        
-        # Check if repository already exists
-        git_dir = os.path.join(install_dir, '.git')
-        if os.path.exists(git_dir):
-            self.log_message("Repository already exists at: " + install_dir)
-            # Ask for permission to remove and replace
-            response = messagebox.askyesno(
-                "Repository Exists",
-                f"A repository already exists at:\n{install_dir}\n\n"
-                "Would you like to remove the existing repository and download a fresh copy?"
-            )
-            if response:
-                self.log_message("Removing existing repository...")
-                # Make sure we're NOT in the directory we're about to delete
-                # Check if original_dir is inside install_dir
-                try:
-                    original_dir = os.path.abspath(original_dir)
-                    install_dir = os.path.abspath(install_dir)
-                    if original_dir.startswith(install_dir + os.sep) or original_dir == install_dir:
-                        # We're inside the directory to be deleted, move to parent
-                        parent_dir = os.path.dirname(install_dir)
-                        os.chdir(parent_dir)
-                    else:
-                        os.chdir(original_dir)
-                except:
-                    # If all else fails, go to root
-                    os.chdir('/')
-                # Remove the entire directory
-                try:
-                    import shutil
-                    shutil.rmtree(install_dir)
-                    self.log_message("Existing repository removed successfully.")
-                except Exception as e:
-                    self.log_message(f"Failed to remove existing repository: {str(e)}")
-                    raise
-            else:
-                self.log_message("Using existing repository.")
-                try:
-                    os.chdir(install_dir)
-                except Exception as e:
-                    self.log_message(f"Warning: Failed to change to repository directory: {e}")
-                    return
-                result = CommandRunner.run_command("git fetch origin", check=False, capture=True, text=True)
-                if result.returncode != 0:
-                    self.log_message(f"Warning: git fetch failed: {result.stderr}")
-                result = CommandRunner.run_command(f"git checkout {InstallerConfig.REPO_BRANCH}", check=False, capture=True, text=True)
-                if result.returncode != 0:
-                    self.log_message(f"Warning: git checkout failed: {result.stderr}")
-                result = CommandRunner.run_command("git pull origin", check=False, capture=True, text=True)
-                if result.returncode != 0:
-                    self.log_message(f"Warning: git pull failed: {result.stderr}")
-                # Return to original directory
-                try:
-                    os.chdir(original_dir)
-                except:
-                    pass
-                return
-        
-        # Create directory if it doesn't exist
-        os.makedirs(install_dir, exist_ok=True)
-        
-        # Clone fresh repository
-        self.log_message("Cloning repository...")
-        result = CommandRunner.run_command(f"git clone --branch {InstallerConfig.REPO_BRANCH} --depth 1 {InstallerConfig.REPO_URL} {install_dir}",
-                                          check=False, capture=True, text=True)
-        if result.returncode != 0:
-            self.log_message(f"Error: Failed to clone repository: {result.stderr}")
-            raise Exception(f"Failed to clone repository: {result.stderr}")
-        
-        try:
-            os.chdir(install_dir)
-        except Exception as e:
-            self.log_message(f"Error: Failed to change to repository directory: {e}")
-            raise Exception(f"Failed to change to repository directory: {e}")
-        
-        # Ensure requirements.txt exists as a real file (not a broken symlink)
-        reqs_file = 'requirements.txt'
-        source_reqs = os.path.join('configs', 'python', 'requirements.txt')
-        
-        if os.path.islink(reqs_file):
-            # If it's a symlink, check if it's valid
-            target = os.path.realpath(reqs_file)
-            if not os.path.exists(target):
-                self.log_message("[DEBUG] requirements.txt is a broken symlink, replacing with actual file...")
-                os.remove(reqs_file)
-                if os.path.exists(source_reqs):
-                    shutil.copy(source_reqs, reqs_file)
-                    self.log_message("[DEBUG] Copied requirements.txt from configs/python/")
-                else:
-                    self.log_message("Error: configs/python/requirements.txt not found!")
-                    raise Exception("requirements.txt not found after cloning")
-        elif not os.path.exists(reqs_file):
-            # If it doesn't exist, copy it from configs/python/
-            if os.path.exists(source_reqs):
-                shutil.copy(source_reqs, reqs_file)
-                self.log_message("[DEBUG] Copied requirements.txt from configs/python/")
-            else:
-                self.log_message("Error: requirements.txt not found in cloned repository!")
-                self.log_message("The repository may not have been cloned correctly.")
-                raise Exception("requirements.txt not found after cloning")
-        
-        self.log_message("Repository cloned successfully. requirements.txt found.")
-        
-        # Return to original directory
-        try:
-            os.chdir(original_dir)
-        except:
-            pass
-    
-    def install_ollama(self):
-        """Install Ollama."""
-        if SystemChecker.check_ollama():
-            self.log_message("Ollama is already installed")
-            return
-        
-        self.log_message("Downloading and installing Ollama...")
-        result = CommandRunner.run_command("curl -fsSL https://ollama.com/install.sh | sh", 
-                                          check=False, capture=True, text=True)
-        if result.returncode != 0:
-            self.log_message(f"Warning: Ollama installation may have failed: {result.stderr}")
-        else:
-            self.log_message("Ollama installed successfully")
-    
-
-    def install_python_deps(self):
-        """Install Python dependencies."""
-        try:
-            os.chdir(self.config['install_dir'])
-        except Exception as e:
-            self.log_message(f"Error: Failed to change to install directory: {e}")
-            raise
-        
-        # Create virtual environment
-        if not os.path.exists('venv'):
-            self.log_message("Creating virtual environment...")
-            result = CommandRunner.run_command("python3 -m venv venv", check=False, capture=True, text=True)
-            if result.returncode != 0:
-                self.log_message(f"Warning: Failed to create virtual environment: {result.stderr}")
-                return
-        
-        # Install dependencies using venv python directly
-        venv_pip = os.path.join(self.config['install_dir'], 'venv', 'bin', 'pip')
-        venv_python = os.path.join(self.config['install_dir'], 'venv', 'bin', 'python')
-        
-        self.log_message("Installing core dependencies...")
-        result = CommandRunner.run_command(f"{venv_pip} install --upgrade pip setuptools wheel", 
-                                            check=False, capture=True, text=True)
-        if result.returncode != 0:
-            self.log_message(f"Warning: Failed to upgrade pip: {result.stderr}")
-        
-        # Debug: Log venv paths
-        self.log_message(f"[DEBUG] venv_pip: {venv_pip}")
-        self.log_message(f"[DEBUG] venv_python: {venv_python}")
-        
-        # Install all dependencies from the single requirements.txt file
-        reqs_file = os.path.join(self.config['install_dir'], 'requirements.txt')
-        
-        # Debug: Log requirements file path and existence
-        self.log_message(f"[DEBUG] Looking for requirements.txt at: {reqs_file}")
-        self.log_message(f"[DEBUG] requirements.txt exists: {os.path.exists(reqs_file)}")
-        
-        # If requirements.txt is a symlink, check if it's valid
-        if os.path.islink(reqs_file):
-            target = os.path.realpath(reqs_file)
-            self.log_message(f"[DEBUG] requirements.txt is a symlink pointing to: {target}")
-            self.log_message(f"[DEBUG] Symlink target exists: {os.path.exists(target)}")
-            # If symlink is broken, remove it and copy the actual file
-            if not os.path.exists(target):
-                self.log_message("[DEBUG] Symlink is broken, replacing with actual file...")
-                os.remove(reqs_file)
-                source_reqs = os.path.join(self.config['install_dir'], 'configs', 'python', 'requirements.txt')
-                if os.path.exists(source_reqs):
-                    shutil.copy(source_reqs, reqs_file)
-                    self.log_message(f"[DEBUG] Copied requirements.txt to: {reqs_file}")
-                else:
-                    self.log_message("Error: requirements.txt not found in configs/python/!")
-                    return
-        
-        # If requirements.txt doesn't exist, try to copy it from configs/python/
-        if not os.path.exists(reqs_file):
-            source_reqs = os.path.join(self.config['install_dir'], 'configs', 'python', 'requirements.txt')
-            self.log_message(f"[DEBUG] Trying fallback requirements file: {source_reqs}")
-            if os.path.exists(source_reqs):
-                self.log_message("Copying requirements.txt from configs/python/...")
-                shutil.copy(source_reqs, reqs_file)
-                self.log_message(f"[DEBUG] Copied requirements.txt to: {reqs_file}")
-            else:
-                self.log_message("Error: requirements.txt not found in install_dir or configs/python/!")
-                return
-        
-        # Install dependencies
-        self.log_message(f"Installing dependencies from: {reqs_file}")
-        result = CommandRunner.run_command(f"{venv_pip} install -r {reqs_file}", 
-                                            check=False, capture=True, text=True)
-        if result.returncode != 0:
-            self.log_message(f"Warning: Failed to install dependencies: {result.stderr}")
-            self.log_message(f"[DEBUG] pip install stdout: {result.stdout}")
-        else:
-            self.log_message("Dependencies installed successfully")
-        
-        # Explicitly verify and install uvicorn as fallback
-        self.log_message("[DEBUG] Verifying uvicorn installation...")
-        uvicorn_check_cmd = f"{venv_python} -c 'import uvicorn; print(\"Uvicorn is installed\")'"
-        result = CommandRunner.run_command(uvicorn_check_cmd, check=False, capture=True, text=True)
-        if result.returncode != 0:
-            self.log_message("[DEBUG] Uvicorn not found, installing explicitly...")
-            result = CommandRunner.run_command(f"{venv_pip} install uvicorn[standard]", 
-                                                check=False, capture=True, text=True)
-            if result.returncode != 0:
-                self.log_message(f"Error: Failed to install uvicorn: {result.stderr}")
-            else:
-                self.log_message("Uvicorn installed successfully")
-        else:
-            self.log_message("[DEBUG] Uvicorn is already installed")
-    
-    def configure_environment(self):
-        """Configure the environment."""
-        try:
-            os.chdir(self.config['install_dir'])
-        except Exception as e:
-            self.log_message(f"Error: Failed to change to install directory: {e}")
-            raise
-        
-        # Copy example environment file
-        if not os.path.exists('.env'):
-            if os.path.exists('.env.example'):
-                shutil.copy('.env.example', '.env')
-                self.log_message("Created .env from .env.example")
-        
-        # Create data directories
-        for dir_name in ['data', 'audit', 'logs']:
-            os.makedirs(dir_name, exist_ok=True)
-            self.log_message(f"Created directory: {dir_name}")
-        
-        # Configure database based on selection
-        if self.config['database_type'] == 'sqlite':
-            self.log_message("Using SQLite database (default)")
-        else:
-            self.log_message("PostgreSQL selected - you will need to configure it manually")
-    
-    def create_launcher(self):
-        """Create application launcher."""
-        install_dir = self.config['install_dir']
-        
-        # Create .desktop file
-        desktop_file = os.path.expanduser("~/.local/share/applications/open-omniscience.desktop")
-        os.makedirs(os.path.dirname(desktop_file), exist_ok=True)
-        
-        desktop_content = f"""[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Open-Omniscience
-GenericName=Investigative Journalism Platform
-Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd {install_dir} && source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload & xdg-open http://localhost:8000"
-Terminal=true
-Categories=Development;Journalism;Research;Utility;
-StartupWMClass=Open-Omniscience
-"""
-        
-        with open(desktop_file, 'w') as f:
-            f.write(desktop_content)
-        
-        # Make executable
-        os.chmod(desktop_file, os.stat(desktop_file).st_mode | stat.S_IEXEC)
-        
-        # Update desktop database
-        if SystemChecker.check_command('update-desktop-database'):
-            CommandRunner.run_command("update-desktop-database ~/.local/share/applications")
-        
-        self.log_message(f"Created desktop launcher at {desktop_file}")
-        self.log_message("You can now find 'Open-Omniscience' in your application menu")
-    
-    def start_services(self, open_browser=True):
-        """Start Open-Omniscience services using direct Python execution."""
-        try:
-            os.chdir(self.config['install_dir'])
-        except Exception as e:
-            self.log_message(f"Error: Failed to change to install directory: {e}")
-            return False
-        
-        # Check if virtual environment exists
-        venv_path = os.path.join(self.config['install_dir'], 'venv')
-        if not os.path.exists(venv_path):
-            self.log_message("Error: Virtual environment not found. Please run the installation first.")
-            return False
-        
-        # Debug: Log venv and python paths
-        python_path = os.path.join(venv_path, 'bin', 'python3')
-        self.log_message(f"[DEBUG] Starting server with python_path: {python_path}")
-        self.log_message(f"[DEBUG] python_path exists: {os.path.exists(python_path)}")
-        
-        # Verify uvicorn is available before starting
-        self.log_message("[DEBUG] Verifying uvicorn is available...")
-        uvicorn_check_cmd = f"{python_path} -c 'import uvicorn; print(\"Uvicorn is available\")'"
-        result = CommandRunner.run_command(uvicorn_check_cmd, check=False, capture=True, text=True)
-        if result.returncode != 0:
-            self.log_message(f"[DEBUG] Uvicorn not available! Error: {result.stderr}")
-            self.log_message("Error: Uvicorn is not installed in the virtual environment. Please run dependency installation first.")
-            return False
-        else:
-            self.log_message("[DEBUG] Uvicorn is available in the virtual environment")
-        
-        # Start the application using uvicorn
-        self.log_message("Starting Open-Omniscience with uvicorn...")
-        
-        # Use absolute path to python and uvicorn in the venv
-        uvicorn_path = os.path.join(venv_path, 'bin', 'uvicorn')
-        
-        # Start in background using nohup so it doesn't die when parent exits
-        import subprocess
-        
-        # Log file for debugging
-        log_file = os.path.join(self.config['install_dir'], 'server.log')
-        
-        try:
-            with open(log_file, 'w') as log_f:
-                proc = subprocess.Popen(
-                    [python_path, '-m', 'uvicorn', 'api.main:app', '--host', '0.0.0.0', '--port', '8000', '--reload'],
-                    cwd=self.config['install_dir'],
-                    stdout=log_f,
-                    stderr=subprocess.STDOUT,
-                    preexec_fn=os.setsid
-                )
-            self.log_message(f"Server started with PID {proc.pid}")
-            self.log_message(f"Logs available at: {log_file}")
-        except Exception as e:
-            self.log_message(f"Error starting server: {str(e)}")
-            return False
-        
-        # Wait a bit then check if service is ready
-        self.log_message("Waiting for server to start...")
-        self.root.after(5000, lambda: self.check_service_ready(open_browser, attempt=0))
-        return True
-
-
-    def check_service_ready(self, open_browser, attempt):
-        """Check if service is ready, with non-blocking retry."""
-        max_attempts = 24  # 120 seconds / 5 seconds per attempt
-        
-        # Check if the web service is responding
-        service_ready = False
-        try:
-            import requests
-            try:
-                response = requests.get("http://localhost:8000", timeout=5)
-                if response.status_code in [200, 301, 302, 307, 308]:
-                    service_ready = True
-            except requests.exceptions.RequestException as e:
-                self.log_message(f"Connection error: {str(e)}")
-        except ImportError:
-            # requests not available, use curl
-            result = CommandRunner.run_command("curl -s -o /dev/null -w '%{http_code}' http://localhost:8000",
-                                              check=False, capture=True, text=True)
-            if result.returncode == 0 and '200' in result.stdout:
-                service_ready = True
-        
-        if service_ready:
-            self.log_message("Application is ready!")
-            if open_browser:
-                import webbrowser
-                webbrowser.open_new("http://localhost:8000")
-            return
-        
-        # Not ready yet, schedule next check
-        if attempt < max_attempts - 1:
-            self.log_message(f"Waiting... (attempt {attempt + 1}/{max_attempts})")
-            self.root.after(5000, lambda: self.check_service_ready(open_browser, attempt + 1))
-        else:
-            self.log_message("Warning: Application did not become ready within the timeout period")
-            self.log_message("You can manually check if it's running and open http://localhost:8000")
-            # Show container logs for debugging
-    def create_complete_page(self):
-        """Create installation complete page with compact layout."""
-        frame = ttk.Frame(self.main_frame)
-        
-        # Header
-        header = ttk.Label(frame, text="✅ Installation Complete!", style='Header.TLabel')
-        header.pack(pady=(10, 5))
-        
-        # Success message
-        success = ttk.Label(frame, text="Open-Omniscience has been successfully installed!", 
-                           style='Success.TLabel', font=('Segoe UI', 11))
-        success.pack(pady=(0, 10))
-        
-        # Status label for launch feedback
-        self.launch_status_label = ttk.Label(frame, text="", background=ModernTheme.BG_PRIMARY, foreground=ModernTheme.PRIMARY)
-        self.launch_status_label.pack(pady=(0, 10))
-        
-        # Summary and Next Steps in a scrollable frame to save space
-        content_frame = ttk.Frame(frame)
-        content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        # Summary section - more compact
-        summary_label = ttk.Label(content_frame, text="Installation Summary:", style='Subheader.TLabel')
-        summary_label.pack(anchor=tk.W, pady=(0, 5))
-        
-        # Use a more compact summary format
-        summary_text = f"Directory: {self.config['install_dir']}\n"
-        summary_text += f"Ollama: {'Yes' if self.config['install_ollama'] else 'No'}\n"
-        summary_text += f"Database: {self.config['database_type']}\n"
-        summary_text += f"Services: {'Yes' if self.config['start_services'] else 'No'}\n"
-        summary_text += f"Launcher: {'Yes' if self.config['create_launcher'] else 'No'}"
-        
-        summary_label_detail = ttk.Label(content_frame, text=summary_text, 
-                                        background=ModernTheme.BG_PRIMARY, 
-                                        foreground=ModernTheme.TEXT_PRIMARY, 
-                                        justify=tk.LEFT, font=('Segoe UI', 9))
-        summary_label_detail.pack(anchor=tk.W, padx=20, pady=(0, 10))
-        
-        # Next steps - more compact
-        next_steps_label = ttk.Label(content_frame, text="Next Steps:", style='Subheader.TLabel')
-        next_steps_label.pack(anchor=tk.W, pady=(0, 5))
-        
-        next_steps_text = "1. Access at: http://localhost:8000\n"
-        next_steps_text += "2. Download models: ollama pull gemma4:e2b\n"
-        next_steps_text += "3. Documentation: https://github.com/ideotion/Open-Omniscience"
-        
-        next_steps_detail = ttk.Label(content_frame, text=next_steps_text,
-                                    background=ModernTheme.BG_PRIMARY,
-                                    foreground=ModernTheme.TEXT_PRIMARY,
-                                    justify=tk.LEFT, font=('Segoe UI', 9))
-        next_steps_detail.pack(anchor=tk.W, padx=20, pady=(0, 10))
-        
-        # Buttons - ensure they're visible by packing at bottom
-        button_frame = ttk.Frame(frame)
-        button_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(10, 0))
-        
-        # Use smaller buttons with less padding
-        ttk.Button(button_frame, text="Documentation", 
-                  command=lambda: webbrowser.open_new("https://github.com/ideotion/Open-Omniscience")).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(button_frame, text="Launch App", 
-                  command=self.launch_application).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(button_frame, text="Exit", command=self.root.destroy).pack(side=tk.LEFT, padx=5)
-        
-        return frame
-    
-    def launch_application(self):
-        """Launch the application using direct Python execution."""
-        self.launch_status_label.config(text="Preparing to launch...")
-        self.root.update_idletasks()
-        
-        try:
-            os.chdir(self.config['install_dir'])
-        except Exception as e:
-            self.launch_status_label.config(text=f"Error: Failed to change to install directory: {e}")
-            return
-        
-        # Check if virtual environment exists
-        venv_path = os.path.join(self.config['install_dir'], 'venv')
-        if not os.path.exists(venv_path):
-            self.launch_status_label.config(text="Error: Virtual environment not found. Please run the installation first.")
-            return
-        
-        self.launch_status_label.config(text="Starting Open-Omniscience...")
-        self.root.update_idletasks()
-        
-        # Use absolute path to python in the venv
-        python_path = os.path.join(venv_path, 'bin', 'python3')
-        
-        # Log file for debugging
-        log_file = os.path.join(self.config['install_dir'], 'server.log')
-        
-        # Start the application using uvicorn in background
-        import subprocess
-        
-        try:
-            with open(log_file, 'w') as log_f:
-                proc = subprocess.Popen(
-                    [python_path, '-m', 'uvicorn', 'api.main:app', '--host', '0.0.0.0', '--port', '8000', '--reload'],
-                    cwd=self.config['install_dir'],
-                    stdout=log_f,
-                    stderr=subprocess.STDOUT,
-                    preexec_fn=os.setsid
-                )
-            self.launch_status_label.config(text=f"Server started with PID {proc.pid}")
-            self.launch_status_label.config(text=f"Logs available at: {log_file}")
-        except Exception as e:
-            self.launch_status_label.config(text=f"Error starting application: {str(e)}")
-            return
-        
-        self.launch_status_label.config(text="Services started. Waiting for application to be ready...")
-        self.root.update_idletasks()
-        
-        # Check if service is ready with non-blocking retry
-        self.check_service_ready_from_complete(open_browser=True, attempt=0)
-
-
-    def check_service_ready_from_complete(self, open_browser, attempt):
-        """Check if service is ready from complete page, updates status label."""
-        max_attempts = 24  # 120 seconds / 5 seconds per attempt
-        
-        try:
-            # Check if the web service is responding
-            import requests
-            try:
-                response = requests.get("http://localhost:8000", timeout=5)
-                if response.status_code in [200, 301, 302, 307, 308]:
-                    self.launch_status_label.config(text="Application is ready!")
-                    if open_browser:
-                        import webbrowser
-                        webbrowser.open_new("http://localhost:8000")
-                    return
-            except requests.exceptions.RequestException as e:
-                self.launch_status_label.config(text=f"Connection error: {str(e)}")
-                self.root.update_idletasks()
-        except ImportError:
-            # requests not available, use curl
-            result = CommandRunner.run_command("curl -s -o /dev/null -w '%{http_code}' http://localhost:8000",
-                                              check=False, capture=True, text=True)
-            if result.returncode == 0 and '200' in result.stdout:
-                self.launch_status_label.config(text="Application is ready!")
-                if open_browser:
-                    import webbrowser
-                    webbrowser.open_new("http://localhost:8000")
-                return
-            elif result.returncode != 0:
-                self.launch_status_label.config(text=f"Curl error: {result.stderr}")
-                self.root.update_idletasks()
-        
-        # Not ready yet, schedule next check
-        if attempt < max_attempts - 1:
-            self.launch_status_label.config(text=f"Waiting... (attempt {attempt + 1}/{max_attempts})")
-            self.root.update_idletasks()
-            self.root.after(5000, lambda: self.check_service_ready_from_complete(open_browser, attempt + 1))
-        else:
-            self.launch_status_label.config(text="Warning: Application did not become ready. Check if services are running at http://localhost:8000")
-    
-    def show_welcome_page(self):
-        """Show the welcome page initially."""
-        self.show_page('welcome')
-
-
-class AppLauncher:
-    """Create application launcher."""
-    
-    @staticmethod
-    def create_launcher(install_dir, name="Open-Omniscience"):
-        """Create a .desktop file for the application."""
-        desktop_file = os.path.expanduser(f"~/.local/share/applications/{name.lower()}.desktop")
-        os.makedirs(os.path.dirname(desktop_file), exist_ok=True)
-        
-        content = f"""[Desktop Entry]
-Version=1.0
-Type=Application
-Name={name}
-GenericName=Investigative Journalism Platform
-Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd {install_dir} && source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload & xdg-open http://localhost:8000"
-Terminal=true
-Categories=Development;Journalism;Research;Utility;
-StartupWMClass={name}
-"""
-        
-        with open(desktop_file, 'w') as f:
-            f.write(content)
-        
-        os.chmod(desktop_file, 0o755)
-        
-        # Update desktop database
-        if SystemChecker.check_command('update-desktop-database'):
-            subprocess.run(['update-desktop-database', os.path.dirname(desktop_file)], 
-                          capture_output=True)
-        
-        return desktop_file
-
-
-def main():
-    """Main entry point."""
-    # Check if running on Debian-based system
-    if not SystemChecker.check_debian():
-        print("Error: This installer is designed for Debian-based Linux systems only.")
-        print("Detected system:", platform.system(), platform.release())
-        sys.exit(1)
-    
-    # Check for required packages
-    try:
-        import tkinter as tk
-        from tkinter import ttk, messagebox, scrolledtext
-    except ImportError:
-        print("Error: Tkinter is required. Please install it with:")
-        print("  sudo apt-get install python3-tk")
-        sys.exit(1)
-    
-    # Check for psutil
-    try:
-        import psutil
-    except ImportError:
-        print("Warning: psutil not available. Some system checks will be limited.")
-        print("Install it with: pip install psutil")
-        # Continue anyway - psutil is optional
-    
-    # Create and run GUI
-    root = tk.Tk()
-    app = GUIInstaller(root)
-    root.mainloop()
-
-
-if __name__ == "__main__":
-    main()
