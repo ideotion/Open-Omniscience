@@ -36,7 +36,14 @@ import json
 import webbrowser
 
 # Import modern theme
-from installer.modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
+try:
+    from installer.modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
+except ImportError:
+    # Fallback for when running directly (not as a module)
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
 
 # Import modern theme
 from installer.modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
