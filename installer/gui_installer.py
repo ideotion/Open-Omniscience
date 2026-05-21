@@ -35,6 +35,12 @@ import psutil
 import json
 import webbrowser
 
+# Import modern theme
+from installer.modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
+
+# Import modern theme
+from installer.modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
+
 
 class SystemChecker:
     """Check system requirements and dependencies."""
@@ -332,35 +338,30 @@ class GUIInstaller:
         self.show_welcome_page()
     
     def setup_styles(self):
-        """Setup custom styles."""
+        """Setup modern custom styles."""
         self.style = ttk.Style()
-        self.style.configure('TFrame', background='#f0f0f0')
-        self.style.configure('TLabel', background='#f0f0f0', font=('Arial', 10))
-        self.style.configure('TButton', font=('Arial', 10))
-        self.style.configure('TCheckbutton', background='#f0f0f0')
-        self.style.configure('TRadiobutton', background='#f0f0f0')
-        self.style.configure('Header.TLabel', font=('Arial', 14, 'bold'), background='#f0f0f0')
-        self.style.configure('Success.TLabel', font=('Arial', 10), foreground='green', background='#f0f0f0')
-        self.style.configure('Warning.TLabel', font=('Arial', 10), foreground='orange', background='#f0f0f0')
-        self.style.configure('Error.TLabel', font=('Arial', 10), foreground='red', background='#f0f0f0')
+        apply_modern_styles(self.style)
+        
+        # Configure root window background
+        self.root.configure(background=ModernTheme.BG_PRIMARY)
     
     def create_widgets(self):
         """Create all widgets."""
         # Main container
-        self.main_frame = ttk.Frame(self.root)
-        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.main_frame = ttk.Frame(self.root, style='TFrame')
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
         # Navigation buttons - pack at the bottom
-        self.nav_frame = ttk.Frame(self.root)
-        self.nav_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=10, pady=5)
+        self.nav_frame = ttk.Frame(self.root, style='TFrame')
+        self.nav_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=20, pady=10)
         
-        self.prev_button = ttk.Button(self.nav_frame, text="Back", command=self.prev_page)
+        self.prev_button = ttk.Button(self.nav_frame, text="Back", command=self.prev_page, style='TButton')
         self.prev_button.pack(side=tk.LEFT, padx=5)
         
-        self.next_button = ttk.Button(self.nav_frame, text="Next", command=self.next_page)
+        self.next_button = ttk.Button(self.nav_frame, text="Next", command=self.next_page, style='TButton')
         self.next_button.pack(side=tk.RIGHT, padx=5)
         
-        self.cancel_button = ttk.Button(self.nav_frame, text="Cancel", command=self.cancel_installation)
+        self.cancel_button = ttk.Button(self.nav_frame, text="Cancel", command=self.cancel_installation, style='TButton')
         self.cancel_button.pack(side=tk.RIGHT, padx=5)
         
         # Page containers
@@ -442,41 +443,48 @@ class GUIInstaller:
         frame = ttk.Frame(self.main_frame)
         
         # Header
-        header = ttk.Label(frame, text="Welcome to Open-Omniscience", style='Header.TLabel')
-        header.pack(pady=10)
+        header = ttk.Label(frame, text="🌍 Open-Omniscience", style='Header.TLabel')
+        header.pack(pady=20)
         
-        # Logo (compact)
-        logo_frame = ttk.Frame(frame)
-        logo_frame.pack(fill=tk.X, pady=5)
-        
-        logo_label = ttk.Label(logo_frame, text=self.LOGO, font=('Courier', 7), background='#f0f0f0', anchor=tk.CENTER)
-        logo_label.pack()
+        # Subtitle
+        subtitle = ttk.Label(frame, text="Ethical Global Intelligence Platform", 
+                           style='Subheader.TLabel', font=('Segoe UI', 14))
+        subtitle.pack(pady=5)
         
         # Description
-        desc = ttk.Label(frame, text="Open-Omniscience is an ethical, open-source global intelligence platform\nfor investigative journalism with local LLM support.", wraplength=700)
-        desc.pack(pady=10)
+        desc = ttk.Label(frame, 
+                        text="A modern, open-source platform for investigative journalism with local LLM support.", 
+                        style='TLabel', wraplength=700, justify=tk.CENTER)
+        desc.pack(pady=20)
         
         # Features
-        features_label = ttk.Label(frame, text="Key Features:", style='Header.TLabel')
-        features_label.pack(anchor=tk.W, padx=20, pady=(5, 2))
+        features_label = ttk.Label(frame, text="✨ Key Features:", style='Subheader.TLabel')
+        features_label.pack(anchor=tk.W, padx=20, pady=(10, 5))
         
         features = [
-            "• Scrape 1900+ news sources (RSS and HTML)",
-            "• Advanced search with Boolean operators",
-            "• Local LLM support for text analysis",
-            "• Data export in CSV, JSON, or SQLite",
-            "• Audit logging for transparency",
-            "• Ethical scraping with robots.txt compliance",
+            ("🌐", "Scrape 1900+ news sources (RSS and HTML)"),
+            ("🔍", "Advanced search with Boolean operators"),
+            ("🤖", "Local LLM support for text analysis"),
+            ("💾", "Data export in CSV, JSON, or SQLite"),
+            ("📊", "Audit logging for transparency"),
+            ("⚖️", "Ethical scraping with robots.txt compliance"),
         ]
         
-        for feature in features:
-            ttk.Label(frame, text=feature, background='#f0f0f0').pack(anchor=tk.W, padx=40, pady=1)
+        for icon, feature in features:
+            feature_frame = ttk.Frame(frame)
+            feature_frame.pack(anchor=tk.W, padx=40, pady=2)
+            
+            icon_label = ttk.Label(feature_frame, text=icon, font=('Segoe UI', 12))
+            icon_label.pack(side=tk.LEFT, padx=(0, 10))
+            
+            text_label = ttk.Label(feature_frame, text=feature)
+            text_label.pack(side=tk.LEFT)
         
         # Platform notice
         platform_label = ttk.Label(frame, 
-                                   text="⚠️  This installer is designed for Debian-based Linux systems only (Ubuntu, Debian, etc.)",
-                                   style='Warning.TLabel', wraplength=700)
-        platform_label.pack(pady=10)
+                                   text="📱 This installer is designed for Debian-based Linux systems only (Ubuntu, Debian, etc.)",
+                                   style='Warning.TLabel', wraplength=700, justify=tk.CENTER)
+        platform_label.pack(pady=20)
         
         # Set next page target
         self.next_page_target = 'requirements'
@@ -488,7 +496,7 @@ class GUIInstaller:
         frame = ttk.Frame(self.main_frame)
         
         # Header
-        header = ttk.Label(frame, text="System Requirements Check", style='Header.TLabel')
+        header = ttk.Label(frame, text="🔧 System Requirements Check", style='Header.TLabel')
         header.pack(pady=20)
         
         # Description
@@ -562,41 +570,41 @@ class GUIInstaller:
         ]
         
         # Display critical checks
-        ttk.Label(parent_frame, text="Critical Requirements:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 5))
+        ttk.Label(parent_frame, text="🔴 Critical Requirements:", style='Subheader.TLabel').pack(anchor=tk.W, pady=(0, 10))
         
         all_critical_passed = True
         for name, passed, critical, description in critical_checks:
-            status = "✓" if passed else "✗"
-            color = 'green' if passed else 'red'
+            status = get_status_icon('success' if passed else 'error')
+            color = get_status_color('success' if passed else 'error')
             label = ttk.Label(parent_frame, text=f"{status} {name}: {'OK' if passed else 'MISSING'}", 
-                             foreground=color, background='#f0f0f0')
+                             foreground=color, background=ModernTheme.BG_PRIMARY)
             label.pack(anchor=tk.W, padx=20, pady=2)
-            ttk.Label(parent_frame, text=f"   {description}", background='#f0f0f0').pack(anchor=tk.W, padx=40)
+            ttk.Label(parent_frame, text=f"   {description}", background=ModernTheme.BG_PRIMARY).pack(anchor=tk.W, padx=40)
             
             if critical and not passed:
                 all_critical_passed = False
         
         # Display recommended checks
-        ttk.Label(parent_frame, text="\nRecommended:", style='Header.TLabel').pack(anchor=tk.W, pady=(10, 5))
+        ttk.Label(parent_frame, text="🟡 Recommended:", style='Subheader.TLabel').pack(anchor=tk.W, pady=(10, 10))
         
         for name, passed, critical, description in recommended_checks:
-            status = "✓" if passed else "○"
-            color = 'green' if passed else 'gray'
+            status = get_status_icon('success' if passed else 'pending')
+            color = get_status_color('success' if passed else 'pending')
             label = ttk.Label(parent_frame, text=f"{status} {name}: {'Installed' if passed else 'Not installed'}", 
-                             foreground=color, background='#f0f0f0')
+                             foreground=color, background=ModernTheme.BG_PRIMARY)
             label.pack(anchor=tk.W, padx=20, pady=2)
-            ttk.Label(parent_frame, text=f"   {description}", background='#f0f0f0').pack(anchor=tk.W, padx=40)
+            ttk.Label(parent_frame, text=f"   {description}", background=ModernTheme.BG_PRIMARY).pack(anchor=tk.W, padx=40)
         
         # Display resource checks
-        ttk.Label(parent_frame, text="\nSystem Resources:", style='Header.TLabel').pack(anchor=tk.W, pady=(10, 5))
+        ttk.Label(parent_frame, text="💾 System Resources:", style='Subheader.TLabel').pack(anchor=tk.W, pady=(10, 10))
         
         for name, passed, critical, description in resource_checks:
-            status = "✓" if passed else "⚠"
-            color = 'green' if passed else 'orange'
+            status = get_status_icon('success' if passed else 'warning')
+            color = get_status_color('success' if passed else 'warning')
             label = ttk.Label(parent_frame, text=f"{status} {name}", 
-                             foreground=color, background='#f0f0f0')
+                             foreground=color, background=ModernTheme.BG_PRIMARY)
             label.pack(anchor=tk.W, padx=20, pady=2)
-            ttk.Label(parent_frame, text=f"   {description}", background='#f0f0f0').pack(anchor=tk.W, padx=40)
+            ttk.Label(parent_frame, text=f"   {description}", background=ModernTheme.BG_PRIMARY).pack(anchor=tk.W, padx=40)
         
         # Warning if critical checks failed
         if not all_critical_passed:
@@ -613,7 +621,7 @@ class GUIInstaller:
         frame = ttk.Frame(self.main_frame)
         
         # Header
-        header = ttk.Label(frame, text="Installation Options", style='Header.TLabel')
+        header = ttk.Label(frame, text="⚙️ Installation Options", style='Header.TLabel')
         header.pack(pady=20)
         
         # Description
@@ -625,10 +633,10 @@ class GUIInstaller:
         options_frame.pack(fill=tk.BOTH, expand=True, pady=20)
         
         # Installation directory
-        dir_frame = ttk.Frame(options_frame)
-        dir_frame.pack(fill=tk.X, pady=10)
+        dir_frame = ttk.Frame(options_frame, style='TFrame')
+        dir_frame.pack(fill=tk.X, pady=15)
         
-        ttk.Label(dir_frame, text="Installation Directory:", background='#f0f0f0').pack(anchor=tk.W)
+        ttk.Label(dir_frame, text="📁 Installation Directory:", style='Subheader.TLabel').pack(anchor=tk.W)
         self.dir_entry = ttk.Entry(dir_frame, width=50)
         self.dir_entry.insert(0, self.config['install_dir'])
         self.dir_entry.pack(fill=tk.X, padx=20, pady=5)
@@ -636,56 +644,61 @@ class GUIInstaller:
         ttk.Button(dir_frame, text="Browse...", command=self.browse_directory).pack(anchor=tk.W, padx=20)
         
         # Ollama installation
-        ollama_frame = ttk.Frame(options_frame)
-        ollama_frame.pack(fill=tk.X, pady=10)
+        ollama_frame = ttk.Frame(options_frame, style='TFrame')
+        ollama_frame.pack(fill=tk.X, pady=15)
         
         self.ollama_var = tk.BooleanVar(value=self.config['install_ollama'])
-        ollama_check = ttk.Checkbutton(ollama_frame, text="Install Ollama for LLM support", 
-                                      variable=self.ollama_var, onvalue=True, offvalue=False)
+        ollama_check = ttk.Checkbutton(ollama_frame, text="🤖 Install Ollama for LLM support", 
+                                      variable=self.ollama_var, onvalue=True, offvalue=False,
+                                      style='TCheckbutton')
         ollama_check.pack(anchor=tk.W, padx=20)
         
-        ttk.Label(ollama_frame, text="Ollama enables local LLM features (text generation, translation, analysis)", 
-                 background='#f0f0f0', font=('Arial', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
+        ttk.Label(ollama_frame, text="   Ollama enables local LLM features (text generation, translation, analysis)", 
+                 style='TLabel', foreground=ModernTheme.TEXT_SECONDARY, font=('Segoe UI', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
         
         # Database type
-        db_frame = ttk.Frame(options_frame)
-        db_frame.pack(fill=tk.X, pady=10)
+        db_frame = ttk.Frame(options_frame, style='TFrame')
+        db_frame.pack(fill=tk.X, pady=15)
         
-        ttk.Label(db_frame, text="Database Type:", background='#f0f0f0').pack(anchor=tk.W, padx=20)
+        ttk.Label(db_frame, text="🗃️ Database Type:", style='Subheader.TLabel').pack(anchor=tk.W, padx=20)
         
         self.db_var = tk.StringVar(value=self.config['database_type'])
         
         sqlite_radio = ttk.Radiobutton(db_frame, text="SQLite (Recommended for beginners)", 
-                                       variable=self.db_var, value='sqlite')
+                                       variable=self.db_var, value='sqlite',
+                                       style='TRadiobutton')
         sqlite_radio.pack(anchor=tk.W, padx=40, pady=5)
         
         postgres_radio = ttk.Radiobutton(db_frame, text="PostgreSQL (Recommended for production)", 
-                                         variable=self.db_var, value='postgresql')
+                                         variable=self.db_var, value='postgresql',
+                                         style='TRadiobutton')
         postgres_radio.pack(anchor=tk.W, padx=40, pady=5)
         
-        ttk.Label(db_frame, text="SQLite is file-based and requires no setup. PostgreSQL requires separate installation.", 
-                 background='#f0f0f0', font=('Arial', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
+        ttk.Label(db_frame, text="   SQLite is file-based and requires no setup. PostgreSQL requires separate installation.", 
+                 style='TLabel', foreground=ModernTheme.TEXT_SECONDARY, font=('Segoe UI', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
         
         # Start services
-        services_frame = ttk.Frame(options_frame)
-        services_frame.pack(fill=tk.X, pady=10)
+        services_frame = ttk.Frame(options_frame, style='TFrame')
+        services_frame.pack(fill=tk.X, pady=15)
         
         self.services_var = tk.BooleanVar(value=self.config['start_services'])
-        services_check = ttk.Checkbutton(services_frame, text="Start services automatically after installation", 
-                                        variable=self.services_var, onvalue=True, offvalue=False)
+        services_check = ttk.Checkbutton(services_frame, text="▶️ Start services automatically after installation", 
+                                        variable=self.services_var, onvalue=True, offvalue=False,
+                                        style='TCheckbutton')
         services_check.pack(anchor=tk.W, padx=20)
         
         # Create launcher
-        launcher_frame = ttk.Frame(options_frame)
-        launcher_frame.pack(fill=tk.X, pady=10)
+        launcher_frame = ttk.Frame(options_frame, style='TFrame')
+        launcher_frame.pack(fill=tk.X, pady=15)
         
         self.launcher_var = tk.BooleanVar(value=self.config['create_launcher'])
-        launcher_check = ttk.Checkbutton(launcher_frame, text="Create application launcher", 
-                                         variable=self.launcher_var, onvalue=True, offvalue=False)
+        launcher_check = ttk.Checkbutton(launcher_frame, text="🎯 Create application launcher", 
+                                         variable=self.launcher_var, onvalue=True, offvalue=False,
+                                         style='TCheckbutton')
         launcher_check.pack(anchor=tk.W, padx=20)
         
-        ttk.Label(launcher_frame, text="Creates a .desktop file for easy launching from your application menu", 
-                 background='#f0f0f0', font=('Arial', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
+        ttk.Label(launcher_frame, text="   Creates a .desktop file for easy launching from your application menu", 
+                 style='TLabel', foreground=ModernTheme.TEXT_SECONDARY, font=('Segoe UI', 8), wraplength=700).pack(anchor=tk.W, padx=40, pady=(0, 10))
         
         # Set next page target
         self.next_page_target = self.start_installation
@@ -720,7 +733,7 @@ class GUIInstaller:
         frame = ttk.Frame(self.main_frame)
         
         # Header
-        header = ttk.Label(frame, text="Installing Open-Omniscience", style='Header.TLabel')
+        header = ttk.Label(frame, text="🚀 Installing Open-Omniscience", style='Header.TLabel')
         header.pack(pady=20)
         
         # Logo
@@ -1330,7 +1343,7 @@ StartupWMClass=Open-Omniscience
         frame = ttk.Frame(self.main_frame)
         
         # Header
-        header = ttk.Label(frame, text="Installation Complete!", style='Header.TLabel')
+        header = ttk.Label(frame, text="✅ Installation Complete!", style='Header.TLabel')
         header.pack(pady=10)
         
         # Logo

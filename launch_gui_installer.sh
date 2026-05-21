@@ -241,6 +241,7 @@ main() {
         fi
         
         cd "$INSTALL_DIR"
+        # Use the modern GUI installer
         python3 installer/gui_installer.py
         
     else
