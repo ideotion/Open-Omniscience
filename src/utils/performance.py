@@ -390,7 +390,7 @@ def paginate_query(
 def chunked_query(
     query: Any,
     chunk_size: int = 1000,
-    process_func: Callable[[List[Any]], None]
+    process_func: Callable[[List[Any]], None] = None
 ) -> None:
     """
     Process a large query in chunks to avoid memory issues.

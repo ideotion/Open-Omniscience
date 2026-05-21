@@ -542,7 +542,7 @@ class SearchQueryBuilder:
                         'A' if weight >= 1.0 else 'B' if weight >= 0.7 else 'C'
                     )
                 else:
-                    search_vector = search_vector || sql_func.setweight(
+                    search_vector = search_vector or sql_func.setweight(
                         sql_func.to_tsvector(self.config.default_language, column),
                         'A' if weight >= 1.0 else 'B' if weight >= 0.7 else 'C'
                     )
@@ -1096,7 +1096,7 @@ class SearchService:
                 # Case-insensitive replacement
                 pattern = re.compile(re.escape(term), re.IGNORECASE)
                 highlighted = pattern.sub(
-                    f"<{self.config.highlight_tag}>\g<0></{self.config.highlight_tag}>",
+                    f"<{self.config.highlight_tag}>\\g<0></{self.config.highlight_tag}>",
                     highlighted
                 )
         

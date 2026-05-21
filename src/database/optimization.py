@@ -351,7 +351,7 @@ def with_selected_relationships(query: Select, relationships: List[str]) -> Sele
 def batch_query(
     query: Select,
     batch_size: int = 1000,
-    process_func: Callable[[List[T]], None]
+    process_func: Callable[[List[T]], None] = None
 ) -> None:
     """
     Process a large query in batches to avoid memory issues.
@@ -617,7 +617,7 @@ database_monitor = DatabaseMonitor()
 def monitor_query(func: Callable[..., T]) -> Callable[..., T]:
     """Decorator to monitor query performance."""
     @wraps(func)
-    def wrapper(*args: **kwargs) -> T:
+    def wrapper(*args, **kwargs) -> T:
         start_time = time.time()
         try:
             result = func(*args, **kwargs)
@@ -641,7 +641,7 @@ def cached_query(ttl: float = 300.0):
         cache: Dict[str, Tuple[T, float]] = {}
         
         @wraps(func)
-        def wrapper(*args: **kwargs) -> T:
+        def wrapper(*args, **kwargs) -> T:
             # Create cache key from function name and arguments
             cache_key = hashlib.md5(f"{func.__name__}{args}{kwargs}".encode()).hexdigest()
             
