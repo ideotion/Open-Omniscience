@@ -903,11 +903,31 @@ class GUIInstaller:
             self.log_message(f"Error: Failed to change to repository directory: {e}")
             raise Exception(f"Failed to change to repository directory: {e}")
         
-        # Verify requirements.txt exists
-        if not os.path.exists('requirements.txt'):
-            self.log_message("Error: requirements.txt not found in cloned repository!")
-            self.log_message("The repository may not have been cloned correctly.")
-            raise Exception("requirements.txt not found after cloning")
+        # Ensure requirements.txt exists as a real file (not a broken symlink)
+        reqs_file = 'requirements.txt'
+        source_reqs = os.path.join('configs', 'python', 'requirements.txt')
+        
+        if os.path.islink(reqs_file):
+            # If it's a symlink, check if it's valid
+            target = os.path.realpath(reqs_file)
+            if not os.path.exists(target):
+                self.log_message("[DEBUG] requirements.txt is a broken symlink, replacing with actual file...")
+                os.remove(reqs_file)
+                if os.path.exists(source_reqs):
+                    shutil.copy(source_reqs, reqs_file)
+                    self.log_message("[DEBUG] Copied requirements.txt from configs/python/")
+                else:
+                    self.log_message("Error: configs/python/requirements.txt not found!")
+                    raise Exception("requirements.txt not found after cloning")
+        elif not os.path.exists(reqs_file):
+            # If it doesn't exist, copy it from configs/python/
+            if os.path.exists(source_reqs):
+                shutil.copy(source_reqs, reqs_file)
+                self.log_message("[DEBUG] Copied requirements.txt from configs/python/")
+            else:
+                self.log_message("Error: requirements.txt not found in cloned repository!")
+                self.log_message("The repository may not have been cloned correctly.")
+                raise Exception("requirements.txt not found after cloning")
         
         self.log_message("Repository cloned successfully. requirements.txt found.")
         
@@ -969,11 +989,22 @@ class GUIInstaller:
         self.log_message(f"[DEBUG] Looking for requirements.txt at: {reqs_file}")
         self.log_message(f"[DEBUG] requirements.txt exists: {os.path.exists(reqs_file)}")
         
-        # If requirements.txt is a symlink, resolve it and log the target
+        # If requirements.txt is a symlink, check if it's valid
         if os.path.islink(reqs_file):
             target = os.path.realpath(reqs_file)
             self.log_message(f"[DEBUG] requirements.txt is a symlink pointing to: {target}")
             self.log_message(f"[DEBUG] Symlink target exists: {os.path.exists(target)}")
+            # If symlink is broken, remove it and copy the actual file
+            if not os.path.exists(target):
+                self.log_message("[DEBUG] Symlink is broken, replacing with actual file...")
+                os.remove(reqs_file)
+                source_reqs = os.path.join(self.config['install_dir'], 'configs', 'python', 'requirements.txt')
+                if os.path.exists(source_reqs):
+                    shutil.copy(source_reqs, reqs_file)
+                    self.log_message(f"[DEBUG] Copied requirements.txt to: {reqs_file}")
+                else:
+                    self.log_message("Error: requirements.txt not found in configs/python/!")
+                    return
         
         # If requirements.txt doesn't exist, try to copy it from configs/python/
         if not os.path.exists(reqs_file):

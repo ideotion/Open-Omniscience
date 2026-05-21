@@ -244,6 +244,19 @@ main() {
         
         cd "$INSTALL_DIR"
         
+        # Ensure requirements.txt exists as a real file (not symlink) in the install directory
+        # Git clone with --depth 1 does not preserve symlinks, so we need to copy the actual file
+        if [ ! -f "requirements.txt" ] || [ -L "requirements.txt" ]; then
+            log_info "Ensuring requirements.txt exists as a real file..."
+            if [ -f "configs/python/requirements.txt" ]; then
+                cp -f "configs/python/requirements.txt" "requirements.txt"
+                log_success "Copied requirements.txt to install directory"
+            else
+                log_error "configs/python/requirements.txt not found! Cannot proceed."
+                exit 1
+            fi
+        fi
+        
         # Set an environment variable to tell the GUI installer that we've already cloned
         export OPEN_OMNISCIENCE_ALREADY_CLONED=1
         
