@@ -885,6 +885,17 @@ class GUIInstaller:
         # Save current directory to return to it safely
         original_dir = os.getcwd()
         
+        # Check if we were launched by the smart launcher (which already cloned the repo)
+        if os.environ.get('OPEN_OMNISCIENCE_ALREADY_CLONED') == '1':
+            # Skip the clone prompt since the launcher already handled it
+            self.log_message("Repository already cloned by launcher, using existing repository")
+            try:
+                os.chdir(install_dir)
+                return
+            except Exception as e:
+                self.log_message(f"Warning: Failed to change to repository directory: {e}")
+                return
+        
         # Check if repository already exists
         git_dir = os.path.join(install_dir, '.git')
         if os.path.exists(git_dir):
@@ -1200,11 +1211,33 @@ StartupWMClass=Open-Omniscience
     
     def start_services(self, open_browser=True):
         """Start Open-Omniscience services and optionally open browser."""
-        # Check if Docker Compose is available
-        if not SystemChecker.check_docker_compose():
+        # Check if Docker Compose is available - use the same method as CommandRunner
+        docker_compose_available = False
+        try:
+            # Check for docker compose plugin
+            result = subprocess.run(['docker', 'compose', 'version'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                docker_compose_available = True
+                self.log_message(f"Docker Compose plugin detected: {result.stdout.strip()}")
+        except:
+            pass
+        
+        # Check for standalone docker-compose
+        if not docker_compose_available and SystemChecker.check_command('docker-compose'):
+            try:
+                result = subprocess.run(['docker-compose', '--version'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    docker_compose_available = True
+                    self.log_message(f"Docker Compose standalone detected: {result.stdout.strip()}")
+            except:
+                pass
+        
+        if not docker_compose_available:
             self.log_message("Error: Docker Compose is not installed.")
             self.log_message("Please install Docker Engine and Docker Compose plugin first.")
-            self.log_message("See: https://docs.docker.com/engine/install/ for installation instructions")
+            self.log_message("Install with: sudo apt-get install docker-compose-plugin")
             return False
         
         # Check if Docker daemon is running
@@ -1419,8 +1452,28 @@ StartupWMClass=Open-Omniscience
     
     def launch_application(self):
         """Launch the application and open browser when ready."""
-        # Check if Docker Compose is available
-        if not SystemChecker.check_docker_compose():
+        # Check if Docker Compose is available - use the same method as start_services
+        docker_compose_available = False
+        try:
+            # Check for docker compose plugin
+            result = subprocess.run(['docker', 'compose', 'version'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                docker_compose_available = True
+        except:
+            pass
+        
+        # Check for standalone docker-compose
+        if not docker_compose_available and SystemChecker.check_command('docker-compose'):
+            try:
+                result = subprocess.run(['docker-compose', '--version'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    docker_compose_available = True
+            except:
+                pass
+        
+        if not docker_compose_available:
             self.launch_status_label.config(text="Error: Docker Compose is not installed. Please install Docker Engine first.")
             return
         

@@ -205,21 +205,23 @@ main() {
         log_info "Launching GUI installer..."
         echo ""
         
+        # Create directory if it doesn't exist
+        mkdir -p "$INSTALL_DIR" 2>/dev/null || {
+            log_error "Cannot create directory $INSTALL_DIR"
+            log_error "Check if you have write permissions in your home directory"
+            exit 1
+        }
+        
+        # Check if we can write to the directory
+        if [ ! -w "$INSTALL_DIR" ]; then
+            log_error "No write permission in $INSTALL_DIR"
+            log_error "Try running with: sudo mkdir -p $INSTALL_DIR && sudo chown $USER:$USER $INSTALL_DIR"
+            exit 1
+        fi
+        
         # Clone repository if not already present
         if [ ! -d "$INSTALL_DIR/.git" ]; then
             log_info "Cloning repository to $INSTALL_DIR..."
-            # Create directory if it doesn't exist
-            mkdir -p "$INSTALL_DIR" 2>/dev/null || {
-                log_error "Cannot create directory $INSTALL_DIR"
-                log_error "Check if you have write permissions in your home directory"
-                exit 1
-            }
-            # Check if we can write to the directory
-            if [ ! -w "$INSTALL_DIR" ]; then
-                log_error "No write permission in $INSTALL_DIR"
-                log_error "Try running with: sudo mkdir -p $INSTALL_DIR && sudo chown $USER:$USER $INSTALL_DIR"
-                exit 1
-            fi
             if git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR" 2>&1; then
                 log_success "Repository cloned"
             else
@@ -241,6 +243,10 @@ main() {
         fi
         
         cd "$INSTALL_DIR"
+        
+        # Set an environment variable to tell the GUI installer that we've already cloned
+        export OPEN_OMNISCIENCE_ALREADY_CLONED=1
+        
         # Use the modern GUI installer
         python3 installer/gui_installer.py
         
