@@ -276,7 +276,8 @@ main() {
         log_info "No GUI environment detected"
         log_error "This installer requires a GUI environment (X11/Wayland/DISPLAY)."
         log_error "Please run this installer from a graphical terminal or desktop environment."
-        log_error "Alternatively, use the Docker-based installation method if available."
+        log_error "Alternatively, use the text-based installation method:"
+        log_error "  curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install | bash"
         exit 1
     fi
 }

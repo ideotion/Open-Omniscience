@@ -20,7 +20,7 @@
 # Open Omniscience Makefile
 # Provides convenient commands for development, testing, and deployment
 
-.PHONY: help install test lint format run clean docker-build docker-run docker-down desktop-launcher-install desktop-launcher-uninstall
+.PHONY: help install test lint format run clean desktop-launcher-install desktop-launcher-uninstall
 
 # Default target
 help:
@@ -54,12 +54,6 @@ help:
 	@echo "  make db-migrate       - Run database migrations"
 	@echo "  make db-reset          - Reset the database (WARNING: deletes data)"
 	@echo ""
-	@echo "Docker:"
-	@echo "  make docker-build     - Build Docker image"
-	@echo "  make docker-run       - Run with Docker"
-	@echo "  make docker-down      - Stop Docker containers"
-	@echo "  make docker-clean     - Remove Docker containers and volumes"
-	@echo ""
 	@echo "Packages:"
 	@echo "  make package-appimage - Build AppImage package"
 	@echo "  make package-deb      - Build Debian package"
@@ -68,7 +62,7 @@ help:
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean            - Remove Python cache and temporary files"
-	@echo "  make clean-all        - Full cleanup (includes Docker)"
+	@echo "  make clean-all        - Full cleanup"
 	@echo ""
 	@echo "Scraping:"
 	@echo "  make scrape           - Run the scraper"
@@ -205,19 +199,7 @@ scrape-all:
 ingest:
 	$(PYTHON) -c "import sys; sys.path.insert(0, '$(SRC_DIR)'); from ingestor.pipeline import IngestionPipeline; p = IngestionPipeline(); total = p.ingest_all_sources(); print(f'Ingested {total} articles'); p.close()"
 
-# Docker operations
-docker-build:
-	docker build -t ideotion/open-omniscience .
 
-docker-run:
-	docker-compose up -d
-
-docker-down:
-	docker-compose down
-
-docker-clean:
-	docker-compose down -v
-	docker system prune -f
 
 # Cleanup
 clean:
@@ -227,7 +209,7 @@ clean:
 	find . -type f -name "*~" -delete 2>/dev/null || true
 	find . -type f -name "*.swp" -delete 2>/dev/null || true
 
-clean-all: clean docker-clean
+clean-all: clean
 	rm -rf .pytest_cache .mypy_cache .coverage htmlcov/
 
 # Package building

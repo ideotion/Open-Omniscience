@@ -442,7 +442,7 @@ Models:
 **Software Options:**
 - Omni-OS: Custom Linux distribution optimized for Open-Omniscience
 - Omni-Cloud: Pre-configured cloud instances (AWS, GCP, Azure)
-- Omni-Docker: Enterprise Docker images with support
+- Omni-Deploy: Enterprise deployment support and consulting
 
 **Revenue Protection:**
 ✅ Provides tools for journalism, not content  

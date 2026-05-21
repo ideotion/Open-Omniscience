@@ -194,8 +194,6 @@ All requested features have been successfully implemented and tested:
 - Python 3.8+ verification
 - Git installation check
 - cURL installation check
-- Docker installation check
-- Docker Compose installation check
 - Ollama installation check
 - Memory and disk space verification
 - Port availability (8000, 11434)

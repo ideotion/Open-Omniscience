@@ -95,7 +95,6 @@ Open-Omniscience/
 - **Markdown Files**: 20+
 - **Configuration Files**: 15+ (YAML, INI, JSON, etc.)
 - **Shell Scripts**: 10+
-- **Docker Files**: 5
 - **Test Files**: 20+
 
 ### Code Metrics
@@ -208,9 +207,8 @@ Open-Omniscience/
 
 **Critical Issues**
 1. **Hardcoded Secrets in Examples**
-   - `docker-compose.yml`: `POSTGRES_PASSWORD=change_this_password`
-   - `docker-compose.staging.yml`: `POSTGRES_PASSWORD=staging_password_change_me`
-   - `docker-compose.production.yml`: Default password in environment variables
+   - `.env.example`: Default database passwords and secrets
+   - `.env.production.example`: Production secrets in example files
 
 2. **Fragmented Configuration**
    - Settings in `.env.example`, `.env.production.example`, `configs/settings.yaml`, `configs/sources.yml`
@@ -328,7 +326,7 @@ Open-Omniscience/
 #### ❌ Issues Found
 
 **Critical Issues**
-1. **Hardcoded Secrets**: Default passwords in docker-compose files
+1. **Hardcoded Secrets**: Default passwords in example environment files
 2. **Insecure Defaults**: CORS set to `*` in development
 3. **No Authentication**: API has no authentication by default
 4. **SQL Injection Risk**: Some areas use string formatting for SQL
@@ -342,31 +340,26 @@ Open-Omniscience/
 1. **Password Hashing**: Fallback to SHA-256 is less secure
 2. **Token Generation**: Could use more secure methods
 
-### 7. Docker & Deployment Review
+### 7. Deployment Review
 
 #### ✅ Strengths
-- **Multi-stage Build**: Good Dockerfile with builder pattern
-- **Health Checks**: Proper health checks configured
-- **Volume Mounts**: Persistent data volumes
-- **Network Configuration**: Proper network setup
-- **Production Config**: Separate production docker-compose
+- **Direct Python Deployment**: Simple and portable deployment using uvicorn/gunicorn
+- **Systemd Service**: Production-ready systemd service configuration
+- **Flexible Configuration**: Support for both SQLite and PostgreSQL
+- **Environment Management**: Comprehensive .env configuration
 
 #### ❌ Issues Found
 
 **Critical Issues**
-1. **Hardcoded Passwords**: Default passwords in docker-compose files
-2. **Insecure Defaults**: Some containers run as root
-3. **No Secret Management**: No integration with vault or secrets manager
+1. **Hardcoded Passwords**: Default passwords in example environment files
+2. **No Secret Management**: No integration with vault or secrets manager
 
 **Moderate Issues**
-1. **Large Image**: Python slim image could be optimized
-2. **No CI/CD**: No GitHub Actions workflow for Docker builds
-3. **Inconsistent Config**: Different configs across docker-compose files
+1. **No CI/CD**: No GitHub Actions workflow for automated deployment
+2. **Inconsistent Config**: Different configs across environment files
 
 **Minor Issues**
-1. **Missing Labels**: Docker images lack proper labels
-2. **No Multi-arch**: Only single architecture builds
-3. **No Image Scanning**: No security scanning of images
+1. **No Process Manager**: No built-in process manager for production
 
 ### 8. Shell Scripts Review
 
@@ -394,8 +387,8 @@ Open-Omniscience/
 ### 🔴 P0 - Critical (Must Fix Immediately)
 
 #### 1. Security Vulnerabilities
-- **Action**: Remove all hardcoded passwords and secrets from docker-compose files
-- **Files**: `docker-compose.yml`, `docker-compose.staging.yml`, `docker-compose.production.yml`
+- **Action**: Remove all hardcoded passwords and secrets from example environment files
+- **Files**: `.env.example`, `.env.production.example`
 - **Impact**: High - Security risk if deployed without changing defaults
 - **Effort**: Low (1-2 hours)
 - **Priority**: **CRITICAL**
@@ -467,9 +460,9 @@ Open-Omniscience/
 - **Effort**: Medium (4-8 hours)
 - **Priority**: **MEDIUM**
 
-#### 11. Docker Security Improvements
-- **Action**: Implement proper secret management and non-root users
-- **Files**: Dockerfile, docker-compose files
+#### 11. Deployment Security Improvements
+- **Action**: Implement proper secret management for production deployments
+- **Files**: Environment configuration files, deployment scripts
 - **Impact**: Medium - Improves deployment security
 - **Effort**: Medium (4-8 hours)
 - **Priority**: **MEDIUM**
@@ -680,32 +673,23 @@ tests/
 #### 3. Security Scanning
 - Add `safety check` to CI pipeline
 - Add `pip-audit` for vulnerability scanning
-- Add Docker image scanning
+- Add deployment security scanning
 
-### Docker Improvements
+### Deployment Improvements
 
-#### 1. Multi-stage Build Optimization
-```dockerfile
-# Stage 1: Build
-FROM python:3.12-slim as builder
-RUN apt-get update && apt-get install -y build-essential
-COPY requirements.txt .
-RUN pip install --user -r requirements.txt
+#### 1. Production Deployment Optimization
+For production deployments, use gunicorn with uvicorn workers:
 
-# Stage 2: Runtime
-FROM python:3.12-alpine
-COPY --from=builder /root/.local /usr/local
-COPY . .
-USER nobody
-EXPOSE 8000
-CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```bash
+# Install gunicorn
+gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app
 ```
 
 #### 2. Security Hardening
-- Run as non-root user
-- Use minimal base images
-- Scan images for vulnerabilities
-- Use distroless or scratch images where possible
+- Run as non-root user using systemd service
+- Use minimal Python virtual environment
+- Implement proper secret management
+- Use environment variables for configuration
 
 ---
 
@@ -769,7 +753,7 @@ CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ## 📝 Recommendations Summary
 
 ### Immediate Actions (Next 24-48 Hours)
-1. **Remove all hardcoded passwords** from docker-compose files
+1. **Remove all hardcoded passwords** from example environment files
 2. **Fix circular imports** in core modules
 3. **Centralize database configuration**
 
@@ -783,7 +767,7 @@ CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 1. **Standardize import paths**
 2. **Cleanup directory structure**
 3. **Update documentation**
-4. **Improve Docker security**
+4. **Improve deployment security**
 
 ### Long-term Actions (Ongoing)
 1. **Enforce code style**

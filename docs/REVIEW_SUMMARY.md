@@ -90,9 +90,9 @@ Open-Omniscience is a **well-architected, comprehensive** open-source global int
 ## ⚠️ Top 5 Issues to Fix
 
 ### 1. **Hardcoded Secrets** 🔴 CRITICAL
-**Files:** `docker-compose.yml`, `docker-compose.staging.yml`, `docker-compose.production.yml`
+**Files:** `.env.example`, `.env.production.example`
 
-**Problem:** Default passwords like `change_this_password`, `staging_password_change_me` in configuration files.
+**Problem:** Default passwords and secrets in example environment configuration files.
 
 **Impact:** High security risk if deployed without changing defaults.
 
@@ -170,7 +170,7 @@ Open-Omniscience is a **well-architected, comprehensive** open-source global int
 
 | # | Task | Files | Impact | Effort | Priority |
 |---|------|-------|--------|--------|----------|
-| 1 | Remove hardcoded secrets from docker-compose files | docker-compose*.yml | High | 1-2h | ⭐⭐⭐⭐⭐ |
+| 1 | Remove hardcoded secrets from example environment files | .env.example, .env.production.example | High | 1-2h | ⭐⭐⭐⭐⭐ |
 | 2 | Resolve circular imports | src/pipeline.py, src/scraper/scraper.py | High | 2-4h | ⭐⭐⭐⭐⭐ |
 | 3 | Centralize database configuration | src/database/models.py, src/api/main.py | High | 2-4h | ⭐⭐⭐⭐⭐ |
 
@@ -190,7 +190,7 @@ Open-Omniscience is a **well-architected, comprehensive** open-source global int
 | 8 | Standardize import paths | All Python files | Medium | 4-8h | ⭐⭐⭐ |
 | 9 | Cleanup directory structure | package/ vs packages/ | Medium | 4-8h | ⭐⭐⭐ |
 | 10 | Update documentation | README.md, docs/ | Medium | 4-8h | ⭐⭐⭐ |
-| 11 | Improve Docker security | Dockerfile, docker-compose*.yml | Medium | 4-8h | ⭐⭐⭐ |
+| 11 | Improve deployment security | Environment configs, deployment scripts | Medium | 4-8h | ⭐⭐⭐ |
 
 ### 🔵 P3 - Low Priority (Fix When Resources Available)
 
@@ -206,7 +206,7 @@ Open-Omniscience is a **well-architected, comprehensive** open-source global int
 ## 🎯 Implementation Roadmap
 
 ### Phase 1: Critical Fixes (Week 1)
-- **Day 1-2**: Fix hardcoded secrets in docker-compose files
+- **Day 1-2**: Fix hardcoded secrets in example environment files
 - **Day 3-4**: Resolve circular imports
 - **Day 5**: Centralize database configuration
 
@@ -221,7 +221,7 @@ Open-Omniscience is a **well-architected, comprehensive** open-source global int
 ### Phase 3: Medium Priority (Week 4-6)
 - **Week 4**: Standardize import paths
 - **Week 5**: Cleanup directory structure
-- **Week 6**: Update documentation + Improve Docker security
+- **Week 6**: Update documentation + Improve deployment security
 
 **Outcome:** Code is consistent, structure is clean, documentation is accurate.
 

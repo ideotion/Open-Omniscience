@@ -213,92 +213,6 @@ setup_linux() {
 }
 
 # =============================================================================
-# Install Docker
-# =============================================================================
-
-install_docker() {
-    if command_exists docker && docker --version >/dev/null 2>&1; then
-        log_info "Docker is already installed: $(docker --version)"
-        return 0
-    fi
-    
-    log_info "Installing Docker..."
-    
-    # Remove old versions
-    run_with_sudo apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
-    
-    # Install Docker using official script
-    log_info "Installing Docker (this may take a few minutes)..."
-    if ! curl -fsSL https://get.docker.com | sh; then
-        log_error "Docker installation failed. Please install Docker manually from https://get.docker.com"
-        exit 1
-    fi
-    
-    # Add current user to docker group
-    if [ -n "${USER:-}" ] && [ ! -z "$USER" ]; then
-        if ! grep -qw "$USER" /etc/group 2>/dev/null || ! grep -q "^docker:" /etc/group 2>/dev/null; then
-            run_with_sudo usermod -aG docker "$USER"
-            log_info "Added $USER to docker group. You may need to log out and back in for this to take effect."
-        fi
-    fi
-    
-    # Start Docker daemon if not running
-    if command_exists systemctl; then
-        run_with_sudo systemctl start docker 2>/dev/null || true
-        run_with_sudo systemctl enable docker 2>/dev/null || true
-    fi
-    
-    # Verify Docker is working
-    if ! command_exists docker || ! docker --version >/dev/null 2>&1; then
-        log_error "Docker installation failed. Please install Docker manually and re-run this script."
-        exit 1
-    fi
-    
-    log_success "Docker installed: $(docker --version)"
-}
-
-# =============================================================================
-# Install Docker Compose
-# =============================================================================
-
-install_docker_compose() {
-    # Check for standalone docker-compose first
-    if command_exists docker-compose && docker-compose --version >/dev/null 2>&1; then
-        log_info "Docker Compose is already installed: $(docker-compose --version)"
-        return 0
-    fi
-    
-    # Check if docker compose plugin is available (Docker v20.10+)
-    if docker compose version >/dev/null 2>&1; then
-        log_info "Docker Compose plugin detected"
-        # Create docker-compose symlink if it doesn't exist
-        if ! command_exists docker-compose; then
-            DOCKER_PATH=$(which docker 2>/dev/null || echo "/usr/bin/docker")
-            run_with_sudo ln -sf "$DOCKER_PATH" /usr/local/bin/docker-compose 2>/dev/null || true
-            log_info "Created docker-compose symlink"
-        fi
-        return 0
-    fi
-    
-    log_info "Installing Docker Compose..."
-    
-    # Get latest version
-    COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-    
-    # Install Docker Compose
-    run_with_sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    run_with_sudo chmod +x /usr/local/bin/docker-compose
-    
-    # Verify installation
-    if ! command_exists docker-compose; then
-        log_error "Docker Compose installation failed"
-        exit 1
-    fi
-    
-    log_success "Docker Compose installed: $(docker-compose --version)"
-}
-
-# =============================================================================
 # Install Ollama (for LLM support)
 # =============================================================================
 
@@ -431,7 +345,6 @@ install_python_deps() {
     # Install core dependencies
     log_info "Installing core dependencies..."
     pip install --upgrade pip setuptools wheel
-    pip install -r requirements.txt
     
     # Install all dependencies from the unified requirements.txt
     if [ -f "requirements.txt" ]; then
@@ -517,7 +430,7 @@ Type=Application
 Name=Open-Omniscience
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd $INSTALL_DIR && docker-compose up -d --build && xdg-open http://localhost:8000"
+Exec=bash -c "cd $INSTALL_DIR && source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload & xdg-open http://localhost:8000"
 Icon=$INSTALL_DIR/docs/open-omniscience-icon.png
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
@@ -537,6 +450,50 @@ EOF
 }
 
 # =============================================================================
+# Create Systemd Service (Optional)
+# =============================================================================
+
+create_systemd_service() {
+    log_info "Creating systemd service for production deployment..."
+    
+    SERVICE_FILE="/etc/systemd/system/open-omniscience.service"
+    
+    # Create the systemd service file
+    cat > /tmp/open-omniscience.service << EOF
+[Unit]
+Description=Open-Omniscience - Global Intelligence Platform
+After=network.target
+
+[Service]
+User=$USER
+WorkingDirectory=$INSTALL_DIR
+Environment="PATH=$INSTALL_DIR/venv/bin:$PATH"
+ExecStart=$INSTALL_DIR/venv/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    # Copy to systemd directory
+    run_with_sudo cp /tmp/open-omniscience.service "$SERVICE_FILE"
+    run_with_sudo chmod 644 "$SERVICE_FILE"
+    
+    # Reload systemd
+    if command_exists systemctl; then
+        run_with_sudo systemctl daemon-reload
+        log_success "Systemd service created at $SERVICE_FILE"
+        log_info "To enable: sudo systemctl enable open-omniscience"
+        log_info "To start: sudo systemctl start open-omniscience"
+    else
+        log_warning "systemctl not available, service file created but not enabled"
+    fi
+    
+    rm -f /tmp/open-omniscience.service
+}
+
+# =============================================================================
 # Verification
 # =============================================================================
 
@@ -544,22 +501,6 @@ verify_installation() {
     log_info "Verifying installation..."
     
     local all_passed=true
-    
-    # Check Docker
-    if ! command_exists docker || ! docker --version >/dev/null 2>&1; then
-        log_error "Docker verification failed"
-        all_passed=false
-    else
-        log_success "Docker: $(docker --version)"
-    fi
-    
-    # Check Docker Compose
-    if ! command_exists docker-compose || ! docker-compose --version >/dev/null 2>&1; then
-        log_error "Docker Compose verification failed"
-        all_passed=false
-    else
-        log_success "Docker Compose: $(docker-compose --version)"
-    fi
     
     # Check Git
     if ! command_exists git || ! git --version >/dev/null 2>&1; then
@@ -626,12 +567,6 @@ main() {
     # Setup for Debian-based Linux
     setup_linux
     
-    # Install Docker
-    install_docker
-    
-    # Install Docker Compose
-    install_docker_compose
-    
     # Ask user if they want to install Ollama
     if [ "$INTERACTIVE" = true ]; then
         read -p "Do you want to install Ollama for LLM support? (Y/n): " -n 1 -r
@@ -662,6 +597,15 @@ main() {
     # Create desktop launcher
     create_desktop_launcher
     
+    # Create systemd service (optional)
+    if [ "$INTERACTIVE" = true ]; then
+        read -p "Do you want to create a systemd service for production? (y/N): " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            create_systemd_service
+        fi
+    fi
+    
     # Verify installation
     echo ""
     log_info "Running verification..."
@@ -683,10 +627,12 @@ main() {
             echo ""
             log_info "Launching Open-Omniscience..."
             cd "$INSTALL_DIR"
-            docker-compose up -d --build
+            source venv/bin/activate
+            uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload &
             
             # Check if it started successfully
-            if docker ps | grep -q open-omniscience 2>/dev/null; then
+            sleep 3
+            if pgrep -f "uvicorn.*api.main:app" >/dev/null 2>&1; then
                 log_success "Open-Omniscience is running!"
                 echo ""
                 echo "  Access the application at: http://localhost:8000"
@@ -701,14 +647,14 @@ main() {
                     fi
                 fi
             else
-                log_warning "Open-Omniscience may not have started. Check with: docker ps"
+                log_warning "Open-Omniscience may not have started. Check with: pgrep -f uvicorn"
             fi
         else
             echo ""
             log_info "To start Open-Omniscience manually:"
             echo "    cd $INSTALL_DIR"
             echo "    source venv/bin/activate"
-            echo "    docker-compose up -d --build"
+            echo "    uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
             echo ""
             echo "  Then access at: http://localhost:8000"
         fi
@@ -717,7 +663,7 @@ main() {
         log_info "To start Open-Omniscience:"
         echo "    cd $INSTALL_DIR"
         echo "    source venv/bin/activate"
-        echo "    docker-compose up -d --build"
+        echo "    uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
         echo ""
         echo "  Then access at: http://localhost:8000"
     fi
@@ -725,7 +671,11 @@ main() {
     echo ""
     echo "  For LLM support (if Ollama installed):"
     echo "    ollama pull gemma4:e2b"
-    echo "    docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build"
+    echo "    # Then restart Open-Omniscience"
+    echo ""
+    echo "  For production deployment:"
+    echo "    pip install gunicorn"
+    echo "    gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app"
     echo ""
     echo "  Documentation: https://github.com/ideotion/Open-Omniscience"
     echo ""

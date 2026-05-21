@@ -320,14 +320,14 @@ pip install -r requirements.txt
 python examples/metadata_validation_demo.py
 ```
 
-### 2. Docker Installation
+### 2. Direct Python Installation
 
 ```bash
-# Build Docker image
-docker build -t open-omniscience-pillar3 .
+# Run directly with Python
+python -m pillar3.src.analysis.metadata_validator
 
-# Run container
-docker run -it --rm -v $(pwd)/data:/app/data open-omniscience-pillar3
+# Or use the test runner
+PYTHONPATH=pillar3 python -m pytest tests/ -v
 ```
 
 ### 3. Python Package (Future)
@@ -412,7 +412,7 @@ detector = DeepfakeDetector()
 - [ ] Comprehensive test coverage (>95%)
 - [ ] Performance optimization
 - [ ] Model download scripts
-- [ ] Docker containerization
+- [ ] Production deployment scripts
 - [ ] User documentation
 - [ ] API documentation
 

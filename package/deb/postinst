@@ -21,6 +21,6 @@ fi
 
 echo "Open-Omniscience installation complete!"
 echo "You can now run 'open-omniscience' from anywhere or cd to $INSTALL_DIR"
-echo "To start the application: docker-compose up -d --build"
+echo "To start the application: source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000"
 
 exit 0

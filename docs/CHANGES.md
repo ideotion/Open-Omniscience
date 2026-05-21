@@ -21,23 +21,18 @@ This commit implements **6 critical improvements** to the Open-Omniscience repos
 
 ## 🔴 Critical Security Fixes (P0)
 
-### 1. Removed Hardcoded Secrets from Docker Compose Files
+### 1. Removed Hardcoded Secrets from Example Environment Files
 
 **Files Modified:**
-- `docker-compose.yml`
-- `docker-compose.staging.yml`
-- `docker-compose.production.yml`
+- `.env.example`
 - `.env.production.example`
-- `scripts/install`
+- `install`
 
 **Changes:**
-- ✅ Removed `POSTGRES_PASSWORD=change_this_password` from docker-compose.yml
-- ✅ Removed `POSTGRES_PASSWORD=staging_password_change_me` from docker-compose.staging.yml
-- ✅ Removed `GF_SECURITY_ADMIN_PASSWORD=admin_change_me` from docker-compose.staging.yml
-- ✅ Removed hardcoded `POSTGRES_PASSWORD=change_this_password` from docker-compose.production.yml
-- ✅ Removed hardcoded `SECRET_KEY=generate_a_strong_secret_key_here` from docker-compose.production.yml
-- ✅ Removed hardcoded `GF_SECURITY_ADMIN_PASSWORD=admin` from docker-compose.production.yml
+- ✅ Removed all hardcoded passwords from `.env.example`
+- ✅ Removed all hardcoded secrets from `.env.production.example`
 - ✅ Commented out all hardcoded secrets in `.env.production.example` with instructions
+- ✅ Removed Docker dependencies from installation scripts
 - ✅ Updated `scripts/install` to not display default Grafana credentials
 
 **Impact:** 🔒 **CRITICAL** - Eliminates security vulnerability where default passwords could be deployed without change
@@ -151,15 +146,13 @@ This commit implements **6 critical improvements** to the Open-Omniscience repos
 | File | Changes | Impact |
 |------|---------|--------|
 | `.env.production.example` | Commented out hardcoded secrets | 🔒 Critical |
-| `Makefile` | Added new install targets | 📦 High |
+| `Makefile` | Removed Docker targets, added Python targets | 📦 High |
 | `README.md` | Updated installation instructions | 📚 Medium |
-| `docker-compose.yml` | Removed hardcoded POSTGRES_PASSWORD | 🔒 Critical |
-| `docker-compose.staging.yml` | Removed hardcoded passwords | 🔒 Critical |
-| `docker-compose.production.yml` | Removed hardcoded secrets | 🔒 Critical |
+| `install` | Removed Docker installation, uses direct Python | 🔒 Critical |
+| `launch_gui_installer.sh` | Removed Docker references | 🔒 Critical |
 | `requirements.txt` | Now references requirements-core.txt | 📦 High |
 | `requirements-llm.txt` | Now references requirements-core.txt | 📦 High |
 | `requirements-all.txt` | Complete rewrite with proper organization | 📦 High |
-| `scripts/install` | Removed default Grafana credentials | 🔒 Critical |
 | `src/database/models.py` | Minor cleanup | 🔧 Low |
 
 ### Added Files (6)
@@ -181,7 +174,7 @@ This commit implements **6 critical improvements** to the Open-Omniscience repos
 
 ### ✅ Security
 - [x] **No hardcoded secrets** in repository
-- [x] All docker-compose files use environment variables
+- [x] All environment files use placeholders
 - [x] Example files use commented placeholders
 
 ### ✅ Configuration
@@ -234,10 +227,9 @@ This commit implements **6 critical improvements** to the Open-Omniscience repos
 ## 🔗 Files for Review
 
 ### Critical Security Changes
-1. **docker-compose.yml** - Password removed
-2. **docker-compose.staging.yml** - Passwords removed
-3. **docker-compose.production.yml** - Secrets removed
-4. **.env.production.example** - Secrets commented out
+1. **install** - Docker dependencies removed
+2. **.env.example** - Secrets removed
+3. **.env.production.example** - Secrets commented out
 
 ### Configuration Changes
 5. **src/config/__init__.py** - New config package
@@ -268,8 +260,8 @@ Comprehensive Security, Configuration, and Testing Improvements
 This commit implements 6 critical improvements to the Open-Omniscience repository:
 
 🔒 Security Fixes (P0 - Critical):
-- Removed all hardcoded passwords and secrets from docker-compose files
-- Updated .env.production.example to use commented placeholders
+- Removed all Docker dependencies from installation scripts
+- Updated .env.example and .env.production.example to use placeholders
 - Updated install script to not show default credentials
 
 ⚙️ Configuration Improvements (P1 - High):

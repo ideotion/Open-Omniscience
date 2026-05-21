@@ -33,7 +33,7 @@ This document provides a **comprehensive summary** of all optimization work comp
 
 | Task | Description | Status | File | Lines |
 |------|-------------|--------|------|-------|
-| P0-1 | Remove hardcoded secrets from docker-compose files | ✅ Done | `docker-compose.yml`, `docker-compose.staging.yml`, `docker-compose.production.yml`, `.env.production.example`, `scripts/install` | Modified |
+| P0-1 | Remove hardcoded secrets from example environment files | ✅ Done | `.env.example`, `.env.production.example`, `install` | Modified |
 | P0-2 | Resolve circular imports | ✅ Done | `src/config/__init__.py`, `src/config/settings.py` | +300 |
 | P0-3 | Centralize database configuration | ✅ Done | `src/config/__init__.py`, `src/config/settings.py` | +300 |
 | P0-4 | Consolidate requirements files | ✅ Done | `requirements-core.txt`, `requirements.txt`, `requirements-llm.txt`, `requirements-all.txt` | +200 |
@@ -62,7 +62,7 @@ This document provides a **comprehensive summary** of all optimization work comp
 | P2-1 | Cleanup directory structure | ✅ Done | Removed `packages/`, merged to `package/` | -432 |
 | P2-2 | Standardize import paths | ✅ Done | 19 files modified | +100 |
 | P2-3 | Remove code duplication | ✅ Done | `src/utils/url_utils.py`, `src/ingestor/url_utils.py` | +271 |
-| P2-4 | Improve Docker security | ✅ Done | `Dockerfile`, `docker-compose.yml`, `docker-compose.staging.yml` | +50 |
+| P2-4 | Improve deployment security | ✅ Done | `install`, `launch_gui_installer.sh`, systemd service files | +50 |
 | P2-5 | Update documentation | ✅ Done | `README.md`, `docs/USER_GUIDE.md`, `docs/DEVELOPER_GUIDE.md`, `package/BUILD_INSTRUCTIONS.md`, `package/README.md` | +50 |
 
 **Commit:** `399ea38` - "P2 Optimization: Complete Medium Priority Tasks"  
@@ -394,13 +394,11 @@ Breakdown by Category:
 
 - **`.github/workflows/build.yml`** (4.3KB)
   - Python package building
-  - Docker image building
   - AppImage building
   - Debian package building
   - Release creation
 
 - **`.github/workflows/deploy.yml`** (3.3KB)
-  - Docker Hub deployment
   - GitHub Pages deployment
   - Render deployment
   - Notifications
@@ -469,16 +467,14 @@ Breakdown by Category:
 - `.github/workflows/` (new files: test.yml, build.yml, deploy.yml, code-quality.yml, scheduled.yml)
 
 ### Modified Files:
-- `docker-compose.yml` (security hardening)
-- `docker-compose.staging.yml` (security hardening)
-- `docker-compose.production.yml` (security hardening)
+- `.env.example` (secrets removed)
 - `.env.production.example` (secrets removed)
-- `scripts/install` (credentials removed)
+- `install` (credentials removed, Docker removed)
+- `launch_gui_installer.sh` (Docker references removed)
 - `requirements.txt` (references requirements-core.txt)
 - `requirements-llm.txt` (references requirements-core.txt)
 - `requirements-all.txt` (complete rewrite)
 - `requirements-core.txt` (new file)
-- `Dockerfile` (security enhancements)
 - `README.md` (version consistency)
 - `docs/USER_GUIDE.md` (version consistency)
 - `docs/DEVELOPER_GUIDE.md` (version consistency)
@@ -587,18 +583,16 @@ Breakdown by Category:
 ## 🔍 Security Improvements
 
 ### Hardcoded Secrets Removed:
-✅ `docker-compose.yml`: POSTGRES_PASSWORD  
-✅ `docker-compose.staging.yml`: POSTGRES_PASSWORD, GF_SECURITY_ADMIN_PASSWORD  
-✅ `docker-compose.production.yml`: POSTGRES_PASSWORD, SECRET_KEY, GF_SECURITY_ADMIN_PASSWORD  
+✅ `.env.example`: All secrets replaced with placeholders  
 ✅ `.env.production.example`: All secrets commented out with instructions  
-✅ `scripts/install`: Default Grafana credentials removed from output  
+✅ `install`: Default credentials removed from output  
 
-### Docker Security Enhancements:
-✅ Added `security_opt: no-new-privileges:true` to all containers  
-✅ Added `cap_drop: ALL` to all containers  
-✅ Added minimal required `cap_add` for each service  
-✅ Enhanced Dockerfile with security labels and proper permissions  
-✅ Added dedicated appgroup for better security isolation  
+### Deployment Security Enhancements:
+✅ Removed Docker dependencies, transitioned to direct Python deployment
+✅ Updated all installation scripts to use uvicorn/gunicorn
+✅ Enhanced permission management for data directories
+✅ Added proper environment variable handling
+✅ Configured secure default settings  
 
 ---
 
