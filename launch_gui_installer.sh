@@ -12,6 +12,7 @@
 # - Automatic psutil installation if missing
 # - Automatic Python virtual environment creation and activation
 # - Prefer Python 3.12 for compatibility, fall back to 3.13 if needed
+# - Uses --no-hardlinks for Qubes OS compatibility
 # - Fallback to text-based installer if GUI not available
 # - Works in virtual environments, XEN, Qubes OS, etc.
 #
@@ -304,7 +305,7 @@ main() {
         # Clone repository if not already present
         if [ ! -d "$INSTALL_DIR/.git" ]; then
             log_info "Cloning repository to $INSTALL_DIR..."
-            if git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR" 2>&1; then
+            if git clone --branch "$REPO_BRANCH" --depth 1 --no-hardlinks "$REPO_URL" "$INSTALL_DIR" 2>&1; then
                 log_success "Repository cloned"
             else
                 log_error "Failed to clone repository. Check your internet connection and git installation."
@@ -316,7 +317,7 @@ main() {
                 else
                     log_error "Cannot proceed without repository"
                     log_info "You can manually clone the repository first:"
-                    log_info "  git clone --branch 0.02 --depth 1 https://github.com/ideotion/Open-Omniscience.git ~/open-omniscience"
+                    log_info "  git clone --branch 0.02 --depth 1 --no-hardlinks https://github.com/ideotion/Open-Omniscience.git ~/open-omniscience"
                     exit 1
                 fi
             fi
