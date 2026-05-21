@@ -134,7 +134,7 @@ torch>=2.2.0
 # tensorflow>=2.16.1  # Commented out: No Python 3.13 support yet
 transformers==4.40.0  # Pinned for Python 3.13 compatibility
 onnx==1.16.0  # Pinned for Python 3.13 compatibility
-onnxruntime==1.18.0  # Pinned for Python 3.13 compatibility
+onnxruntime>=1.20.0  # Updated: Version 1.18.0 does not exist
 
 # ============================================================================
 # Encryption & Security
