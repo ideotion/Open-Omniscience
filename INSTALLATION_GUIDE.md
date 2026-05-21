@@ -1,10 +1,10 @@
 # Open-Omniscience Installation Guide
 
 **Version:** 0.02  
-**Last Updated:** 2026  
-**Platform:** Debian-based Linux (Ubuntu, Debian, etc.)
+**Last Updated:** 2025-05-21  
+**Platform:** Debian-based Linux (Ubuntu, Debian, etc.), macOS, Windows (WSL2)
 
-This guide provides comprehensive instructions for installing Open-Omniscience on Debian-based Linux systems.
+This guide provides comprehensive instructions for installing Open-Omniscience on your system using direct Python installation.
 
 ## 🚀 Quick Start
 
@@ -16,477 +16,378 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/inst
 
 This script will:
 - ✅ Automatically detect your Debian-based system
-- ✅ Install all required dependencies (Docker, Docker Compose, Git, etc.)
+- ✅ Install all required dependencies (Python, Git, etc.)
 - ✅ Clone the Open-Omniscience repository
-- ✅ Install Python dependencies in a virtual environment
+- ✅ Set up the virtual environment
+- ✅ Install all Python packages
 - ✅ Configure the environment automatically
-- ✅ Create a desktop launcher for easy access
+- ✅ Create a desktop launcher
 - ✅ Optionally install Ollama for LLM support
-- ✅ Start the services and verify everything works
 
-## 📋 System Requirements
+**After installation:**
+- Open-Omniscience will be running at: **http://localhost:8000**
+- Application launcher created in your OS app menu
+- All dependencies installed and configured
 
-### Minimum Requirements (Core Features Only)
-- **Operating System:** Debian-based Linux (Ubuntu 20.04+, Debian 10+)
+For advanced users who need manual installation options, see the sections below.
+
+---
+
+## 📋 Prerequisites
+
+### Supported Operating Systems
+- **Linux:** Debian 11+, Ubuntu 20.04+, and derivatives
+- **macOS:** 10.15+ (Catalina and later)
+- **Windows:** 10/11 with WSL2 (Windows Subsystem for Linux 2)
+
+### Minimum System Requirements
 - **CPU:** 2 cores
-- **RAM:** 4GB
-- **Storage:** 10GB free disk space
-- **Architecture:** x86_64, amd64, aarch64, arm64
+- **RAM:** 4 GB
+- **Storage:** 20 GB free disk space
+- **Python:** 3.8 or higher
 
-### Recommended Requirements (With LLM Support)
-- **CPU:** 8 cores
-- **RAM:** 16GB
-- **Storage:** 50GB (for 3-4 LLM models)
-- **GPU:** NVIDIA with 8GB+ VRAM (optional, for better LLM performance)
+### Recommended System Requirements
+- **CPU:** 4+ cores
+- **RAM:** 8+ GB
+- **Storage:** 50 GB+ free disk space
+- **Python:** 3.10 or higher
 
-### High-End Requirements (Full LLM Capabilities)
-- **CPU:** 16+ cores
-- **RAM:** 32GB+
-- **Storage:** 100GB+ (for multiple large models)
-- **GPU:** NVIDIA with 24GB+ VRAM
+---
 
-## 🛠️ Prerequisites
+## 🛠️ Manual Installation
 
-### Required Packages
-The installer will automatically install these if missing:
-- `curl` - For downloading files
-- `git` - For cloning the repository
-- `wget` - For downloading dependencies
-- `ca-certificates` - For SSL/TLS support
-- `gnupg` - For package verification
-- `lsb-release` - For system information
-- `software-properties-common` - For repository management
+If you prefer to install manually or want more control over the process, follow these steps:
 
-### Docker Requirements
-- **Docker Engine** 20.10+
-- **Docker Compose** 2.0+ (plugin or standalone)
+### Step 1: Install System Dependencies
 
-## 📦 Installation Methods
-
-### Method 1: Unified Install Script (Recommended)
-
-```bash
-# Download and run the unified installer
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install.sh | bash
-```
-
-**What this does:**
-1. Checks system prerequisites
-2. Installs basic system packages
-3. Installs Docker and Docker Compose
-4. Optionally installs Ollama for LLM support
-5. Clones the Open-Omniscience repository
-6. Installs Python dependencies
-7. Configures the environment
-8. Creates a desktop launcher
-9. Starts the services
-10. Verifies the installation
-
-### Method 2: Manual Installation
-
-If you prefer manual control over the installation process:
-
-#### Step 1: Install System Dependencies
-
+#### Ubuntu/Debian
 ```bash
 # Update package lists
-sudo apt-get update
+sudo apt update && sudo apt upgrade -y
 
-# Install basic packages
-sudo apt-get install -y git curl wget ca-certificates gnupg lsb-release software-properties-common
+# Install required packages
+sudo apt install -y python3 python3-pip python3-venv git curl wget
 
-# Install Python 3.8+ and venv
-sudo apt-get install -y python3 python3-pip python3-venv python3-tk
+# Verify installation
+python3 --version
+pip3 --version
 ```
 
-#### Step 2: Install Docker
+#### CentOS/RHEL
+```bash
+# Update package lists
+sudo yum update -y
+
+# Install required packages
+sudo yum install -y python3 python3-pip git curl wget
+
+# Verify installation
+python3 --version
+pip3 --version
+```
+
+#### macOS
+```bash
+# Install Homebrew (if not already installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install required packages
+brew install python git
+
+# Verify installation
+python3 --version
+pip3 --version
+```
+
+#### Windows (WSL2)
+```powershell
+# Install WSL2 (if not already installed)
+wsl --install
+
+# Install Ubuntu from Microsoft Store
+# Open Ubuntu terminal and run:
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y python3 python3-pip python3-venv git curl wget
+```
+
+### Step 2: Clone the Repository
 
 ```bash
-# Remove old Docker versions
-sudo apt-get remove -y docker docker-engine docker.io containerd runc
-
-# Install Docker using official script
-curl -fsSL https://get.docker.com | sh
-
-# Add current user to docker group (requires logout/login)
-sudo usermod -aG docker $USER
-
-# Start Docker service
-sudo systemctl start docker
-sudo systemctl enable docker
+# Clone the Open-Omniscience repository
+git clone --branch 0.02 https://github.com/ideotion/Open-Omniscience.git
+cd Open-Omniscience
 ```
 
-#### Step 3: Install Docker Compose
-
-```bash
-# Install Docker Compose plugin (recommended)
-sudo apt-get install -y docker-compose-plugin
-
-# OR install standalone docker-compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-```
-
-#### Step 4: Clone Repository
-
-```bash
-# Clone the repository
-git clone --branch 0.02 --depth 1 https://github.com/ideotion/Open-Omniscience.git ~/open-omniscience
-
-# Navigate to the directory
-cd ~/open-omniscience
-```
-
-#### Step 5: Install Python Dependencies
+### Step 3: Set Up Python Virtual Environment
 
 ```bash
 # Create virtual environment
 python3 -m venv venv
 
-# Activate virtual environment
+# Activate it
+# Linux/macOS:
 source venv/bin/activate
 
+# Windows (in WSL2):
+source venv/bin/activate
+```
+
+### Step 4: Install Python Dependencies
+
+```bash
+# Upgrade pip
+pip install --upgrade pip
+
 # Install core dependencies
-pip install --upgrade pip setuptools wheel
 pip install -r requirements-core.txt
 
-# Optionally install LLM dependencies
+# For LLM features (optional)
 pip install -r requirements-llm.txt
 ```
 
-#### Step 6: Configure Environment
+### Step 5: Configure Environment
 
 ```bash
-# Copy example environment file
+# Copy example configuration
 cp .env.example .env
 
-# Create data directories
-mkdir -p data audit logs
-
-# Optionally configure settings
-nano configs/settings.yaml
+# Edit configuration (optional)
+nano .env  # or use your preferred editor
 ```
 
-#### Step 7: Start Services
+Default configuration uses SQLite, which requires no additional setup. For PostgreSQL, see the [Database Configuration](#database-configuration) section.
+
+### Step 6: Install Ollama (Optional - for LLM Features)
 
 ```bash
-# Build and start containers
-docker compose up -d --build
+# Install Ollama for local LLM support
+curl -fsSL https://ollama.com/install.sh | sh
 
-# Check if services are running
-docker compose ps
+# Start Ollama server
+ollama serve &
 
-# View logs
-docker compose logs -f
+# Verify installation
+ollama --version
 ```
 
-### Method 3: GUI Installer
+### Step 7: Start Open-Omniscience
 
-For users who prefer a graphical interface:
-
+#### For Development
 ```bash
-# First, ensure python3-tk is installed
-sudo apt-get install -y python3-tk
-
-# Then run the GUI installer
-cd ~/open-omniscience
-python3 installer/gui_installer.py
+# Start with auto-reload
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-The GUI installer provides:
-- Interactive 5-step wizard
-- System requirements check with visual feedback
-- Progress tracking and real-time logs
-- Application launcher creation
-- Automatic service startup
-
-## 🎯 Post-Installation Setup
-
-### Access the Application
-
-After successful installation, access Open-Omniscience at:
-```
-http://localhost:8000
-```
-
-### Verify Installation
-
+#### For Production
 ```bash
-# Check if containers are running
-docker compose ps
+# Install Gunicorn
+pip install gunicorn
 
-# Check application health
-curl http://localhost:8000/api/health
-
-# View application logs
-docker compose logs web
+# Start with Gunicorn (4 workers)
+gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app
 ```
 
-### Install LLM Models (Optional)
+### Step 8: Verify Installation
 
-If you installed Ollama for LLM support:
+Open your browser and navigate to: **http://localhost:8000**
 
-```bash
-# Pull the default model
-ollama pull gemma4:e2b
+You should see the Open-Omniscience interface.
 
-# List available models
-ollama list
+---
 
-# Check Ollama status
-curl http://localhost:11434/api/tags
-```
-
-### Configure LLM Support
-
-To enable LLM features in Docker:
-
-```bash
-# Create a docker-compose.override.yml file
-cat > docker-compose.override.yml << 'EOF'
-version: '3.8'
-
-services:
-  web:
-    environment:
-      - OLLAMA_HOST=http://host.docker.internal:11434
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-EOF
-
-# Restart services
-docker compose down && docker compose up -d --build
-```
-
-## 🔧 Troubleshooting
-
-### Common Issues and Solutions
-
-#### 1. Docker Permission Denied
-
-**Symptom:** `Got permission denied while trying to connect to the Docker daemon socket`
-
-**Solution:**
-```bash
-# Add user to docker group
-sudo usermod -aG docker $USER
-
-# Log out and back in, or restart
-logout
-```
-
-#### 2. Port 8000 Already in Use
-
-**Symptom:** `Address already in use` or `port is already allocated`
-
-**Solution:**
-```bash
-# Find and kill the process using port 8000
-sudo lsof -i :8000
-sudo kill -9 <PID>
-
-# Or change the port in docker-compose.yml
-# Edit the ports section to use a different port
-```
-
-#### 3. Docker Compose Not Found
-
-**Symptom:** `docker-compose: command not found`
-
-**Solution:**
-```bash
-# Use docker compose plugin instead
-sudo apt-get install -y docker-compose-plugin
-
-# Or create a symlink
-sudo ln -s /usr/bin/docker /usr/local/bin/docker-compose
-```
-
-#### 4. Python Dependencies Installation Failed
-
-**Symptom:** `pip install failed` or `ModuleNotFoundError`
-
-**Solution:**
-```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Upgrade pip
-pip install --upgrade pip setuptools wheel
-
-# Install dependencies one by one
-pip install fastapi uvicorn sqlalchemy
-```
-
-#### 5. Application Not Starting
-
-**Symptom:** Container starts but application doesn't respond
-
-**Solution:**
-```bash
-# Check container logs
-docker compose logs web
-
-# Check if the health endpoint works
-curl http://localhost:8000/api/health
-
-# If using SQLite, ensure the data directory is writable
-chmod -R 755 data/
-```
-
-#### 6. Database Connection Issues
-
-**Symptom:** `Database connection failed` or `sqlite3.OperationalError`
-
-**Solution:**
-```bash
-# Ensure data directory exists and is writable
-mkdir -p data
-chmod 755 data
-
-# Check database URL in .env file
-nano .env
-
-# Ensure DATABASE_URL points to a writable location
-DATABASE_URL=sqlite:///./data/open_omniscience.db
-```
-
-### Debugging Commands
-
-```bash
-# Check all running containers
-docker ps -a
-
-# View container logs
-docker compose logs
-
-# Inspect container
-docker inspect open-omniscience-web
-
-# Test database connection
-python3 -c "from src.database.models import engine; print('DB OK')"
-
-# Test API endpoints
-curl -v http://localhost:8000/api/health
-curl -v http://localhost:8000/api/sources
-```
-
-## 📊 Verification Checklist
-
-- [ ] Docker is installed and running (`docker --version`)
-- [ ] Docker Compose is available (`docker compose version`)
-- [ ] Repository is cloned to `~/open-omniscience`
-- [ ] Python dependencies are installed (`pip list`)
-- [ ] Data directories exist (`data/`, `audit/`, `logs/`)
-- [ ] Configuration files exist (`configs/settings.yaml`, `.env`)
-- [ ] Containers are running (`docker compose ps`)
-- [ ] Application responds to health check (`curl http://localhost:8000/api/health`)
-- [ ] Web interface is accessible at `http://localhost:8000`
-
-## 🔄 Updating Open-Omniscience
-
-```bash
-# Navigate to installation directory
-cd ~/open-omniscience
-
-# Pull latest changes
-git pull origin 0.02
-
-# Update Python dependencies
-source venv/bin/activate
-pip install --upgrade -r requirements-core.txt
-
-# Rebuild and restart containers
-docker compose down
-docker compose up -d --build
-```
-
-## 🏗️ Configuration Options
+## ⚙️ Configuration
 
 ### Environment Variables
 
-Create or edit `.env` file in the installation directory:
+Edit the `.env` file to customize your installation:
 
 ```bash
 # Database configuration
 DATABASE_URL=sqlite:///./data/open_omniscience.db
 
 # Server configuration
-ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8000
+SERVER_DEBUG=false
 
 # LLM configuration (if using Ollama)
+LLM_ENABLED=true
 OLLAMA_HOST=http://localhost:11434
-DOWNLOAD_DEFAULT_MODELS=false
-AUTO_DOWNLOAD_MODELS=true
-MAX_CONTEXT_LENGTH=8192
-MAX_TOKENS=4096
+DEFAULT_MODEL=gemma4:e2b
+AUTO_DOWNLOAD_MODELS=false
+
+# Scraping configuration
+SCRAPING_RATE_LIMIT_MS=1000
+SCRAPING_USER_AGENT="OpenOmniscience/1.0 (+https://github.com/ideotion/Open-Omniscience)"
+SCRAPING_RESPECT_ROBOTS_TXT=true
 ```
 
-### Settings Configuration
+### Database Configuration
 
-Edit `configs/settings.yaml`:
+#### SQLite (Default)
+No configuration needed. The application will automatically create a SQLite database at `data/open_omniscience.db`.
 
-```yaml
-database:
-  url: sqlite:///./data/open_omniscience.db
+#### PostgreSQL (Recommended for Production)
 
-scraping:
-  rate_limit_ms: 1000
-  user_agent: "OpenOmniscience/1.0 (+https://github.com/ideotion/Open-Omniscience)"
-  respect_robots_txt: true
-
-llm:
-  enabled: true
-  ollama_host: "http://localhost:11434"
-  default_model: "gemma4:e2b"
-  auto_download: false
-
-server:
-  host: "0.0.0.0"
-  port: 8000
-  debug: false
-```
-
-## 🚨 Security Considerations
-
-### Production Deployment
-
-For production environments:
-
-1. **Use HTTPS:** Set up a reverse proxy with SSL/TLS
-2. **Use PostgreSQL:** Instead of SQLite for better performance and reliability
-3. **Configure Authentication:** Add authentication for API endpoints
-4. **Limit Origins:** Set `ALLOWED_ORIGINS` to specific domains only
-5. **Use Docker Secrets:** For sensitive configuration
-
-### Docker Security
-
+1. Install PostgreSQL:
 ```bash
-# Run containers as non-root users (already configured in Dockerfile)
-# Use read-only filesystems where possible
-# Limit container capabilities
-# Use health checks for monitoring
+# Ubuntu/Debian
+sudo apt install -y postgresql postgresql-contrib
+
+# CentOS/RHEL
+sudo yum install -y postgresql-server postgresql-contrib
 ```
 
-## 📚 Additional Resources
+2. Create database and user:
+```bash
+sudo -u postgres psql -c "CREATE DATABASE open_omniscience;"
+sudo -u postgres psql -c "CREATE USER omniscience WITH PASSWORD 'your_secure_password';"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE open_omniscience TO omniscience;"
+```
 
-- **Documentation:** https://github.com/ideotion/Open-Omniscience
-- **API Documentation:** http://localhost:8000/docs (after installation)
-- **Issue Tracker:** https://github.com/ideotion/Open-Omniscience/issues
-- **Discussions:** https://github.com/ideotion/Open-Omniscience/discussions
-
-## 🎉 Next Steps
-
-After successful installation:
-
-1. **Access the web interface** at `http://localhost:8000`
-2. **Configure news sources** through the admin interface
-3. **Start scraping** to populate your database
-4. **Explore LLM features** (if Ollama is installed)
-5. **Check the documentation** for advanced usage
+3. Update `.env` file:
+```bash
+DATABASE_URL=postgresql+psycopg2://omniscience:your_secure_password@localhost/open_omniscience
+```
 
 ---
 
-**© 2026 Ideotion. All rights reserved.**
+## 🚀 Using the GUI Installer
 
-*Built with ❤️ for investigative journalism and ethical data analysis.*
+For a graphical installation experience, run the GUI installer:
+
+```bash
+# Navigate to the installer directory
+cd Open-Omniscience/installer
+
+# Run the GUI installer
+python3 gui_installer.py
+```
+
+The GUI installer provides:
+- Step-by-step visual installation
+- System requirements check
+- Automatic dependency installation
+- Configuration options
+- Progress tracking
+
+---
+
+## 📚 Post-Installation Steps
+
+### Create Desktop Launcher (Optional)
+
+To create a desktop shortcut for easy access:
+
+```bash
+# Create desktop file
+mkdir -p ~/.local/share/applications
+
+cat > ~/.local/share/applications/open-omniscience.desktop << EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Open-Omniscience
+Comment=Ethical Global Intelligence Platform
+Exec=bash -c "cd $HOME/open-omniscience && source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload & xdg-open http://localhost:8000"
+Icon=$HOME/open-omniscience/docs/open-omniscience-icon.png
+Terminal=true
+Categories=Development;Journalism;Research;Utility;
+StartupWMClass=Open-Omniscience
+EOF
+
+# Make executable
+chmod +x ~/.local/share/applications/open-omniscience.desktop
+
+# Update desktop database
+update-desktop-database ~/.local/share/applications
+```
+
+### Set Up as a System Service (Optional)
+
+To run Open-Omniscience as a background service:
+
+```bash
+# Create systemd service file
+sudo nano /etc/systemd/system/open-omniscience.service
+```
+
+Add the following content:
+```ini
+[Unit]
+Description=Open-Omniscience
+After=network.target
+
+[Service]
+User=your_username
+WorkingDirectory=/home/your_username/open-omniscience
+Environment="PATH=/home/your_username/open-omniscience/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/your_username/open-omniscience/venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable open-omniscience
+sudo systemctl start open-omniscience
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### Python not found
+- Ensure Python 3.8+ is installed
+- On some systems, you may need to use `python3` explicitly
+
+#### pip not found
+- Install pip: `sudo apt install python3-pip` (Ubuntu/Debian)
+- Or: `sudo yum install python3-pip` (CentOS/RHEL)
+
+#### Module not found errors
+- Activate the virtual environment: `source venv/bin/activate`
+- Install dependencies: `pip install -r requirements-core.txt`
+
+#### Port already in use
+- Check what's using port 8000: `ss -tulnp | grep 8000`
+- Either stop the conflicting service or change the port in `.env`
+
+#### Permission errors
+- Ensure you have write permissions in the installation directory
+- Try running with `sudo` if needed (not recommended for production)
+
+### Getting Help
+
+- Check the [FAQ](FAQ.md)
+- Review the [Troubleshooting Guide](TROUBLESHOOTING.md)
+- Open an issue on [GitHub](https://github.com/ideotion/Open-Omniscience/issues)
+
+---
+
+## 📖 Next Steps
+
+1. **Explore the interface** - Navigate through the application
+2. **Configure your settings** - Customize the configuration in `.env`
+3. **Set up LLM models** - If using LLM features, download models with `ollama pull`
+4. **Start collecting data** - Begin using the scraping and data collection features
+5. **Review documentation** - Check out the other guides in the `docs/` directory
+
+---
+
+## 🔗 Additional Resources
+
+- [Official Documentation](https://github.com/ideotion/Open-Omniscience)
+- [Deployment Guide](docs/DEPLOYMENT_GUIDE.md)
+- [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
+- [Developer Guide](docs/DEVELOPER_GUIDE.md)
+- [API Documentation](docs/API_DOCUMENTATION.md)
+
+---
+
+*Last updated: 2025-05-21*

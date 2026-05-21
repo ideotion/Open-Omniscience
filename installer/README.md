@@ -23,7 +23,7 @@ A graphical installer for non-technical users to install Open-Omniscience on Deb
   - `python3-tk` (for GUI)
   - `psutil` (for system checks)
   - `git`, `curl`, `wget` (for installation)
-  - `docker`, `docker-compose` (for containerized deployment)
+  - `python3`, `python3-venv` (for Python environment)
 
 ## Installation
 

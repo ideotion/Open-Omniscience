@@ -7,7 +7,7 @@ The **Smart Installer Launcher** (`launch_gui_installer.sh`) provides an intelli
 1. **Automatically detects** if a GUI environment is available
 2. **Automatically installs** required dependencies (`python3-tk`, `psutil`)
 3. **Launches the appropriate installer** (GUI or text-based)
-4. **Works in all environments**: Virtual machines, XEN, Docker, bare metal, etc.
+4. **Works in all environments**: Virtual machines, XEN, Qubes OS, bare metal, etc.
 
 ## Features
 
@@ -96,7 +96,7 @@ Launch GUI installer
 | **Bare Metal Debian/Ubuntu** | ✅ Yes | ✅ Yes |
 | **Virtual Machine (X11)** | ✅ Yes | ✅ Yes |
 | **XEN with X11 passthrough** | ✅ Yes | ✅ Yes |
-| **Docker with X11 socket** | ✅ Yes | ✅ Yes |
+| **Qubes OS AppVM** | ✅ Yes | ✅ Yes |
 | **Headless Server** | ❌ No | ✅ Falls back to text |
 | **SSH Terminal** | ❌ No | ✅ Falls back to text |
 | **WSL (Windows)** | ❌ No | ❌ Not supported |
@@ -113,7 +113,7 @@ Launch GUI installer
 ### For Text Mode (Fallback)
 - Debian-based Linux
 - curl, bash, git
-- Docker (optional, for containerized deployment)
+- Python 3.8+ (required)
 
 ## Customization
 
@@ -171,7 +171,7 @@ python3 -m pip install psutil
 
 1. A display server (X11 or Wayland)
 2. X11 forwarding if using SSH: `ssh -X user@host`
-3. Docker with X11 socket mounted: `docker run -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix ...`
+3. Qubes OS with GUI VM: Ensure your AppVM has GUI capabilities
 
 ### "Not a Debian-based system"
 

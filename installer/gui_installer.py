@@ -124,27 +124,7 @@ class SystemChecker:
         """Check if command is available."""
         return shutil.which(cmd) is not None
     
-    @staticmethod
-    def check_docker():
-        """Check Docker installation."""
-        return SystemChecker.check_command('docker')
-    
-    @staticmethod
-    def check_docker_compose():
-        """Check Docker Compose installation."""
-        # Check for docker-compose standalone
-        if SystemChecker.check_command('docker-compose'):
-            return True
-        # Check for docker compose plugin
-        if SystemChecker.check_command('docker'):
-            try:
-                result = subprocess.run(['docker', 'compose', 'version'], 
-                                      capture_output=True, text=True, timeout=5)
-                return result.returncode == 0
-            except:
-                pass
-        return False
-    
+
     @staticmethod
     def check_git():
         """Check Git installation."""
@@ -191,9 +171,7 @@ class SystemChecker:
             'architecture': SystemChecker.check_architecture(),
             'memory_gb': SystemChecker.check_memory(),
             'disk_space_gb': SystemChecker.check_disk_space(),
-            'has_docker': SystemChecker.check_docker(),
-            'has_docker_compose': SystemChecker.check_docker_compose(),
-            'has_git': SystemChecker.check_git(),
+                        'has_git': SystemChecker.check_git(),
             'has_curl': SystemChecker.check_curl(),
             'has_python': SystemChecker.check_python(),
             'has_ollama': SystemChecker.check_ollama(),
@@ -227,27 +205,8 @@ class InstallerConfig:
 class CommandRunner:
     """Run shell commands with output capture."""
     
-    # Cache for docker compose command
-    _docker_compose_cmd = None
     
-    @classmethod
-    def get_docker_compose_cmd(cls):
-        """Get the correct docker compose command (docker-compose or docker compose)."""
-        if cls._docker_compose_cmd is None:
-            if SystemChecker.check_command('docker-compose'):
-                cls._docker_compose_cmd = 'docker-compose'
-            elif SystemChecker.check_command('docker'):
-                # Check if docker compose plugin is available
-                result = subprocess.run(['docker', 'compose', 'version'], 
-                                      capture_output=True, text=True)
-                if result.returncode == 0:
-                    cls._docker_compose_cmd = 'docker compose'
-                else:
-                    cls._docker_compose_cmd = 'docker-compose'
-            else:
-                cls._docker_compose_cmd = 'docker-compose'
-        return cls._docker_compose_cmd
-    
+
     @staticmethod
     def run_command(cmd, check=False, capture=True, text=True, sudo=False):
         """Run a command and return result."""
@@ -261,13 +220,7 @@ class CommandRunner:
         except subprocess.CalledProcessError as e:
             return e
     
-    @staticmethod
-    def run_docker_compose(args, check=False, capture=True, text=True, sudo=False):
-        """Run docker-compose command, trying both variants."""
-        cmd = CommandRunner.get_docker_compose_cmd()
-        full_cmd = f"{cmd} {args}"
-        return CommandRunner.run_command(full_cmd, check=check, capture=capture, text=text, sudo=sudo)
-    
+
     @staticmethod
     def run_async(cmd, output_callback=None, error_callback=None):
         """Run command asynchronously with callbacks."""
@@ -558,10 +511,6 @@ class GUIInstaller:
         
         # Recommended checks
         recommended_checks = [
-            ('Docker', checks.get('has_docker', False), False,
-             "Required for containerized deployment"),
-            ('Docker Compose', checks.get('has_docker_compose', False), False,
-             "Required for multi-container deployment"),
             ('Ollama', checks.get('has_ollama', False), False,
              "Required for LLM features"),
         ]
@@ -796,18 +745,7 @@ class GUIInstaller:
             self.install_dependencies()
             self.update_progress(10, "Dependencies installed")
             
-            # Step 1.5: Install Docker (if not already installed)
-            if not (SystemChecker.check_docker() and SystemChecker.check_docker_compose()):
-                self.update_progress(12, "Installing Docker...")
-                self.log_message("Installing Docker Engine and Docker Compose...")
-                if not self.install_docker():
-                    self.log_message("Warning: Docker installation failed. Services will not be started automatically.")
-                    self.config['start_services'] = False
-                self.update_progress(15, "Docker installed")
-            else:
-                self.log_message("Docker and Docker Compose are already installed")
-                self.update_progress(15, "Docker verified")
-            
+
             # Step 2: Clone repository
             self.update_progress(20, "Cloning repository...")
             self.log_message("Cloning Open-Omniscience repository...")
@@ -846,13 +784,8 @@ class GUIInstaller:
             if self.config['start_services']:
                 self.update_progress(98, "Starting services...")
                 self.log_message("Starting Open-Omniscience services...")
-                # Re-check Docker Compose in case it was just installed
-                if not (SystemChecker.check_docker() and SystemChecker.check_docker_compose()):
-                    self.log_message("Warning: Docker Compose is not available. Services cannot be started.")
-                    self.log_message("If Docker was just installed, you may need to log out and back in for group changes to take effect.")
-                else:
-                    if not self.start_services(open_browser=True):
-                        self.log_message("Warning: Services failed to start. You can start them manually later.")
+                if not self.start_services(open_browser=True):
+                    self.log_message("Warning: Services failed to start. You can start them manually later.")
             
             self.update_progress(100, "Installation complete!")
             self.log_message("Installation completed successfully!")
@@ -970,13 +903,13 @@ class GUIInstaller:
             self.log_message(f"Error: Failed to change to repository directory: {e}")
             raise Exception(f"Failed to change to repository directory: {e}")
         
-        # Verify docker-compose.yml exists
-        if not os.path.exists('docker-compose.yml'):
-            self.log_message("Error: docker-compose.yml not found in cloned repository!")
+        # Verify requirements-core.txt exists
+        if not os.path.exists('requirements-core.txt'):
+            self.log_message("Error: requirements-core.txt not found in cloned repository!")
             self.log_message("The repository may not have been cloned correctly.")
-            raise Exception("docker-compose.yml not found after cloning")
+            raise Exception("requirements-core.txt not found after cloning")
         
-        self.log_message("Repository cloned successfully. docker-compose.yml found.")
+        self.log_message("Repository cloned successfully. requirements-core.txt found.")
         
         # Return to original directory
         try:
@@ -998,116 +931,7 @@ class GUIInstaller:
         else:
             self.log_message("Ollama installed successfully")
     
-    def install_docker(self):
-        """Install Docker Engine and Docker Compose plugin."""
-        try:
-            # Check if we have sudo privileges
-            if not SystemChecker.check_root():
-                self.log_message("Note: Docker installation requires sudo privileges. You may be prompted for your password.")
-            
-            if SystemChecker.check_docker() and SystemChecker.check_docker_compose():
-                self.log_message("Docker and Docker Compose are already installed")
-                return True
-            
-            self.log_message("Installing Docker Engine and Docker Compose...")
-            
-            # Remove old docker-compose if it exists (conflicts with plugin)
-            if SystemChecker.check_command('docker-compose'):
-                self.log_message("Removing old docker-compose standalone...")
-                CommandRunner.run_command("sudo apt-get remove -y docker-compose", 
-                                          check=False, capture=True, text=True)
-            
-            # Install Docker Engine
-            self.log_message("Installing Docker Engine...")
-            commands = [
-                # Remove old versions
-                "sudo apt-get remove -y docker docker-engine docker.io containerd runc",
-                # Install dependencies
-                "sudo apt-get update",
-                "sudo apt-get install -y ca-certificates curl gnupg",
-                # Add Docker's official GPG key
-                "sudo install -m 0755 -d /etc/apt/keyrings",
-                'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg',
-                # Set up the repository
-                'sudo chmod a+r /etc/apt/keyrings/docker.gpg',
-                'echo "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null',
-                # Install Docker Engine
-                "sudo apt-get update",
-                "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
-            ]
-            
-            for cmd in commands:
-                self.log_message(f"Running: {cmd}")
-                result = CommandRunner.run_command(cmd, check=False, capture=True, text=True)
-                if result.returncode != 0:
-                    self.log_message(f"Warning: {result.stderr}")
-            
-            # Verify installation
-            if SystemChecker.check_docker() and SystemChecker.check_docker_compose():
-                self.log_message("Docker and Docker Compose installed successfully!")
-                # Add current user to docker group to avoid sudo
-                self.log_message("Adding current user to docker group...")
-                CommandRunner.run_command(f"sudo usermod -aG docker {os.getenv('USER', 'root')}", 
-                                          check=False, capture=True, text=True)
-                
-                # Start Docker daemon (try multiple methods)
-                self.log_message("Starting Docker daemon...")
-                daemon_started = False
-                
-                # Method 1: systemctl (preferred)
-                result = CommandRunner.run_command("sudo systemctl start docker", 
-                                                  check=False, capture=True, text=True)
-                if result.returncode == 0:
-                    daemon_started = True
-                else:
-                    self.log_message(f"systemctl start failed, trying alternative methods...")
-                
-                # Method 2: service command
-                if not daemon_started:
-                    result = CommandRunner.run_command("sudo service docker start", 
-                                                      check=False, capture=True, text=True)
-                    if result.returncode == 0:
-                        daemon_started = True
-                    else:
-                        self.log_message(f"service start failed, trying dockerd directly...")
-                
-                # Method 3: dockerd directly
-                if not daemon_started:
-                    result = CommandRunner.run_command("sudo dockerd &", 
-                                                      check=False, capture=True, text=True)
-                    if result.returncode == 0:
-                        daemon_started = True
-                
-                # Wait for daemon to initialize and verify it's running
-                if daemon_started:
-                    import time
-                    max_attempts = 10
-                    for attempt in range(max_attempts):
-                        time.sleep(2)  # Wait 2 seconds between checks
-                        # Use sudo to check docker info in case user isn't in docker group yet
-                        result = CommandRunner.run_command("sudo docker info", 
-                                                          check=False, capture=True, text=True)
-                        if result.returncode == 0:
-                            self.log_message("Docker daemon is running!")
-                            break
-                        else:
-                            self.log_message(f"Waiting for Docker daemon to start... (attempt {attempt + 1}/{max_attempts})")
-                    else:
-                        # All attempts failed
-                        self.log_message("Warning: Docker daemon started but not responding after 20 seconds.")
-                        self.log_message("The installer will continue, but Docker may need more time to initialize.")
-                else:
-                    self.log_message("Warning: Docker daemon could not be started automatically.")
-                
-                self.log_message("Note: You may need to log out and back in for docker group changes to take effect.")
-                return True
-            else:
-                self.log_message("Warning: Docker installation may have failed. Please install manually.")
-                return False
-        except Exception as e:
-            self.log_message(f"Error during Docker installation: {e}")
-            return False
-    
+
     def install_python_deps(self):
         """Install Python dependencies."""
         try:
@@ -1183,14 +1007,13 @@ class GUIInstaller:
         desktop_file = os.path.expanduser("~/.local/share/applications/open-omniscience.desktop")
         os.makedirs(os.path.dirname(desktop_file), exist_ok=True)
         
-        dc_cmd = CommandRunner.get_docker_compose_cmd()
         desktop_content = f"""[Desktop Entry]
 Version=1.0
 Type=Application
 Name=Open-Omniscience
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd {install_dir} && {dc_cmd} -f {install_dir}/docker-compose.yml up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
+Exec=bash -c "cd {install_dir} && source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload & xdg-open http://localhost:8000"
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
 StartupWMClass=Open-Omniscience
@@ -1210,161 +1033,57 @@ StartupWMClass=Open-Omniscience
         self.log_message("You can now find 'Open-Omniscience' in your application menu")
     
     def start_services(self, open_browser=True):
-        """Start Open-Omniscience services and optionally open browser."""
-        # Check if Docker Compose is available - use comprehensive detection
-        docker_compose_available = False
-        compose_cmd = None
-        
-        # Method 1: Check for docker compose plugin (modern Docker)
-        try:
-            result = subprocess.run(['docker', 'compose', 'version'], 
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                docker_compose_available = True
-                compose_cmd = 'docker compose'
-                self.log_message(f"Docker Compose plugin detected: {result.stdout.strip()}")
-        except:
-            pass
-        
-        # Method 2: Check for standalone docker-compose
-        if not docker_compose_available and SystemChecker.check_command('docker-compose'):
-            try:
-                result = subprocess.run(['docker-compose', '--version'], 
-                                      capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    docker_compose_available = True
-                    compose_cmd = 'docker-compose'
-                    self.log_message(f"Docker Compose standalone detected: {result.stdout.strip()}")
-            except:
-                pass
-        
-        # Method 3: Check if docker command exists and try to use it
-        if not docker_compose_available and SystemChecker.check_command('docker'):
-            try:
-                # Try to see if docker compose is available as a subcommand
-                result = subprocess.run(['docker', 'compose'], 
-                                      capture_output=True, text=True, timeout=5)
-                # Even if it fails, docker compose might still work
-                docker_compose_available = True
-                compose_cmd = 'docker compose'
-                self.log_message("Docker Compose plugin available (docker compose)")
-            except:
-                pass
-        
-        if not docker_compose_available:
-            self.log_message("Error: Docker Compose is not installed.")
-            self.log_message("Please install Docker Engine and Docker Compose plugin first.")
-            self.log_message("Install with: sudo apt-get install docker-compose-plugin")
-            return False
-        
-        # Update the docker compose command in CommandRunner if we found it
-        if compose_cmd:
-            CommandRunner._docker_compose_cmd = compose_cmd
-        
-        # Check if Docker daemon is running
-        self.log_message("Checking Docker daemon...")
-        result = CommandRunner.run_command("sudo docker info", check=False, capture=True, text=True)
-        if result.returncode != 0:
-            self.log_message("Docker daemon is not running. Attempting to start it...")
-            
-            # Try multiple methods to start Docker daemon
-            daemon_started = False
-            
-            # Method 1: systemctl
-            result = CommandRunner.run_command("sudo systemctl start docker", 
-                                              check=False, capture=True, text=True)
-            if result.returncode == 0:
-                daemon_started = True
-            
-            # Method 2: service command
-            if not daemon_started:
-                result = CommandRunner.run_command("sudo service docker start", 
-                                                  check=False, capture=True, text=True)
-                if result.returncode == 0:
-                    daemon_started = True
-            
-            # Method 3: dockerd directly
-            if not daemon_started:
-                result = CommandRunner.run_command("sudo dockerd &", 
-                                                  check=False, capture=True, text=True)
-                if result.returncode == 0:
-                    daemon_started = True
-            
-            if not daemon_started:
-                self.log_message("Warning: Could not start Docker daemon automatically.")
-                return False
-            
-            # Wait for daemon to initialize and verify it's running
-            import time
-            max_attempts = 10
-            for attempt in range(max_attempts):
-                time.sleep(2)  # Wait 2 seconds between checks
-                # Use sudo to check docker info in case user isn't in docker group yet
-                result = CommandRunner.run_command("sudo docker info", check=False, capture=True, text=True)
-                if result.returncode == 0:
-                    self.log_message("Docker daemon is running!")
-                    break
-                else:
-                    self.log_message(f"Waiting for Docker daemon to start... (attempt {attempt + 1}/{max_attempts})")
-            else:
-                # All attempts failed
-                self.log_message("Warning: Docker daemon started but not responding after 20 seconds.")
-                return False
-        
+        """Start Open-Omniscience services using direct Python execution."""
         try:
             os.chdir(self.config['install_dir'])
         except Exception as e:
             self.log_message(f"Error: Failed to change to install directory: {e}")
             return False
         
-        # Check if docker-compose.yml exists
-        compose_file = os.path.join(self.config['install_dir'], 'docker-compose.yml')
-        if not os.path.exists(compose_file):
-            self.log_message(f"Error: docker-compose.yml not found at {compose_file}")
-            self.log_message("Cannot start services without a Docker Compose configuration file.")
+        # Check if virtual environment exists
+        venv_path = os.path.join(self.config['install_dir'], 'venv')
+        if not os.path.exists(venv_path):
+            self.log_message("Error: Virtual environment not found. Please run the installation first.")
             return False
         
-        # Start with Docker Compose
-        self.log_message("Starting services with Docker Compose...")
-        result = CommandRunner.run_docker_compose(f"-f {compose_file} up -d --build", 
-                                                  check=False, capture=True, text=True)
-        if result.returncode != 0:
-            self.log_message(f"Warning: Failed to start services: {result.stderr}")
-            # Try to see what containers are running
-            result2 = CommandRunner.run_docker_compose("ps", check=False, capture=True, text=True)
-            self.log_message(f"Container status:\n{result2.stdout}")
-            # Also check if the file is readable
-            if os.path.exists(compose_file):
-                self.log_message(f"docker-compose.yml exists at: {compose_file}")
-                try:
-                    with open(compose_file, 'r') as f:
-                        content = f.read()
-                    self.log_message(f"docker-compose.yml is readable ({len(content)} bytes)")
-                except Exception as e:
-                    self.log_message(f"Error reading docker-compose.yml: {e}")
-            return False
+        # Start the application using uvicorn
+        self.log_message("Starting Open-Omniscience with uvicorn...")
         
-        # Wait a bit for containers to initialize
-        self.log_message("Waiting for containers to initialize...")
-        self.root.after(10000, lambda: self.check_service_ready(open_browser, attempt=0))
+        # Build the command to start the server in the background
+        activate_cmd = f"source {venv_path}/bin/activate"
+        start_cmd = f"{activate_cmd} && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
+        
+        # Start in background
+        import subprocess
+        import threading
+        
+        def start_server():
+            try:
+                # Use bash to handle the source command
+                proc = subprocess.Popen(
+                    ['bash', '-c', start_cmd],
+                    cwd=self.config['install_dir'],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                # Don't wait, just let it run in background
+            except Exception as e:
+                self.log_message(f"Error starting server: {str(e)}")
+        
+        # Start server in a thread so it doesn't block
+        server_thread = threading.Thread(target=start_server, daemon=True)
+        server_thread.start()
+        
+        # Wait a bit then check if service is ready
+        self.log_message("Waiting for server to start...")
+        self.root.after(5000, lambda: self.check_service_ready(open_browser, attempt=0))
         return True
-    
+
+
     def check_service_ready(self, open_browser, attempt):
         """Check if service is ready, with non-blocking retry."""
         max_attempts = 24  # 120 seconds / 5 seconds per attempt
-        
-        # First check if containers are actually running
-        result_ps = CommandRunner.run_docker_compose("ps", check=False, capture=True, text=True)
-        if result_ps.returncode == 0:
-            containers_running = "Up" in result_ps.stdout or "running" in result_ps.stdout.lower()
-        else:
-            containers_running = False
-        
-        if not containers_running:
-            self.log_message(f"Containers not running. Status:\n{result_ps.stdout}")
-            # Try to see logs
-            result_logs = CommandRunner.run_docker_compose("logs web", check=False, capture=True, text=True)
-            self.log_message(f"Web container logs:\n{result_logs.stdout}")
         
         # Check if the web service is responding
         service_ready = False
@@ -1398,9 +1117,6 @@ StartupWMClass=Open-Omniscience
             self.log_message("Warning: Application did not become ready within the timeout period")
             self.log_message("You can manually check if it's running and open http://localhost:8000")
             # Show container logs for debugging
-            result_logs = CommandRunner.run_docker_compose("logs web", check=False, capture=True, text=True)
-            self.log_message(f"Web container logs:\n{result_logs.stdout}")
-    
     def create_complete_page(self):
         """Create installation complete page with compact layout."""
         frame = ttk.Frame(self.main_frame)
@@ -1469,85 +1185,9 @@ StartupWMClass=Open-Omniscience
         return frame
     
     def launch_application(self):
-        """Launch the application and open browser when ready."""
-        # Check if Docker Compose is available - use the same method as start_services
-        docker_compose_available = False
-        try:
-            # Check for docker compose plugin
-            result = subprocess.run(['docker', 'compose', 'version'], 
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                docker_compose_available = True
-        except:
-            pass
-        
-        # Check for standalone docker-compose
-        if not docker_compose_available and SystemChecker.check_command('docker-compose'):
-            try:
-                result = subprocess.run(['docker-compose', '--version'], 
-                                      capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    docker_compose_available = True
-            except:
-                pass
-        
-        if not docker_compose_available:
-            self.launch_status_label.config(text="Error: Docker Compose is not installed. Please install Docker Engine first.")
-            return
-        
-        # Check if Docker daemon is running
-        self.launch_status_label.config(text="Checking Docker daemon...")
+        """Launch the application using direct Python execution."""
+        self.launch_status_label.config(text="Preparing to launch...")
         self.root.update_idletasks()
-        result = CommandRunner.run_command("sudo docker info", check=False, capture=True, text=True)
-        if result.returncode != 0:
-            self.launch_status_label.config(text="Docker daemon is not running. Starting it...")
-            self.root.update_idletasks()
-            
-            # Try multiple methods to start Docker daemon
-            daemon_started = False
-            
-            # Method 1: systemctl
-            result = CommandRunner.run_command("sudo systemctl start docker", 
-                                              check=False, capture=True, text=True)
-            if result.returncode == 0:
-                daemon_started = True
-            
-            # Method 2: service command
-            if not daemon_started:
-                result = CommandRunner.run_command("sudo service docker start", 
-                                                  check=False, capture=True, text=True)
-                if result.returncode == 0:
-                    daemon_started = True
-            
-            # Method 3: dockerd directly
-            if not daemon_started:
-                result = CommandRunner.run_command("sudo dockerd &", 
-                                                  check=False, capture=True, text=True)
-                if result.returncode == 0:
-                    daemon_started = True
-            
-            if not daemon_started:
-                self.launch_status_label.config(text="Error: Could not start Docker daemon automatically.")
-                return
-            
-            # Wait for daemon to initialize and verify it's running
-            import time
-            max_attempts = 10
-            for attempt in range(max_attempts):
-                time.sleep(2)  # Wait 2 seconds between checks
-                # Use sudo to check docker info in case user isn't in docker group yet
-                result = CommandRunner.run_command("sudo docker info", check=False, capture=True, text=True)
-                if result.returncode == 0:
-                    self.launch_status_label.config(text="Docker daemon is running!")
-                    self.root.update_idletasks()
-                    break
-                else:
-                    self.launch_status_label.config(text=f"Waiting for Docker daemon... ({attempt + 1}/10)")
-                    self.root.update_idletasks()
-            else:
-                # All attempts failed
-                self.launch_status_label.config(text="Error: Docker daemon started but not responding after 20 seconds.")
-                return
         
         try:
             os.chdir(self.config['install_dir'])
@@ -1555,28 +1195,47 @@ StartupWMClass=Open-Omniscience
             self.launch_status_label.config(text=f"Error: Failed to change to install directory: {e}")
             return
         
-        # Check if docker-compose.yml exists
-        compose_file = os.path.join(self.config['install_dir'], 'docker-compose.yml')
-        if not os.path.exists(compose_file):
-            self.launch_status_label.config(text=f"Error: docker-compose.yml not found at {compose_file}")
+        # Check if virtual environment exists
+        venv_path = os.path.join(self.config['install_dir'], 'venv')
+        if not os.path.exists(venv_path):
+            self.launch_status_label.config(text="Error: Virtual environment not found. Please run the installation first.")
             return
         
-        self.launch_status_label.config(text="Starting services...")
+        self.launch_status_label.config(text="Starting Open-Omniscience...")
         self.root.update_idletasks()
         
-        # Start services with docker-compose
-        result = CommandRunner.run_docker_compose(f"-f {compose_file} up -d --build", 
-                                                  check=False, capture=True, text=True)
-        if result.returncode != 0:
-            self.launch_status_label.config(text=f"Failed to start services: {result.stderr}")
-            return
+        # Start the application using uvicorn in background
+        import subprocess
+        import threading
+        
+        def start_app():
+            try:
+                activate_cmd = f"source {venv_path}/bin/activate"
+                start_cmd = f"{activate_cmd} && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
+                
+                # Use bash to handle the source command
+                proc = subprocess.Popen(
+                    ['bash', '-c', start_cmd],
+                    cwd=self.config['install_dir'],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                # Don't wait, just let it run
+            except Exception as e:
+                self.launch_status_label.config(text=f"Error starting application: {str(e)}")
+        
+        # Start in a thread
+        app_thread = threading.Thread(target=start_app, daemon=True)
+        app_thread.start()
         
         self.launch_status_label.config(text="Services started. Waiting for application to be ready...")
         self.root.update_idletasks()
         
         # Check if service is ready with non-blocking retry
         self.check_service_ready_from_complete(open_browser=True, attempt=0)
-    
+
+
     def check_service_ready_from_complete(self, open_browser, attempt):
         """Check if service is ready from complete page, updates status label."""
         max_attempts = 24  # 120 seconds / 5 seconds per attempt
@@ -1631,14 +1290,13 @@ class AppLauncher:
         desktop_file = os.path.expanduser(f"~/.local/share/applications/{name.lower()}.desktop")
         os.makedirs(os.path.dirname(desktop_file), exist_ok=True)
         
-        dc_cmd = CommandRunner.get_docker_compose_cmd()
         content = f"""[Desktop Entry]
 Version=1.0
 Type=Application
 Name={name}
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd {install_dir} && {dc_cmd} -f {install_dir}/docker-compose.yml up -d --build && echo 'Waiting for services...' && while ! curl -s http://localhost:8000 > /dev/null 2>&1; do sleep 1; done && xdg-open http://localhost:8000"
+Exec=bash -c "cd {install_dir} && source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload & xdg-open http://localhost:8000"
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
 StartupWMClass={name}

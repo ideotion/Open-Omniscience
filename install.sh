@@ -31,9 +31,6 @@ REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
 REPO_BRANCH="0.02"
 INSTALL_DIR="${HOME}/open-omniscience"
 
-# Track if restart is needed
-RESTART_NEEDED=false
-
 # =============================================================================
 # Open-Omniscience Logo
 # =============================================================================
@@ -75,7 +72,6 @@ display_logo() {
                                 .-+*%@@@@@@@@@@@@@@@%#+=:                                       
 
                                        .::-----::.                                              
-
 EOF
 }
 
@@ -194,143 +190,6 @@ setup_system() {
 }
 
 # =============================================================================
-# Install Docker
-# =============================================================================
-
-install_docker() {
-    if command_exists docker && docker --version >/dev/null 2>&1; then
-        log_info "Docker is already installed: $(docker --version)"
-        return 0
-    fi
-    
-    log_info "Installing Docker..."
-    
-    # Remove old versions
-    run_with_sudo apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
-    
-    # Install Docker using official script
-    log_info "Installing Docker (this may take a few minutes)..."
-    if ! curl -fsSL https://get.docker.com | sh; then
-        log_error "Docker installation failed. Please install Docker manually from https://get.docker.com"
-        exit 1
-    fi
-    
-    # Add current user to docker group
-    if [ -n "${USER:-}" ] && [ ! -z "$USER" ]; then
-        if ! grep -qw "$USER" /etc/group 2>/dev/null || ! grep -q "^docker:" /etc/group 2>/dev/null; then
-            run_with_sudo usermod -aG docker "$USER"
-            log_info "Added $USER to docker group."
-            RESTART_NEEDED=true
-        fi
-    fi
-    
-    # Start Docker daemon if not running
-    if command_exists systemctl; then
-        run_with_sudo systemctl start docker 2>/dev/null || true
-        run_with_sudo systemctl enable docker 2>/dev/null || true
-    fi
-    
-    # Verify Docker is working
-    if ! command_exists docker || ! docker --version >/dev/null 2>&1; then
-        log_error "Docker installation failed. Please install Docker manually and re-run this script."
-        exit 1
-    fi
-    
-    log_success "Docker installed: $(docker --version)"
-}
-
-# =============================================================================
-# Install Docker Compose
-# =============================================================================
-
-install_docker_compose() {
-    # Check for docker compose plugin first (preferred method)
-    if docker compose version >/dev/null 2>&1; then
-        log_info "Docker Compose plugin detected"
-        # Create docker-compose symlink if it doesn't exist
-        if ! command_exists docker-compose; then
-            DOCKER_PATH=$(which docker 2>/dev/null || echo "/usr/bin/docker")
-            run_with_sudo ln -sf "$DOCKER_PATH" /usr/local/bin/docker-compose 2>/dev/null || true
-            log_info "Created docker-compose symlink"
-        fi
-        return 0
-    fi
-    
-    # Check for standalone docker-compose
-    if command_exists docker-compose && docker-compose --version >/dev/null 2>&1; then
-        log_info "Docker Compose is already installed: $(docker-compose --version)"
-        return 0
-    fi
-    
-    log_info "Installing Docker Compose..."
-    
-    # Get latest version
-    COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-    
-    # Install Docker Compose
-    run_with_sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    run_with_sudo chmod +x /usr/local/bin/docker-compose
-    
-    # Verify installation
-    if ! command_exists docker-compose; then
-        log_error "Docker Compose installation failed"
-        exit 1
-    fi
-    
-    log_success "Docker Compose installed: $(docker-compose --version)"
-}
-
-# =============================================================================
-# Install Ollama (for LLM support)
-# =============================================================================
-
-install_ollama() {
-    if command_exists ollama && ollama --version >/dev/null 2>&1; then
-        log_info "Ollama is already installed: $(ollama --version)"
-        return 0
-    fi
-    
-    log_info "Installing Ollama for local LLM support..."
-    
-    curl -fsSL https://ollama.com/install.sh | sh
-    
-    # Verify installation
-    if ! command_exists ollama || ! ollama --version >/dev/null 2>&1; then
-        log_warning "Ollama installation may have failed or is not in PATH"
-        return 1
-    fi
-    
-    log_success "Ollama installed: $(ollama --version)"
-    return 0
-}
-
-# =============================================================================
-# Clone Repository
-# =============================================================================
-
-clone_repository() {
-    if [ -d "$INSTALL_DIR" ]; then
-        log_info "Repository already exists at $INSTALL_DIR"
-        cd "$INSTALL_DIR"
-        git fetch origin
-        git checkout "$REPO_BRANCH"
-        git pull origin "$REPO_BRANCH"
-        return 0
-    fi
-    
-    log_info "Cloning Open-Omniscience repository..."
-    git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
-    
-    if [ ! -d "$INSTALL_DIR" ]; then
-        log_error "Failed to clone repository"
-        exit 1
-    fi
-    
-    cd "$INSTALL_DIR"
-    log_success "Repository cloned to $INSTALL_DIR"
-}
-
-# =============================================================================
 # Install Python Dependencies
 # =============================================================================
 
@@ -398,6 +257,56 @@ install_python_deps() {
     fi
     
     log_success "All Python dependencies installed"
+}
+
+# =============================================================================
+# Install Ollama (for LLM support)
+# =============================================================================
+
+install_ollama() {
+    if command_exists ollama && ollama --version >/dev/null 2>&1; then
+        log_info "Ollama is already installed: $(ollama --version)"
+        return 0
+    fi
+    
+    log_info "Installing Ollama for local LLM support..."
+    
+    curl -fsSL https://ollama.com/install.sh | sh
+    
+    # Verify installation
+    if ! command_exists ollama || ! ollama --version >/dev/null 2>&1; then
+        log_warning "Ollama installation may have failed or is not in PATH"
+        return 1
+    fi
+    
+    log_success "Ollama installed: $(ollama --version)"
+    return 0
+}
+
+# =============================================================================
+# Clone Repository
+# =============================================================================
+
+clone_repository() {
+    if [ -d "$INSTALL_DIR" ]; then
+        log_info "Repository already exists at $INSTALL_DIR"
+        cd "$INSTALL_DIR"
+        git fetch origin
+        git checkout "$REPO_BRANCH"
+        git pull origin "$REPO_BRANCH"
+        return 0
+    fi
+    
+    log_info "Cloning Open-Omniscience repository..."
+    git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
+    
+    if [ ! -d "$INSTALL_DIR" ]; then
+        log_error "Failed to clone repository"
+        exit 1
+    fi
+    
+    cd "$INSTALL_DIR"
+    log_success "Repository cloned to $INSTALL_DIR"
 }
 
 # =============================================================================
@@ -472,7 +381,7 @@ Type=Application
 Name=Open-Omniscience
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd $INSTALL_DIR && docker compose up -d --build && echo 'Open-Omniscience starting...' && echo 'Access at: http://localhost:8000'"
+Exec=bash -c "cd $INSTALL_DIR && source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload & xdg-open http://localhost:8000"
 Icon=$INSTALL_DIR/docs/open-omniscience-icon.png
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
@@ -500,14 +409,11 @@ start_services() {
     
     cd "$INSTALL_DIR"
     
-    # Check if docker-compose.yml exists
-    if [ ! -f "docker-compose.yml" ]; then
-        log_error "docker-compose.yml not found in $INSTALL_DIR"
-        return 1
-    fi
+    # Activate virtual environment
+    source venv/bin/activate
     
-    # Start with Docker Compose
-    if docker compose up -d --build; then
+    # Start the application
+    if uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload > /tmp/open-omniscience.log 2>&1 & then
         log_success "Services started successfully!"
         
         # Wait for services to be ready
@@ -521,11 +427,11 @@ start_services() {
             sleep 2
         done
         
-        log_warning "Application may take longer to start. Check with: docker compose ps"
+        log_warning "Application may take longer to start. Check with: tail -f /tmp/open-omniscience.log"
         return 0
     else
         log_error "Failed to start services"
-        log_info "Check container logs with: docker compose logs"
+        log_info "Check logs with: tail -f /tmp/open-omniscience.log"
         return 1
     fi
 }
@@ -538,26 +444,6 @@ verify_installation() {
     log_info "Verifying installation..."
     
     local all_passed=true
-    
-    # Check Docker
-    if ! command_exists docker || ! docker --version >/dev/null 2>&1; then
-        log_error "Docker verification failed"
-        all_passed=false
-    else
-        log_success "Docker: $(docker --version)"
-    fi
-    
-    # Check Docker Compose
-    if ! docker compose version >/dev/null 2>&1 && ! command_exists docker-compose; then
-        log_error "Docker Compose verification failed"
-        all_passed=false
-    else
-        if docker compose version >/dev/null 2>&1; then
-            log_success "Docker Compose: $(docker compose version)"
-        else
-            log_success "Docker Compose: $(docker-compose --version)"
-        fi
-    fi
     
     # Check Git
     if ! command_exists git || ! git --version >/dev/null 2>&1; then
@@ -624,12 +510,6 @@ main() {
     # Setup for Debian-based Linux
     setup_system
     
-    # Install Docker
-    install_docker
-    
-    # Install Docker Compose
-    install_docker_compose
-    
     # Ask user if they want to install Ollama
     read -p "Do you want to install Ollama for LLM support? (Y/n): " -n 1 -r
     echo ""
@@ -676,7 +556,7 @@ main() {
         start_services
         
         # Check if it started successfully
-        if docker ps | grep -q open-omniscience 2>/dev/null; then
+        if pgrep -f "uvicorn.*api.main" > /dev/null 2>&1; then
             log_success "Open-Omniscience is running!"
             echo ""
             echo "  Access the application at: http://localhost:8000"
@@ -691,26 +571,21 @@ main() {
                 fi
             fi
         else
-            log_warning "Open-Omniscience may not have started. Check with: docker ps"
+            log_warning "Open-Omniscience may not have started. Check with: tail -f /tmp/open-omniscience.log"
         fi
     else
         echo ""
         log_info "To start Open-Omniscience manually:"
         echo "    cd $INSTALL_DIR"
-        echo "    docker compose up -d --build"
+        echo "    source venv/bin/activate"
+        echo "    uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
         echo ""
         echo "  Then access at: http://localhost:8000"
     fi
     
-    # Restart notice
-    if [ "$RESTART_NEEDED" = true ]; then
-        echo ""
-        log_warning "⚠️  A system restart is recommended for Docker group changes to take effect."
-        log_info "You can restart now or log out and back in."
-    fi
-    
     echo ""
     echo "  For LLM support (if Ollama installed):"
+    echo "    ollama serve &"
     echo "    ollama pull gemma4:e2b"
     echo ""
     echo "  Documentation: https://github.com/ideotion/Open-Omniscience"

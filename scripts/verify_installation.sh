@@ -98,7 +98,7 @@ print_summary() {
         echo "  Open-Omniscience is ready to use!"
         echo ""
         echo "  To start the application:"
-        echo "    docker-compose up -d --build"
+        echo "    source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
         echo ""
         echo "  Access at: http://localhost:8000"
         echo ""
@@ -117,49 +117,6 @@ print_summary() {
 # Verification Functions
 # =============================================================================
 
-verify_docker() {
-    log_info "Checking Docker..."
-    
-    if ! command_exists docker; then
-        log_error "Docker is not installed"
-        return 1
-    fi
-    
-    if ! command_works "docker --version"; then
-        log_error "Docker is installed but not working"
-        return 1
-    fi
-    
-    VERSION=$(docker --version 2>/dev/null)
-    log_success "Docker: $VERSION"
-    
-    # Check if Docker daemon is running
-    if ! command_works "docker info"; then
-        log_error "Docker daemon is not running"
-        return 1
-    fi
-    
-    log_success "Docker daemon is running"
-    return 0
-}
-
-verify_docker_compose() {
-    log_info "Checking Docker Compose..."
-    
-    if ! command_exists docker-compose; then
-        log_error "Docker Compose is not installed"
-        return 1
-    fi
-    
-    if ! command_works "docker-compose --version"; then
-        log_error "Docker Compose is installed but not working"
-        return 1
-    fi
-    
-    VERSION=$(docker-compose --version 2>/dev/null)
-    log_success "Docker Compose: $VERSION"
-    return 0
-}
 
 verify_git() {
     log_info "Checking Git..."
@@ -316,19 +273,6 @@ verify_ollama() {
     return 0
 }
 
-verify_docker_images() {
-    log_info "Checking Docker images..."
-    
-    # Check if images are built or available
-    if command_works "docker images | grep -q open-omniscience"; then
-        log_success "Open-Omniscience Docker images are available"
-    else
-        log_warning "Open-Omniscience Docker images not built yet"
-        log_info "  Run: docker-compose build"
-    fi
-    
-    return 0
-}
 
 verify_environment_files() {
     log_info "Checking environment configuration..."
@@ -387,8 +331,6 @@ main() {
     print_header
     
     # Run all verification checks
-    verify_docker
-    verify_docker_compose
     verify_git
     verify_python
     verify_pip
@@ -396,7 +338,6 @@ main() {
     verify_python_dependencies
     verify_llm_dependencies
     verify_ollama
-    verify_docker_images
     verify_environment_files
     verify_port_availability
     

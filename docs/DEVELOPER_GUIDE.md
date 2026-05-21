@@ -464,8 +464,8 @@ WantedBy=multi-user.target
   sudo systemctl start openomniscience
   ```
 
-### Docker Deployment (Future)
-A `Dockerfile` and `docker-compose.yml` will be added in a future release.
+### Direct Python Deployment
+The application is designed for direct Python deployment. Simply install dependencies and run with uvicorn or Gunicorn.
 
 ---
 

@@ -1,7 +1,7 @@
 # LLM Setup Guide for Open-Omniscience
 
 **Version:** 1.0  
-**Last Updated:** $(date)  
+**Last Updated:** 2025-05-21  
 **Author:** Ideotion
 
 ---
@@ -17,14 +17,14 @@ This guide provides step-by-step instructions for setting up Local LLM (Large La
 ### System Requirements
 
 #### Minimum (Core Features Only)
-- **Operating System:** Debian-based Linux (Ubuntu, Debian, etc.)
+- **Operating System:** Linux (Debian/Ubuntu recommended), macOS, or Windows (WSL2)
 - **CPU:** 2 cores
 - **RAM:** 4GB
 - **Storage:** 10GB free disk space
 - **Python:** 3.8+
 
 #### Recommended (With LLM Support)
-- **Operating System:** Debian-based Linux (Ubuntu 20.04+ recommended)
+- **Operating System:** Linux (Ubuntu 22.04+ or Debian 12+ recommended)
 - **CPU:** 8 cores
 - **RAM:** 16GB
 - **Storage:** 50GB+ free disk space (for 3-4 models)
@@ -32,7 +32,7 @@ This guide provides step-by-step instructions for setting up Local LLM (Large La
 - **Python:** 3.8+
 
 #### High-End (Full LLM Capabilities)
-- **Operating System:** Debian-based Linux (Ubuntu, Debian, etc.)
+- **Operating System:** Linux (Ubuntu, Debian, etc.)
 - **CPU:** 16+ cores
 - **RAM:** 32GB+
 - **Storage:** 100GB+ free disk space (for multiple large models)
@@ -44,77 +44,15 @@ This guide provides step-by-step instructions for setting up Local LLM (Large La
 - **Git** - Version control
 - **Python** - 3.8 or higher
 - **pip** - Python package manager
-- **Docker** (optional) - For containerized deployment
 - **Ollama** - Local LLM runtime (required for LLM features)
 
 ---
 
 ## 🚀 Installation Methods
 
-Choose one of the following installation methods based on your needs:
+### Method 1: Direct Python Installation (Recommended)
 
-### Method 1: Docker Deployment (Recommended for Production)
-
-This is the easiest way to get started with LLM support.
-
-#### Step 1: Clone the Repository
-```bash
-git clone https://github.com/ideotion/Open-Omniscience.git
-cd Open-Omniscience
-```
-
-#### Step 2: Configure Environment
-```bash
-# Copy the example environment file
-cp .env.example .env
-
-# Edit .env with your settings (optional)
-nano .env
-
-# Recommended settings for LLM:
-OLLAMA_HOST=0.0.0.0
-OLLAMA_ORIGINS=*
-AUTO_DOWNLOAD_MODELS=true
-```
-
-#### Step 3: Start with Docker Compose
-```bash
-# Start both standard and LLM services
-docker-compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build
-
-# This will:
-# 1. Build the standard Open-Omniscience image
-# 2. Build the LLM-enabled image
-# 3. Start Ollama server
-# 4. Start Open-Omniscience API
-# 5. Set up model volume for persistence
-```
-
-#### Step 4: Verify Installation
-```bash
-# Check that containers are running
-docker ps
-
-# Check LLM service health
-curl http://localhost:8000/api/llm/health
-
-# List available models
-curl http://localhost:8000/api/llm/models
-```
-
-#### Step 5: Download Models (Optional)
-```bash
-# Download the default model (gemma4:e2b)
-docker exec open-omniscience-llm ollama pull gemma4:e2b
-
-# Or download multiple models
-docker exec open-omniscience-llm ollama pull mistral:7b
-docker exec open-omniscience-llm ollama pull phi3:3.8b
-```
-
-### Method 2: Bare Metal Installation (Recommended for Development)
-
-This method gives you more control over the installation.
+This is the simplest way to get started with LLM support.
 
 #### Step 1: Clone the Repository
 ```bash
@@ -125,15 +63,15 @@ cd Open-Omniscience
 #### Step 2: Set Up Python Environment
 ```bash
 # Create virtual environment
-python -m venv venv
+python3 -m venv venv
 
 # Activate it
-source venv/bin/activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
 #### Step 3: Install Core Dependencies
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-core.txt
 ```
 
 #### Step 4: Install LLM Dependencies
@@ -155,35 +93,36 @@ If the above method doesn't work, download Ollama manually from [https://ollama.
 #### Step 6: Start Ollama Server
 ```bash
 # Start Ollama in the background
-ollama serve
+ollama serve &
 
 # Verify it's running
-curl http://localhost:11434/api/tags
+ollama --version
 ```
 
-#### Step 7: Download Models
+#### Step 7: Configure Environment
 ```bash
-# Download the default model
-ollama pull gemma4:e2b
+# Copy the example environment file
+cp .env.example .env
 
-# Optional: Download additional models
-ollama pull mistral:7b
-ollama pull phi3:3.8b
-ollama pull qwen2.5:7b
+# Edit .env with your settings (optional)
+nano .env
+
+# Recommended settings for LLM:
+OLLAMA_HOST=http://localhost:11434
+AUTO_DOWNLOAD_MODELS=false
 ```
 
-#### Step 8: Initialize Database
+#### Step 8: Start Open-Omniscience
 ```bash
-mkdir -p data audit logs
-python -c "import sys; sys.path.insert(0, 'src'); from database.models import Base, engine; Base.metadata.create_all(engine); print('Database initialized')"
+# Start the application
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Or for production:
+pip install gunicorn
+gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app
 ```
 
-#### Step 9: Start Open-Omniscience
-```bash
-uvicorn api.main:app --reload
-```
-
-#### Step 10: Verify Installation
+#### Step 9: Verify Installation
 ```bash
 # Check LLM service health
 curl http://localhost:8000/api/llm/health
@@ -192,210 +131,213 @@ curl http://localhost:8000/api/llm/health
 curl http://localhost:8000/api/llm/models
 ```
 
-### Method 3: Automated Setup Script
-
-For the quickest setup, use the provided setup script:
-
+#### Step 10: Download Models (Optional)
 ```bash
-# Run the automated setup
-python scripts/setup_llm.py --all
-
-# This will:
-# 1. Install Ollama (if not already installed)
-# 2. Start Ollama server
-# 3. Download the default model (gemma4:e2b)
-# 4. Verify the installation
-```
-
-You can also use specific options:
-
-```bash
-# Install Ollama only
-python scripts/setup_llm.py --install-ollama
-
-# Download default models only
-python scripts/setup_llm.py --download-models
-
-# Download specific models
-python scripts/setup_llm.py --model gemma4:e2b --model mistral:7b
-
-# Show current status
-python scripts/setup_llm.py --status
-```
-
----
-
-## 📦 Model Management
-
-### Available Models
-
-Open-Omniscience comes with 9 pre-configured models:
-
-| Model ID | Name | Size | VRAM Required | RAM Required | Best For |
-|----------|------|------|---------------|--------------|----------|
-| `phi3:3.8b` | Microsoft Phi-3 3.8B | 2.3GB | 3GB | 4GB | Lightweight tasks, fast inference |
-| `bart-large` | Facebook BART Large | 1.4GB | 3GB | 4GB | Translation, summarization |
-| `mistral:7b` | Mistral AI 7B | 4.1GB | 5GB | 8GB | General purpose, balanced |
-| `gemma4:e2b` | Google Gemma 4 E2B | 2.7GB | 3GB | 4GB | **All tasks (DEFAULT)** |
-| `gemma:7b` | Google Gemma 7B | 4.8GB | 5GB | 8GB | CPU-optimized |
-| `qwen2.5:7b` | Alibaba Qwen 2.5 7B | 4.8GB | 5GB | 8GB | Multilingual support |
-| `llava:7b` | LLaVA 7B | 4.5GB | 6GB | 10GB | Multimodal (text + vision) |
-| `llama3:70b` | Meta Llama 3 70B | 40GB | 42GB | 80GB | High capability, complex tasks |
-
-### Downloading Models
-
-#### Using Ollama CLI
-```bash
-# Download a specific model
+# Download the default model (gemma4:e2b)
 ollama pull gemma4:e2b
 
-# Download multiple models
-ollama pull gemma4:e2b mistral:7b phi3:3.8b
-
-# List downloaded models
-ollama list
-```
-
-#### Using Open-Omniscience API
-```bash
-# List available models
-curl http://localhost:8000/api/llm/models
-
-# Get model information
-curl http://localhost:8000/api/llm/models | jq
-```
-
-### Removing Models
-
-To free up disk space, you can remove downloaded models:
-
-```bash
-# Remove a specific model
-ollama rm gemma4:e2b
-
-# List downloaded models
-ollama list
-```
-
-### Model Storage
-
-Ollama stores models in:
-- **Debian-based Linux:** `~/.ollama/models/`
-
-To check disk usage:
-```bash
-# Using Open-Omniscience API
-du -sh ~/.ollama/models/
-
-# Or use the API endpoint
-curl http://localhost:8000/api/llm/models | jq '.disk_usage'
+# Or download multiple models
+ollama pull mistral:7b
+ollama pull phi3:3.8b
+ollama pull llama3:8b
 ```
 
 ---
 
-## 🔧 Configuration
+## 📚 Model Recommendations
 
-### Environment Variables
+### Lightweight Models (Good for testing, lower resource usage)
+- **phi3:3.8b** - Fast, efficient, good for basic tasks
+- **gemma4:e2b** - Balanced performance and quality
+- **mistral:7b** - Good general purpose model
 
-Create a `.env` file in the project root with the following variables:
+### Medium Models (Better quality, moderate resource usage)
+- **llama3:8b** - Improved reasoning capabilities
+- **mistral:7b-instruct** - Better at following instructions
+- **gemma:7b** - Google's open model
+
+### Large Models (Best quality, higher resource usage)
+- **llama3:70b** - Excellent for complex tasks (requires 48GB+ RAM)
+- **mistral-large** - High quality responses
+- **mixtral-8x7b** - Mixture of experts model
+
+### Specialized Models
+- **codellama:13b** - Optimized for code generation and analysis
+- **llava:13b** - Multimodal (text + image) model
+
+---
+
+## ⚙️ Configuration
+
+### Ollama Configuration
+
+Edit your Ollama configuration at `~/.ollama/ollama.env`:
 
 ```bash
-# Database configuration
-DATABASE_URL=sqlite:///./data/open_omniscience.db
-
-# CORS configuration
-ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
-
-# Ollama configuration
+# Allow connections from other hosts (for remote access)
 OLLAMA_HOST=0.0.0.0
+
+# Allow all origins (for web interface)
 OLLAMA_ORIGINS=*
 
-# LLM configuration
-DOWNLOAD_DEFAULT_MODELS=false
-AUTO_DOWNLOAD_MODELS=true
-MAX_CONTEXT_LENGTH=8192
-MAX_TOKENS=4096
+# Custom model directory
+OLLAMA_MODELS=/path/to/models
 
-# Model library path
-MODEL_LIBRARY_PATH=./data/llm_models
+# GPU settings (if available)
+OLLAMA_MAX_LOADED_MODELS=2
+OLLAMA_GPU=all
 ```
 
-### Configuration Options
+### Open-Omniscience LLM Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OLLAMA_HOST` | `0.0.0.0` | Host for Ollama server |
-| `OLLAMA_ORIGINS` | `*` | CORS origins for Ollama |
-| `DOWNLOAD_DEFAULT_MODELS` | `false` | Auto-download default models on startup |
-| `AUTO_DOWNLOAD_MODELS` | `true` | Auto-download models when first used |
-| `MAX_CONTEXT_LENGTH` | `8192` | Maximum context length for LLM |
-| `MAX_TOKENS` | `4096` | Maximum tokens to generate |
-| `MODEL_LIBRARY_PATH` | `./data/llm_models` | Path to store downloaded models |
+In your `.env` file:
 
-### Configuration File
+```bash
+# Enable/disable LLM features
+LLM_ENABLED=true
 
-You can also configure LLM settings in Python code:
+# Ollama server URL
+OLLAMA_HOST=http://localhost:11434
 
-```python
-from src.llm.config import LLMConfig, ModelConfig
+# Default model to use
+DEFAULT_MODEL=gemma4:e2b
 
-# Create custom configuration
-config = LLMConfig(
-    ollama=OllamaConfig(
-        enabled=True,
-        base_url="http://localhost:11434",
-        timeout=120,
-        max_retries=3
-    ),
-    model_library_path="./data/llm_models",
-    auto_download_models=True,
-    max_context_length=8192,
-    max_tokens=4096
-)
+# Auto-download models on first use
+auto_download_models=false
+
+# Maximum context length
+MAX_CONTEXT_LENGTH=4096
+
+# Temperature (creativity)
+LLM_TEMPERATURE=0.7
+
+# Top-p sampling
+LLM_TOP_P=0.9
+
+# Maximum tokens per response
+MAX_TOKENS=2048
 ```
 
 ---
 
-## 🧪 Testing the Installation
+## 🎯 Using LLM Features
 
-### Health Check
-```bash
-curl http://localhost:8000/api/llm/health
+### Basic Text Generation
+
+```python
+from api.llm import generate_text
+
+prompt = "Explain the concept of open-source software"
+response = generate_text(prompt, model="gemma4:e2b")
+print(response)
 ```
 
-Expected response:
-```json
-{
-  "status": "healthy",
-  "ollama_installed": true,
-  "ollama_running": true
-}
+### Text Analysis
+
+```python
+from api.llm import analyze_text
+
+text = "Your long document text here..."
+analysis = analyze_text(text, model="mistral:7b")
+print(analysis)
 ```
 
-### List Models
-```bash
-curl http://localhost:8000/api/llm/models
+### Translation
+
+```python
+from api.llm import translate_text
+
+text = "Hello, how are you?"
+translation = translate_text(text, target_language="fr", model="gemma4:e2b")
+print(translation)  # "Bonjour, comment allez-vous ?"
 ```
 
-### Test Text Generation
-```bash
-curl -X POST http://localhost:8000/api/llm/generate \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "What is Open Omniscience?", "temperature": 0.7}'
+### Summarization
+
+```python
+from api.llm import summarize_text
+
+long_text = "Your long article or document..."
+summary = summarize_text(long_text, model="llama3:8b")
+print(summary)
 ```
 
-### Test Translation
+---
+
+## 🔧 Model Management
+
+### List Available Models
 ```bash
-curl -X POST http://localhost:8000/api/llm/translate \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Hello, how are you?", "target_language": "fr", "source_language": "en"}'
+ollama list
 ```
 
-### Test Text Extraction
+### Pull a New Model
 ```bash
-curl -X POST http://localhost:8000/api/llm/extract \
-  -H "Content-Type: application/json" \
-  -d '{"content": "Apple Inc. was founded by Steve Jobs in 1976.", "extraction_type": "entities"}'
+ollama pull model-name
+```
+
+### Remove a Model
+```bash
+ollama rm model-name
+```
+
+### Check Model Information
+```bash
+ollama show model-name
+```
+
+### Create Custom Model
+```bash
+# Create a modelfile
+nano Modelfile
+
+# Example modelfile
+FROM llama3:8b
+SYSTEM You are a helpful assistant that always responds in JSON format.
+
+# Create the model
+ollama create my-custom-model -f Modelfile
+```
+
+---
+
+## 📊 Performance Optimization
+
+### GPU Acceleration
+
+If you have an NVIDIA GPU, Ollama will automatically use it. To verify:
+
+```bash
+# Check GPU detection
+ollama run llama3:8b "What GPU am I using?"
+
+# Force CPU only (for testing)
+OLLAMA_NO_GPU=true ollama run llama3:8b
+```
+
+### Memory Management
+
+```bash
+# Limit RAM usage (in bytes)
+OLLAMA_MAX_RAM=16GB
+
+# Limit VRAM usage
+OLLAMA_MAX_VRAM=8GB
+
+# Limit the number of loaded models
+OLLAMA_MAX_LOADED_MODELS=1
+```
+
+### Model Quantization
+
+Use smaller quantized versions of models to save memory:
+
+```bash
+# 4-bit quantization (smallest, fastest)
+ollama pull llama3:8b-instruct-q4_0
+
+# 8-bit quantization (balanced)
+ollama pull llama3:8b-instruct-q8_0
 ```
 
 ---
@@ -404,306 +346,58 @@ curl -X POST http://localhost:8000/api/llm/extract \
 
 ### Common Issues
 
-#### Issue 1: Ollama Not Installed
+#### Ollama fails to start
+- Check that your system meets the minimum requirements
+- Verify you have enough disk space
+- Check for port conflicts: `ss -tulnp | grep 11434`
 
-**Error:** `OllamaNotInstalledError: Ollama is not installed`
+#### Model download fails
+- Check your internet connection
+- Verify you have enough disk space
+- Try a smaller model first
 
-**Solution:**
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Verify installation
-ollama --version
-```
-
-#### Issue 2: Ollama Server Not Running
-
-**Error:** `OllamaNotRunningError: Ollama server is not running`
-
-**Solution:**
-```bash
-# Start Ollama server
-ollama serve
-
-# Verify it's running
-curl http://localhost:11434/api/tags
-```
-
-#### Issue 3: Model Not Downloaded
-
-**Error:** `ModelNotFoundError: Model 'gemma4:e2b' not found or not downloaded`
-
-**Solution:**
-```bash
-# Download the model
-ollama pull gemma4:e2b
-
-# Verify download
-ollama list
-```
-
-#### Issue 4: Insufficient Resources
-
-**Error:** `InsufficientResourcesError` or out of memory errors
-
-**Solution:**
-- Use a smaller model (e.g., `phi3:3.8b` instead of `llama3:70b`)
+#### Out of memory errors
+- Try a smaller model
+- Use quantized versions (q4_0, q8_0)
 - Close other memory-intensive applications
-- Add more RAM or use a machine with more resources
-- Enable GPU acceleration if available
+- Add swap space: `sudo fallocate -l 8G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`
 
-#### Issue 5: Port Already in Use
+#### GPU not detected
+- Install NVIDIA drivers
+- Install CUDA toolkit
+- Verify with: `nvidia-smi`
 
-**Error:** `Address already in use` or similar
+#### Slow performance
+- Use a smaller model
+- Enable GPU acceleration
+- Reduce the context length
 
-**Solution:**
+### Debug Mode
+
+Run Ollama with debug logging:
 ```bash
-# Find and kill the process using port 11434
-sudo lsof -i :11434
-sudo kill -9 <PID>
-
-# Or use a different port
-OLLAMA_HOST=0.0.0.0:11435 ollama serve
+OLLAMA_DEBUG=1 ollama serve
 ```
-
-#### Issue 6: Permission Denied
-
-**Error:** `Permission denied` when installing or running
-
-**Solution:**
-```bash
-# Use sudo for Debian-based Linux
-sudo curl -fsSL https://ollama.com/install.sh | sh
-
-# Or fix permissions
-sudo chown -R $USER:$USER ~/.ollama
-```
-
-### Debugging Tips
-
-#### Check Ollama Logs
-```bash
-# View Ollama logs
-journalctl -u ollama -f  # Systemd
-# OR
-tail -f ~/.ollama/logs/server.log
-```
-
-#### Check Open-Omniscience Logs
-```bash
-# View application logs
- tail -f logs/open_omniscience.log
-```
-
-#### Enable Verbose Logging
-```python
-# In your Python code
-import logging
-logging.basicConfig(level=logging.DEBUG)
-```
-
-#### Test Ollama API Directly
-```bash
-# Test Ollama API directly
-curl http://localhost:11434/api/tags
-
-# Test model generation
-curl -X POST http://localhost:11434/api/generate \
-  -H "Content-Type: application/json" \
-  -d '{"model": "gemma4:e2b", "prompt": "Hello"}'
-```
-
----
-
-## 📈 Performance Optimization
-
-### GPU Acceleration
-
-Ollama automatically uses GPU if available:
-
-```bash
-# Check if GPU is being used
-nvidia-smi  # For NVIDIA GPUs
-
-# Or check Ollama logs for GPU usage
-```
-
-### Model Selection
-
-Choose the right model for your needs:
-
-| Use Case | Recommended Model | Reason |
-|----------|------------------|--------|
-| Quick testing | `phi3:3.8b` | Fast, lightweight |
-| General use | `gemma4:e2b` | Balanced performance |
-| Multilingual | `qwen2.5:7b` | Best language support |
-| Translation | `bart-large` | Optimized for translation |
-| High accuracy | `llama3:70b` | Most capable (requires more resources) |
-
-### Resource Management
-
-#### Limit Concurrent Requests
-
-```python
-# In your application code
-from src.llm.llm_service import LLMService
-
-# Create service with custom configuration
-service = LLMService(config=custom_config)
-```
-
-#### Monitor Resource Usage
-
-```bash
-# Monitor CPU and memory
-htop
-
-# Monitor GPU usage (NVIDIA)
-nvidia-smi
-
-# Check disk usage
-du -sh ~/.ollama/
-```
-
-#### Clean Up Unused Models
-
-```bash
-# List downloaded models
-ollama list
-
-# Remove unused models
-ollama rm model_name
-```
-
----
-
-## 🔄 Updating Models
-
-### Check for Model Updates
-
-```bash
-# List available models from Ollama registry
-curl https://registry.ollama.ai/api/v1/models | jq
-```
-
-### Update a Model
-
-```bash
-# Pull the latest version of a model
-ollama pull gemma4:e2b
-
-# This will download the latest version if available
-```
-
-### Switch Models
-
-```bash
-# Use a different model in your requests
-curl -X POST http://localhost:8000/api/llm/generate \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Hello", "model_id": "mistral:7b"}'
-```
-
----
-
-## 🛡️ Security Considerations
-
-### Data Privacy
-
-✅ **All processing happens locally** - No data is sent to external services
-✅ **Models are downloaded and run on your machine** - Full control over your data
-✅ **No telemetry** - Ollama and Open-Omniscience don't collect usage data
-
-### Network Security
-
-- **Firewall**: Ensure ports 11434 (Ollama) and 8000 (Open-Omniscience) are protected
-- **CORS**: Configure `ALLOWED_ORIGINS` to restrict access
-- **HTTPS**: Use HTTPS in production for encrypted communication
-
-### Model Security
-
-- **Verify model sources**: Only download models from trusted sources
-- **Check model hashes**: Verify model integrity after download
-- **Sandboxing**: Consider running Ollama in a container for isolation
 
 ---
 
 ## 📚 Additional Resources
 
-### Documentation
-
-- [Main README](../README.md) - Project overview
-- [User Guide](USER_GUIDE.md) - Complete user guide with LLM features
-- [Developer Guide](DEVELOPER_GUIDE.md) - Development guide with LLM development
-- [Contributing Guide](../CONTRIBUTING.md) - Contribution guidelines
-
-### Community
-
-- [GitHub Issues](https://github.com/ideotion/Open-Omniscience/issues) - Report bugs
-- [GitHub Discussions](https://github.com/ideotion/Open-Omniscience/discussions) - Ask questions
-- [Ollama Documentation](https://github.com/jmorganca/ollama) - Ollama runtime docs
-
-### Useful Links
-
-- [Ollama Model Library](https://ollama.com/library) - Browse available models
-- [Ollama GitHub](https://github.com/jmorganca/ollama) - Ollama source code
-- [FastAPI Documentation](https://fastapi.tiangolo.com/) - API framework docs
-
----
-
-## 📝 Quick Reference Commands
-
-### Ollama Commands
-
-| Command | Description |
-|---------|-------------|
-| `ollama --version` | Check Ollama version |
-| `ollama serve` | Start Ollama server |
-| `ollama pull model` | Download a model |
-| `ollama list` | List downloaded models |
-| `ollama rm model` | Remove a model |
-| `ollama ps` | List running processes |
-| `ollama kill` | Stop Ollama server |
-
-### Open-Omniscience Commands
-
-| Command | Description |
-|---------|-------------|
-| `uvicorn api.main:app --reload` | Start development server |
-| `python scripts/setup_llm.py --all` | Automated LLM setup |
-| `python scripts/setup_llm.py --status` | Check LLM status |
-| `pytest tests/test_llm.py` | Run LLM tests |
-
-### API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/llm/health` | Health check |
-| GET | `/api/llm/models` | List models |
-| GET | `/api/llm/capabilities` | List capabilities |
-| POST | `/api/llm/generate` | Generate text |
-| POST | `/api/llm/chat` | Chat completion |
-| POST | `/api/llm/extract` | Extract information |
-| POST | `/api/llm/translate` | Translate text |
-| POST | `/api/llm/analyze` | Analyze text |
-| POST | `/api/llm/synthesize` | Synthesize information |
-| POST | `/api/llm/batch` | Batch processing |
+- [Ollama Documentation](https://github.com/jmorganca/ollama)
+- [Ollama Model Library](https://ollama.ai/library)
+- [Open-Omniscience API Documentation](API_DOCUMENTATION.md)
+- [Deployment Guide](DEPLOYMENT_GUIDE.md)
 
 ---
 
 ## 🎉 Next Steps
 
-Now that you have LLM support set up, you can:
-
-1. **Explore the API**: Try out all the LLM endpoints
-2. **Integrate with your workflow**: Use LLM features in your applications
-3. **Download more models**: Experiment with different models
-4. **Contribute**: Help improve the LLM features
-5. **Provide feedback**: Share your experience and suggestions
+1. **Test the LLM features** - Try different models and prompts
+2. **Integrate with your workflow** - Use the API in your applications
+3. **Explore custom models** - Create models tailored to your needs
+4. **Monitor performance** - Optimize based on your hardware
+5. **Contribute** - Share your custom models and configurations
 
 ---
 
-**© 2024 Ideotion. All rights reserved.**
-
-*For questions or issues, please open a GitHub issue or check the documentation.*
+*Last updated: 2025-05-21*

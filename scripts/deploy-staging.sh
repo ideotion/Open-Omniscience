@@ -1,5 +1,4 @@
 #!/bin/bash
-#!/bin/bash
 # Open Omniscience - Global Intelligence Platform for Investigative Journalism
 #
 # Copyright (C) 2026 Ideotion
@@ -21,15 +20,14 @@
 
 
 # Open Omniscience Staging Deployment Script
-# This script deploys the application to a staging environment
+# This script deploys the application to a staging environment using direct Python installation
 
 set -e
 
 # Configuration
 APP_NAME="Open Omniscience"
 ENVIRONMENT="staging"
-BRANCH="0.01"
-DOCKER_COMPOSE_FILE="docker-compose.staging.yml"
+BRANCH="0.02"
 LOG_FILE="/tmp/open-omniscience-staging-deploy-$(date +%Y%m%d-%H%M%S).log"
 
 # Colors for output
@@ -58,19 +56,13 @@ error() {
 
 # Check if running as root
 if [ "$(id -u)" -eq 0 ]; then
-    error "This script should NOT be run as root. Use a regular user with docker permissions."
+    error "This script should NOT be run as root. Use a regular user."
     exit 1
 fi
 
-# Check if docker is available
-if ! command -v docker &> /dev/null; then
-    error "Docker is not installed. Please install Docker first."
-    exit 1
-fi
-
-# Check if docker-compose is available
-if ! command -v docker-compose &> /dev/null; then
-    error "docker-compose is not installed. Please install it first."
+# Check if python3 is available
+if ! command -v python3 &> /dev/null; then
+    error "Python 3 is not installed. Please install Python 3.8+ first."
     exit 1
 fi
 
@@ -80,10 +72,16 @@ if ! command -v git &> /dev/null; then
     exit 1
 fi
 
-# Function to check if a service is running
-is_service_running() {
-    local service_name=$1
-    if docker-compose -f "$DOCKER_COMPOSE_FILE" ps | grep -q "$service_name.*Up"; then
+# Check if pip is available
+if ! command -v pip3 &> /dev/null && ! command -v pip &> /dev/null; then
+    error "pip is not installed. Please install pip first."
+    exit 1
+fi
+
+# Function to check if a process is running
+is_process_running() {
+    local process_name=$1
+    if pgrep -f "$process_name" > /dev/null 2>&1; then
         return 0
     else
         return 1
@@ -99,7 +97,7 @@ wait_for_health() {
     log "Waiting for $service_name to be healthy..."
     
     while [ $attempt -le $max_attempts ]; do
-        if docker-compose -f "$DOCKER_COMPOSE_FILE" ps | grep -q "$service_name.*healthy"; then
+        if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
             success "$service_name is healthy!"
             return 0
         fi
@@ -121,34 +119,43 @@ deploy() {
     log "Starting $APP_NAME staging deployment..."
     
     # Step 1: Pull latest changes
-    log "Step 1/6: Pulling latest changes from branch $BRANCH..."
+    log "Step 1/5: Pulling latest changes from branch $BRANCH..."
     git fetch origin
     git checkout "$BRANCH"
     git pull origin "$BRANCH"
     success "Latest changes pulled successfully"
     
     # Step 2: Create directories
-    log "Step 2/6: Creating required directories..."
-    mkdir -p data audit logs monitoring/grafana-provisioning/dashboards monitoring/grafana-provisioning/datasources
+    log "Step 2/5: Creating required directories..."
+    mkdir -p data audit logs
     success "Directories created"
     
-    # Step 3: Build Docker images
-    log "Step 3/6: Building Docker images..."
-    docker-compose -f "$DOCKER_COMPOSE_FILE" build
-    success "Docker images built successfully"
+    # Step 3: Install Python dependencies
+    log "Step 3/5: Installing Python dependencies..."
+    if [ ! -d "venv" ]; then
+        log "Creating virtual environment..."
+        python3 -m venv venv
+    fi
+    
+    source venv/bin/activate
+    pip install --upgrade pip
+    pip install -q -r requirements-core.txt
+    pip install -q -r requirements-llm.txt 2>/dev/null || true
+    success "Python dependencies installed"
     
     # Step 4: Start services
-    log "Step 4/6: Starting services..."
-    docker-compose -f "$DOCKER_COMPOSE_FILE" up -d
+    log "Step 4/5: Starting services..."
+    # Start with Gunicorn in background
+    nohup venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app > /tmp/open-omniscience-staging.log 2>&1 &
     success "Services started"
     
     # Step 5: Wait for health checks
-    log "Step 5/6: Waiting for services to become healthy..."
-    wait_for_health "open-omniscience-web-staging"
+    log "Step 5/5: Waiting for services to become healthy..."
+    wait_for_health "Open-Omniscience"
     success "All services are healthy"
     
-    # Step 6: Verify deployment
-    log "Step 6/6: Verifying deployment..."
+    # Verify deployment
+    log "Verifying deployment..."
     verify_deployment
     
     success "$APP_NAME staging deployment completed successfully!"
@@ -164,19 +171,11 @@ deploy() {
     echo "Access Points:"
     echo "  - Web Interface: http://localhost:8000"
     echo "  - API: http://localhost:8000/api/"
-    echo "  - Metrics: http://localhost:8000/metrics"
-    echo ""
-    echo "Optional Services (if enabled):"
-    echo "  - PostgreSQL: localhost:5433"
-    echo "  - Redis: localhost:6380"
-    echo "  - Traefik Dashboard: http://localhost:8081"
-    echo "  - Prometheus: http://localhost:9090"
-    echo "  - Grafana: http://localhost:3000"
     echo ""
     echo "Commands:"
-    echo "  - View logs: docker-compose -f $DOCKER_COMPOSE_FILE logs -f"
-    echo "  - Stop: docker-compose -f $DOCKER_COMPOSE_FILE down"
-    echo "  - Restart: docker-compose -f $DOCKER_COMPOSE_FILE restart"
+    echo "  - View logs: tail -f /tmp/open-omniscience-staging.log"
+    echo "  - Stop: pkill -f gunicorn"
+    echo "  - Restart: pkill -f gunicorn && nohup venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app > /tmp/open-omniscience-staging.log 2>&1 &"
     echo ""
     echo "=========================================="
 }
@@ -186,7 +185,7 @@ verify_deployment() {
     log "Verifying application health..."
     
     # Check if web service is running
-    if ! is_service_running "open-omniscience-web-staging"; then
+    if ! is_process_running "gunicorn"; then
         error "Web service is not running"
         return 1
     fi
@@ -212,27 +211,6 @@ verify_deployment() {
     fi
     
     success "API endpoint is responding"
-    
-    # Test metrics endpoint
-    log "Testing metrics endpoint..."
-    attempt=1
-    local metrics_healthy=false
-    
-    while [ $attempt -le $max_attempts ]; do
-        if curl -s http://localhost:8000/metrics > /dev/null 2>&1; then
-            metrics_healthy=true
-            break
-        fi
-        sleep 3
-        attempt=$((attempt + 1))
-    done
-    
-    if [ "$metrics_healthy" = false ]; then
-        warning "Metrics endpoint is not responding (Prometheus integration may not be working)"
-    else
-        success "Metrics endpoint is responding"
-    fi
-    
     return 0
 }
 
@@ -240,8 +218,10 @@ verify_deployment() {
 run_tests() {
     log "Running tests..."
     
+    source venv/bin/activate
+    
     # Run Python tests
-    if [ -f "requirements.txt" ]; then
+    if [ -f "requirements-core.txt" ]; then
         log "Installing test dependencies..."
         pip install -q pytest pytest-mock 2>&1 | tail -5 || true
         
@@ -252,7 +232,7 @@ run_tests() {
             warning "Some tests failed. Check $LOG_FILE for details."
         fi
     else
-        warning "No requirements.txt found, skipping Python tests"
+        warning "No requirements-core.txt found, skipping Python tests"
     fi
     
     # Test API endpoints
@@ -278,9 +258,9 @@ run_tests() {
 monitor_performance() {
     log "Monitoring performance..."
     
-    # Check container resource usage
-    log "Container resource usage:"
-    docker stats --no-stream --format "table {{.Container}},{{.Name}},{{.CPUPerc}},{{.MemUsage}},{{.MemPerc}}" 2>/dev/null || true
+    # Check process resource usage
+    log "Process resource usage:"
+    ps aux | grep -E "gunicorn|uvicorn|python" | grep -v grep | awk '{print $2, $3, $4, $11}' || true
     
     # Check disk usage
     log "Disk usage:"
@@ -294,11 +274,16 @@ monitor_performance() {
 # Function to show status
 show_status() {
     log "Current status:"
-    docker-compose -f "$DOCKER_COMPOSE_FILE" ps
+    if is_process_running "gunicorn"; then
+        echo "  ✅ Gunicorn is running"
+        ps aux | grep gunicorn | grep -v grep
+    else
+        echo "  ❌ Gunicorn is not running"
+    fi
     echo ""
     
     log "Service logs (last 10 lines):"
-    docker-compose -f "$DOCKER_COMPOSE_FILE" logs --tail=10
+    tail -10 /tmp/open-omniscience-staging.log 2>/dev/null || echo "  No log file found"
 }
 
 # Main menu
@@ -340,17 +325,19 @@ main() {
             ;;
         6)
             log "Stopping services..."
-            docker-compose -f "$DOCKER_COMPOSE_FILE" down
+            pkill -f gunicorn
             success "Services stopped"
             ;;
         7)
             log "Restarting services..."
-            docker-compose -f "$DOCKER_COMPOSE_FILE" restart
+            pkill -f gunicorn
+            sleep 2
+            nohup venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app > /tmp/open-omniscience-staging.log 2>&1 &
             success "Services restarted"
             ;;
         8)
             log "Viewing logs (press Ctrl+C to exit)..."
-            docker-compose -f "$DOCKER_COMPOSE_FILE" logs -f
+            tail -f /tmp/open-omniscience-staging.log
             ;;
         9)
             log "Exiting..."

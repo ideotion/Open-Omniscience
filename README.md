@@ -51,7 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/laun
 
 **What this does:**
 - ✅ Automatically detects your Debian-based system
-- ✅ Detects if GUI environment is available (works in XEN, VMs, Docker with X11)
+- ✅ Detects if GUI environment is available (works in XEN, VMs, Qubes OS)
 - ✅ Automatically installs `python3-tk` and `psutil` if needed
 - ✅ Launches the graphical installer with 5-step wizard
 - ✅ System requirements check with visual feedback
@@ -59,7 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/laun
 - ✅ Creates application launcher for your OS app menu
 - ✅ Falls back to text-based installer if GUI not available
 - ✅ Clones the repository to `~/open-omniscience`
-- ✅ Installs all dependencies (Docker, Docker Compose, Ollama, Python packages)
+- ✅ Installs all dependencies (Python, Ollama, Python packages)
 - ✅ Configures the environment automatically
 
 **After installation:**
@@ -273,7 +273,7 @@ For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 | **LLM Runtime** | Ollama | Local LLM execution |
 | **LLM Models** | Llama, Mistral, Phi, Qwen, Gemma | Text processing |
 | **Frontend** | HTML5, CSS, JavaScript | User interface |
-| **Containerization** | Docker | Deployment and portability |
+| **Deployment** | Direct Python | Simple and portable deployment |
 | **Platform** | Debian-based Linux | Primary supported platform |
 
 ---
@@ -718,7 +718,7 @@ print(f"Deepfake confidence: {result.confidence:.2%}")
 - **NEW:** Local LLM support with comprehensive text processing capabilities
 - **NEW:** 40 pre-configured models (Gemma 4, Llama 4, Phi-4, Qwen 3, NLLB, T5, BERT, etc.)
 - **NEW:** 10+ API endpoints for LLM operations
-- **NEW:** Docker support for LLM deployment
+- **NEW:** Direct Python deployment for maximum portability
 - **NEW:** Automated setup scripts
 - **NEW:** Comprehensive test suite for LLM features
 - Updated API version to 0.02
