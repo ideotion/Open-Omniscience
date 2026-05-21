@@ -36,13 +36,18 @@ import json
 import webbrowser
 
 # Import modern theme
+import sys
+import os
+
+# Determine the correct import path
 try:
+    # Try package import first (when running as module)
     from installer.modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
 except ImportError:
-    # Fallback for when running directly (not as a module)
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    # Fallback to direct import (when running script directly)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
     from modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
 
 
