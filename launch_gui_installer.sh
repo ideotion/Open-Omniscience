@@ -11,6 +11,7 @@
 # - Automatic python3-tk installation if missing
 # - Automatic psutil installation if missing
 # - Automatic Python virtual environment creation and activation
+# - Prefer Python 3.12 for compatibility, fall back to 3.13 if needed
 # - Fallback to text-based installer if GUI not available
 # - Works in virtual environments, XEN, Qubes OS, etc.
 #
@@ -126,19 +127,52 @@ command_exists() {
 }
 
 # =============================================================================
+# Python Version Detection
+# =============================================================================
+
+# Get the best available Python command for venv creation
+# Prefer Python 3.12 for compatibility, fall back to 3.13 or default python3
+get_python_cmd() {
+    if command_exists python3.12; then
+        echo "python3.12"
+    elif command_exists python3.11; then
+        echo "python3.11"
+    else
+        echo "python3"
+    fi
+}
+
+# Get the pip command for the selected Python version
+get_pip_cmd() {
+    local py_cmd=$(get_python_cmd)
+    echo "${py_cmd} -m pip"
+}
+
+# Get the venv module command for the selected Python version
+get_venv_cmd() {
+    local py_cmd=$(get_python_cmd)
+    echo "${py_cmd} -m venv"
+}
+
+# =============================================================================
 # Virtual Environment Functions
 # =============================================================================
 
 # Create Python virtual environment
 create_venv() {
     local venv_path="$INSTALL_DIR/venv"
+    local py_cmd=$(get_python_cmd)
+    local venv_cmd=$(get_venv_cmd)
+    local pip_cmd=$(get_pip_cmd)
+    
+    log_info "Using Python: $py_cmd"
     
     if [ ! -d "$venv_path" ]; then
         log_info "Creating Python virtual environment at $venv_path..."
-        if python3 -m venv "$venv_path"; then
+        if $venv_cmd "$venv_path"; then
             log_success "Virtual environment created"
         else
-            log_error "Failed to create virtual environment"
+            log_error "Failed to create virtual environment with $py_cmd"
             return 1
         fi
     else
@@ -150,7 +184,7 @@ create_venv() {
     source "$venv_path/bin/activate"
     
     if [ -f "$INSTALL_DIR/requirements.txt" ]; then
-        if pip install --upgrade pip && pip install -r "$INSTALL_DIR/requirements.txt"; then
+        if $pip_cmd install --upgrade pip && $pip_cmd install -r "$INSTALL_DIR/requirements.txt"; then
             log_success "Dependencies installed"
         else
             log_error "Failed to install dependencies"
