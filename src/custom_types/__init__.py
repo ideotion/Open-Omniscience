@@ -28,9 +28,12 @@ to improve type safety and code clarity.
 Author: Ideotion
 """
 
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, TypedDict
+from typing import Any, Dict, List, Optional, Set, Tuple, Union, TypedDict, TypeVar
 from datetime import datetime
 from pathlib import Path
+
+# Type variable for generic types
+T = TypeVar('T')
 from enum import Enum
 import requests
 
@@ -236,10 +239,10 @@ MetadataDict = Dict[str, Any]
 ErrorInfo = Dict[str, Any]
 
 # Type for result with success/failure
-Result[T] = Tuple[bool, T]
+Result = Tuple[bool, T]
 
 # Type for paginated results
-PaginatedResult[T] = Dict[str, Union[List[T], int, bool]]
+PaginatedResult = Dict[str, Union[List[T], int, bool]]
 
 # =============================================================================
 # Request/Response Types
