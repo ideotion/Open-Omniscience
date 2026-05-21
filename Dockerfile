@@ -30,13 +30,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements files
-COPY configs/python/requirements-core.txt /app/requirements-core.txt
-COPY configs/python/requirements-llm.txt /app/requirements-llm.txt
+# Copy unified requirements file
+COPY configs/python/requirements.txt /app/requirements.txt
 
 # Install Python dependencies into system site-packages
-RUN pip install --no-cache-dir --user -r requirements-core.txt \
-    && pip install --no-cache-dir --user -r requirements-llm.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Stage 2: Runtime stage
 FROM python:3.12-slim

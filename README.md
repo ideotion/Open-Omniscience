@@ -178,7 +178,7 @@ ollama serve
 ollama pull gemma4:e2b
 
 # 4. Install Python dependencies
-pip install -r requirements-llm.txt
+pip install -r requirements.txt
 
 # 5. Start Open Omniscience
 uvicorn api.main:app --reload

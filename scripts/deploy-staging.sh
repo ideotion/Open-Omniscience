@@ -139,8 +139,7 @@ deploy() {
     
     source venv/bin/activate
     pip install --upgrade pip
-    pip install -q -r requirements-core.txt
-    pip install -q -r requirements-llm.txt 2>/dev/null || true
+    pip install -q -r requirements.txt
     success "Python dependencies installed"
     
     # Step 4: Start services
@@ -221,7 +220,7 @@ run_tests() {
     source venv/bin/activate
     
     # Run Python tests
-    if [ -f "requirements-core.txt" ]; then
+    if [ -f "requirements.txt" ]; then
         log "Installing test dependencies..."
         pip install -q pytest pytest-mock 2>&1 | tail -5 || true
         
@@ -232,7 +231,7 @@ run_tests() {
             warning "Some tests failed. Check $LOG_FILE for details."
         fi
     else
-        warning "No requirements-core.txt found, skipping Python tests"
+        warning "No requirements.txt found, skipping Python tests"
     fi
     
     # Test API endpoints

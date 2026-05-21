@@ -136,7 +136,7 @@ Activate the virtual environment and install dependencies:
 ```bash
 cd /opt/open-omniscience
 source venv/bin/activate
-pip install -r requirements-core.txt
+pip install -r requirements.txt
 ```
 
 ### Port already in use

@@ -389,24 +389,13 @@ install_python_deps() {
     pip install --upgrade pip setuptools wheel
     pip install -r requirements.txt
     
-    # Install LLM dependencies
-    if [ -f "requirements-llm.txt" ]; then
-        log_info "Installing LLM dependencies..."
-        pip install -r requirements-llm.txt
-    fi
-    
-    # Install all pillar dependencies
-    for pillar in pillar2 pillar3 pillar4; do
-        if [ -d "$pillar" ] && [ -f "$pillar/requirements.txt" ]; then
-            log_info "Installing $pillar dependencies..."
-            pip install -r "$pillar/requirements.txt"
-        fi
-    done
-    
-    # Install development dependencies
-    if [ -f "requirements-all.txt" ]; then
-        log_info "Installing development dependencies..."
-        pip install -r requirements-all.txt
+    # Install all dependencies from the unified requirements.txt
+    if [ -f "requirements.txt" ]; then
+        log_info "Installing all dependencies from unified requirements.txt..."
+        pip install -r requirements.txt
+    else
+        log_error "requirements.txt not found! Cannot install dependencies."
+        exit 1
     fi
     
     log_success "All Python dependencies installed"

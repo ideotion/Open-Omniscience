@@ -94,17 +94,13 @@ LOGS_DIR ?= logs
 init-dirs:
 	mkdir -p $(DATA_DIR) $(AUDIT_DIR) $(LOGS_DIR)
 
-# Install dependencies
+# Install all dependencies from unified requirements.txt
 install:
-	$(PIP) install -r requirements-core.txt
+	$(PIP) install -r requirements.txt
 
-# Install with LLM support
-install-llm:
-	$(PIP) install -r requirements-llm.txt
-
-# Install all dependencies
+# Install all dependencies (alias for install)
 install-all:
-	$(PIP) install -r requirements-all.txt
+	$(PIP) install -r requirements.txt
 
 # Run the application
 run:
@@ -177,7 +173,7 @@ quality-check:
 
 # Install development dependencies
 install-dev:
-	$(PIP) install -r requirements-all.txt
+	$(PIP) install -r requirements.txt
 	$(PIP) install -e ".[dev]"
 
 # Install pre-commit hooks
