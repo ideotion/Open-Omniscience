@@ -1049,31 +1049,30 @@ StartupWMClass=Open-Omniscience
         # Start the application using uvicorn
         self.log_message("Starting Open-Omniscience with uvicorn...")
         
-        # Build the command to start the server in the background
-        activate_cmd = f"source {venv_path}/bin/activate"
-        start_cmd = f"{activate_cmd} && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
+        # Use absolute path to python and uvicorn in the venv
+        python_path = os.path.join(venv_path, 'bin', 'python3')
+        uvicorn_path = os.path.join(venv_path, 'bin', 'uvicorn')
         
-        # Start in background
+        # Start in background using nohup so it doesn't die when parent exits
         import subprocess
-        import threading
         
-        def start_server():
-            try:
-                # Use bash to handle the source command
+        # Log file for debugging
+        log_file = os.path.join(self.config['install_dir'], 'server.log')
+        
+        try:
+            with open(log_file, 'w') as log_f:
                 proc = subprocess.Popen(
-                    ['bash', '-c', start_cmd],
+                    [python_path, '-m', 'uvicorn', 'api.main:app', '--host', '0.0.0.0', '--port', '8000', '--reload'],
                     cwd=self.config['install_dir'],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
+                    stdout=log_f,
+                    stderr=subprocess.STDOUT,
+                    preexec_fn=os.setsid
                 )
-                # Don't wait, just let it run in background
-            except Exception as e:
-                self.log_message(f"Error starting server: {str(e)}")
-        
-        # Start server in a thread so it doesn't block
-        server_thread = threading.Thread(target=start_server, daemon=True)
-        server_thread.start()
+            self.log_message(f"Server started with PID {proc.pid}")
+            self.log_message(f"Logs available at: {log_file}")
+        except Exception as e:
+            self.log_message(f"Error starting server: {str(e)}")
+            return False
         
         # Wait a bit then check if service is ready
         self.log_message("Waiting for server to start...")
@@ -1204,30 +1203,29 @@ StartupWMClass=Open-Omniscience
         self.launch_status_label.config(text="Starting Open-Omniscience...")
         self.root.update_idletasks()
         
+        # Use absolute path to python in the venv
+        python_path = os.path.join(venv_path, 'bin', 'python3')
+        
+        # Log file for debugging
+        log_file = os.path.join(self.config['install_dir'], 'server.log')
+        
         # Start the application using uvicorn in background
         import subprocess
-        import threading
         
-        def start_app():
-            try:
-                activate_cmd = f"source {venv_path}/bin/activate"
-                start_cmd = f"{activate_cmd} && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
-                
-                # Use bash to handle the source command
+        try:
+            with open(log_file, 'w') as log_f:
                 proc = subprocess.Popen(
-                    ['bash', '-c', start_cmd],
+                    [python_path, '-m', 'uvicorn', 'api.main:app', '--host', '0.0.0.0', '--port', '8000', '--reload'],
                     cwd=self.config['install_dir'],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
+                    stdout=log_f,
+                    stderr=subprocess.STDOUT,
+                    preexec_fn=os.setsid
                 )
-                # Don't wait, just let it run
-            except Exception as e:
-                self.launch_status_label.config(text=f"Error starting application: {str(e)}")
-        
-        # Start in a thread
-        app_thread = threading.Thread(target=start_app, daemon=True)
-        app_thread.start()
+            self.launch_status_label.config(text=f"Server started with PID {proc.pid}")
+            self.launch_status_label.config(text=f"Logs available at: {log_file}")
+        except Exception as e:
+            self.launch_status_label.config(text=f"Error starting application: {str(e)}")
+            return
         
         self.launch_status_label.config(text="Services started. Waiting for application to be ready...")
         self.root.update_idletasks()
