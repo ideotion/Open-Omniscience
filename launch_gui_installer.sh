@@ -10,6 +10,7 @@
 # - Automatic GUI detection (DISPLAY, X11, Wayland)
 # - Automatic python3-tk installation if missing
 # - Automatic psutil installation if missing
+# - Automatic Python virtual environment creation and activation
 # - Fallback to text-based installer if GUI not available
 # - Works in virtual environments, XEN, Qubes OS, etc.
 #
@@ -122,6 +123,45 @@ has_psutil() {
 # Check if command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# =============================================================================
+# Virtual Environment Functions
+# =============================================================================
+
+# Create Python virtual environment
+create_venv() {
+    local venv_path="$INSTALL_DIR/venv"
+    
+    if [ ! -d "$venv_path" ]; then
+        log_info "Creating Python virtual environment at $venv_path..."
+        if python3 -m venv "$venv_path"; then
+            log_success "Virtual environment created"
+        else
+            log_error "Failed to create virtual environment"
+            return 1
+        fi
+    else
+        log_info "Virtual environment already exists at $venv_path"
+    fi
+    
+    # Activate the virtual environment and install dependencies
+    log_info "Activating virtual environment and installing dependencies..."
+    source "$venv_path/bin/activate"
+    
+    if [ -f "$INSTALL_DIR/requirements.txt" ]; then
+        if pip install --upgrade pip && pip install -r "$INSTALL_DIR/requirements.txt"; then
+            log_success "Dependencies installed"
+        else
+            log_error "Failed to install dependencies"
+            return 1
+        fi
+    else
+        log_error "requirements.txt not found in $INSTALL_DIR"
+        return 1
+    fi
+    
+    return 0
 }
 
 # =============================================================================
@@ -253,7 +293,6 @@ main() {
         cd "$INSTALL_DIR"
         
         # Ensure requirements.txt exists as a real file (not symlink) in the install directory
-        # Git clone with --depth 1 may preserve symlinks, so we replace them with actual files
         if [ -L "requirements.txt" ] || [ ! -f "requirements.txt" ]; then
             log_info "Ensuring requirements.txt exists as a real file..."
             if [ -f "configs/python/requirements.txt" ]; then
@@ -264,6 +303,12 @@ main() {
                 log_error "configs/python/requirements.txt not found! Cannot proceed."
                 exit 1
             fi
+        fi
+        
+        # Create and activate the Python virtual environment
+        if ! create_venv; then
+            log_error "Failed to create or activate virtual environment"
+            exit 1
         fi
         
         # Set an environment variable to tell the GUI installer that we've already cloned
