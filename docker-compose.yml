@@ -33,17 +33,18 @@ services:
       - DATABASE_URL=sqlite:////app/data/open_omniscience.db
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONPATH=/app/src
     volumes:
       # Persist data, audit logs, and logs
       - ./data:/app/data
       - ./audit:/app/audit
       - ./logs:/app/logs
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.path.insert(0, 'src'); from database.models import engine; print('DB OK')"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
-      timeout: 3s
+      timeout: 10s
       retries: 3
-      start_period: 5s
+      start_period: 15s
     networks:
       - open-omniscience-network
     security_opt:
@@ -61,7 +62,7 @@ services:
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-open_omniscience}
       - POSTGRES_USER=${POSTGRES_USER:-open_omniscience}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-open_omniscience}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:

@@ -2,7 +2,7 @@
 # Minimum dependencies required to run the core Open-Omniscience platform
 # 
 # For full installation options, see:
-# - requirements-core.txt  (this file, minimal dependencies)
+# - requirements-core.txt  (minimal dependencies)
 # - requirements-llm.txt   (core + LLM support)
 # - requirements-all.txt   (all dependencies including all pillars)
 #

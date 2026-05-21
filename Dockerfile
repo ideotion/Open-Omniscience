@@ -30,16 +30,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+# Copy requirements files
+COPY configs/python/requirements-core.txt /app/requirements-core.txt
+COPY configs/python/requirements-llm.txt /app/requirements-llm.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --user -r requirements.txt
+# Install Python dependencies into system site-packages
+RUN pip install --no-cache-dir --user -r requirements-core.txt \
+    && pip install --no-cache-dir --user -r requirements-llm.txt
 
 # Stage 2: Runtime stage
 FROM python:3.12-slim
 
 WORKDIR /app
+
+# Install runtime dependencies (curl for healthcheck)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user and group for security
 RUN groupadd -r appgroup && useradd -r --create-home --shell /bin/bash -g appgroup appuser
@@ -83,8 +90,8 @@ LABEL maintainer="Ideotion <open-omniscience@ideotion.com>" \
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "from src.database.models import engine; print('DB OK')" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
 
-# Default command
-CMD ["python", "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default command - use module path that works with PYTHONPATH
+CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
