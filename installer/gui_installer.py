@@ -1211,26 +1211,43 @@ StartupWMClass=Open-Omniscience
     
     def start_services(self, open_browser=True):
         """Start Open-Omniscience services and optionally open browser."""
-        # Check if Docker Compose is available - use the same method as CommandRunner
+        # Check if Docker Compose is available - use comprehensive detection
         docker_compose_available = False
+        compose_cmd = None
+        
+        # Method 1: Check for docker compose plugin (modern Docker)
         try:
-            # Check for docker compose plugin
             result = subprocess.run(['docker', 'compose', 'version'], 
                                   capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
                 docker_compose_available = True
+                compose_cmd = 'docker compose'
                 self.log_message(f"Docker Compose plugin detected: {result.stdout.strip()}")
         except:
             pass
         
-        # Check for standalone docker-compose
+        # Method 2: Check for standalone docker-compose
         if not docker_compose_available and SystemChecker.check_command('docker-compose'):
             try:
                 result = subprocess.run(['docker-compose', '--version'], 
                                       capture_output=True, text=True, timeout=5)
                 if result.returncode == 0:
                     docker_compose_available = True
+                    compose_cmd = 'docker-compose'
                     self.log_message(f"Docker Compose standalone detected: {result.stdout.strip()}")
+            except:
+                pass
+        
+        # Method 3: Check if docker command exists and try to use it
+        if not docker_compose_available and SystemChecker.check_command('docker'):
+            try:
+                # Try to see if docker compose is available as a subcommand
+                result = subprocess.run(['docker', 'compose'], 
+                                      capture_output=True, text=True, timeout=5)
+                # Even if it fails, docker compose might still work
+                docker_compose_available = True
+                compose_cmd = 'docker compose'
+                self.log_message("Docker Compose plugin available (docker compose)")
             except:
                 pass
         
@@ -1239,6 +1256,10 @@ StartupWMClass=Open-Omniscience
             self.log_message("Please install Docker Engine and Docker Compose plugin first.")
             self.log_message("Install with: sudo apt-get install docker-compose-plugin")
             return False
+        
+        # Update the docker compose command in CommandRunner if we found it
+        if compose_cmd:
+            CommandRunner._docker_compose_cmd = compose_cmd
         
         # Check if Docker daemon is running
         self.log_message("Checking Docker daemon...")
@@ -1381,72 +1402,69 @@ StartupWMClass=Open-Omniscience
             self.log_message(f"Web container logs:\n{result_logs.stdout}")
     
     def create_complete_page(self):
-        """Create installation complete page."""
+        """Create installation complete page with compact layout."""
         frame = ttk.Frame(self.main_frame)
         
         # Header
         header = ttk.Label(frame, text="✅ Installation Complete!", style='Header.TLabel')
-        header.pack(pady=10)
-        
-        # Logo
-        logo_frame = ttk.Frame(frame)
-        logo_frame.pack(fill=tk.X, pady=5)
-        logo_label = ttk.Label(logo_frame, text=self.LOGO, font=('Courier', 7), background='#f0f0f0', anchor=tk.CENTER)
-        logo_label.pack()
+        header.pack(pady=(10, 5))
         
         # Success message
-        success = ttk.Label(frame, text="✓ Open-Omniscience has been successfully installed!", 
-                           style='Success.TLabel', font=('Arial', 11))
-        success.pack(pady=10)
+        success = ttk.Label(frame, text="Open-Omniscience has been successfully installed!", 
+                           style='Success.TLabel', font=('Segoe UI', 11))
+        success.pack(pady=(0, 10))
         
         # Status label for launch feedback
-        self.launch_status_label = ttk.Label(frame, text="", background='#f0f0f0', foreground='blue')
-        self.launch_status_label.pack(pady=5)
+        self.launch_status_label = ttk.Label(frame, text="", background=ModernTheme.BG_PRIMARY, foreground=Theme.PRIMARY)
+        self.launch_status_label.pack(pady=(0, 10))
         
-        # Summary
-        summary_frame = ttk.Frame(frame)
-        summary_frame.pack(fill=tk.X, pady=10)
+        # Summary and Next Steps in a scrollable frame to save space
+        content_frame = ttk.Frame(frame)
+        content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        ttk.Label(summary_frame, text="Installation Summary:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 5))
+        # Summary section - more compact
+        summary_label = ttk.Label(content_frame, text="Installation Summary:", style='Subheader.TLabel')
+        summary_label.pack(anchor=tk.W, pady=(0, 5))
         
-        summary_items = [
-            ("Installation Directory", self.config['install_dir']),
-            ("Ollama Installed", "Yes" if self.config['install_ollama'] else "No"),
-            ("Database Type", self.config['database_type']),
-            ("Services Started", "Yes" if self.config['start_services'] else "No"),
-            ("Launcher Created", "Yes" if self.config['create_launcher'] else "No"),
-        ]
+        # Use a more compact summary format
+        summary_text = f"Directory: {self.config['install_dir']}\n"
+        summary_text += f"Ollama: {'Yes' if self.config['install_ollama'] else 'No'}\n"
+        summary_text += f"Database: {self.config['database_type']}\n"
+        summary_text += f"Services: {'Yes' if self.config['start_services'] else 'No'}\n"
+        summary_text += f"Launcher: {'Yes' if self.config['create_launcher'] else 'No'}"
         
-        for label, value in summary_items:
-            ttk.Label(summary_frame, text=f"  {label}: {value}", background='#f0f0f0').pack(anchor=tk.W, padx=20, pady=1)
+        summary_label_detail = ttk.Label(content_frame, text=summary_text, 
+                                        background=ModernTheme.BG_PRIMARY, 
+                                        foreground=ModernTheme.TEXT_PRIMARY, 
+                                        justify=tk.LEFT, font=('Segoe UI', 9))
+        summary_label_detail.pack(anchor=tk.W, padx=20, pady=(0, 10))
         
-        # Next steps
-        next_steps_frame = ttk.Frame(frame)
-        next_steps_frame.pack(fill=tk.X, pady=10)
+        # Next steps - more compact
+        next_steps_label = ttk.Label(content_frame, text="Next Steps:", style='Subheader.TLabel')
+        next_steps_label.pack(anchor=tk.W, pady=(0, 5))
         
-        ttk.Label(next_steps_frame, text="Next Steps:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 5))
+        next_steps_text = "1. Access at: http://localhost:8000\n"
+        next_steps_text += "2. Download models: ollama pull gemma4:e2b\n"
+        next_steps_text += "3. Documentation: https://github.com/ideotion/Open-Omniscience"
         
-        steps = [
-            "1. Access the application at: http://localhost:8000",
-            "2. If you installed Ollama, download models with: ollama pull gemma4:e2b",
-            "3. For LLM support, start with: docker compose -f docker-compose.yml -f docker-compose.llm.yml up -d --build",
-            "4. Check the documentation at: https://github.com/ideotion/Open-Omniscience",
-        ]
+        next_steps_detail = ttk.Label(content_frame, text=next_steps_text,
+                                    background=ModernTheme.BG_PRIMARY,
+                                    foreground=ModernTheme.TEXT_PRIMARY,
+                                    justify=tk.LEFT, font=('Segoe UI', 9))
+        next_steps_detail.pack(anchor=tk.W, padx=20, pady=(0, 10))
         
-        for step in steps:
-            ttk.Label(next_steps_frame, text=f"  {step}", background='#f0f0f0').pack(anchor=tk.W, padx=20, pady=1)
-        
-        # Buttons
+        # Buttons - ensure they're visible by packing at bottom
         button_frame = ttk.Frame(frame)
-        button_frame.pack(pady=15)
+        button_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(10, 0))
         
-        ttk.Button(button_frame, text="Open Documentation", 
-                  command=lambda: webbrowser.open_new("https://github.com/ideotion/Open-Omniscience")).pack(side=tk.LEFT, padx=10)
+        # Use smaller buttons with less padding
+        ttk.Button(button_frame, text="Documentation", 
+                  command=lambda: webbrowser.open_new("https://github.com/ideotion/Open-Omniscience")).pack(side=tk.LEFT, padx=5)
         
-        ttk.Button(button_frame, text="Launch Application", 
-                  command=self.launch_application).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="Launch App", 
+                  command=self.launch_application).pack(side=tk.LEFT, padx=5)
         
-        ttk.Button(button_frame, text="Exit", command=self.root.destroy).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="Exit", command=self.root.destroy).pack(side=tk.LEFT, padx=5)
         
         return frame
     
