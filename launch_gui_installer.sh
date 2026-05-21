@@ -67,7 +67,7 @@ log_error() {
 is_debian() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
-        if [[ "$ID" == "debian" || "$ID" == "ubuntu" || "$ID_LIKE" == *"debian"* ]]; then
+        if [[ "$ID" == "debian" || "$ID" == "ubuntu" || ("${ID_LIKE:-}" == *"debian"*) ]]; then
             return 0
         fi
     fi

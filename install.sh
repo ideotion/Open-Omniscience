@@ -12,5 +12,12 @@
 # License: GPLv3
 #
 
-# Simply execute the GUI installer launcher
-exec curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/launch_gui_installer.sh | bash
+# Check if we're running from within the repository (local launch_gui_installer.sh exists)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/launch_gui_installer.sh" ]; then
+    # Use the local version if available
+    exec bash "$SCRIPT_DIR/launch_gui_installer.sh"
+else
+    # Otherwise, fetch the latest version from GitHub
+    exec curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/launch_gui_installer.sh | bash
+fi
