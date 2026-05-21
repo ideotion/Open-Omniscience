@@ -45,9 +45,6 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
 
-# Import modern theme
-from installer.modern_theme import ModernTheme, apply_modern_styles, get_status_color, get_status_icon
-
 
 class SystemChecker:
     """Check system requirements and dependencies."""
