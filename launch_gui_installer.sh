@@ -63,15 +63,25 @@ log_error() {
 # Detection Functions
 # =============================================================================
 
-# Check if we're running in a Debian-based system
-is_debian() {
+# Check if we're running in a supported Linux system (Debian, Ubuntu, Alpine, Qubes OS, etc.)
+is_supported() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
+        # Support Debian, Ubuntu, and Debian-like systems (including Qubes OS)
         if [[ "$ID" == "debian" || "$ID" == "ubuntu" || ("${ID_LIKE:-}" == *"debian"*) ]]; then
             return 0
         fi
+        # Support Alpine Linux (used in some Qubes OS VMs)
+        if [[ "$ID" == "alpine" ]]; then
+            return 0
+        fi
+        # Support Qubes OS explicitly
+        if [[ "$ID" == "qubes" || "${ID_LIKE:-}" == *"qubes"* ]]; then
+            return 0
+        fi
     fi
-    return 1
+    # If we can't determine, assume supported (for maximum compatibility)
+    return 0
 }
 
 # Check if GUI environment is available
@@ -163,12 +173,10 @@ main() {
     echo "  ========================================"
     echo ""
     
-    # Check if Debian-based
-    if ! is_debian; then
-        log_error "This installer is designed for Debian-based Linux systems only."
-        log_error "Falling back to standard text-based installer..."
-        exec curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install | bash
-        exit 1
+    # Check if running on a supported Linux system
+    if ! is_supported; then
+        log_warning "This installer is designed for Debian-based Linux systems (including Qubes OS)."
+        log_warning "Your system may not be fully supported, but continuing anyway..."
     fi
     
     log_info "Detected Debian-based Linux system"

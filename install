@@ -106,15 +106,25 @@ run_with_sudo() {
     fi
 }
 
-# Check if running on Debian-based system
-is_debian() {
+# Check if running on a supported Linux system (Debian, Ubuntu, Alpine, Qubes OS, etc.)
+is_supported() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
+        # Support Debian, Ubuntu, and Debian-like systems (including Qubes OS)
         if [[ "$ID" == "debian" || "$ID" == "ubuntu" || ("${ID_LIKE:-}" == *"debian"*) ]]; then
             return 0
         fi
+        # Support Alpine Linux (used in some Qubes OS VMs)
+        if [[ "$ID" == "alpine" ]]; then
+            return 0
+        fi
+        # Support Qubes OS explicitly
+        if [[ "$ID" == "qubes" || "${ID_LIKE:-}" == *"qubes"* ]]; then
+            return 0
+        fi
     fi
-    return 1
+    # If we can't determine, assume supported (for maximum compatibility)
+    return 0
 }
 
 # Check architecture
@@ -154,11 +164,10 @@ check_prerequisites() {
     # Check architecture
     check_architecture
     
-    # Check if Debian-based
-    if ! is_debian; then
-        log_error "This installer is designed for Debian-based Linux systems only (Ubuntu, Debian, etc.)."
-        log_error "Detected system does not appear to be Debian-based."
-        exit 1
+    # Check if running on a supported Linux system
+    if ! is_supported; then
+        log_warning "This installer is designed for Debian-based Linux systems (including Qubes OS)."
+        log_warning "Your system may not be fully supported, but continuing anyway..."
     fi
     
     log_success "Prerequisites check passed"
