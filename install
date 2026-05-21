@@ -193,8 +193,19 @@ setup_linux() {
     if command_exists apt-get; then
         run_with_sudo apt-get update -qq
         run_with_sudo apt-get install -y -qq git curl wget ca-certificates gnupg lsb-release
+    elif command_exists apk; then
+        # Alpine Linux
+        run_with_sudo apk update -qq
+        run_with_sudo apk add --no-cache git curl wget ca-certificates gnupg
+    elif command_exists dnf; then
+        # Fedora/RHEL
+        run_with_sudo dnf install -y -q git curl wget ca-certificates gnupg
+    elif command_exists yum; then
+        # Older RHEL/CentOS
+        run_with_sudo yum install -y -q git curl wget ca-certificates gnupg
     else
         log_error "Unsupported package manager. Please install git and curl manually."
+        log_error "Supported package managers: apt-get, apk, dnf, yum"
         exit 1
     fi
     
@@ -378,6 +389,30 @@ install_python_deps() {
                 else
                     log_error "Failed to install python3-venv automatically."
                     log_error "Please run manually: sudo apt install python3-venv"
+                    exit 1
+                fi
+            elif command_exists apk; then
+                # Alpine Linux: python3 and py3-pip include venv
+                if run_with_sudo apk add --no-cache python3 py3-pip; then
+                    log_success "Installed python3 and py3-pip (includes venv)"
+                else
+                    log_error "Failed to install python3. Please run manually: sudo apk add python3 py3-pip"
+                    exit 1
+                fi
+            elif command_exists dnf; then
+                # Fedora/RHEL
+                if run_with_sudo dnf install -y python3-virtualenv; then
+                    log_success "Installed python3-virtualenv"
+                else
+                    log_error "Failed to install python3-virtualenv. Please run manually: sudo dnf install python3-virtualenv"
+                    exit 1
+                fi
+            elif command_exists yum; then
+                # Older RHEL/CentOS
+                if run_with_sudo yum install -y python3-virtualenv; then
+                    log_success "Installed python3-virtualenv"
+                else
+                    log_error "Failed to install python3-virtualenv. Please run manually: sudo yum install python3-virtualenv"
                     exit 1
                 fi
             else
