@@ -1415,7 +1415,7 @@ StartupWMClass=Open-Omniscience
         success.pack(pady=(0, 10))
         
         # Status label for launch feedback
-        self.launch_status_label = ttk.Label(frame, text="", background=ModernTheme.BG_PRIMARY, foreground=Theme.PRIMARY)
+        self.launch_status_label = ttk.Label(frame, text="", background=ModernTheme.BG_PRIMARY, foreground=ModernTheme.PRIMARY)
         self.launch_status_label.pack(pady=(0, 10))
         
         # Summary and Next Steps in a scrollable frame to save space
