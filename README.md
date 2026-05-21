@@ -46,7 +46,7 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 The **only** way to install Open-Omniscience - a single command that launches the GUI installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/launch_gui_installer.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install.sh | bash
 ```
 
 **What this does:**
