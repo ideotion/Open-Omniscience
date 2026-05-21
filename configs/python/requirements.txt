@@ -131,10 +131,10 @@ leidenalg>=0.10.0
 # Machine Learning & AI
 # ============================================================================
 torch>=2.2.0
-tensorflow>=2.16.1
-transformers>=4.40.0
-onnx>=1.16.0
-onnxruntime>=1.18.0
+tensorflow==2.16.1  # Pinned for Python 3.13 compatibility
+transformers==4.40.0  # Pinned for Python 3.13 compatibility
+onnx==1.16.0  # Pinned for Python 3.13 compatibility
+onnxruntime==1.18.0  # Pinned for Python 3.13 compatibility
 
 # ============================================================================
 # Encryption & Security
@@ -194,9 +194,9 @@ webargs>=8.3.0
 # ============================================================================
 # River (Online Machine Learning)
 # ============================================================================
-river>=0.20.0
+river==0.24.2  # Pinned for Python 3.13 compatibility
 
 # ============================================================================
 # Audio Analysis
 # ============================================================================
-pyAudioAnalysis>=3.0
+pyAudioAnalysis>=0.3.0,<0.4.0  # Fixed: No >=3.0 exists, latest is 0.3.14
