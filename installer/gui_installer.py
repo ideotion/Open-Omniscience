@@ -958,8 +958,15 @@ class GUIInstaller:
         if result.returncode != 0:
             self.log_message(f"Warning: Failed to upgrade pip: {result.stderr}")
         
-        result = CommandRunner.run_command(f"{venv_pip} install -r requirements.txt", 
-                                            check=False, capture=True, text=True)
+        # Try requirements-core.txt first, then fall back to requirements.txt
+        core_reqs = os.path.join(self.config['install_dir'], 'requirements-core.txt')
+        if os.path.exists(core_reqs):
+            result = CommandRunner.run_command(f"{venv_pip} install -r {core_reqs}", 
+                                                check=False, capture=True, text=True)
+        else:
+            result = CommandRunner.run_command(f"{venv_pip} install -r requirements.txt", 
+                                                check=False, capture=True, text=True)
+        
         if result.returncode != 0:
             self.log_message(f"Warning: Failed to install core dependencies: {result.stderr}")
         
