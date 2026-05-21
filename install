@@ -430,7 +430,7 @@ Type=Application
 Name=Open-Omniscience
 GenericName=Investigative Journalism Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd $INSTALL_DIR && $INSTALL_DIR/venv/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload & sleep 5 && xdg-open http://localhost:8000"
+Exec=bash -c "cd $INSTALL_DIR && $INSTALL_DIR/venv/bin/python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload & sleep 5 && xdg-open http://localhost:8000"
 Icon=$INSTALL_DIR/docs/open-omniscience-icon.png
 Terminal=true
 Categories=Development;Journalism;Research;Utility;
@@ -471,7 +471,7 @@ After=network.target
 User=${CURRENT_USER}
 WorkingDirectory=${INSTALL_DIR}
 Environment="PATH=${INSTALL_DIR}/venv/bin:$PATH"
-ExecStart=${INSTALL_DIR}/venv/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+ExecStart=${INSTALL_DIR}/venv/bin/python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=5
 
@@ -633,15 +633,16 @@ main() {
             # Use full path to uvicorn from venv to ensure it works
             VENV_UVICORN="$INSTALL_DIR/venv/bin/uvicorn"
             if [ -f "$VENV_UVICORN" ]; then
-                "$VENV_UVICORN" api.main:app --host 0.0.0.0 --port 8000 --reload &
+                "$VENV_UVICORN" src.api.main:app --host 0.0.0.0 --port 8000 --reload &
             else
                 # Fallback: try with python -m
-                "$INSTALL_DIR/venv/bin/python" -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload &
+                "$INSTALL_DIR/venv/bin/python" -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload &
             fi
             
             # Check if it started successfully
-            sleep 3
-            if pgrep -f "uvicorn.*api.main:app" >/dev/null 2>&1; then
+            sleep 5
+            # Try multiple pgrep patterns to be more reliable
+            if pgrep -f "uvicorn" >/dev/null 2>&1 || pgrep -f "src.api.main:app" >/dev/null 2>&1 || pgrep -f "open-omniscience" >/dev/null 2>&1; then
                 log_success "Open-Omniscience is running!"
                 echo ""
                 echo "  Access the application at: http://localhost:8000"
@@ -656,14 +657,39 @@ main() {
                     fi
                 fi
             else
-                log_warning "Open-Omniscience may not have started. Check with: pgrep -f uvicorn"
+                # Check if the port is listening
+                if command_exists curl; then
+                    if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000 2>/dev/null | grep -q "200\|301\|302"; then
+                        log_success "Open-Omniscience is running!"
+                        echo ""
+                        echo "  Access the application at: http://localhost:8000"
+                    else
+                        log_warning "Open-Omniscience may not have started. Check with: pgrep -f uvicorn"
+                        echo ""
+                        echo "  Trying to check the process manually..."
+                        ps aux | grep uvicorn | grep -v grep || true
+                        echo ""
+                        echo "  You can start it manually with:"
+                        echo "    cd $INSTALL_DIR"
+                        echo "    $INSTALL_DIR/venv/bin/python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload"
+                    fi
+                else
+                    log_warning "Open-Omniscience may not have started. Check with: pgrep -f uvicorn"
+                    echo ""
+                    echo "  Trying to check the process manually..."
+                    ps aux | grep uvicorn | grep -v grep || true
+                    echo ""
+                    echo "  You can start it manually with:"
+                    echo "    cd $INSTALL_DIR"
+                    echo "    $INSTALL_DIR/venv/bin/python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload"
+                fi
             fi
         else
             echo ""
             log_info "To start Open-Omniscience manually:"
             echo "    cd $INSTALL_DIR"
             echo "    source venv/bin/activate"
-            echo "    uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
+            echo "    uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload"
             echo ""
             echo "  Then access at: http://localhost:8000"
         fi
@@ -672,7 +698,7 @@ main() {
         log_info "To start Open-Omniscience:"
         echo "    cd $INSTALL_DIR"
         echo "    source venv/bin/activate"
-        echo "    uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
+        echo "    uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload"
         echo ""
         echo "  Then access at: http://localhost:8000"
     fi
@@ -684,7 +710,7 @@ main() {
     echo ""
     echo "  For production deployment:"
     echo "    pip install gunicorn"
-    echo "    gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app"
+    echo "    gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 src.api.main:app"
     echo ""
     echo "  Documentation: https://github.com/ideotion/Open-Omniscience"
     echo ""
