@@ -958,15 +958,59 @@ class GUIInstaller:
         if result.returncode != 0:
             self.log_message(f"Warning: Failed to upgrade pip: {result.stderr}")
         
+        # Debug: Log venv paths
+        self.log_message(f"[DEBUG] venv_pip: {venv_pip}")
+        self.log_message(f"[DEBUG] venv_python: {venv_python}")
+        
         # Install all dependencies from the single requirements.txt file
         reqs_file = os.path.join(self.config['install_dir'], 'requirements.txt')
-        if os.path.exists(reqs_file):
-            result = CommandRunner.run_command(f"{venv_pip} install -r {reqs_file}", 
+        
+        # Debug: Log requirements file path and existence
+        self.log_message(f"[DEBUG] Looking for requirements.txt at: {reqs_file}")
+        self.log_message(f"[DEBUG] requirements.txt exists: {os.path.exists(reqs_file)}")
+        
+        # If requirements.txt is a symlink, resolve it and log the target
+        if os.path.islink(reqs_file):
+            target = os.path.realpath(reqs_file)
+            self.log_message(f"[DEBUG] requirements.txt is a symlink pointing to: {target}")
+            self.log_message(f"[DEBUG] Symlink target exists: {os.path.exists(target)}")
+        
+        # If requirements.txt doesn't exist, try to copy it from configs/python/
+        if not os.path.exists(reqs_file):
+            source_reqs = os.path.join(self.config['install_dir'], 'configs', 'python', 'requirements.txt')
+            self.log_message(f"[DEBUG] Trying fallback requirements file: {source_reqs}")
+            if os.path.exists(source_reqs):
+                self.log_message("Copying requirements.txt from configs/python/...")
+                shutil.copy(source_reqs, reqs_file)
+                self.log_message(f"[DEBUG] Copied requirements.txt to: {reqs_file}")
+            else:
+                self.log_message("Error: requirements.txt not found in install_dir or configs/python/!")
+                return
+        
+        # Install dependencies
+        self.log_message(f"Installing dependencies from: {reqs_file}")
+        result = CommandRunner.run_command(f"{venv_pip} install -r {reqs_file}", 
+                                            check=False, capture=True, text=True)
+        if result.returncode != 0:
+            self.log_message(f"Warning: Failed to install dependencies: {result.stderr}")
+            self.log_message(f"[DEBUG] pip install stdout: {result.stdout}")
+        else:
+            self.log_message("Dependencies installed successfully")
+        
+        # Explicitly verify and install uvicorn as fallback
+        self.log_message("[DEBUG] Verifying uvicorn installation...")
+        uvicorn_check_cmd = f"{venv_python} -c 'import uvicorn; print(\"Uvicorn is installed\")'"
+        result = CommandRunner.run_command(uvicorn_check_cmd, check=False, capture=True, text=True)
+        if result.returncode != 0:
+            self.log_message("[DEBUG] Uvicorn not found, installing explicitly...")
+            result = CommandRunner.run_command(f"{venv_pip} install uvicorn[standard]", 
                                                 check=False, capture=True, text=True)
             if result.returncode != 0:
-                self.log_message(f"Warning: Failed to install dependencies: {result.stderr}")
+                self.log_message(f"Error: Failed to install uvicorn: {result.stderr}")
+            else:
+                self.log_message("Uvicorn installed successfully")
         else:
-            self.log_message("Warning: requirements.txt not found!")
+            self.log_message("[DEBUG] Uvicorn is already installed")
     
     def configure_environment(self):
         """Configure the environment."""
@@ -1040,11 +1084,26 @@ StartupWMClass=Open-Omniscience
             self.log_message("Error: Virtual environment not found. Please run the installation first.")
             return False
         
+        # Debug: Log venv and python paths
+        python_path = os.path.join(venv_path, 'bin', 'python3')
+        self.log_message(f"[DEBUG] Starting server with python_path: {python_path}")
+        self.log_message(f"[DEBUG] python_path exists: {os.path.exists(python_path)}")
+        
+        # Verify uvicorn is available before starting
+        self.log_message("[DEBUG] Verifying uvicorn is available...")
+        uvicorn_check_cmd = f"{python_path} -c 'import uvicorn; print(\"Uvicorn is available\")'"
+        result = CommandRunner.run_command(uvicorn_check_cmd, check=False, capture=True, text=True)
+        if result.returncode != 0:
+            self.log_message(f"[DEBUG] Uvicorn not available! Error: {result.stderr}")
+            self.log_message("Error: Uvicorn is not installed in the virtual environment. Please run dependency installation first.")
+            return False
+        else:
+            self.log_message("[DEBUG] Uvicorn is available in the virtual environment")
+        
         # Start the application using uvicorn
         self.log_message("Starting Open-Omniscience with uvicorn...")
         
         # Use absolute path to python and uvicorn in the venv
-        python_path = os.path.join(venv_path, 'bin', 'python3')
         uvicorn_path = os.path.join(venv_path, 'bin', 'uvicorn')
         
         # Start in background using nohup so it doesn't die when parent exits
