@@ -245,10 +245,11 @@ main() {
         cd "$INSTALL_DIR"
         
         # Ensure requirements.txt exists as a real file (not symlink) in the install directory
-        # Git clone with --depth 1 does not preserve symlinks, so we need to copy the actual file
-        if [ ! -f "requirements.txt" ] || [ -L "requirements.txt" ]; then
+        # Git clone with --depth 1 may preserve symlinks, so we replace them with actual files
+        if [ -L "requirements.txt" ] || [ ! -f "requirements.txt" ]; then
             log_info "Ensuring requirements.txt exists as a real file..."
             if [ -f "configs/python/requirements.txt" ]; then
+                rm -f "requirements.txt"
                 cp -f "configs/python/requirements.txt" "requirements.txt"
                 log_success "Copied requirements.txt to install directory"
             else
