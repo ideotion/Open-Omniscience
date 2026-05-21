@@ -11,7 +11,7 @@
 # - Automatic python3-tk installation if missing
 # - Automatic psutil installation if missing
 # - Fallback to text-based installer if GUI not available
-# - Works in virtual environments, XEN, Docker, etc.
+# - Works in virtual environments, XEN, Qubes OS, etc.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install | bash
