@@ -903,13 +903,13 @@ class GUIInstaller:
             self.log_message(f"Error: Failed to change to repository directory: {e}")
             raise Exception(f"Failed to change to repository directory: {e}")
         
-        # Verify requirements-core.txt exists
-        if not os.path.exists('requirements-core.txt'):
-            self.log_message("Error: requirements-core.txt not found in cloned repository!")
+        # Verify requirements.txt exists
+        if not os.path.exists('requirements.txt'):
+            self.log_message("Error: requirements.txt not found in cloned repository!")
             self.log_message("The repository may not have been cloned correctly.")
-            raise Exception("requirements-core.txt not found after cloning")
+            raise Exception("requirements.txt not found after cloning")
         
-        self.log_message("Repository cloned successfully. requirements-core.txt found.")
+        self.log_message("Repository cloned successfully. requirements.txt found.")
         
         # Return to original directory
         try:
@@ -958,28 +958,21 @@ class GUIInstaller:
         if result.returncode != 0:
             self.log_message(f"Warning: Failed to upgrade pip: {result.stderr}")
         
-        # Try requirements-core.txt first, then fall back to requirements.txt
-        core_reqs = os.path.join(self.config['install_dir'], 'requirements-core.txt')
-        if os.path.exists(core_reqs):
-            result = CommandRunner.run_command(f"{venv_pip} install -r {core_reqs}", 
+        # Install all dependencies from the single requirements.txt file
+        reqs_file = os.path.join(self.config['install_dir'], 'requirements.txt')
+        if os.path.exists(reqs_file):
+            result = CommandRunner.run_command(f"{venv_pip} install -r {reqs_file}", 
                                                 check=False, capture=True, text=True)
+            if result.returncode != 0:
+                self.log_message(f"Warning: Failed to install dependencies: {result.stderr}")
         else:
-            result = CommandRunner.run_command(f"{venv_pip} install -r requirements.txt", 
-                                                check=False, capture=True, text=True)
-        
-        if result.returncode != 0:
-            self.log_message(f"Warning: Failed to install core dependencies: {result.stderr}")
-        
-        if self.config['install_ollama']:
-            self.log_message("Installing LLM dependencies...")
-            llm_reqs = os.path.join(self.config['install_dir'], 'requirements-llm.txt')
-            if os.path.exists(llm_reqs):
-                result = CommandRunner.run_command(f"{venv_pip} install -r {llm_reqs}", 
+            self.log_message("Warning: requirements.txt not found, trying requirements-core.txt...")
+            core_reqs = os.path.join(self.config['install_dir'], 'requirements-core.txt')
+            if os.path.exists(core_reqs):
+                result = CommandRunner.run_command(f"{venv_pip} install -r {core_reqs}", 
                                                     check=False, capture=True, text=True)
                 if result.returncode != 0:
-                    self.log_message(f"Warning: Failed to install LLM dependencies: {result.stderr}")
-            else:
-                self.log_message("LLM requirements file not found, skipping...")
+                    self.log_message(f"Warning: Failed to install core dependencies: {result.stderr}")
     
     def configure_environment(self):
         """Configure the environment."""

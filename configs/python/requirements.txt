@@ -1,12 +1,101 @@
-# Open-Omniscience - Core Requirements
-# Minimum dependencies required to run the core Open-Omniscience platform
-# 
-# For full installation options, see:
-# - requirements-core.txt  (minimal dependencies)
-# - requirements-llm.txt   (core + LLM support)
-# - requirements-all.txt   (all dependencies including all pillars)
+# Open-Omniscience - All Requirements
+# =================================
+# This is the single requirements file for Open-Omniscience.
+# It includes all dependencies needed for the core application with LLM support.
 #
 # Install with: pip install -r requirements.txt
 
-# Include core requirements
--r requirements-core.txt
+# ============================================================================
+# WEB FRAMEWORK & API
+# ============================================================================
+fastapi>=0.95.0
+uvicorn>=0.21.0
+python-multipart>=0.0.6
+
+# ============================================================================
+# DATABASE & ORM
+# ============================================================================
+sqlalchemy>=2.0.0
+alembic>=1.11.1
+
+# ============================================================================
+# WEB SCRAPING & DATA INGESTION
+# ============================================================================
+requests>=2.28.0
+beautifulsoup4>=4.12.0
+feedparser>=6.0.10
+
+# ============================================================================
+# CONFIGURATION & SERIALIZATION
+# ============================================================================
+pyyaml>=6.0.0
+
+# ============================================================================
+# RATE LIMITING
+# ============================================================================
+slowapi>=0.1.8
+
+# ============================================================================
+# MONITORING & METRICS
+# ============================================================================
+prometheus-client>=0.17.0
+
+# ============================================================================
+# SECURITY
+# ============================================================================
+bleach>=6.0.0
+bcrypt>=4.0.0
+jose>=1.0.0
+passlib>=1.7.0
+python-jose[cryptography]>=3.3.0
+
+# ============================================================================
+# DATA PROCESSING
+# ============================================================================
+numpy>=1.24.0
+python-dateutil>=2.8.0
+
+# ============================================================================
+# SYSTEM UTILITIES
+# ============================================================================
+psutil>=5.9.0
+
+# ============================================================================
+# TESTING
+# ============================================================================
+pytest>=7.0.0
+pytest-mock>=3.11.0
+
+# ============================================================================
+# LLM-SPECIFIC DEPENDENCIES
+# ============================================================================
+
+# Core dependencies
+pydantic>=2.0.0
+
+# For better JSON handling
+orjson>=3.8.0
+
+# For async support
+httpx>=0.24.0
+
+# For progress bars when downloading models
+tqdm>=4.64.0
+
+# For better error handling
+tenacity>=8.2.0
+
+# For type hints
+typing-extensions>=4.5.0
+
+# For configuration management
+pydantic-settings>=2.0.0
+
+# For logging
+structlog>=23.0.0
+
+# For caching
+cachetools>=5.3.0
+
+# For rate limiting
+limits>=3.0.0

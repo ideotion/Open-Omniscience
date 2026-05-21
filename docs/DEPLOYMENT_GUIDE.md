@@ -130,7 +130,7 @@ python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
-pip install -r requirements-core.txt
+pip install -r requirements.txt
 
 # Start the application
 uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
@@ -162,10 +162,10 @@ source venv/bin/activate
 #### Step 3: Install Dependencies
 ```bash
 # Install core dependencies
-pip install -r requirements-core.txt
+pip install -r requirements.txt
 
 # For LLM features (optional)
-pip install -r requirements-llm.txt
+pip install -r requirements.txt
 ```
 
 #### Step 4: Configure Environment
@@ -428,7 +428,7 @@ server {
 
 #### Module not found errors
 - Activate virtual environment: `source venv/bin/activate`
-- Reinstall dependencies: `pip install -r requirements-core.txt`
+- Reinstall dependencies: `pip install -r requirements.txt`
 
 ### Debug Mode
 Run with debug mode for detailed error messages:
@@ -448,7 +448,7 @@ git pull origin main
 
 # Update dependencies
 source venv/bin/activate
-pip install -r requirements-core.txt
+pip install -r requirements.txt
 
 # Restart the application
 # If using systemd:

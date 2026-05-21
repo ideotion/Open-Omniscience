@@ -139,7 +139,7 @@ source venv/bin/activate
 pip install --upgrade pip
 
 # Install core dependencies
-pip install -r requirements-core.txt
+pip install -r requirements.txt
 
 # For LLM features (optional)
 pip install -r requirements-llm.txt
@@ -352,7 +352,7 @@ sudo systemctl start open-omniscience
 
 #### Module not found errors
 - Activate the virtual environment: `source venv/bin/activate`
-- Install dependencies: `pip install -r requirements-core.txt`
+- Install dependencies: `pip install -r requirements.txt`
 
 #### Port already in use
 - Check what's using port 8000: `ss -tulnp | grep 8000`

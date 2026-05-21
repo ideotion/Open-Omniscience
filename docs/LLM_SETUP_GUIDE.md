@@ -71,7 +71,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 #### Step 3: Install Core Dependencies
 ```bash
-pip install -r requirements-core.txt
+pip install -r requirements.txt
 ```
 
 #### Step 4: Install LLM Dependencies
