@@ -966,13 +966,7 @@ class GUIInstaller:
             if result.returncode != 0:
                 self.log_message(f"Warning: Failed to install dependencies: {result.stderr}")
         else:
-            self.log_message("Warning: requirements.txt not found, trying requirements-core.txt...")
-            core_reqs = os.path.join(self.config['install_dir'], 'requirements-core.txt')
-            if os.path.exists(core_reqs):
-                result = CommandRunner.run_command(f"{venv_pip} install -r {core_reqs}", 
-                                                    check=False, capture=True, text=True)
-                if result.returncode != 0:
-                    self.log_message(f"Warning: Failed to install core dependencies: {result.stderr}")
+            self.log_message("Warning: requirements.txt not found!")
     
     def configure_environment(self):
         """Configure the environment."""

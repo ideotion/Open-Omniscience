@@ -142,7 +142,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # For LLM features (optional)
-pip install -r requirements-llm.txt
+pip install -r requirements.txt
 ```
 
 ### Step 5: Configure Environment

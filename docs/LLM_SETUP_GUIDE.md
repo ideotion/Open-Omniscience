@@ -76,7 +76,7 @@ pip install -r requirements.txt
 
 #### Step 4: Install LLM Dependencies
 ```bash
-pip install -r requirements-llm.txt
+pip install -r requirements.txt
 ```
 
 #### Step 5: Install Ollama
