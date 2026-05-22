@@ -284,10 +284,13 @@ install_python_deps() {
         exit 1
     fi
     
-    # Recommend Python 3.12 for best compatibility
-    if [ "$PYTHON_VERSION" != "3.12" ]; then
-        log_warning "Python 3.12 is recommended for best compatibility (detected: $PYTHON_VERSION)"
-        log_warning "Python 3.13 should work but may have some dependency compatibility issues"
+    # Python 3.13 is now the recommended default for new installations
+    if [ "$PYTHON_VERSION" = "3.13" ]; then
+        log_success "Python 3.13 detected - recommended for new installations"
+    elif [ "$PYTHON_VERSION" = "3.12" ]; then
+        log_info "Python 3.12 detected - fully supported"
+    else
+        log_warning "Python $PYTHON_VERSION detected - supported but 3.13 is recommended for new installations"
     fi
     
     # Create virtual environment
@@ -359,6 +362,16 @@ install_python_deps() {
     else
         log_error "requirements.txt not found! Cannot install dependencies."
         exit 1
+    fi
+    
+    # Explicitly ensure uvicorn is installed (has been an issue before)
+    log_info "Ensuring uvicorn is installed..."
+    pip install --upgrade uvicorn[standard]>=0.25.0
+    
+    # If using Python 3.13, install compatible versions
+    if [ "$PYTHON_VERSION" = "3.13" ]; then
+        log_info "Detected Python 3.13, installing compatible package versions..."
+        pip install --upgrade sqlalchemy>=2.0.25 alembic>=1.13.0 cryptography>=42.0.0 pyyaml>=6.0.1
     fi
     
     log_success "All Python dependencies installed"
@@ -485,7 +498,7 @@ RestartSec=5
 # Prevent systemd from stopping restarts after too many failures
 # This is especially important for Qubes OS which may have aggressive defaults
 # Allow up to 10 restarts within 10 minutes before giving up
-StartLimitIntervalSec=600
+StartLimitIntervalSec=60
 StartLimitBurst=10
 # Log to syslog for better debugging
 StandardOutput=journal
@@ -753,6 +766,8 @@ main() {
     echo "  Documentation: https://github.com/ideotion/Open-Omniscience"
     echo ""
     echo "  GUI Installer: Run installer/gui_installer.py for a graphical installation"
+    echo ""
+    echo "  Debug Tool: Run scripts/debug_install.sh to diagnose installation issues"
     echo ""
 }
 
