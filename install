@@ -13,12 +13,9 @@
 #
 
 set -uo pipefail
-# Check if running interactively (not piped)
-if [ ! -t 0 ]; then
-    INTERACTIVE=false
-else
-    INTERACTIVE=true
-fi
+# Make the script interactive by default for better user experience
+# This allows prompts to work even when piped (curl ... | bash)
+INTERACTIVE=true
 
 
 # =============================================================================
