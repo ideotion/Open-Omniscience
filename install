@@ -523,7 +523,7 @@ EOF
         cd "$INSTALL_DIR"
         
         # Try to start the service and check for immediate errors
-        TEST_OUTPUT=$("${INSTALL_DIR}/venv/bin/python" -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 5 2>&1 &
+        "${INSTALL_DIR}/venv/bin/python" -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 5 2>&1 &
         UVICORN_PID=$!
         sleep 3
         
@@ -538,7 +538,6 @@ EOF
             log_warning "Service test startup: FAILED - Check the output above for errors"
             log_warning "The service file has been created but not enabled due to startup failure"
             log_warning "Please fix the issues and manually enable with: sudo systemctl enable open-omniscience"
-            echo "$TEST_OUTPUT"
         fi
     else
         log_warning "systemctl not available, service file created but not enabled"
