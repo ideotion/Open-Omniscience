@@ -44,13 +44,13 @@ For advanced users who need manual installation options, see the sections below.
 - **CPU:** 2 cores
 - **RAM:** 4 GB
 - **Storage:** 20 GB free disk space
-- **Python:** 3.8 or higher
+- **Python:** 3.8 through 3.13 (3.12 recommended for best compatibility)
 
 ### Recommended System Requirements
 - **CPU:** 4+ cores
 - **RAM:** 8+ GB
 - **Storage:** 50 GB+ free disk space
-- **Python:** 3.10 or higher
+- **Python:** 3.10 through 3.13 (3.12 recommended)
 
 ---
 

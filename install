@@ -278,10 +278,16 @@ install_python_deps() {
     PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
     log_info "Detected Python: $PYTHON_VERSION"
     
-    # Check Python version
-    if ! python3 -c "import sys; assert sys.version_info >= (3, 8)" 2>/dev/null; then
-        log_error "Python 3.8 or higher is required"
+    # Check Python version - support 3.8 through 3.13
+    if ! python3 -c "import sys; assert sys.version_info >= (3, 8) and sys.version_info < (3, 14)" 2>/dev/null; then
+        log_error "Python 3.8 through 3.13 is required (detected: $PYTHON_VERSION)"
         exit 1
+    fi
+    
+    # Recommend Python 3.12 for best compatibility
+    if [ "$PYTHON_VERSION" != "3.12" ]; then
+        log_warning "Python 3.12 is recommended for best compatibility (detected: $PYTHON_VERSION)"
+        log_warning "Python 3.13 should work but may have some dependency compatibility issues"
     fi
     
     # Create virtual environment
@@ -466,14 +472,25 @@ create_systemd_service() {
 [Unit]
 Description=Open-Omniscience - Global Intelligence Platform
 After=network.target
+Requires=network.target
 
 [Service]
 User=${CURRENT_USER}
 WorkingDirectory=${INSTALL_DIR}
 Environment="PATH=${INSTALL_DIR}/venv/bin:$PATH"
+Environment="PYTHONUNBUFFERED=1"
 ExecStart=${INSTALL_DIR}/venv/bin/python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=5
+# Prevent systemd from stopping restarts after too many failures
+# This is especially important for Qubes OS which may have aggressive defaults
+# Allow up to 10 restarts within 10 minutes before giving up
+StartLimitIntervalSec=600
+StartLimitBurst=10
+# Log to syslog for better debugging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=open-omniscience
 
 [Install]
 WantedBy=multi-user.target
@@ -487,8 +504,29 @@ EOF
     if command_exists systemctl; then
         run_with_sudo systemctl daemon-reload
         log_success "Systemd service created at $SERVICE_FILE"
-        log_info "To enable: sudo systemctl enable open-omniscience"
-        log_info "To start: sudo systemctl start open-omniscience"
+        
+        # Test if the service can start before enabling
+        log_info "Testing service startup..."
+        cd "$INSTALL_DIR"
+        
+        # Try to start the service and check for immediate errors
+        TEST_OUTPUT=$("${INSTALL_DIR}/venv/bin/python" -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 5 2>&1 &
+        UVICORN_PID=$!
+        sleep 3
+        
+        # Check if it's running
+        if kill -0 $UVICORN_PID 2>/dev/null; then
+            log_success "Service test startup: PASSED"
+            kill $UVICORN_PID 2>/dev/null
+            wait $UVICORN_PID 2>/dev/null
+            log_info "To enable: sudo systemctl enable open-omniscience"
+            log_info "To start: sudo systemctl start open-omniscience"
+        else
+            log_warning "Service test startup: FAILED - Check the output above for errors"
+            log_warning "The service file has been created but not enabled due to startup failure"
+            log_warning "Please fix the issues and manually enable with: sudo systemctl enable open-omniscience"
+            echo "$TEST_OUTPUT"
+        fi
     else
         log_warning "systemctl not available, service file created but not enabled"
     fi
