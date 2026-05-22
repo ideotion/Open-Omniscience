@@ -248,15 +248,36 @@ clone_repository() {
     fi
     
     log_info "Cloning Open-Omniscience repository..."
-    git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
     
-    if [ ! -d "$INSTALL_DIR" ]; then
-        log_error "Failed to clone repository"
-        exit 1
+    # Try cloning with depth 1 first
+    if git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR" 2>&1; then
+        cd "$INSTALL_DIR"
+        log_success "Repository cloned to $INSTALL_DIR"
+        return 0
     fi
     
-    cd "$INSTALL_DIR"
-    log_success "Repository cloned to $INSTALL_DIR"
+    # If that fails (e.g., due to symlink issues with long filenames), try without depth
+    log_warning "Clone with --depth 1 failed, trying full clone..."
+    rm -rf "$INSTALL_DIR"
+    if git clone --branch "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR" 2>&1; then
+        cd "$INSTALL_DIR"
+        log_success "Repository cloned to $INSTALL_DIR"
+        return 0
+    fi
+    
+    # If both fail, try cloning without checking out files, then checkout manually
+    log_warning "Full clone failed, trying alternative approach..."
+    rm -rf "$INSTALL_DIR"
+    if git clone --branch "$REPO_BRANCH" --no-checkout "$REPO_URL" "$INSTALL_DIR" 2>&1; then
+        cd "$INSTALL_DIR"
+        # Checkout files one by one to avoid symlink issues
+        git reset --hard HEAD 2>/dev/null || true
+        log_success "Repository cloned to $INSTALL_DIR"
+        return 0
+    fi
+    
+    log_error "Failed to clone repository"
+    exit 1
 }
 
 # =============================================================================
@@ -353,11 +374,15 @@ install_python_deps() {
     pip install --upgrade pip setuptools wheel
     
     # Install all dependencies from the unified requirements.txt
+    # If requirements.txt doesn't exist (e.g., due to clone issues), use requirements-minimal.txt
     if [ -f "requirements.txt" ]; then
         log_info "Installing all dependencies from unified requirements.txt..."
         pip install -r requirements.txt
+    elif [ -f "requirements-minimal.txt" ]; then
+        log_info "requirements.txt not found, using requirements-minimal.txt..."
+        pip install -r requirements-minimal.txt
     else
-        log_error "requirements.txt not found! Cannot install dependencies."
+        log_error "Neither requirements.txt nor requirements-minimal.txt found! Cannot install dependencies."
         exit 1
     fi
     
