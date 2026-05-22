@@ -29,6 +29,8 @@ from urllib.parse import urlparse, ParseResult
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from enum import Enum
 import time
 import logging
 import concurrent.futures
@@ -37,6 +39,23 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
 logger = setup_logging("scraper")
+
+
+class Status(Enum):
+    """Status enum for download results."""
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    BLOCKED = "BLOCKED"
+
+
+@dataclass
+class DownloadResult:
+    """Result of a download operation."""
+    status: Status
+    content: str = ""
+    url: str = ""
+    headers: Optional[Dict[str, str]] = None
+    error: str = ""
 
 
 class Scraper:
@@ -179,7 +198,7 @@ class Scraper:
                 time.sleep(delay)
         return None
 
-    def download_page(self, url: str) -> "DownloadResult":
+    def download_page(self, url: str) -> DownloadResult:
         """
         Download a single page from a URL.
         
@@ -191,22 +210,6 @@ class Scraper:
         Returns:
             DownloadResult object with status, content, and metadata.
         """
-        from dataclasses import dataclass
-        from enum import Enum
-        
-        class Status(Enum):
-            SUCCESS = "SUCCESS"
-            FAILED = "FAILED"
-            BLOCKED = "BLOCKED"
-        
-        @dataclass
-        class DownloadResult:
-            status: Status
-            content: str = ""
-            url: str = ""
-            headers: Optional[Dict[str, str]] = None
-            error: str = ""
-        
         # Check robots.txt first
         if not self._can_scrape(url):
             return DownloadResult(

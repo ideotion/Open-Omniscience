@@ -388,7 +388,7 @@ async def search_articles(
         if tags:
             tag_list = [tag.strip() for tag in tags.split(",")]
             # Find sources with any of the tags
-            from sqlalchemy import or_
+            from sqlalchemy import or_, bindparam
             tag_conditions = []
             for tag in tag_list:
                 # Fixed: Use proper parameter binding to prevent SQL injection
@@ -515,7 +515,7 @@ async def export_articles(
         # Apply tags filter
         if tags:
             tag_list = [tag.strip() for tag in tags.split(",")]
-            from sqlalchemy import or_
+            from sqlalchemy import or_, bindparam
             tag_conditions = []
             for tag in tag_list:
                 # Fixed: Use proper parameter binding to prevent SQL injection

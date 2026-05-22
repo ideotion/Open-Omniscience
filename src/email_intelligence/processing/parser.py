@@ -118,7 +118,7 @@ class EmailParser:
         
         # Check if this is an attachment
         if 'attachment' in content_disposition:
-            attachment = self._process_attachment(msg)
+            attachment = self._process_attachment(msg, parsed_data)
             if attachment:
                 parsed_data['attachments'].append(attachment)
             return
@@ -149,11 +149,11 @@ class EmailParser:
         
         else:
             # Treat as attachment
-            attachment = self._process_attachment(msg)
+            attachment = self._process_attachment(msg, parsed_data)
             if attachment:
                 parsed_data['attachments'].append(attachment)
     
-    def _process_attachment(self, msg: email.message.Message) -> Optional[Dict[str, Any]]:
+    def _process_attachment(self, msg: email.message.Message, parsed_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Process an email attachment.
         

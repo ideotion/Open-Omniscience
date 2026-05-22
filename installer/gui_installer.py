@@ -22,6 +22,7 @@ License: GNU GPLv3
 """
 
 import os
+import shlex
 import sys
 import subprocess
 import shutil
@@ -189,14 +190,15 @@ class CommandRunner:
             return e
     
     @staticmethod
-    def run_async(cmd, output_callback=None, error_callback=None):
+    def run_async(cmd=None, output_callback=None, error_callback=None):
         def run():
             try:
                 # Security: Use shell=False to prevent shell injection
-                if isinstance(cmd, str):
-                    import shlex
-                    cmd = shlex.split(cmd)
-                result = subprocess.run(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if cmd is None:
+                    return
+                # Use a local variable to avoid flake8 F823 warning
+                command = cmd if isinstance(cmd, list) else shlex.split(cmd)
+                result = subprocess.run(command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 if output_callback:
                     output_callback(result.stdout)
             except Exception as e:

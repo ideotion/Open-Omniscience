@@ -567,9 +567,15 @@ async def refresh_tag_based_group(request: Request, group_id: int):
     logger.info(f"Refresh tag-based group: {group_id}")
     
     with SourceManager() as manager:
-        group = manager.update_tag_based_group(group_id, group.tag_pattern if hasattr(group, 'tag_pattern') else '')
+        # First get the group to get its tag_pattern
+        group = manager.get_group(group_id)
         if not group:
             raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
+        
+        # Update the tag-based group
+        updated_group = manager.update_tag_based_group(group_id, group.tag_pattern if hasattr(group, 'tag_pattern') else '')
+        if not updated_group:
+            raise HTTPException(status_code=404, detail=f"Failed to refresh group {group_id}")
         
         return {"message": f"Refreshed tag-based group {group_id}"}
 

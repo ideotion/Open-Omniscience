@@ -667,7 +667,7 @@ class MultiModalAnalyzer:
                 samples = np.mean(samples, axis=1)
             
             # Calculate basic statistics
-            features[x27rmsx27] = float(np.sqrt(np.mean(samples**2)))
+            features['rms'] = float(np.sqrt(np.mean(samples**2)))
             features['max_amplitude'] = float(np.max(np.abs(samples)))
             features['mean_amplitude'] = float(np.mean(np.abs(samples)))
             
