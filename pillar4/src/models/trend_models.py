@@ -30,13 +30,21 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 import logging
+import os
 from sklearn.linear_model import LinearRegression, BayesianRidge
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import TimeSeriesSplit
-import joblib
-import os
+
+# Optional import for model serialization
+try:
+    import joblib
+    HAS_JOBLIB = True
+except ImportError:
+    HAS_JOBLIB = False
+    logger = logging.getLogger(__name__)
+    logger.warning("joblib not available. Model serialization/deserialization will be limited.")
 
 
 class TrendModelType(Enum):
@@ -326,6 +334,10 @@ class TrendPredictionModel:
         Returns:
             True if successful, False otherwise.
         """
+        if not HAS_JOBLIB:
+            self.logger.error("joblib not available. Cannot save model.")
+            return False
+            
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             joblib.dump({
@@ -354,6 +366,11 @@ class TrendPredictionModel:
         Returns:
             Loaded TrendPredictionModel instance.
         """
+        if not HAS_JOBLIB:
+            logger = logging.getLogger(__name__)
+            logger.error("joblib not available. Cannot load model.")
+            raise ImportError("joblib not available. Cannot load model.")
+            
         try:
             data = joblib.load(path)
             config = data["config"]

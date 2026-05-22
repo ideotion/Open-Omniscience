@@ -32,11 +32,18 @@ from typing import List, Dict, Optional, Any, Tuple, Set
 from datetime import datetime, timezone
 import logging
 import networkx as nx
-import matplotlib.pyplot as plt
 import numpy as np
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Optional import for visualization
+try:
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+    logger.warning("matplotlib not available. Network visualization features will be disabled.")
 
 
 class NetworkAnalyzer:
@@ -514,6 +521,10 @@ class NetworkAnalyzer:
         Returns:
             True if visualization was generated successfully
         """
+        if not HAS_MATPLOTLIB:
+            logger.warning("matplotlib not available. Cannot generate network visualization.")
+            return False
+            
         try:
             plt.figure(figsize=(12, 12))
             

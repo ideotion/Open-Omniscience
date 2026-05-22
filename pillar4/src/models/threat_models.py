@@ -30,14 +30,22 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 import logging
+import os
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder
-import joblib
-import os
+
+# Optional import for model serialization
+try:
+    import joblib
+    HAS_JOBLIB = True
+except ImportError:
+    HAS_JOBLIB = False
+    logger = logging.getLogger(__name__)
+    logger.warning("joblib not available. Model serialization/deserialization will be limited.")
 
 
 class ThreatModelType(Enum):
@@ -277,6 +285,10 @@ class ThreatClassificationModel:
         Returns:
             True if successful, False otherwise.
         """
+        if not HAS_JOBLIB:
+            self.logger.error("joblib not available. Cannot save model.")
+            return False
+            
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             joblib.dump({
@@ -305,6 +317,11 @@ class ThreatClassificationModel:
         Returns:
             Loaded ThreatClassificationModel instance.
         """
+        if not HAS_JOBLIB:
+            logger = logging.getLogger(__name__)
+            logger.error("joblib not available. Cannot load model.")
+            raise ImportError("joblib not available. Cannot load model.")
+            
         try:
             data = joblib.load(path)
             config = data["config"]

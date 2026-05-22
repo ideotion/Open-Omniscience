@@ -30,12 +30,20 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple, Union
 from enum import Enum
 import logging
+import os
 from sklearn.ensemble import IsolationForest
 from sklearn.svm import OneClassSVM
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
-import joblib
-import os
+
+# Optional import for model serialization
+try:
+    import joblib
+    HAS_JOBLIB = True
+except ImportError:
+    HAS_JOBLIB = False
+    logger = logging.getLogger(__name__)
+    logger.warning("joblib not available. Model serialization/deserialization will be limited.")
 
 
 class ModelType(Enum):
@@ -270,6 +278,10 @@ class AnomalyDetectionModel:
         Returns:
             True if successful, False otherwise.
         """
+        if not HAS_JOBLIB:
+            self.logger.error("joblib not available. Cannot save model.")
+            return False
+            
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             joblib.dump({
@@ -296,6 +308,11 @@ class AnomalyDetectionModel:
         Returns:
             Loaded AnomalyDetectionModel instance.
         """
+        if not HAS_JOBLIB:
+            logger = logging.getLogger(__name__)
+            logger.error("joblib not available. Cannot load model.")
+            raise ImportError("joblib not available. Cannot load model.")
+            
         try:
             data = joblib.load(path)
             config = data["config"]
