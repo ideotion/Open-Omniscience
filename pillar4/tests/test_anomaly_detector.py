@@ -245,4 +245,4 @@ class TestAnomaly:
         assert d["status"] == "suspicious"
         assert d["score"] == 0.75
         assert "timestamp" in d
-        assert "data_point"] in d
+        assert "data_point" in d

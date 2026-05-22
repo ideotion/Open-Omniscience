@@ -179,7 +179,12 @@ class CommandRunner:
         if sudo and not SystemChecker.check_root():
             cmd = f"sudo {cmd}"
         try:
-            return subprocess.run(cmd, shell=True, check=check, capture_output=capture, text=text)
+            # Security: Use shell=False to prevent shell injection
+            # If shell functionality is needed, cmd should be a list of arguments
+            if isinstance(cmd, str):
+                import shlex
+                cmd = shlex.split(cmd)
+            return subprocess.run(cmd, shell=False, check=check, capture_output=capture, text=text)
         except subprocess.CalledProcessError as e:
             return e
     
@@ -187,7 +192,11 @@ class CommandRunner:
     def run_async(cmd, output_callback=None, error_callback=None):
         def run():
             try:
-                result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                # Security: Use shell=False to prevent shell injection
+                if isinstance(cmd, str):
+                    import shlex
+                    cmd = shlex.split(cmd)
+                result = subprocess.run(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 if output_callback:
                     output_callback(result.stdout)
             except Exception as e:
