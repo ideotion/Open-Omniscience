@@ -620,19 +620,19 @@ main() {
     # Setup for Debian-based Linux
     setup_linux
     
-    # Ask user if they want to install Ollama
+    # Ollama installation is optional and skipped by default for faster testing
+    # It can be installed later from within the app or manually from https://ollama.com
     if [ "$INTERACTIVE" = true ]; then
-        read -p "Do you want to install Ollama for LLM support? (Y/n): " -n 1 -r
+        read -p "Do you want to install Ollama for LLM support? (y/N): " -n 1 -r
         echo ""
-        if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
             install_ollama || log_warning "Ollama installation skipped or failed"
         else
-            log_info "Skipping Ollama installation. You can install it later from https://ollama.com"
+            log_info "Skipping Ollama installation (recommended for testing). You can install it later from within the app or from https://ollama.com"
         fi
     else
-        # Non-interactive mode: install Ollama by default
-        log_info "Non-interactive mode: Installing Ollama by default..."
-        install_ollama || log_warning "Ollama installation skipped or failed"
+        # Non-interactive mode: skip Ollama by default for faster installation
+        log_info "Skipping Ollama installation (can be installed later from within the app)."
     fi
     
     # Clone repository
@@ -754,7 +754,8 @@ main() {
     fi
     
     echo ""
-    echo "  For LLM support (if Ollama installed):"
+    echo "  To install Ollama later for LLM support:"
+    echo "    curl -fsSL https://ollama.com/install.sh | sh"
     echo "    ollama pull gemma4:e2b"
     echo "    # Then restart Open-Omniscience"
     echo ""
