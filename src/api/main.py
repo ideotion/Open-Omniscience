@@ -70,7 +70,7 @@ from src.api.link_analysis import router as link_analysis_router
 from src.api.routes.llm import router as llm_router
 
 # Configure logging using shared config
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("api")
 
 # Database setup - use environment variable or default

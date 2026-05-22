@@ -148,7 +148,6 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     autocommit=False,
     autoflush=False,
-    expire_on_commit=False,
 )
 
 # Base class for async models

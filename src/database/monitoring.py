@@ -271,10 +271,12 @@ class DatabaseMonitor:
         def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
             self._handle_after_execute(conn, cursor, statement, parameters, context)
         
-        # Listen for dbapi_error events
-        @event.listens_for(self.engine, "dbapi_error")
-        def dbapi_error(connection, cursor, statement, parameters, context, executemany):
-            self._handle_error(connection, cursor, statement, parameters, context)
+        # Listen for error events (dbapi_error was removed in SQLAlchemy 2.0)
+        # Note: 'error' event is not available in all SQLAlchemy versions/backends
+        # For now, we skip this event to maintain compatibility
+        # @event.listens_for(self.engine, "error")
+        # def error_handler(connection, cursor, statement, parameters, context, executemany):
+        #     self._handle_error(connection, cursor, statement, parameters, context)
         
         # Listen for connect events
         @event.listens_for(self.engine, "connect")

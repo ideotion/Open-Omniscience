@@ -45,7 +45,7 @@ from sqlalchemy.orm import Session
 from src.database.models import Source, SourceGroup, SourceMetadata, source_group_association, get_session
 
 # Import logging config
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("source_manager")
 
 # Import DuckDuckGo search

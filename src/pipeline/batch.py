@@ -46,7 +46,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExec
 import threading
 
 # Configure logging
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("batch_pipeline")
 
 

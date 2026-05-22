@@ -106,7 +106,6 @@ DATABASE_CONFIG = {
     "common": {
         "echo": False,
         "future": True,  # Use SQLAlchemy 2.0 style
-        "expire_on_commit": False,  # Keep objects usable after commit
     }
 }
 
@@ -291,7 +290,6 @@ Session = sessionmaker(
     bind=engine,
     autocommit=False,  # Use explicit commits for better control
     autoflush=False,  # Use explicit flushes for better performance
-    expire_on_commit=False,  # Keep objects usable after commit
 )
 
 # Initialize database monitor

@@ -44,11 +44,11 @@ from src.scraper.scraper import Scraper
 from src.scraper.source_monitor import SourceMonitor
 from src.utils.url_utils import canonicalize_url, resolve_redirects, generate_content_hash
 from src.ingestor.normalizer import ArticleNormalizer
-from ingestor.deduplicator import Deduplicator, DeduplicationConfig
-from database.models import Article, Source, get_session
+from src.ingestor.deduplicator import Deduplicator, DeduplicationConfig
+from src.database.models import Article, Source, get_session
 
 # Configure logging using shared config
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("pipeline")
 
 # Retry configuration

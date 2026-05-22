@@ -54,7 +54,7 @@ class DataProvenance:
     """
     
     def __init__(self, data_id: str, data: Any, source: str = "unknown", 
-                 metadata: Dict[str, Any] = None):
+                 metadata: Optional[Dict[str, Any]] = None):
         """
         Initialize provenance record for data.
         
@@ -154,8 +154,7 @@ class ProvenanceLedger:
             create_if_not_exists: Create database if it doesn't exist
         """
         self.db_path = Path(db_path)
-        
-        self.connection = None
+        self.connection: Optional[sqlite3.Connection] = None
         self._initialize_database(create_if_not_exists)
     
     def _initialize_database(self, create_if_not_exists: bool) -> None:
@@ -224,7 +223,7 @@ class ProvenanceLedger:
         self.connection.commit()
     
     def add_data(self, data_id: str, data: Any, source: str = "unknown", 
-                 metadata: Dict[str, Any] = None, batch_id: Optional[int] = None) -> DataProvenance:
+                 metadata: Optional[Dict[str, Any]] = None, batch_id: Optional[int] = None) -> DataProvenance:
         """
         Add a new data entry to the ledger.
         

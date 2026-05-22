@@ -45,7 +45,7 @@ from src.services.keyword_extractor import keyword_extractor
 from src.services.text_processor import text_processor
 
 # Configure logging
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("api.keyword")
 
 # Create router

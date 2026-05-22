@@ -45,21 +45,21 @@ from slowapi.errors import RateLimitExceeded
 import logging
 
 # Import database models and session
-from database.models import (
+from src.database.models import (
     Article, ExternalSource, SourceArticle, ArticleLink, 
     ArticleSourceRelationship, LinkClassificationRule, SourceCredibilityRule,
     get_session
 )
 
 # Import link analyzer services
-from services.link_analyzer import (
+from src.services.link_analyzer import (
     LinkAnalyzerService, LinkExtractor, LinkClassifier, 
     SourceIdentifier, SourceScraper, RelationshipTracker,
     TemporalAnalyzer, NetworkAnalyzer, CredibilityScorer, link_analyzer
 )
 
 # Configure logging
-from utils.logging_config import setup_logging
+from src.utils.logging_config import setup_logging
 logger = setup_logging("api.link_analysis")
 
 # Create router
