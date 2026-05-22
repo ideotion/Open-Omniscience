@@ -865,7 +865,7 @@ def cached(
             if key_func:
                 cache_key = key_func(*args, **kwargs)
             else:
-                cache_key = self._generate_cache_key(func, args, kwargs)
+                cache_key = _generate_cache_key(func, args, kwargs)
             
             # Try to get from cache
             cached_data = response_cache.get(cache_key)
@@ -1003,13 +1003,13 @@ def compress_response(
                 return response
             
             # Check response size
-            min_size = min_size or config.compression_min_size
+            actual_min_size = min_size or config.compression_min_size
             if isinstance(response, JSONResponse):
                 content = response.body
-                if len(content) >= min_size:
+                if len(content) >= actual_min_size:
                     # Compress
-                    level = level or config.compression_level
-                    compressed = gzip.compress(content, compresslevel=level)
+                    actual_level = level or config.compression_level
+                    compressed = gzip.compress(content, compresslevel=actual_level)
                     
                     # Return compressed response
                     return Response(
