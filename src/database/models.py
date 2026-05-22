@@ -281,18 +281,6 @@ def get_database_config(pool_profile: str = "production") -> Dict[str, Any]:
     
     return config
 
-# Determine database type and apply appropriate configuration
-def get_database_config() -> Dict[str, Any]:
-    """Get database-specific configuration based on the URL."""
-    config = DATABASE_CONFIG["common"].copy()
-    
-    if DATABASE_URL.startswith("sqlite"):
-        config.update(DATABASE_CONFIG["sqlite"])
-    elif DATABASE_URL.startswith("postgresql"):
-        config.update(DATABASE_CONFIG["postgresql"])
-    
-    return config
-
 # Create the SQLAlchemy engine with performance optimizations
 # Use environment variable to select pool profile, default to "production"
 POOL_PROFILE = os.getenv("DB_POOL_PROFILE", "production")
