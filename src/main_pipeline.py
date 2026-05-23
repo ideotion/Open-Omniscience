@@ -186,9 +186,9 @@ class OpenOmnisciencePipeline:
     def _init_pillar2(self):
         """Initialize Pillar 2 (Data Processing)."""
         try:
-            from src.pillar2.src.analysis.statistical_tests import StatisticalTests
-            from src.pillar2.src.analysis.peer_review import PeerReviewSimulator
-            from src.pillar2.src.analysis.reproducibility import ReproducibilityCalculator
+            from pillar2.src.analysis.statistical_tests import StatisticalTests
+            from pillar2.src.analysis.peer_review import PeerReviewSimulator
+            from pillar2.src.analysis.reproducibility import ReproducibilityCalculator
             
             return {
                 "statistical_tests": StatisticalTests(),
@@ -202,8 +202,8 @@ class OpenOmnisciencePipeline:
     def _init_pillar3(self):
         """Initialize Pillar 3 (Analytics & Intelligence)."""
         try:
-            from src.pillar3.src.analysis.deepfake_detector import DeepfakeDetector
-            from src.pillar3.src.analysis.propaganda import PropagandaDetector
+            from pillar3.src.analysis.deepfake_detector import DeepfakeDetector
+            from pillar3.src.analysis.propaganda import PropagandaDetector
             
             return {
                 "deepfake_detector": DeepfakeDetector(),
@@ -216,11 +216,11 @@ class OpenOmnisciencePipeline:
     def _init_pillar4(self):
         """Initialize Pillar 4 (Legal Admissibility)."""
         try:
-            from src.pillar4.src.legal.validator import LegalValidator
-            from src.pillar4.src.crypto.provenance import DataLineageTracker
-            from src.pillar4.src.audit.chain_of_custody import DataLineageTracker as ChainOfCustodyTracker
-            from src.pillar4.src.compliance.gdpr import GDPRComplianceChecker
-            from src.pillar4.src.compliance.copyright import CopyrightComplianceChecker
+            from pillar4.src.legal.validator import LegalValidator
+            from pillar4.src.crypto.provenance import DataLineageTracker
+            from pillar4.src.audit.chain_of_custody import DataLineageTracker as ChainOfCustodyTracker
+            from pillar4.src.compliance.gdpr import GDPRComplianceChecker
+            from pillar4.src.compliance.copyright import CopyrightComplianceChecker
             
             return {
                 "validator": LegalValidator(),
