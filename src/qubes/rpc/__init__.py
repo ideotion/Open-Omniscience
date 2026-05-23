@@ -6,6 +6,6 @@ It allows secure, isolated components to communicate with each other.
 """
 
 from .server import QubesRPCServer
-from .client import QubesRPCClient
+from .client import QubesRPCClient, RPCClientConfig
 
-__all__ = ['QubesRPCServer', 'QubesRPCClient']
+__all__ = ['QubesRPCServer', 'QubesRPCClient', 'RPCClientConfig']
