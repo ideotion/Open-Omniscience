@@ -262,7 +262,7 @@ class AttachmentHandler:
                 # Text files - just decode
                 try:
                     return payload.decode('utf-8')
-                except:
+                except UnicodeDecodeError:
                     return payload.decode('latin-1')
             
             elif content_type == 'application/pdf':
@@ -296,7 +296,7 @@ class AttachmentHandler:
                 # For unknown types, try to decode as text
                 try:
                     return payload.decode('utf-8')
-                except:
+                except UnicodeDecodeError:
                     return f"[Binary file: {raw_attachment.get('filename', 'unknown')}]"
             
         except Exception as e:

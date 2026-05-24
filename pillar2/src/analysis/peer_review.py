@@ -145,7 +145,7 @@ class PeerReviewSimulator:
                     s = float(match.group(1))
                     if 0 <= s <= 100:
                         return s
-                except:
+                except (ValueError, TypeError, AttributeError):
                     pass
         return 75.0
 
@@ -169,7 +169,7 @@ class PeerReviewSimulator:
                         return c
                     if 0 <= c <= 100:
                         return c / 100.0
-                except:
+                except (ValueError, TypeError, AttributeError):
                     pass
         return 0.8
 

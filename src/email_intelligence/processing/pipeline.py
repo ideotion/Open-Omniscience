@@ -158,7 +158,8 @@ class EmailProcessingPipeline:
                                 results['duplicates'] += 1
                             else:
                                 results['failed'] += 1
-                        except:
+                        except Exception as e:
+                            logger.debug(f"Failed to check duplicate: {e}")
                             results['failed'] += 1
                     
                     # Log progress

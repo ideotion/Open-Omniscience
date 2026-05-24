@@ -19,19 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 For inquiries, contact: open-omniscience@ideotion.com
 """
 """
-Pillar 4: Legal Admissibility - Crypto Module
+Chain of Custody Module for Open-Omniscience Pillar 4
 
-Provides cryptographic provenance, Merkle trees, and digital signatures for legal compliance.
+This module provides chain of custody tracking for legal admissibility.
+For Pillar 4 Qubes OS compatibility, we use DataLineageTracker from crypto.provenance.
 """
-from .provenance import DataLineageTracker
-from .merkle_tree import MerkleTree, MerkleNode
 
-try:
-    from .signatures import GPGSigner, SignatureResult, GPGNotAvailableError
-    HAS_SIGNATURES = True
-except Exception:
-    HAS_SIGNATURES = False
+# Import DataLineageTracker from crypto.provenance
+from pillar4.src.crypto.provenance import DataLineageTracker
 
-__all__ = ["DataLineageTracker", "MerkleTree", "MerkleNode"]
-if HAS_SIGNATURES:
-    __all__.extend(["GPGSigner", "SignatureResult", "GPGNotAvailableError"])
+# Re-export for compatibility
+__all__ = ["DataLineageTracker"]

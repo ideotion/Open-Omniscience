@@ -131,7 +131,7 @@ class EmailParser:
             if payload:
                 try:
                     parsed_data['plain_text'] += payload.decode(parsed_data['charset'], errors='replace') + '\n'
-                except:
+                except (UnicodeDecodeError, LookupError):
                     parsed_data['plain_text'] += payload.decode('utf-8', errors='replace') + '\n'
         
         elif content_type == 'text/html':
@@ -139,7 +139,7 @@ class EmailParser:
             if payload:
                 try:
                     parsed_data['html_content'] += payload.decode(parsed_data['charset'], errors='replace')
-                except:
+                except (UnicodeDecodeError, LookupError):
                     parsed_data['html_content'] += payload.decode('utf-8', errors='replace')
         
         elif content_type.startswith('multipart/'):
@@ -244,7 +244,8 @@ class EmailParser:
                 str(part[0], part[1] or 'utf-8') if isinstance(part[0], bytes) else part[0]
                 for part in decoded
             )
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to decode header: {e}")
             return header
     
     def _parse_address_list(self, address_header: str) -> List[str]:
@@ -272,7 +273,8 @@ class EmailParser:
                     if email_addr:
                         addresses.append(email_addr)
             return addresses
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to parse address list: {e}")
             # Fallback to simple parsing
             return [addr.strip() for addr in address_header.split(',') if addr.strip()]
     

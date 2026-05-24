@@ -154,8 +154,8 @@ class QubesRPCClient:
             # Clean up temp file
             try:
                 os.unlink(temp_file)
-            except:
-                pass
+            except OSError as e:
+                logger.warning(f"Failed to clean up temp file {temp_file}: {e}")
     
     # Convenience methods for common actions
     

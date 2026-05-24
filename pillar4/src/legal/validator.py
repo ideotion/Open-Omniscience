@@ -531,7 +531,7 @@ class LegalValidator:
         try:
             result = urlparse(url)
             return all([result.scheme, result.netloc])
-        except:
+        except (ValueError, AttributeError):
             return False
 
     def validate_chain_of_custody(self, metadata: Dict[str, Any]) -> LegalValidationResult:
