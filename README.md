@@ -50,13 +50,15 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIF
 ```
 
 **What this does:**
-- ✅ **Automatically detects** your environment (Qubes OS vs regular Linux)
-- ✅ **Asks simple questions** if it's uncertain (Are you using Qubes OS?)
-- ✅ **Adapts installation method** accordingly
+- ✅ **Asks if you're using Qubes OS** (required - Qubes is undetectable by design for security)
+- ✅ **Detects GUI environment** automatically
+- ✅ **Adapts installation method** based on your answers
 - ✅ **Installs all dependencies** automatically
 - ✅ **Configures everything** properly for your setup
 - ✅ **Creates desktop launcher** (if GUI available)
 - ✅ **Provides clear next steps**
+
+**Note:** Since Qubes OS is designed to be undetectable from within VMs for security, the installer always asks you about Qubes OS. This is by design.
 
 **After installation:**
 - **Regular Linux:** Open-Omniscience runs at **http://localhost:8000**
@@ -68,18 +70,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIF
 **One documentation file for ALL users:**
 - [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md) - Complete guide for all platforms
 
-This single file replaces the need for separate Qubes and regular Linux documentation.
-
-### 🔄 Legacy Installation Methods (Deprecated)
-
-> ⚠️ **DEPRECATED**: The following installation methods are kept for backward compatibility but the unified installer above is recommended for all new installations.
-
-- [install.sh](install.sh) - Legacy GUI installer launcher
-- [LAUNCHER_README.md](LAUNCHER_README.md) - Legacy smart installer documentation
-- [INSTALL-QUBES.sh](INSTALL-QUBES.sh) - **DEPRECATED** - Use unified installer instead
-- [qubes-installer.sh](qubes-installer.sh) - **DEPRECATED** - Use unified installer instead
-
-**Please use the unified installer above for all new installations.**
+This single file replaces all previous separate documentation files. It covers installation, usage, troubleshooting, API reference, and architecture for all environments (regular Linux, Qubes OS, headless servers).
 
 ---
 
@@ -298,7 +289,7 @@ For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 - **Platform:** GUI environment recommended (X11 or Wayland)
 - **Dependencies:** All dependencies are installed automatically by the GUI installer
 
-For advanced users who need manual installation options, see [LAUNCHER_README.md](LAUNCHER_README.md).
+For advanced users who need manual installation options, see [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md).
 
 ## 🎯 Features
 
@@ -712,9 +703,7 @@ This master documentation file provides a single entry point for all Open-Omnisc
 
 ### 📖 Core Documentation
 - **[DOCUMENTATION.md](DOCUMENTATION.md)** - Master documentation index (RECOMMENDED STARTING POINT)
-- **[INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)** - Detailed installation instructions
-- **[QUBS_INSTALL_GUIDE.md](QUBS_INSTALL_GUIDE.md)** - Qubes OS specific installation guide
-- **[LAUNCHER_README.md](LAUNCHER_README.md)** - Smart installer documentation
+- **[UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md)** - Complete guide for all platforms
 
 ### 🔧 Technical Guides
 - [docs/LLM_SETUP_GUIDE.md](docs/LLM_SETUP_GUIDE.md) - Local LLM setup, configuration, and usage

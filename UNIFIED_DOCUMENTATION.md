@@ -22,39 +22,47 @@
 curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
 ```
 
-**The installer will automatically:**
-1. ✅ Detect if you're using Qubes OS or regular Linux
-2. ✅ Ask simple questions if it's uncertain
-3. ✅ Adapt the installation method accordingly
-4. ✅ Install all dependencies
-5. ✅ Configure everything properly
+**The installer will:**
+1. ✅ **Ask if you're using Qubes OS** (required - Qubes is undetectable by design)
+2. ✅ Detect if you have a GUI environment
+3. ✅ Adapt the installation method based on your answers
+4. ✅ Install all dependencies automatically
+5. ✅ Configure everything properly for your environment
 6. ✅ Provide clear next steps
+
+**Important:** Since Qubes OS is designed to be undetectable from within VMs for security, the installer **always asks** you about Qubes OS. This is by design and ensures security.
 
 ---
 
 ## 🎯 Installation Methods
 
-### 🔄 Automatic Detection (Default)
+### 💬 User Prompts (Required for Qubes OS)
 
-The unified installer automatically detects your environment:
+**Important:** Qubes OS is designed to be **undetectable from within VMs** for security reasons. Therefore, the installer **always asks** you about Qubes OS rather than trying to auto-detect it.
 
-| Environment | Detection Method | Installation Type |
-|-------------|------------------|------------------|
-| **Qubes OS** | Checks for `qvm-ls` command | Multi-VM architecture |
-| **GUI Linux** | Checks for DISPLAY/WAYLAND | Standard with GUI |
-| **Headless** | No display detected | Standard without GUI |
-
-### 💬 User Prompts
-
-If automatic detection is uncertain, you'll be asked:
+You will be asked:
 
 ```
+Note: Qubes OS is designed to be undetectable from within VMs for security
 Are you installing on Qubes OS [y/N]: 
 Do you have a GUI environment available [y/N]: 
 Proceed with installation [Y/n]: 
 ```
 
-**Just press Enter to accept the defaults** - the installer is smart enough to figure it out!
+**For Qubes OS users:** You **must** answer "yes" to the first question to get the multi-VM installation.
+
+**For regular Linux users:** Just press Enter (accepts "no" by default) for all questions.
+
+### 🔄 Environment Adaptation
+
+Based on your answers, the installer adapts:
+
+| Your Answer | Installation Type | What Happens |
+|-------------|------------------|--------------|
+| **Qubes OS: Yes** | Multi-VM architecture | Creates 4 isolated VMs with proper configuration |
+| **Qubes OS: No** | Standard installation | Installs on current system |
+| **GUI: Yes** | With desktop launcher | Creates application menu entry |
+| **GUI: No** | Headless mode | No desktop integration |
 
 ---
 

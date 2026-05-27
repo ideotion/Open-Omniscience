@@ -92,7 +92,7 @@ check_disp_template() {
     if ! qvm-ls 2>/dev/null | grep -q "^${DISP_TEMPLATE}\s"; then
         error "Disposable template '$DISP_TEMPLATE' not found"
         error "Please run the main installer first:"
-        error "  sudo ./qubes-installer.sh"
+        error "  curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash"
         exit 1
     fi
 }
@@ -444,7 +444,7 @@ Examples:
 Notes:
   - Disposable VMs are automatically removed after use
   - All changes in disposable VMs are lost when cleaned up
-  - For persistent storage, use the main installer (qubes-installer.sh)
+  - For persistent storage, use the unified installer: curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
   - Requires Qubes OS R4.1+ with Debian Trixie (12)
 
 EOF

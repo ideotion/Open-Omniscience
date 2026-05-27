@@ -32,7 +32,7 @@ git clone https://github.com/ideotion/Open-Omniscience.git
 cd Open-Omniscience
 
 # Run the main installer (recommended)
-sudo ./qubes-installer.sh
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
 ```
 
 ### For Headless Servers
@@ -49,9 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/inst
 | Topic | File | Description | Priority |
 |-------|------|-------------|----------|
 | **Main Overview** | [`README.md`](README.md) | Complete platform overview, features, API | ⭐⭐⭐ |
-| **Installation** | [`INSTALLATION_GUIDE.md`](INSTALLATION_GUIDE.md) | Detailed installation instructions | ⭐⭐⭐ |
-| **Qubes OS** | [`QUBS_INSTALL_GUIDE.md`](QUBS_INSTALL_GUIDE.md) | Qubes-specific installation & usage | ⭐⭐⭐ |
-| **Launcher** | [`LAUNCHER_README.md`](LAUNCHER_README.md) | Smart installer details | ⭐⭐ |
+| **Unified Documentation** | [`UNIFIED_DOCUMENTATION.md`](UNIFIED_DOCUMENTATION.md) | Complete guide for all platforms | ⭐⭐⭐ |
 
 ### 🔧 Technical Documentation
 | Topic | File | Description | Priority |
@@ -113,13 +111,12 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/inst
 ### For New Users
 1. **Start Here** → Read this file (`DOCUMENTATION.md`)
 2. **Quick Start** → Follow the Quick Start Guide above
-3. **Detailed Setup** → Read [`INSTALLATION_GUIDE.md`](INSTALLATION_GUIDE.md)
+3. **Detailed Setup** → Read [`UNIFIED_DOCUMENTATION.md`](UNIFIED_DOCUMENTATION.md)
 4. **Usage** → Read [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)
 
 ### For Qubes OS Users
 1. **Start Here** → Read this file
-2. **Qubes Setup** → Read [`QUBS_INSTALL_GUIDE.md`](QUBS_INSTALL_GUIDE.md)
-3. **Usage** → Read [`README-QUBES.md`](README-QUBES.md)
+2. **Complete Guide** → Read [`UNIFIED_DOCUMENTATION.md`](UNIFIED_DOCUMENTATION.md) (covers Qubes OS setup)
 
 ### For Developers
 1. **Start Here** → Read this file
@@ -141,10 +138,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/inst
 Open-Omniscience/
 ├── DOCUMENTATION.md          # 📚 YOU ARE HERE - Master index
 ├── README.md                # ⭐ Main overview & features
-├── INSTALLATION_GUIDE.md    # ⭐ Installation instructions
-├── QUBS_INSTALL_GUIDE.md    # ⭐ Qubes OS specific guide
-├── README-QUBES.md          # ⭐ Qubes edition details
-├── LAUNCHER_README.md       # ⭐ Smart installer details
+├── UNIFIED_DOCUMENTATION.md # ⭐ Complete guide for all platforms
 │
 ├── docs/
 │   ├── API_DOCUMENTATION.md    # ⭐ API reference
@@ -172,16 +166,10 @@ Open-Omniscience/
 
 ## 📚 Essential Reading by User Type
 
-### 🎯 End Users (Want to use Open-Omniscience)
+### 🎯 All Users
 1. **DOCUMENTATION.md** (this file) - Overview
 2. **README.md** - Features & capabilities
-3. **INSTALLATION_GUIDE.md** - How to install
-4. **USER_GUIDE.md** - How to use
-
-### 🎯 Qubes OS Users
-1. **DOCUMENTATION.md** (this file) - Overview
-2. **QUBS_INSTALL_GUIDE.md** - Qubes-specific installation
-3. **README-QUBES.md** - Qubes architecture & usage
+3. **UNIFIED_DOCUMENTATION.md** - Complete installation and usage guide
 
 ### 🎯 Developers (Want to contribute)
 1. **DOCUMENTATION.md** (this file) - Overview
@@ -200,9 +188,8 @@ Open-Omniscience/
 ## 🔗 Quick Links to Common Tasks
 
 ### Installation
-- [Standard Installation](INSTALLATION_GUIDE.md) - Debian/Ubuntu/macOS
-- [Qubes OS Installation](QUBS_INSTALL_GUIDE.md) - Qubes R4.1+ specific
-- [Manual Installation](INSTALLATION_GUIDE.md#manual-installation) - Step-by-step
+- [Unified Installation](UNIFIED_DOCUMENTATION.md#🌟-quick-start-all-platforms) - All platforms (recommended)
+- [Manual Installation](UNIFIED_DOCUMENTATION.md#📋-installation-details-by-environment) - Step-by-step for all environments
 
 ### Usage
 - [User Guide](docs/USER_GUIDE.md) - Complete usage instructions
@@ -215,7 +202,7 @@ Open-Omniscience/
 - [Architecture](docs/IMPLEMENTATION_SUMMARY.md) - System architecture
 
 ### Troubleshooting
-- [Qubes Troubleshooting](QUBS_INSTALL_GUIDE.md#troubleshooting) - Qubes-specific issues
+- [Troubleshooting](UNIFIED_DOCUMENTATION.md#🛠️-troubleshooting) - All environments
 - [Debug Reports](docs/debugging/) - Detailed debugging analysis
 - [Test Reports](docs/qa/) - Quality assurance reports
 
@@ -246,9 +233,8 @@ Open-Omniscience/
 ### Common Questions
 
 **Q: Which installation method should I use?**
-- Use `install.sh` for standard Debian/Ubuntu systems with GUI
-- Use `install` for headless servers
-- Use `qubes-installer.sh` for Qubes OS
+- Use the **unified installer** for ALL environments: `curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash`
+- It automatically adapts to your environment (Qubes OS, regular Linux, headless, etc.)
 
 **Q: Where can I find the API documentation?**
 - See [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md)

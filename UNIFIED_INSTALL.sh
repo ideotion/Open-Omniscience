@@ -84,17 +84,14 @@ log_header() {
 # ============================================================================
 
 # Check if running in Qubes OS
+# Note: Qubes OS is designed to be undetectable from within VMs for security
+# So we always ask the user rather than trying to auto-detect
 detect_qubes() {
-    if command -v qvm-ls &>/dev/null; then
-        return 0
-    fi
-    if [ -f /etc/qubes-release ]; then
-        return 0
-    fi
-    if grep -qi qubes /etc/os-release 2>/dev/null; then
-        return 0
-    fi
-    return 1
+    # We don't try to auto-detect Qubes OS because:
+    # 1. Qubes OS is designed to be undetectable from within VMs
+    # 2. This is a security feature to prevent VM fingerprinting
+    # 3. The only reliable way is to ask the user
+    return 1  # Always return false, we'll ask the user explicitly
 }
 
 # Check if GUI environment is available
@@ -503,11 +500,11 @@ main() {
     local is_qubes=false
     local has_gui=false
     
-    if detect_qubes; then
+    # Qubes OS is designed to be undetectable from within VMs for security
+    # So we always ask the user rather than trying to auto-detect
+    log_info "Note: Qubes OS is designed to be undetectable from within VMs for security"
+    if ask_yes_no "Are you installing on Qubes OS" "no"; then
         is_qubes=true
-        log_success "Qubes OS detected"
-    else
-        log_info "Qubes OS not detected"
     fi
     
     if detect_gui; then
@@ -515,16 +512,6 @@ main() {
         log_success "GUI environment detected"
     else
         log_info "GUI environment not detected"
-    fi
-    
-    # Ask user for clarification if automatic detection is uncertain
-    if ! $is_qubes; then
-        if ask_yes_no "Are you installing on Qubes OS" "no"; then
-            is_qubes=true
-        fi
-    fi
-    
-    if ! $has_gui; then
         if ask_yes_no "Do you have a GUI environment available" "no"; then
             has_gui=true
         fi
