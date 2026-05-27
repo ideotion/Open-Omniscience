@@ -108,6 +108,18 @@ class IngestedData:
         return hashlib.sha256(self.raw_content).hexdigest()
     
     @property
+    def metadata_hash(self) -> str:
+        """Get SHA-256 hash of the metadata."""
+        metadata_str = json.dumps(self.metadata, sort_keys=True)
+        return hashlib.sha256(metadata_str.encode()).hexdigest()
+    
+    @property
+    def source_hash(self) -> str:
+        """Get SHA-256 hash of the source URL + timestamp."""
+        source_str = f"{self.url}{self.timestamp}"
+        return hashlib.sha256(source_str.encode()).hexdigest()
+    
+    @property
     def domain(self) -> str:
         """Get the domain of the URL."""
         return urlparse(self.url).netloc
@@ -118,6 +130,8 @@ class IngestedData:
             "url": self.url,
             "content": self.content,
             "content_hash": self.content_hash,
+            "metadata_hash": self.metadata_hash,
+            "source_hash": self.source_hash,
             "headers": self.headers,
             "timestamp": self.timestamp,
             "source_type": self.source_type,
@@ -480,8 +494,8 @@ class OpenOmnisciencePipeline:
         """
         Add ingested data to the blockchain for per-article verification.
         
-        Computes the 3 hashes (content, metadata, source) and adds them to the
-        local hash chain.
+        Uses the 3 hashes (content, metadata, source) from IngestedData properties
+        and adds them to the local hash chain.
         
         Args:
             ingested_data: IngestedData object to add to blockchain
@@ -490,17 +504,10 @@ class OpenOmnisciencePipeline:
             # Generate unique article ID
             article_id = f"article_{int(time.time() * 1000)}_{hashlib.sha256(ingested_data.url.encode()).hexdigest()[:8]}"
             
-            # Compute hashes
+            # Use the hashes from IngestedData properties
             content_hash = ingested_data.content_hash
-            
-            # Compute metadata hash
-            metadata_str = json.dumps(ingested_data.metadata, sort_keys=True)
-            metadata_hash = hashlib.sha256(metadata_str.encode()).hexdigest()
-            
-            # Compute source hash (URL + timestamp)
-            source_hash = hashlib.sha256(
-                f"{ingested_data.url}{ingested_data.timestamp}".encode()
-            ).hexdigest()
+            metadata_hash = ingested_data.metadata_hash
+            source_hash = ingested_data.source_hash
             
             # Add to blockchain
             blockchain_service = get_blockchain_service()
@@ -511,7 +518,7 @@ class OpenOmnisciencePipeline:
                 source_hash=source_hash
             )
             
-            # Store article ID in the ingested data for reference
+            # Store article ID and hashes in the ingested data for reference
             ingested_data.metadata["blockchain_article_id"] = article_id
             ingested_data.metadata["blockchain_content_hash"] = content_hash
             ingested_data.metadata["blockchain_metadata_hash"] = metadata_hash

@@ -697,19 +697,17 @@ class LocalHashChain:
         ]
         
         # Verify the Merkle proof
-        # We need to verify that content_hash with the proof produces merkle_root
-        # The verify_proof method expects leaf_data, but we already have the hash
-        # So we'll use the hash directly
+        # The Merkle tree hashes the leaf data (content_hash), so we need to
+        # start with hash(content_hash) as the leaf hash
         try:
-            # Use the content_hash as the leaf hash
-            current_hash = content_hash
+            # Hash the content_hash to get the leaf hash (Merkle tree hashes leaf data)
+            current_hash = hashlib.sha256(content_hash.encode('utf-8')).hexdigest()
             
             # If there's no proof (single article in block), 
             # the merkle root should be hash(content_hash)
             if not proof_tuples:
                 # For a single article, Merkle root = hash(content_hash)
-                expected_root = hashlib.sha256(content_hash.encode('utf-8')).hexdigest()
-                return expected_root == merkle_root
+                return current_hash == merkle_root
             
             for sibling_hash, is_right_sibling in proof_tuples:
                 if is_right_sibling:

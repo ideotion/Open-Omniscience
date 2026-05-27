@@ -233,6 +233,193 @@ For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 
 ---
 
+## 🔗 Blockchain Verification (NEW!)
+
+Open Omniscience now includes a **per-article blockchain verification system** that provides cryptographic proof of data authenticity and integrity. This enables **legal admissibility** and **decentralized verification** of all ingested content.
+
+### 🎯 Key Features
+
+| Feature | Description | Per-Article? | Offline? | Decentralized? |
+|---------|-------------|--------------|----------|----------------|
+| **Local Hash Chain** | SQLite-based storage of article hashes | ✅ Yes | ✅ Yes | ❌ No |
+| **Per-Article Verification** | Verify individual articles via Merkle proofs | ✅ Yes | ✅ Yes | ✅ Yes (with anchoring) |
+| **Blockchain Anchoring** | Anchor block Merkle roots to public blockchains | ❌ No (per-batch) | ❌ No | ✅ Yes |
+| **Merkle Proofs** | Cryptographic proofs of article inclusion | ✅ Yes | ✅ Yes | ✅ Yes |
+
+### 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Blockchain Verification System                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────┐ │
+│  │  Article        │    │  Local Hash     │    │  Public     │ │
+│  │  Ingestion      │───▶│  Chain (SQLite) │───▶│  Blockchain │ │
+│  │                 │    │                 │    │  Anchoring  │ │
+│  └─────────────────┘    └─────────────────┘    └─────────────┘ │
+│           │                    │                    │            │
+│           ▼                    ▼                    ▼            │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────┐ │
+│  │  3 Hashes:      │    │  Blocks with    │    │  Merkle     │ │
+│  │  - content_hash │    │  Merkle Roots   │    │  Roots      │ │
+│  │  - metadata_hash│    │  - Per-article  │    │  Anchored   │ │
+│  │  - source_hash  │    │    verification │    │  to Ethereum│ │
+│  └─────────────────┘    └─────────────────┘    │  IPFS/Arweave│ │
+│                                              └─────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 📋 How It Works
+
+1. **Article Ingestion**: As articles are ingested, three cryptographic hashes are computed:
+   - `content_hash`: SHA-256 hash of the article content
+   - `metadata_hash`: SHA-256 hash of the article metadata
+   - `source_hash`: SHA-256 hash of the source URL + timestamp
+
+2. **Block Organization**: Articles are grouped into blocks (default: 100 articles or 24 hours)
+
+3. **Merkle Tree**: Each block has a Merkle root computed from all article content hashes
+
+4. **Per-Article Verification**: Any article can be verified by:
+   - Retrieving its 3 hashes from the local hash chain
+   - Generating a Merkle proof showing inclusion in its block
+   - Verifying the Merkle proof against the block's Merkle root
+
+5. **Blockchain Anchoring (Optional)**: Block Merkle roots can be anchored to:
+   - **Ethereum**: Smart contract for decentralized verification
+   - **IPFS**: Decentralized storage for permanent records
+   - **Arweave**: Permanent, low-cost storage
+
+### 🎯 Advantages
+
+✅ **Per-Article Verification**: Each article is individually verifiable  
+✅ **Cost-Effective**: Only block Merkle roots are anchored (not individual articles)  
+✅ **100% Offline**: Local hash chain works without internet connection  
+✅ **Privacy-Preserving**: Only cryptographic hashes stored, never article content  
+✅ **FOSS Components**: All components are GNU GPLv3 compatible  
+✅ **Decentralized**: Optional blockchain anchoring for trustless verification  
+
+### 🚀 Usage
+
+#### Basic Usage
+
+```python
+from src.blockchain import get_blockchain_service
+
+# Get the blockchain service
+service = get_blockchain_service()
+
+# Add an article (automatically done during ingestion)
+service.add_article(
+    article_id="article_123",
+    content_hash="sha256_of_content",
+    metadata_hash="sha256_of_metadata",
+    source_hash="sha256_of_source_url_timestamp"
+)
+
+# Verify an article
+result = service.verify_article("article_123")
+print(f"Verified: {result.verified}")
+print(f"Block: {result.block_height}")
+print(f"Position: {result.position}")
+```
+
+#### Get Verification Data for Third-Party Verification
+
+```python
+# Get all data needed for independent verification
+verification_data = service.get_article_verification_data("article_123")
+
+# This includes:
+# - content_hash, metadata_hash, source_hash
+# - block_height, position
+# - merkle_proof (list of sibling hashes)
+# - merkle_root
+# - block_hash, previous_block_hash
+
+# Third party can verify using:
+is_valid = service.verify_article_with_proof(
+    "article_123",
+    verification_data['content_hash'],
+    verification_data['metadata_hash'],
+    verification_data['source_hash'],
+    verification_data['merkle_proof'],
+    verification_data['merkle_root']
+)
+```
+
+### 🔌 API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/blockchain/status` | Get service status and statistics |
+| GET | `/api/blockchain/verify?article_id=...` | Verify a single article |
+| POST | `/api/blockchain/verify` | Verify with POST body |
+| GET | `/api/blockchain/articles/{article_id}/proof` | Get Merkle proof for an article |
+| GET | `/api/blockchain/articles/{article_id}/hashes` | Get the 3 hashes for an article |
+| GET | `/api/blockchain/blocks` | List all blocks |
+| GET | `/api/blockchain/anchors` | List all blockchain anchors |
+| POST | `/api/blockchain/anchor-current-block` | Manually anchor current block |
+| GET | `/api/blockchain/chain-integrity` | Verify block chain integrity |
+
+### 📝 Configuration
+
+Edit `configs/blockchain.yml`:
+
+```yaml
+blockchain:
+  enabled: true
+  local_chain:
+    enabled: true
+    db_path: "data/blockchain/local_hash_chain.db"
+    articles_per_block: 100
+    time_per_block: 86400  # 24 hours
+  anchoring:
+    enabled: true
+    interval: 86400  # 24 hours
+    providers:
+      - local
+      # - ethereum
+      # - ipfs
+      # - arweave
+```
+
+For Ethereum anchoring, configure the contract address and RPC URL:
+
+```yaml
+anchoring:
+  ethereum:
+    contract_address: "0x123..."
+    rpc_url: "http://localhost:8545"
+    gas_limit: 200000
+    gas_price: 20000000000
+```
+
+### 📊 Smart Contract
+
+The Ethereum smart contract (`contracts/OpenOmniscienceAnchor.sol`) provides:
+
+- **Anchor function**: Store block Merkle roots on-chain
+- **Verification function**: Check if a Merkle root was anchored
+- **Batch anchoring**: Anchor multiple blocks efficiently
+- **Events**: `AnchorCreated` event emitted for each anchor
+
+### 🔒 Security & Privacy
+
+- **Only hashes are stored** on-chain, never article content
+- **Local verification** works 100% offline
+- **Merkle proofs** enable trustless verification
+- **GNU GPLv3** licensed, fully open source
+
+### 📚 Learn More
+
+- [Blockchain Architecture Documentation](docs/BLOCKCHAIN_ARCHITECTURE.md)
+- [Blockchain API Reference](docs/BLOCKCHAIN_API.md)
+- [Blockchain Setup Guide](docs/BLOCKCHAIN_SETUP.md)
+
+---
+
 ## 🏗️ Architecture
 
 ### Core Components
