@@ -216,12 +216,26 @@ setup_python() {
     pip install --upgrade pip
     
     log_info "Installing Python dependencies..."
-    if [ -f "requirements.txt" ]; then
-        if ! pip install -r requirements.txt 2>/dev/null; then
-            log_error "Failed to install Python dependencies"
+    
+    # Check if user wants full installation (with ML packages)
+    if [[ "${FULL_INSTALL:-false}" == "true" || "${INSTALL_ALL:-false}" == "true" ]]; then
+        log_info "Installing full dependencies (including ML packages - requires significant disk space and memory)..."
+        if [ -f "requirements.txt" ]; then
+            if ! pip install -r requirements.txt 2>/dev/null; then
+                log_error "Failed to install full Python dependencies. Try minimal installation with: FULL_INSTALL=false curl ... | bash"
+            fi
+        else
+            log_error "requirements.txt not found in repository"
         fi
     else
-        log_error "requirements.txt not found in repository"
+        log_info "Installing minimal dependencies (core functionality only)..."
+        if [ -f "requirements-minimal.txt" ]; then
+            if ! pip install -r requirements-minimal.txt 2>/dev/null; then
+                log_error "Failed to install minimal Python dependencies"
+            fi
+        else
+            log_error "requirements-minimal.txt not found in repository"
+        fi
     fi
     
     log_success "Python environment set up"
@@ -309,6 +323,9 @@ main() {
     echo "  For production deployment:"
     echo "    pip install gunicorn"
     echo "    gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app"
+    echo ""
+    echo "  For full installation with ML packages (requires 10GB+ disk space):"
+    echo "    FULL_INSTALL=true curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash"
     echo ""
     log_warning "If the virtual environment doesn't activate properly, you may need to restart your terminal or system."
     echo ""
