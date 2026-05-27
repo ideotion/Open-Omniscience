@@ -1,44 +1,34 @@
-# Open-Omniscience Unified Documentation
+# Open-Omniscience Documentation
 
 **Version:** 0.03  
 **Last Updated:** 2025-06-18  
-**Master Documentation Index**
+**Master Documentation Index for Debian 13**
 
-> 📚 **START HERE**: This is the unified entry point for all Open-Omniscience documentation. Use the table of contents below to navigate to specific topics.
+> 📚 **START HERE**: This is the master entry point for all Open-Omniscience documentation on Debian 13. Use the table of contents below to navigate to specific topics.
 
 ---
 
 ## 🌟 Quick Start Guide
 
-### For Most Users (Recommended)
+### For Debian 13 Users (Recommended)
 ```bash
-# Single command installation (GUI environment required)
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
+# Simple installation for Debian 13
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
 ```
 
 **What this does:**
-- ✅ Automatically detects your Debian-based system
-- ✅ Installs required dependencies (python3-tk, psutil)
-- ✅ Launches graphical installer with 5-step wizard
-- ✅ Creates application launcher in your OS menu
+- ✅ Detects Debian 13 environment
+- ✅ Installs required dependencies
+- ✅ Creates virtual environment
 - ✅ Installs all Python dependencies
 - ✅ Configures environment automatically
+- ✅ Creates desktop launcher (if GUI available)
 - ✅ Open-Omniscience runs at: **http://localhost:8000**
 
-### For Qubes OS Users
+### For Headless Servers (Debian 13)
 ```bash
-# Clone repository in any AppVM with network access
-git clone https://github.com/ideotion/Open-Omniscience.git
-cd Open-Omniscience
-
-# Run the main installer (recommended)
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
-```
-
-### For Headless Servers
-```bash
-# Text-based installation
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
+# Installation on headless Debian 13 server
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
 ```
 
 ---
@@ -49,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIF
 | Topic | File | Description | Priority |
 |-------|------|-------------|----------|
 | **Main Overview** | [`README.md`](README.md) | Complete platform overview, features, API | ⭐⭐⭐ |
-| **Unified Documentation** | [`UNIFIED_DOCUMENTATION.md`](UNIFIED_DOCUMENTATION.md) | Complete guide for all platforms | ⭐⭐⭐ |
+| **Documentation** | [`UNIFIED_DOCUMENTATION.md`](UNIFIED_DOCUMENTATION.md) | Complete guide for Debian 13 | ⭐⭐⭐ |
 
 ### 🔧 Technical Documentation
 | Topic | File | Description | Priority |
@@ -74,189 +64,166 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIF
 |-------|------|-------------|----------|
 | **Implementation** | [`docs/IMPLEMENTATION_SUMMARY.md`](docs/IMPLEMENTATION_SUMMARY.md) | Architecture overview | ⭐⭐ |
 | **Changes** | [`docs/CHANGES.md`](docs/CHANGES.md) | Change history | ⭐ |
-| **Final Report** | [`docs/FINAL_REPORT.md`](docs/FINAL_REPORT.md) | Complete project report | ⭐ |
-
-### 🧪 Quality Assurance
-| Topic | File | Description | Priority |
-|-------|------|-------------|----------|
-| **Test Plan** | [`docs/qa/TEST_PLAN.md`](docs/qa/TEST_PLAN.md) | Testing strategy | ⭐⭐ |
-| **Test Reports** | [`docs/qa/`](docs/qa/) | Various test reports | ⭐ |
-| **Debug Reports** | [`docs/debugging/`](docs/debugging/) | Debugging analysis | ⭐ |
-
-### 📈 Analysis & Reports
-| Topic | File | Description | Priority |
-|-------|------|-------------|----------|
-| **Phase Reports** | [`docs/analysis/`](docs/analysis/) | Phase 1-4 analysis | ⭐ |
-| **Summaries** | [`docs/summaries/`](docs/summaries/) | Optimization summaries | ⭐ |
-| **Master Report** | [`docs/FINAL_MASTER_REPORT.md`](docs/FINAL_MASTER_REPORT.md) | Complete master report | ⭐ |
 
 ### 📦 Packaging
 | Topic | File | Description | Priority |
 |-------|------|-------------|----------|
-| **Debian Package** | [`package/deb/README.md`](package/deb/README.md) | Debian packaging | ⭐⭐ |
+| **Debian Package** | [`package/deb/README.md`](package/deb/README.md) | Debian 13 packaging | ⭐⭐ |
 | **AppImage** | [`package/appimage/`](package/appimage/) | AppImage packaging | ⭐ |
 | **Launcher** | [`package/launcher/README.md`](package/launcher/README.md) | Desktop launcher | ⭐ |
 
 ### 🏗️ Pillar Documentation
-| Pillar | File | Description | Priority |
-|--------|------|-------------|----------|
-| **Pillar 2** | [`pillar2/README.md`](pillar2/README.md) | Scientific Rigor | ⭐⭐ |
-| **Pillar 3** | [`pillar3/README.md`](pillar3/README.md) | Deception Defense | ⭐⭐ |
-| **Pillar 4** | [`pillar4/README.md`](pillar4/README.md) | Compliance & Monitoring | ⭐⭐ |
+
+#### Pillar 1: Data Ingestion
+- **File:** [`pillar1/README.md`](pillar1/README.md)
+- **Description:** Web scraping, data collection, and ingestion
+- **Priority:** ⭐⭐⭐
+
+#### Pillar 2: Scientific Rigor
+- **File:** [`pillar2/README.md`](pillar2/README.md)
+- **Description:** Statistical validation, reproducibility scoring
+- **Priority:** ⭐⭐⭐
+- **Tests:** 101 tests, all passing
+
+#### Pillar 3: Deception Defense
+- **File:** [`pillar3/README.md`](pillar3/README.md)
+- **Description:** Deepfake detection, propaganda detection, cognitive bias analysis
+- **Priority:** ⭐⭐⭐
+- **Features:** 100% FOSS, offline capable
+
+#### Pillar 4: Legal Admissibility
+- **File:** [`pillar4/README.md`](pillar4/README.md)
+- **Description:** Compliance, audit trails, legal framework
+- **Priority:** ⭐⭐
 
 ---
 
-## 🎯 Documentation Roadmap
+## 🎯 Installation Methods
 
-### For New Users
-1. **Start Here** → Read this file (`DOCUMENTATION.md`)
-2. **Quick Start** → Follow the Quick Start Guide above
-3. **Detailed Setup** → Read [`UNIFIED_DOCUMENTATION.md`](UNIFIED_DOCUMENTATION.md)
-4. **Usage** → Read [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)
-
-### For Qubes OS Users
-1. **Start Here** → Read this file
-2. **Complete Guide** → Read [`UNIFIED_DOCUMENTATION.md`](UNIFIED_DOCUMENTATION.md) (covers Qubes OS setup)
-
-### For Developers
-1. **Start Here** → Read this file
-2. **Development Setup** → Read [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md)
-3. **API Reference** → Read [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md)
-4. **Architecture** → Read [`docs/IMPLEMENTATION_SUMMARY.md`](docs/IMPLEMENTATION_SUMMARY.md)
-
-### For System Administrators
-1. **Start Here** → Read this file
-2. **Deployment** → Read [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md)
-3. **Database** → Read [`docs/DATABASE.md`](docs/DATABASE.md)
-4. **LLM Setup** → Read [`docs/LLM_SETUP_GUIDE.md`](docs/LLM_SETUP_GUIDE.md)
-
----
-
-## 🔍 Documentation Structure
-
+### Method 1: Using the Install Script (Recommended)
+```bash
+# Download and run the Debian 13 installer
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
 ```
-Open-Omniscience/
-├── DOCUMENTATION.md          # 📚 YOU ARE HERE - Master index
-├── README.md                # ⭐ Main overview & features
-├── UNIFIED_DOCUMENTATION.md # ⭐ Complete guide for all platforms
-│
-├── docs/
-│   ├── API_DOCUMENTATION.md    # ⭐ API reference
-│   ├── DEVELOPER_GUIDE.md      # ⭐ Development guide
-│   ├── USER_GUIDE.md           # ⭐ User guide
-│   ├── LLM_SETUP_GUIDE.md      # ⭐ LLM configuration
-│   ├── DEPLOYMENT_GUIDE.md     # ⭐ Deployment guide
-│   ├── DATABASE.md             # ⭐ Database setup
-│   ├── ETHICS.md               # ⭐ Ethical guidelines
-│   ├── SECURITY.md             # ⭐ Security practices
-│   ├── COMPLIANCE.md           # ⭐ Compliance guide
-│   ├── IMPLEMENTATION_SUMMARY.md # ⭐ Architecture overview
-│   └── ... (additional reports & analysis)
-│
-├── package/
-│   ├── deb/README.md          # Debian packaging
-│   ├── appimage/              # AppImage packaging
-│   └── launcher/README.md     # Desktop launcher
-│
-└── pillar2/, pillar3/, pillar4/
-    └── README.md              # Pillar-specific docs
+
+### Method 2: Manual Installation
+```bash
+# Clone the repository
+git clone --branch 0.03 https://github.com/ideotion/Open-Omniscience.git
+cd Open-Omniscience
+
+# Install dependencies
+sudo apt-get update
+sudo apt-get install -y python3 python3-pip python3-venv python3-tk git curl
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Start the application
+uvicorn api.main:app --reload
+```
+
+### Method 3: Using Debian Package
+```bash
+# Download and install the .deb package
+wget https://github.com/ideotion/Open-Omniscience/raw/0.03/package/deb/open-omniscience_0.03-1_all.deb
+sudo dpkg -i open-omniscience_0.03-1_all.deb
+sudo apt-get install -f
 ```
 
 ---
 
-## 📚 Essential Reading by User Type
+## 🚀 Usage Examples
 
-### 🎯 All Users
-1. **DOCUMENTATION.md** (this file) - Overview
-2. **README.md** - Features & capabilities
-3. **UNIFIED_DOCUMENTATION.md** - Complete installation and usage guide
+### Starting the Application
+```bash
+# Navigate to installation directory
+cd ~/open-omniscience
 
-### 🎯 Developers (Want to contribute)
-1. **DOCUMENTATION.md** (this file) - Overview
-2. **DEVELOPER_GUIDE.md** - Development setup
-3. **API_DOCUMENTATION.md** - API reference
-4. **IMPLEMENTATION_SUMMARY.md** - Architecture
+# Activate virtual environment
+source venv/bin/activate
 
-### 🎯 System Administrators
-1. **DOCUMENTATION.md** (this file) - Overview
-2. **DEPLOYMENT_GUIDE.md** - Production deployment
-3. **DATABASE.md** - Database configuration
-4. **LLM_SETUP_GUIDE.md** - LLM setup
+# Start development server
+uvicorn api.main:app --reload
 
----
+# Access at: http://localhost:8000
+```
 
-## 🔗 Quick Links to Common Tasks
+### Production Deployment
+```bash
+# Install Gunicorn
+pip install gunicorn
 
-### Installation
-- [Unified Installation](UNIFIED_DOCUMENTATION.md#🌟-quick-start-all-platforms) - All platforms (recommended)
-- [Manual Installation](UNIFIED_DOCUMENTATION.md#📋-installation-details-by-environment) - Step-by-step for all environments
-
-### Usage
-- [User Guide](docs/USER_GUIDE.md) - Complete usage instructions
-- [API Documentation](docs/API_DOCUMENTATION.md) - REST API reference
-- [LLM Features](docs/LLM_SETUP_GUIDE.md) - Local LLM setup & usage
-
-### Development
-- [Developer Guide](docs/DEVELOPER_GUIDE.md) - Development workflow
-- [Contributing](docs/CONTRIBUTING.md) - How to contribute
-- [Architecture](docs/IMPLEMENTATION_SUMMARY.md) - System architecture
-
-### Troubleshooting
-- [Troubleshooting](UNIFIED_DOCUMENTATION.md#🛠️-troubleshooting) - All environments
-- [Debug Reports](docs/debugging/) - Detailed debugging analysis
-- [Test Reports](docs/qa/) - Quality assurance reports
+# Start with Gunicorn
+ gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app
+```
 
 ---
 
-## 🛡️ Important Notes
+## 📊 System Requirements
 
-### Version Information
-- **Current Version**: 0.03
-- **Repository Branch**: 0.03
-- **Last Updated**: 2025-06-18
+### Minimum (Core Features Only)
+- **CPU:** 2 cores
+- **RAM:** 4GB
+- **Storage:** 10GB
+- **OS:** Debian 13 (Trixie)
 
-### Compatibility
-- **Primary Platform**: Debian-based Linux (Ubuntu, Debian, etc.)
-- **Qubes OS**: R4.1+ with Debian 13 (Trixie) template
-- **Python**: 3.8-3.13 (3.13 recommended)
-- **Architecture**: x86_64/AMD64
+### Recommended (With LLM Support)
+- **CPU:** 8 cores
+- **RAM:** 16GB
+- **Storage:** 50GB (for 3-4 models)
+- **GPU:** NVIDIA with 8GB VRAM (recommended)
+- **OS:** Debian 13 (Trixie)
 
-### Support
-- **GitHub Issues**: Report bugs and request features
-- **Documentation**: Check here first!
-- **Email**: contact@ideotion.com
-
----
-
-## 📞 Need Help?
-
-### Common Questions
-
-**Q: Which installation method should I use?**
-- Use the **unified installer** for ALL environments: `curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash`
-- It automatically adapts to your environment (Qubes OS, regular Linux, headless, etc.)
-
-**Q: Where can I find the API documentation?**
-- See [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md)
-- Also available at `/docs` when the server is running
-
-**Q: How do I set up local LLMs?**
-- See [`docs/LLM_SETUP_GUIDE.md`](docs/LLM_SETUP_GUIDE.md)
-
-**Q: What are the system requirements?**
-- See [System Requirements](README.md#performance) in the main README
-
-**Q: How do I contribute?**
-- See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)
+### High-End (Full LLM Capabilities)
+- **CPU:** 16+ cores
+- **RAM:** 32GB+
+- **Storage:** 100GB+ (for multiple large models)
+- **GPU:** NVIDIA with 24GB+ VRAM
+- **OS:** Debian 13 (Trixie)
 
 ---
 
-## 🎉 Documentation Unified!
+## 🤝 Contributing
 
-This master documentation file provides a **single entry point** for all Open-Omniscience documentation, reducing the number of files users need to read while preserving all existing information.
+We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
-**All original documentation files remain intact** - no data has been lost. This file simply provides a unified navigation structure.
+### Development Workflow
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Make your changes
+4. Run tests (`pytest`)
+5. Commit your changes (`git commit -m 'Add some feature'`)
+6. Push to the branch (`git push origin feature/your-feature`)
+7. Open a Pull Request
 
 ---
 
-*Last updated: 2025-06-18 | Version: 0.03 | Maintained by: Open-Omniscience Team*
+## 🙏 Support
+
+- **GitHub Issues:** Report bugs and request features
+- **Documentation:** Check this file first!
+- **Email:** contact@ideotion.com
+
+---
+
+## 📅 Version History
+
+### Version 0.03 (Current)
+- **NEW:** Simplified installation for Debian 13
+- **NEW:** Unified documentation for Debian 13 users
+- **UPDATED:** All documentation to reference version 0.03
+- **REMOVED:** Qubes OS specific installation methods
+
+### Version 0.02 (Previous)
+- Initial LLM support with comprehensive text processing
+- 40 pre-configured models (Gemma 4, Llama 4, Phi-4, Qwen 3, etc.)
+- Direct Python deployment for maximum portability
+
+---
+
+*Documentation v0.03 | Last Updated: 2025-06-18 | Open-Omniscience Team | Target: Debian 13 (Trixie)*

@@ -3,8 +3,7 @@ Ollama Integration for Open-Omniscience
 
 This module provides integration with Ollama for local LLM inference.
 
-Note: This is a placeholder implementation for Qubes OS compatibility.
-      In a full deployment, this would connect to a local Ollama instance.
+Note: In a full deployment, this would connect to a local Ollama instance.
 """
 
 from typing import Optional, Dict, Any
@@ -22,7 +21,6 @@ def generate_with_ollama(
     """
     Generate text using Ollama.
     
-    This is a placeholder implementation for Qubes OS compatibility.
     In a full deployment, this would connect to a local Ollama instance.
     
     Args:

@@ -1,6 +1,6 @@
 # Open-Omniscience Debian Package
 
-This directory contains the Debian package (.deb) for Open-Omniscience, allowing for easy installation on Debian-based systems (Ubuntu, Debian, etc.).
+This directory contains the Debian package (.deb) for Open-Omniscience, allowing for easy installation on Debian 13 (Trixie).
 
 ## Package Information
 
@@ -9,6 +9,7 @@ This directory contains the Debian package (.deb) for Open-Omniscience, allowing
 - **Architecture**: all
 - **Maintainer**: Open-Omniscience Team <team@ideotion.com>
 - **Dependencies**: python3, python3-venv, python3-pip, git, curl
+- **Target OS**: Debian 13 (Trixie)
 
 ## Installation
 

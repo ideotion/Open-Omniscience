@@ -41,36 +41,31 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 
 ## 🚀 Getting Started
 
-### 🎯 Unified Installation (Recommended for ALL Users)
+### 🎯 Simple Installation (Recommended for Debian 13 Users)
 
-**One command for ALL environments:** Regular Linux, Qubes OS, headless servers - the installer automatically adapts!
+**One command for Debian 13:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
 ```
 
 **What this does:**
-- ✅ **Asks if you're using Qubes OS** (required - Qubes is undetectable by design for security)
-- ✅ **Detects GUI environment** automatically
-- ✅ **Adapts installation method** based on your answers
+- ✅ **Detects Debian 13 environment**
 - ✅ **Installs all dependencies** automatically
-- ✅ **Configures everything** properly for your setup
+- ✅ **Configures everything** properly for Debian 13
 - ✅ **Creates desktop launcher** (if GUI available)
 - ✅ **Provides clear next steps**
 
-**Note:** Since Qubes OS is designed to be undetectable from within VMs for security, the installer always asks you about Qubes OS. This is by design.
-
 **After installation:**
-- **Regular Linux:** Open-Omniscience runs at **http://localhost:8000**
-- **Qubes OS:** 4 isolated VMs created with proper configuration
-- **All environments:** Ready to use with environment-specific instructions
+- Open-Omniscience runs at **http://localhost:8000**
+- Ready to use on your Debian 13 system
 
-### 📚 Unified Documentation
+### 📚 Documentation
 
-**One documentation file for ALL users:**
-- [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md) - Complete guide for all platforms
+**Complete guide for Debian 13 users:**
+- [DOCUMENTATION.md](DOCUMENTATION.md) - Complete guide for Debian 13
 
-This single file replaces all previous separate documentation files. It covers installation, usage, troubleshooting, API reference, and architecture for all environments (regular Linux, Qubes OS, headless servers).
+This file covers installation, usage, troubleshooting, API reference, and architecture for Debian 13.
 
 ---
 
@@ -277,7 +272,7 @@ For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 | **LLM Models** | Llama, Mistral, Phi, Qwen, Gemma | Text processing |
 | **Frontend** | HTML5, CSS, JavaScript | User interface |
 | **Deployment** | Direct Python | Simple and portable deployment |
-| **Platform** | Debian-based Linux | Primary supported platform |
+| **Platform** | Debian 13 | Primary supported platform |
 
 ---
 
@@ -285,11 +280,11 @@ For more details, see [LLM Setup Guide](docs/LLM_SETUP_GUIDE.md)
 
 ### Prerequisites
 
-- **Operating System:** Debian-based Linux (Ubuntu, Debian, etc.)
+- **Operating System:** Debian 13 (Trixie)
 - **Platform:** GUI environment recommended (X11 or Wayland)
-- **Dependencies:** All dependencies are installed automatically by the GUI installer
+- **Dependencies:** All dependencies are installed automatically by the installer
 
-For advanced users who need manual installation options, see [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md).
+For advanced users who need manual installation options, see [DOCUMENTATION.md](DOCUMENTATION.md).
 
 ## 🎯 Features
 
@@ -465,21 +460,21 @@ For complete API documentation, see [API Documentation](#api-endpoints) (if avai
 - **CPU:** 2 cores
 - **RAM:** 4GB
 - **Storage:** 10GB
-- **OS:** Debian-based Linux (Ubuntu, Debian, etc.)
+- **OS:** Debian 13
 
 #### Recommended (With LLM Support)
 - **CPU:** 8 cores
 - **RAM:** 16GB
 - **Storage:** 50GB (for 3-4 models)
 - **GPU:** NVIDIA with 8GB VRAM (recommended for better performance)
-- **OS:** Debian-based Linux (Ubuntu, Debian, etc.)
+- **OS:** Debian 13
 
 #### High-End (Full LLM Capabilities)
 - **CPU:** 16+ cores
 - **RAM:** 32GB+
 - **Storage:** 100GB+ (for multiple large models)
 - **GPU:** NVIDIA with 24GB+ VRAM
-- **OS:** Debian-based Linux (Ubuntu, Debian, etc.)
+- **OS:** Debian 13
 
 ### Performance Optimizations
 
@@ -703,7 +698,6 @@ This master documentation file provides a single entry point for all Open-Omnisc
 
 ### 📖 Core Documentation
 - **[DOCUMENTATION.md](DOCUMENTATION.md)** - Master documentation index (RECOMMENDED STARTING POINT)
-- **[UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md)** - Complete guide for all platforms
 
 ### 🔧 Technical Guides
 - [docs/LLM_SETUP_GUIDE.md](docs/LLM_SETUP_GUIDE.md) - Local LLM setup, configuration, and usage

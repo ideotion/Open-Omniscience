@@ -2,7 +2,7 @@
 # ========================================
 # This is a minimal requirements file for Open-Omniscience.
 # It excludes large ML/AI packages (torch, transformers, spacy, etc.)
-# to fit in Qubes OS temporary VMs with limited disk space.
+# for environments with limited disk space.
 #
 # Install with: pip install -r requirements-minimal.txt
 

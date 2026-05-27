@@ -23,7 +23,6 @@ For inquiries, contact: open-omniscience@ideotion.com
 # Placeholder file to make database a Python package
 
 # Import key database functions for convenience
-# These are placeholder implementations for Qubes RPC compatibility
 
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
@@ -42,7 +41,6 @@ def query_data(query: Dict[str, Any], collection: str = 'articles', **kwargs) ->
     """
     Query data from a collection.
     
-    This is a placeholder implementation for Qubes RPC compatibility.
     In a full deployment, this would connect to the actual database.
     
     Args:
@@ -66,7 +64,6 @@ def store_data(data: Any, collection: str = 'articles', **kwargs) -> Dict[str, A
     """
     Store data in a collection.
     
-    This is a placeholder implementation for Qubes RPC compatibility.
     In a full deployment, this would connect to the actual database.
     
     Args:
@@ -90,7 +87,6 @@ def search_collection(query: str, collection: str = 'articles', **kwargs) -> Dic
     """
     Search a collection.
     
-    This is a placeholder implementation for Qubes RPC compatibility.
     In a full deployment, this would use the actual search functionality.
     
     Args:

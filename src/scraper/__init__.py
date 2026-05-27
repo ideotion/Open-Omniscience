@@ -42,7 +42,6 @@ def scrape_website(url: str, depth: int = 1, **kwargs) -> ScrapeResult:
     """
     Scrape a website and extract content.
     
-    This is a placeholder implementation for Qubes RPC compatibility.
     In a full deployment, this would use the actual scraper functionality.
     
     Args:

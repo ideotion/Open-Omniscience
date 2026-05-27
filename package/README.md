@@ -16,7 +16,7 @@ This directory contains configuration files and build scripts for creating distr
 - `package/deb/debian/rules` - Build rules
 - `package/deb/debian/source/` - Source package configuration
 
-**Dependencies Required:**
+**Dependencies Required (Debian 13):**
 ```bash
 sudo apt-get install dpkg-dev debhelper dh-make fakeroot build-essential
 ```
@@ -30,7 +30,7 @@ chmod +x build-deb.sh
 
 **Output:** `package/deb/dist/open-omniscience_0.03_all.deb`
 
-**Installation:**
+**Installation (Debian 13):**
 ```bash
 sudo dpkg -i package/deb/dist/open-omniscience_0.03_all.deb
 ```
@@ -100,6 +100,7 @@ Both package types include:
 - **Current Version:** 0.03
 - **Maintainer:** Ideotion <open-omniscience@ideotion.com>
 - **Homepage:** https://github.com/ideotion/Open-Omniscience
+- **Target OS:** Debian 13 (Trixie)
 
 ---
 
@@ -118,7 +119,7 @@ slowapi
 prometheus-client
 ```
 
-### System Dependencies
+### System Dependencies (Debian 13)
 - Python 3.10 or later
 - SQLite (included in Python standard library)
 - Optional: PostgreSQL for production use
@@ -157,6 +158,8 @@ uvicorn src.api.main:app --reload
    - Database: `~/.open-omniscience/data/`
    - Logs: `~/.open-omniscience/logs/`
    - Audit: `~/.open-omniscience/audit/`
+
+**Note:** This packaging is designed specifically for Debian 13 (Trixie).
 
 4. **Permissions:** The application requires internet access to scrape news sources and network permissions to listen on the configured port (default: 8000).
 
