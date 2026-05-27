@@ -102,7 +102,7 @@ cd ~/open-omniscience
 source venv/bin/activate
 
 # Start the application
-uvicorn api.main:app --reload
+uvicorn src.api.main:app --reload
 
 # Access at: http://localhost:8000
 ```
@@ -116,7 +116,7 @@ cd ~/open-omniscience
 source venv/bin/activate
 
 # Start the application
-uvicorn api.main:app --host 0.0.0.0 --port 8000
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000
 
 # Access from another machine: http://<your-server-ip>:8000
 ```
@@ -125,8 +125,8 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 | Command | Description |
 |---------|-------------|
-| `uvicorn api.main:app --reload` | Start with auto-reload (development) |
-| `uvicorn api.main:app --host 0.0.0.0 --port 8000` | Start for external access |
+| `uvicorn src.api.main:app --reload` | Start with auto-reload (development) |
+| `uvicorn src.api.main:app --host 0.0.0.0 --port 8000` | Start for external access |
 | `python scripts/setup_llm.py --all` | Setup all LLM models |
 | `pytest` | Run all tests |
 | `black src/` | Format code |
@@ -324,7 +324,7 @@ pip install -r configs/python/requirements.txt
 pytest
 
 # Start development server
-uvicorn api.main:app --reload
+uvicorn src.api.main:app --reload
 ```
 
 ---

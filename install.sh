@@ -22,26 +22,43 @@ REPO_BRANCH="0.03"
 INSTALL_DIR="${HOME}/open-omniscience"
 
 # Open-Omniscience Eye Logo
-LOGO='      .-=+*#%@@@@@@@@@@%#*+-:                                        
-     .-+#@@@@@@%%@@@@@@@@@%%%@@@@@@#+:                                   
-  -+%@@@#*=:.-*#*#@*-@=+@#*#*-.:-+*%@@@#=:                               
- -*@@%+-.    +%+. *#.  @: .*#..=%+     :=#@@%+:                            
-.+@%*-       :%+##+%*    @:   *%=*#+%-       :=#@%=                          
-:#%+.         -@:   ##+****@#***+#@   .%=          -*%+.                       
-:*+.           .@:   :@.     @:     @-   .@:            -**.                     
-.-               *#    *#      @:     *#    *#              .==                    
-:-                #%****@%******@#*****%@****%%                 =                   
- .=:              *#    *#      @:     +#    +#               --                    
-  -*=.           :@.   -@      @:     %=   .@-            :++.                     
-   -##-          +%.   %*=+**#@#**+=*%    #*          .=%*.                       
-     :*@#=.       =%=+#*%#.   @:  .*@*#*=%+        :+%%=.                         
-       =#@@*=.    .*%- .#*   @:  +%. :%#:     :=#@@*:                            
-        .=#@@@#+-: .+#*=*@=.@--%#=*#+. .:=*%@@%*-                               
-           :+#@@@@@%**%@@@@@@@@@%**#%@@@@%*=.                                  
-              .-+*%@@@@@@@@@@@@@@@%#+=:                                       
-                     .::-----::.                                              '
+LOGO='                           .-=+*#%@@@@@@@@@@%#*+-:                                         
 
-# Colors for output
+                      .-+#@@@@@@%%@@@@@@@@@%%%@@@@@@#+:                                    
+
+                   -+%@@@#*=:.-*#*#@*-@=+@#*#*-.:-+*%@@@#=:                                
+
+                -*@@%+-.    +%+. *#.  @: .*#..=%+     :=#@@%+:                             
+
+             .+@%*-       :%+##+%*    @:   *%=*#+%-       :=#@%=                           
+
+           :#%+.         -@:   ##+****@#***+#@   .%=          -*%+.                        
+
+         :*+.           .@:   :@.     @:     @-   .@:            -**.                      
+
+       .=-              *#    *#      @:     *#    *#              .==                     
+
+      :-                #%****@%******@#*****%@****%%                 =                    
+
+       .=:              *#    *#      @:     +#    +#               --                     
+
+         -*=.           :@.   -@      @:     %=   .@-            :++.                      
+
+           -##-          +%.   %*=+**#@#**+=*%    #*          .=%*.                        
+
+             :*@#=.       =%=+#*%#.   @:  .*@*#*=%+        :+%%=.                          
+
+                =#@@*=.    .*%- .#*   @:  +%. :%#:     :=#@@*:                             
+
+                  .=#@@@#+-: .+#*=*@=.@--%#=*#+. .:=*%@@%*-                                
+
+                      :+#@@@@@%**%@@@@@@@@@%**#%@@@@%*=.                                   
+
+                          .-+*%@@@@@@@@@@@@@@@%#+=:                                        
+
+                                 .::-----::.                                              '
+
+# Colors for output# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -365,7 +382,7 @@ Type=Application
 Name=Open-Omniscience
 GenericName=Global Intelligence Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd $INSTALL_DIR && source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000"
+Exec=bash -c "cd $INSTALL_DIR && source venv/bin/activate && uvicorn src.api.main:app --host 0.0.0.0 --port 8000"
 Icon=$INSTALL_DIR/package/deb/open-omniscience.svg
 Terminal=true
 Categories=Utility;News;Information;
@@ -446,13 +463,13 @@ main() {
     echo "  To start Open-Omniscience:"
     echo "    cd $INSTALL_DIR"
     echo "    source venv/bin/activate"
-    echo "    uvicorn api.main:app --reload"
+    echo "    uvicorn src.api.main:app --reload"
     echo ""
     echo "  Then open: http://localhost:8000"
     echo ""
     echo "  For production deployment:"
     echo "    pip install gunicorn"
-    echo "    gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app"
+    echo "    gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 src.api.main:app"
     echo ""
     log_warning "If the virtual environment doesn't activate properly, you may need to restart your terminal or system."
     echo ""

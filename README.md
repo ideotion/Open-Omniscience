@@ -179,7 +179,7 @@ ollama pull gemma4:e2b
 pip install -r requirements.txt
 
 # 5. Start Open Omniscience
-uvicorn api.main:app --reload
+uvicorn src.api.main:app --reload
 ```
 
 #### Verify Installation

@@ -124,7 +124,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Start the application
-uvicorn api.main:app --reload
+uvicorn src.api.main:app --reload
 ```
 
 ### Method 3: Using Debian Package
@@ -148,7 +148,7 @@ cd ~/open-omniscience
 source venv/bin/activate
 
 # Start development server
-uvicorn api.main:app --reload
+uvicorn src.api.main:app --reload
 
 # Access at: http://localhost:8000
 ```
@@ -159,7 +159,7 @@ uvicorn api.main:app --reload
 pip install gunicorn
 
 # Start with Gunicorn
- gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app
+ gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 src.api.main:app
 ```
 
 ---
