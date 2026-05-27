@@ -22,8 +22,8 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Repository
-REPO_URL="https://github.com/your-username/Open-Omniscience-Qubes.git"
-REPO_BRANCH="main"
+REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
+REPO_BRANCH="0.02_Qubes"
 
 # Installation directories
 INSTALL_DIR="/opt/open-omniscience"
@@ -299,7 +299,9 @@ setup_db_vm() {
     run_in_vm "$DB_VM" "pg_createcluster 15 main --start" || warning "Failed to initialize PostgreSQL cluster"
     
     # Create user and database
-    run_in_vm "$DB_VM" "su - postgres -c \"psql -c \\\"CREATE USER omniscience WITH PASSWORD '$(openssl rand -hex 16)';\\\"\"" || warning "Failed to create database user"
+    local db_password
+    db_password=$(openssl rand -hex 16)
+    run_in_vm "$DB_VM" "su - postgres -c \"psql -c \\\"CREATE USER omniscience WITH PASSWORD '$db_password';\\\"\"" || warning "Failed to create database user"
     run_in_vm "$DB_VM" "su - postgres -c \"psql -c \\\"CREATE DATABASE open_omniscience OWNER omniscience;\\\"\"" || warning "Failed to create database"
     
     # Configure PostgreSQL to listen on all interfaces
@@ -343,22 +345,107 @@ setup_api_vm() {
     # Configure nginx
     info "Configuring nginx in $API_VM"
     
-    run_in_vm "$API_VM" "bash -c 'cat > /etc/nginx/sites-available/open-omniscience << "EOF"
-server {
+    # Use a variable for the nginx config to avoid heredoc issues
+    NGINX_CONFIG="server {
     listen 80;
     server_name localhost;
     
     location / {
         proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host \\$host;
+        proxy_set_header X-Real-IP \\$remote_addr;
+        proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \\$scheme;
     }
     
     location /static/ {
         alias ${INSTALL_DIR}/src/static/;
     }
+}"
+    
+    run_in_vm "$API_VM" "mkdir -p /etc/nginx/sites-available && echo \"$NGINX_CONFIG\" > /etc/nginx/sites-available/open-omniscience"
+    
+    # Enable site
+    run_in_vm "$API_VM" "ln -sf /etc/nginx/sites-available/open-omniscience /etc/nginx/sites-enabled/ && rm -f /etc/nginx/sites-enabled/default"
+    
+    # Test nginx configuration
+    run_in_vm "$API_VM" "nginx -t"
+    
+    success "API VM setup complete"
 }
-EOF
-'
+
+# Setup Scraper VM
+setup_scraper_vm() {
+    header "Setting up Scraper VM"
+    
+    # Create VM
+    create_vm "$SCRAPER_VM" "AppVM" "$TEMPLATE_VM" "$SCRAPER_VM_LABEL" \
+        "$SCRAPER_VM_MEMORY" "$SCRAPER_VM_MAXMEM" "$SCRAPER_VM_VCPUS" || return 1
+    
+    # Configure network
+    configure_vm_network "$SCRAPER_VM" "$NETVM" "false" || return 1
+    
+    # Install dependencies
+    install_packages "$SCRAPER_VM" \
+        python3 \
+        python3-pip \
+        git \
+        curl \
+        sudo \
+        openssl || return 1
+    
+    # Clone repository
+    clone_repo "$SCRAPER_VM" || return 1
+    
+    # Setup Python environment
+    setup_python_env "$SCRAPER_VM" || return 1
+    
+    success "Scraper VM setup complete"
+}
+
+# Setup AI VM
+setup_ai_vm() {
+    header "Setting up AI VM"
+    
+    # Create VM
+    create_vm "$AI_VM" "AppVM" "$TEMPLATE_VM" "$AI_VM_LABEL" \
+        "$AI_VM_MEMORY" "$AI_VM_MAXMEM" "$AI_VM_VCPUS" || return 1
+    
+    # Configure network
+    configure_vm_network "$AI_VM" "$NETVM" "false" || return 1
+    
+    # Install dependencies
+    install_packages "$AI_VM" \
+        python3 \
+        python3-pip \
+        python3-venv \
+        git \
+        curl \
+        sudo \
+        openssl || return 1
+    
+    # Clone repository
+    clone_repo "$AI_VM" || return 1
+    
+    # Setup Python environment
+    setup_python_env "$AI_VM" || return 1
+    
+    success "AI VM setup complete"
+}
+
+# ============================================================================
+# Main Execution
+# ============================================================================
+
+# Check environment
+check_qubes
+check_root
+check_template
+
+# Setup all VMs
+setup_db_vm || { error "Failed to setup Database VM"; exit 1; }
+setup_api_vm || { error "Failed to setup API VM"; exit 1; }
+setup_scraper_vm || { error "Failed to setup Scraper VM"; exit 1; }
+setup_ai_vm || { error "Failed to setup AI VM"; exit 1; }
+
+success "Open-Omniscience Qubes-OS installation complete!"
