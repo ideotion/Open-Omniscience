@@ -106,7 +106,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIF
 
 # What happens:
 # 1. Detects Qubes OS environment
-# 2. Checks for Debian 12 template (installs if needed)
+# 2. Checks for Debian 13 template (installs if needed)
 # 3. Creates 4 isolated VMs:
 #    - open-omniscience-api (Blue) - HTTP API & coordination
 #    - open-omniscience-db (Green) - PostgreSQL database (no network)
@@ -299,10 +299,10 @@ sudo ./UNIFIED_INSTALL.sh
 ```
 
 #### Qubes OS: Template Not Found
-**Solution:** Install Debian 12 template first
+**Solution:** Install Debian 13 template first
 ```bash
 # In dom0
-sudo qubesctl state.sls qvm.template-debian-12
+sudo qubesctl state.sls qvm.template-debian-13
 ```
 
 #### GUI Dependencies Missing
@@ -431,7 +431,7 @@ Open-Omniscience is organized into 4 pillars:
 
 ### Qubes OS Specific
 - **Qubes Version:** R4.1+
-- **Template:** Debian 12 (Trixie)
+- **Template:** Debian 13 (Trixie)
 - **Memory:** 8GB RAM (16GB recommended for AI)
 - **Disk Space:** 20GB free space across VMs
 

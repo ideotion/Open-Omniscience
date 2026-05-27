@@ -217,7 +217,7 @@ Open-Omniscience/
 
 ### Compatibility
 - **Primary Platform**: Debian-based Linux (Ubuntu, Debian, etc.)
-- **Qubes OS**: R4.1+ with Debian 12 (Trixie) template
+- **Qubes OS**: R4.1+ with Debian 13 (Trixie) template
 - **Python**: 3.8-3.13 (3.13 recommended)
 - **Architecture**: x86_64/AMD64
 

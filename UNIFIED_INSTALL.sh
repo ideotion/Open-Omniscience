@@ -1,10 +1,25 @@
+#
+# Version: 0.03
+# Unified installer that automatically adapts to:
+#   - Regular Debian/Ubuntu systems (with or without GUI)
+#   - Qubes OS (R4.1+ with Debian 13 template)
+#   - Headless servers
+#   - Various environments (X11, Wayland, VMs, bare metal)
+=======
 # Open-Omniscience UNIFIED Installer
 # ============================================================================
 #
 # Version: 0.03
 # Unified installer that automatically adapts to:
 #   - Regular Debian/Ubuntu systems (with or without GUI)
-#   - Qubes OS (R4.1+ with Debian 12 template)
+#   - Qubes OS (R4.1+ with Debian 13 template)
+#   - Headless servers
+#   - Various environments (X11, Wayland, VMs, bare metal)============================================================================
+#
+# Version: 0.03
+# Unified installer that automatically adapts to:
+#   - Regular Debian/Ubuntu systems (with or without GUI)
+#   - Qubes OS (R4.1+ with Debian 13 template)
 #   - Headless servers
 #   - Various environments (X11, Wayland, VMs, bare metal)
 #
@@ -36,7 +51,7 @@ set -uo pipefail
 # Version: 0.03
 # Unified installer that adapts to:
 #   - Regular Debian/Ubuntu systems (with or without GUI)
-#   - Qubes OS (R4.1+ with Debian 12 template)
+#   - Qubes OS (R4.1+ with Debian 13 template)
 #   - Headless servers
 #   - Various environments (X11, Wayland, VMs, bare metal)
 #
@@ -69,7 +84,7 @@ set -uo pipefail
 # Version: 0.03
 # Unified installer that automatically adapts to:
 #   - Regular Debian/Ubuntu systems (with or without GUI)
-#   - Qubes OS (R4.1+ with Debian 12 template)
+#   - Qubes OS (R4.1+ with Debian 13 template)
 #   - Headless servers
 #   - Various environments (X11, Wayland, VMs, bare metal)
 #
@@ -149,11 +164,21 @@ log_header() {
 # Note: Qubes OS is designed to be undetectable from within VMs for security
 # So we always ask the user rather than trying to auto-detect
 detect_qubes() {
-    # We don't try to auto-detect Qubes OS because:
-    # 1. Qubes OS is designed to be undetectable from within VMs
-    # 2. This is a security feature to prevent VM fingerprinting
-    # 3. The only reliable way is to ask the user
-    return 1  # Always return false, we'll ask the user explicitly
+    # Try to detect Qubes OS by checking for Qubes-specific commands
+    # Note: Qubes is designed to be undetectable from within VMs for security,
+    # but we can check if Qubes management commands are available
+    if command -v qvm-ls >/dev/null 2>&1 || command -v qubesctl >/dev/null 2>&1; then
+        # We have Qubes commands available, likely running in dom0 or with admin access
+        return 0
+    fi
+    
+    # Check for Qubes-specific environment variables or files
+    if [ -f /etc/qubes-release ] || [ -n "${QUBES_VM_TYPE:-}" ]; then
+        return 0
+    fi
+    
+    # Default: not detected (will ask user)
+    return 1
 }
 
 # Check if GUI environment is available
@@ -408,20 +433,33 @@ setup_qubes() {
     log_header "Qubes OS Setup"
     
     # Check if template exists
-    local template="debian-12"
+    local template="debian-13"
     if ! qvm-ls | grep -q "^${template}\s"; then
-        log_info "Debian 12 template not found"
-        if ! ask_yes_no "Install Debian 12 template now" "yes"; then
-            log_error "Debian 12 template required for Qubes OS installation"
-            return 1
+        log_info "Debian 13 template not found"
+        
+        # Check if we're already running in a Debian 13 template VM
+        # If so, assume this is the template and don't prompt for installation
+        local current_vm_name=""
+        if command -v qvm-ls >/dev/null 2>&1; then
+            current_vm_name=$(qvm-ls --current 2>/dev/null | head -1 | awk '{print $1}')
         fi
         
-        log_info "Installing Debian 12 template..."
-        if ! sudo qubesctl state.sls qvm.template-debian-12 2>/dev/null; then
-            log_error "Failed to install Debian 12 template"
-            return 1
+        if [ -n "$current_vm_name" ] && [ "$current_vm_name" = "$template" ]; then
+            log_info "Running in Debian 13 template VM - using current VM as template"
+        else
+            # Only prompt if we're not already in the template
+            if ! ask_yes_no "Install Debian 13 template now" "yes"; then
+                log_error "Debian 13 template required for Qubes OS installation"
+                return 1
+            fi
+            
+            log_info "Installing Debian 13 template..."
+            if ! sudo qubesctl state.sls qvm.template-debian-13 2>/dev/null; then
+                log_error "Failed to install Debian 13 template"
+                return 1
+            fi
+            log_success "Debian 13 template installed"
         fi
-        log_success "Debian 12 template installed"
     fi
     
     # Create VMs
@@ -584,11 +622,17 @@ main() {
     local is_qubes=false
     local has_gui=false
     
-    # Qubes OS is designed to be undetectable from within VMs for security
-    # So we always ask the user rather than trying to auto-detect
-    log_info "Note: Qubes OS is designed to be undetectable from within VMs for security"
-    if ask_yes_no "Are you installing on Qubes OS" "no"; then
+    # Try to detect Qubes OS first
+    if detect_qubes; then
+        log_info "Detected Qubes OS environment"
         is_qubes=true
+    else
+        # Qubes OS is designed to be undetectable from within VMs for security
+        # So we ask the user if detection failed
+        log_info "Note: Qubes OS is designed to be undetectable from within VMs for security"
+        if ask_yes_no "Are you installing on Qubes OS" "no"; then
+            is_qubes=true
+        fi
     fi
     
     if detect_gui; then
