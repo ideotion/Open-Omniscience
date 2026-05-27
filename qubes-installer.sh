@@ -1,6 +1,64 @@
+# Open-Omniscience Qubes-OS Automated Installer
+# ============================================================================
+# 
+# Version: 2.0.0
+# Compatibility: Qubes OS R4.1+ with Debian Trixie (12)
+# 
+# This script provides FULLY AUTOMATED deployment of Open-Omniscience in Qubes OS
+# with support for:
+#   - Disposable VMs (default-dvm) with persistent TemplateVMs
+#   - No python-venv in disposables (uses system Python or TemplateVM-based venv)
+#   - Proper Qubes RPC communication between isolated VMs
+#   - Network isolation (DB VM has no network access)
+#   - Automatic VM creation, configuration, and service deployment
+# 
+# Usage:
+#   sudo ./qubes-installer.sh [OPTIONS]
+# 
+# Options:
+#   --help, -h          Show this help message
+#   --dry-run, -n       Show what would be done without making changes
+#   --clean, -c         Remove all Open-Omniscience VMs and data
+#   --template, -t NAME Use specific template (default: debian-12)
+#   --netvm, -N NAME    Use specific NetVM (default: sys-whonix)
+#   --memory, -m SIZE   Base memory in MB (default: 2048)
+#   --verbose, -v       Enable verbose output
+# 
+# ============================================================================
+=======
 #!/bin/bash
 
 # ============================================================================
+# Open-Omniscience Qubes-OS Automated Installer (LEGACY)
+# ============================================================================
+# 
+# Version: 2.0.0
+# Compatibility: Qubes OS R4.1+ with Debian Trixie (12)
+# Status: ⚠️ DEPRECATED - Use UNIFIED_INSTALL.sh instead
+# 
+# ⚠️ DEPRECATION NOTICE: This script is deprecated.
+# Please use UNIFIED_INSTALL.sh instead for all new installations.
+# 
+# The unified installer automatically detects Qubes OS and provides the same
+# functionality with better error handling and user experience.
+# 
+# Usage (LEGACY): sudo ./qubes-installer.sh [OPTIONS]
+# Usage (RECOMMENDED): curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
+# 
+# This script provides FULLY AUTOMATED deployment of Open-Omniscience in Qubes OS
+# with support for:
+#   - Disposable VMs (default-dvm) with persistent TemplateVMs
+#   - No python-venv in disposables (uses system Python or TemplateVM-based venv)
+#   - Proper Qubes RPC communication between isolated VMs
+#   - Network isolation (DB VM has no network access)
+#   - Automatic VM creation, configuration, and service deployment
+# 
+# ============================================================================
+
+# DEPRECATION WARNING
+echo "⚠️  DEPRECATION NOTICE: This installer is deprecated."
+echo "✅ Please use: curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash"
+echo ""============================================================================
 # Open-Omniscience Qubes-OS Automated Installer
 # ============================================================================
 # 

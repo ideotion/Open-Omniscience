@@ -1,8 +1,27 @@
-# Open-Omniscience Qubes-OS Installation Guide
+# Open-Omniscience Qubes-OS Installation Guide (LEGACY)
 
 ## Version 2.0.0 - Compatible with Qubes OS R4.1+ and Debian Trixie (12)
+**Status:** ⚠️ **DEPRECATED** - Use [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md) instead
 
-> 📚 **Looking for other documentation?** See the [Unified Documentation Index](DOCUMENTATION.md) for all Open-Omniscience documentation.
+> 📚 **PLEASE USE:** [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md) - Single documentation for all users
+
+> ⚠️ **DEPRECATION NOTICE**: This file is kept for backward compatibility but all new users should use the unified documentation and installer. The unified installer automatically detects Qubes OS and adapts accordingly.
+
+### 🔗 Quick Link to Unified Documentation
+**→ [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md)**
+
+### 🚀 Quick Start with Unified Installer
+```bash
+# This single command works for Qubes OS too!
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
+```
+
+The unified installer will:
+- ✅ Automatically detect Qubes OS
+- ✅ Ask "Are you installing on Qubes OS?" if uncertain
+- ✅ Create the 4 isolated VMs with proper configuration
+- ✅ Install Open-Omniscience in each VM
+- ✅ Configure network isolation correctly
 
 ---
 

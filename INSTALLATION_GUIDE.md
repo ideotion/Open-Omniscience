@@ -1,12 +1,23 @@
-# Open-Omniscience Installation Guide
+# Open-Omniscience Installation Guide (LEGACY)
 
 **Version:** 0.03  
 **Last Updated:** 2025-06-18  
 **Platform:** Debian-based Linux (Ubuntu, Debian, etc.), macOS, Windows (WSL2)
+**Status:** ⚠️ **DEPRECATED** - Use [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md) instead
 
-> 📚 **Looking for other documentation?** See the [Unified Documentation Index](DOCUMENTATION.md) for all Open-Omniscience documentation.
+> 📚 **PLEASE USE:** [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md) - Single documentation for all users
+
+> ⚠️ **DEPRECATION NOTICE**: This file is kept for backward compatibility but all new users should use the unified documentation and installer. The unified installer automatically adapts to all environments including regular Linux, Qubes OS, and headless servers.
+
+### 🔗 Quick Link to Unified Documentation
+**→ [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md)**
 
 This guide provides comprehensive instructions for installing Open-Omniscience on your system using direct Python installation.
+
+**Note:** This legacy guide is maintained for existing users but new installations should use the unified installer:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
+```
 
 ## 🚀 Quick Start
 

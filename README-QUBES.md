@@ -1,10 +1,27 @@
-# Open-Omniscience Qubes-OS Edition
+# Open-Omniscience Qubes-OS Edition (LEGACY)
 
-> 📚 **Looking for other documentation?** See the [Unified Documentation Index](DOCUMENTATION.md) for all Open-Omniscience documentation.
+**Status:** ⚠️ **DEPRECATED** - Use [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md) instead
+
+> 📚 **PLEASE USE:** [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md) - Single documentation for all users
+
+> ⚠️ **DEPRECATION NOTICE**: This file is kept for backward compatibility but all new users should use the unified documentation and installer. The unified installer automatically detects Qubes OS and provides the same multi-VM architecture.
+
+### 🔗 Quick Link to Unified Documentation
+**→ [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md)**
+
+### 🚀 Quick Start with Unified Installer
+```bash
+# This single command works for Qubes OS!
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
+```
+
+---
 
 ## 🚀 Overview
 
 This is the **Qubes-OS compatible** version of Open-Omniscience, specifically adapted for **Debian Trixie (12)** environments in **Qubes OS R4.1+**. This adaptation implements a **multi-VM architecture** that leverages Qubes OS's security features for maximum isolation and protection.
+
+**Note:** The unified installer now provides the same functionality automatically. This file is maintained for backward compatibility.
 
 ### Key Features
 

@@ -41,33 +41,45 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 
 ## 🚀 Getting Started
 
-### Unified Installation (Recommended)
+### 🎯 Unified Installation (Recommended for ALL Users)
 
-The **only** way to install Open-Omniscience - a single command that launches the GUI installer:
+**One command for ALL environments:** Regular Linux, Qubes OS, headless servers - the installer automatically adapts!
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
 ```
 
 **What this does:**
-- ✅ Automatically detects your Debian-based system
-- ✅ Detects if GUI environment is available (works in XEN, VMs, Qubes OS)
-- ✅ Automatically installs `python3-tk` and `psutil` if needed
-- ✅ Launches the graphical installer with 5-step wizard
-- ✅ System requirements check with visual feedback
-- ✅ Progress tracking and real-time logs
-- ✅ Creates application launcher for your OS app menu
-- ✅ Falls back to text-based installer if GUI not available
-- ✅ Clones the repository to `~/open-omniscience`
-- ✅ Installs all dependencies (Python, Ollama, Python packages)
-- ✅ Configures the environment automatically
+- ✅ **Automatically detects** your environment (Qubes OS vs regular Linux)
+- ✅ **Asks simple questions** if it's uncertain (Are you using Qubes OS?)
+- ✅ **Adapts installation method** accordingly
+- ✅ **Installs all dependencies** automatically
+- ✅ **Configures everything** properly for your setup
+- ✅ **Creates desktop launcher** (if GUI available)
+- ✅ **Provides clear next steps**
 
 **After installation:**
-- Open-Omniscience will be running at: **http://localhost:8000**
-- Application launcher created in your OS app menu
-- All services started automatically
+- **Regular Linux:** Open-Omniscience runs at **http://localhost:8000**
+- **Qubes OS:** 4 isolated VMs created with proper configuration
+- **All environments:** Ready to use with environment-specific instructions
 
-For advanced users who need manual installation options, see [LAUNCHER_README.md](LAUNCHER_README.md).
+### 📚 Unified Documentation
+
+**One documentation file for ALL users:**
+- [UNIFIED_DOCUMENTATION.md](UNIFIED_DOCUMENTATION.md) - Complete guide for all platforms
+
+This single file replaces the need for separate Qubes and regular Linux documentation.
+
+### 🔄 Legacy Installation Methods (Deprecated)
+
+> ⚠️ **DEPRECATED**: The following installation methods are kept for backward compatibility but the unified installer above is recommended for all new installations.
+
+- [install.sh](install.sh) - Legacy GUI installer launcher
+- [LAUNCHER_README.md](LAUNCHER_README.md) - Legacy smart installer documentation
+- [INSTALL-QUBES.sh](INSTALL-QUBES.sh) - **DEPRECATED** - Use unified installer instead
+- [qubes-installer.sh](qubes-installer.sh) - **DEPRECATED** - Use unified installer instead
+
+**Please use the unified installer above for all new installations.**
 
 ---
 

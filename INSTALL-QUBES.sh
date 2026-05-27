@@ -1,14 +1,38 @@
+=======
+set -euo pipefail
+
+# Deprecation warning
+echo "WARNING: This script (INSTALL-QUBES.sh) is deprecated."
+echo "Please use qubes-installer.sh instead for full functionality."
+echo "This script will continue to work but may not have all the latest features."
+echo ""
+=======
 #!/bin/bash
 
-# Open-Omniscience Qubes-OS Installer (DEPRECATED)
+# Open-Omniscience Qubes-OS Installer (LEGACY - DOUBLE DEPRECATED)
 # Compatible with Debian Trixie (12) in Qubes OS R4.1+
 # 
-# DEPRECATED: This script is deprecated. Please use qubes-installer.sh instead.
+# ⚠️ DOUBLE DEPRECATED: This script is deprecated.
+# Please use UNIFIED_INSTALL.sh instead for all new installations.
+# 
+# The unified installer automatically detects Qubes OS and provides the same
+# multi-VM architecture with better error handling and user experience.
+#
+# Old recommendation: qubes-installer.sh (also deprecated)
+# New recommendation: UNIFIED_INSTALL.sh
+#
 # This script automates the deployment of Open-Omniscience across multiple
 # Qubes OS VMs for maximum security and isolation.
 
+set -euo pipefail
+
+# DEPRECATION WARNING
+echo "⚠️  DEPRECATION NOTICE: This installer is deprecated."
+echo "✅ Please use: curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash"
+echo ""
+
 # Configuration
-# ============================================================================
+# ========================================================================================================================================================
 =======
 set -euo pipefail
 
