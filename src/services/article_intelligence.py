@@ -102,7 +102,8 @@ class ArticleIntelligenceAnalyzer:
                     tfidf_matrix = vectorizer.fit_transform([text1, text2])
                     similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
                     return float(similarity)
-                except:
+                except Exception as e:
+                    logger.debug(f"TF-IDF with IDF failed, trying without: {e}")
                     vectorizer = TfidfVectorizer(tokenizer=lambda x: x.split(), lowercase=False, use_idf=False)
                     tfidf_matrix = vectorizer.fit_transform([text1, text2])
                     similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]

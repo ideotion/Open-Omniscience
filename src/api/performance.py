@@ -179,7 +179,7 @@ class ResponseCache:
         Args:
             config: API performance configuration.
         """
-        self.config = config or config
+        self.config = config or APIPerformanceConfig()
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._access_times: Dict[str, float] = {}
         self._lock = threading.Lock()

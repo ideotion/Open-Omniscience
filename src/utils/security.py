@@ -35,13 +35,20 @@ Author: Ideotion
 
 import re
 import html
-import bleach
 from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
 import logging
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Try to import bleach for HTML sanitization
+try:
+    import bleach
+    BLEACH_AVAILABLE = True
+except ImportError:
+    BLEACH_AVAILABLE = False
+    logger.warning("bleach module not available, using fallback HTML sanitization")
 
 
 class SecurityError(Exception):
@@ -77,15 +84,20 @@ def sanitize_html(content: str) -> str:
     }
     
     try:
-        # Use bleach to sanitize HTML
-        cleaned = bleach.clean(
-            content,
-            tags=ALLOWED_TAGS,
-            attributes=ALLOWED_ATTRIBUTES,
-            strip=True,
-            strip_comments=True
-        )
-        return cleaned
+        if BLEACH_AVAILABLE:
+            # Use bleach to sanitize HTML
+            cleaned = bleach.clean(
+                content,
+                tags=ALLOWED_TAGS,
+                attributes=ALLOWED_ATTRIBUTES,
+                strip=True,
+                strip_comments=True
+            )
+            return cleaned
+        else:
+            # Fallback: escape all HTML when bleach is not available
+            logger.warning("Using fallback HTML sanitization (bleach not available)")
+            return html.escape(content)
     except Exception as e:
         logger.error(f"Error sanitizing HTML: {e}")
         # Fallback: escape all HTML

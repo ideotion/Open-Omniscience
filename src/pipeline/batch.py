@@ -311,8 +311,8 @@ class BatchProcessor:
             Tuple of (success, result_dict).
         """
         try:
-            from scraper.scraper import Scraper
-            from ingestor.pipeline import IngestionPipeline
+            from src.scraper.scraper import Scraper
+            from src.ingestor.pipeline import IngestionPipeline
             
             # Create a temporary source config
             source_config = {

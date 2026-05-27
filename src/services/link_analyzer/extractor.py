@@ -260,8 +260,8 @@ class LinkExtractor:
                     if base_url and not url.startswith(('http://', 'https://', 'ftp://')):
                         try:
                             url = urljoin(base_url, url)
-                        except:
-                            pass
+                        except (ValueError, TypeError) as e:
+                            logger.debug(f"Failed to resolve relative URL: {e}")
                     
                     normalized_url = self.normalize_url(url)
                     parsed_url = urlparse(url)

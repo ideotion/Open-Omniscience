@@ -186,9 +186,9 @@ class OpenOmnisciencePipeline:
     def _init_pillar2(self):
         """Initialize Pillar 2 (Data Processing)."""
         try:
-            from src.pillar2.src.analysis.statistical_tests import StatisticalTests
-            from src.pillar2.src.analysis.peer_review import PeerReviewSimulator
-            from src.pillar2.src.analysis.reproducibility import ReproducibilityCalculator
+            from pillar2.src.analysis.statistical_tests import StatisticalTests
+            from pillar2.src.analysis.peer_review import PeerReviewSimulator
+            from pillar2.src.analysis.reproducibility import ReproducibilityCalculator
             
             return {
                 "statistical_tests": StatisticalTests(),
@@ -202,8 +202,8 @@ class OpenOmnisciencePipeline:
     def _init_pillar3(self):
         """Initialize Pillar 3 (Analytics & Intelligence)."""
         try:
-            from src.pillar3.src.analysis.deepfake_detector import DeepfakeDetector
-            from src.pillar3.src.analysis.propaganda import PropagandaDetector
+            from pillar3.src.analysis.deepfake_detector import DeepfakeDetector
+            from pillar3.src.analysis.propaganda import PropagandaDetector
             
             return {
                 "deepfake_detector": DeepfakeDetector(),
@@ -216,11 +216,11 @@ class OpenOmnisciencePipeline:
     def _init_pillar4(self):
         """Initialize Pillar 4 (Legal Admissibility)."""
         try:
-            from src.pillar4.src.legal.validator import LegalValidator
-            from src.pillar4.src.crypto.provenance import DataLineageTracker
-            from src.pillar4.src.audit.chain_of_custody import DataLineageTracker as ChainOfCustodyTracker
-            from src.pillar4.src.compliance.gdpr import GDPRComplianceChecker
-            from src.pillar4.src.compliance.copyright import CopyrightComplianceChecker
+            from pillar4.src.legal.validator import LegalValidator
+            from pillar4.src.crypto.provenance import DataLineageTracker
+            from pillar4.src.audit.chain_of_custody import DataLineageTracker as ChainOfCustodyTracker
+            from pillar4.src.compliance.gdpr import GDPRComplianceChecker
+            from pillar4.src.compliance.copyright import CopyrightComplianceChecker
             
             return {
                 "validator": LegalValidator(),
@@ -412,6 +412,9 @@ class OpenOmnisciencePipeline:
         
         Returns:
             IngestedData with the ingested content.
+            
+        Raises:
+            ValueError: If ingestion fails after all retry attempts.
         """
         import requests
         
@@ -419,20 +422,25 @@ class OpenOmnisciencePipeline:
         if self.pillar1 and hasattr(self.pillar1, 'download_page'):
             try:
                 result = self.pillar1.download_page(url)
-                if result and hasattr(result, 'status') and result.status.value == "SUCCESS":
-                    # Extract content from the downloaded page
-                    response = requests.get(url, timeout=30)
-                    return IngestedData(
-                        url=url,
-                        content=response.text,
-                        raw_content=response.content,
-                        headers=dict(response.headers),
-                        source_type="web",
-                        metadata={
-                            "status_code": response.status_code,
-                            "content_type": response.headers.get('Content-Type', ''),
-                        },
-                    )
+                if result and hasattr(result, 'status'):
+                    if result.status.value == "SUCCESS":
+                        # Extract content from the downloaded page
+                        response = requests.get(url, timeout=30)
+                        return IngestedData(
+                            url=url,
+                            content=response.text,
+                            raw_content=response.content,
+                            headers=dict(response.headers),
+                            source_type="web",
+                            metadata={
+                                "status_code": response.status_code,
+                                "content_type": response.headers.get('Content-Type', ''),
+                            },
+                        )
+                    elif result.status.value == "BLOCKED":
+                        raise ValueError(f"URL blocked by robots.txt: {url}")
+                    else:  # FAILED
+                        raise ValueError(f"Scraper download failed: {result.error}")
             except Exception as e:
                 self.logger.warning(f"Scraper download_page failed, falling back to requests: {e}")
         
@@ -453,15 +461,7 @@ class OpenOmnisciencePipeline:
             )
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to ingest URL {url}: {e}")
-            # Return minimal data on failure
-            return IngestedData(
-                url=url,
-                content="",
-                raw_content=b"",
-                headers={},
-                source_type="web",
-                metadata={"error": str(e)},
-            )
+            raise ValueError(f"Failed to ingest URL {url}: {e}")
 
     def _process(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """

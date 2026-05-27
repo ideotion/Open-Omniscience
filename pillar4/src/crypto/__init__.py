@@ -23,8 +23,15 @@ Pillar 4: Legal Admissibility - Crypto Module
 
 Provides cryptographic provenance, Merkle trees, and digital signatures for legal compliance.
 """
-from .provenance import DataLineageTracker, ReproducibilityCalculator
-from .merkle_tree import MerkleTree
-from .signatures import GPGSigner
+from .provenance import DataLineageTracker
+from .merkle_tree import MerkleTree, MerkleNode
 
-__all__ = ["DataLineageTracker", "ReproducibilityCalculator", "MerkleTree", "GPGSigner"]
+try:
+    from .signatures import GPGSigner, SignatureResult, GPGNotAvailableError
+    HAS_SIGNATURES = True
+except Exception:
+    HAS_SIGNATURES = False
+
+__all__ = ["DataLineageTracker", "MerkleTree", "MerkleNode"]
+if HAS_SIGNATURES:
+    __all__.extend(["GPGSigner", "SignatureResult", "GPGNotAvailableError"])
