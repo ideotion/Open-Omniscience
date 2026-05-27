@@ -686,26 +686,59 @@ class ChainOfCustodyLogger:
         """Initialize the SQLite database for CoC entries."""
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS coc_entries (
-                    entry_id TEXT PRIMARY KEY,
-                    article_id TEXT NOT NULL,
-                    article_hash TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    tsa_timestamp TEXT,
-                    tsa_token BLOB,
-                    tsa_algorithm TEXT,
-                    actor_id TEXT,
-                    actor_signature TEXT,  -- JSON-serialized HybridSignature
-                    previous_entry_hash TEXT,
-                    entry_hash TEXT NOT NULL,
-                    metadata TEXT,
-                    key_id TEXT,
-                    hash_algorithm TEXT DEFAULT 'sha3_512',
-                    FOREIGN KEY (article_id) REFERENCES articles(id)
-                )
-            """)
+            # Check if the table exists
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='coc_entries'")
+            table_exists = cursor.fetchone() is not None
+            
+            if not table_exists:
+                # Create new table with all columns
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS coc_entries (
+                        entry_id TEXT PRIMARY KEY,
+                        article_id TEXT NOT NULL,
+                        article_hash TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        tsa_timestamp TEXT,
+                        tsa_token BLOB,
+                        tsa_algorithm TEXT,
+                        actor_id TEXT,
+                        actor_signature TEXT,  -- JSON-serialized HybridSignature
+                        previous_entry_hash TEXT,
+                        entry_hash TEXT NOT NULL,
+                        metadata TEXT,
+                        key_id TEXT,
+                        hash_algorithm TEXT DEFAULT 'sha3_512',
+                        FOREIGN KEY (article_id) REFERENCES articles(id)
+                    )
+                """)
+            else:
+                # Add missing columns for backward compatibility
+                # Check for tsa_algorithm column
+                cursor.execute("PRAGMA table_info(coc_entries)")
+                columns = [row[1] for row in cursor.fetchall()]
+                
+                if 'tsa_algorithm' not in columns:
+                    conn.execute("ALTER TABLE coc_entries ADD COLUMN tsa_algorithm TEXT")
+                if 'key_id' not in columns:
+                    conn.execute("ALTER TABLE coc_entries ADD COLUMN key_id TEXT")
+                if 'hash_algorithm' not in columns:
+                    conn.execute("ALTER TABLE coc_entries ADD COLUMN hash_algorithm TEXT DEFAULT 'sha3_512'")
+                
+                # Update actor_signature from BLOB to TEXT if it exists as BLOB
+                if 'actor_signature' in columns:
+                    cursor.execute("PRAGMA table_info(coc_entries)")
+                    for row in cursor.fetchall():
+                        if row[1] == 'actor_signature' and row[2] == 'BLOB':
+                            # Migrate BLOB to TEXT (JSON)
+                            conn.execute("""
+                                UPDATE coc_entries 
+                                SET actor_signature = NULL 
+                                WHERE actor_signature IS NOT NULL
+                            """)
+                            break
+            
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_coc_article_id 
                 ON coc_entries (article_id)
@@ -868,7 +901,12 @@ class ChainOfCustodyLogger:
         
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
-                INSERT INTO coc_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO coc_entries (
+                    entry_id, article_id, article_hash, action, timestamp,
+                    tsa_timestamp, tsa_token, tsa_algorithm, actor_id,
+                    actor_signature, previous_entry_hash, entry_hash,
+                    metadata, key_id, hash_algorithm
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 entry.entry_id,
                 entry.article_id,

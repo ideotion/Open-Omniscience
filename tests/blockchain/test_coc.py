@@ -124,8 +124,8 @@ class TestCoCEntry(unittest.TestCase):
             timestamp=self.timestamp,
         )
         
-        # entry_hash should be a SHA-256 hex string
-        self.assertEqual(len(entry.entry_hash), 64)
+        # entry_hash should be a hex string (SHA-256: 64 chars, SHA-3-512: 128 chars)
+        self.assertIn(len(entry.entry_hash), [64, 128])
         self.assertTrue(all(c in "0123456789abcdef" for c in entry.entry_hash))
 
     def test_entry_hash_consistency(self):
@@ -629,7 +629,12 @@ class TestChainOfCustodyLogger(unittest.TestCase):
         # Log an entry outside the time range (simulate by modifying timestamp)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
-                INSERT INTO coc_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO coc_entries (
+                    entry_id, article_id, article_hash, action, timestamp,
+                    tsa_timestamp, tsa_token, tsa_algorithm, actor_id,
+                    actor_signature, previous_entry_hash, entry_hash,
+                    metadata, key_id, hash_algorithm
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 "entry_old",
                 "article_old",
@@ -641,8 +646,11 @@ class TestChainOfCustodyLogger(unittest.TestCase):
                 None,
                 None,
                 None,
+                None,
                 "hash_old",
                 "{}",
+                None,
+                "sha256",
             ))
         
         entries = self.logger.get_entries_by_time_range(start_time, end_time)
@@ -742,7 +750,12 @@ class TestCoCWithSigning(unittest.TestCase):
         )
         
         self.assertIsNotNone(entry.actor_signature)
-        self.assertGreater(len(entry.actor_signature), 0)
+        # actor_signature is now a HybridSignature object
+        if hasattr(entry.actor_signature, 'is_valid'):
+            self.assertTrue(entry.actor_signature.is_valid())
+        else:
+            # Legacy: bytes signature
+            self.assertGreater(len(entry.actor_signature), 0)
 
     def test_verify_signature(self):
         """Test verifying a signed entry."""
