@@ -216,7 +216,7 @@ parse_arguments() {
 
 # Show help message
 show_help() {
-    cat << EOF
+    cat <<EOF
 Open-Omniscience Qubes-OS Automated Installer v$VERSION
 
 Usage: sudo ./qubes-installer.sh [OPTIONS]
@@ -260,7 +260,6 @@ Examples:
   
   # Clean up (remove all Open-Omniscience VMs)
   sudo ./qubes-installer.sh --clean
-
 EOF
 }
 
@@ -390,7 +389,6 @@ configure_vm_network() {
 }
 
 # Execute command in VM with proper error handling
-# Uses qvm-run with --skip-prepare and --no-wait for disposables
 run_in_vm() {
     local vm_name="$1"
     shift
@@ -410,7 +408,6 @@ run_in_vm() {
     fi
     
     # For AppVMs, use --skip-prepare and --no-wait to handle disposables
-    # For TemplateVMs, we need to be more careful
     if qvm-ls 2>/dev/null | grep -q "^${vm_name}\s.*TemplateVM"; then
         # TemplateVM - run normally
         if ! qvm-run -u "$vm_name" "$command" 2>&1; then
@@ -430,7 +427,6 @@ run_in_vm() {
 }
 
 # Install packages in VM
-# For disposables, we need to install in TemplateVM and ensure they're available
 install_packages_in_vm() {
     local vm_name="$1"
     shift
@@ -459,11 +455,9 @@ install_packages_in_vm() {
 }
 
 # Setup Python environment in VM
-# For disposables: install system-wide Python packages (no venv)
-# For persistent VMs: create venv in TemplateVM
 setup_python_in_vm() {
     local vm_name="$1"
-    local use_venv="$2"  # true or false
+    local use_venv="$2"
     
     log "INFO" "Setting up Python in $vm_name (venv: $use_venv)"
     
@@ -643,7 +637,6 @@ setup_db_vm() {
     fi
     
     # Configure pg_hba.conf to allow connections from other VMs
-    # In Qubes, we use RPC, but we still need to allow local connections
     if ! run_in_vm "$DB_VM" "echo 'host    all             all             127.0.0.1/32            md5' >> /etc/postgresql/15/main/pg_hba.conf"; then
         log "WARNING" "Failed to configure pg_hba.conf"
     fi
@@ -721,10 +714,10 @@ setup_api_vm() {
     
     location / {
         proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host \\$host;
+        proxy_set_header X-Real-IP \\$remote_addr;
+        proxy_set_header X-Forwarded-For \\$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \\$scheme;
     }
     
     location /static/ {
@@ -785,7 +778,6 @@ WantedBy=multi-user.target"
     # Configure Qubes RPC for API VM
     log "INFO" "Configuring Qubes RPC for API VM"
     
-    # Create RPC configuration
     local rpc_config="[RPC]
 # API VM can call DB VM for database operations
 open-omniscience.db.query = open-omniscience-db + open-omniscience-db
@@ -829,12 +821,7 @@ setup_scraper_vm() {
         git \
         curl \
         sudo \
-        openssl \
-        # Scraping dependencies
-        python3-requests \
-        python3-beautifulsoup4 \
-        python3-lxml \
-        python3-html5lib; then
+        openssl; then
         return 1
     fi
     
@@ -844,7 +831,6 @@ setup_scraper_vm() {
     fi
     
     # Setup Python - for scrapers, we can use system-wide to support disposables
-    # But since this is a persistent VM, we'll use venv
     if ! setup_python_in_vm "$SCRAPER_VM" "true"; then
         return 1
     fi
@@ -983,7 +969,6 @@ WantedBy=multi-user.target"
 # ============================================================================
 
 # Create a disposable template for Open-Omniscience
-# This allows creating disposable VMs with pre-installed dependencies
 setup_disposable_template() {
     local template_name="open-omniscience-disp-template"
     
@@ -1037,252 +1022,3 @@ setup_disposable_template() {
     log "SUCCESS" "Disposable template setup complete"
     return 0
 }
-
-# Create a disposable VM for testing
-create_disposable_vm() {
-    local disp_vm="open-omniscience-disp-$$"
-    
-    log "INFO" "Creating disposable VM: $disp_vm"
-    
-    if [ "$DRY_RUN" = true ]; then
-        log "INFO" "[DRY RUN] Would create disposable VM"
-        return 0
-    fi
-    
-    # Create disposable VM from template
-    if ! qvm-create --label "black" --template "open-omniscience-disp-template" --dispvm "$TEMPLATE_VM" "$disp_vm" 2>&1; then
-        log "ERROR" "Failed to create disposable VM"
-        return 1
-    fi
-    
-    # Set network
-    if ! configure_vm_network "$disp_vm" "$NETVM" "false"; then
-        return 1
-    fi
-    
-    log "SUCCESS" "Disposable VM created: $disp_vm"
-    log "INFO" "To use: qvm-run -u $disp_vm 'cd $INSTALL_DIR && python3 src/main.py'"
-    
-    return 0
-}
-
-# ============================================================================
-# Cleanup Functions
-# ============================================================================
-
-# Remove a VM and all its data
-remove_vm() {
-    local vm_name="$1"
-    
-    if ! vm_exists "$vm_name"; then
-        log "INFO" "VM $vm_name does not exist, skipping removal"
-        return 0
-    fi
-    
-    log "INFO" "Removing VM: $vm_name"
-    
-    if [ "$DRY_RUN" = true ]; then
-        log "INFO" "[DRY RUN] Would remove VM: $vm_name"
-        return 0
-    fi
-    
-    # Shutdown VM first
-    if vm_running "$vm_name"; then
-        if ! qvm-shutdown "$vm_name" 2>/dev/null; then
-            log "WARNING" "Failed to shutdown $vm_name, forcing removal"
-        fi
-    fi
-    
-    # Remove VM
-    if ! qvm-remove "$vm_name" 2>&1; then
-        log "ERROR" "Failed to remove VM $vm_name"
-        return 1
-    fi
-    
-    log "SUCCESS" "Removed VM: $vm_name"
-    return 0
-}
-
-# Clean all Open-Omniscience VMs
-clean_all() {
-    log "HEADER" "Cleaning up Open-Omniscience VMs"
-    
-    local vms_to_remove=("$API_VM" "$DB_VM" "$SCRAPER_VM" "$AI_VM" "open-omniscience-disp-template")
-    
-    for vm in "${vms_to_remove[@]}"; do
-        if remove_vm "$vm"; then
-            log "INFO" "Successfully removed $vm"
-        else
-            log "ERROR" "Failed to remove $vm"
-        fi
-    done
-    
-    log "SUCCESS" "Cleanup complete"
-}
-
-# ============================================================================
-# Verification Functions
-# ============================================================================
-
-# Verify installation
-verify_installation() {
-    log "HEADER" "Verifying Installation"
-    
-    local all_ok=true
-    
-    # Check VMs exist
-    for vm in "$API_VM" "$DB_VM" "$SCRAPER_VM" "$AI_VM"; do
-        if ! vm_exists "$vm"; then
-            log "ERROR" "VM $vm does not exist"
-            all_ok=false
-        else
-            log "SUCCESS" "VM $vm exists"
-        fi
-    done
-    
-    # Check VMs are running
-    for vm in "$API_VM" "$DB_VM" "$SCRAPER_VM" "$AI_VM"; do
-        if ! vm_running "$vm"; then
-            log "WARNING" "VM $vm is not running"
-            all_ok=false
-        else
-            log "SUCCESS" "VM $vm is running"
-        fi
-    done
-    
-    # Check network configuration
-    if ! qvm-prefs "$DB_VM" 2>/dev/null | grep -q "netvm.*none"; then
-        log "ERROR" "DB VM has network access (should have none)"
-        all_ok=false
-    else
-        log "SUCCESS" "DB VM has no network access"
-    fi
-    
-    # Check services
-    if vm_exists "$API_VM"; then
-        if ! run_in_vm "$API_VM" "systemctl is-active open-omniscience-api.service 2>/dev/null || true" | grep -q "active"; then
-            log "WARNING" "API service is not active"
-            all_ok=false
-        else
-            log "SUCCESS" "API service is active"
-        fi
-    fi
-    
-    if [ "$all_ok" = true ]; then
-        log "SUCCESS" "All verification checks passed!"
-    else
-        log "ERROR" "Some verification checks failed"
-        return 1
-    fi
-    
-    return 0
-}
-
-# ============================================================================
-# Main Installation Function
-# ============================================================================
-
-perform_installation() {
-    log "HEADER" "Starting Open-Omniscience Qubes-OS Installation"
-    
-    # Check environment
-    check_qubes_environment
-    check_root
-    check_template
-    check_netvm
-    
-    # Show configuration
-    log "HEADER" "Installation Configuration"
-    log "INFO" "Repository: $REPO_URL (branch: $REPO_BRANCH)"
-    log "INFO" "Template: $TEMPLATE_VM"
-    log "INFO" "NetVM: $NETVM"
-    log "INFO" "Installation directory: $INSTALL_DIR"
-    log "INFO" ""
-    log "INFO" "VM Configuration:"
-    log "INFO" "  API VM: $API_VM (${API_VM_MEMORY}MB RAM, ${API_VM_VCPUS} VCPUs, label: $API_VM_LABEL)"
-    log "INFO" "  DB VM: $DB_VM (${DB_VM_MEMORY}MB RAM, ${DB_VM_VCPUS} VCPUs, label: $DB_VM_LABEL)"
-    log "INFO" "  Scraper VM: $SCRAPER_VM (${SCRAPER_VM_MEMORY}MB RAM, ${SCRAPER_VM_VCPUS} VCPUs, label: $SCRAPER_VM_LABEL)"
-    log "INFO" "  AI VM: $AI_VM (${AI_VM_MEMORY}MB RAM, ${AI_VM_VCPUS} VCPUs, label: $AI_VM_LABEL)"
-    
-    # Create VMs
-    log "HEADER" "Creating VMs"
-    
-    if ! setup_db_vm; then
-        log "ERROR" "Failed to setup Database VM"
-        return 1
-    fi
-    
-    if ! setup_api_vm; then
-        log "ERROR" "Failed to setup API VM"
-        return 1
-    fi
-    
-    if ! setup_scraper_vm; then
-        log "ERROR" "Failed to setup Scraper VM"
-        return 1
-    fi
-    
-    if ! setup_ai_vm; then
-        log "ERROR" "Failed to setup AI VM"
-        return 1
-    fi
-    
-    # Setup disposable template (optional)
-    if ! setup_disposable_template; then
-        log "WARNING" "Failed to setup disposable template (non-critical)"
-    fi
-    
-    # Verify installation
-    if ! verify_installation; then
-        log "ERROR" "Installation verification failed"
-        return 1
-    fi
-    
-    log "HEADER" "Installation Complete!"
-    log "SUCCESS" "Open-Omniscience has been successfully installed in Qubes OS"
-    log "INFO" ""
-    log "INFO" "Access your installation:"
-    log "INFO" "  API: qvm-run -u $API_VM 'curl http://localhost'"
-    log "INFO" "  DB: qvm-run -u $DB_VM 'psql -U omniscience -d open_omniscience'"
-    log "INFO" "  Scraper: qvm-run -u $SCRAPER_VM 'systemctl status open-omniscience-scraper'"
-    log "INFO" "  AI: qvm-run -u $AI_VM 'systemctl status open-omniscience-ai'"
-    log "INFO" ""
-    log "INFO" "To create a disposable VM for testing:"
-    log "INFO" "  sudo ./qubes-installer.sh --create-disposable"
-    log "INFO" ""
-    log "INFO" "To clean up:"
-    log "INFO" "  sudo ./qubes-installer.sh --clean"
-    
-    return 0
-}
-
-# ============================================================================
-# Main Script Execution
-# ============================================================================
-
-main() {
-    # Parse command-line arguments
-    parse_arguments "$@"
-    
-    # Show header
-    log "HEADER" "Open-Omniscience Qubes-OS Installer v$VERSION"
-    log "INFO" "Compatible with Qubes OS R4.1+ and Debian Trixie (12)"
-    log "INFO" ""
-    
-    # Handle clean mode
-    if [ "$CLEAN_MODE" = true ]; then
-        clean_all
-        exit 0
-    fi
-    
-    # Perform installation
-    if ! perform_installation; then
-        log "ERROR" "Installation failed"
-        exit 1
-    fi
-    
-    exit 0
-}
-
-# Execute main function with all arguments
-main "$@"
