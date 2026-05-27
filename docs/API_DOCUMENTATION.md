@@ -1,5 +1,7 @@
 # Open-Omniscience API Documentation
 
+> 📚 **Looking for other documentation?** See the [Unified Documentation Index](../DOCUMENTATION.md) for all Open-Omniscience documentation.
+
 **Version:** 2.0  
 **Last Updated:** 2025-05-12  
 **Author:** Open-Omniscience Team  

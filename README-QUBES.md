@@ -1,5 +1,7 @@
 # Open-Omniscience Qubes-OS Edition
 
+> 📚 **Looking for other documentation?** See the [Unified Documentation Index](DOCUMENTATION.md) for all Open-Omniscience documentation.
+
 ## 🚀 Overview
 
 This is the **Qubes-OS compatible** version of Open-Omniscience, specifically adapted for **Debian Trixie (12)** environments in **Qubes OS R4.1+**. This adaptation implements a **multi-VM architecture** that leverages Qubes OS's security features for maximum isolation and protection.

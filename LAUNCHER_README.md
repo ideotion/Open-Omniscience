@@ -1,5 +1,7 @@
 # Open-Omniscience Smart Installer Launcher
 
+> 📚 **Looking for other documentation?** See the [Unified Documentation Index](DOCUMENTATION.md) for all Open-Omniscience documentation.
+
 ## Overview
 
 The **Smart Installer Launcher** (`launch_gui_installer.sh`) provides an intelligent installation experience that:

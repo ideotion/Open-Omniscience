@@ -691,15 +691,32 @@ print(f"Deepfake confidence: {result.confidence:.2%}")
 ✅ **Modular** - Clean, reusable components  
 ✅ **Well-Documented** - Complete documentation and examples  
 
-## 📚 Additional Documentation
+## 📚 Documentation
 
+### 🎯 Start Here
+**📖 [DOCUMENTATION.md](DOCUMENTATION.md)** - Unified documentation index with complete table of contents
+
+This master documentation file provides a single entry point for all Open-Omniscience documentation, organized by user type and use case.
+
+### 📖 Core Documentation
+- **[DOCUMENTATION.md](DOCUMENTATION.md)** - Master documentation index (RECOMMENDED STARTING POINT)
+- **[INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)** - Detailed installation instructions
+- **[QUBS_INSTALL_GUIDE.md](QUBS_INSTALL_GUIDE.md)** - Qubes OS specific installation guide
+- **[LAUNCHER_README.md](LAUNCHER_README.md)** - Smart installer documentation
+
+### 🔧 Technical Guides
 - [docs/LLM_SETUP_GUIDE.md](docs/LLM_SETUP_GUIDE.md) - Local LLM setup, configuration, and usage
 - [docs/DATABASE.md](docs/DATABASE.md) - Database setup guide
 - [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) - Development guide (includes LLM development)
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md) - User guide (includes LLM features)
+- [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) - Complete API reference
+- [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) - Production deployment guide
+
+### 🛡️ Compliance & Ethics
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 - [ETHICS.md](ETHICS.md) - Ethical guidelines and compliance
 - [SECURITY.md](SECURITY.md) - Security practices and recommendations
+- [docs/COMPLIANCE.md](docs/COMPLIANCE.md) - Legal compliance framework
 
 ---
 

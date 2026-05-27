@@ -1,8 +1,10 @@
 # Open-Omniscience Installation Guide
 
 **Version:** 0.03  
-**Last Updated:** 2025-05-21  
+**Last Updated:** 2025-06-18  
 **Platform:** Debian-based Linux (Ubuntu, Debian, etc.), macOS, Windows (WSL2)
+
+> 📚 **Looking for other documentation?** See the [Unified Documentation Index](DOCUMENTATION.md) for all Open-Omniscience documentation.
 
 This guide provides comprehensive instructions for installing Open-Omniscience on your system using direct Python installation.
 

@@ -2,6 +2,8 @@
 
 ## Version 2.0.0 - Compatible with Qubes OS R4.1+ and Debian Trixie (12)
 
+> 📚 **Looking for other documentation?** See the [Unified Documentation Index](DOCUMENTATION.md) for all Open-Omniscience documentation.
+
 ---
 
 ## Table of Contents

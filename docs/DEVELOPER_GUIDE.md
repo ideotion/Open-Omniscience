@@ -1,5 +1,7 @@
 # Open Omniscience Developer Guide
 
+> 📚 **Looking for other documentation?** See the [Unified Documentation Index](../DOCUMENTATION.md) for all Open-Omniscience documentation.
+
 **Version:** 0.03
 **Last Updated:** May 7, 2026
 
