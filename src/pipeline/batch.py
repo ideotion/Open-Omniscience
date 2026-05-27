@@ -159,7 +159,7 @@ class BatchProcessor:
         self._job_counter = 0
         
         # Initialize database connection
-        from database.models import get_session
+        from src.database.models import get_session
         self.session = get_session()
         
         logger.info(f"BatchProcessor initialized with {self.config.max_workers} workers")
@@ -279,7 +279,7 @@ class BatchProcessor:
             Tuple of (success, result_dict).
         """
         try:
-            from ingestor.pipeline import IngestionPipeline
+            from src.ingestor.pipeline import IngestionPipeline
             
             # Create a temporary pipeline instance
             pipeline = IngestionPipeline()

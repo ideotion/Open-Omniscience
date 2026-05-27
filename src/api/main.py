@@ -186,7 +186,7 @@ async def monitor_requests(request: Request, call_next):
 async def startup_event():
     session = get_session()
     try:
-        from database.models import Article, Source
+        from src.database.models import Article, Source
         articles_count = session.query(Article).count()
         sources_count = session.query(Source).count()
         ARTICLES_COUNT.set(articles_count)
