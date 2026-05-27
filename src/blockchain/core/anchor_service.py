@@ -356,6 +356,7 @@ class AnchorService:
         Anchor the current block's Merkle root to configured blockchains.
         
         This is typically called automatically or on a schedule.
+        Also logs Chain of Custody entries for each article in the anchored block.
         
         Returns:
             Dictionary with anchoring results for each provider
@@ -398,6 +399,32 @@ class AnchorService:
                     'block_height': block.block_height,
                     'merkle_root': block.merkle_root
                 }
+                
+                # Log Chain of Custody ANCHOR action for each article in the block
+                try:
+                    from src.blockchain.core.coc import get_coc_logger, CoCAction
+                    coc_logger = get_coc_logger()
+                    for article_id in block.articles:
+                        article_hashes = self.hash_chain.get_article_hashes(article_id)
+                        if article_hashes:
+                            coc_logger.log_action(
+                                article_id=article_id,
+                                article_hash=article_hashes['content_hash'],
+                                action=CoCAction.ANCHOR,
+                                actor_id=f"anchor_service:{provider_name}",
+                                metadata={
+                                    'block_height': block.block_height,
+                                    'provider': provider_name,
+                                    'transaction_hash': transaction_hash,
+                                    'merkle_root': block.merkle_root
+                                }
+                            )
+                except Exception as coc_e:
+                    # Log warning but don't fail anchoring
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Failed to log CoC ANCHOR entries: {coc_e}")
+                    
             except Exception as e:
                 results[provider_name] = {
                     'success': False,

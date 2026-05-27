@@ -315,11 +315,71 @@ class IntegrityMonitor:
                 message=f"Storage check error: {e}"
             ))
         
+        # Check 5: Chain of Custody (CoC) integrity
+        try:
+            coc_ok, coc_errors = self._check_coc_integrity()
+            if coc_ok:
+                results.append(IntegrityCheckResult(
+                    check_name="chain_of_custody",
+                    status=IntegrityStatus.HEALTHY,
+                    message="Chain of Custody integrity verified"
+                ))
+            else:
+                results.append(IntegrityCheckResult(
+                    check_name="chain_of_custody",
+                    status=IntegrityStatus.CRITICAL,
+                    message="Chain of Custody integrity check failed",
+                    details={"errors": coc_errors}
+                ))
+                self._alert("CRITICAL: Chain of Custody integrity check failed!")
+        except Exception as e:
+            results.append(IntegrityCheckResult(
+                check_name="chain_of_custody",
+                status=IntegrityStatus.WARNING,
+                message=f"Chain of Custody check error: {e}"
+            ))
+        
         # Store results
         with self._lock:
             self._check_results = results
         
         return results
+    
+    def _check_coc_integrity(self) -> tuple:
+        """
+        Check Chain of Custody integrity.
+        
+        Returns:
+            Tuple of (is_ok, errors) where:
+            - is_ok: True if all CoC entries are valid
+            - errors: List of error messages (empty if valid)
+        """
+        try:
+            from .coc import get_coc_logger
+            coc_logger = get_coc_logger()
+            
+            # Get all articles with CoC entries
+            articles = coc_logger.get_all_articles()
+            
+            if not articles:
+                # No CoC entries yet - this is OK
+                return True, []
+            
+            # Check all articles
+            all_errors = []
+            for article_id in articles:
+                is_valid, errors = coc_logger.verify_coc(article_id)
+                if not is_valid:
+                    all_errors.extend(errors)
+            
+            if all_errors:
+                return False, all_errors
+            else:
+                return True, []
+                
+        except Exception as e:
+            # If CoC is not initialized or other error, return warning
+            return True, [f"CoC check skipped: {e}"]
     
     def _check_database_integrity(self) -> bool:
         """Check database file integrity."""
@@ -400,6 +460,32 @@ class IntegrityMonitor:
                 audit_log_path = Path(self.hash_chain.audit_logger.log_path)
                 if audit_log_path.exists():
                     shutil.copy2(audit_log_path, backup_dir / audit_log_path.name)
+            
+            # Copy Chain of Custody database if it exists
+            try:
+                from .coc import get_coc_logger
+                coc_logger = get_coc_logger()
+                coc_db_path = Path(coc_logger.db_path)
+                if coc_db_path.exists():
+                    # Checkpoint WAL if in WAL mode
+                    if coc_logger._conn:
+                        try:
+                            coc_logger._conn.execute("PRAGMA wal_checkpoint(FULL)")
+                        except:
+                            pass
+                    # Copy CoC database and WAL files
+                    shutil.copy2(coc_db_path, backup_dir / coc_db_path.name)
+                    
+                    coc_wal_file = Path(str(coc_db_path) + "-wal")
+                    if coc_wal_file.exists():
+                        shutil.copy2(coc_wal_file, backup_dir / coc_wal_file.name)
+                    
+                    coc_shm_file = Path(str(coc_db_path) + "-shm")
+                    if coc_shm_file.exists():
+                        shutil.copy2(coc_shm_file, backup_dir / coc_shm_file.name)
+            except Exception:
+                # CoC not initialized or other error - skip
+                pass
             
             # Copy config if it exists
             config_file = Path("configs/blockchain.yml")

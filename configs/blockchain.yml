@@ -4,10 +4,14 @@
 # The system provides:
 # - Local hash chain (SQLite) for offline per-article verification
 # - Optional public blockchain anchoring (Ethereum, IPFS, Arweave) for decentralized verification
+# - Chain of Custody (CoC) for legally admissible audit trails
 #
 # Per-article verification works via Merkle proofs, allowing individual articles to be
 # verified without storing each article on-chain. Block Merkle roots are anchored to
 # public blockchains for cost-effective decentralized verification.
+#
+# Chain of Custody (CoC) provides tamper-evident, cryptographically signed tracking of
+# all actions performed on articles for legal admissibility.
 
 blockchain:
   # Enable/disable the entire blockchain module
@@ -70,3 +74,43 @@ blockchain:
       wallet_path: "~/.arweave/wallet.json"
       # wallet_key: "..."  # Set via environment variable for security
       arweave_url: "https://arweave.net"
+
+  # Chain of Custody (CoC) Settings
+  # CoC provides legally admissible, tamper-evident tracking of all actions on articles.
+  chain_of_custody:
+    enabled: true
+    
+    # Path to the SQLite database for CoC entries
+    db_path: "data/coc.db"
+    
+    # Digital Signing Settings (Ed25519)
+    # Signing provides non-repudiation (proves who performed each action)
+    signing:
+      enabled: true
+      # Path to PEM-encoded Ed25519 private key
+      # Generate with: openssl genpkey -algorithm ed25519 -out coc_private_key.pem
+      private_key_path: "keys/coc_private_key.pem"
+      # Alternatively, set private_key directly (not recommended for production)
+      # private_key: "..."  # PEM-encoded private key
+    
+    # Timestamp Authority (RFC 3161) Settings
+    # TSA provides legally admissible timestamps for CoC entries
+    tsa:
+      enabled: true
+      # URL of the RFC 3161 Timestamp Authority
+      # Recommended providers: DigiCert, Sectigo, GlobalSign, D-Trust
+      url: "http://timestamp.digicert.com"
+      timeout: 10  # Request timeout in seconds
+      retry_attempts: 3
+    
+    # Offline Mode Settings
+    # If TSA is unavailable, CoC will fall back to local timestamps
+    offline:
+      enabled: true
+      use_local_timestamps: true
+    
+    # Redaction Settings (for GDPR compliance)
+    # Automatically redact sensitive data in exported reports
+    redaction:
+      default_redact_actor_ids: false
+      default_redact_metadata: false

@@ -495,7 +495,8 @@ class OpenOmnisciencePipeline:
         Add ingested data to the blockchain for per-article verification.
         
         Uses the 3 hashes (content, metadata, source) from IngestedData properties
-        and adds them to the local hash chain.
+        and adds them to the local hash chain. Also logs a Chain of Custody entry
+        for legal admissibility.
         
         Args:
             ingested_data: IngestedData object to add to blockchain
@@ -517,6 +518,26 @@ class OpenOmnisciencePipeline:
                 metadata_hash=metadata_hash,
                 source_hash=source_hash
             )
+            
+            # Log Chain of Custody entry for ingestion
+            try:
+                from src.blockchain.core.coc import get_coc_logger, CoCAction
+                coc_logger = get_coc_logger()
+                coc_entry = coc_logger.log_action(
+                    article_id=article_id,
+                    article_hash=content_hash,  # Use content_hash as the article hash
+                    action=CoCAction.INGEST,
+                    actor_id="pipeline",
+                    metadata={
+                        "url": ingested_data.url,
+                        "source_type": ingested_data.source_type,
+                        "timestamp": ingested_data.timestamp,
+                    }
+                )
+                # Store CoC entry ID for reference
+                ingested_data.metadata["coc_entry_id"] = coc_entry.entry_id
+            except Exception as coc_e:
+                self.logger.warning(f"Failed to log CoC entry: {coc_e}")
             
             # Store article ID and hashes in the ingested data for reference
             ingested_data.metadata["blockchain_article_id"] = article_id

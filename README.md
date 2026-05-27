@@ -403,6 +403,101 @@ The Ethereum smart contract (`contracts/OpenOmniscienceAnchor.sol`) provides:
 - **Anchor function**: Store block Merkle roots on-chain
 - **Verification function**: Check if a Merkle root was anchored
 - **Batch anchoring**: Anchor multiple blocks efficiently
+
+---
+
+## 🔐 Chain of Custody (CoC) - Legal-Grade Audit Trail (NEW!)
+
+The **Chain of Custody (CoC)** module provides **tamper-evident, cryptographically signed, and legally admissible** tracking of all actions performed on articles. This ensures that **evidence can be verified in court**, **audited by third parties**, and **trusted by intelligence agencies and journalists**.
+
+### 🎯 Why Chain of Custody?
+
+| **Use Case** | **Why It Matters** |
+|--------------|-------------------|
+| **Legal Proceedings** | Courts require **unbroken chain of custody** to admit digital evidence (e.g., war crimes, corruption). |
+| **Investigative Journalism** | Proves that **leaked documents** were not altered after receipt. |
+| **Intelligence Agencies** | Ensures **data integrity** across classified and unclassified systems. |
+| **Whistleblower Protection** | Provides **non-repudiation** for sources and journalists. |
+| **Disinformation Defense** | Proves **authenticity** of evidence in an era of deepfakes and manipulation. |
+
+### ✨ Features
+
+| Feature | Description | Legal Benefit |
+|---------|-------------|---------------|
+| **Cryptographic Chaining** | Each entry includes the hash of the previous entry | Prevents tampering, deletion, or insertion |
+| **Digital Signatures (Ed25519)** | All entries are signed with a private key | Proves who performed each action |
+| **RFC 3161 Timestamps** | Uses Trusted Timestamp Authority (TSA) for legally binding timestamps | Provides court-admissible proof of when actions occurred |
+| **Offline-First** | Works without internet (fallback to local timestamps) | Enables air-gapped and field operations |
+| **Exportable Reports** | Generate PDF and JSON reports for legal proceedings | Court-admissible evidence format |
+| **Tamper Detection** | Automatically detects modified, deleted, or forged entries | Self-auditing for integrity |
+
+### 🚀 Quick Start
+
+```python
+from src.blockchain.core.coc import initialize_coc_logger, get_coc_logger, CoCAction
+
+# Initialize (recommended for production)
+initialize_coc_logger(
+    db_path="data/coc.db",
+    private_key=open("keys/coc_private_key.pem", "rb").read(),
+    tsa_url="http://timestamp.digicert.com",
+)
+
+# Get the logger
+coc_logger = get_coc_logger()
+
+# Log an action
+entry = coc_logger.log_action(
+    article_id="article_123",
+    article_hash="abc123...",
+    action=CoCAction.INGEST,
+    actor_id="journalist_1",
+    metadata={"source": "leaked_document.pdf"},
+)
+
+# Generate a report
+report = coc_logger.generate_report("article_123")
+
+# Export as PDF (for court)
+report.to_pdf("coc_report.pdf")
+
+# Verify the Chain of Custody
+is_valid, errors = coc_logger.verify_coc("article_123")
+print(f"Valid: {is_valid}")
+```
+
+### 🔌 CoC API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/blockchain/coc/{article_id}` | Get CoC report for an article |
+| GET | `/api/blockchain/coc/{article_id}/verify` | Verify CoC integrity |
+| GET | `/api/blockchain/coc/{article_id}/export/json` | Export CoC report as JSON |
+| GET | `/api/blockchain/coc/{article_id}/entries` | Get all CoC entries for an article |
+| GET | `/api/blockchain/coc/articles` | List all articles with CoC |
+| GET | `/api/blockchain/coc/stats` | Get CoC statistics |
+| POST | `/api/blockchain/coc/{article_id}/log` | Manually log a CoC action |
+
+### 📋 Supported Actions
+
+| Action | Description | When Logged |
+|--------|-------------|-------------|
+| `INGEST` | Article ingested | Automatically in `main_pipeline.py` |
+| `MODIFY` | Article updated | Manually or via API |
+| `ACCESS` | Article accessed | Manually or via API |
+| `DELETE` | Article deleted | Manually or via API |
+| `VERIFY` | Article verified | Manually or via API |
+| `ANCHOR` | Block anchored | Automatically in `anchor_service.py` |
+| `RESTORE` | Article restored | Manually or via API |
+| `EXPORT` | Article exported | Manually or via API |
+| `REDACT` | Data redacted | Manually or via API |
+| `SIGN` | Article signed | Manually or via API |
+
+### 📚 Learn More
+
+- [Chain of Custody Detailed Guide](docs/CHAIN_OF_CUSTODY.md)
+- [Blockchain API Reference](docs/BLOCKCHAIN_API.md#-chain-of-custody-coc-endpoints)
+- [Blockchain Architecture](docs/BLOCKCHAIN_ARCHITECTURE.md#-chain-of-custody-coc-module)
 - **Events**: `AnchorCreated` event emitted for each anchor
 
 ### 🔒 Security & Privacy

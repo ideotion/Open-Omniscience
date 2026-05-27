@@ -42,6 +42,11 @@ from fastapi.responses import JSONResponse
 
 from src.blockchain import get_blockchain_service, BlockchainService
 from src.blockchain.core.anchor_service import VerificationResult
+from src.blockchain.core.coc import (
+    get_coc_logger,
+    CoCReport,
+    CoCAction,
+)
 
 # Create router
 router = APIRouter(prefix="/api/blockchain", tags=["blockchain"])
@@ -442,3 +447,224 @@ async def test_add_article(request: Dict[str, Any]):
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============================================================================
+# Chain of Custody (CoC) Endpoints
+# ============================================================================
+
+@router.get("/coc/{article_id}")
+async def get_coc(
+    article_id: str = Path(..., description="ID of the article"),
+    redact_actor_ids: bool = Query(False, description="Redact actor IDs in the report"),
+    redact_metadata: bool = Query(False, description="Redact metadata in the report"),
+) -> CoCReport:
+    """
+    Get the Chain of Custody report for an article.
+    
+    Returns a complete audit trail of all actions performed on the article,
+    including timestamps, signatures, and cryptographic proofs for legal use.
+    
+    Args:
+        article_id: The unique identifier of the article.
+        redact_actor_ids: If True, redact actor IDs in the report (for privacy).
+        redact_metadata: If True, redact metadata in the report (for privacy).
+        
+    Returns:
+        CoCReport with the full Chain of Custody for the article.
+        
+    Raises:
+        HTTPException: If the article is not found or an error occurs.
+    """
+    try:
+        coc_logger = get_coc_logger()
+        report = coc_logger.generate_report(
+            article_id,
+            redact_actor_ids=redact_actor_ids,
+            redact_metadata=redact_metadata,
+        )
+        return report
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Article not found or error: {e}")
+
+
+@router.get("/coc/{article_id}/verify")
+async def verify_coc(
+    article_id: str = Path(..., description="ID of the article"),
+) -> Dict[str, Any]:
+    """
+    Verify the integrity of the Chain of Custody for an article.
+    
+    Checks:
+    - Hash chain integrity (each entry references the previous)
+    - Digital signatures (if signing is enabled)
+    - TSA timestamps (if TSA is enabled)
+    - Entry hashes (computed vs stored)
+    
+    Args:
+        article_id: The unique identifier of the article.
+        
+    Returns:
+        Dictionary with verification status and any errors.
+        
+    Raises:
+        HTTPException: If verification fails or an error occurs.
+    """
+    try:
+        coc_logger = get_coc_logger()
+        is_valid, errors = coc_logger.verify_coc(article_id)
+        return {
+            "article_id": article_id,
+            "is_valid": is_valid,
+            "errors": errors,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/coc/{article_id}/export/json")
+async def export_coc_json(
+    article_id: str = Path(..., description="ID of the article"),
+    redact_actor_ids: bool = Query(False, description="Redact actor IDs in the report"),
+    redact_metadata: bool = Query(False, description="Redact metadata in the report"),
+) -> JSONResponse:
+    """
+    Export the Chain of Custody report as JSON.
+    
+    Returns a machine-readable JSON representation of the CoC report,
+    suitable for automated processing or storage.
+    
+    Args:
+        article_id: The unique identifier of the article.
+        redact_actor_ids: If True, redact actor IDs in the report.
+        redact_metadata: If True, redact metadata in the report.
+        
+    Returns:
+        JSONResponse with the CoC report in JSON format.
+        
+    Raises:
+        HTTPException: If the article is not found or an error occurs.
+    """
+    try:
+        coc_logger = get_coc_logger()
+        report = coc_logger.generate_report(
+            article_id,
+            redact_actor_ids=redact_actor_ids,
+            redact_metadata=redact_metadata,
+        )
+        return JSONResponse(content=report.to_dict())
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Article not found or error: {e}")
+
+
+@router.get("/coc/{article_id}/entries")
+async def get_coc_entries(
+    article_id: str = Path(..., description="ID of the article"),
+) -> List[Dict[str, Any]]:
+    """
+    Get all Chain of Custody entries for an article.
+    
+    Returns a list of all CoC entries (actions) performed on the article,
+    ordered by timestamp.
+    
+    Args:
+        article_id: The unique identifier of the article.
+        
+    Returns:
+        List of CoC entry dictionaries.
+        
+    Raises:
+        HTTPException: If the article is not found or an error occurs.
+    """
+    try:
+        coc_logger = get_coc_logger()
+        entries = coc_logger.get_coc_for_article(article_id)
+        return [entry.to_dict() for entry in entries]
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Article not found or error: {e}")
+
+
+@router.get("/coc/articles")
+async def get_all_coc_articles() -> List[str]:
+    """
+    Get a list of all article IDs with Chain of Custody entries.
+    
+    Returns:
+        List of article IDs that have CoC entries.
+    """
+    try:
+        coc_logger = get_coc_logger()
+        return coc_logger.get_all_articles()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/coc/stats")
+async def get_coc_stats() -> Dict[str, Any]:
+    """
+    Get statistics about the Chain of Custody database.
+    
+    Returns:
+        Dictionary with CoC statistics including:
+        - total_entries: Total number of CoC entries
+        - total_articles: Total number of articles with CoC entries
+        - tsa_entries: Number of entries with TSA timestamps
+        - signed_entries: Number of entries with digital signatures
+    """
+    try:
+        coc_logger = get_coc_logger()
+        return coc_logger.get_stats()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/coc/{article_id}/log")
+async def log_coc_action(
+    article_id: str = Path(..., description="ID of the article"),
+    action: str = Query(..., description="Action to log (e.g., 'modify', 'access', 'verify')"),
+    article_hash: str = Query(..., description="SHA-256 hash of the article content"),
+    actor_id: Optional[str] = Query(None, description="ID of the actor performing the action"),
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Manually log a Chain of Custody action for an article.
+    
+    This endpoint allows external systems to log custom actions to the CoC.
+    
+    Args:
+        article_id: The unique identifier of the article.
+        action: The action to log (must be a valid CoCAction value).
+        article_hash: SHA-256 hash of the article content at the time of action.
+        actor_id: Optional identifier of the actor performing the action.
+        metadata: Optional additional metadata about the action.
+        
+    Returns:
+        Dictionary with the created CoC entry.
+        
+    Raises:
+        HTTPException: If the action is invalid or an error occurs.
+    """
+    try:
+        # Validate action
+        try:
+            action_enum = CoCAction(action)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid action: {action}. Must be one of: {[a.value for a in CoCAction]}"
+            )
+        
+        coc_logger = get_coc_logger()
+        entry = coc_logger.log_action(
+            article_id=article_id,
+            article_hash=article_hash,
+            action=action_enum,
+            actor_id=actor_id,
+            metadata=metadata,
+        )
+        return {
+            "status": "success",
+            "entry": entry.to_dict(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

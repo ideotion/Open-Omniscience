@@ -710,10 +710,341 @@ The blockchain API follows the same versioning as Open Omniscience. Currently:
 
 ---
 
+## 🔐 Chain of Custody (CoC) Endpoints
+
+The **Chain of Custody (CoC)** endpoints provide **legally admissible audit trails** for all actions performed on articles. These endpoints complement the blockchain verification system by adding **human-readable, tamper-evident logs** with **cryptographic proofs**.
+
+**Base URL**: `http://localhost:8000/api/blockchain/coc`
+
+### 📋 Get Chain of Custody Report
+
+#### Get CoC Report for an Article
+
+```
+GET /api/blockchain/coc/{article_id}
+```
+
+**Description**: Retrieve the **complete Chain of Custody report** for an article, including all actions, timestamps, signatures, and cryptographic proofs.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `redact_actor_ids` | bool | No | `false` | Redact actor IDs in the report (for privacy) |
+| `redact_metadata` | bool | No | `false` | Redact metadata in the report (for privacy) |
+
+**Response**: `200 OK`
+
+```json
+{
+  "report_id": "uuid",
+  "generated_at": "2024-01-01T12:00:00+00:00",
+  "generated_by": "Open-Omniscience CoC Logger",
+  "article": {
+    "id": "article_123",
+    "hash": "abc123...",
+    "metadata": {}
+  },
+  "chain_of_custody": [
+    {
+      "entry_id": "uuid",
+      "article_id": "article_123",
+      "article_hash": "abc123...",
+      "action": "ingest",
+      "timestamp": "2024-01-01T10:00:00+00:00",
+      "tsa_timestamp": "2024-01-01T10:00:01+00:00",
+      "actor_id": "journalist_1",
+      "entry_hash": "def456...",
+      "previous_entry_hash": null,
+      "metadata": {"source": "leaked_document.pdf"}
+    },
+    {
+      "entry_id": "uuid",
+      "article_id": "article_123",
+      "article_hash": "abc123...",
+      "action": "verify",
+      "timestamp": "2024-01-01T11:00:00+00:00",
+      "tsa_timestamp": "2024-01-01T11:00:01+00:00",
+      "actor_id": "editor_1",
+      "entry_hash": "ghi789...",
+      "previous_entry_hash": "def456...",
+      "metadata": {}
+    }
+  ],
+  "verification": {
+    "is_verified": true,
+    "errors": []
+  }
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:8000/api/blockchain/coc/article_123?redact_actor_ids=true"
+```
+
+---
+
+### ✅ Verify Chain of Custody
+
+#### Verify CoC Integrity
+
+```
+GET /api/blockchain/coc/{article_id}/verify
+```
+
+**Description**: Verify the **integrity of the Chain of Custody** for an article. Checks hash chain, signatures, TSA tokens, and entry hashes.
+
+**Response**: `200 OK`
+
+```json
+{
+  "article_id": "article_123",
+  "is_valid": true,
+  "errors": []
+}
+```
+
+**Error Response**: `200 OK` (but `is_valid: false`)
+
+```json
+{
+  "article_id": "article_123",
+  "is_valid": false,
+  "errors": [
+    "Entry uuid: Entry hash mismatch",
+    "Entry uuid: Previous hash mismatch"
+  ]
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:8000/api/blockchain/coc/article_123/verify"
+```
+
+---
+
+### 📥 Export CoC Report
+
+#### Export as JSON
+
+```
+GET /api/blockchain/coc/{article_id}/export/json
+```
+
+**Description**: Export the **CoC report as JSON** (machine-readable format for automated processing).
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `redact_actor_ids` | bool | No | `false` | Redact actor IDs in the report |
+| `redact_metadata` | bool | No | `false` | Redact metadata in the report |
+
+**Response**: `200 OK` (JSON file download)
+
+**Example:**
+```bash
+curl "http://localhost:8000/api/blockchain/coc/article_123/export/json?redact_actor_ids=true" \
+  -o coc_report.json
+```
+
+---
+
+### 📋 Get CoC Entries
+
+#### Get All Entries for an Article
+
+```
+GET /api/blockchain/coc/{article_id}/entries
+```
+
+**Description**: Retrieve **all Chain of Custody entries** for an article, ordered by timestamp.
+
+**Response**: `200 OK`
+
+```json
+[
+  {
+    "entry_id": "uuid",
+    "article_id": "article_123",
+    "article_hash": "abc123...",
+    "action": "ingest",
+    "timestamp": "2024-01-01T10:00:00+00:00",
+    "tsa_timestamp": "2024-01-01T10:00:01+00:00",
+    "actor_id": "journalist_1",
+    "entry_hash": "def456...",
+    "previous_entry_hash": null,
+    "metadata": {"source": "leaked_document.pdf"}
+  },
+  {
+    "entry_id": "uuid",
+    "article_id": "article_123",
+    "article_hash": "abc123...",
+    "action": "verify",
+    "timestamp": "2024-01-01T11:00:00+00:00",
+    "tsa_timestamp": "2024-01-01T11:00:01+00:00",
+    "actor_id": "editor_1",
+    "entry_hash": "ghi789...",
+    "previous_entry_hash": "def456...",
+    "metadata": {}
+  }
+]
+```
+
+**Example:**
+```bash
+curl "http://localhost:8000/api/blockchain/coc/article_123/entries"
+```
+
+---
+
+### 📊 List All Articles with CoC
+
+#### Get All Article IDs
+
+```
+GET /api/blockchain/coc/articles
+```
+
+**Description**: Retrieve a **list of all article IDs** that have Chain of Custody entries.
+
+**Response**: `200 OK`
+
+```json
+[
+  "article_1",
+  "article_2",
+  "article_123"
+]
+```
+
+**Example:**
+```bash
+curl "http://localhost:8000/api/blockchain/coc/articles"
+```
+
+---
+
+### 📈 Get CoC Statistics
+
+#### Get Database Statistics
+
+```
+GET /api/blockchain/coc/stats
+```
+
+**Description**: Retrieve **statistics** about the Chain of Custody database.
+
+**Response**: `200 OK`
+
+```json
+{
+  "total_entries": 150,
+  "total_articles": 50,
+  "tsa_entries": 140,
+  "signed_entries": 150,
+  "db_path": "data/coc.db",
+  "enable_signing": true,
+  "enable_tsa": true
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:8000/api/blockchain/coc/stats"
+```
+
+---
+
+### ✍️ Log a CoC Action
+
+#### Manually Log an Action
+
+```
+POST /api/blockchain/coc/{article_id}/log
+```
+
+**Description**: **Manually log a Chain of Custody action** for an article. Useful for custom workflows or external systems.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | str | Yes | Action to log (e.g., `modify`, `access`, `verify`) |
+| `article_hash` | str | Yes | SHA-256 hash of the article content |
+| `actor_id` | str | No | ID of the actor performing the action |
+
+**Request Body (JSON):**
+```json
+{
+  "metadata": {
+    "key": "value",
+    "reason": "corrected typo"
+  }
+}
+```
+
+**Response**: `200 OK`
+
+```json
+{
+  "status": "success",
+  "entry": {
+    "entry_id": "uuid",
+    "article_id": "article_123",
+    "article_hash": "abc123...",
+    "action": "modify",
+    "timestamp": "2024-01-01T12:00:00+00:00",
+    "entry_hash": "def456...",
+    "actor_id": "user_1",
+    "metadata": {"reason": "corrected typo"}
+  }
+}
+```
+
+**Error Response**: `400 Bad Request`
+
+```json
+{
+  "detail": "Invalid action: invalid_action. Must be one of: ['ingest', 'modify', 'access', 'delete', 'verify', 'anchor', 'restore', 'export', 'redact', 'sign']"
+}
+```
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/api/blockchain/coc/article_123/log?action=modify&article_hash=abc123" \
+  -H "Content-Type: application/json" \
+  -d '{"metadata": {"reason": "corrected typo"}}'
+```
+
+---
+
+## 📊 CoC Action Types
+
+The following **action types** are supported (via `CoCAction` enum):
+
+| Action | Description | When to Use |
+|--------|-------------|-------------|
+| `ingest` | Article ingested into the system | Automatically logged by `main_pipeline.py` |
+| `modify` | Article metadata or content updated | Log when editing an article |
+| `access` | Article accessed (read/exported) | Log when viewing or exporting |
+| `delete` | Article deleted (secure wipe) | Log when removing an article |
+| `verify` | Article verified (hash check) | Log when manually verifying |
+| `anchor` | Article anchored to blockchain | Automatically logged by `anchor_service.py` |
+| `restore` | Article restored from backup | Log when recovering data |
+| `export` | Article exported (e.g., to PDF/JSON) | Log when exporting |
+| `redact` | Sensitive data redacted from article | Log when redacting PII |
+| `sign` | Article signed (e.g., by journalist/editor) | Log when adding a signature |
+
+---
+
 ## 📚 See Also
 
 - [Blockchain Architecture Documentation](BLOCKCHAIN_ARCHITECTURE.md)
 - [Blockchain Setup Guide](BLOCKCHAIN_SETUP.md)
+- [Chain of Custody Detailed Guide](CHAIN_OF_CUSTODY.md)
 - [Main API Documentation](../API_DOCUMENTATION.md)
 
 ---

@@ -56,11 +56,37 @@ from .integrity_monitor import (
     IntegrityCheckResult,
     BackupInfo,
 )
+from .coc import (
+    CoCAction,
+    CoCEntry,
+    CoCReport,
+    CoCError,
+    CoCVerificationError,
+    CoCTimestampError,
+    CoCSignatureError,
+    ChainOfCustodyLogger,
+    get_coc_logger,
+    initialize_coc_logger,
+    reset_coc_logger,
+)
+from .tsa import (
+    TSAError,
+    TSARequestError,
+    TSAVerificationError,
+    RFC3161Client,
+    SimpleHTTPTSAClient,
+    TSAClient,
+)
 
 __all__ = [
+    # Hash Chain
     'LocalBlock',
     'LocalHashChain',
     'EnhancedLocalHashChain',
+    'create_hash_chain',
+    'create_enhanced_hash_chain',
+    
+    # Crypto Utils
     'HashAlgorithm',
     'HashResult',
     'MultiHash',
@@ -68,15 +94,36 @@ __all__ = [
     'AuditLogger',
     'IntegrityError',
     'WORMError',
+    'compute_hash',
+    'compute_multi_hash',
+    'compute_article_multi_hash',
+    'get_audit_logger',
+    'reset_audit_logger',
+    
+    # Integrity Monitor
     'IntegrityMonitor',
     'IntegrityStatus',
     'IntegrityCheckResult',
     'BackupInfo',
-    'compute_hash',
-    'compute_multi_hash',
-    'compute_article_multi_hash',
-    'create_hash_chain',
-    'create_enhanced_hash_chain',
-    'get_audit_logger',
-    'reset_audit_logger',
+    
+    # Chain of Custody
+    'CoCAction',
+    'CoCEntry',
+    'CoCReport',
+    'CoCError',
+    'CoCVerificationError',
+    'CoCTimestampError',
+    'CoCSignatureError',
+    'ChainOfCustodyLogger',
+    'get_coc_logger',
+    'initialize_coc_logger',
+    'reset_coc_logger',
+    
+    # Timestamp Authority
+    'TSAError',
+    'TSARequestError',
+    'TSAVerificationError',
+    'RFC3161Client',
+    'SimpleHTTPTSAClient',
+    'TSAClient',
 ]
