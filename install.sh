@@ -1,8 +1,8 @@
 #!/bin/bash
-# Open-Omniscience - Simple Debian Installer
+# Open-Omniscience - Debian 13 Installer
 # =========================================
 # This script provides a simple, clean installation of Open-Omniscience
-# for Debian-based systems ONLY.
+# for Debian 13 (Trixie) ONLY.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
@@ -20,6 +20,24 @@ set -euo pipefail
 REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
 REPO_BRANCH="0.03"
 INSTALL_DIR="${HOME}/open-omniscience"
+
+# Open-Omniscience Eye Logo
+LOGO="
+  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+ █                             █
+█   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄   █
+█  █                     █  █
+█  █   ▄▄▄▄▄▄▄▄▄▄▄▄▄   █  █
+█  █  █               █  █  █
+█  █  █   ▄▄▄▄▄▄▄   █  █  █
+█  █  █               █  █  █
+█  █   ▄▄▄▄▄▄▄▄▄▄▄▄▄   █  █
+█  █                     █  █
+█   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   █
+█                             █
+ █▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+"
 
 # Colors for output
 RED='\033[0;31m'
@@ -50,19 +68,62 @@ log_error() {
 }
 
 # ============================================================================
+# Cleanup Functions
+# ============================================================================
+
+# Remove previous installation
+cleanup_previous() {
+    log_info "Checking for previous installations..."
+    
+    # Remove old installation directory
+    if [ -d "$INSTALL_DIR" ]; then
+        log_info "Found previous installation at $INSTALL_DIR"
+        log_info "Removing old installation..."
+        rm -rf "$INSTALL_DIR"
+        log_success "Previous installation removed"
+    fi
+    
+    # Remove old desktop launcher
+    if [ -f "$HOME/.local/share/applications/open-omniscience.desktop" ]; then
+        log_info "Removing old desktop launcher..."
+        rm -f "$HOME/.local/share/applications/open-omniscience.desktop"
+    fi
+    
+    # Remove old symlinks
+    if [ -f "/usr/local/bin/open-omniscience" ]; then
+        log_info "Removing old symlink..."
+        run_with_sudo rm -f "/usr/local/bin/open-omniscience"
+    fi
+    
+    # Remove old virtual environment if it exists separately
+    if [ -d "$INSTALL_DIR/venv" ]; then
+        log_info "Removing old virtual environment..."
+        rm -rf "$INSTALL_DIR/venv"
+    fi
+}
+
+# ============================================================================
 # Environment Detection
 # ============================================================================
 
-# Check if running on Debian
+# Check if running on Debian 13
 check_debian() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         if [[ "$ID" != "debian" ]]; then
-            log_error "This installer is for Debian-based systems only."
+            log_error "This installer is for Debian 13 only."
+        fi
+        if [[ "$VERSION_ID" != "13" && "$VERSION_ID" != *"13"* ]]; then
+            log_warning "This installer is designed for Debian 13 (Trixie). You are running $VERSION_ID."
+            read -p "Continue anyway? [y/N]: " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                log_error "Installation aborted. Please use Debian 13."
+            fi
         fi
         log_info "Detected Debian $VERSION_ID"
     else
-        log_error "Cannot determine OS. This installer is for Debian-based systems only."
+        log_error "Cannot determine OS. This installer is for Debian 13 only."
     fi
 }
 
@@ -139,10 +200,17 @@ setup_python() {
         if ! python3 -m venv venv 2>/dev/null; then
             log_error "Failed to create virtual environment. Ensure python3-venv is installed."
         fi
+    else
+        log_info "Virtual environment already exists, updating..."
+        # Update existing virtual environment
+        source venv/bin/activate
+        pip install --upgrade pip
+        deactivate
     fi
     
     # Activate and install dependencies
-    source venv/bin/activate
+    log_info "Activating virtual environment..."
+    source "$INSTALL_DIR/venv/bin/activate"
     
     log_info "Upgrading pip..."
     pip install --upgrade pip
@@ -175,7 +243,7 @@ Name=Open-Omniscience
 GenericName=Global Intelligence Platform
 Comment=Ethical Global Intelligence Platform for Investigative Journalism
 Exec=bash -c "cd $INSTALL_DIR && source venv/bin/activate && uvicorn api.main:app --host 0.0.0.0 --port 8000"
-Icon=utilities-terminal
+Icon=$INSTALL_DIR/package/deb/open-omniscience.svg
 Terminal=true
 Categories=Utility;News;Information;
 Path=$INSTALL_DIR
@@ -201,16 +269,14 @@ EOF
 
 main() {
     echo ""
-    echo "  ██████╗  ██████╗ ███╗   ██╗██████╗ ██╗███╗   ██╗████████╗"
-    echo "  ██╔══██╗██╔═══██╗████╗  ██║██╔══██╗██║████╗  ██║╚══██╔══╝"
-    echo "  ██║  ██║██║   ██║██╔██╗ ██║██║   ██║██╔██╗ ██║   ██║   "
-    echo "  ██║  ██║██║   ██║██║╚██╗██║██║   ██║██║╚██╗██║   ██║   "
-    echo "  ██████╔╝╚██████╔╝██║ ╚████║╚██████╔╝██║ ╚████║   ██║   "
-    echo "  ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   "
+    echo -e "$LOGO"
     echo ""
-    echo "  Open-Omniscience - Debian Installer"
+    echo "  Open-Omniscience - Debian 13 Installer"
     echo "  =================================="
     echo ""
+    
+    # Cleanup previous installations
+    cleanup_previous
     
     # Check environment
     check_debian
@@ -243,6 +309,8 @@ main() {
     echo "  For production deployment:"
     echo "    pip install gunicorn"
     echo "    gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 api.main:app"
+    echo ""
+    log_warning "If the virtual environment doesn't activate properly, you may need to restart your terminal or system."
     echo ""
 }
 
