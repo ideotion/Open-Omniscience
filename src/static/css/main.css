@@ -1,9 +1,160 @@
+   FONT FACE DECLARATIONS
+   Using only open-source fonts
+   ============================================ */
+
+/* Inter font - Primary font family */
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 300;
+    font-display: swap;
+    src: url('/fonts/inter/Inter-Light.woff2') format('woff2'),
+         url('/fonts/inter/Inter-Light.woff') format('woff');
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/fonts/inter/Inter-Regular.woff2') format('woff2'),
+         url('/fonts/inter/Inter-Regular.woff') format('woff');
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('/fonts/inter/Inter-Medium.woff2') format('woff2'),
+         url('/fonts/inter/Inter-Medium.woff') format('woff');
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('/fonts/inter/Inter-SemiBold.woff2') format('woff2'),
+         url('/fonts/inter/Inter-SemiBold.woff') format('woff');
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('/fonts/inter/Inter-Bold.woff2') format('woff2'),
+         url('/fonts/inter/Inter-Bold.woff') format('woff');
+}
+
+/* IBM Plex Mono - Monospace font for code */
+@font-face {
+    font-family: 'IBM Plex Mono';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/fonts/ibm-plex-mono/IBMPlexMono-Regular.woff2') format('woff2'),
+         url('/fonts/ibm-plex-mono/IBMPlexMono-Regular.woff') format('woff');
+}
+
+@font-face {
+    font-family: 'IBM Plex Mono';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('/fonts/ibm-plex-mono/IBMPlexMono-Medium.woff2') format('woff2'),
+         url('/fonts/ibm-plex-mono/IBMPlexMono-Medium.woff') format('woff');
+}
+=======
 /* Open Omniscience - Main CSS */
 /* Imports design system variables */
 
 @import url('variables.css');
 
 /* ============================================
+   FONT FACE DECLARATIONS
+   Using CDN fonts as primary, with local fallback
+   ============================================ */
+
+/* Import Google Fonts - Inter (primary font family) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Import Google Fonts - IBM Plex Mono (monospace font) */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* Local font fallback - will be used if CDN fails or for offline mode */
+/* Inter font - Primary font family */
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 300;
+    font-display: swap;
+    src: local('Inter Light'),
+         url('/fonts/inter/Inter-Light.woff2') format('woff2'),
+         url('/fonts/inter/Inter-Light.woff') format('woff');
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: local('Inter Regular'),
+         url('/fonts/inter/Inter-Regular.woff2') format('woff2'),
+         url('/fonts/inter/Inter-Regular.woff') format('woff');
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: local('Inter Medium'),
+         url('/fonts/inter/Inter-Medium.woff2') format('woff2'),
+         url('/fonts/inter/Inter-Medium.woff') format('woff');
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: local('Inter SemiBold'),
+         url('/fonts/inter/Inter-SemiBold.woff2') format('woff2'),
+         url('/fonts/inter/Inter-SemiBold.woff') format('woff');
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: local('Inter Bold'),
+         url('/fonts/inter/Inter-Bold.woff2') format('woff2'),
+         url('/fonts/inter/Inter-Bold.woff') format('woff');
+}
+
+/* IBM Plex Mono - Monospace font for code */
+@font-face {
+    font-family: 'IBM Plex Mono';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: local('IBM Plex Mono Regular'),
+         url('/fonts/ibm-plex-mono/IBMPlexMono-Regular.woff2') format('woff2'),
+         url('/fonts/ibm-plex-mono/IBMPlexMono-Regular.woff') format('woff');
+}
+
+@font-face {
+    font-family: 'IBM Plex Mono';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: local('IBM Plex Mono Medium'),
+         url('/fonts/ibm-plex-mono/IBMPlexMono-Medium.woff2') format('woff2'),
+         url('/fonts/ibm-plex-mono/IBMPlexMono-Medium.woff') format('woff');
+}============================================
    FONT FACE DECLARATIONS
    Using only open-source fonts
    ============================================ */

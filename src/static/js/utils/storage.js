@@ -425,3 +425,6 @@ const SessionStorageUtils = {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { StorageUtils, SessionStorageUtils };
 }
+
+// ES6 Module exports
+export { StorageUtils, SessionStorageUtils };

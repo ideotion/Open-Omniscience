@@ -1097,3 +1097,6 @@ const DOMUtils = {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = DOMUtils;
 }
+
+// ES6 Module exports
+export { DOMUtils };

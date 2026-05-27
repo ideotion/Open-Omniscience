@@ -3,887 +3,891 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Source Manager - Open Omniscience">
+    <meta name="theme-color" content="#1976d2">
+    
     <title>Source Manager - Open Omniscience</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="source-manager.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.min.js"></script>
+    
+    <!-- Preload critical resources -->
+    <link rel="preload" href="css/variables.css" as="style">
+    <link rel="preload" href="css/main.css" as="style">
+    <link rel="preload" href="css/layouts/source-manager.css" as="style">
+    
+    <!-- Load CSS -->
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/utilities.css">
+    <link rel="stylesheet" href="css/components/buttons.css">
+    <link rel="stylesheet" href="css/components/forms.css">
+    <link rel="stylesheet" href="css/components/tables.css">
+    <link rel="stylesheet" href="css/components/modals.css">
+    <link rel="stylesheet" href="css/components/notifications.css">
+    <link rel="stylesheet" href="css/layouts/main.css">
+    <link rel="stylesheet" href="css/layouts/source-manager.css">
+    
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" 
+          integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" 
+          crossorigin="anonymous" referrerpolicy="no-referrer" />
+    
+    <!-- Recharts for visualization -->
+    <script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.min.js" defer></script>
+    
+    <!-- Google Fonts fallback -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div class="header-content">
-                <h1><i class="fas fa-cogs"></i> Source Manager</h1>
-                <div class="header-actions">
-                    <a href="llm.html" class="icon-button" title="Local LLM">
-                        <i class="fas fa-brain"></i>
-                    </a>
-                    <button id="backButton" class="icon-button" title="Back to Main Dashboard">
-                        <i class="fas fa-arrow-left"></i>
-                    </button>
-                    <button id="refreshButton" class="icon-button" title="Refresh Data">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
-                    <button id="settingsButton" class="icon-button" title="Settings">
-                        <i class="fas fa-cog"></i>
-                    </button>
-                    <button id="themeToggle" class="icon-button" title="Toggle Theme">
-                        <i class="fas fa-moon"></i>
-                    </button>
-                </div>
-            </div>
-            <p class="subtitle">Comprehensive Source Management Dashboard for Open Omniscience</p>
-        </header>
-
-        <!-- Main Navigation Tabs -->
-        <nav class="tabs-nav">
-            <button class="tab-button active" data-tab="sources">
-                <i class="fas fa-newspaper"></i> Sources
-            </button>
-            <button class="tab-button" data-tab="groups">
-                <i class="fas fa-folder"></i> Groups
-            </button>
-            <button class="tab-button" data-tab="discover">
-                <i class="fas fa-search"></i> Search & Discover
-            </button>
-            <button class="tab-button" data-tab="statistics">
-                <i class="fas fa-chart-bar"></i> Statistics
-            </button>
-        </nav>
-
-        <!-- Tab Content -->
-        <div class="tab-content">
-            <!-- Sources Tab -->
-            <div id="sources-tab" class="tab-pane active">
-                <div class="tab-header">
-                    <h2><i class="fas fa-newspaper"></i> Source Management</h2>
-                    <div class="tab-actions">
-                        <button id="addSourceBtn" class="primary-btn">
-                            <i class="fas fa-plus"></i> Add Source
-                        </button>
-                        <button id="batchActionsBtn" class="secondary-btn">
-                            <i class="fas fa-tasks"></i> Batch Actions
-                        </button>
-                        <button id="exportSourcesBtn" class="export-btn">
-                            <i class="fas fa-file-export"></i> Export
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Filters -->
-                <div class="filters-panel">
-                    <div class="filter-group">
-                        <label for="sourceSearch"><i class="fas fa-search"></i> Search:</label>
-                        <input type="text" id="sourceSearch" placeholder="Search by name, domain, or tags...">
-                    </div>
-                    <div class="filter-group">
-                        <label for="sourceStatusFilter"><i class="fas fa-toggle-on"></i> Status:</label>
-                        <select id="sourceStatusFilter">
-                            <option value="">All Statuses</option>
-                            <option value="enabled">Enabled</option>
-                            <option value="disabled">Disabled</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="sourcePriorityFilter"><i class="fas fa-sort-amount-up"></i> Priority:</label>
-                        <select id="sourcePriorityFilter">
-                            <option value="">All Priorities</option>
-                            <option value="1">High (1)</option>
-                            <option value="2">Medium (2)</option>
-                            <option value="3">Low (3)</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="sourceGroupFilter"><i class="fas fa-folder"></i> Group:</label>
-                        <select id="sourceGroupFilter">
-                            <option value="">All Groups</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="sourceTagFilter"><i class="fas fa-tags"></i> Tags:</label>
-                        <select id="sourceTagFilter" multiple>
-                            <option value="">All Tags</option>
-                        </select>
-                    </div>
-                    <button id="clearSourceFilters" class="secondary-btn">
-                        <i class="fas fa-times"></i> Clear
-                    </button>
-                </div>
-
-                <!-- Sources Table -->
-                <div class="table-container">
-                    <table id="sourcesTable" class="data-table">
-                        <thead>
-                            <tr>
-                                <th><input type="checkbox" id="selectAllSources"></th>
-                                <th>Name</th>
-                                <th>Domain</th>
-                                <th>RSS URL</th>
-                                <th>Status</th>
-                                <th>Priority</th>
-                                <th>Rate Limit</th>
-                                <th>Tags</th>
-                                <th>Groups</th>
-                                <th>Articles</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="sourcesTableBody">
-                            <!-- Sources will be loaded dynamically -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Pagination -->
-                <div class="pagination-controls">
-                    <button type="button" id="prevPageSources" class="pagination-btn" disabled>
-                        <i class="fas fa-chevron-left"></i> Previous
-                    </button>
-                    <span id="pageInfoSources">Page 1 of 1</span>
-                    <button type="button" id="nextPageSources" class="pagination-btn" disabled>
-                        Next <i class="fas fa-chevron-right"></i>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Groups Tab -->
-            <div id="groups-tab" class="tab-pane">
-                <div class="tab-header">
-                    <h2><i class="fas fa-folder"></i> Group Management</h2>
-                    <div class="tab-actions">
-                        <button id="addGroupBtn" class="primary-btn">
-                            <i class="fas fa-plus"></i> Add Group
-                        </button>
-                        <button id="refreshGroupsBtn" class="secondary-btn">
-                            <i class="fas fa-sync-alt"></i> Refresh Tag-Based Groups
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Groups Table -->
-                <div class="table-container">
-                    <table id="groupsTable" class="data-table">
-                        <thead>
-                            <tr>
-                                <th><input type="checkbox" id="selectAllGroups"></th>
-                                <th>Name</th>
-                                <th>Description</th>
-                                <th>Type</th>
-                                <th>Sources</th>
-                                <th>Priority</th>
-                                <th>Rate Limit</th>
-                                <th>Status</th>
-                                <th>Tag Pattern</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="groupsTableBody">
-                            <!-- Groups will be loaded dynamically -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Group Detail Panel (hidden by default) -->
-                <div id="groupDetailPanel" class="detail-panel" style="display: none;">
-                    <div class="panel-header">
-                        <h3><i class="fas fa-folder-open"></i> Group Details</h3>
-                        <button id="closeGroupDetail" class="icon-button">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </div>
-                    <div class="panel-content">
-                        <div class="detail-section">
-                            <h4>Basic Information</h4>
-                            <div class="detail-grid">
-                                <div class="detail-item">
-                                    <label>Name:</label>
-                                    <span id="groupDetailName"></span>
-                                </div>
-                                <div class="detail-item">
-                                    <label>Description:</label>
-                                    <span id="groupDetailDescription"></span>
-                                </div>
-                                <div class="detail-item">
-                                    <label>Color:</label>
-                                    <span id="groupDetailColor" style="display: inline-block; width: 20px; height: 20px; border-radius: 3px;"></span>
-                                </div>
-                                <div class="detail-item">
-                                    <label>Type:</label>
-                                    <span id="groupDetailType"></span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="detail-section">
-                            <h4>Settings</h4>
-                            <div class="detail-grid">
-                                <div class="detail-item">
-                                    <label>Priority:</label>
-                                    <span id="groupDetailPriority"></span>
-                                </div>
-                                <div class="detail-item">
-                                    <label>Rate Limit (ms):</label>
-                                    <span id="groupDetailRateLimit"></span>
-                                </div>
-                                <div class="detail-item">
-                                    <label>Enabled:</label>
-                                    <span id="groupDetailEnabled"></span>
-                                </div>
-                                <div class="detail-item">
-                                    <label>Tag Pattern:</label>
-                                    <span id="groupDetailTagPattern"></span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="detail-section">
-                            <h4>Sources in Group</h4>
-                            <div class="table-container">
-                                <table id="groupSourcesTable" class="data-table compact">
-                                    <thead>
-                                        <tr>
-                                            <th><input type="checkbox" id="selectAllGroupSources"></th>
-                                            <th>Name</th>
-                                            <th>Domain</th>
-                                            <th>Status</th>
-                                            <th>Priority</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="groupSourcesTableBody">
-                                        <!-- Sources will be loaded dynamically -->
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="panel-actions">
-                                <button id="addSourcesToGroupBtn" class="primary-btn">
-                                    <i class="fas fa-plus"></i> Add Sources
-                                </button>
-                                <button id="removeSelectedFromGroupBtn" class="danger-btn">
-                                    <i class="fas fa-minus"></i> Remove Selected
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Search & Discover Tab -->
-            <div id="discover-tab" class="tab-pane">
-                <div class="tab-header">
-                    <h2><i class="fas fa-search"></i> Source Discovery</h2>
-                    <div class="tab-actions">
-                        <button id="discoverRssBtn" class="primary-btn">
-                            <i class="fas fa-rss"></i> Find Missing RSS Feeds
-                        </button>
-                    </div>
-                </div>
-
-                <div class="discovery-panel">
-                    <!-- Topic Search -->
-                    <div class="discovery-section">
-                        <h3><i class="fas fa-globe"></i> Discover Sources by Topic</h3>
-                        <div class="discovery-form">
-                            <div class="form-group">
-                                <label for="discoveryTopic"><i class="fas fa-tag"></i> Topic:</label>
-                                <input type="text" id="discoveryTopic" placeholder="e.g., technology news, financial markets">
-                            </div>
-                            <div class="form-group">
-                                <label for="discoveryMaxSources"><i class="fas fa-list"></i> Max Sources:</label>
-                                <input type="number" id="discoveryMaxSources" min="1" max="50" value="20">
-                            </div>
-                            <div class="form-group">
-                                <label for="discoveryRegion"><i class="fas fa-globe-americas"></i> Region:</label>
-                                <select id="discoveryRegion">
-                                    <option value="wt-wt">Worldwide</option>
-                                    <option value="us-en">United States</option>
-                                    <option value="gb-en">United Kingdom</option>
-                                    <option value="ca-en">Canada</option>
-                                    <option value="au-en">Australia</option>
-                                    <option value="de-de">Germany</option>
-                                    <option value="fr-fr">France</option>
-                                    <option value="es-es">Spain</option>
-                                    <option value="it-it">Italy</option>
-                                    <option value="jp-ja">Japan</option>
-                                    <option value="cn-zh">China</option>
-                                    <option value="ru-ru">Russia</option>
-                                </select>
-                            </div>
-                            <button id="discoverTopicBtn" class="primary-btn">
-                                <i class="fas fa-search"></i> Discover Sources
-                            </button>
-                        </div>
-                        
-                        <div id="discoveryResults" class="discovery-results" style="display: none;">
-                            <h4>Discovered Sources:</h4>
-                            <div class="results-info" id="discoveryResultsInfo"></div>
-                            <div class="table-container">
-                                <table id="discoveredSourcesTable" class="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th><input type="checkbox" id="selectAllDiscovered"></th>
-                                            <th>Name</th>
-                                            <th>Domain</th>
-                                            <th>URL</th>
-                                            <th>RSS Feeds</th>
-                                            <th>Relevance</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="discoveredSourcesTableBody">
-                                        <!-- Results will be loaded dynamically -->
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="panel-actions">
-                                <button id="addDiscoveredBtn" class="primary-btn">
-                                    <i class="fas fa-plus"></i> Add Selected to Database
-                                </button>
-                                <button id="addAllDiscoveredBtn" class="primary-btn">
-                                    <i class="fas fa-plus-circle"></i> Add All to Database
-                                </button>
-                                <select id="discoveredGroupSelect">
-                                    <option value="">-- Add to Group --</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- RSS Discovery -->
-                    <div class="discovery-section">
-                        <h3><i class="fas fa-rss"></i> RSS Feed Discovery</h3>
-                        <div class="discovery-form">
-                            <div class="form-group">
-                                <label for="rssDiscoveryScope"><i class="fas fa-filter"></i> Scope:</label>
-                                <select id="rssDiscoveryScope">
-                                    <option value="all">All Sources Without RSS</option>
-                                    <option value="selected">Selected Sources Only</option>
-                                </select>
-                            </div>
-                            <button id="startRssDiscoveryBtn" class="primary-btn">
-                                <i class="fas fa-search"></i> Discover RSS Feeds
-                            </button>
-                        </div>
-                        
-                        <div id="rssDiscoveryResults" class="discovery-results" style="display: none;">
-                            <h4>RSS Discovery Results:</h4>
-                            <div class="results-info" id="rssDiscoveryResultsInfo"></div>
-                            <div class="table-container">
-                                <table id="rssDiscoveryTable" class="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Source Name</th>
-                                            <th>Domain</th>
-                                            <th>Discovered RSS URL</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="rssDiscoveryTableBody">
-                                        <!-- Results will be loaded dynamically -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Web Search -->
-                    <div class="discovery-section">
-                        <h3><i class="fas fa-search"></i> Web Search for Sources</h3>
-                        <div class="discovery-form">
-                            <div class="form-group">
-                                <label for="webSearchQuery"><i class="fas fa-search"></i> Search Query:</label>
-                                <input type="text" id="webSearchQuery" placeholder="e.g., news site:bbc.com OR site:reuters.com">
-                            </div>
-                            <div class="form-group">
-                                <label for="webSearchMaxResults"><i class="fas fa-list"></i> Max Results:</label>
-                                <input type="number" id="webSearchMaxResults" min="1" max="50" value="10">
-                            </div>
-                            <button id="webSearchBtn" class="primary-btn">
-                                <i class="fas fa-search"></i> Search Web
-                            </button>
-                        </div>
-                        
-                        <div id="webSearchResults" class="discovery-results" style="display: none;">
-                            <h4>Web Search Results:</h4>
-                            <div class="results-info" id="webSearchResultsInfo"></div>
-                            <div class="table-container">
-                                <table id="webSearchTable" class="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Title</th>
-                                            <th>URL</th>
-                                            <th>Domain</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="webSearchTableBody">
-                                        <!-- Results will be loaded dynamically -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Statistics Tab -->
-            <div id="statistics-tab" class="tab-pane">
-                <div class="tab-header">
-                    <h2><i class="fas fa-chart-bar"></i> Source Statistics</h2>
-                    <div class="tab-actions">
-                        <button id="refreshStatsBtn" class="secondary-btn">
-                            <i class="fas fa-sync-alt"></i> Refresh
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Summary Cards -->
-                <div class="stats-cards">
-                    <div class="stat-card">
-                        <div class="stat-icon total-sources">
-                            <i class="fas fa-newspaper"></i>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="totalSourcesStat">0</span>
-                            <span class="stat-label">Total Sources</span>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon enabled-sources">
-                            <i class="fas fa-toggle-on"></i>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="enabledSourcesStat">0</span>
-                            <span class="stat-label">Enabled</span>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon disabled-sources">
-                            <i class="fas fa-toggle-off"></i>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="disabledSourcesStat">0</span>
-                            <span class="stat-label">Disabled</span>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon with-rss">
-                            <i class="fas fa-rss"></i>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="withRssStat">0</span>
-                            <span class="stat-label">With RSS</span>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon without-rss">
-                            <i class="fas fa-exclamation-triangle"></i>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="withoutRssStat">0</span>
-                            <span class="stat-label">Without RSS</span>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon total-groups">
-                            <i class="fas fa-folder"></i>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="totalGroupsStat">0</span>
-                            <span class="stat-label">Total Groups</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Charts -->
-                <div class="charts-container">
-                    <div class="chart">
-                        <h3>Sources by Priority</h3>
-                        <div id="priorityChart" class="chart-content"></div>
-                    </div>
-                    <div class="chart">
-                        <h3>Sources by Status</h3>
-                        <div id="statusChart" class="chart-content"></div>
-                    </div>
-                </div>
-
-                <div class="charts-container">
-                    <div class="chart">
-                        <h3>Top Tags</h3>
-                        <div id="tagsChart" class="chart-content"></div>
-                    </div>
-                    <div class="chart">
-                        <h3>Sources with Metadata</h3>
-                        <div id="metadataChart" class="chart-content"></div>
-                    </div>
-                </div>
-
-                <!-- Detailed Statistics -->
-                <div class="stats-details">
-                    <div class="stats-section">
-                        <h3><i class="fas fa-tags"></i> Tag Distribution</h3>
-                        <div id="tagDistribution" class="tag-cloud"></div>
-                    </div>
-                    <div class="stats-section">
-                        <h3><i class="fas fa-chart-pie"></i> Priority Breakdown</h3>
-                        <div id="priorityBreakdown"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modals -->
-    
-    <!-- Add/Edit Source Modal -->
-    <div id="sourceModal" class="modal">
-        <div class="modal-content large">
-            <div class="modal-header">
-                <h2><i class="fas fa-newspaper"></i> <span id="sourceModalTitle">Add Source</span></h2>
-                <button id="closeSourceModal" class="icon-button">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form id="sourceForm">
-                    <input type="hidden" id="sourceId">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="sourceName">Name *</label>
-                            <input type="text" id="sourceName" required placeholder="e.g., BBC News">
-                        </div>
-                        <div class="form-group">
-                            <label for="sourceDomain">Domain *</label>
-                            <input type="text" id="sourceDomain" required placeholder="e.g., bbc.com">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="sourceRssUrl">RSS URL</label>
-                            <input type="url" id="sourceRssUrl" placeholder="e.g., http://feeds.bbci.co.uk/news/rss.xml">
-                        </div>
-                        <div class="form-group">
-                            <label for="sourceUrl">Homepage URL</label>
-                            <input type="url" id="sourceUrl" placeholder="e.g., https://www.bbc.com">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="sourceRateLimit">Rate Limit (ms)</label>
-                            <input type="number" id="sourceRateLimit" min="100" max="60000" value="2000">
-                        </div>
-                        <div class="form-group">
-                            <label for="sourcePriority">Priority</label>
-                            <select id="sourcePriority">
-                                <option value="1">High (1)</option>
-                                <option value="2" selected>Medium (2)</option>
-                                <option value="3">Low (3)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="sourceEnabled">Enabled</label>
-                            <select id="sourceEnabled">
-                                <option value="true" selected>Yes</option>
-                                <option value="false">No</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="sourceTags">Tags</label>
-                            <input type="text" id="sourceTags" placeholder="e.g., news, uk, general">
-                            <small>Comma-separated list of tags</small>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Groups</label>
-                        <div id="sourceGroupsSelect" class="checkbox-group">
-                            <!-- Groups will be loaded dynamically -->
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" id="cancelSourceBtn" class="secondary-btn">
-                    <i class="fas fa-times"></i> Cancel
-                </button>
-                <button type="button" id="saveSourceBtn" class="primary-btn">
-                    <i class="fas fa-save"></i> Save
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add/Edit Group Modal -->
-    <div id="groupModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2><i class="fas fa-folder"></i> <span id="groupModalTitle">Add Group</span></h2>
-                <button id="closeGroupModal" class="icon-button">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form id="groupForm">
-                    <input type="hidden" id="groupId">
-                    <div class="form-group">
-                        <label for="groupName">Name *</label>
-                        <input type="text" id="groupName" required placeholder="e.g., Technology News">
-                    </div>
-                    <div class="form-group">
-                        <label for="groupDescription">Description</label>
-                        <textarea id="groupDescription" rows="3" placeholder="Describe the purpose of this group..."></textarea>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="groupColor">Color</label>
-                            <input type="color" id="groupColor" value="#666666">
-                        </div>
-                        <div class="form-group">
-                            <label for="groupIsTagBased">Tag-Based Group</label>
-                            <select id="groupIsTagBased">
-                                <option value="false" selected>No</option>
-                                <option value="true">Yes</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-group" id="tagPatternGroup" style="display: none;">
-                        <label for="groupTagPattern">Tag Pattern</label>
-                        <input type="text" id="groupTagPattern" placeholder="e.g., technology,tech,ai">
-                        <small>Comma-separated list of tags for auto-population</small>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="groupPriority">Default Priority</label>
-                            <select id="groupPriority">
-                                <option value="1">High (1)</option>
-                                <option value="2" selected>Medium (2)</option>
-                                <option value="3">Low (3)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="groupRateLimit">Default Rate Limit (ms)</label>
-                            <input type="number" id="groupRateLimit" min="100" max="60000" value="2000">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="groupEnabled">Enabled</label>
-                        <select id="groupEnabled">
-                            <option value="true" selected>Yes</option>
-                            <option value="false">No</option>
-                        </select>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" id="cancelGroupBtn" class="secondary-btn">
-                    <i class="fas fa-times"></i> Cancel
-                </button>
-                <button type="button" id="saveGroupBtn" class="primary-btn">
-                    <i class="fas fa-save"></i> Save
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Batch Actions Modal -->
-    <div id="batchActionsModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2><i class="fas fa-tasks"></i> Batch Actions</h2>
-                <button id="closeBatchActionsModal" class="icon-button">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="batch-actions-form">
-                    <div class="form-group">
-                        <label>Selected Sources: <span id="batchSelectedCount">0</span></label>
-                    </div>
-                    
-                    <div class="batch-action-options">
-                        <div class="batch-option">
-                            <h4><i class="fas fa-toggle-on"></i> Status</h4>
-                            <div class="batch-buttons">
-                                <button id="batchEnableBtn" class="primary-btn">
-                                    <i class="fas fa-check"></i> Enable Selected
-                                </button>
-                                <button id="batchDisableBtn" class="danger-btn">
-                                    <i class="fas fa-times"></i> Disable Selected
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="batch-option">
-                            <h4><i class="fas fa-sort-amount-up"></i> Priority</h4>
-                            <div class="batch-buttons">
-                                <button id="batchPriorityHighBtn" class="primary-btn">
-                                    <i class="fas fa-arrow-up"></i> Set High (1)
-                                </button>
-                                <button id="batchPriorityMediumBtn" class="primary-btn">
-                                    <i class="fas fa-minus"></i> Set Medium (2)
-                                </button>
-                                <button id="batchPriorityLowBtn" class="primary-btn">
-                                    <i class="fas fa-arrow-down"></i> Set Low (3)
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="batch-option">
-                            <h4><i class="fas fa-tachometer-alt"></i> Rate Limit</h4>
-                            <div class="form-group">
-                                <input type="number" id="batchRateLimit" min="100" max="60000" value="2000" placeholder="Rate limit in ms">
-                                <button id="batchSetRateLimitBtn" class="primary-btn">
-                                    <i class="fas fa-check"></i> Apply
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="batch-option">
-                            <h4><i class="fas fa-tags"></i> Tags</h4>
-                            <div class="form-group">
-                                <input type="text" id="batchAddTags" placeholder="Tags to add (comma-separated)">
-                                <button id="batchAddTagsBtn" class="primary-btn">
-                                    <i class="fas fa-plus"></i> Add Tags
-                                </button>
-                            </div>
-                            <div class="form-group">
-                                <input type="text" id="batchRemoveTags" placeholder="Tags to remove (comma-separated)">
-                                <button id="batchRemoveTagsBtn" class="danger-btn">
-                                    <i class="fas fa-minus"></i> Remove Tags
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="batch-option">
-                            <h4><i class="fas fa-folder"></i> Groups</h4>
-                            <div class="form-group">
-                                <select id="batchAddToGroup" class="form-select">
-                                    <option value="">-- Add to Group --</option>
-                                </select>
-                                <button id="batchAddToGroupBtn" class="primary-btn">
-                                    <i class="fas fa-plus"></i> Add to Group
-                                </button>
-                            </div>
-                            <div class="form-group">
-                                <select id="batchRemoveFromGroup" class="form-select">
-                                    <option value="">-- Remove from Group --</option>
-                                </select>
-                                <button id="batchRemoveFromGroupBtn" class="danger-btn">
-                                    <i class="fas fa-minus"></i> Remove from Group
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" id="closeBatchActionsBtn" class="secondary-btn">
-                    <i class="fas fa-times"></i> Close
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add Sources to Group Modal -->
-    <div id="addSourcesToGroupModal" class="modal">
-        <div class="modal-content large">
-            <div class="modal-header">
-                <h2><i class="fas fa-plus"></i> Add Sources to Group</h2>
-                <button id="closeAddSourcesToGroupModal" class="icon-button">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Group: <span id="addToGroupName" style="font-weight: bold;"></span></label>
-                </div>
-                <div class="form-group">
-                    <label for="availableSourcesSearch"><i class="fas fa-search"></i> Search Available Sources:</label>
-                    <input type="text" id="availableSourcesSearch" placeholder="Search by name, domain, or tags...">
-                </div>
-                <div class="dual-list-container">
-                    <div class="list-panel">
-                        <h4>Available Sources</h4>
-                        <div class="table-container small">
-                            <table id="availableSourcesTable" class="data-table compact">
-                                <thead>
-                                    <tr>
-                                        <th><input type="checkbox" id="selectAllAvailable"></th>
-                                        <th>Name</th>
-                                        <th>Domain</th>
-                                        <th>Tags</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="availableSourcesTableBody">
-                                    <!-- Sources will be loaded dynamically -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="list-actions">
-                        <button id="addSelectedToGroupBtn" class="primary-btn">
-                            <i class="fas fa-arrow-right"></i>
-                        </button>
-                        <button id="addAllToGroupBtn" class="primary-btn">
-                            <i class="fas fa-double-arrow-right"></i>
-                        </button>
-                        <button id="removeSelectedFromGroupBtn" class="danger-btn">
-                            <i class="fas fa-arrow-left"></i>
-                        </button>
-                        <button id="removeAllFromGroupBtn" class="danger-btn">
-                            <i class="fas fa-double-arrow-left"></i>
-                        </button>
-                    </div>
-                    <div class="list-panel">
-                        <h4>Selected Sources</h4>
-                        <div class="table-container small">
-                            <table id="selectedSourcesTable" class="data-table compact">
-                                <thead>
-                                    <tr>
-                                        <th><input type="checkbox" id="selectAllSelected"></th>
-                                        <th>Name</th>
-                                        <th>Domain</th>
-                                        <th>Tags</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="selectedSourcesTableBody">
-                                    <!-- Sources will be loaded dynamically -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" id="cancelAddSourcesToGroupBtn" class="secondary-btn">
-                    <i class="fas fa-times"></i> Cancel
-                </button>
-                <button type="button" id="confirmAddSourcesToGroupBtn" class="primary-btn">
-                    <i class="fas fa-save"></i> Save
-                </button>
-            </div>
-        </div>
-    </div>
-
     <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+    <div id="loadingOverlay" class="loading-overlay d-none">
         <div class="loading-content">
-            <i class="fas fa-spinner fa-spin"></i>
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
             <p id="loadingMessage">Loading...</p>
         </div>
     </div>
 
-    <!-- Notification Toast -->
-    <div id="notificationToast" class="notification-toast" style="display: none;">
-        <i id="notificationIcon" class="fas"></i>
-        <span id="notificationMessage"></span>
-        <button id="closeNotification" class="icon-button small">
-            <i class="fas fa-times"></i>
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+    <!-- Skip to main content link for accessibility -->
+    <a href="#main-content" class="skip-link sr-only">Skip to main content</a>
+
+    <!-- Page Header -->
+    <header class="page-header">
+        <div class="header">
+            <div class="header-content">
+                <a href="index.html" class="header-brand">
+                    <i class="fas fa-cogs" aria-hidden="true"></i>
+                    <h1>Source Manager</h1>
+                </a>
+                <div class="header-actions">
+                    <a href="llm.html" class="btn btn-outline-primary" title="Local LLM" aria-label="Open Local LLM interface">
+                        <i class="fas fa-brain me-1" aria-hidden="true"></i>
+                        <span>LLM</span>
+                    </a>
+                    <button id="backButton" class="btn btn-secondary" title="Back to Main Dashboard" aria-label="Back to main dashboard">
+                        <i class="fas fa-arrow-left me-1" aria-hidden="true"></i>
+                        <span>Back</span>
+                    </button>
+                    <button id="refreshButton" class="btn btn-outline-primary" title="Refresh Data" aria-label="Refresh data">
+                        <i class="fas fa-sync-alt" aria-hidden="true"></i>
+                    </button>
+                    <button id="settingsButton" class="btn btn-outline-secondary" title="Settings" aria-label="Open settings">
+                        <i class="fas fa-cog" aria-hidden="true"></i>
+                    </button>
+                    <button id="themeToggle" class="btn btn-outline-secondary" title="Toggle Theme" aria-label="Toggle between light and dark theme">
+                        <i class="fas fa-moon" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </div>
+            <p class="header-subtitle">Comprehensive Source Management Dashboard for Open Omniscience</p>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content" class="page-main">
+        <div class="main-content">
+            <!-- Breadcrumb -->
+            <nav class="breadcrumb" aria-label="Breadcrumb">
+                <ol>
+                    <li><a href="index.html"><i class="fas fa-home me-1" aria-hidden="true"></i> Home</a></li>
+                    <li aria-current="page">Source Manager</li>
+                </ol>
+            </nav>
+
+            <!-- Tab Navigation -->
+            <nav class="nav-tabs mb-4" aria-label="Source Manager tabs">
+                <button class="nav-link active" id="sources-tab-btn" data-bs-toggle="tab" data-bs-target="#sources-tab" role="tab" aria-selected="true">
+                    <i class="fas fa-newspaper me-1" aria-hidden="true"></i>
+                    Sources
+                </button>
+                <button class="nav-link" id="groups-tab-btn" data-bs-toggle="tab" data-bs-target="#groups-tab" role="tab" aria-selected="false">
+                    <i class="fas fa-folder me-1" aria-hidden="true"></i>
+                    Groups
+                </button>
+                <button class="nav-link" id="discover-tab-btn" data-bs-toggle="tab" data-bs-target="#discover-tab" role="tab" aria-selected="false">
+                    <i class="fas fa-search me-1" aria-hidden="true"></i>
+                    Discover
+                </button>
+                <button class="nav-link" id="statistics-tab-btn" data-bs-toggle="tab" data-bs-target="#statistics-tab" role="tab" aria-selected="false">
+                    <i class="fas fa-chart-bar me-1" aria-hidden="true"></i>
+                    Statistics
+                </button>
+            </nav>
+
+            <!-- Tab Content -->
+            <div class="tab-content">
+                <!-- Sources Tab -->
+                <div class="tab-pane fade show active" id="sources-tab" role="tabpanel">
+                    <div class="tab-header d-flex justify-content-between align-items-center mb-4">
+                        <h2 class="mb-0"><i class="fas fa-newspaper me-2" aria-hidden="true"></i> Source Management</h2>
+                        <div class="tab-actions">
+                            <button id="addSourceBtn" class="btn btn-primary">
+                                <i class="fas fa-plus me-1" aria-hidden="true"></i>
+                                Add Source
+                            </button>
+                            <button id="batchActionsBtn" class="btn btn-outline-secondary">
+                                <i class="fas fa-tasks me-1" aria-hidden="true"></i>
+                                Batch Actions
+                            </button>
+                            <button id="exportSourcesBtn" class="btn btn-outline-success">
+                                <i class="fas fa-file-export me-1" aria-hidden="true"></i>
+                                Export
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-filter me-2" aria-hidden="true"></i> Filters</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label for="sourceSearch" class="form-label">Search</label>
+                                    <div class="input-group">
+                                        <input type="text" id="sourceSearch" class="form-control" placeholder="Search by name, domain, or tags...">
+                                        <button class="btn btn-outline-secondary" type="button">
+                                            <i class="fas fa-search" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="sourceStatusFilter" class="form-label">Status</label>
+                                    <select id="sourceStatusFilter" class="form-select">
+                                        <option value="">All Statuses</option>
+                                        <option value="enabled">Enabled</option>
+                                        <option value="disabled">Disabled</option>
+                                        <option value="error">Error</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="sourcePriorityFilter" class="form-label">Priority</label>
+                                    <select id="sourcePriorityFilter" class="form-select">
+                                        <option value="">All Priorities</option>
+                                        <option value="1">High (1)</option>
+                                        <option value="2">Medium (2)</option>
+                                        <option value="3">Low (3)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="sourceGroupFilter" class="form-label">Group</label>
+                                    <select id="sourceGroupFilter" class="form-select">
+                                        <option value="">All Groups</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <button id="clearSourceFilters" class="btn btn-outline-danger w-100">
+                                        <i class="fas fa-times me-1" aria-hidden="true"></i>
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sources Table -->
+                    <div class="table-wrapper">
+                        <table id="sourcesTable" class="table table-hover table-striped">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 40px;">
+                                        <input type="checkbox" id="selectAllSources" class="form-check-input" aria-label="Select all sources">
+                                    </th>
+                                    <th class="sortable" data-sort="name">Name</th>
+                                    <th class="sortable" data-sort="domain">Domain</th>
+                                    <th>RSS URL</th>
+                                    <th class="sortable" data-sort="status">Status</th>
+                                    <th class="sortable" data-sort="priority">Priority</th>
+                                    <th>Rate Limit</th>
+                                    <th>Tags</th>
+                                    <th>Groups</th>
+                                    <th class="sortable" data-sort="article_count">Articles</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sourcesTableBody">
+                                <!-- Sources will be loaded dynamically -->
+                                <tr class="skeleton-row">
+                                    <td><div class="skeleton skeleton-checkbox"></div></td>
+                                    <td><div class="skeleton skeleton-text"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-text"></div></td>
+                                    <td><div class="skeleton skeleton-badge"></div></td>
+                                    <td><div class="skeleton skeleton-badge"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-actions"></div></td>
+                                </tr>
+                                <tr class="skeleton-row">
+                                    <td><div class="skeleton skeleton-checkbox"></div></td>
+                                    <td><div class="skeleton skeleton-text"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-text"></div></td>
+                                    <td><div class="skeleton skeleton-badge"></div></td>
+                                    <td><div class="skeleton skeleton-badge"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-text short"></div></td>
+                                    <td><div class="skeleton skeleton-actions"></div></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <nav class="mt-4" aria-label="Sources pagination">
+                        <ul class="pagination justify-content-center">
+                            <li class="page-item disabled">
+                                <button class="page-link" id="prevPageSources" aria-label="Previous">
+                                    <i class="fas fa-chevron-left" aria-hidden="true"></i>
+                                    <span class="visually-hidden">Previous</span>
+                                </button>
+                            </li>
+                            <li class="page-item active">
+                                <button class="page-link" id="page1Sources">1</button>
+                            </li>
+                            <li class="page-item">
+                                <button class="page-link" id="page2Sources">2</button>
+                            </li>
+                            <li class="page-item">
+                                <button class="page-link" id="page3Sources">3</button>
+                            </li>
+                            <li class="page-item">
+                                <span class="page-link">...</span>
+                            </li>
+                            <li class="page-item">
+                                <button class="page-link" id="lastPageSources">Last</button>
+                            </li>
+                            <li class="page-item disabled">
+                                <button class="page-link" id="nextPageSources" aria-label="Next">
+                                    <span class="visually-hidden">Next</span>
+                                    <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                                </button>
+                            </li>
+                        </ul>
+                    </nav>
+                    <div class="text-center text-muted mt-2">
+                        <span id="pageInfoSources">Showing 1-20 of 0 sources</span>
+                    </div>
+                </div>
+
+                <!-- Groups Tab -->
+                <div class="tab-pane fade" id="groups-tab" role="tabpanel">
+                    <div class="tab-header d-flex justify-content-between align-items-center mb-4">
+                        <h2 class="mb-0"><i class="fas fa-folder me-2" aria-hidden="true"></i> Group Management</h2>
+                        <div class="tab-actions">
+                            <button id="addGroupBtn" class="btn btn-primary">
+                                <i class="fas fa-plus me-1" aria-hidden="true"></i>
+                                Add Group
+                            </button>
+                            <button id="refreshGroupsBtn" class="btn btn-outline-primary">
+                                <i class="fas fa-sync-alt me-1" aria-hidden="true"></i>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Groups Table -->
+                    <div class="table-wrapper">
+                        <table id="groupsTable" class="table table-hover table-striped">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 40px;">
+                                        <input type="checkbox" id="selectAllGroups" class="form-check-input" aria-label="Select all groups">
+                                    </th>
+                                    <th class="sortable" data-sort="name">Name</th>
+                                    <th>Description</th>
+                                    <th>Type</th>
+                                    <th class="sortable" data-sort="source_count">Sources</th>
+                                    <th class="sortable" data-sort="priority">Priority</th>
+                                    <th>Rate Limit</th>
+                                    <th class="sortable" data-sort="status">Status</th>
+                                    <th>Tag Pattern</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="groupsTableBody">
+                                <!-- Groups will be loaded dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Discover Tab -->
+                <div class="tab-pane fade" id="discover-tab" role="tabpanel">
+                    <div class="tab-header d-flex justify-content-between align-items-center mb-4">
+                        <h2 class="mb-0"><i class="fas fa-search me-2" aria-hidden="true"></i> Discover New Sources</h2>
+                        <div class="tab-actions">
+                            <button id="refreshDiscoverBtn" class="btn btn-outline-primary">
+                                <i class="fas fa-sync-alt me-1" aria-hidden="true"></i>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h5 class="mb-0"><i class="fas fa-search me-2" aria-hidden="true"></i> Search Sources</h5>
+                                </div>
+                                <div class="card-body">
+                                    <form id="discoverForm">
+                                        <div class="mb-3">
+                                            <label for="discoverQuery" class="form-label">Search Query</label>
+                                            <input type="text" id="discoverQuery" class="form-control" placeholder="Enter search terms...">
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="discoverCategory" class="form-label">Category</label>
+                                            <select id="discoverCategory" class="form-select">
+                                                <option value="">All Categories</option>
+                                                <option value="news">News</option>
+                                                <option value="blog">Blogs</option>
+                                                <option value="forum">Forums</option>
+                                                <option value="social">Social Media</option>
+                                                <option value="academic">Academic</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="discoverLanguage" class="form-label">Language</label>
+                                            <select id="discoverLanguage" class="form-select">
+                                                <option value="">All Languages</option>
+                                                <option value="en">English</option>
+                                                <option value="fr">French</option>
+                                                <option value="es">Spanish</option>
+                                                <option value="de">German</option>
+                                            </select>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="fas fa-search me-1" aria-hidden="true"></i>
+                                            Search
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h5 class="mb-0"><i class="fas fa-lightbulb me-2" aria-hidden="true"></i> Suggestions</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="list-group" id="suggestionsList">
+                                        <button type="button" class="list-group-item list-group-item-action">
+                                            <div class="d-flex w-100 justify-content-between">
+                                                <h6 class="mb-1">Popular News Sites</h6>
+                                                <small>12 sources</small>
+                                            </div>
+                                            <p class="mb-1">Top news websites from around the world</p>
+                                            <small>Category: News</small>
+                                        </button>
+                                        <button type="button" class="list-group-item list-group-item-action">
+                                            <div class="d-flex w-100 justify-content-between">
+                                                <h6 class="mb-1">Technology Blogs</h6>
+                                                <small>8 sources</small>
+                                            </div>
+                                            <p class="mb-1">Leading technology and innovation blogs</p>
+                                            <small>Category: Blog</small>
+                                        </button>
+                                        <button type="button" class="list-group-item list-group-item-action">
+                                            <div class="d-flex w-100 justify-content-between">
+                                                <h6 class="mb-1">Academic Journals</h6>
+                                                <small>5 sources</small>
+                                            </div>
+                                            <p class="mb-1">Peer-reviewed academic publications</p>
+                                            <small>Category: Academic</small>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Discover Results -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-list me-2" aria-hidden="true"></i> Results</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-wrapper">
+                                <table id="discoverResultsTable" class="table table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width: 40px;"></th>
+                                            <th>Name</th>
+                                            <th>Domain</th>
+                                            <th>Category</th>
+                                            <th>Language</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="discoverResultsBody">
+                                        <!-- Results will be loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistics Tab -->
+                <div class="tab-pane fade" id="statistics-tab" role="tabpanel">
+                    <div class="tab-header d-flex justify-content-between align-items-center mb-4">
+                        <h2 class="mb-0"><i class="fas fa-chart-bar me-2" aria-hidden="true"></i> Statistics</h2>
+                        <div class="tab-actions">
+                            <button id="refreshStatsBtn" class="btn btn-outline-primary">
+                                <i class="fas fa-sync-alt me-1" aria-hidden="true"></i>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Statistics Cards -->
+                    <div class="row mb-4">
+                        <div class="col-md-3 col-6">
+                            <div class="card stat-card h-100">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="stat-icon bg-primary bg-opacity-10 text-primary p-3 me-3">
+                                            <i class="fas fa-newspaper fa-2x" aria-hidden="true"></i>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <h6 class="text-muted mb-1">Total Sources</h6>
+                                            <h3 class="mb-0" id="totalSourcesCount">0</h3>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="card stat-card h-100">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="stat-icon bg-success bg-opacity-10 text-success p-3 me-3">
+                                            <i class="fas fa-check-circle fa-2x" aria-hidden="true"></i>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <h6 class="text-muted mb-1">Active Sources</h6>
+                                            <h3 class="mb-0" id="activeSourcesCount">0</h3>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="card stat-card h-100">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="stat-icon bg-warning bg-opacity-10 text-warning p-3 me-3">
+                                            <i class="fas fa-tags fa-2x" aria-hidden="true"></i>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <h6 class="text-muted mb-1">Total Groups</h6>
+                                            <h3 class="mb-0" id="totalGroupsCount">0</h3>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="card stat-card h-100">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="stat-icon bg-info bg-opacity-10 text-info p-3 me-3">
+                                            <i class="fas fa-database fa-2x" aria-hidden="true"></i>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <h6 class="text-muted mb-1">Total Articles</h6>
+                                            <h3 class="mb-0" id="totalArticlesCount">0</h3>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts -->
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h5 class="mb-0"><i class="fas fa-chart-pie me-2" aria-hidden="true"></i> Sources by Status</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div id="sourcesByStatusChart" style="height: 300px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-4">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h5 class="mb-0"><i class="fas fa-chart-bar me-2" aria-hidden="true"></i> Articles by Source</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div id="articlesBySourceChart" style="height: 300px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Bottom Navigation for Mobile -->
+    <nav class="bottom-nav no-print">
+        <button class="nav-item" data-page="sources" aria-label="Sources" onclick="document.getElementById('sources-tab-btn').click()">
+            <i class="fas fa-newspaper" aria-hidden="true"></i>
+            <span>Sources</span>
         </button>
+        <button class="nav-item" data-page="groups" aria-label="Groups" onclick="document.getElementById('groups-tab-btn').click()">
+            <i class="fas fa-folder" aria-hidden="true"></i>
+            <span>Groups</span>
+        </button>
+        <button class="nav-item" data-page="discover" aria-label="Discover" onclick="document.getElementById('discover-tab-btn').click()">
+            <i class="fas fa-search" aria-hidden="true"></i>
+            <span>Discover</span>
+        </button>
+        <button class="nav-item" data-page="statistics" aria-label="Statistics" onclick="document.getElementById('statistics-tab-btn').click()">
+            <i class="fas fa-chart-bar" aria-hidden="true"></i>
+            <span>Stats</span>
+        </button>
+    </nav>
+
+    <!-- Add Source Modal -->
+    <div id="addSourceModal" class="modal fade" tabindex="-1" aria-labelledby="addSourceModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addSourceModalLabel">
+                        <i class="fas fa-plus me-2" aria-hidden="true"></i>
+                        Add New Source
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addSourceForm" class="form">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="sourceName" class="form-label">Source Name *</label>
+                                    <input type="text" id="sourceName" name="name" class="form-control" required>
+                                    <div class="invalid-feedback">Please provide a source name</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="sourceDomain" class="form-label">Domain *</label>
+                                    <input type="text" id="sourceDomain" name="domain" class="form-control" required>
+                                    <div class="invalid-feedback">Please provide a domain</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="sourceRssUrl" class="form-label">RSS/Feed URL *</label>
+                                    <input type="url" id="sourceRssUrl" name="rss_url" class="form-control" required>
+                                    <div class="invalid-feedback">Please provide a valid URL</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="sourceHomepage" class="form-label">Homepage URL</label>
+                                    <input type="url" id="sourceHomepage" name="homepage" class="form-control">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="sourceCategory" class="form-label">Category</label>
+                                    <select id="sourceCategory" name="category" class="form-select">
+                                        <option value="">Select category...</option>
+                                        <option value="news">News</option>
+                                        <option value="blog">Blog</option>
+                                        <option value="forum">Forum</option>
+                                        <option value="social">Social Media</option>
+                                        <option value="academic">Academic</option>
+                                        <option value="government">Government</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="sourceLanguage" class="form-label">Language</label>
+                                    <select id="sourceLanguage" name="language" class="form-select">
+                                        <option value="">Select language...</option>
+                                        <option value="en">English</option>
+                                        <option value="fr">French</option>
+                                        <option value="es">Spanish</option>
+                                        <option value="de">German</option>
+                                        <option value="ar">Arabic</option>
+                                        <option value="zh">Chinese</option>
+                                        <option value="ru">Russian</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="sourcePriority" class="form-label">Priority</label>
+                                    <select id="sourcePriority" name="priority" class="form-select">
+                                        <option value="2">Medium (2)</option>
+                                        <option value="1">High (1)</option>
+                                        <option value="3">Low (3)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="sourceRateLimit" class="form-label">Rate Limit (seconds)</label>
+                                    <input type="number" id="sourceRateLimit" name="rate_limit" class="form-control" min="0" value="300">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="sourceTimeout" class="form-label">Timeout (seconds)</label>
+                                    <input type="number" id="sourceTimeout" name="timeout" class="form-control" min="1" value="30">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Status</label>
+                                    <div class="form-check form-switch">
+                                        <input type="checkbox" id="sourceEnabled" name="enabled" class="form-check-input" checked>
+                                        <label for="sourceEnabled" class="form-check-label">Enabled</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="sourceDescription" class="form-label">Description</label>
+                            <textarea id="sourceDescription" name="description" class="form-control" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="sourceTags" class="form-label">Tags</label>
+                            <input type="text" id="sourceTags" name="tags" class="form-control" placeholder="Comma-separated tags">
+                            <div class="form-text">Enter tags separated by commas</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="sourceGroups" class="form-label">Groups</label>
+                            <select id="sourceGroups" name="groups" class="form-select" multiple>
+                                <option value="">No groups</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1" aria-hidden="true"></i>
+                        Cancel
+                    </button>
+                    <button type="button" id="saveSourceBtn" class="btn btn-primary">
+                        <i class="fas fa-save me-1" aria-hidden="true"></i>
+                        Save Source
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <script src="script.js"></script>
-    <script src="source-manager.js"></script>
+    <!-- Edit Source Modal -->
+    <div id="editSourceModal" class="modal fade" tabindex="-1" aria-labelledby="editSourceModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editSourceModalLabel">
+                        <i class="fas fa-edit me-2" aria-hidden="true"></i>
+                        Edit Source
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editSourceForm" class="form">
+                        <input type="hidden" id="editSourceId">
+                        <!-- Form fields will be populated dynamically -->
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1" aria-hidden="true"></i>
+                        Cancel
+                    </button>
+                    <button type="button" id="updateSourceBtn" class="btn btn-primary">
+                        <i class="fas fa-save me-1" aria-hidden="true"></i>
+                        Update Source
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Group Modal -->
+    <div id="addGroupModal" class="modal fade" tabindex="-1" aria-labelledby="addGroupModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addGroupModalLabel">
+                        <i class="fas fa-plus me-2" aria-hidden="true"></i>
+                        Add New Group
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addGroupForm" class="form">
+                        <div class="mb-3">
+                            <label for="groupName" class="form-label">Group Name *</label>
+                            <input type="text" id="groupName" name="name" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="groupDescription" class="form-label">Description</label>
+                            <textarea id="groupDescription" name="description" class="form-control" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="groupType" class="form-label">Type</label>
+                            <select id="groupType" name="type" class="form-select">
+                                <option value="static">Static (Manual selection)</option>
+                                <option value="dynamic">Dynamic (Tag-based)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3" id="tagPatternGroup" style="display: none;">
+                            <label for="groupTagPattern" class="form-label">Tag Pattern</label>
+                            <input type="text" id="groupTagPattern" name="tag_pattern" class="form-control" placeholder="e.g., news, politics">
+                            <div class="form-text">Sources with matching tags will be automatically added</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="groupPriority" class="form-label">Priority</label>
+                            <select id="groupPriority" name="priority" class="form-select">
+                                <option value="2">Medium (2)</option>
+                                <option value="1">High (1)</option>
+                                <option value="3">Low (3)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="groupRateLimit" class="form-label">Rate Limit (seconds)</label>
+                            <input type="number" id="groupRateLimit" name="rate_limit" class="form-control" min="0" value="300">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Status</label>
+                            <div class="form-check form-switch">
+                                <input type="checkbox" id="groupEnabled" name="enabled" class="form-check-input" checked>
+                                <label for="groupEnabled" class="form-check-label">Enabled</label>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1" aria-hidden="true"></i>
+                        Cancel
+                    </button>
+                    <button type="button" id="saveGroupBtn" class="btn btn-primary">
+                        <i class="fas fa-save me-1" aria-hidden="true"></i>
+                        Save Group
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal fade" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Action</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="confirmMessage"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1" aria-hidden="true"></i>
+                        Cancel
+                    </button>
+                    <button type="button" id="confirmActionBtn" class="btn btn-danger">
+                        <i class="fas fa-check me-1" aria-hidden="true"></i>
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <!-- Service Worker Registration -->
+    <script>
+        // Register service worker if supported
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('DOMContentLoaded', () => {
+                navigator.serviceWorker.register('/static/sw.js', {
+                    scope: '/',
+                    type: 'module'
+                }).then((registration) => {
+                    console.log('Service Worker registered:', registration);
+                }).catch((error) => {
+                    console.error('Service Worker registration failed:', error);
+                });
+            });
+        }
+    </script>
+    
+    <!-- Load React and Recharts for charts -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin async></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin async></script>
+    
+    <!-- Utility Libraries -->
+    <script type="module" src="js/utils/storage.js" defer></script>
+    <script type="module" src="js/utils/dom.js" defer></script>
+    <script type="module" src="js/utils/format.js" defer></script>
+    <script type="module" src="js/utils/validation.js" defer></script>
+    <script type="module" src="js/utils/lazy-load.js" defer></script>
+    <script type="module" src="js/utils/service-worker.js" defer></script>
+    
+    <!-- Component Libraries -->
+    <script type="module" src="js/components/notifications.js" defer></script>
+    <script type="module" src="js/components/tables.js" defer></script>
+    
+    <!-- API and Application -->
+    <script type="module" src="js/api.js" defer></script>
+    <script type="module" src="js/main.js" defer></script>
+    
+    <!-- Source Manager specific JavaScript -->
+    <script type="module" src="js/pages/source-manager.js" defer></script>
+    
+    <!-- Initialize Bootstrap tooltips and popovers -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize Bootstrap tooltips
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+            
+            // Initialize Bootstrap popovers
+            const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+            popoverTriggerList.map(function (popoverTriggerEl) {
+                return new bootstrap.Popover(popoverTriggerEl);
+            });
+            
+            // Initialize lazy loading
+            if (window.LazyLoadUtils) {
+                window.LazyLoadUtils.init({ autoInit: true });
+            }
+        });
+    </script>
 </body>
 </html>

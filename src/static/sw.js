@@ -3,47 +3,47 @@
  * Provides offline caching and performance optimizations
  */
 
-// Cache names
+// Cache names with versioning
+const CACHE_VERSION = 'v2';
 const CACHE_NAMES = {
-    ASSETS: 'open-omniscience-assets-v1',
-    DATA: 'open-omniscience-data-v1',
-    FONTS: 'open-omniscience-fonts-v1',
-    IMAGES: 'open-omniscience-images-v1'
+    ASSETS: `open-omniscience-assets-${CACHE_VERSION}`,
+    DATA: `open-omniscience-data-${CACHE_VERSION}`,
+    FONTS: `open-omniscience-fonts-${CACHE_VERSION}`,
+    IMAGES: `open-omniscience-images-${CACHE_VERSION}`
 };
 
-// Assets to cache on install
+// Assets to cache on install - only current files
 const ASSETS_TO_CACHE = [
     '/',
-    '/index.html',
     '/static/index.html',
-    '/static/new-index.html',
-    '/static/style.css',
     '/static/source-manager.html',
-    '/static/source-manager.css',
-    '/static/script.js',
-    '/static/source-manager.js',
+    '/static/llm.html',
+    '/static/llm.css',
     // CSS files
     '/static/css/variables.css',
     '/static/css/main.css',
     '/static/css/utilities.css',
+    '/static/css/layouts/main.css',
+    '/static/css/layouts/source-manager.css',
     '/static/css/components/buttons.css',
     '/static/css/components/forms.css',
     '/static/css/components/tables.css',
     '/static/css/components/modals.css',
     '/static/css/components/notifications.css',
-    '/static/css/layouts/main.css',
-    '/static/css/layouts/source-manager.css',
     // JS files
     '/static/js/api.js',
     '/static/js/main.js',
+    '/static/js/llm.js',
     '/static/js/utils/storage.js',
     '/static/js/utils/dom.js',
     '/static/js/utils/format.js',
     '/static/js/utils/validation.js',
     '/static/js/utils/lazy-load.js',
+    '/static/js/utils/service-worker.js',
     '/static/js/components/notifications.js',
     '/static/js/components/tables.js',
-    '/static/js/pages/dashboard.js'
+    '/static/js/pages/dashboard.js',
+    '/static/js/pages/source-manager.js'
 ];
 
 // Font URLs to cache
@@ -119,7 +119,13 @@ self._cleanupOldCaches = async function() {
     const currentCacheNames = Object.values(CACHE_NAMES);
 
     for (const cacheName of cacheNames) {
-        if (!currentCacheNames.includes(cacheName)) {
+        // Delete old version caches (v1) and any non-current caches
+        if (!currentCacheNames.includes(cacheName) || 
+            cacheName.includes('-v1') ||
+            cacheName.includes('open-omniscience-assets') && !cacheName.includes(CACHE_VERSION) ||
+            cacheName.includes('open-omniscience-data') && !cacheName.includes(CACHE_VERSION) ||
+            cacheName.includes('open-omniscience-fonts') && !cacheName.includes(CACHE_VERSION) ||
+            cacheName.includes('open-omniscience-images') && !cacheName.includes(CACHE_VERSION)) {
             await caches.delete(cacheName);
             console.log(`Deleted old cache: ${cacheName}`);
         }

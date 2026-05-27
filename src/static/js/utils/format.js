@@ -1004,3 +1004,6 @@ const FormatUtils = {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = FormatUtils;
 }
+
+// ES6 Module exports
+export { FormatUtils };
