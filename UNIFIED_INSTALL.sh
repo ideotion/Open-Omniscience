@@ -1,27 +1,15 @@
-#
-# Version: 0.03
-# Unified installer that automatically adapts to:
-#   - Regular Debian/Ubuntu systems (with or without GUI)
-#   - Qubes OS (R4.1+ with Debian 13 template)
-#   - Headless servers
-#   - Various environments (X11, Wayland, VMs, bare metal)
-=======
 # Open-Omniscience UNIFIED Installer
 # ============================================================================
 #
 # Version: 0.03
 # Unified installer that automatically adapts to:
 #   - Regular Debian/Ubuntu systems (with or without GUI)
-#   - Qubes OS (R4.1+ with Debian 13 template)
-#   - Headless servers
-#   - Various environments (X11, Wayland, VMs, bare metal)============================================================================
-#
-# Version: 0.03
-# Unified installer that automatically adapts to:
-#   - Regular Debian/Ubuntu systems (with or without GUI)
-#   - Qubes OS (R4.1+ with Debian 13 template)
+#   - Qubes OS VMs (R4.1+ with Debian 13 template)
 #   - Headless servers
 #   - Various environments (X11, Wayland, VMs, bare metal)
+#
+# Note: dom0 cannot run this installer as it has no web access.
+# This installer is designed to run in Debian 13 VMs (Qubes or regular).
 #
 # Features:
 #   - Automatic environment detection (Qubes vs regular Linux)
@@ -79,17 +67,6 @@ set -uo pipefail
 # So we need to use /dev/tty for user input when available
 # If /dev/tty is not available (piped), we'll use stdin============================================================================
 # Open-Omniscience UNIFIED Installer
-# ============================================================================
-#
-# Version: 0.03
-# Unified installer that automatically adapts to:
-#   - Regular Debian/Ubuntu systems (with or without GUI)
-#   - Qubes OS (R4.1+ with Debian 13 template)
-#   - Headless servers
-#   - Various environments (X11, Wayland, VMs, bare metal)
-#
-# Features:
-#   - Automatic environment detection (Qubes vs regular Linux)
 #   - Smart installation method selection
 #   - Single entry point for all users
 #   - Comprehensive error handling
@@ -163,25 +140,11 @@ log_header() {
 # Check if running in Qubes OS
 # Note: Qubes OS is designed to be undetectable from within VMs for security
 # So we always ask the user rather than trying to auto-detect
-detect_qubes_dom0() {
-    # Check if we're running in dom0 (has Qubes management commands)
-    if command -v qvm-ls >/dev/null 2>&1 || command -v qubesctl >/dev/null 2>&1; then
-        return 0
-    fi
-    return 1
-}
-
-detect_qubes_vm() {
-    # Check if we're running in a Qubes VM (has Qubes markers but no management commands)
-    if [ -f /etc/qubes-release ] || [ -n "${QUBES_VM_TYPE:-}" ]; then
-        return 0
-    fi
-    return 1
-}
-
 detect_qubes() {
-    # Try to detect any Qubes OS environment
-    if detect_qubes_dom0 || detect_qubes_vm; then
+    # Check if we're running in a Qubes VM
+    # Note: dom0 cannot run this installer as it has no web access
+    # So we only check for Qubes VM markers
+    if [ -f /etc/qubes-release ] || [ -n "${QUBES_VM_TYPE:-}" ]; then
         return 0
     fi
     return 1
@@ -276,7 +239,7 @@ ask_yes_no() {
 # Ask user if they're using Qubes OS
 ask_qubes() {
     if detect_qubes; then
-        log_info "Detected Qubes OS environment"
+        log_info "Detected Qubes VM environment"
         return 0
     fi
     
@@ -318,10 +281,8 @@ install_dependencies() {
             packages+=("python3-tk")
         fi
         
-        # Qubes-specific dependencies
-        if [ "$is_qubes" = true ]; then
-            packages+=("qubes-mgmt-salt" "qubes-core-admin")
-        fi
+        # Note: Qubes-specific packages (qubes-mgmt-salt, qubes-core-admin) 
+        # are dom0-only and not needed in VMs where this installer runs
         
         log_info "Installing packages: ${packages[*]}"
         if ! sudo apt-get update && sudo apt-get install -y "${packages[@]}" 2>/dev/null; then
@@ -435,98 +396,14 @@ create_venv() {
 }
 
 # Qubes-specific setup
+# Since dom0 cannot run this installer (no web access),
+# we assume we're always in a Qubes VM and do regular installation
 setup_qubes() {
-    log_header "Qubes OS Setup"
+    log_header "Qubes OS VM Setup"
+    log_info "Detected Qubes VM environment - installing Open-Omniscience directly in this VM"
     
-    # Determine if we're running in dom0 or in a VM
-    if detect_qubes_dom0; then
-        # Running in dom0 - do multi-VM setup
-        setup_qubes_dom0
-    elif detect_qubes_vm; then
-        # Running in a Qubes VM - do regular installation in this VM
-        log_info "Detected Qubes VM environment - installing directly in this VM"
-        setup_regular
-    else
-        # Qubes detected but can't determine type - ask user
-        log_info "Qubes OS detected but cannot determine environment type"
-        if ask_yes_no "Are you running this in dom0 (with admin access)" "no"; then
-            setup_qubes_dom0
-        else
-            log_info "Installing directly in this VM"
-            setup_regular
-        fi
-    fi
-}
-
-# Qubes dom0 setup (multi-VM architecture)
-setup_qubes_dom0() {
-    log_header "Qubes OS Multi-VM Setup"
-    
-    # Check if template exists
-    local template="debian-13"
-    if ! qvm-ls | grep -q "^${template}\s"; then
-        log_info "Debian 13 template not found"
-        if ! ask_yes_no "Install Debian 13 template now" "yes"; then
-            log_error "Debian 13 template required for Qubes OS installation"
-            return 1
-        fi
-        
-        log_info "Installing Debian 13 template..."
-        if ! sudo qubesctl state.sls qvm.template-debian-13 2>/dev/null; then
-            log_error "Failed to install Debian 13 template"
-            return 1
-        fi
-        log_success "Debian 13 template installed"
-    fi
-    
-    # Create VMs
-    local vms=("open-omniscience-api" "open-omniscience-db" "open-omniscience-scraper" "open-omniscience-ai")
-    local labels=("blue" "green" "yellow" "red")
-    local netvm="sys-whonix"
-    
-    for i in "${!vms[@]}"; do
-        local vm="${vms[$i]}"
-        local label="${labels[$i]}"
-        
-        if qvm-ls | grep -q "^$vm\s"; then
-            log_info "VM $vm already exists"
-        else
-            log_info "Creating VM: $vm"
-            if ! qvm-create --label "$label" --template "$template" "$vm" 2>/dev/null; then
-                log_error "Failed to create VM $vm"
-                return 1
-            fi
-            
-            # Configure VM
-            qvm-mem "$vm" 2048 2>/dev/null || true
-            qvm-maxmem "$vm" 4096 2>/dev/null || true
-            qvm-vcpus "$vm" 2 2>/dev/null || true
-            
-            # Network configuration
-            if [ "$vm" = "open-omniscience-db" ]; then
-                qvm-prefs "$vm" netvm "" 2>/dev/null || true
-                qvm-prefs "$vm" provides_network false 2>/dev/null || true
-            else
-                qvm-prefs "$vm" netvm "$netvm" 2>/dev/null || true
-                qvm-prefs "$vm" provides_network false 2>/dev/null || true
-            fi
-            
-            log_success "VM $vm created and configured"
-        fi
-    done
-    
-    # Install in each VM
-    for vm in "${vms[@]}"; do
-        log_info "Setting up $vm"
-        if ! qvm-run -u "$vm" "cd /opt && git clone --branch ${REPO_BRANCH} ${REPO_URL} open-omniscience && cd open-omniscience && pip install -r requirements.txt" 2>/dev/null; then
-            log_error "Failed to setup $vm"
-            return 1
-        fi
-        log_success "$vm set up"
-    done
-    
-    log_success "Qubes OS multi-VM setup complete"
-    return 0
+    # For Qubes VMs, we do regular installation but with Qubes-aware optimizations
+    setup_regular
 }
 
 # Regular Linux setup
@@ -646,13 +523,14 @@ main() {
     local is_qubes=false
     local has_gui=false
     
-    # Try to detect Qubes OS first
+    # Try to detect Qubes OS
+    # Note: dom0 cannot run this installer (no web access), so we only detect VMs
     if detect_qubes; then
-        log_info "Detected Qubes OS environment"
+        log_info "Detected Qubes VM environment"
         is_qubes=true
     else
         # Qubes OS is designed to be undetectable from within VMs for security
-        # So we ask the user if detection failed
+        # So we ask the user if detection failed (e.g., in a VM without markers)
         log_info "Note: Qubes OS is designed to be undetectable from within VMs for security"
         if ask_yes_no "Are you installing on Qubes OS" "no"; then
             is_qubes=true
