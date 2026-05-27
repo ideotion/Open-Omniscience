@@ -1,14 +1,26 @@
 #!/bin/bash
 
-# Open-Omniscience Qubes-OS Installer
+# Open-Omniscience Qubes-OS Installer (DEPRECATED)
 # Compatible with Debian Trixie (12) in Qubes OS R4.1+
 # 
+# DEPRECATED: This script is deprecated. Please use qubes-installer.sh instead.
 # This script automates the deployment of Open-Omniscience across multiple
 # Qubes OS VMs for maximum security and isolation.
 
+# Configuration
+# ============================================================================
+=======
 set -euo pipefail
 
+# Deprecation warning
+echo "WARNING: This script (INSTALL-QUBES.sh) is deprecated."
+echo "Please use qubes-installer.sh instead for full functionality."
+echo "This script will continue to work but may not have all the latest features."
+echo ""
+
 # ============================================================================
+# Configuration
+# ========================================================================================================================================================
 # Configuration
 # ============================================================================
 
@@ -23,7 +35,7 @@ NC='\033[0m' # No Color
 
 # Repository
 REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
-REPO_BRANCH="0.02_Qubes"
+REPO_BRANCH="0.03_Qubes"
 
 # Installation directories
 INSTALL_DIR="/opt/open-omniscience"

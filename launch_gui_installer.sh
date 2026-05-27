@@ -39,7 +39,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
-REPO_BRANCH="0.02"
+REPO_BRANCH="0.03"
 INSTALL_DIR="${HOME}/open-omniscience"
 
 # =============================================================================
@@ -265,7 +265,7 @@ main() {
             log_info "python3-tk not found, installing..."
             if ! install_python3_tk; then
                 log_warning "python3-tk installation failed, falling back to text-based installer"
-                exec curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install | bash
+                exec curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install | bash
                 exit 1
             fi
         else
@@ -277,7 +277,7 @@ main() {
             log_info "psutil not found, installing..."
             if ! install_psutil; then
                 log_warning "psutil installation failed, falling back to text-based installer"
-                exec curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install | bash
+                exec curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install | bash
                 exit 1
             fi
         else

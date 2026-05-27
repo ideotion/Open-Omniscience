@@ -1,6 +1,6 @@
 # Open-Omniscience Installation Guide
 
-**Version:** 0.02  
+**Version:** 0.03  
 **Last Updated:** 2025-05-21  
 **Platform:** Debian-based Linux (Ubuntu, Debian, etc.), macOS, Windows (WSL2)
 
@@ -11,7 +11,7 @@ This guide provides comprehensive instructions for installing Open-Omniscience o
 The fastest way to install Open-Omniscience is with our unified installation script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
 ```
 
 This script will:
@@ -114,7 +114,7 @@ sudo apt install -y python3 python3-pip python3-venv git curl wget
 
 ```bash
 # Clone the Open-Omniscience repository
-git clone --branch 0.02 https://github.com/ideotion/Open-Omniscience.git
+git clone --branch 0.03 https://github.com/ideotion/Open-Omniscience.git
 cd Open-Omniscience
 ```
 

@@ -54,7 +54,7 @@ NC='\033[0m' # No Color
 
 # Repository
 REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
-REPO_BRANCH="0.02_Qubes"
+REPO_BRANCH="0.03_Qubes"
 
 # Installation directories
 INSTALL_DIR="/opt/open-omniscience"
@@ -124,9 +124,11 @@ log() {
         "SUCCESS") echo -e "${GREEN}[$timestamp] [SUCCESS]${NC} $message" ;;
         "WARNING") echo -e "${YELLOW}[$timestamp] [WARNING]${NC} $message" ;;
         "ERROR")   echo -e "${RED}[$timestamp] [ERROR]${NC} $message" >&2 ;;
-        "HEADER")  echo -e "\n${CYAN}[$timestamp] ========================================${NC}" ;;
-                    echo -e "${CYAN}[$timestamp] $message${NC}" ;;
-                    echo -e "${CYAN}[$timestamp] ========================================${NC}" ;;
+        "HEADER")
+            echo -e "\n${CYAN}[$timestamp] ========================================${NC}"
+            echo -e "${CYAN}[$timestamp] $message${NC}"
+            echo -e "${CYAN}[$timestamp] ========================================${NC}"
+            ;;
         "VERBOSE") 
             if [ "$VERBOSE_MODE" = true ]; then
                 echo -e "${WHITE}[$timestamp] [VERBOSE]${NC} $message"

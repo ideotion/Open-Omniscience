@@ -28,11 +28,11 @@ chmod +x build-deb.sh
 ./build-deb.sh
 ```
 
-**Output:** `package/deb/dist/open-omniscience_0.02_all.deb`
+**Output:** `package/deb/dist/open-omniscience_0.03_all.deb`
 
 **Installation:**
 ```bash
-sudo dpkg -i package/deb/dist/open-omniscience_0.02_all.deb
+sudo dpkg -i package/deb/dist/open-omniscience_0.03_all.deb
 ```
 
 ---
@@ -61,11 +61,11 @@ chmod +x OpenOmniscience.AppImageBuilder
 ./OpenOmniscience.AppImageBuilder
 ```
 
-**Output:** `package/appimage/dist/OpenOmniscience-0.02-x86_64.AppImage`
+**Output:** `package/appimage/dist/OpenOmniscience-0.03-x86_64.AppImage`
 
 **Usage:**
 ```bash
-chmod +x OpenOmniscience-0.02-x86_64.AppImage
+chmod +x OpenOmniscience-0.03-x86_64.AppImage
 ./OpenOmniscience-0.02-x86_64.AppImage
 ```
 
@@ -97,7 +97,7 @@ Both package types include:
 
 ## Version Information
 
-- **Current Version:** 0.02
+- **Current Version:** 0.03
 - **Maintainer:** Ideotion <open-omniscience@ideotion.com>
 - **Homepage:** https://github.com/ideotion/Open-Omniscience
 

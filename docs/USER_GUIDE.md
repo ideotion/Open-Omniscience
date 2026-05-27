@@ -1,6 +1,6 @@
 # Open Omniscience User Guide
 
-**Version:** 0.02
+**Version:** 0.03
 **Last Updated:** May 7, 2026
 
 This guide will help you **install, configure, and use** Open Omniscience for investigative journalism, research, and data analysis.

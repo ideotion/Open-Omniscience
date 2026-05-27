@@ -1,7 +1,7 @@
 # Open-Omniscience GUI Installer - Test Report
 
 **Date:** 2026-05-20  
-**Version:** 0.02  
+**Version:** 0.03  
 **Status:** ✅ ALL TESTS PASSED  
 
 ---
@@ -275,14 +275,14 @@ All requested features have been successfully implemented and tested:
 - [x] Install script updated to be Debian-only
 - [x] Test suite created and passing
 - [x] All files committed to GitHub
-- [x] All changes pushed to origin/0.02
+- [x] All changes pushed to origin/0.03
 
 ---
 
 ## 📚 References
 
 - **Repository**: https://github.com/ideotion/Open-Omniscience
-- **Branch**: 0.02
+- **Branch**: 0.03
 - **Commits**:
   - `c14d6df` - Fix: Improve error handling in smart launcher for clone failures
   - `6103cbd` - Fix: Rewrite requirements-core.txt cleanly and add smart GUI launcher

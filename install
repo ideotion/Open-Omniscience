@@ -30,9 +30,9 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Version
-VERSION="0.02"
+VERSION="0.03"
 REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
-REPO_BRANCH="0.02"
+REPO_BRANCH="0.03"
 INSTALL_DIR="${HOME}/open-omniscience"
 
 # =============================================================================

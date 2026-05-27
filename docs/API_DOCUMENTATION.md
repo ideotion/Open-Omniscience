@@ -148,7 +148,7 @@ https://yourdomain.com
 {
   "status": "healthy",
   "timestamp": "2025-05-12T12:00:00Z",
-  "version": "0.02",
+  "version": "0.03",
   "services": {
     "database": "healthy",
     "llm": "degraded"  // Degraded if Ollama not installed

@@ -98,7 +98,7 @@ Creates temporary VMs for testing and development:
 # Clone the repository (in any AppVM with network access)
 git clone https://github.com/ideotion/Open-Omniscience.git
 cd Open-Omniscience
-git checkout 0.02_Qubes
+git checkout 0.03_Qubes
 
 # Run the installer (must be run as root in dom0)
 sudo ./qubes-installer.sh
@@ -137,7 +137,7 @@ The installer performs the following steps:
 
 4. **Repository Setup**
    - Clones Open-Omniscience repository in each VM
-   - Checks out the `0.02_Qubes` branch
+   - Checks out the `0.03_Qubes` branch
 
 5. **Python Environment Setup**
    - Creates virtual environments in persistent VMs
@@ -759,7 +759,7 @@ To update to the latest version:
 ```bash
 # In each VM
 for vm in open-omniscience-api open-omniscience-db open-omniscience-scraper open-omniscience-ai; do
-    qvm-run -u $vm 'cd /opt/open-omniscience && git pull origin 0.02_Qubes'
+    qvm-run -u $vm 'cd /opt/open-omniscience && git pull origin 0.03_Qubes'
 done
 
 # Restart services

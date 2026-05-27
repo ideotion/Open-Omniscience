@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-20  
 **Repository:** https://github.com/ideotion/Open-Omniscience  
-**Version:** 0.02 (with Local LLM Support)  
+**Version:** 0.03 (with Local LLM Support)  
 
 ---
 

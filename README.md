@@ -5,7 +5,7 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.02 (with Local LLM Support)
+**Version:** 0.03 (with Local LLM Support)
 **License:** [GNU GPLv3](LICENSE)
 
 ![Open Omniscience Logo](https://via.placeholder.com/150?text=Open+Omniscience)
@@ -46,7 +46,7 @@ The maintainers of Open Omniscience **do not endorse or assume responsibility** 
 The **only** way to install Open-Omniscience - a single command that launches the GUI installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
 ```
 
 **What this does:**
@@ -714,14 +714,14 @@ print(f"Deepfake confidence: {result.confidence:.2%}")
 
 ## 📅 Changelog
 
-### Version 0.02 (Current)
+### Version 0.03 (Current)
 - **NEW:** Local LLM support with comprehensive text processing capabilities
 - **NEW:** 40 pre-configured models (Gemma 4, Llama 4, Phi-4, Qwen 3, NLLB, T5, BERT, etc.)
 - **NEW:** 10+ API endpoints for LLM operations
 - **NEW:** Direct Python deployment for maximum portability
 - **NEW:** Automated setup scripts
 - **NEW:** Comprehensive test suite for LLM features
-- Updated API version to 0.02
+- Updated API version to 0.03
 - Enhanced documentation with LLM guides
 
 ### Version 0.2.0 (Previous)

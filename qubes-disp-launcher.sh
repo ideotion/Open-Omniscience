@@ -44,7 +44,7 @@ NC='\033[0m' # No Color
 
 # Repository
 REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
-REPO_BRANCH="0.02_Qubes"
+REPO_BRANCH="0.03_Qubes"
 
 # Installation directories
 INSTALL_DIR="/opt/open-omniscience"

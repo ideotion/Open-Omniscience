@@ -27,7 +27,7 @@ set -e
 # Configuration
 APP_NAME="Open Omniscience"
 ENVIRONMENT="staging"
-BRANCH="0.02"
+BRANCH="0.03"
 LOG_FILE="/tmp/open-omniscience-staging-deploy-$(date +%Y%m%d-%H%M%S).log"
 
 # Colors for output

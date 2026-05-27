@@ -1,6 +1,6 @@
 # Open Omniscience Developer Guide
 
-**Version:** 0.02
+**Version:** 0.03
 **Last Updated:** May 7, 2026
 
 This guide is for **developers** who want to **extend, customize, or contribute** to Open Omniscience. It covers:

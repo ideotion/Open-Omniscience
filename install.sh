@@ -19,5 +19,5 @@ if [ -f "$SCRIPT_DIR/launch_gui_installer.sh" ]; then
     exec bash "$SCRIPT_DIR/launch_gui_installer.sh"
 else
     # Otherwise, fetch the latest version from GitHub
-    exec curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/launch_gui_installer.sh | bash
+    exec curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/launch_gui_installer.sh | bash
 fi

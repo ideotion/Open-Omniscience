@@ -23,7 +23,7 @@
 # Application settings
 app:
   name: "Open Omniscience"
-  version: "0.2.0"
+  version: "0.03"
   debug: false
   
 # Scraping settings

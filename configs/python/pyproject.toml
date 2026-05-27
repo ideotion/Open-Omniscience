@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "open-omniscience"
-version = "0.02"
+version = "0.03"
 description = "Global Intelligence Platform for Investigative Journalism with Local LLM Support"
 readme = "README.md"
 license = {text = "GPLv3"}

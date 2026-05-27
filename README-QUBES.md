@@ -65,14 +65,14 @@ This is the **Qubes-OS compatible** version of Open-Omniscience, specifically ad
 
 1. **Clone this repository in dom0:**
    ```bash
-   git clone https://github.com/your-username/Open-Omniscience-Qubes.git
+   git clone https://github.com/ideotion/Open-Omniscience.git
    cd Open-Omniscience-Qubes
    ```
 
 2. **Run the installer:**
    ```bash
-   chmod +x INSTALL-QUBES.sh
-   sudo ./INSTALL-QUBES.sh
+   chmod +x qubes-installer.sh
+   sudo ./qubes-installer.sh
    ```
 
 3. **Follow the prompts** to configure and deploy
@@ -99,7 +99,7 @@ Open-Omniscience-Qubes/
 ├── README-QUBES.md              # This file
 ├── FINAL_REPORT.md              # Complete debugging & adaptation report
 ├── QUBES_ADAPTATION_SUMMARY.md  # Detailed adaptation guide
-├── INSTALL-QUBES.sh             # Automated installation script
+├── INSTALL-QUBES.sh             # Legacy installation script (deprecated)
 ├── src/
 │   └── qubes/                   # Qubes-specific modules
 │       ├── __init__.py          # Qubes environment utilities
@@ -373,7 +373,7 @@ python3 -c "from src.qubes import get_qubes_environment; print(get_qubes_environ
 
 - **[FINAL_REPORT.md](FINAL_REPORT.md)** - Complete debugging and adaptation report
 - **[QUBES_ADAPTATION_SUMMARY.md](QUBES_ADAPTATION_SUMMARY.md)** - Detailed adaptation guide
-- **[INSTALL-QUBES.sh](INSTALL-QUBES.sh)** - Installation script (with comments)
+- **[INSTALL-QUBES.sh](INSTALL-QUBES.sh)** - Legacy installation script (deprecated, use `qubes-installer.sh` instead)
 
 ### Original Documentation
 

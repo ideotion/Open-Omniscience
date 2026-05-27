@@ -5,7 +5,7 @@ This directory contains the Debian package (.deb) for Open-Omniscience, allowing
 ## Package Information
 
 - **Package Name**: open-omniscience
-- **Version**: 0.02-1
+- **Version**: 0.03-1
 - **Architecture**: all
 - **Maintainer**: Open-Omniscience Team <team@ideotion.com>
 - **Dependencies**: python3, python3-venv, python3-pip, git, curl
@@ -19,7 +19,7 @@ This directory contains the Debian package (.deb) for Open-Omniscience, allowing
 wget https://github.com/ideotion/Open-Omniscience/raw/0.02/package/deb/open-omniscience_0.02-1_all.deb
 
 # Install the package
-sudo dpkg -i open-omniscience_0.02-1_all.deb
+sudo dpkg -i open-omniscience_0.03-1_all.deb
 
 # Fix any missing dependencies
 sudo apt-get install -f
@@ -33,7 +33,7 @@ git clone --branch 0.02 https://github.com/ideotion/Open-Omniscience.git
 cd Open-Omniscience
 
 # Install the package
-sudo dpkg -i package/deb/open-omniscience_0.02-1_all.deb
+sudo dpkg -i package/deb/open-omniscience_0.03-1_all.deb
 
 # Fix any missing dependencies
 sudo apt-get install -f

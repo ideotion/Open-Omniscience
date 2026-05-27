@@ -74,7 +74,7 @@ open-omniscience-gui-installer
 The installer uses the following defaults:
 
 - **Repository URL**: https://github.com/ideotion/Open-Omniscience.git
-- **Branch**: 0.02
+- **Branch**: 0.03
 - **Installation Directory**: ~/open-omniscience
 - **Database Type**: SQLite
 - **Default Model**: gemma4:e2b
