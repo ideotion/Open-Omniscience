@@ -1,5 +1,282 @@
 #!/bin/bash
-# Open-Omniscience - Debian 13 Installer
+# Installation Options
+# ============================================================================
+
+# Default to minimal installation
+INSTALL_TYPE="minimal"
+INSTALL_TORCH="false"
+INSTALL_OLLAMA="false"
+
+# Feature descriptions
+show_installation_options() {
+    clear
+    echo -e "$LOGO"
+    echo ""
+    log_header "=========================================="
+    log_header "  Open-Omniscience Installation Options"
+    log_header "=========================================="
+    echo ""
+    
+    echo "Please select your installation type:"
+    echo ""
+    
+    log_header "📦 Option 1: Minimal Installation (RECOMMENDED)"
+    echo "   Download Size: ~50-100 MB"
+    echo "   Disk Space: ~300-500 MB"
+    echo "   Memory: 2GB+"
+    echo ""
+    echo "   ✅ Core web scraping and data management"
+    echo "   ✅ API server and web interface"
+    echo "   ✅ Basic analysis features"
+    echo "   ✅ SQLite database support"
+    echo "   ❌ NO Local LLM support (torch, transformers)"
+    echo "   ❌ NO Deepfake detection"
+    echo "   ❌ NO Advanced AI features"
+    echo ""
+    
+    log_header "🤖 Option 2: Full Installation (Advanced)"
+    echo "   Download Size: ~2-5 GB"
+    echo "   Disk Space: ~10-20 GB"
+    echo "   Memory: 8GB+ (16GB recommended)"
+    echo ""
+    echo "   ✅ All minimal features"
+    echo "   ✅ Local LLM support"
+    echo "   ✅ Deepfake detection"
+    echo "   ✅ Advanced AI analysis"
+    echo "   ✅ All machine learning models"
+    echo ""
+    
+    log_header "⚙️  Option 3: Custom Installation"
+    echo "   Choose which large packages to install"
+    echo ""
+    
+    echo "Enter your choice [1-3] (Default: 1): "
+    read -r choice
+    
+    case "$choice" in
+        2|2)
+            INSTALL_TYPE="full"
+            INSTALL_TORCH="true"
+            INSTALL_OLLAMA="true"
+            ;;
+        3|3)
+            INSTALL_TYPE="custom"
+            custom_installation_menu
+            ;;
+        *)
+            INSTALL_TYPE="minimal"
+            INSTALL_TORCH="false"
+            INSTALL_OLLAMA="false"
+            ;;
+    esac
+}
+
+custom_installation_menu() {
+    clear
+    echo -e "$LOGO"
+    echo ""
+    log_header "=========================================="
+    log_header "  Custom Installation Options"
+    log_header "=========================================="
+    echo ""
+    
+    echo "Select which large packages to install:"
+    echo ""
+    
+    # Torch option
+    echo "1. PyTorch (torch) - Required for deep learning"
+    echo "   Size: ~500-800 MB"
+    echo "   Enables: Deepfake detection, advanced AI features"
+    echo "   Install? [y/N]: "
+    read -r answer
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+        INSTALL_TORCH="true"
+    fi
+    echo ""
+    
+    # Ollama option
+    echo "2. Ollama - Local LLM runtime"
+    echo "   Size: ~50-100 MB (plus model downloads)"
+    echo "   Enables: Local LLM text processing"
+    echo "   Install? [y/N]: "
+    read -r answer
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+        INSTALL_OLLAMA="true"
+    fi
+    echo ""
+    
+    if [[ "$INSTALL_TORCH" == "true" || "$INSTALL_OLLAMA" == "true" ]]; then
+        INSTALL_TYPE="custom"
+    else
+        INSTALL_TYPE="minimal"
+    fi
+}
+=======
+# ============================================================================
+# Installation Options
+# ============================================================================
+
+# Default to minimal installation
+INSTALL_TYPE="minimal"
+INSTALL_TORCH="false"
+INSTALL_OLLAMA="false"
+
+# Check if we're in an interactive terminal
+is_interactive() {
+    if [ -t 0 ]; then
+        return 0  # Interactive
+    else
+        return 1  # Non-interactive
+    fi
+}
+
+# Feature descriptions
+show_installation_options() {
+    # Check for environment variables first (non-interactive mode)
+    if [[ "${INSTALL_OPTION:-}" == "2" || "${FULL_INSTALL:-false}" == "true" ]]; then
+        INSTALL_TYPE="full"
+        INSTALL_TORCH="true"
+        INSTALL_OLLAMA="true"
+        return
+    elif [[ "${INSTALL_OPTION:-}" == "3" ]]; then
+        INSTALL_TYPE="custom"
+        INSTALL_TORCH="${INSTALL_TORCH:-false}"
+        INSTALL_OLLAMA="${INSTALL_OLLAMA:-false}"
+        return
+    fi
+    
+    # Interactive mode
+    if is_interactive; then
+        clear
+        echo -e "$LOGO"
+        echo ""
+        log_header "=========================================="
+        log_header "  Open-Omniscience Installation Options"
+        log_header "=========================================="
+        echo ""
+        
+        echo "Please select your installation type:"
+        echo ""
+        
+        log_header "📦 Option 1: Minimal Installation (RECOMMENDED)"
+        echo "   Download Size: ~50-100 MB"
+        echo "   Disk Space: ~300-500 MB"
+        echo "   Memory: 2GB+"
+        echo ""
+        echo "   ✅ Core web scraping and data management"
+        echo "   ✅ API server and web interface"
+        echo "   ✅ Basic analysis features"
+        echo "   ✅ SQLite database support"
+        echo "   ❌ NO Local LLM support (torch, transformers)"
+        echo "   ❌ NO Deepfake detection"
+        echo "   ❌ NO Advanced AI features"
+        echo ""
+        
+        log_header "🤖 Option 2: Full Installation (Advanced)"
+        echo "   Download Size: ~2-5 GB"
+        echo "   Disk Space: ~10-20 GB"
+        echo "   Memory: 8GB+ (16GB recommended)"
+        echo ""
+        echo "   ✅ All minimal features"
+        echo "   ✅ Local LLM support"
+        echo "   ✅ Deepfake detection"
+        echo "   ✅ Advanced AI analysis"
+        echo "   ✅ All machine learning models"
+        echo ""
+        
+        log_header "⚙️  Option 3: Custom Installation"
+        echo "   Choose which large packages to install"
+        echo ""
+        
+        echo -n "Enter your choice [1-3] (Default: 1): "
+        read -r choice
+        
+        case "$choice" in
+            2|2)
+                INSTALL_TYPE="full"
+                INSTALL_TORCH="true"
+                INSTALL_OLLAMA="true"
+                ;;
+            3|3)
+                INSTALL_TYPE="custom"
+                custom_installation_menu
+                ;;
+            *)
+                INSTALL_TYPE="minimal"
+                INSTALL_TORCH="false"
+                INSTALL_OLLAMA="false"
+                ;;
+        esac
+    else
+        # Non-interactive mode - use defaults or environment variables
+        log_info "Running in non-interactive mode. Using minimal installation."
+        log_info "To select a different installation type, use:"
+        log_info "  Option 2 (Full):   INSTALL_OPTION=2 curl ... | bash"
+        log_info "  Option 3 (Custom): INSTALL_OPTION=3 INSTALL_TORCH=true INSTALL_OLLAMA=true curl ... | bash"
+        echo ""
+        
+        # Check for FULL_INSTALL environment variable for backward compatibility
+        if [[ "${FULL_INSTALL:-false}" == "true" ]]; then
+            INSTALL_TYPE="full"
+            INSTALL_TORCH="true"
+            INSTALL_OLLAMA="true"
+        fi
+    fi
+}
+
+custom_installation_menu() {
+    # Check for environment variables first
+    if [[ "${INSTALL_TORCH:-}" == "true" || "${INSTALL_OLLAMA:-}" == "true" ]]; then
+        INSTALL_TYPE="custom"
+        return
+    fi
+    
+    if is_interactive; then
+        clear
+        echo -e "$LOGO"
+        echo ""
+        log_header "=========================================="
+        log_header "  Custom Installation Options"
+        log_header "=========================================="
+        echo ""
+        
+        echo "Select which large packages to install:"
+        echo ""
+        
+        # Torch option
+        echo "1. PyTorch (torch) - Required for deep learning"
+        echo "   Size: ~500-800 MB"
+        echo "   Enables: Deepfake detection, advanced AI features"
+        echo -n "   Install? [y/N]: "
+        read -r answer
+        if [[ "$answer" =~ ^[Yy]$ ]]; then
+            INSTALL_TORCH="true"
+        fi
+        echo ""
+        
+        # Ollama option
+        echo "2. Ollama - Local LLM runtime"
+        echo "   Size: ~50-100 MB (plus model downloads)"
+        echo "   Enables: Local LLM text processing"
+        echo -n "   Install? [y/N]: "
+        read -r answer
+        if [[ "$answer" =~ ^[Yy]$ ]]; then
+            INSTALL_OLLAMA="true"
+        fi
+        echo ""
+        
+        if [[ "$INSTALL_TORCH" == "true" || "$INSTALL_OLLAMA" == "true" ]]; then
+            INSTALL_TYPE="custom"
+        else
+            INSTALL_TYPE="minimal"
+        fi
+    else
+        # Non-interactive custom mode
+        INSTALL_TYPE="custom"
+        INSTALL_TORCH="${INSTALL_TORCH:-false}"
+        INSTALL_OLLAMA="${INSTALL_OLLAMA:-false}"
+    fi
+}Open-Omniscience - Debian 13 Installer
 # =========================================
 # This script provides a simple, clean installation of Open-Omniscience
 # for Debian 13 (Trixie) ONLY.
