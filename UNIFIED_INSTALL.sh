@@ -163,21 +163,27 @@ log_header() {
 # Check if running in Qubes OS
 # Note: Qubes OS is designed to be undetectable from within VMs for security
 # So we always ask the user rather than trying to auto-detect
-detect_qubes() {
-    # Try to detect Qubes OS by checking for Qubes-specific commands
-    # Note: Qubes is designed to be undetectable from within VMs for security,
-    # but we can check if Qubes management commands are available
+detect_qubes_dom0() {
+    # Check if we're running in dom0 (has Qubes management commands)
     if command -v qvm-ls >/dev/null 2>&1 || command -v qubesctl >/dev/null 2>&1; then
-        # We have Qubes commands available, likely running in dom0 or with admin access
         return 0
     fi
-    
-    # Check for Qubes-specific environment variables or files
+    return 1
+}
+
+detect_qubes_vm() {
+    # Check if we're running in a Qubes VM (has Qubes markers but no management commands)
     if [ -f /etc/qubes-release ] || [ -n "${QUBES_VM_TYPE:-}" ]; then
         return 0
     fi
-    
-    # Default: not detected (will ask user)
+    return 1
+}
+
+detect_qubes() {
+    # Try to detect any Qubes OS environment
+    if detect_qubes_dom0 || detect_qubes_vm; then
+        return 0
+    fi
     return 1
 }
 
@@ -432,34 +438,45 @@ create_venv() {
 setup_qubes() {
     log_header "Qubes OS Setup"
     
+    # Determine if we're running in dom0 or in a VM
+    if detect_qubes_dom0; then
+        # Running in dom0 - do multi-VM setup
+        setup_qubes_dom0
+    elif detect_qubes_vm; then
+        # Running in a Qubes VM - do regular installation in this VM
+        log_info "Detected Qubes VM environment - installing directly in this VM"
+        setup_regular
+    else
+        # Qubes detected but can't determine type - ask user
+        log_info "Qubes OS detected but cannot determine environment type"
+        if ask_yes_no "Are you running this in dom0 (with admin access)" "no"; then
+            setup_qubes_dom0
+        else
+            log_info "Installing directly in this VM"
+            setup_regular
+        fi
+    fi
+}
+
+# Qubes dom0 setup (multi-VM architecture)
+setup_qubes_dom0() {
+    log_header "Qubes OS Multi-VM Setup"
+    
     # Check if template exists
     local template="debian-13"
     if ! qvm-ls | grep -q "^${template}\s"; then
         log_info "Debian 13 template not found"
-        
-        # Check if we're already running in a Debian 13 template VM
-        # If so, assume this is the template and don't prompt for installation
-        local current_vm_name=""
-        if command -v qvm-ls >/dev/null 2>&1; then
-            current_vm_name=$(qvm-ls --current 2>/dev/null | head -1 | awk '{print $1}')
+        if ! ask_yes_no "Install Debian 13 template now" "yes"; then
+            log_error "Debian 13 template required for Qubes OS installation"
+            return 1
         fi
         
-        if [ -n "$current_vm_name" ] && [ "$current_vm_name" = "$template" ]; then
-            log_info "Running in Debian 13 template VM - using current VM as template"
-        else
-            # Only prompt if we're not already in the template
-            if ! ask_yes_no "Install Debian 13 template now" "yes"; then
-                log_error "Debian 13 template required for Qubes OS installation"
-                return 1
-            fi
-            
-            log_info "Installing Debian 13 template..."
-            if ! sudo qubesctl state.sls qvm.template-debian-13 2>/dev/null; then
-                log_error "Failed to install Debian 13 template"
-                return 1
-            fi
-            log_success "Debian 13 template installed"
+        log_info "Installing Debian 13 template..."
+        if ! sudo qubesctl state.sls qvm.template-debian-13 2>/dev/null; then
+            log_error "Failed to install Debian 13 template"
+            return 1
         fi
+        log_success "Debian 13 template installed"
     fi
     
     # Create VMs
@@ -508,7 +525,7 @@ setup_qubes() {
         log_success "$vm set up"
     done
     
-    log_success "Qubes OS setup complete"
+    log_success "Qubes OS multi-VM setup complete"
     return 0
 }
 
@@ -605,12 +622,19 @@ main() {
     clear
     
     echo ""
-    echo "  ██████╗ ██████╗  ██████╗ ███╗   ██╗████████╗ ██████╗ ██████╗ "
-    echo "  ██╔══██╗██╔══██╗██╔═══██╗████╗  ██║╚══██╔══╝██╔═══██╗██╔══██╗"
-    echo "  ██████╔╝██████╔╝██║   ██║██╔██╗ ██║   ██║   ██║   ██║██████╔╝"
-    echo "  ██╔═══╝ ██╔══██╗██║   ██║██║╚██╗██║   ██║   ██║   ██║██╔══██╗"
-    echo "  ██║     ██║  ██║╚██████╔╝██║ ╚████║   ██║   ╚██████╔╝██║  ██║"
-    echo "  ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝"
+    echo "  ██████╗  ██████╗ ███╗   ██╗██████╗ ██╗███╗   ██╗████████╗"
+    echo "  ██╔══██╗██╔═══██╗████╗  ██║██╔══██╗██║████╗  ██║╚══██╔══╝"
+    echo "  ██║  ██║██║   ██║██╔██╗ ██║██║   ██║██╔██╗ ██║   ██║   "
+    echo "  ██║  ██║██║   ██║██║╚██╗██║██║   ██║██║╚██╗██║   ██║   "
+    echo "  ██████╔╝╚██████╔╝██║ ╚████║╚██████╔╝██║ ╚████║   ██║   "
+    echo "  ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝    "
+    echo ""
+    echo "  ██████╗ ██╗   ██╗███╗   ███╗██████╗ ██████╗ ███████╗"
+    echo "  ██╔══██╗██║   ██║████╗  ████║██╔══██╗██╔══██╗██╔════╝"
+    echo "  ██████╔╝██║   ██║██╔██╗ ██║██████╔╝██║   ██║█████╗  "
+    echo "  ██╔══██╗██║   ██║██║╚██╗██║██╔══██╗██║   ██║██╔══╝  "
+    echo "  ██║  ██║╚██████╔╝██║ ╚████║██║  ██║╚██████╔╝███████╗"
+    echo "  ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝"
     echo ""
     echo "  Open-Omniscience Unified Installer v0.03"
     echo "  ========================================"
