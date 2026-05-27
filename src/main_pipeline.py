@@ -39,6 +39,9 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
+# Import blockchain service
+from src.blockchain import get_blockchain_service
+
 
 class PipelineStatus(Enum):
     IDLE = "idle"
@@ -426,7 +429,7 @@ class OpenOmnisciencePipeline:
                     if result.status.value == "SUCCESS":
                         # Extract content from the downloaded page
                         response = requests.get(url, timeout=30)
-                        return IngestedData(
+                        ingested_data = IngestedData(
                             url=url,
                             content=response.text,
                             raw_content=response.content,
@@ -437,6 +440,11 @@ class OpenOmnisciencePipeline:
                                 "content_type": response.headers.get('Content-Type', ''),
                             },
                         )
+                        
+                        # Add to blockchain
+                        self._add_to_blockchain(ingested_data)
+                        
+                        return ingested_data
                     elif result.status.value == "BLOCKED":
                         raise ValueError(f"URL blocked by robots.txt: {url}")
                     else:  # FAILED
@@ -448,7 +456,7 @@ class OpenOmnisciencePipeline:
         try:
             response = requests.get(url, timeout=30)
             response.raise_for_status()
-            return IngestedData(
+            ingested_data = IngestedData(
                 url=url,
                 content=response.text,
                 raw_content=response.content,
@@ -459,9 +467,61 @@ class OpenOmnisciencePipeline:
                     "content_type": response.headers.get('Content-Type', ''),
                 },
             )
+            
+            # Add to blockchain
+            self._add_to_blockchain(ingested_data)
+            
+            return ingested_data
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to ingest URL {url}: {e}")
             raise ValueError(f"Failed to ingest URL {url}: {e}")
+    
+    def _add_to_blockchain(self, ingested_data: IngestedData) -> None:
+        """
+        Add ingested data to the blockchain for per-article verification.
+        
+        Computes the 3 hashes (content, metadata, source) and adds them to the
+        local hash chain.
+        
+        Args:
+            ingested_data: IngestedData object to add to blockchain
+        """
+        try:
+            # Generate unique article ID
+            article_id = f"article_{int(time.time() * 1000)}_{hashlib.sha256(ingested_data.url.encode()).hexdigest()[:8]}"
+            
+            # Compute hashes
+            content_hash = ingested_data.content_hash
+            
+            # Compute metadata hash
+            metadata_str = json.dumps(ingested_data.metadata, sort_keys=True)
+            metadata_hash = hashlib.sha256(metadata_str.encode()).hexdigest()
+            
+            # Compute source hash (URL + timestamp)
+            source_hash = hashlib.sha256(
+                f"{ingested_data.url}{ingested_data.timestamp}".encode()
+            ).hexdigest()
+            
+            # Add to blockchain
+            blockchain_service = get_blockchain_service()
+            blockchain_service.add_article(
+                article_id=article_id,
+                content_hash=content_hash,
+                metadata_hash=metadata_hash,
+                source_hash=source_hash
+            )
+            
+            # Store article ID in the ingested data for reference
+            ingested_data.metadata["blockchain_article_id"] = article_id
+            ingested_data.metadata["blockchain_content_hash"] = content_hash
+            ingested_data.metadata["blockchain_metadata_hash"] = metadata_hash
+            ingested_data.metadata["blockchain_source_hash"] = source_hash
+            
+            self.logger.debug(f"Added article {article_id} to blockchain")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to add article to blockchain: {e}")
+            # Blockchain is optional - don't fail ingestion if it fails
 
     def _process(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """

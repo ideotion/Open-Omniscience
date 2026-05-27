@@ -1,0 +1,72 @@
+# Blockchain Configuration for Open-Omniscience
+# 
+# This configuration file controls the per-article blockchain verification system.
+# The system provides:
+# - Local hash chain (SQLite) for offline per-article verification
+# - Optional public blockchain anchoring (Ethereum, IPFS, Arweave) for decentralized verification
+#
+# Per-article verification works via Merkle proofs, allowing individual articles to be
+# verified without storing each article on-chain. Block Merkle roots are anchored to
+# public blockchains for cost-effective decentralized verification.
+
+blockchain:
+  # Enable/disable the entire blockchain module
+  enabled: true
+
+  # Local Hash Chain Settings
+  # The local hash chain stores per-article hashes in SQLite and organizes them into blocks
+  # with Merkle roots for efficient verification.
+  local_chain:
+    enabled: true
+    
+    # Path to the SQLite database
+    db_path: "data/blockchain/local_hash_chain.db"
+    
+    # Maximum number of articles per block
+    # When a block reaches this limit, a new block is created
+    articles_per_block: 100
+    
+    # Maximum time (in seconds) per block
+    # When a block reaches this age, a new block is created (even if not full)
+    time_per_block: 86400  # 24 hours
+
+  # Blockchain Anchoring Settings
+  # Anchoring stores block Merkle roots on public blockchains for decentralized verification.
+  # This is per-batch (not per-article) to keep costs low.
+  anchoring:
+    enabled: true
+    
+    # Interval (in seconds) between automatic anchoring attempts
+    interval: 86400  # 24 hours
+    
+    # List of providers to use for anchoring
+    # Available: local, ethereum, ipfs, arweave
+    # - local: SQLite-based offline anchoring (always available)
+    # - ethereum: Ethereum smart contract anchoring (requires web3.py and node connection)
+    # - ipfs: IPFS decentralized storage (requires ipfshttpclient and IPFS node)
+    # - arweave: Arweave permanent storage (requires arweave-python and wallet)
+    providers:
+      - local
+      # - ethereum
+      # - ipfs
+      # - arweave
+    
+    # Ethereum-specific settings
+    ethereum:
+      contract_address: "0x1234567890123456789012345678901234567890"
+      rpc_url: "http://localhost:8545"
+      # private_key: "0x..."  # Set via environment variable for security
+      gas_limit: 200000
+      gas_price: 20000000000  # 20 Gwei
+    
+    # IPFS-specific settings
+    ipfs:
+      host: "localhost"
+      port: 5001
+      use_https: false
+    
+    # Arweave-specific settings
+    arweave:
+      wallet_path: "~/.arweave/wallet.json"
+      # wallet_key: "..."  # Set via environment variable for security
+      arweave_url: "https://arweave.net"
