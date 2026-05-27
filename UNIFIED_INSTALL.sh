@@ -1,6 +1,68 @@
+# Open-Omniscience UNIFIED Installer
+# ============================================================================
+#
+# Version: 0.03
+# Unified installer that automatically adapts to:
+#   - Regular Debian/Ubuntu systems (with or without GUI)
+#   - Qubes OS (R4.1+ with Debian 12 template)
+#   - Headless servers
+#   - Various environments (X11, Wayland, VMs, bare metal)
+#
+# Features:
+#   - Automatic environment detection (Qubes vs regular Linux)
+#   - Smart installation method selection
+#   - Single entry point for all users
+#   - Comprehensive error handling
+#   - User-friendly prompts with sensible defaults
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
+#   OR
+#   ./UNIFIED_INSTALL.sh
+#
+# Author: Open-Omniscience Team
+# License: GNU GPLv3
+#
+# ============================================================================
+
+set -uo pipefail
+=======
 #!/bin/bash
 
 # ============================================================================
+# Open-Omniscience UNIFIED Installer
+# ============================================================================
+#
+# Version: 0.03
+# Unified installer that adapts to:
+#   - Regular Debian/Ubuntu systems (with or without GUI)
+#   - Qubes OS (R4.1+ with Debian 12 template)
+#   - Headless servers
+#   - Various environments (X11, Wayland, VMs, bare metal)
+#
+# Features:
+#   - User prompts for Qubes OS (undetectable by design)
+#   - Automatic GUI detection
+#   - Smart installation method selection
+#   - Single entry point for all users
+#   - Comprehensive error handling
+#   - Works with both direct execution and piped execution
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
+#   OR
+#   ./UNIFIED_INSTALL.sh
+#
+# Author: Open-Omniscience Team
+# License: GNU GPLv3
+#
+# ============================================================================
+
+set -uo pipefail
+
+# Note: When piped (curl ... | bash), stdin is not a terminal
+# So we need to use /dev/tty for user input when available
+# If /dev/tty is not available (piped), we'll use stdin============================================================================
 # Open-Omniscience UNIFIED Installer
 # ============================================================================
 #
@@ -143,6 +205,7 @@ detect_system() {
 # ============================================================================
 
 # Ask yes/no question with default
+# Works with both terminal and piped execution
 ask_yes_no() {
     local question="$1"
     local default="$2"
@@ -154,16 +217,29 @@ ask_yes_no() {
         prompt="y/N"
     fi
     
-    while true; do
-        read -p "$question [$prompt]: " answer
-        answer="${answer:-$default}"
-        
-        case "$answer" in
-            [Yy]*|[Yy][Ee][Ss]*) return 0 ;;
-            [Nn]*|[Nn][Oo]*) return 1 ;;
-            *) echo "Please answer yes or no." ;;
-        esac
-    done
+    # Try to read from /dev/tty first (for piped execution), then fallback to stdin
+    if [ -e /dev/tty ] && [ -r /dev/tty ]; then
+        while true; do
+            read -p "$question [$prompt]: " answer < /dev/tty
+            answer="${answer:-$default}"
+            case "$answer" in
+                [Yy]*|[Yy][Ee][Ss]*) return 0 ;;
+                [Nn]*|[Nn][Oo]*) return 1 ;;
+                *) echo "Please answer yes or no." > /dev/tty ;;
+            esac
+        done
+    else
+        # Fallback for direct terminal execution
+        while true; do
+            read -p "$question [$prompt]: " answer
+            answer="${answer:-$default}"
+            case "$answer" in
+                [Yy]*|[Yy][Ee][Ss]*) return 0 ;;
+                [Nn]*|[Nn][Oo]*) return 1 ;;
+                *) echo "Please answer yes or no." ;;
+            esac
+        done
+    fi
 }
 
 # Ask user if they're using Qubes OS
@@ -459,15 +535,23 @@ start_services() {
     
     cd "$INSTALL_DIR"
     
+    # Activate virtual environment and get the full path to uvicorn
+    source venv/bin/activate
+    local uvicorn_cmd=$(which uvicorn 2>/dev/null)
+    
+    if [ -z "$uvicorn_cmd" ]; then
+        log_error "uvicorn not found. Please ensure the virtual environment is activated and dependencies are installed."
+        log_info "Try running: source venv/bin/activate && pip install uvicorn"
+        return 1
+    fi
+    
     if [ "$USE_GUI" = true ]; then
         log_info "Starting with GUI..."
-        source venv/bin/activate
-        uvicorn api.main:app --reload &
+        "$uvicorn_cmd" api.main:app --reload &
         log_success "Open-Omniscience running at http://localhost:8000"
     else
         log_info "Starting in background..."
-        source venv/bin/activate
-        nohup uvicorn api.main:app --host 0.0.0.0 --port 8000 > /tmp/open-omniscience.log 2>&1 &
+        nohup "$uvicorn_cmd" api.main:app --host 0.0.0.0 --port 8000 > /tmp/open-omniscience.log 2>&1 &
         log_success "Open-Omniscience running at http://localhost:8000"
         log_info "Logs available at /tmp/open-omniscience.log"
     fi
