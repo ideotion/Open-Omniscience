@@ -1,4 +1,22 @@
-# Open-Omniscience - Unified Requirements
+# Encryption & Security
+# ============================================================================
+python-gnupg>=0.4.7
+=======
+# ============================================================================
+# Encryption & Security
+# ============================================================================
+python-gnupg>=0.4.7
+
+# ============================================================================
+# Post-Quantum Cryptography (PQC)
+# ============================================================================
+# CRYSTALS-Dilithium (NIST PQC Standard for signatures)
+pqcrypto>=0.1.3  # Python bindings for Dilithium, Kyber, etc.
+
+# ============================================================================
+# SHA-3 and Advanced Hashing
+# ============================================================================
+pycryptodome>=3.20.0  # SHA-3, BLAKE2, and other modern hash functionsOpen-Omniscience - Unified Requirements
 # ======================================
 # This is the single requirements file for Open-Omniscience.
 # It includes all dependencies for the core application, LLM support, and all pillars.

@@ -26,10 +26,11 @@ with cryptographic timestamps, digital signatures, and exportable reports.
 
 Features:
 - RFC 3161 TSA (Timestamp Authority) support for legally binding timestamps
-- Ed25519 digital signatures for non-repudiation
+- Hybrid digital signatures (Ed25519 + Dilithium3) for non-repudiation and quantum resistance
 - Cryptographic chaining of log entries for tamper detection
 - Exportable PDF/JSON reports for legal proceedings
 - Offline-first design with fallback to local timestamps
+- Key rotation and forward secrecy support
 
 Author: Open-Omniscience Team
 License: GNU GPLv3
@@ -46,6 +47,31 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import hashlib
+
+# Import PQC and Key Manager
+from .pqc import (
+    HybridSignature,
+    HybridKeyPair,
+    HashAlgorithm,
+    SignatureAlgorithm,
+    sign_hybrid,
+    verify_hybrid,
+    hash_data,
+    generate_hybrid_keypair,
+    PQCError,
+    PQCNotAvailableError,
+)
+from .key_manager import (
+    KeyManager,
+    KeyMetadata,
+    KeyStatus,
+    get_key_manager,
+    reset_key_manager,
+    KeyManagerError,
+    KeyNotFoundError,
+    KeyRevokedError,
+    KeyExpiredError,
+)
 
 # Optional imports (for PDF generation and RFC 3161)
 try:
@@ -122,16 +148,19 @@ class CoCEntry:
     Attributes:
         entry_id: Unique identifier (UUID4) for this entry.
         article_id: Reference to the article (hash or ID).
-        article_hash: SHA-256 of the article content at the time of action.
+        article_hash: SHA-3-512 hash of the article content at the time of action.
         action: The type of action performed (from CoCAction enum).
         timestamp: Local timestamp when the action occurred (UTC).
         tsa_timestamp: RFC 3161 timestamp (if available).
         tsa_token: Raw TSA token for verification (if available).
+        tsa_algorithm: Algorithm used for TSA (e.g., "dilithium3", "rsa", "ed25519").
         actor_id: Identifier of the actor (user, system, etc.).
-        actor_signature: Ed25519 signature of the entry (for non-repudiation).
+        actor_signature: HybridSignature (Ed25519 + Dilithium3) of the entry.
         previous_entry_hash: Hash of the previous CoC entry for this article.
-        entry_hash: SHA-256 hash of this entry (computed from all other fields).
+        entry_hash: SHA-3-512 hash of this entry (computed from all other fields).
         metadata: Additional context (e.g., modification details).
+        key_id: ID of the key used for signing (for key rotation tracking).
+        hash_algorithm: Hash algorithm used (default: SHA3_512).
     """
     entry_id: str
     article_id: str
@@ -140,11 +169,14 @@ class CoCEntry:
     timestamp: datetime
     tsa_timestamp: Optional[datetime] = None
     tsa_token: Optional[bytes] = None
+    tsa_algorithm: Optional[str] = None
     actor_id: Optional[str] = None
-    actor_signature: Optional[bytes] = None
+    actor_signature: Optional[HybridSignature] = None
     previous_entry_hash: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     entry_hash: Optional[str] = field(default=None, init=False)
+    key_id: Optional[str] = None
+    hash_algorithm: HashAlgorithm = HashAlgorithm.SHA3_512
 
     def __post_init__(self) -> None:
         """Compute entry_hash after initialization."""
@@ -152,7 +184,7 @@ class CoCEntry:
 
     def _compute_hash(self) -> str:
         """
-        Compute SHA-256 hash of the entry (excluding entry_hash and actor_signature).
+        Compute hash of the entry (excluding entry_hash and actor_signature).
         
         This hash is used for:
         - Storing as entry_hash in the database
@@ -160,7 +192,7 @@ class CoCEntry:
         - Verifying the entry's integrity
         
         Returns:
-            Hexadecimal SHA-256 hash string.
+            Hexadecimal hash string (using the configured hash_algorithm).
         """
         # Serialize all fields except entry_hash and actor_signature
         # (actor_signature is excluded because it's derived from this hash)
@@ -172,13 +204,30 @@ class CoCEntry:
             "timestamp": self.timestamp.isoformat(),
             "tsa_timestamp": self.tsa_timestamp.isoformat() if self.tsa_timestamp else None,
             "tsa_token": self.tsa_token.hex() if self.tsa_token else None,
+            "tsa_algorithm": self.tsa_algorithm,
             "actor_id": self.actor_id,
             # NOTE: actor_signature is EXCLUDED to avoid circular dependency
             "previous_entry_hash": self.previous_entry_hash,
             "metadata": json.dumps(self.metadata, sort_keys=True),
+            "key_id": self.key_id,
+            "hash_algorithm": self.hash_algorithm.value,
         }
         serialized = json.dumps(data, sort_keys=True)
-        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        
+        # Use the configured hash algorithm
+        if self.hash_algorithm == HashAlgorithm.SHA256:
+            return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        elif self.hash_algorithm == HashAlgorithm.SHA3_256:
+            return hashlib.sha3_256(serialized.encode("utf-8")).hexdigest()
+        elif self.hash_algorithm == HashAlgorithm.SHA3_512:
+            return hashlib.sha3_512(serialized.encode("utf-8")).hexdigest()
+        elif self.hash_algorithm == HashAlgorithm.BLAKE2B:
+            return hashlib.blake2b(serialized.encode("utf-8"), digest_size=64).hexdigest()
+        elif self.hash_algorithm == HashAlgorithm.BLAKE2S:
+            return hashlib.blake2s(serialized.encode("utf-8"), digest_size=32).hexdigest()
+        else:
+            # Fallback to SHA-3-512
+            return hashlib.sha3_512(serialized.encode("utf-8")).hexdigest()
 
     def to_dict(self, include_signature: bool = True) -> Dict[str, Any]:
         """
@@ -198,13 +247,16 @@ class CoCEntry:
             "timestamp": self.timestamp.isoformat(),
             "tsa_timestamp": self.tsa_timestamp.isoformat() if self.tsa_timestamp else None,
             "tsa_token": self.tsa_token.hex() if self.tsa_token else None,
+            "tsa_algorithm": self.tsa_algorithm,
             "actor_id": self.actor_id,
             "previous_entry_hash": self.previous_entry_hash,
             "entry_hash": self.entry_hash,
             "metadata": self.metadata,
+            "key_id": self.key_id,
+            "hash_algorithm": self.hash_algorithm.value,
         }
         if include_signature and self.actor_signature:
-            result["actor_signature"] = self.actor_signature.hex()
+            result["actor_signature"] = self.actor_signature.to_dict()
         return result
 
     @classmethod
@@ -218,6 +270,26 @@ class CoCEntry:
         Returns:
             CoCEntry instance.
         """
+        # Handle actor_signature (can be bytes or dict)
+        actor_signature = None
+        if data.get("actor_signature"):
+            sig_data = data["actor_signature"]
+            if isinstance(sig_data, dict):
+                actor_signature = HybridSignature.from_dict(sig_data)
+            elif isinstance(sig_data, str):
+                # Legacy: assume it's a hex-encoded Ed25519 signature
+                # Convert to HybridSignature with only Ed25519
+                actor_signature = HybridSignature(
+                    ed25519_signature=bytes.fromhex(sig_data),
+                    algorithm=SignatureAlgorithm.ED25519,
+                )
+            elif isinstance(sig_data, bytes):
+                # Legacy: assume it's an Ed25519 signature
+                actor_signature = HybridSignature(
+                    ed25519_signature=sig_data,
+                    algorithm=SignatureAlgorithm.ED25519,
+                )
+        
         return cls(
             entry_id=data["entry_id"],
             article_id=data["article_id"],
@@ -226,10 +298,13 @@ class CoCEntry:
             timestamp=datetime.fromisoformat(data["timestamp"]),
             tsa_timestamp=datetime.fromisoformat(data["tsa_timestamp"]) if data.get("tsa_timestamp") else None,
             tsa_token=bytes.fromhex(data["tsa_token"]) if data.get("tsa_token") else None,
+            tsa_algorithm=data.get("tsa_algorithm"),
             actor_id=data.get("actor_id"),
-            actor_signature=bytes.fromhex(data["actor_signature"]) if data.get("actor_signature") else None,
+            actor_signature=actor_signature,
             previous_entry_hash=data.get("previous_entry_hash"),
             metadata=data.get("metadata", {}),
+            key_id=data.get("key_id"),
+            hash_algorithm=HashAlgorithm(data.get("hash_algorithm", "sha3_512")),
         )
 
     def verify_hash(self) -> bool:
@@ -516,10 +591,11 @@ class ChainOfCustodyLogger:
     This class manages the **immutable, tamper-evident log** of all actions
     performed on articles in the Open-Omniscience system. It supports:
     - **Cryptographic chaining** of entries (each entry includes the hash of the previous).
-    - **Digital signatures** (Ed25519) for non-repudiation.
+    - **Hybrid digital signatures** (Ed25519 + Dilithium3) for non-repudiation and quantum resistance.
     - **RFC 3161 timestamps** for legally admissible time proofs.
     - **SQLite storage** for persistence.
     - **Offline mode** with fallback to local timestamps.
+    - **Key rotation and forward secrecy** via KeyManager integration.
     
     Example:
         >>> coc_logger = ChainOfCustodyLogger(db_path="data/coc.db")
@@ -540,24 +616,31 @@ class ChainOfCustodyLogger:
         tsa_url: Optional[str] = None,
         enable_signing: bool = True,
         enable_tsa: bool = True,
+        key_manager: Optional[KeyManager] = None,
+        hash_algorithm: HashAlgorithm = HashAlgorithm.SHA3_512,
     ) -> None:
         """
         Initialize the ChainOfCustodyLogger.
         
         Args:
             db_path: Path to the SQLite database for storing CoC entries.
-            private_key: Ed25519 private key (bytes) for signing entries.
+            private_key: Ed25519 private key (bytes) for signing entries (legacy).
             tsa_url: URL of the RFC 3161 Timestamp Authority (e.g., "http://timestamp.digicert.com").
-            enable_signing: Whether to sign entries (requires private_key).
+            enable_signing: Whether to sign entries (requires private_key or key_manager).
             enable_tsa: Whether to request TSA timestamps (requires tsa_url).
+            key_manager: KeyManager instance for key rotation and forward secrecy.
+            hash_algorithm: Hash algorithm to use (default: SHA3_512).
         """
         self.db_path = db_path
         self.private_key = private_key
         self.tsa_url = tsa_url
-        self.enable_signing = enable_signing and (private_key is not None)
+        self.enable_signing = enable_signing and (private_key is not None or key_manager is not None)
         self.enable_tsa = enable_tsa and (tsa_url is not None)
+        self.key_manager = key_manager
+        self.hash_algorithm = hash_algorithm
         self._public_key: Optional[bytes] = None
         self._tsa_client: Optional["RFC3161Client"] = None
+        self._use_legacy_signing = private_key is not None and key_manager is None
 
         # Initialize database
         self._initialize_database()
@@ -566,8 +649,8 @@ class ChainOfCustodyLogger:
         if self.enable_tsa:
             self._init_tsa_client()
 
-        # Derive public key if signing is enabled
-        if self.enable_signing:
+        # Derive public key if using legacy signing
+        if self._use_legacy_signing and self.enable_signing:
             self._public_key = self._derive_public_key()
 
     def _init_tsa_client(self) -> None:
@@ -612,11 +695,14 @@ class ChainOfCustodyLogger:
                     timestamp TEXT NOT NULL,
                     tsa_timestamp TEXT,
                     tsa_token BLOB,
+                    tsa_algorithm TEXT,
                     actor_id TEXT,
-                    actor_signature BLOB,
+                    actor_signature TEXT,  -- JSON-serialized HybridSignature
                     previous_entry_hash TEXT,
                     entry_hash TEXT NOT NULL,
                     metadata TEXT,
+                    key_id TEXT,
+                    hash_algorithm TEXT DEFAULT 'sha3_512',
                     FOREIGN KEY (article_id) REFERENCES articles(id)
                 )
             """)
@@ -628,6 +714,10 @@ class ChainOfCustodyLogger:
                 CREATE INDEX IF NOT EXISTS idx_coc_timestamp 
                 ON coc_entries (timestamp)
             """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_coc_key_id 
+                ON coc_entries (key_id)
+            """)
 
     def log_action(
         self,
@@ -636,6 +726,7 @@ class ChainOfCustodyLogger:
         action: CoCAction,
         actor_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        key_id: Optional[str] = None,
     ) -> CoCEntry:
         """
         Log a new action to the Chain of Custody.
@@ -643,15 +734,16 @@ class ChainOfCustodyLogger:
         This method:
         1. Creates a new CoCEntry with the provided details.
         2. Requests a TSA timestamp (if enabled and online).
-        3. Signs the entry (if enabled).
+        3. Signs the entry with hybrid signature (Ed25519 + Dilithium3) (if enabled).
         4. Stores the entry in the database.
         
         Args:
             article_id: Unique identifier for the article.
-            article_hash: SHA-256 hash of the article content at the time of action.
+            article_hash: SHA-3-512 hash of the article content at the time of action.
             action: The type of action being logged (from CoCAction enum).
             actor_id: Identifier of the actor (user, system, etc.).
             metadata: Additional context (e.g., modification details).
+            key_id: Optional key ID to use for signing (default: current key from KeyManager).
             
         Returns:
             The created CoCEntry.
@@ -670,23 +762,26 @@ class ChainOfCustodyLogger:
             actor_id=actor_id,
             previous_entry_hash=previous_entry_hash,
             metadata=metadata or {},
+            hash_algorithm=self.hash_algorithm,
         )
 
         # Request TSA timestamp (if enabled)
         if self.enable_tsa and self._tsa_client:
             try:
-                tsa_timestamp, tsa_token = self._tsa_client.get_timestamp(
-                    entry.entry_hash.encode()
+                tsa_timestamp, tsa_token, tsa_algorithm = self._tsa_client.get_timestamp(
+                    entry.entry_hash.encode(),
+                    hash_algorithm=self.hash_algorithm,
                 )
                 entry.tsa_timestamp = tsa_timestamp
                 entry.tsa_token = tsa_token
+                entry.tsa_algorithm = tsa_algorithm
             except Exception as e:
                 # Log warning but continue (fallback to local timestamp)
-                print(f"Warning: TSA timestamp failed: {e}")
+                logger.warning(f"TSA timestamp failed: {e}")
 
         # Sign the entry (if enabled)
         if self.enable_signing:
-            entry.actor_signature = self._sign_entry(entry)
+            entry.actor_signature, entry.key_id = self._sign_entry(entry, key_id)
 
         # Store in database
         self._store_entry(entry)
@@ -715,23 +810,48 @@ class ChainOfCustodyLogger:
                 return self._row_to_entry(row)
             return None
 
-    def _sign_entry(self, entry: CoCEntry) -> bytes:
+    def _sign_entry(
+        self,
+        entry: CoCEntry,
+        key_id: Optional[str] = None,
+    ) -> Tuple[Optional[HybridSignature], Optional[str]]:
         """
-        Sign the entry with the private key.
+        Sign the entry with a hybrid signature (Ed25519 + Dilithium3).
         
         Args:
             entry: The CoCEntry to sign.
+            key_id: Optional key ID to use (default: current key from KeyManager).
             
         Returns:
-            Ed25519 signature (bytes).
+            Tuple of (HybridSignature, key_id) or (None, None) if signing fails.
         """
-        if not HAS_CRYPTOGRAPHY:
-            raise CoCSignatureError("Signing requires 'cryptography' library")
+        if not self.enable_signing:
+            return None, None
+        
         try:
-            private_key_obj = serialization.load_pem_private_key(self.private_key, password=None)
-            data = entry._compute_hash().encode()
-            return private_key_obj.sign(data)
+            # Use KeyManager if available
+            if self.key_manager is not None:
+                hybrid_key = self.key_manager.get_key(key_id) if key_id else self.key_manager.get_current_key()
+                data = entry._compute_hash().encode()
+                signature = sign_hybrid(hybrid_key, data, entry.hash_algorithm)
+                return signature, hybrid_key.key_id
+            
+            # Fallback to legacy Ed25519 signing
+            elif self._use_legacy_signing and HAS_CRYPTOGRAPHY:
+                private_key_obj = serialization.load_pem_private_key(self.private_key, password=None)
+                data = entry._compute_hash().encode()
+                ed25519_sig = private_key_obj.sign(data)
+                # Convert to HybridSignature for compatibility
+                signature = HybridSignature(
+                    ed25519_signature=ed25519_sig,
+                    algorithm=SignatureAlgorithm.ED25519,
+                )
+                return signature, None
+            else:
+                logger.warning("Signing disabled: no key_manager or private_key")
+                return None, None
         except Exception as e:
+            logger.error(f"Failed to sign entry: {e}")
             raise CoCSignatureError(f"Failed to sign entry: {e}")
 
     def _store_entry(self, entry: CoCEntry) -> None:
@@ -741,9 +861,14 @@ class ChainOfCustodyLogger:
         Args:
             entry: The CoCEntry to store.
         """
+        # Serialize actor_signature (HybridSignature) to JSON
+        actor_signature_json = None
+        if entry.actor_signature:
+            actor_signature_json = json.dumps(entry.actor_signature.to_dict())
+        
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
-                INSERT INTO coc_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO coc_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 entry.entry_id,
                 entry.article_id,
@@ -752,11 +877,14 @@ class ChainOfCustodyLogger:
                 entry.timestamp.isoformat(),
                 entry.tsa_timestamp.isoformat() if entry.tsa_timestamp else None,
                 entry.tsa_token,
+                entry.tsa_algorithm,
                 entry.actor_id,
-                entry.actor_signature,
+                actor_signature_json,
                 entry.previous_entry_hash,
                 entry.entry_hash,
                 json.dumps(entry.metadata),
+                entry.key_id,
+                entry.hash_algorithm.value,
             ))
 
     def _row_to_entry(self, row: sqlite3.Row) -> CoCEntry:
@@ -778,11 +906,36 @@ class ChainOfCustodyLogger:
         entry.timestamp = datetime.fromisoformat(row[4])
         entry.tsa_timestamp = datetime.fromisoformat(row[5]) if row[5] else None
         entry.tsa_token = row[6]
-        entry.actor_id = row[7]
-        entry.actor_signature = row[8]
-        entry.previous_entry_hash = row[9]
-        entry.entry_hash = row[10]  # Load the stored hash (do NOT recompute)
-        entry.metadata = json.loads(row[11]) if row[11] else {}
+        entry.tsa_algorithm = row[7]
+        entry.actor_id = row[8]
+        
+        # Deserialize actor_signature (HybridSignature)
+        if row[9]:
+            try:
+                sig_dict = json.loads(row[9])
+                entry.actor_signature = HybridSignature.from_dict(sig_dict)
+            except (json.JSONDecodeError, KeyError):
+                # Legacy: assume it's a hex-encoded Ed25519 signature
+                if isinstance(row[9], str):
+                    entry.actor_signature = HybridSignature(
+                        ed25519_signature=bytes.fromhex(row[9]),
+                        algorithm=SignatureAlgorithm.ED25519,
+                    )
+                elif isinstance(row[9], bytes):
+                    entry.actor_signature = HybridSignature(
+                        ed25519_signature=row[9],
+                        algorithm=SignatureAlgorithm.ED25519,
+                    )
+                else:
+                    entry.actor_signature = None
+        else:
+            entry.actor_signature = None
+        
+        entry.previous_entry_hash = row[10]
+        entry.entry_hash = row[11]  # Load the stored hash (do NOT recompute)
+        entry.metadata = json.loads(row[12]) if row[12] else {}
+        entry.key_id = row[13]
+        entry.hash_algorithm = HashAlgorithm(row[14]) if row[14] else HashAlgorithm.SHA3_512
         return entry
 
     def get_coc_for_article(self, article_id: str) -> List[CoCEntry]:
@@ -893,7 +1046,7 @@ class ChainOfCustodyLogger:
 
     def _verify_signature(self, entry: CoCEntry) -> bool:
         """
-        Verify the entry's signature.
+        Verify the entry's hybrid signature.
         
         Args:
             entry: The CoCEntry to verify.
@@ -901,15 +1054,37 @@ class ChainOfCustodyLogger:
         Returns:
             True if the signature is valid, False otherwise.
         """
-        if not HAS_CRYPTOGRAPHY or not self._public_key:
+        if not entry.actor_signature or not entry.key_id:
+            # Fallback to legacy verification if no key_id
+            if self._use_legacy_signing and HAS_CRYPTOGRAPHY and self._public_key:
+                try:
+                    public_key_obj = serialization.load_pem_public_key(self._public_key)
+                    data = entry._compute_hash().encode()
+                    # Handle legacy signature (bytes)
+                    if isinstance(entry.actor_signature, bytes):
+                        public_key_obj.verify(entry.actor_signature, data)
+                        return True
+                    elif entry.actor_signature.ed25519_signature:
+                        public_key_obj.verify(entry.actor_signature.ed25519_signature, data)
+                        return True
+                except Exception:
+                    pass
             return False
-        try:
-            public_key_obj = serialization.load_pem_public_key(self._public_key)
-            data = entry._compute_hash().encode()
-            public_key_obj.verify(entry.actor_signature, data)
-            return True
-        except Exception:
-            return False
+        
+        # Use KeyManager for verification
+        if self.key_manager is not None:
+            try:
+                # Get the key used for signing
+                hybrid_key = self.key_manager.get_key(entry.key_id)
+                data = entry._compute_hash().encode()
+                return verify_hybrid(hybrid_key, entry.actor_signature, data, entry.hash_algorithm)
+            except (KeyNotFoundError, KeyRevokedError, KeyExpiredError):
+                return False
+            except Exception as e:
+                logger.error(f"Failed to verify signature for entry {entry.entry_id}: {e}")
+                return False
+        
+        return False
 
     def _verify_tsa_token(self, entry: CoCEntry) -> bool:
         """

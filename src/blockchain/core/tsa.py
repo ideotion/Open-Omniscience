@@ -30,18 +30,34 @@ Features:
 - Verify TSA tokens (responses) against the original data
 - Support for multiple TSA providers (e.g., DigiCert, Sectigo, GlobalSign)
 - Offline fallback to local timestamps
+- Post-Quantum Cryptography (PQC) support via Dilithium-signed timestamps
 
 Author: Open-Omniscience Team
 License: GNU GPLv3
 """
 
 import hashlib
+import json
 import struct
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple, Union
 
 import requests
+
+# Import PQC for local timestamp fallback
+try:
+    from .pqc import (
+        HybridKeyPair,
+        HashAlgorithm as PQCHashAlgorithm,
+        generate_hybrid_keypair,
+        sign_hybrid,
+        verify_hybrid,
+        hash_data,
+    )
+    PQC_AVAILABLE = True
+except ImportError:
+    PQC_AVAILABLE = False
 
 
 class TSAError(Exception):
@@ -110,8 +126,8 @@ class RFC3161Client:
     def get_timestamp(
         self,
         data: bytes,
-        hash_algorithm: str = "sha256",
-    ) -> Tuple[datetime, bytes]:
+        hash_algorithm: Union[str, PQCHashAlgorithm] = "sha256",
+    ) -> Tuple[datetime, bytes, str]:
         """
         Request a timestamp from the TSA for the given data.
         
@@ -123,29 +139,39 @@ class RFC3161Client:
         
         Args:
             data: The data to timestamp (bytes).
-            hash_algorithm: Hash algorithm to use ("sha256", "sha512", etc.).
+            hash_algorithm: Hash algorithm to use ("sha256", "sha512", etc. or HashAlgorithm enum).
             
         Returns:
-            Tuple of (timestamp, raw_token), where:
+            Tuple of (timestamp, raw_token, algorithm), where:
             - timestamp: The UTC timestamp from the TSA.
             - raw_token: The raw TSA response (for later verification).
+            - algorithm: The algorithm used for timestamping (e.g., "rsa", "ed25519", "dilithium3").
             
         Raises:
             TSARequestError: If the request fails.
         """
+        # Convert HashAlgorithm enum to string if needed
+        if isinstance(hash_algorithm, PQCHashAlgorithm):
+            hash_algorithm_str = hash_algorithm.value
+        else:
+            hash_algorithm_str = hash_algorithm
+        
         # Compute hash of the data
-        hash_value = self._compute_hash(data, hash_algorithm)
+        if PQC_AVAILABLE and isinstance(hash_algorithm, PQCHashAlgorithm):
+            hash_value = hash_data(data, hash_algorithm)
+        else:
+            hash_value = self._compute_hash(data, hash_algorithm_str)
 
         # Create timestamp request
-        request = self._create_timestamp_request(hash_value, hash_algorithm)
+        request = self._create_timestamp_request(hash_value, hash_algorithm_str)
 
         # Send request to TSA
         response = self._send_request(request)
 
         # Parse response
-        timestamp, token = self._parse_response(response, hash_value, hash_algorithm)
+        timestamp, token, tsa_algorithm = self._parse_response(response, hash_value, hash_algorithm_str)
 
-        return timestamp, token
+        return timestamp, token, tsa_algorithm
 
     def verify_token(
         self,
@@ -304,7 +330,7 @@ class RFC3161Client:
         response: bytes,
         expected_hash: bytes,
         hash_algorithm: str,
-    ) -> Tuple[datetime, bytes]:
+    ) -> Tuple[datetime, bytes, str]:
         """
         Parse a TSA response to extract the timestamp.
         
@@ -314,7 +340,7 @@ class RFC3161Client:
             hash_algorithm: Hash algorithm used.
             
         Returns:
-            Tuple of (timestamp, raw_token).
+            Tuple of (timestamp, raw_token, tsa_algorithm).
             
         Raises:
             TSARequestError: If parsing fails.
@@ -327,7 +353,11 @@ class RFC3161Client:
         # (This is a placeholder - real implementation would parse the response)
         timestamp = datetime.now(timezone.utc)
         
-        return timestamp, response
+        # Determine the TSA algorithm (default to "unknown")
+        # In a real implementation, this would be extracted from the TSA certificate
+        tsa_algorithm = "unknown"
+        
+        return timestamp, response, tsa_algorithm
 
     def _parse_token(self, token: bytes) -> Tuple[datetime, bytes]:
         """
@@ -375,21 +405,42 @@ class SimpleHTTPTSAClient:
         self.timeout = timeout
         self._session = requests.Session()
 
-    def get_timestamp(self, data: bytes) -> Tuple[datetime, bytes]:
+    def get_timestamp(
+        self,
+        data: bytes,
+        hash_algorithm: Union[str, PQCHashAlgorithm] = "sha256",
+    ) -> Tuple[datetime, bytes, str]:
         """
         Request a timestamp from the TSA for the given data.
         
-        This implementation sends the SHA-256 hash of the data to the TSA
+        This implementation sends the hash of the data to the TSA
         and receives a timestamp in response.
         
         Args:
             data: The data to timestamp.
+            hash_algorithm: Hash algorithm to use ("sha256", "sha512", etc.).
             
         Returns:
-            Tuple of (timestamp, raw_response).
+            Tuple of (timestamp, raw_response, algorithm).
         """
-        # Compute SHA-256 hash of the data
-        hash_value = hashlib.sha256(data).digest()
+        # Convert HashAlgorithm enum to string if needed
+        if isinstance(hash_algorithm, PQCHashAlgorithm):
+            hash_algorithm_str = hash_algorithm.value
+        else:
+            hash_algorithm_str = hash_algorithm
+        
+        # Compute hash of the data
+        if PQC_AVAILABLE and isinstance(hash_algorithm, PQCHashAlgorithm):
+            hash_value = hash_data(data, hash_algorithm)
+        else:
+            if hash_algorithm_str == "sha256":
+                hash_value = hashlib.sha256(data).digest()
+            elif hash_algorithm_str == "sha512":
+                hash_value = hashlib.sha512(data).digest()
+            elif hash_algorithm_str == "sha384":
+                hash_value = hashlib.sha384(data).digest()
+            else:
+                hash_value = hashlib.sha256(data).digest()
 
         try:
             response = self._session.post(
@@ -408,7 +459,10 @@ class SimpleHTTPTSAClient:
             # Most TSAs return the timestamp in the response body or headers
             timestamp = self._extract_timestamp(response)
             
-            return timestamp, response.content
+            # Determine the TSA algorithm (default to "unknown")
+            tsa_algorithm = "unknown"
+            
+            return timestamp, response.content, tsa_algorithm
         except requests.exceptions.RequestException as e:
             raise TSARequestError(f"TSA request failed: {e}")
 

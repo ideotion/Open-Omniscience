@@ -77,6 +77,36 @@ from .tsa import (
     SimpleHTTPTSAClient,
     TSAClient,
 )
+from .pqc import (
+    HybridSignature,
+    HybridKeyPair,
+    HashAlgorithm as PQCHashAlgorithm,
+    SignatureAlgorithm,
+    PQCError,
+    PQCNotAvailableError,
+    SignatureVerificationError,
+    generate_hybrid_keypair,
+    sign_hybrid,
+    verify_hybrid,
+    hash_data,
+    get_available_algorithms,
+    get_global_hybrid_keypair,
+    generate_global_hybrid_keypair,
+    reset_global_hybrid_keypair,
+)
+from .key_manager import (
+    KeyManager,
+    KeyMetadata,
+    KeyStatus,
+    KeyType,
+    KeyRevocationEntry,
+    KeyManagerError,
+    KeyNotFoundError,
+    KeyRevokedError,
+    KeyExpiredError,
+    get_key_manager,
+    reset_key_manager,
+)
 
 __all__ = [
     # Hash Chain
@@ -126,4 +156,34 @@ __all__ = [
     'RFC3161Client',
     'SimpleHTTPTSAClient',
     'TSAClient',
+    
+    # Post-Quantum Cryptography (PQC)
+    'HybridSignature',
+    'HybridKeyPair',
+    'PQCHashAlgorithm',
+    'SignatureAlgorithm',
+    'PQCError',
+    'PQCNotAvailableError',
+    'SignatureVerificationError',
+    'generate_hybrid_keypair',
+    'sign_hybrid',
+    'verify_hybrid',
+    'hash_data',
+    'get_available_algorithms',
+    'get_global_hybrid_keypair',
+    'generate_global_hybrid_keypair',
+    'reset_global_hybrid_keypair',
+    
+    # Key Manager (Forward Secrecy)
+    'KeyManager',
+    'KeyMetadata',
+    'KeyStatus',
+    'KeyType',
+    'KeyRevocationEntry',
+    'KeyManagerError',
+    'KeyNotFoundError',
+    'KeyRevokedError',
+    'KeyExpiredError',
+    'get_key_manager',
+    'reset_key_manager',
 ]
