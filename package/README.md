@@ -66,7 +66,7 @@ chmod +x OpenOmniscience.AppImageBuilder
 **Usage:**
 ```bash
 chmod +x OpenOmniscience-0.03-x86_64.AppImage
-./OpenOmniscience-0.02-x86_64.AppImage
+./OpenOmniscience-0.03-x86_64.AppImage
 ```
 
 ---

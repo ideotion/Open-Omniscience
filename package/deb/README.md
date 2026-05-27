@@ -16,7 +16,7 @@ This directory contains the Debian package (.deb) for Open-Omniscience, allowing
 
 ```bash
 # Download the .deb package
-wget https://github.com/ideotion/Open-Omniscience/raw/0.02/package/deb/open-omniscience_0.02-1_all.deb
+wget https://github.com/ideotion/Open-Omniscience/raw/0.03/package/deb/open-omniscience_0.03-1_all.deb
 
 # Install the package
 sudo dpkg -i open-omniscience_0.03-1_all.deb
@@ -29,7 +29,7 @@ sudo apt-get install -f
 
 ```bash
 # Clone the repository
-git clone --branch 0.02 https://github.com/ideotion/Open-Omniscience.git
+git clone --branch 0.03 https://github.com/ideotion/Open-Omniscience.git
 cd Open-Omniscience
 
 # Install the package
@@ -158,7 +158,7 @@ ss -tulnp | grep 8000
 
 For support, please:
 1. Check the [official documentation](https://github.com/ideotion/Open-Omniscience)
-2. Review the [troubleshooting guide](https://github.com/ideotion/Open-Omniscience/blob/0.02/docs/TROUBLESHOOTING.md)
+2. Review the [troubleshooting guide](https://github.com/ideotion/Open-Omniscience/blob/0.03/docs/UNIFIED_DOCUMENTATION.md#🛠️-troubleshooting)
 3. Open an issue on [GitHub](https://github.com/ideotion/Open-Omniscience/issues)
 
 ---

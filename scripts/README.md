@@ -173,7 +173,7 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y python3 python3-pip python3-venv git curl wget
 
 # 2. Install Open-Omniscience
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.02/install | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
 
 # 3. If issues, run debug tool
 bash scripts/debug_install.sh

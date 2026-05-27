@@ -32,7 +32,7 @@ This project is a **Debian-based Linux application** built on Python, leveraging
 1. **Respect all applicable laws** in your jurisdiction, including copyright and data protection regulations.
 2. **Adhere to `robots.txt` directives** and terms of service of all scraped websites.
 3. **Use the platform for non-commercial, non-malicious purposes only**.
-4. **Ensure ethical use** as outlined in [ETHICS.md](ETHICS.md).
+4. **Ensure ethical use** as outlined in [ETHICS.md](docs/ETHICS.md).
 5. **All LLM processing happens locally** - no data is sent to external services.
 
 The maintainers of Open Omniscience **do not endorse or assume responsibility** for any misuse of this tool.
@@ -493,7 +493,7 @@ For complete API documentation, see [API Documentation](#api-endpoints) (if avai
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
 ### Development Workflow
 
@@ -714,9 +714,9 @@ This master documentation file provides a single entry point for all Open-Omnisc
 - [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) - Production deployment guide
 
 ### 🛡️ Compliance & Ethics
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
-- [ETHICS.md](ETHICS.md) - Ethical guidelines and compliance
-- [SECURITY.md](SECURITY.md) - Security practices and recommendations
+- [CONTRIBUTING.md](docs/CONTRIBUTING.md) - Contribution guidelines
+- [ETHICS.md](docs/ETHICS.md) - Ethical guidelines and compliance
+- [SECURITY.md](docs/SECURITY.md) - Security practices and recommendations
 - [docs/COMPLIANCE.md](docs/COMPLIANCE.md) - Legal compliance framework
 
 ---

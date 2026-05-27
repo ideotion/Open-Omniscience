@@ -13,7 +13,7 @@
 ### For Most Users (Recommended)
 ```bash
 # Single command installation (GUI environment required)
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
 ```
 
 **What this does:**
@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIF
 ### For Headless Servers
 ```bash
 # Text-based installation
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/UNIFIED_INSTALL.sh | bash
 ```
 
 ---

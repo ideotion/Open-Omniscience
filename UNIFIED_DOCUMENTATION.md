@@ -446,7 +446,7 @@ Open-Omniscience is organized into 4 pillars:
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
 ### Quick Start for Developers
 ```bash
