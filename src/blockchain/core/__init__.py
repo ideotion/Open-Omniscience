@@ -29,6 +29,54 @@ Author: Open-Omniscience Team
 License: GNU GPLv3
 """
 
-from .hash_chain import LocalBlock, LocalHashChain
+from .hash_chain import (
+    LocalBlock,
+    LocalHashChain,
+    EnhancedLocalHashChain,
+    create_hash_chain,
+    create_enhanced_hash_chain,
+)
+from .crypto_utils import (
+    HashAlgorithm,
+    HashResult,
+    MultiHash,
+    AuditEntry,
+    AuditLogger,
+    IntegrityError,
+    WORMError,
+    compute_hash,
+    compute_multi_hash,
+    compute_article_multi_hash,
+    get_audit_logger,
+    reset_audit_logger,
+)
+from .integrity_monitor import (
+    IntegrityMonitor,
+    IntegrityStatus,
+    IntegrityCheckResult,
+    BackupInfo,
+)
 
-__all__ = ['LocalBlock', 'LocalHashChain']
+__all__ = [
+    'LocalBlock',
+    'LocalHashChain',
+    'EnhancedLocalHashChain',
+    'HashAlgorithm',
+    'HashResult',
+    'MultiHash',
+    'AuditEntry',
+    'AuditLogger',
+    'IntegrityError',
+    'WORMError',
+    'IntegrityMonitor',
+    'IntegrityStatus',
+    'IntegrityCheckResult',
+    'BackupInfo',
+    'compute_hash',
+    'compute_multi_hash',
+    'compute_article_multi_hash',
+    'create_hash_chain',
+    'create_enhanced_hash_chain',
+    'get_audit_logger',
+    'reset_audit_logger',
+]

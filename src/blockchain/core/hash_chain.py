@@ -40,6 +40,9 @@ from pathlib import Path
 # Import existing Merkle tree functionality
 from src.crypto.merkle_tree import compute_merkle_root, MerkleTree
 
+# Import from crypto_utils for enhanced features
+from .crypto_utils import AuditLogger, WORMError, IntegrityError
+
 
 @dataclass
 class LocalBlock:
@@ -834,3 +837,296 @@ def create_hash_chain(db_path: str = LocalHashChain.DEFAULT_DB_PATH,
         New LocalHashChain instance
     """
     return LocalHashChain(db_path, articles_per_block, time_per_block)
+
+
+class EnhancedLocalHashChain(LocalHashChain):
+    """
+    Enhanced local hash chain with WORM (Write-Once-Read-Many) mode and multi-hash support.
+    
+    Provides additional security features for single-user deployments:
+    - WORM mode: Prevents modification of existing articles
+    - Multi-hash: Stores multiple hash algorithms for redundancy
+    - Audit logging: Immutable log of all operations
+    - Integrity monitoring: Background verification
+    
+    Attributes:
+        worm_mode: If True, prevents modification of existing data
+        multi_hash_enabled: If True, computes multiple hash algorithms
+        audit_logger: Audit logger instance for tracking operations
+    """
+    
+    DEFAULT_DB_PATH = "data/blockchain/enhanced_hash_chain.db"
+    
+    def __init__(self, db_path: str = DEFAULT_DB_PATH,
+                 articles_per_block: int = 100,
+                 time_per_block: int = 86400,
+                 worm_mode: bool = True,
+                 multi_hash_enabled: bool = True,
+                 audit_log_path: str = "data/blockchain/audit.log"):
+        """
+        Initialize enhanced hash chain.
+        
+        Args:
+            db_path: Path to SQLite database
+            articles_per_block: Maximum articles per block
+            time_per_block: Maximum time (seconds) per block
+            worm_mode: Enable WORM (Write-Once-Read-Many) mode
+            multi_hash_enabled: Enable multi-hash algorithm support
+            audit_log_path: Path to audit log file
+        """
+        super().__init__(db_path, articles_per_block, time_per_block)
+        self.worm_mode = worm_mode
+        self.multi_hash_enabled = multi_hash_enabled
+        self.audit_logger = AuditLogger(audit_log_path)
+        
+        # Initialize database with multi-hash tables if needed
+        if multi_hash_enabled:
+            self._initialize_multi_hash_tables()
+    
+    def _initialize_multi_hash_tables(self) -> None:
+        """Initialize database tables for multi-hash support."""
+        cursor = self.connection.cursor()
+        
+        # Create multi_hash_articles table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS multi_hash_articles (
+                article_id TEXT PRIMARY KEY,
+                content_sha256 TEXT NOT NULL,
+                content_sha512 TEXT NOT NULL,
+                content_blake2b TEXT NOT NULL,
+                metadata_sha256 TEXT NOT NULL,
+                metadata_sha512 TEXT NOT NULL,
+                metadata_blake2b TEXT NOT NULL,
+                source_sha256 TEXT NOT NULL,
+                source_sha512 TEXT NOT NULL,
+                source_blake2b TEXT NOT NULL,
+                timestamp REAL NOT NULL,
+                FOREIGN KEY (article_id) REFERENCES article_hashes(article_id)
+            )
+        """)
+        
+        self.connection.commit()
+    
+    def add_article(self, article_id: str, content_hash: str, 
+                   metadata_hash: str, source_hash: str) -> Dict[str, Any]:
+        """
+        Add an article to the hash chain with WORM and multi-hash support.
+        
+        Args:
+            article_id: Unique identifier for the article
+            content_hash: SHA-256 hash of article content
+            metadata_hash: SHA-256 hash of article metadata
+            source_hash: SHA-256 hash of source URL + timestamp
+            
+        Returns:
+            Dictionary with block_height, position, and status
+            
+        Raises:
+            WORMError: If article already exists and WORM mode is enabled
+        """
+        # Check for WORM violation
+        if self.worm_mode:
+            existing = self.get_article_hashes(article_id)
+            if existing is not None:
+                raise WORMError(
+                    f"Article {article_id} already exists. "
+                    "WORM mode prevents modification of existing data."
+                )
+        
+        # Call parent add_article
+        result = super().add_article(article_id, content_hash, metadata_hash, source_hash)
+        
+        # Log the operation
+        self.audit_logger.log(
+            action="add_article",
+            article_id=article_id,
+            block_height=result['block_height'],
+            details={
+                'position': result['position'],
+                'content_hash': content_hash[:16] + '...',
+                'metadata_hash': metadata_hash[:16] + '...',
+                'source_hash': source_hash[:16] + '...',
+            }
+        )
+        
+        # Store multi-hash if enabled
+        if self.multi_hash_enabled:
+            self._store_multi_hash(article_id, content_hash, metadata_hash, source_hash)
+        
+        return result
+    
+    def _store_multi_hash(self, article_id: str, content_hash: str,
+                         metadata_hash: str, source_hash: str) -> None:
+        """
+        Store multi-algorithm hashes for an article.
+        
+        Note: We store the SHA-256 hash as the primary hash, and also store
+        the original data hashes for multi-algorithm verification.
+        For now, we just store the SHA-256, SHA-512, and BLAKE2b of the content_hash
+        to provide redundancy in hash algorithms.
+        """
+        from .crypto_utils import compute_hash, HashAlgorithm
+        
+        cursor = self.connection.cursor()
+        current_time = time.time()
+        
+        # Store the primary SHA-256 hashes
+        # The multi-hash provides additional algorithms for the same hash values
+        content_sha512 = compute_hash(content_hash, HashAlgorithm.SHA512)
+        content_blake2b = compute_hash(content_hash, HashAlgorithm.BLAKE2B)
+        
+        metadata_sha512 = compute_hash(metadata_hash, HashAlgorithm.SHA512)
+        metadata_blake2b = compute_hash(metadata_hash, HashAlgorithm.BLAKE2B)
+        
+        source_sha512 = compute_hash(source_hash, HashAlgorithm.SHA512)
+        source_blake2b = compute_hash(source_hash, HashAlgorithm.BLAKE2B)
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO multi_hash_articles 
+            (article_id, content_sha256, content_sha512, content_blake2b,
+             metadata_sha256, metadata_sha512, metadata_blake2b,
+             source_sha256, source_sha512, source_blake2b, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            article_id,
+            content_hash, content_sha512, content_blake2b,
+            metadata_hash, metadata_sha512, metadata_blake2b,
+            source_hash, source_sha512, source_blake2b,
+            current_time
+        ))
+        
+        self.connection.commit()
+    
+    def get_multi_hash(self, article_id: str) -> Optional[Dict[str, str]]:
+        """
+        Get multi-algorithm hashes for an article.
+        
+        Args:
+            article_id: Article identifier
+            
+        Returns:
+            Dictionary with multi-hash values or None if not found
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT * FROM multi_hash_articles WHERE article_id = ?
+        """, (article_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return None
+        
+        return {
+            'article_id': row[0],
+            'content': {
+                'sha256': row[1],
+                'sha512': row[2],
+                'blake2b': row[3],
+            },
+            'metadata': {
+                'sha256': row[4],
+                'sha512': row[5],
+                'blake2b': row[6],
+            },
+            'source': {
+                'sha256': row[7],
+                'sha512': row[8],
+                'blake2b': row[9],
+            },
+            'timestamp': row[10],
+        }
+    
+    def verify_article_multi_hash(self, article_id: str, 
+                                   content_hash: str, metadata_hash: str, 
+                                   source_hash: str) -> bool:
+        """
+        Verify article using multi-algorithm hashes.
+        
+        This verifies that the stored multi-hash values are consistent with
+        the provided SHA-256 hashes. The multi-hash stores SHA-512 and BLAKE2b
+        hashes of the SHA-256 hashes for redundancy.
+        
+        Args:
+            article_id: Article identifier
+            content_hash: Expected SHA-256 content hash
+            metadata_hash: Expected SHA-256 metadata hash
+            source_hash: Expected SHA-256 source hash
+            
+        Returns:
+            True if all multi-hash values match, False otherwise
+        """
+        from .crypto_utils import compute_hash, HashAlgorithm
+        
+        multi_hash = self.get_multi_hash(article_id)
+        if not multi_hash:
+            return False
+        
+        # Compute expected multi-hashes from the provided SHA-256 hashes
+        expected_content_sha512 = compute_hash(content_hash, HashAlgorithm.SHA512)
+        expected_content_blake2b = compute_hash(content_hash, HashAlgorithm.BLAKE2B)
+        
+        expected_metadata_sha512 = compute_hash(metadata_hash, HashAlgorithm.SHA512)
+        expected_metadata_blake2b = compute_hash(metadata_hash, HashAlgorithm.BLAKE2B)
+        
+        expected_source_sha512 = compute_hash(source_hash, HashAlgorithm.SHA512)
+        expected_source_blake2b = compute_hash(source_hash, HashAlgorithm.BLAKE2B)
+        
+        # Verify each component
+        checks = [
+            # Content hashes
+            multi_hash['content']['sha256'] == content_hash,
+            multi_hash['content']['sha512'] == expected_content_sha512,
+            multi_hash['content']['blake2b'] == expected_content_blake2b,
+            
+            # Metadata hashes
+            multi_hash['metadata']['sha256'] == metadata_hash,
+            multi_hash['metadata']['sha512'] == expected_metadata_sha512,
+            multi_hash['metadata']['blake2b'] == expected_metadata_blake2b,
+            
+            # Source hashes
+            multi_hash['source']['sha256'] == source_hash,
+            multi_hash['source']['sha512'] == expected_source_sha512,
+            multi_hash['source']['blake2b'] == expected_source_blake2b,
+        ]
+        
+        return all(checks)
+    
+    def verify_block_chain_integrity(self, max_height: Optional[int] = None) -> bool:
+        """
+        Verify integrity with enhanced checks including audit log.
+        """
+        chain_ok = super().verify_block_chain_integrity(max_height)
+        audit_ok = self.audit_logger.verify_integrity()
+        
+        return chain_ok and audit_ok
+    
+    def get_audit_entries(self, since: Optional[float] = None) -> List[Any]:
+        """Get audit log entries."""
+        return self.audit_logger.get_entries(since)
+
+
+# Convenience function for enhanced hash chain
+def create_enhanced_hash_chain(db_path: str = EnhancedLocalHashChain.DEFAULT_DB_PATH,
+                              articles_per_block: int = 100,
+                              time_per_block: int = 86400,
+                              worm_mode: bool = True,
+                              multi_hash_enabled: bool = True,
+                              audit_log_path: str = "data/blockchain/audit.log") -> EnhancedLocalHashChain:
+    """
+    Factory function to create a new enhanced local hash chain.
+    
+    Args:
+        db_path: Path to SQLite database
+        articles_per_block: Maximum articles per block
+        time_per_block: Maximum time (seconds) per block
+        worm_mode: Enable WORM mode
+        multi_hash_enabled: Enable multi-hash support
+        audit_log_path: Path to audit log file
+        
+    Returns:
+        New EnhancedLocalHashChain instance
+    """
+    return EnhancedLocalHashChain(
+        db_path, articles_per_block, time_per_block,
+        worm_mode, multi_hash_enabled, audit_log_path
+    )
