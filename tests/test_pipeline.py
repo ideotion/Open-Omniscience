@@ -25,6 +25,7 @@ from main_pipeline import (
     IngestedData,
     get_pipeline,
     process_single,
+    reset_pipeline,
 )
 
 
@@ -108,7 +109,8 @@ class TestIngestedData:
         
         assert data.url == "https://example.com"
         assert data.content == "Test content"
-        assert data.content_hash == "559aead08264d5795d3909718c465b00441f584f46645a01a95ab7d0e08fa79"
+        # SHA-256 hash of b"Test content"
+        assert data.content_hash == "9d9595c5d94fb65b824f56e9999527dba9542481580d69feb89056aabaa0aa87"
         assert data.domain == "example.com"
     
     def test_content_hash_consistency(self):
@@ -223,7 +225,7 @@ class TestOpenOmnisciencePipeline:
         assert pipeline.stats["total_runs"] == 0
         assert pipeline.stats["errors"] == 0
     
-    @patch('pipeline.OpenOmnisciencePipeline._ingest')
+    @patch('main_pipeline.OpenOmnisciencePipeline._ingest')
     def test_process_url_ingest_only(self, mock_ingest, pipeline_config):
         """Test process_url with INGEST_ONLY mode."""
         # Setup mock
@@ -261,6 +263,9 @@ class TestGlobalPipeline:
     
     def test_get_pipeline_with_config(self):
         """Test get_pipeline with custom config."""
+        # Reset pipeline to ensure fresh instance
+        reset_pipeline()
+        
         config = PipelineConfig(mode=PipelineMode.INGEST_ONLY)
         pipeline = get_pipeline(config)
         
@@ -270,7 +275,7 @@ class TestGlobalPipeline:
 class TestConvenienceFunctions:
     """Tests for convenience functions."""
     
-    @patch('pipeline.get_pipeline')
+    @patch('main_pipeline.get_pipeline')
     def test_process_single(self, mock_get_pipeline):
         """Test process_single function."""
         mock_pipeline = Mock()

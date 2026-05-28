@@ -43,14 +43,16 @@ def test_canonicalize_url():
     assert canonicalize_url("https://example.com/page?gclid=abc&param=value") == "https://example.com/page?param=value"
     
     # Test scheme normalization
-    assert canonicalize_url("http://example.com") == "https://example.com"
-    assert canonicalize_url("HTTP://EXAMPLE.COM") == "https://example.com"
+    # Note: empty path is normalized to "/" to ensure canonical form
+    assert canonicalize_url("http://example.com") == "https://example.com/"
+    assert canonicalize_url("HTTP://EXAMPLE.COM") == "https://example.com/"
     
     # Test fragment removal
     assert canonicalize_url("https://example.com/page#section") == "https://example.com/page"
     
     # Test domain lowercasing
-    assert canonicalize_url("https://EXAMPLE.COM") == "https://example.com"
+    # Note: empty path is normalized to "/" to ensure canonical form
+    assert canonicalize_url("https://EXAMPLE.COM") == "https://example.com/"
     
     # Test empty input
     assert canonicalize_url("") == ""

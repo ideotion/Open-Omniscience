@@ -121,12 +121,24 @@ class TestConfig:
     
     def test_environment_variable_loading(self):
         """Test that environment variables override defaults."""
-        # Set environment variables
-        os.environ["DATABASE_URL"] = "postgresql://test:test@localhost/test"
-        os.environ["MAX_WORKERS"] = "10"
-        os.environ["LOG_LEVEL"] = "DEBUG"
+        # Temporarily rename configs directory to prevent YAML loading
+        repo_configs = Path(__file__).parent.parent / "configs"
+        backup_dir = repo_configs.with_suffix(".backup")
+        
+        # Backup and remove configs directory temporarily
+        configs_existed = repo_configs.exists()
+        if configs_existed:
+            repo_configs.rename(backup_dir)
         
         try:
+            # Reset config to ensure fresh load
+            reset_config()
+            
+            # Set environment variables
+            os.environ["DATABASE_URL"] = "postgresql://test:test@localhost/test"
+            os.environ["MAX_WORKERS"] = "10"
+            os.environ["LOG_LEVEL"] = "DEBUG"
+            
             config = get_config()
             
             assert config.database_url == "postgresql://test:test@localhost/test"
@@ -134,9 +146,18 @@ class TestConfig:
             assert config.log_level == "DEBUG"
         finally:
             # Cleanup environment variables
-            del os.environ["DATABASE_URL"]
-            del os.environ["MAX_WORKERS"]
-            del os.environ["LOG_LEVEL"]
+            if "DATABASE_URL" in os.environ:
+                del os.environ["DATABASE_URL"]
+            if "MAX_WORKERS" in os.environ:
+                del os.environ["MAX_WORKERS"]
+            if "LOG_LEVEL" in os.environ:
+                del os.environ["LOG_LEVEL"]
+            # Reset config after test
+            reset_config()
+            
+            # Restore configs directory
+            if configs_existed:
+                backup_dir.rename(repo_configs)
     
     def test_get_database_url_sqlite(self):
         """Test get_database_url with SQLite."""
@@ -278,8 +299,19 @@ class TestValidation:
         """Test that empty database URL raises an error."""
         from config.settings import Config
         
-        with monkeypatch.context() as m:
-            m.setattr(Config, "database_url", "")
-            
+        # Temporarily rename configs directory to prevent YAML loading
+        repo_configs = Path(__file__).parent.parent / "configs"
+        backup_dir = repo_configs.with_suffix(".backup")
+        
+        # Backup and remove configs directory temporarily
+        configs_existed = repo_configs.exists()
+        if configs_existed:
+            repo_configs.rename(backup_dir)
+        
+        try:
             with pytest.raises(ValueError, match="Database URL is not configured"):
-                config = Config()
+                config = Config(database_url="")
+        finally:
+            # Restore configs directory
+            if configs_existed:
+                backup_dir.rename(repo_configs)

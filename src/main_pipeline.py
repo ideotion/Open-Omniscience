@@ -618,6 +618,12 @@ def get_pipeline(config: Optional[PipelineConfig] = None) -> OpenOmnisciencePipe
     return _default_pipeline
 
 
+def reset_pipeline():
+    """Reset the global pipeline instance (useful for testing)."""
+    global _default_pipeline
+    _default_pipeline = None
+
+
 # Convenience functions
 def process_single(url: str) -> PipelineResult:
     """
