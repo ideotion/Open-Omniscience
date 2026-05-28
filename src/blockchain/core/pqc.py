@@ -35,6 +35,7 @@ import hashlib
 import json
 import logging
 import os
+import time  # Moved to top to avoid circular import issues
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -63,10 +64,12 @@ logger = logging.getLogger(__name__)
 class HashAlgorithm(Enum):
     """Supported hash algorithms for post-quantum resistance."""
     SHA256 = "sha256"
+    SHA512 = "sha512"
     SHA3_256 = "sha3_256"
     SHA3_512 = "sha3_512"
     BLAKE2B = "blake2b"
     BLAKE2S = "blake2s"
+    RIPEMD160 = "ripemd160"
 
 
 class SignatureAlgorithm(Enum):
@@ -180,10 +183,6 @@ class HybridKeyPair:
         return serialization.load_pem_public_key(self.ed25519_public_key)
 
 
-# Import time at the bottom to avoid circular imports
-import time
-
-
 class PQCError(Exception):
     """Base exception for PQC-related errors."""
     pass
@@ -215,6 +214,8 @@ def hash_data(data: bytes, algorithm: HashAlgorithm = HashAlgorithm.SHA3_512) ->
     """
     if algorithm == HashAlgorithm.SHA256:
         return hashlib.sha256(data).digest()
+    elif algorithm == HashAlgorithm.SHA512:
+        return hashlib.sha512(data).digest()
     elif algorithm == HashAlgorithm.SHA3_256:
         return hashlib.sha3_256(data).digest()
     elif algorithm == HashAlgorithm.SHA3_512:
@@ -223,6 +224,8 @@ def hash_data(data: bytes, algorithm: HashAlgorithm = HashAlgorithm.SHA3_512) ->
         return hashlib.blake2b(data, digest_size=64).digest()
     elif algorithm == HashAlgorithm.BLAKE2S:
         return hashlib.blake2s(data, digest_size=32).digest()
+    elif algorithm == HashAlgorithm.RIPEMD160:
+        return hashlib.new('ripemd160', data).digest()
     else:
         raise ValueError(f"Unsupported hash algorithm: {algorithm}")
 
@@ -407,7 +410,7 @@ def sign_hybrid(
     Args:
         hybrid_key_pair: The hybrid key pair to use for signing.
         data: The data to sign.
-        hash_algorithm: The hash algorithm to use (default: SHA3-512).
+        hash_algorithm: The hash algorithm to use (default: SHA3_512).
     
     Returns:
         HybridSignature containing both signatures (if available).
@@ -415,6 +418,9 @@ def sign_hybrid(
     Notes:
         - If Dilithium3 is not available, only the Ed25519 signature is included.
         - If Ed25519 is not available, only the Dilithium3 signature is included.
+    
+    Raises:
+        PQCError: If no signing algorithm is available.
     """
     # Hash the data first
     hashed_data = hash_data(data, hash_algorithm)
