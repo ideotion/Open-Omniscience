@@ -800,3 +800,16 @@ export {
     getBackgroundLazyLoad,
     resetLazyLoad
 };
+
+// CommonJS export for compatibility
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { 
+        LazyLoadUtils,
+        ImageLazyLoader,
+        BackgroundLazyLoader,
+        getLazyLoad,
+        getImageLazyLoad,
+        getBackgroundLazyLoad,
+        resetLazyLoad
+    };
+}

@@ -867,27 +867,5 @@
     
     <!-- Source Manager specific JavaScript -->
     <script type="module" src="js/pages/source-manager.js" defer></script>
-    
-    <!-- Initialize Bootstrap tooltips and popovers -->
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // Initialize Bootstrap tooltips
-            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl);
-            });
-            
-            // Initialize Bootstrap popovers
-            const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
-            popoverTriggerList.map(function (popoverTriggerEl) {
-                return new bootstrap.Popover(popoverTriggerEl);
-            });
-            
-            // Initialize lazy loading
-            if (window.LazyLoadUtils) {
-                window.LazyLoadUtils.init({ autoInit: true });
-            }
-        });
-    </script>
 </body>
 </html>
