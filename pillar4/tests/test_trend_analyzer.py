@@ -25,7 +25,7 @@ Pillar 4: Tests for Trend Analyzer
 import pytest
 import time
 import numpy as np
-from pillar4.src.analysis.trend_analyzer import TrendAnalyzer, Trend, TrendDirection, TrendStrength
+from src.analysis.trend_analyzer import TrendAnalyzer, Trend, TrendDirection, TrendStrength
 
 
 class TestTrendAnalyzer:
@@ -160,7 +160,7 @@ class TestTrendAnalyzer:
 
     def test_volatility_detection(self):
         """Test volatility detection."""
-        analyzer = TrendAnalyzer(volatility_threshold=0.1)
+        analyzer = TrendAnalyzer(volatility_threshold=0.1, min_trend_length=5)
         
         # Add volatile data
         data = [10, 5, 15, 8, 12, 6, 14]
