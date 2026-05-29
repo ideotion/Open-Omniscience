@@ -27,7 +27,7 @@ import time
 import json
 import tempfile
 import os
-from pillar4.src.analysis.threat_intel import (
+from src.analysis.threat_intel import (
     ThreatIntel, 
     IndicatorOfCompromise, 
     ThreatIntelMatch,
@@ -83,10 +83,12 @@ class TestThreatIntel:
             ti = ThreatIntel()
             ti.load_ioc_database(temp_path)
             
-            assert len(ti.ioc_database) == 2
+            # Database has 4 keys: 192.168.1.1, ip:192.168.1.1, evil.com, domain:evil.com
+            assert len(ti.ioc_database) == 4
             assert "192.168.1.1" in ti.ioc_database
             assert "evil.com" in ti.ioc_database
             assert "domain:evil.com" in ti.ioc_database
+            assert "ip:192.168.1.1" in ti.ioc_database
         finally:
             os.unlink(temp_path)
 

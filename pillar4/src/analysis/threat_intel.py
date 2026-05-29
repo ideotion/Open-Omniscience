@@ -133,8 +133,8 @@ class ThreatIntel:
                 ioc = IndicatorOfCompromise(
                     value=ioc_data.get("value", ""),
                     type=ioc_data.get("type", "unknown"),
-                    threat_type=ThreatType(ioc_data.get("threat_type", "unknown")),
-                    severity=ThreatSeverity(ioc_data.get("severity", "medium")),
+                    threat_type=ThreatType(ioc_data.get("threat_type", "unknown").lower()),
+                    severity=ThreatSeverity(ioc_data.get("severity", "medium").lower()),
                     description=ioc_data.get("description", ""),
                     first_seen=ioc_data.get("first_seen", time.time()),
                     last_seen=ioc_data.get("last_seen", time.time()),
@@ -183,30 +183,35 @@ class ThreatIntel:
         """Check an IP address against the IOC database."""
         matches = []
         ip_lower = ip.lower().strip()
+        seen_iocs = set()
 
         # Check exact match
         if ip_lower in self.ioc_database:
             ioc = self.ioc_database[ip_lower]
-            matches.append(
-                ThreatIntelMatch(
-                    indicator=ioc,
-                    matched_value=ip,
-                    context={"type": "ip"},
-                    timestamp=time.time(),
+            if id(ioc) not in seen_iocs:
+                matches.append(
+                    ThreatIntelMatch(
+                        indicator=ioc,
+                        matched_value=ip,
+                        context={"type": "ip"},
+                        timestamp=time.time(),
+                    )
                 )
-            )
+                seen_iocs.add(id(ioc))
 
         # Check IP-based keys
         if f"ip:{ip_lower}" in self.ioc_database:
             ioc = self.ioc_database[f"ip:{ip_lower}"]
-            matches.append(
-                ThreatIntelMatch(
-                    indicator=ioc,
-                    matched_value=ip,
-                    context={"type": "ip"},
-                    timestamp=time.time(),
+            if id(ioc) not in seen_iocs:
+                matches.append(
+                    ThreatIntelMatch(
+                        indicator=ioc,
+                        matched_value=ip,
+                        context={"type": "ip"},
+                        timestamp=time.time(),
+                    )
                 )
-            )
+                seen_iocs.add(id(ioc))
 
         return matches
 
@@ -214,6 +219,7 @@ class ThreatIntel:
         """Check a domain against the IOC database."""
         matches = []
         domain_lower = domain.lower().strip()
+        seen_iocs = set()
 
         # Remove protocol and path if present
         if domain_lower.startswith("http://") or domain_lower.startswith("https://"):
@@ -222,26 +228,30 @@ class ThreatIntel:
         # Check exact match
         if domain_lower in self.ioc_database:
             ioc = self.ioc_database[domain_lower]
-            matches.append(
-                ThreatIntelMatch(
-                    indicator=ioc,
-                    matched_value=domain,
-                    context={"type": "domain"},
-                    timestamp=time.time(),
+            if id(ioc) not in seen_iocs:
+                matches.append(
+                    ThreatIntelMatch(
+                        indicator=ioc,
+                        matched_value=domain,
+                        context={"type": "domain"},
+                        timestamp=time.time(),
+                    )
                 )
-            )
+                seen_iocs.add(id(ioc))
 
         # Check domain-based keys
         if f"domain:{domain_lower}" in self.ioc_database:
             ioc = self.ioc_database[f"domain:{domain_lower}"]
-            matches.append(
-                ThreatIntelMatch(
-                    indicator=ioc,
-                    matched_value=domain,
-                    context={"type": "domain"},
-                    timestamp=time.time(),
+            if id(ioc) not in seen_iocs:
+                matches.append(
+                    ThreatIntelMatch(
+                        indicator=ioc,
+                        matched_value=domain,
+                        context={"type": "domain"},
+                        timestamp=time.time(),
+                    )
                 )
-            )
+                seen_iocs.add(id(ioc))
 
         return matches
 
@@ -249,24 +259,30 @@ class ThreatIntel:
         """Check a URL against the IOC database."""
         matches = []
         url_lower = url.lower().strip()
+        seen_iocs = set()
 
         # Check exact URL match
         if f"url:{url_lower}" in self.ioc_database:
             ioc = self.ioc_database[f"url:{url_lower}"]
-            matches.append(
-                ThreatIntelMatch(
-                    indicator=ioc,
-                    matched_value=url,
-                    context={"type": "url"},
-                    timestamp=time.time(),
+            if id(ioc) not in seen_iocs:
+                matches.append(
+                    ThreatIntelMatch(
+                        indicator=ioc,
+                        matched_value=url,
+                        context={"type": "url"},
+                        timestamp=time.time(),
+                    )
                 )
-            )
+                seen_iocs.add(id(ioc))
 
         # Check domain from URL
         parsed = urlparse(url_lower)
         if parsed.netloc:
             domain_matches = self.check_domain(parsed.netloc)
-            matches.extend(domain_matches)
+            for match in domain_matches:
+                if id(match.indicator) not in seen_iocs:
+                    matches.append(match)
+                    seen_iocs.add(id(match.indicator))
 
         return matches
 
@@ -356,8 +372,10 @@ class ThreatIntel:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get statistics about the threat intelligence database."""
+        # Count unique IOCs by using a set of IOC ids
+        unique_iocs = set(id(ioc) for ioc in self.ioc_database.values())
         return {
-            "total_iocs": len(self.ioc_database),
+            "total_iocs": len(unique_iocs),
             "sources": list(self.sources),
             "last_updated": self.last_updated,
             "ioc_types": {
@@ -371,6 +389,12 @@ class ThreatIntel:
 
     def export_ioc_database(self, path: str) -> None:
         """Export the IOC database to a JSON file."""
-        data = [ioc.to_dict() for ioc in self.ioc_database.values()]
+        # Export unique IOCs only
+        seen_iocs = set()
+        data = []
+        for ioc in self.ioc_database.values():
+            if id(ioc) not in seen_iocs:
+                data.append(ioc.to_dict())
+                seen_iocs.add(id(ioc))
         with open(path, "w") as f:
             json.dump(data, f, indent=2)

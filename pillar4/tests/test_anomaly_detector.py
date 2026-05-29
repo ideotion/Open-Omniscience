@@ -25,7 +25,7 @@ Pillar 4: Tests for Anomaly Detector
 import pytest
 import time
 import numpy as np
-from pillar4.src.analysis.anomaly_detector import AnomalyDetector, Anomaly, AnomalyType, AnomalyStatus
+from src.analysis.anomaly_detector import AnomalyDetector, Anomaly, AnomalyType, AnomalyStatus
 
 
 class TestAnomalyDetector:
