@@ -4,14 +4,38 @@ Pillar 6 Scraping Module
 Web scraping functionality for rare earth market data.
 """
 
-from .price_scraper import PriceScraper
+from .base_scraper import (
+    RareEarthScraper,
+    ScraperConfig,
+    DEFAULT_CONFIG,
+    RobotsTxtCache,
+    ResponseCache,
+    ScraperFactory,
+)
+from .price_scraper import (
+    PriceScraper,
+    MetalPagesScraper,
+    FastmarketsScraper,
+    ArgusMediaScraper,
+)
 from .production_scraper import ProductionScraper
 from .inventory_scraper import InventoryScraper
-from .base_scraper import RareEarthScraper
 
 __all__ = [
+    # Base
     "RareEarthScraper",
+    "ScraperConfig",
+    "DEFAULT_CONFIG",
+    "RobotsTxtCache",
+    "ResponseCache",
+    "ScraperFactory",
+    # Price
     "PriceScraper",
+    "MetalPagesScraper",
+    "FastmarketsScraper",
+    "ArgusMediaScraper",
+    # Production
     "ProductionScraper",
+    # Inventory
     "InventoryScraper",
 ]
