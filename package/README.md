@@ -1,28 +1,36 @@
 # Open Omniscience Packaging
 
-This directory contains configuration files and build scripts for creating distributable packages of Open Omniscience.
+**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
 
-## Available Package Types
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
 
-### 1. Debian Package (.deb)
-**Location:** `package/deb/`
+> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The packaging scripts and configurations described below are **part of a conceptual framework only** and **do not work** in the current state. **Do not attempt to build or use these packages** - they are not functional.
 
-**Build Script:** `package/deb/build-deb.sh`
+This directory contains **conceptual** configuration files and build scripts for creating distributable packages of Open Omniscience **when it becomes functional**.
+
+## Available Package Types (Conceptual)
+
+### 1. Debian Package (.deb) (Conceptual)
+**Location:** `package/deb/` - *not currently functional*
+
+**Build Script:** `package/deb/build-deb.sh` - *not currently functional*
 
 **Configuration Files:**
-- `package/deb/debian/changelog` - Version history
-- `package/deb/debian/control` - Package metadata
-- `package/deb/debian/copyright` - License information
-- `package/deb/debian/rules` - Build rules
-- `package/deb/debian/source/` - Source package configuration
+- `package/deb/debian/changelog` - Version history (conceptual)
+- `package/deb/debian/control` - Package metadata (conceptual)
+- `package/deb/debian/copyright` - License information (conceptual)
+- `package/deb/debian/rules` - Build rules (conceptual)
+- `package/deb/debian/source/` - Source package configuration (conceptual)
 
-**Dependencies Required (Debian 13):**
+**Dependencies Required (Debian 13) (Conceptual):**
 ```bash
+# DO NOT RUN - This is conceptual only
 sudo apt-get install dpkg-dev debhelper dh-make fakeroot build-essential
 ```
 
-**Build Command:**
+**Build Command (Conceptual):**
 ```bash
+# DO NOT RUN - This is conceptual only
 cd package/deb
 chmod +x build-deb.sh
 ./build-deb.sh

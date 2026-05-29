@@ -1,14 +1,19 @@
 # LLM Setup Guide for Open-Omniscience
 
-**Version:** 1.0  
+**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
+
+**Version:** 1.0 (Early Concept - Non-Functional)  
 **Last Updated:** 2025-05-21  
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
 **Author:** Ideotion
+
+> ⚠️ **IMPORTANT NOTICE**: This LLM setup guide describes the **intended LLM integration** for Open-Omniscience. **The LLM features are currently NOT FUNCTIONAL** and the software requires extensive debugging and development. **Do not attempt to follow these setup instructions** - they are part of a conceptual framework only.
 
 ---
 
-## 📋 Overview
+## 📋 Overview (Conceptual)
 
-This guide provides step-by-step instructions for setting up Local LLM (Large Language Model) support in Open-Omniscience. The LLM features enable advanced text processing capabilities including text generation, translation, analysis, and synthesis - all while maintaining full data privacy as all processing happens locally on your machine.
+This guide would provide step-by-step instructions for setting up Local LLM (Large Language Model) support in Open-Omniscience **if the software was functional**. The LLM features are intended to enable advanced text processing capabilities including text generation, translation, analysis, and synthesis - all while maintaining full data privacy as all processing would happen locally on your machine **if implemented**.
 
 ---
 

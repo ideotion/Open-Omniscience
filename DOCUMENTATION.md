@@ -1,29 +1,36 @@
 # Open-Omniscience Documentation
 
-**Version:** 0.03  
+**⚠️ EARLY CONCEPT RELEASE - DOCUMENTATION FOR FUTURE DEVELOPMENT ⚠️**
+
+**Version:** 0.03 (Early Concept - Non-Functional)  
 **Last Updated:** 2025-06-18  
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
 **Master Documentation Index for Debian 13**
 
-> 📚 **START HERE**: This is the master entry point for all Open-Omniscience documentation on Debian 13. Use the table of contents below to navigate to specific topics.
+> ⚠️ **IMPORTANT NOTICE**: This documentation describes the **intended design** of Open-Omniscience. **The software is currently NOT FUNCTIONAL** and requires extensive debugging and development. **Do not attempt to use any of the installation instructions or features described herein** - they are part of a conceptual framework only.
+
+> 📚 **START HERE**: This is the master entry point for all Open-Omniscience documentation on Debian 13. Use the table of contents below to navigate to specific topics. **Note: All documentation is conceptual at this stage.**
 
 ---
 
-## 🌟 Quick Start Guide
+## 🌟 Quick Start Guide (CONCEPTUAL - NOT FUNCTIONAL)
 
-### For Debian 13 Users (Recommended)
+**⚠️ DO NOT ATTEMPT TO RUN THESE COMMANDS** - The installation scripts do not work in the current state.
+
+### For Debian 13 Users (Intended Design)
 ```bash
-# Simple installation for Debian 13
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
+# DO NOT RUN - This is conceptual only
+# curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
 ```
 
-**What this does:**
-- ✅ Detects Debian 13 environment
-- ✅ Installs required dependencies
-- ✅ Creates virtual environment
-- ✅ Installs all Python dependencies
-- ✅ Configures environment automatically
-- ✅ Creates desktop launcher (if GUI available)
-- ✅ Open-Omniscience runs at: **http://localhost:8000**
+**What this would do (when functional):**
+- ❌ Detects Debian 13 environment (not currently working)
+- ❌ Installs required dependencies (not currently working)
+- ❌ Creates virtual environment (not currently working)
+- ❌ Installs all Python dependencies (not currently working)
+- ❌ Configures environment automatically (not currently working)
+- ❌ Creates desktop launcher (if GUI available) (not currently working)
+- ❌ Open-Omniscience runs at: **http://localhost:8000** (not currently functional)
 
 ### For Headless Servers (Debian 13)
 ```bash

@@ -1,13 +1,19 @@
 # Contributing to Open Omniscience
 
+**⚠️ EARLY CONCEPT RELEASE - SOFTWARE NOT FUNCTIONAL ⚠️**
+
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
+
+> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The software **does not work** and requires **extensive debugging and development** before it can be used. **We welcome contributions to help make this project functional**, but please understand that **no features currently work** and the codebase needs significant development.
+
 **First off, thanks for taking the time to contribute!** 🎉
 
-Open Omniscience is an **open-source project** dedicated to **ethical, global intelligence gathering** for investigative journalism. We welcome contributions from everyone, whether you're a **developer, journalist, designer, or ethical hacker**.
+Open Omniscience is intended to be an **open-source project** dedicated to **ethical, global intelligence gathering** for investigative journalism. We welcome contributions from everyone, whether you're a **developer, journalist, designer, or ethical hacker**, to help make this conceptual framework into a working application.
 
-This document outlines how to **contribute** to Open Omniscience, including:
+This document outlines how to **contribute** to Open Omniscience **to help make it functional**, including:
 - [How to Get Started](#-how-to-get-started)
 - [Types of Contributions](#-types-of-contributions)
-- [Development Setup](#-development-setup)
+- [Development Setup (Conceptual)](#-development-setup)
 - [Submitting Changes](#-submitting-changes)
 - [Code of Conduct](#-code-of-conduct)
 - [Recognition](#-recognition)
@@ -16,10 +22,12 @@ This document outlines how to **contribute** to Open Omniscience, including:
 
 ## 🚀 How to Get Started
 
+**⚠️ The project needs extensive debugging and development before it can be used.**
+
 ### 1. Familiarize Yourself with the Project
-- Read the [README.md](README.md) to understand the **mission, features, and architecture**.
-- Review the [ETHICS.md](ETHICS.md) to ensure you understand our **ethical guidelines**.
-- Explore the [User Guide](docs/USER_GUIDE.md) and [Developer Guide](docs/DEVELOPER_GUIDE.md).
+- Read the [README.md](README.md) to understand the **intended mission, features, and architecture** (currently conceptual).
+- Review the [ETHICS.md](ETHICS.md) to ensure you understand our **ethical guidelines** (for when the project becomes functional).
+- Explore the [User Guide](docs/USER_GUIDE.md) and [Developer Guide](docs/DEVELOPER_GUIDE.md) (both describe intended functionality).
 
 ### 2. Join the Community
 - **GitHub Discussions**: Ask questions, share ideas, and discuss features in [Discussions](https://github.com/ideotion/Open-Omniscience/discussions).
@@ -27,10 +35,13 @@ This document outlines how to **contribute** to Open Omniscience, including:
 - **Email**: Contact us at `open-omniscience@ideotion.com` for private inquiries.
 
 ### 3. Find a Way to Contribute
+**The project needs significant work to become functional. Priority contributions include:**
+- **Debug existing code**: Help identify and fix issues preventing the software from working
+- **Implement missing functionality**: The codebase has many conceptual components that need implementation
 - **Browse open issues**: Look for issues labeled [`good first issue`](https://github.com/ideotion/Open-Omniscience/labels/good%20first%20issue) or [`help wanted`](https://github.com/ideotion/Open-Omniscience/labels/help%20wanted).
-- **Suggest new features**: Open an issue with your idea.
-- **Improve documentation**: Fix typos, add examples, or write tutorials.
-- **Add new sources**: Help expand our list of **ethical, scrapable news sources**.
+- **Suggest new features**: Open an issue with your idea for when the project becomes functional.
+- **Improve documentation**: Fix typos, add examples, or write tutorials (but clearly mark what is conceptual vs. functional).
+- **Add new sources**: Help expand our list of **ethical, scrapable news sources** (for when scraping functionality works).
 
 ---
 

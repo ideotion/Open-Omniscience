@@ -1,20 +1,25 @@
 # Open Omniscience User Guide
 
-**Version:** 0.03
-**Last Updated:** May 7, 2026
+**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
 
-This guide will help you **install, configure, and use** Open Omniscience for investigative journalism, research, and data analysis.
+**Version:** 0.03 (Early Concept - Non-Functional)
+**Last Updated:** May 7, 2026
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
+
+> ⚠️ **IMPORTANT NOTICE**: This user guide describes the **intended functionality** of Open-Omniscience. **The software is currently NOT FUNCTIONAL** and requires extensive debugging and development. **Do not attempt to use any of the installation instructions or features described herein** - they are part of a conceptual framework only.
+
+This guide will help you **install, configure, and use** Open Omniscience for investigative journalism, research, and data analysis **when it becomes functional**.
 
 ---
 
 ## 📖 Table of Contents
 1. [Introduction](#-introduction)
-2. [Installation](#-installation)
-3. [Configuration](#-configuration)
-4. [Using the GUI](#-using-the-gui)
-5. [Advanced Search](#-advanced-search)
-6. [Using Local LLM Features](#-using-local-llm-features)
-7. [Exporting Data](#-exporting-data)
+2. [Installation (Conceptual)](#-installation)
+3. [Configuration (Conceptual)](#-configuration)
+4. [Using the GUI (Conceptual)](#-using-the-gui)
+5. [Advanced Search (Conceptual)](#-advanced-search)
+6. [Using Local LLM Features (Conceptual)](#-using-local-llm-features)
+7. [Exporting Data (Conceptual)](#-exporting-data)
 8. [Ethical Guidelines](#-ethical-guidelines)
 9. [Troubleshooting](#-troubleshooting)
 10. [FAQ](#-faq)
@@ -23,80 +28,95 @@ This guide will help you **install, configure, and use** Open Omniscience for in
 
 ## 🌟 Introduction
 
-Open Omniscience is an **open-source global intelligence platform** designed to help journalists, researchers, and analysts **aggregate, search, and analyze news articles** from around the world. It prioritizes **ethical scraping**, **data integrity**, and **user privacy**.
+Open Omniscience is an **early concept** for an open-source global intelligence platform designed to help journalists, researchers, and analysts **aggregate, search, and analyze news articles** from around the world. When functional, it will prioritize **ethical scraping**, **data integrity**, and **user privacy**.
 
-### Key Features:
-- **Scrape 1900+ news sources** (RSS and HTML).
-- **Advanced search** with Boolean operators, filters, and pagination.
-- **Visualize data** with interactive charts.
-- **Export data** in CSV, JSON, or SQLite formats.
-- **Audit logging** for transparency and compliance.
-- **Local LLM Support** for text generation, analysis, translation, and synthesis.
+**⚠️ CURRENT STATUS: This software is NOT FUNCTIONAL and CANNOT be used.**
+
+### Intended Key Features (When Functional):
+- **Scrape 1900+ news sources** (RSS and HTML) - *not currently working*
+- **Advanced search** with Boolean operators, filters, and pagination - *not currently working*
+- **Visualize data** with interactive charts - *not currently working*
+- **Export data** in CSV, JSON, or SQLite formats - *not currently working*
+- **Audit logging** for transparency and compliance - *not currently working*
+- **Local LLM Support** for text generation, analysis, translation, and synthesis - *not currently working*
 
 ---
 
-## 💻 Installation
+## 💻 Installation (CONCEPTUAL - NOT FUNCTIONAL)
 
-### Prerequisites
-- **Operating System:** Debian-based Linux (Ubuntu, Debian, etc.)
-- **Python:** 3.10 or higher.
-- **Hardware:** At least 4GB RAM and 10GB free disk space (for large datasets).
+**⚠️ DO NOT ATTEMPT TO FOLLOW THESE INSTRUCTIONS** - The installation process does not work in the current state.
 
-### Step-by-Step Installation
+### Prerequisites (Intended)
+- **Operating System:** Debian-based Linux (Ubuntu, Debian, etc.) - *for future use*
+- **Python:** 3.10 or higher - *for future use*
+- **Hardware:** At least 4GB RAM and 10GB free disk space (for large datasets) - *for future use*
 
-#### 1. Clone the Repository
+### Step-by-Step Installation (Conceptual Design)
+
+**⚠️ These steps are NOT FUNCTIONAL and should NOT be attempted.**
+
+#### 1. Clone the Repository (Conceptual)
 ```bash
+# DO NOT RUN - This is conceptual only
 git clone https://github.com/ideotion/Open-Omniscience
 cd Open-Omniscience
 ```
 
-#### 2. Set Up a Virtual Environment
+#### 2. Set Up a Virtual Environment (Conceptual)
 ```bash
+# DO NOT RUN - This is conceptual only
 python -m venv venv
 source venv/bin/activate
 ```
 
-#### 3. Install Dependencies
+#### 3. Install Dependencies (Conceptual)
 ```bash
+# DO NOT RUN - This is conceptual only
 pip install -r requirements.txt
 ```
 
-#### 4. Initialize the Database
-For **SQLite** (default, no setup required):
+#### 4. Initialize the Database (Conceptual)
+For **SQLite** (default, no setup required) - *not currently working*:
 ```bash
+# DO NOT RUN - This is conceptual only
 mkdir -p data/
 ```
-The database (`data/open_omniscience.db`) will be created automatically on first run.
+The database (`data/open_omniscience.db`) would be created automatically on first run *if the software worked*.
 
-For **PostgreSQL** (recommended for production):
-1. Install PostgreSQL (see [DATABASE.md](DATABASE.md)).
-2. Create a database and user:
+For **PostgreSQL** (recommended for production) - *not currently working*:
+1. Install PostgreSQL (see [DATABASE.md](DATABASE.md)) - *not currently working*
+2. Create a database and user - *not currently working*:
    ```bash
+   # DO NOT RUN - This is conceptual only
    sudo -u postgres psql
    ```
    In the PostgreSQL shell:
    ```sql
+   # DO NOT RUN - This is conceptual only
    CREATE DATABASE open_omniscience;
    CREATE USER open_omniscience WITH PASSWORD 'your_password';
    GRANT ALL PRIVILEGES ON DATABASE open_omniscience TO open_omniscience;
    \q
    ```
-3. Set the `DATABASE_URL` environment variable:
+3. Set the `DATABASE_URL` environment variable - *not currently working*:
    ```bash
+   # DO NOT RUN - This is conceptual only
    export DATABASE_URL="postgres://open_omniscience:your_password@localhost:5432/open_omniscience"
    ```
-4. Run the migrations:
+4. Run the migrations - *not currently working*:
    ```bash
+   # DO NOT RUN - This is conceptual only
    cd src/database
    alembic upgrade head
    ```
 
-#### 5. Start the Application
+#### 5. Start the Application (Conceptual)
 ```bash
+# DO NOT RUN - This is conceptual only
 uvicorn src.api.main:app --reload
 ```
-- Open your browser and navigate to `http://localhost:8000`.
-- The GUI will load automatically.
+- Open your browser and navigate to `http://localhost:8000` - **This will NOT work in current state**
+- The GUI would load automatically *if the software was functional*
 
 ---
 

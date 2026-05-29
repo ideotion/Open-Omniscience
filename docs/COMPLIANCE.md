@@ -1,6 +1,12 @@
 # GPLv3 Compliance Guide
 
-This document outlines Open Omniscience's compliance with the GNU General Public License Version 3 (GPLv3).
+**⚠️ EARLY CONCEPT RELEASE - SOFTWARE NOT FUNCTIONAL ⚠️**
+
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
+
+> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The software **does not work** and requires **extensive debugging and development** before it can be used. This compliance guide is provided for **future reference** when the project becomes functional.
+
+This document outlines the **intended compliance** of Open Omniscience with the GNU General Public License Version 3 (GPLv3) **when it becomes functional**.
 
 ---
 
@@ -10,7 +16,7 @@ This document outlines Open Omniscience's compliance with the GNU General Public
 **Copyright:** © 2026 Ideotion  
 **License File:** [LICENSE](LICENSE)
 
-Open Omniscience is fully licensed under GPLv3, which provides users with the following freedoms:
+Open Omniscience is fully licensed under GPLv3, which would provide users with the following freedoms **when the software becomes functional**:
 
 1. **Freedom 0:** The freedom to run the program for any purpose
 2. **Freedom 1:** The freedom to study how the program works and change it

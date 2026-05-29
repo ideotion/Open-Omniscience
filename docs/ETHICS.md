@@ -1,8 +1,14 @@
 # Ethical Guidelines for Open Omniscience
 
-This document outlines the **ethical principles, compliance requirements, and best practices** for using and contributing to Open Omniscience. Adherence to these guidelines is **mandatory** for all users and developers.
+**⚠️ EARLY CONCEPT RELEASE - SOFTWARE NOT FUNCTIONAL ⚠️**
 
-Open Omniscience aligns with the **Munich Charter**, a foundational set of principles for journalists adopted in 1971. These principles are integrated below to guide the ethical use of this platform.
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
+
+> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The software **does not work** and requires **extensive debugging and development** before it can be used. These ethical guidelines are provided for **future reference** when the project becomes functional.
+
+This document outlines the **intended ethical principles, compliance requirements, and best practices** for using and contributing to Open Omniscience **when it becomes functional**. Adherence to these guidelines will be **mandatory** for all users and developers.
+
+Open Omniscience is intended to align with the **Munich Charter**, a foundational set of principles for journalists adopted in 1971. These principles are integrated below to guide the ethical use of this platform **when it becomes operational**.
 
 ---
 

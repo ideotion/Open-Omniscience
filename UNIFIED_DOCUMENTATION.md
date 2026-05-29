@@ -1,29 +1,35 @@
 # Open-Omniscience Documentation
 
-**Version:** 0.03  
+**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
+
+**Version:** 0.03 (Early Concept - Non-Functional)  
 **Last Updated:** 2025-06-18  
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
 **Complete Guide for Debian 13 Users**
 
-> 🎯 **DEBIAN 13 DOCUMENTATION**: This file provides complete installation and usage instructions for Open-Omniscience on Debian 13 (Trixie).
+> ⚠️ **IMPORTANT NOTICE**: This documentation describes the **intended design** for Debian 13. **The software is currently NOT FUNCTIONAL** and requires extensive debugging and development. **Do not attempt to use any of the installation instructions or features described herein** - they are part of a conceptual framework only.
+
+> 🎯 **DEBIAN 13 DOCUMENTATION (CONCEPTUAL)**: This file provides the intended installation and usage instructions for Open-Omniscience on Debian 13 (Trixie). **None of this is currently operational.**
 
 ---
 
-## 🌟 Quick Start
+## 🌟 Quick Start (CONCEPTUAL - NOT FUNCTIONAL)
 
-### 🚀 Simple Installation (Recommended)
+**⚠️ DO NOT ATTEMPT TO RUN THESE COMMANDS** - The installation scripts do not work in the current state.
+
+### 🚀 Simple Installation (Intended Design)
 
 ```bash
-# Install Open-Omniscience on Debian 13 with a single command:
-
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
+# DO NOT RUN - This is conceptual only
+# curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
 ```
 
-**The installer will:**
-1. ✅ Detect Debian 13 environment
-2. ✅ Install all dependencies automatically
-3. ✅ Configure everything properly for Debian 13
-4. ✅ Create desktop launcher (if GUI available)
-5. ✅ Provide clear next steps
+**The installer would (when functional):**
+1. ❌ Detect Debian 13 environment (not currently working)
+2. ❌ Install all dependencies automatically (not currently working)
+3. ❌ Configure everything properly for Debian 13 (not currently working)
+4. ❌ Create desktop launcher (if GUI available) (not currently working)
+5. ❌ Provide clear next steps (not currently working)
 
 ---
 

@@ -1,11 +1,16 @@
 # Open Omniscience Developer Guide
 
+**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
+
 > 📚 **Looking for other documentation?** See the [Unified Documentation Index](../DOCUMENTATION.md) for all Open-Omniscience documentation.
 
-**Version:** 0.03
+**Version:** 0.03 (Early Concept - Non-Functional)
 **Last Updated:** May 7, 2026
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
 
-This guide is for **developers** who want to **extend, customize, or contribute** to Open Omniscience. It covers:
+> ⚠️ **IMPORTANT NOTICE**: This developer guide describes the **intended architecture** of Open-Omniscience. **The software is currently NOT FUNCTIONAL** and requires extensive debugging and development. **Do not attempt to use any of the development instructions or features described herein** - they are part of a conceptual framework only.
+
+This guide is for **developers** who want to **extend, customize, or contribute** to Open Omniscience **when it becomes functional**. It covers the intended design for:
 - Architecture overview
 - Code structure
 - Development setup
@@ -17,21 +22,23 @@ This guide is for **developers** who want to **extend, customize, or contribute*
 ---
 
 ## 📖 Table of Contents
-1. [Architecture Overview](#-architecture-overview)
-2. [Development Setup](#-development-setup)
-3. [Code Structure](#-code-structure)
-4. [Adding New Features](#-adding-new-features)
-5. [Local LLM Development](#-local-llm-development)
-6. [Testing](#-testing)
-7. [Database Migrations](#-database-migrations)
-8. [Deployment](#-deployment)
+1. [Architecture Overview (Conceptual)](#-architecture-overview)
+2. [Development Setup (Conceptual)](#-development-setup)
+3. [Code Structure (Conceptual)](#-code-structure)
+4. [Adding New Features (Conceptual)](#-adding-new-features)
+5. [Local LLM Development (Conceptual)](#-local-llm-development)
+6. [Testing (Conceptual)](#-testing)
+7. [Database Migrations (Conceptual)](#-database-migrations)
+8. [Deployment (Conceptual)](#-deployment)
 9. [Contribution Guidelines](#-contribution-guidelines)
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ Architecture Overview (Conceptual)
 
-Open Omniscience follows a **modular, layered architecture**:
+**⚠️ This architecture is conceptual and NOT YET IMPLEMENTED.**
+
+Open Omniscience is intended to follow a **modular, layered architecture**:
 
 ```
 ┌───────────────────────────────────────────────────────┐
@@ -90,13 +97,15 @@ Open Omniscience follows a **modular, layered architecture**:
 
 ---
 
-## 💻 Development Setup
+## 💻 Development Setup (CONCEPTUAL - NOT FUNCTIONAL)
 
-### Prerequisites
-- **Python:** 3.10+
-- **Git:** Latest version
-- **Node.js:** (Optional) For frontend development (future React migration).
-- **PostgreSQL:** (Optional) For production databases.
+**⚠️ These development setup instructions are NOT FUNCTIONAL and should NOT be attempted.**
+
+### Prerequisites (Intended)
+- **Python:** 3.10+ - *for future use*
+- **Git:** Latest version - *for future use*
+- **Node.js:** (Optional) For frontend development (future React migration) - *for future use*
+- **PostgreSQL:** (Optional) For production databases - *for future use*
 
 ### Step-by-Step Setup
 

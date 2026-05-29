@@ -1,15 +1,22 @@
 # Security Policy for Open Omniscience
 
+**⚠️ EARLY CONCEPT RELEASE - SOFTWARE NOT FUNCTIONAL ⚠️**
+
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
 **Last Updated:** May 7, 2026
 
-At **Ideotion**, we take the security of **Open Omniscience** seriously. This document outlines our **security practices**, **vulnerability reporting process**, and **guidelines for contributors** to ensure the platform remains secure and trustworthy.
+> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The software **does not work** and requires **extensive debugging and development** before it can be used. This security policy is provided for **future reference** when the project becomes functional.
+
+At **Ideotion**, we intend to take the security of **Open Omniscience** seriously **when it becomes functional**. This document outlines our **intended security practices**, **vulnerability reporting process**, and **guidelines for contributors** to ensure the platform remains secure and trustworthy **when operational**.
 
 ---
 
-## 🔒 Security Practices
+## 🔒 Security Practices (Conceptual)
 
-### 1. Secure Development Lifecycle
-Open Omniscience follows a **secure development lifecycle (SDL)** to minimize vulnerabilities:
+**⚠️ These security practices are intended for when the software becomes functional.**
+
+### 1. Secure Development Lifecycle (Intended)
+Open Omniscience is intended to follow a **secure development lifecycle (SDL)** to minimize vulnerabilities **when implemented**:
 
 | Phase | Security Measures |
 |-------|-------------------|

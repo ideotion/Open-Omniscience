@@ -1,49 +1,56 @@
 # Open-Omniscience Deployment Guide
 
-**Version:** 2.0  
+**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
+
+**Version:** 2.0 (Early Concept - Non-Functional)  
 **Last Updated:** 2025-05-21  
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
 **Author:** Open-Omniscience Team  
 **License:** GNU GPLv3
+
+> ⚠️ **IMPORTANT NOTICE**: This deployment guide describes the **intended deployment process** of Open-Omniscience. **The software is currently NOT FUNCTIONAL** and cannot be deployed. **Do not attempt to use any of the deployment instructions or configurations described herein** - they are part of a conceptual framework only.
 
 ---
 
 ## 📖 Table of Contents
 
-1. [Introduction](#1-introduction)
-2. [Prerequisites](#2-prerequisites)
-3. [Quick Start](#3-quick-start)
-4. [Production Deployment](#4-production-deployment)
-5. [Configuration](#5-configuration)
-   - [Environment Variables](#environment-variables)
-   - [Database Configuration](#database-configuration)
-   - [Security Configuration](#security-configuration)
-6. [Authentication Setup](#6-authentication-setup)
-7. [Monitoring and Logging](#7-monitoring-and-logging)
-8. [Backup and Recovery](#8-backup-and-recovery)
-9. [Scaling](#9-scaling)
-10. [Troubleshooting](#10-troubleshooting)
-11. [Maintenance](#11-maintenance)
+1. [Introduction (Conceptual)](#1-introduction)
+2. [Prerequisites (Conceptual)](#2-prerequisites)
+3. [Quick Start (Conceptual)](#3-quick-start)
+4. [Production Deployment (Conceptual)](#4-production-deployment)
+5. [Configuration (Conceptual)](#5-configuration)
+   - [Environment Variables (Conceptual)](#environment-variables)
+   - [Database Configuration (Conceptual)](#database-configuration)
+   - [Security Configuration (Conceptual)](#security-configuration)
+6. [Authentication Setup (Conceptual)](#6-authentication-setup)
+7. [Monitoring and Logging (Conceptual)](#7-monitoring-and-logging)
+8. [Backup and Recovery (Conceptual)](#8-backup-and-recovery)
+9. [Scaling (Conceptual)](#9-scaling)
+10. [Troubleshooting (Conceptual)](#10-troubleshooting)
+11. [Maintenance (Conceptual)](#11-maintenance)
 
 ---
 
-## 1. Introduction
+## 1. Introduction (Conceptual)
 
-This comprehensive deployment guide will walk you through deploying Open-Omniscience in production using direct Python installation. The application is designed to be portable and can run on any system with Python 3.8+.
+**⚠️ This deployment guide is NOT FUNCTIONAL and CANNOT be used.**
 
-### 🎯 Deployment Options
+This comprehensive deployment guide would walk you through deploying Open-Omniscience in production using direct Python installation **if the software was functional**. The application is intended to be portable and would run on any system with Python 3.8+ **if implemented**.
+
+### 🎯 Intended Deployment Options
 
 | Option | Complexity | Recommended For | Portability |
 |--------|------------|-----------------|-------------|
-| Direct Python Installation | ⭐ | Production | ✅ High |
-| Manual Deployment | ⭐⭐ | Custom Environments | ✅ High |
+| Direct Python Installation | ⭐ | Production - *not currently working* | ✅ High |
+| Manual Deployment | ⭐⭐ | Custom Environments - *not currently working* | ✅ High |
 
-### 📋 What You'll Need
+### 📋 What You Would Need (When Functional)
 
-- Domain name (for production)
-- SSL certificates (Let's Encrypt recommended)
-- Python 3.8+ and pip
-- Basic Linux server knowledge
-- PostgreSQL (recommended for production)
+- Domain name (for production) - *for future use*
+- SSL certificates (Let's Encrypt recommended) - *for future use*
+- Python 3.8+ and pip - *for future use*
+- Basic Linux server knowledge - *for future use*
+- PostgreSQL (recommended for production) - *for future use*
 
 ---
 

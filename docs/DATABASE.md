@@ -1,31 +1,41 @@
 # Database Configuration for Open Omniscience
 
-Open Omniscience supports both **SQLite** (default) and **PostgreSQL** for data storage. This guide covers setup, configuration, and optimization for both.
+**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
+
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
+
+> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The database configuration described below is **part of a conceptual framework only** and **does not work** in the current state. **Do not attempt to set up or use these database configurations** - they are not functional.
+
+Open Omniscience is intended to support both **SQLite** (default) and **PostgreSQL** for data storage **when it becomes functional**. This guide covers the intended setup, configuration, and optimization for both.
 
 ---
 
-## 🗃️ SQLite (Default)
+## 🗃️ SQLite (Default - Conceptual)
 
-### Pros:
-- **Zero configuration**: Works out of the box.
-- **Portable**: Single file (`data/open_omniscience.db`).
-- **No server required**: Ideal for local development and small-scale use.
+### Pros (Intended):
+- **Zero configuration**: Would work out of the box *if implemented*
+- **Portable**: Single file (`data/open_omniscience.db`) *if implemented*
+- **No server required**: Ideal for local development and small-scale use *if implemented*
 
-### Cons:
-- **Limited scalability**: Not ideal for >10GB of data.
-- **No concurrent writes**: SQLite locks the entire database during writes.
+### Cons (Intended):
+- **Limited scalability**: Not ideal for >10GB of data *if implemented*
+- **No concurrent writes**: SQLite locks the entire database during writes *if implemented*
 
-### Setup:
+### Setup (Conceptual):
+**⚠️ DO NOT ATTEMPT - This is conceptual only**
+
 1. Ensure the `data/` directory exists:
    ```bash
+   # DO NOT RUN - This is conceptual only
    mkdir -p data/
    ```
-2. The database is automatically created when you run the scraper or API for the first time.
+2. The database would be automatically created when you run the scraper or API for the first time *if the software was functional*.
 
-### Configuration:
-- Database file location: `data/open_omniscience.db`
-- To change the location, modify `DATABASE_URL` in `src/database/models.py`:
+### Configuration (Conceptual):
+- Database file location: `data/open_omniscience.db` *if implemented*
+- To change the location, modify `DATABASE_URL` in `src/database/models.py` *if implemented*:
   ```python
+  # DO NOT USE - This is conceptual only
   DATABASE_URL = "sqlite:///path/to/your/database.db"
   ```
 

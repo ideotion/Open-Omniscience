@@ -1,12 +1,18 @@
 # Third-Party Notices and Attributions
 
-This file contains notices and attributions for third-party software and libraries used by Open Omniscience.
+**⚠️ EARLY CONCEPT RELEASE - SOFTWARE NOT FUNCTIONAL ⚠️**
+
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
+
+> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The software **does not work** and requires **extensive debugging and development** before it can be used. The third-party dependencies listed below are part of the intended design for when the project becomes functional.
+
+This file contains notices and attributions for third-party software and libraries **intended to be used** by Open Omniscience **when it becomes functional**.
 
 ---
 
-## 📦 Python Dependencies
+## 📦 Python Dependencies (Intended)
 
-Open Omniscience uses various Python packages, each with their own licenses. The following is a summary of the main dependencies and their licenses:
+Open Omniscience is intended to use various Python packages, each with their own licenses **when implemented**. The following is a summary of the main dependencies and their licenses:
 
 | Package | License | Purpose |
 |---------|---------|---------|
@@ -24,10 +30,10 @@ Open Omniscience uses various Python packages, each with their own licenses. The
 
 ### Compliance Notes
 
-- All Python dependencies are **separate works** and are not modified by Open Omniscience
+- All Python dependencies would be **separate works** and would not be modified by Open Omniscience *when implemented*
 - Each dependency maintains its own license
-- Open Omniscience's GPLv3 license does not affect the licenses of these dependencies
-- Users must comply with each dependency's individual license when using them
+- Open Omniscience's GPLv3 license would not affect the licenses of these dependencies *when implemented*
+- Users would need to comply with each dependency's individual license when using them *when the software is functional*
 
 ---
 

@@ -1,62 +1,69 @@
 # Open-Omniscience API Documentation
 
+**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
+
 > 📚 **Looking for other documentation?** See the [Unified Documentation Index](../DOCUMENTATION.md) for all Open-Omniscience documentation.
 
-**Version:** 2.0  
+**Version:** 2.0 (Early Concept - Non-Functional)  
 **Last Updated:** 2025-05-12  
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
 **Author:** Open-Omniscience Team  
 **License:** Open Source (MIT)
+
+> ⚠️ **IMPORTANT NOTICE**: This API documentation describes the **intended API design** of Open-Omniscience. **The API is currently NOT FUNCTIONAL** and requires extensive debugging and development. **Do not attempt to use any of the API endpoints or examples described herein** - they are part of a conceptual framework only.
 
 ---
 
 ## 📖 Table of Contents
 
-1. [Introduction](#1-introduction)
-2. [Authentication](#2-authentication)
-3. [Base URL](#3-base-url)
-4. [API Endpoints](#4-api-endpoints)
-   - [Health & Status](#health--status)
-   - [Articles](#articles)
-   - [Sources](#sources)
-   - [Keywords](#keywords)
-   - [Link Analysis](#link-analysis)
-   - [LLM Integration](#llm-integration)
-5. [Request/Response Examples](#5-requestresponse-examples)
-6. [Error Handling](#6-error-handling)
-7. [Rate Limiting](#7-rate-limiting)
-8. [Pagination](#8-pagination)
-9. [Filtering & Search](#9-filtering--search)
-10. [Visual Examples](#10-visual-examples)
-11. [Postman Collection](#11-postman-collection)
-12. [cURL Examples](#12-curl-examples)
+1. [Introduction (Conceptual)](#1-introduction)
+2. [Authentication (Conceptual)](#2-authentication)
+3. [Base URL (Conceptual)](#3-base-url)
+4. [API Endpoints (Conceptual)](#4-api-endpoints)
+   - [Health & Status (Conceptual)](#health--status)
+   - [Articles (Conceptual)](#articles)
+   - [Sources (Conceptual)](#sources)
+   - [Keywords (Conceptual)](#keywords)
+   - [Link Analysis (Conceptual)](#link-analysis)
+   - [LLM Integration (Conceptual)](#llm-integration)
+5. [Request/Response Examples (Conceptual)](#5-requestresponse-examples)
+6. [Error Handling (Conceptual)](#6-error-handling)
+7. [Rate Limiting (Conceptual)](#7-rate-limiting)
+8. [Pagination (Conceptual)](#8-pagination)
+9. [Filtering & Search (Conceptual)](#9-filtering--search)
+10. [Visual Examples (Conceptual)](#10-visual-examples)
+11. [Postman Collection (Conceptual)](#11-postman-collection)
+12. [cURL Examples (Conceptual)](#12-curl-examples)
 
 ---
 
-## 1. Introduction
+## 1. Introduction (Conceptual)
 
-The Open-Omniscience API provides a comprehensive interface for interacting with the global intelligence platform. This documentation covers all available endpoints, their parameters, request/response formats, and examples.
+**⚠️ This API is NOT FUNCTIONAL and CANNOT be used.**
 
-### 🎯 API Features
+The Open-Omniscience API is intended to provide a comprehensive interface for interacting with the global intelligence platform. This documentation covers the intended design for all available endpoints, their parameters, request/response formats, and examples.
 
-- **RESTful Design**: Follows REST conventions
-- **JSON Format**: All requests and responses use JSON
-- **OpenAPI Support**: Auto-generated OpenAPI/Swagger documentation
-- **Rate Limiting**: Built-in rate limiting for API protection
-- **CORS Support**: Cross-origin resource sharing enabled
-- **Error Handling**: Consistent error responses
+### 🎯 Intended API Features
 
-### 📊 API Overview
+- **RESTful Design**: Would follow REST conventions *if implemented*
+- **JSON Format**: All requests and responses would use JSON *if implemented*
+- **OpenAPI Support**: Auto-generated OpenAPI/Swagger documentation *if implemented*
+- **Rate Limiting**: Built-in rate limiting for API protection *if implemented*
+- **CORS Support**: Cross-origin resource sharing enabled *if implemented*
+- **Error Handling**: Consistent error responses *if implemented*
+
+### 📊 Intended API Overview
 
 | Category | Endpoints | Description |
 |----------|-----------|-------------|
-| Health | 3 | Service health checks |
-| Articles | 2 | Article search and export |
-| Sources | 15+ | Source management |
-| Keywords | 8 | Keyword extraction and analysis |
-| Link Analysis | 12 | Link classification and analysis |
-| LLM | 8 | Large language model integration |
+| Health | 3 | Service health checks - *not currently working* |
+| Articles | 2 | Article search and export - *not currently working* |
+| Sources | 15+ | Source management - *not currently working* |
+| Keywords | 8 | Keyword extraction and analysis - *not currently working* |
+| Link Analysis | 12 | Link classification and analysis - *not currently working* |
+| LLM | 8 | Large language model integration - *not currently working* |
 
-**Total Endpoints:** 50+
+**Total Endpoints:** 50+ - *none currently functional*
 
 ---
 

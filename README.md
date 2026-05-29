@@ -1,14 +1,33 @@
 # Open Omniscience
 
+**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
+
+> **IMPORTANT:** This is an **early concept release** that is **completely unusable** in its current state. The application **does not work** and requires **extensive debugging and development** before it can be used. **Do not expect this to function** - this is a work in progress for future development.
+
 **An Open-Source, Ethical, Global Intelligence Platform for Investigative Journalism with Local LLM Support**
 
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.03 (with Local LLM Support)
+**Version:** 0.03 (Early Concept - Non-Functional)
 **License:** [GNU GPLv3](LICENSE)
+**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
 
 ![Open Omniscience Logo](https://via.placeholder.com/150?text=Open+Omniscience)
+
+---
+
+## ⚠️ CRITICAL WARNING: EARLY DEVELOPMENT STAGE
+
+**THIS SOFTWARE IS NOT READY FOR USE.**
+
+- ❌ **Does not work** in current state
+- ❌ **Requires extensive debugging**
+- ❌ **Completely unusable** for production or testing
+- ❌ **No functionality guaranteed**
+- ❌ **For development purposes only**
+
+**Please do not attempt to install or use this software expecting it to function.** This is a conceptual framework that needs significant work before it becomes operational.
 
 ---
 
@@ -27,7 +46,21 @@ This project is a **Debian-based Linux application** built on Python, leveraging
 
 ## ⚠️ Disclaimer
 
-**Open Omniscience** is a tool designed for **ethical, legal, and responsible** data aggregation and analysis. By using this software, you agree to comply with the following:
+**Open Omniscience** is an **early concept release** that is **not functional** and **not ready for any use**. This project was initially forked from [HTTrack](https://www.httrack.com/), a website copier tool.
+
+### Early Development Status
+
+**THIS SOFTWARE IS IN AN EARLY CONCEPT STAGE AND DOES NOT WORK.**
+
+- This is **not a production-ready application**
+- The codebase **requires extensive debugging and development**
+- **No features are guaranteed to function**
+- **Do not attempt to use this for any real-world purposes**
+- This is a **development framework only**
+
+### Legal & Ethical Disclaimer
+
+When this software becomes functional, it will be designed for **ethical, legal, and responsible** data aggregation and analysis. By using this software, you agree to comply with the following:
 
 1. **Respect all applicable laws** in your jurisdiction, including copyright and data protection regulations.
 2. **Adhere to `robots.txt` directives** and terms of service of all scraped websites.
@@ -35,30 +68,33 @@ This project is a **Debian-based Linux application** built on Python, leveraging
 4. **Ensure ethical use** as outlined in [ETHICS.md](docs/ETHICS.md).
 5. **All LLM processing happens locally** - no data is sent to external services.
 
-The maintainers of Open Omniscience **do not endorse or assume responsibility** for any misuse of this tool.
+The maintainers of Open Omniscience **do not endorse or assume responsibility** for any misuse of this tool. **Currently, the maintainers cannot guarantee any functionality as the software is not yet operational.**
 
 ---
 
 ## 🚀 Getting Started
 
-### 🎯 Simple Installation (Recommended for Debian 13 Users)
+**⚠️ IMPORTANT: DO NOT ATTEMPT TO INSTALL**
 
-**One command for Debian 13:**
+The installation scripts and instructions below are **part of the conceptual framework only**. The software **will not work** if you attempt to install it. This section is provided for documentation purposes to show the intended design, but **no functionality is currently operational**.
+
+### 🎯 Intended Installation (Conceptual - NOT FUNCTIONAL)
+
+**This is a conceptual design for future Debian 13 installation:**
 
 ```bash
+# DO NOT RUN - This will not work in current state
 curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
 ```
 
-**What this does:**
-- ✅ **Detects Debian 13 environment**
-- ✅ **Installs all dependencies** automatically
-- ✅ **Configures everything** properly for Debian 13
-- ✅ **Creates desktop launcher** (if GUI available)
-- ✅ **Provides clear next steps**
+**What this would do (when functional):**
+- ❌ **Detects Debian 13 environment** (not currently working)
+- ❌ **Installs all dependencies** automatically (not currently working)
+- ❌ **Configures everything** properly for Debian 13 (not currently working)
+- ❌ **Creates desktop launcher** (if GUI available) (not currently working)
+- ❌ **Provides clear next steps** (not currently working)
 
-**After installation:**
-- Open-Omniscience runs at **http://localhost:8000**
-- Ready to use on your Debian 13 system
+**Note:** Open-Omniscience **does not currently run** at http://localhost:8000 or any other address. The application is **not functional**.
 
 ### 📚 Documentation
 
