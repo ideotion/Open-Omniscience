@@ -17,10 +17,22 @@ import os
 from pathlib import Path
 
 # Import existing base and session from main database
-from src.database.models import Base, Session, engine, DATABASE_URL
+# Use relative import to go up to the parent project
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-# Reuse the existing base for all Pillar 6 models
-Pillar6Base = Base
+try:
+    from database.models import Base, Session, engine, DATABASE_URL
+    Pillar6Base = Base
+except ImportError:
+    # Fallback: create our own base if main database not available
+    from sqlalchemy.orm import declarative_base
+    Pillar6Base = declarative_base()
+    Base = Pillar6Base
+    Session = None
+    engine = None
+    DATABASE_URL = "sqlite:///pillar6.db"
 
 
 class RareEarthElementDB(Pillar6Base):
@@ -279,7 +291,7 @@ class RareEarthAnalysisDB(Pillar6Base):
     recommendations = Column(JSON, default=[])
     related_articles = Column(JSON, default=[])
     related_markets = Column(JSON, default=[])
-    metadata = Column(JSON, default={})
+    extra_metadata = Column(JSON, default={})
     created_at = Column(DateTime, default=lambda: datetime.utcnow())
     updated_at = Column(DateTime, onupdate=lambda: datetime.utcnow())
     
@@ -339,7 +351,7 @@ class ArticleRareEarthLinkDB(Pillar6Base):
     insights = Column(Text)
     is_significant = Column(Boolean, default=False)
     p_value = Column(Float)
-    metadata = Column(JSON, default={})
+    extra_metadata = Column(JSON, default={})
     created_at = Column(DateTime, default=lambda: datetime.utcnow())
     updated_at = Column(DateTime, onupdate=lambda: datetime.utcnow())
     
