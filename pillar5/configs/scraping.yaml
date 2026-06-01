@@ -1,0 +1,204 @@
+# Pillar 5: Scraping Configuration
+# Ethical scraping settings for financial data collection
+
+# Global settings
+user_agent: "OpenOmniscience/2.0 (Financial Intelligence; +https://github.com/ideotion/Open-Omniscience)"
+request_timeout: 30  # seconds
+max_retries: 3
+retry_delay: 2.0  # seconds between retries
+
+# Rate limiting (respect robots.txt)
+rate_limit:
+  enabled: true
+  default_delay: 2.0  # seconds between requests to the same domain
+  domain_delays:
+    yahoo.com: 2.0
+    finance.yahoo.com: 2.0
+    investing.com: 2.0
+    marketwatch.com: 2.0
+    nasdaq.com: 2.0
+    nyse.com: 2.0
+    londonstockexchange.com: 2.0
+    coinmarketcap.com: 2.0
+    coingecko.com: 2.0
+    x-rates.com: 2.0
+
+# Caching
+cache:
+  enabled: true
+  directory: "data/cache"
+  expiration: 86400  # 24 hours in seconds
+  max_size_mb: 1000  # Maximum cache size in MB
+
+# Data sources for each asset class
+data_sources:
+  exchanges:
+    - url: "https://www.nasdaq.com/market-activity/stocks/screener"
+      name: "NASDAQ"
+      enabled: true
+    - url: "https://www.nyse.com/listings_directory/stock"
+      name: "NYSE"
+      enabled: true
+    - url: "https://www.londonstockexchange.com/indices/ftse-100/constituents"
+      name: "LSE"
+      enabled: true
+    - url: "https://www.tse.or.jp/english/listing/company/index.html"
+      name: "TSE"
+      enabled: true
+    - url: "https://www.hkex.com.hk/Market-Data/Securities-Trading/Equity?sc_lang=en"
+      name: "HKEX"
+      enabled: true
+    - url: "https://www.sgx.com/securities/equities"
+      name: "SGX"
+      enabled: true
+    - url: "https://www.asx.com.au/markets/equities"
+      name: "ASX"
+      enabled: true
+    - url: "https://www.tsx.com/listings/listed-companies"
+      name: "TSX"
+      enabled: true
+
+  stocks:
+    primary:
+      - url: "https://finance.yahoo.com/quote/{symbol}"
+        name: "Yahoo Finance"
+        enabled: true
+        priority: 1
+      - url: "https://www.marketwatch.com/investing/stock/{symbol}"
+        name: "MarketWatch"
+        enabled: true
+        priority: 2
+      - url: "https://www.nasdaq.com/market-activity/stocks/{symbol}"
+        name: "NASDAQ"
+        enabled: true
+        priority: 3
+    fallback:
+      - url: "https://www.investing.com/equities/{symbol}"
+        name: "Investing.com"
+        enabled: true
+        priority: 4
+
+  etfs:
+    primary:
+      - url: "https://finance.yahoo.com/quote/{symbol}"
+        name: "Yahoo Finance"
+        enabled: true
+        priority: 1
+      - url: "https://www.etf.com/{symbol}"
+        name: "ETF.com"
+        enabled: true
+        priority: 2
+    fallback:
+      - url: "https://www.investing.com/etf/{symbol}"
+        name: "Investing.com"
+        enabled: true
+        priority: 3
+
+  indices:
+    primary:
+      - url: "https://finance.yahoo.com/quote/{symbol}"
+        name: "Yahoo Finance"
+        enabled: true
+        priority: 1
+      - url: "https://www.investing.com/indices/{symbol}"
+        name: "Investing.com"
+        enabled: true
+        priority: 2
+
+  commodities:
+    primary:
+      - url: "https://www.investing.com/commodities/{symbol}"
+        name: "Investing.com"
+        enabled: true
+        priority: 1
+      - url: "https://finance.yahoo.com/quote/{symbol}"
+        name: "Yahoo Finance"
+        enabled: true
+        priority: 2
+
+  forex:
+    primary:
+      - url: "https://www.x-rates.com/table/?from={from}&to={to}"
+        name: "X-Rates"
+        enabled: true
+        priority: 1
+      - url: "https://finance.yahoo.com/quote/{from}{to}=X"
+        name: "Yahoo Finance"
+        enabled: true
+        priority: 2
+      - url: "https://www.investing.com/currencies/{from}-{to}"
+        name: "Investing.com"
+        enabled: true
+        priority: 3
+
+  crypto:
+    primary:
+      - url: "https://www.coingecko.com/en/coins/{symbol}"
+        name: "CoinGecko"
+        enabled: true
+        priority: 1
+      - url: "https://coinmarketcap.com/currencies/{symbol}"
+        name: "CoinMarketCap"
+        enabled: true
+        priority: 2
+    fallback:
+      - url: "https://finance.yahoo.com/quote/{symbol}-USD"
+        name: "Yahoo Finance"
+        enabled: true
+        priority: 3
+
+# OHLC data sources
+ohlc_sources:
+  yahoo_finance:
+    url: "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+    enabled: true
+    priority: 1
+    max_period: "1y"  # Maximum historical data period
+    
+  alpha_vantage:
+    url: "https://www.alphavantage.co/query"
+    enabled: false  # Requires API key
+    priority: 2
+    api_key: null
+    
+  investing_com:
+    url: "https://www.investing.com/instruments/HistoricalDataAjax"
+    enabled: true
+    priority: 3
+
+# Fundamentals data sources
+fundamentals_sources:
+  yahoo_finance:
+    url: "https://query2.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+    enabled: true
+    priority: 1
+    
+  marketwatch:
+    url: "https://www.marketwatch.com/investing/stock/{symbol}/financials"
+    enabled: true
+    priority: 2
+
+# Sector/Industry classification sources
+sector_sources:
+  yahoo_finance:
+    url: "https://finance.yahoo.com/quote/{symbol}/profile"
+    enabled: true
+    priority: 1
+    
+  nasdaq:
+    url: "https://www.nasdaq.com/market-activity/stocks/{symbol}/company-profile"
+    enabled: true
+    priority: 2
+
+# Proxy settings (optional)
+proxy:
+  enabled: false
+  http: null
+  https: null
+
+# Logging
+logging:
+  level: "INFO"
+  file: "logs/scraping.log"
+  max_size_mb: 10
+  backup_count: 5
