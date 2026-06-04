@@ -42,13 +42,10 @@ import logging
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Try to import bleach for HTML sanitization
-try:
-    import bleach
-    BLEACH_AVAILABLE = True
-except ImportError:
-    BLEACH_AVAILABLE = False
-    logger.warning("bleach module not available, using fallback HTML sanitization")
+# bleach is a required dependency (see pyproject). HTML sanitization must use a
+# real allowlist sanitizer; we deliberately do NOT silently fall back to escaping
+# everything, which would corrupt content while appearing to work.
+import bleach
 
 
 class SecurityError(Exception):
@@ -76,32 +73,21 @@ def sanitize_html(content: str) -> str:
         'hr', 'img', 'table', 'tr', 'td', 'th', 'thead', 'tbody', 'tfoot'
     ]
     
-    # List of allowed attributes for each tag
+    # Allowed attributes per tag. 'style' is intentionally NOT allowed (inline
+    # CSS is an XSS vector and would require a separate CSS sanitizer).
     ALLOWED_ATTRIBUTES = {
         'a': ['href', 'title', 'rel'],
         'img': ['src', 'alt', 'width', 'height'],
-        '*': ['class', 'id', 'style']  # Allow class, id, style on any tag
+        '*': ['class', 'id'],
     }
-    
-    try:
-        if BLEACH_AVAILABLE:
-            # Use bleach to sanitize HTML
-            cleaned = bleach.clean(
-                content,
-                tags=ALLOWED_TAGS,
-                attributes=ALLOWED_ATTRIBUTES,
-                strip=True,
-                strip_comments=True
-            )
-            return cleaned
-        else:
-            # Fallback: escape all HTML when bleach is not available
-            logger.warning("Using fallback HTML sanitization (bleach not available)")
-            return html.escape(content)
-    except Exception as e:
-        logger.error(f"Error sanitizing HTML: {e}")
-        # Fallback: escape all HTML
-        return html.escape(content)
+
+    return bleach.clean(
+        content,
+        tags=ALLOWED_TAGS,
+        attributes=ALLOWED_ATTRIBUTES,
+        strip=True,
+        strip_comments=True,
+    )
 
 
 def escape_html(content: str) -> str:
@@ -119,49 +105,13 @@ def escape_html(content: str) -> str:
     return html.escape(content)
 
 
-def sanitize_sql_input(value: Any) -> str:
-    """
-    Sanitize input to prevent SQL injection.
-    This is a defense-in-depth measure - parameterized queries should still be used.
-    
-    Args:
-        value: The value to sanitize.
-        
-    Returns:
-        Sanitized string safe for SQL queries.
-    """
-    if value is None:
-        return ""
-    
-    if isinstance(value, (int, float, bool)):
-        return str(value)
-    
-    if not isinstance(value, str):
-        value = str(value)
-    
-    # Remove SQL comments
-    value = re.sub(r'--.*?$', '', value, flags=re.MULTILINE)
-    value = re.sub(r'/\*.*?\*/', '', value, flags=re.DOTALL)
-    
-    # Remove SQL keywords that could be used in injection
-    sql_keywords = [
-        r'\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|EXEC|EXECUTE)\b',
-        r'\b(UNION|JOIN|WHERE|FROM|GROUP BY|HAVING|ORDER BY)\b',
-        r'\b(OR\s+1=1|AND\s+1=1|OR\s+\"\"=\"\")\b',
-        r'[;]',  # Remove all semicolons
-        r'--.*?$',  # Remove SQL comments (already handled above but included for completeness)
-        r'/\*.*?\*/',  # Remove multi-line comments
-        r'\b(DROP\s+TABLE|DROP\s+DATABASE)\b',
-        r'\b(LOAD_FILE|INTO\s+OUTFILE|INTO\s+DUMPFILE)\b'
-    ]
-    
-    for pattern in sql_keywords:
-        value = re.sub(pattern, '', value, flags=re.IGNORECASE)
-    
-    # Remove extra whitespace
-    value = ' '.join(value.split())
-    
-    return value
+# NOTE (P0-8): the former ``sanitize_sql_input`` was removed in v0.4. It was a
+# regex keyword blocklist that silently corrupted legitimate input -- e.g. it
+# turned the search "oil prices DROP" into "oil prices" and mangled "AT&T" -- and
+# gave a false sense of security. SQL safety comes from parameterized queries
+# (SQLAlchemy binds every value), which the codebase now uses throughout. Likewise
+# ``sanitize_dict_input`` was removed: destructively rewriting stored values is
+# not injection defense.
 
 
 def validate_and_sanitize_filename(filename: str) -> str:
@@ -305,58 +255,18 @@ def validate_and_sanitize_search_query(query: str, max_length: int = 500) -> str
     """
     if not query:
         return query
-    
+
     if len(query) > max_length:
         raise SecurityError(f"Search query exceeds maximum length of {max_length} characters")
-    
-    # Remove SQL-like patterns
-    query = sanitize_sql_input(query)
-    
-    # Remove potential XSS patterns
-    query = escape_html(query)
-    
-    # Remove control characters
+
+    # Non-destructive: only strip control characters and surrounding whitespace.
+    # The query is NOT keyword-filtered or HTML-escaped -- doing so corrupted
+    # legitimate searches (e.g. "AT&T", "oil prices DROP"). Safety against SQL
+    # injection comes from parameterized queries / FTS5 MATCH binding, and the
+    # Boolean parser in src/database/fts.py validates structure.
     query = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', query)
-    
+
     return query.strip()
-
-
-def sanitize_dict_input(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Recursively sanitize dictionary input to prevent injection attacks.
-    
-    Args:
-        data: The dictionary to sanitize.
-        
-    Returns:
-        Sanitized dictionary.
-    """
-    if not isinstance(data, dict):
-        return data
-    
-    sanitized = {}
-    for key, value in data.items():
-        # Sanitize the key
-        if not isinstance(key, str):
-            continue
-        sanitized_key = sanitize_sql_input(key)
-        
-        # Sanitize the value based on its type
-        if isinstance(value, str):
-            sanitized_value = sanitize_sql_input(value)
-        elif isinstance(value, dict):
-            sanitized_value = sanitize_dict_input(value)
-        elif isinstance(value, list):
-            sanitized_value = [
-                sanitize_sql_input(item) if isinstance(item, str) else item
-                for item in value
-            ]
-        else:
-            sanitized_value = value
-        
-        sanitized[sanitized_key] = sanitized_value
-    
-    return sanitized
 
 
 def generate_secure_token(length: int = 32) -> str:
@@ -383,19 +293,14 @@ def hash_password(password: str) -> str:
     Returns:
         Bcrypt hash of the password.
     """
-    try:
-        import bcrypt
-        # Generate salt and hash the password
-        salt = bcrypt.gensalt()
-        hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-        return hashed.decode('utf-8')
-    except ImportError:
-        logger.warning("bcrypt not available, using fallback hashing")
-        # Fallback: use SHA-256 with salt (less secure)
-        import hashlib
-        import secrets
-        salt = secrets.token_hex(16)
-        return hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
+    # bcrypt is required (see pyproject). We do NOT silently fall back to a
+    # single-round SHA-256 (P0-9): that produced an insecure hash that *looked*
+    # like a password hash, and the fallback verifier did not even match it.
+    import bcrypt
+
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
 def verify_password(password: str, hashed: str) -> bool:
@@ -409,18 +314,13 @@ def verify_password(password: str, hashed: str) -> bool:
     Returns:
         True if the password matches, False otherwise.
     """
+    import bcrypt
+
     try:
-        import bcrypt
-        return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
-    except ImportError:
-        logger.warning("bcrypt not available, using fallback verification")
-        # Fallback: use SHA-256 with salt
-        import hashlib
-        # Extract salt from the hash (last 32 characters)
-        salt = hashed[-32:]
-        expected_hash = hashed[:-32]
-        actual_hash = hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
-        return actual_hash == expected_hash
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    except ValueError:
+        # Malformed/old non-bcrypt hash -> not a valid match (never a silent pass).
+        return False
 
 
 # Security headers for HTTP responses

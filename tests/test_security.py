@@ -47,13 +47,11 @@ from utils.security import (
     SecurityError,
     sanitize_html,
     escape_html,
-    sanitize_sql_input,
     validate_and_sanitize_filename,
     safe_path_join,
     sanitize_url,
     validate_email,
     validate_and_sanitize_search_query,
-    sanitize_dict_input,
     generate_secure_token,
     hash_password,
     verify_password,
@@ -111,45 +109,6 @@ class TestSanitizeHtml:
         assert ">" not in escaped
         assert "&lt;" in escaped
         assert "&gt;" in escaped
-
-
-class TestSanitizeSqlInput:
-    """Tests for SQL injection prevention."""
-
-    def test_sanitize_sql_input_removes_sql_comments(self):
-        """Test that SQL comments are removed."""
-        input_text = "test--comment\nSELECT * FROM users"
-        sanitized = sanitize_sql_input(input_text)
-        assert "--" not in sanitized
-        assert "SELECT" not in sanitized
-
-    def test_sanitize_sql_input_removes_sql_keywords(self):
-        """Test that SQL keywords are removed."""
-        input_text = "test OR 1=1"
-        sanitized = sanitize_sql_input(input_text)
-        assert "OR 1=1" not in sanitized
-
-    def test_sanitize_sql_input_removes_semicolons(self):
-        """Test that semicolons are removed."""
-        input_text = "test; DROP TABLE users"
-        sanitized = sanitize_sql_input(input_text)
-        assert ";" not in sanitized
-        assert "DROP" not in sanitized
-
-    def test_sanitize_sql_input_preserves_normal_text(self):
-        """Test that normal text is preserved."""
-        input_text = "Hello World 123"
-        sanitized = sanitize_sql_input(input_text)
-        assert sanitized == "Hello World 123"
-
-    def test_sanitize_sql_input_handles_none(self):
-        """Test that None is handled correctly."""
-        assert sanitize_sql_input(None) == ""
-
-    def test_sanitize_sql_input_handles_numbers(self):
-        """Test that numbers are handled correctly."""
-        assert sanitize_sql_input(123) == "123"
-        assert sanitize_sql_input(12.34) == "12.34"
 
 
 class TestFilenameValidation:
@@ -330,70 +289,18 @@ class TestSearchQueryValidation:
         with pytest.raises(SecurityError):
             validate_and_sanitize_search_query(long_query)
 
-    def test_validate_search_query_sanitizes_sql_injection(self):
-        """Test that SQL injection attempts are sanitized."""
+    def test_validate_search_query_is_non_destructive(self):
+        """The validator must NOT mangle queries: SQL safety is via parameterized
+        queries / FTS5 binding, not by stripping words from user input."""
         query = "test'; DROP TABLE users;--"
         result = validate_and_sanitize_search_query(query)
-        assert "DROP" not in result
-        assert "--" not in result
-        # Note: Single quotes are HTML-escaped to &#x27; which contains a semicolon
-        # The original SQL injection semicolons are removed, but HTML entities may contain semicolons
-        assert "TABLE" in result  # The word TABLE should remain
-        assert "test" in result  # The word test should remain
+        # Content is preserved verbatim (no keyword stripping, no HTML escaping).
+        assert result == "test'; DROP TABLE users;--"
 
     def test_validate_search_query_empty_query(self):
         """Test that empty queries are handled correctly."""
         assert validate_and_sanitize_search_query("") == ""
         assert validate_and_sanitize_search_query(None) is None
-
-
-class TestDictSanitization:
-    """Tests for dictionary input sanitization."""
-
-    def test_sanitize_dict_input_normal_dict(self):
-        """Test that normal dictionaries are sanitized correctly."""
-        data = {
-            "name": "test",
-            "value": "hello world",
-            "count": 42
-        }
-        result = sanitize_dict_input(data)
-        assert result["name"] == "test"
-        assert result["value"] == "hello world"
-        assert result["count"] == 42
-
-    def test_sanitize_dict_input_nested_dicts(self):
-        """Test that nested dictionaries are sanitized recursively."""
-        data = {
-            "user": {
-                "name": "test",
-                "email": "user@example.com"
-            },
-            "settings": {
-                "theme": "dark"
-            }
-        }
-        result = sanitize_dict_input(data)
-        assert result["user"]["name"] == "test"
-        assert result["user"]["email"] == "user@example.com"
-        assert result["settings"]["theme"] == "dark"
-
-    def test_sanitize_dict_input_lists(self):
-        """Test that lists within dictionaries are sanitized."""
-        data = {
-            "tags": ["tag1", "tag2", "tag3"]
-        }
-        result = sanitize_dict_input(data)
-        assert result["tags"] == ["tag1", "tag2", "tag3"]
-
-    def test_sanitize_dict_input_sql_injection(self):
-        """Test that SQL injection in dictionary values is sanitized."""
-        data = {
-            "query": "test'; DROP TABLE users;--"
-        }
-        result = sanitize_dict_input(data)
-        assert "DROP" not in result["query"]
-        assert ";" not in result["query"]
 
 
 class TestTokenGeneration:

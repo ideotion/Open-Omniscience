@@ -416,52 +416,42 @@ class OpenOmnisciencePipeline:
         Raises:
             ValueError: If ingestion fails after all retry attempts.
         """
-        import requests
-        
-        # Try to use the scraper's download_page method if available
-        if self.pillar1 and hasattr(self.pillar1, 'download_page'):
-            try:
-                result = self.pillar1.download_page(url)
-                if result and hasattr(result, 'status'):
-                    if result.status.value == "SUCCESS":
-                        # Extract content from the downloaded page
-                        response = requests.get(url, timeout=30)
-                        return IngestedData(
-                            url=url,
-                            content=response.text,
-                            raw_content=response.content,
-                            headers=dict(response.headers),
-                            source_type="web",
-                            metadata={
-                                "status_code": response.status_code,
-                                "content_type": response.headers.get('Content-Type', ''),
-                            },
-                        )
-                    elif result.status.value == "BLOCKED":
-                        raise ValueError(f"URL blocked by robots.txt: {url}")
-                    else:  # FAILED
-                        raise ValueError(f"Scraper download failed: {result.error}")
-            except Exception as e:
-                self.logger.warning(f"Scraper download_page failed, falling back to requests: {e}")
-        
-        # Fallback to requests
+        # Single ethical fetch path (robots-respecting, rate-limited, fail-closed).
+        # No double fetch, no raw-requests bypass (fixes P1-1/P1-2): the page that
+        # passed the robots/rate-limit checks is the page we keep.
+        from src.ingest import (
+            EthicalFetcher,
+            FetchError,
+            RobotsDisallowed,
+            RobotsUnavailable,
+        )
+
+        fetcher = getattr(self, "_fetcher", None)
+        if fetcher is None:
+            fetcher = self._fetcher = EthicalFetcher()
+
         try:
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            return IngestedData(
-                url=url,
-                content=response.text,
-                raw_content=response.content,
-                headers=dict(response.headers),
-                source_type="web",
-                metadata={
-                    "status_code": response.status_code,
-                    "content_type": response.headers.get('Content-Type', ''),
-                },
-            )
-        except requests.exceptions.RequestException as e:
+            fetched = fetcher.fetch(url, require_html=True)
+        except RobotsDisallowed as e:
+            raise ValueError(f"URL blocked by robots.txt: {url}") from e
+        except RobotsUnavailable as e:
+            raise ValueError(f"robots.txt could not be confirmed for {url}; not fetched") from e
+        except FetchError as e:
             self.logger.error(f"Failed to ingest URL {url}: {e}")
-            raise ValueError(f"Failed to ingest URL {url}: {e}")
+            raise ValueError(f"Failed to ingest URL {url}: {e}") from e
+
+        return IngestedData(
+            url=fetched.requested_url,
+            content=fetched.content,
+            raw_content=fetched.content.encode("utf-8", errors="replace"),
+            headers={},
+            source_type="web",
+            metadata={
+                "status_code": fetched.status_code,
+                "content_type": fetched.content_type,
+                "final_url": fetched.final_url,
+            },
+        )
 
     def _process(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """

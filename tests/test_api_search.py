@@ -1,0 +1,144 @@
+"""
+End-to-end API tests for search + export (Action Plan Phase 1.5/1.6).
+
+Drives the real FastAPI app through TestClient, with the get_db dependency
+overridden onto an isolated temp database, proving the whole flow:
+Boolean full-text search, structured filters, pagination, and CSV/JSON export.
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+
+from src.api.main import app
+from src.database.fts import ensure_fts
+from src.database.models import Article, Base, Source
+from src.database.session import get_db
+
+
+@pytest.fixture()
+def client(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'api.db'}", future=True,
+        connect_args={"check_same_thread": False},
+    )
+
+    @event.listens_for(engine, "connect")
+    def _pragmas(dbapi_conn, _rec):  # noqa: ANN001
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
+
+    Base.metadata.create_all(engine)
+    ensure_fts(engine)
+    TestSession = sessionmaker(bind=engine, future=True)
+
+    with TestSession() as s:
+        src1 = Source(name="Alpha News", domain="alpha.example", tags="politics,world")
+        src2 = Source(name="Beta Wire", domain="beta.example", tags="markets")
+        s.add_all([src1, src2])
+        s.flush()
+        s.add_all([
+            Article(url="https://alpha.example/1", canonical_url="https://alpha.example/1",
+                    source_id=src1.id, title="Quantum leap",
+                    content="scientists report a quantum breakthrough", hash="1".ljust(64, "0"),
+                    language="en"),
+            Article(url="https://alpha.example/2", canonical_url="https://alpha.example/2",
+                    source_id=src1.id, title="Market jitters",
+                    content="oil prices DROP amid quantum computing hype", hash="2".ljust(64, "0"),
+                    language="en"),
+            Article(url="https://beta.example/3", canonical_url="https://beta.example/3",
+                    source_id=src2.id, title="Telecom",
+                    content="AT&T announces a merger", hash="3".ljust(64, "0"),
+                    language="fr"),
+        ])
+        s.commit()
+
+    def _override_get_db():
+        db = TestSession()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = _override_get_db
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+def test_health_reports_real_version(client):
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    assert r.json()["version"] == "0.4.0"
+
+
+def test_boolean_search_and(client):
+    r = client.get("/api/articles", params={"query": "quantum AND oil"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 1
+    assert data["results"][0]["title"] == "Market jitters"
+
+
+def test_boolean_search_or(client):
+    r = client.get("/api/articles", params={"query": "breakthrough OR merger"})
+    titles = {row["title"] for row in r.json()["results"]}
+    assert titles == {"Quantum leap", "Telecom"}
+
+
+def test_search_does_not_strip_keywords(client):
+    # "DROP" must be searchable; "AT&T" must not be mangled.
+    assert client.get("/api/articles", params={"query": "oil prices DROP"}).json()["total"] == 1
+    assert client.get("/api/articles", params={"query": "AT&T"}).json()["total"] == 1
+
+
+def test_invalid_query_returns_400(client):
+    r = client.get("/api/articles", params={"query": "(unbalanced OR"})
+    assert r.status_code == 400
+
+
+def test_structured_filters(client):
+    # language filter
+    assert client.get("/api/articles", params={"language": "fr"}).json()["total"] == 1
+    # source filter
+    assert client.get("/api/articles", params={"source": "Beta Wire"}).json()["total"] == 1
+    # unknown source -> 404
+    assert client.get("/api/articles", params={"source": "Nope"}).status_code == 404
+    # tag filter (source tags)
+    assert client.get("/api/articles", params={"tags": "markets"}).json()["total"] == 1
+
+
+def test_pagination(client):
+    r = client.get("/api/articles", params={"limit": 1, "offset": 0})
+    body = r.json()
+    assert body["total"] == 3
+    assert len(body["results"]) == 1
+
+
+def test_export_csv_matches_filter(client):
+    r = client.get("/api/articles/export", params={"format": "csv", "query": "quantum"})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    rows = list(csv.reader(io.StringIO(r.text)))
+    # header + 2 quantum articles
+    assert rows[0][0] == "ID"
+    assert len(rows) == 1 + 2
+
+
+def test_export_json_matches_filter(client):
+    r = client.get("/api/articles/export", params={"format": "json", "source": "Beta Wire"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["title"] == "Telecom"
+
+
+def test_export_rejects_bad_format(client):
+    assert client.get("/api/articles/export", params={"format": "xml"}).status_code == 400

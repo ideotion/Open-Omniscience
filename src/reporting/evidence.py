@@ -1,0 +1,154 @@
+"""
+Defensible, tamper-evident evidence bundles (chain of custody).
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+Turns the "legal admissibility" claim into something real (PRODUCT_SYNTHESIS §8):
+an exported bundle of selected articles, each with its provenance and content
+hash, bound together by a Merkle root and an Ed25519 signature over a canonical
+serialization. A third party can verify integrity offline with only the bundle
+and the public key -- no trust in this tool required.
+
+Ed25519 (via `cryptography`) is used rather than GPG so verification is fully
+self-contained and reproducible (no external gpg binary / keyring needed). The
+Merkle root reuses the audited src/crypto/merkle_tree implementation.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from datetime import UTC, datetime
+from pathlib import Path
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+
+from src.crypto.merkle_tree import compute_merkle_root
+
+BUNDLE_VERSION = "oo-evidence-1"
+
+
+# --------------------------------------------------------------------------- #
+# Signing keys (persistent under the data dir)
+# --------------------------------------------------------------------------- #
+
+def _default_key_path() -> Path:
+    base = Path(os.getenv("OO_DATA_DIR", Path(__file__).resolve().parents[2] / "data"))
+    return base / "keys" / "evidence_ed25519.pem"
+
+
+def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:
+    """Load the persistent Ed25519 signing key, creating it on first use."""
+    path = path or _default_key_path()
+    if path.exists():
+        return serialization.load_pem_private_key(path.read_bytes(), password=None)
+    key = Ed25519PrivateKey.generate()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ))
+    path.chmod(0o600)
+    return key
+
+
+def public_key_hex(key: Ed25519PrivateKey) -> str:
+    raw = key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+    )
+    return raw.hex()
+
+
+# --------------------------------------------------------------------------- #
+# Bundle construction
+# --------------------------------------------------------------------------- #
+
+def _article_item(article) -> dict:
+    """One evidence item: provenance + a content hash recomputed from the stored text."""
+    content_sha256 = hashlib.sha256((article.content or "").encode("utf-8")).hexdigest()
+    return {
+        "id": article.id,
+        "url": article.url,
+        "canonical_url": article.canonical_url,
+        "source_id": article.source_id,
+        "title": article.title,
+        "published_at": article.published_at.isoformat() if article.published_at else None,
+        "stored_hash": article.hash,
+        "content_sha256": content_sha256,
+    }
+
+
+def canonical_bytes(payload: dict) -> bytes:
+    """Deterministic serialization used for hashing/signing (sorted keys, no spaces)."""
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def build_manifest(articles, *, case_name: str | None = None) -> dict:
+    """Build the unsigned manifest (items + Merkle root + metadata)."""
+    items = [_article_item(a) for a in articles]
+    # Merkle leaves are the per-item content hashes, in item order.
+    leaves = [it["content_sha256"] for it in items]
+    merkle_root = compute_merkle_root(leaves) if leaves else None
+    return {
+        "bundle_version": BUNDLE_VERSION,
+        "case_name": case_name,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "item_count": len(items),
+        "merkle_root": merkle_root,
+        "items": items,
+    }
+
+
+def sign_manifest(manifest: dict, key: Ed25519PrivateKey) -> dict:
+    """Return a signed bundle: {manifest, signature, public_key, algorithm}."""
+    signature = key.sign(canonical_bytes(manifest)).hex()
+    return {
+        "manifest": manifest,
+        "signature": signature,
+        "public_key": public_key_hex(key),
+        "algorithm": "ed25519",
+    }
+
+
+def build_signed_bundle(articles, key: Ed25519PrivateKey, *, case_name: str | None = None) -> dict:
+    return sign_manifest(build_manifest(articles, case_name=case_name), key)
+
+
+# --------------------------------------------------------------------------- #
+# Independent verification (no app/DB needed -- just the bundle + crypto)
+# --------------------------------------------------------------------------- #
+
+def verify_bundle(bundle: dict) -> tuple[bool, str]:
+    """Verify a bundle's Merkle root and signature.
+
+    Returns (ok, reason). Recomputes the Merkle root from the items (detecting any
+    tampered content hash) and checks the Ed25519 signature over the manifest.
+    """
+    manifest = bundle.get("manifest")
+    if not manifest:
+        return False, "no manifest"
+
+    # 1. Recompute the Merkle root from the items as presented.
+    leaves = [it.get("content_sha256", "") for it in manifest.get("items", [])]
+    recomputed = compute_merkle_root(leaves) if leaves else None
+    if recomputed != manifest.get("merkle_root"):
+        return False, "merkle root mismatch (an item hash was altered/added/removed)"
+
+    # 2. Verify the signature over the canonical manifest bytes.
+    try:
+        pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(bundle["public_key"]))
+        pub.verify(bytes.fromhex(bundle["signature"]), canonical_bytes(manifest))
+    except (KeyError, ValueError):
+        return False, "malformed signature or public key"
+    except InvalidSignature:
+        return False, "signature does not match (manifest altered or wrong key)"
+
+    return True, "ok"
