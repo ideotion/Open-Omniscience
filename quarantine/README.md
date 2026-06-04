@@ -28,6 +28,26 @@ The guiding rule for this project (see `docs/PRODUCT_SYNTHESIS.md` §3.5/§3.7):
   call its inference, and report measured accuracy — or label outputs clearly as an
   "experimental heuristic, not evidence."
 
+## `dead_src/` — fabricated / over-engineered modules removed in v0.4 (Phase 6.1)
+
+These modules were **imported by nothing** (not the app, not the tests) — pure
+dead weight that obscured the real code. Removed from `src/` (history preserved):
+
+| Module | Why |
+|--------|-----|
+| `scraper_distributed.py` (1831) | fabricated "distributed" scraper |
+| `llm_optimizer.py` (1612) | fabricated LLM "optimizer" |
+| `database_query_optimizer.py` (1561) | unused; carried a **latent f-string SQL injection** |
+| `api_performance.py` (1404) | unused performance endpoints |
+| `utils_performance.py` (760) | unused |
+| `database_optimization.py` (697) | unused |
+| `compliance_ethical_scraper.py` (641) | superseded by `src/ingest` (the real, fail-closed fetcher) |
+| `ingestor_importer.py` (286) | superseded CSV importer |
+
+~8,300 lines removed; the suite stayed green. `database/async_db.py` (future
+Postgres async session) and `src/database/migrations/*` (Alembic) were
+deliberately **kept**.
+
 ## `legacy_database_search.py` — superseded dead code
 
 The former `src/database/search.py` (1310 lines) advertised SQLite FTS5 / Postgres
