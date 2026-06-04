@@ -4,18 +4,24 @@ Honest assessment of the repository immediately after Phases 0–5 were merged i
 `0.04`. Companion to the upgraded plan in [`ACTION_PLAN.md`](ACTION_PLAN.md) §"Phase 6".
 
 > ## Update after Phase 6 execution
-> Progress against the issues below (all green, branch `claude/kind-lovelace-ulpTc`):
-> - **Dead code:** ~26.6k dead LOC → ~7.4k; **live ratio 36% → 68%.** Purged 22
->   fabricated/orphan modules incl. the hallucinated-LLM catalog and the latent
->   SQL-injection module. (6.1 ✅)
-> - **Out-of-box utility:** the full `configs/sources.yml` catalog (~1,780 unique
->   sources) is now auto-seeded on install/first-run. (6.2 ✅)
-> - **Lint:** ~1,990 findings → ~1,060 via safe autofix (no import removal). (6.6 ◑)
-> - **Live routers:** SourceManager already well-tested; added keyword-extractor
->   tests; fixed a real `list_sources` DI bug. (6.4 ◑)
-> - **Still open:** Alembic migrations (6.3), Pillar-2 honesty gate (6.5), deeper
->   lint + CI-blocking (6.6), link-analyzer coverage, a real commodity scraper (6.7).
-> - Tests: 335 passing / 0 failing.
+> Status against the issues below (all green, branch `claude/kind-lovelace-ulpTc`):
+> - **6.1 Dead-code purge ✅** — ~26.6k dead LOC → ~7.4k; **live ratio 36% → 68%.**
+>   Removed the hallucinated-LLM catalog and the latent SQL-injection module.
+> - **6.2 Source seeding ✅** — the full `configs/sources.yml` catalog (~1,780
+>   unique) auto-seeds on install/first-run.
+> - **6.3 Alembic migrations ✅** — baseline + drift guard (`alembic check`) in CI;
+>   init_db stamps fresh DBs.
+> - **6.4 Router/enricher hardening ◑** — SourceManager already well-covered; added
+>   keyword-extractor + link-extractor tests; fixed two real bugs (`list_sources`
+>   DI; link internal/external classification).
+> - **6.6 Lint ◑** — ~1,990 → ~1,060 via safe autofix (no import removal).
+> - **6.7 Commodity ◑** — CSV bulk price import added (real web scraper deferred:
+>   needs a live source).
+> - **Still open (low marginal value / needs the operator's machine):** Pillar-2
+>   honesty gate (6.5 — moot now that fabricated numbers are quarantined), the
+>   remaining unsafe/manual lint + flipping CI lint to blocking, link-analyzer
+>   deeper quality, a live web scraper.
+> - Tests: 350 passing / 0 failing.
 
 ## Scorecard
 
