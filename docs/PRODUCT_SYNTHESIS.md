@@ -11,6 +11,72 @@
 
 ---
 
+## 0. Deployment context (RESOLVED — drives everything below)
+
+This build targets **one specific environment and one user**. These answers are now fixed and resolve
+several of the former `⚠️ DECIDE` points.
+
+- **Host:** Qubes OS, running inside a **Debian AppVM** (template-based).
+- **Python:** **3.13 as the default interpreter.**
+- **User:** a **single primary user (the project owner)** — no multi-tenant accounts, no RBAC.
+- **Surface:** **web UI + REST API bound to `127.0.0.1` only** (loopback). No external listeners.
+- **Network posture:** local-first; outbound only during scraping/LLM-pull; **no inbound** anything.
+
+### 0.1 What Qubes changes about the design
+
+Qubes is not "just Debian." Its security model and AppVM lifecycle impose hard constraints that the
+installer and runtime **must** respect:
+
+1. **Filesystem persistence is selective.** In an AppVM, only **`/home`, `/usr/local`, and `/rw`**
+   survive a reboot; the root filesystem is **reset from the TemplateVM every boot**. Therefore:
+   - The app, its virtualenv, the database, scraped data, logs, audit trail, and any downloaded LLM
+     models **must live under `/home/user/...`** (recommended: `/home/user/open-omniscience`).
+   - **`apt`/system packages do *not* persist** if installed in the AppVM. System dependencies must be
+     installed **in the TemplateVM** (and the AppVM rebooted), or pulled in via Qubes `bind-dirs`.
+     The installer must **split**: "system deps → TemplateVM" vs "Python venv + app → AppVM `/home`."
+2. **No assumption of persistent root.** Root changes in the AppVM vanish on reboot. Treat the AppVM as:
+   persistent `/home`, ephemeral root.
+3. **Networking via a NetVM.** The AppVM reaches the internet only through its assigned net/firewall
+   qube. The app must **degrade cleanly when offline** and never assume connectivity.
+4. **No GPU.** GPU passthrough is impractical in typical Qubes setups → **LLM inference is CPU-only**.
+   Default to **small models** (e.g. `gemma2:2b`, `llama3.2:3b`, `qwen2.5:1.5b`); large models opt-in.
+5. **Air-gap / split-VM is a first-class *future* option (not v1).** Qubes makes the "ethical scrape in a
+   networked qube, analyze/store in an offline vault qube" pattern natural via **qrexec/qubes-rpc**. v1
+   runs in **one AppVM**; the architecture must keep the *fetch* boundary clean so a later split is a
+   deployment change, not a rewrite. (The repo already contains vestigial `src/qubes/rpc/` and
+   `docs/QUBES_*` material — to be reviewed/replaced, not trusted.)
+
+### 0.2 Python 3.13 implications (resolves the dependency-version conflicts)
+
+- **Core stack is 3.13-clean:** FastAPI, uvicorn, SQLAlchemy 2.x, pydantic 2.x, requests, httpx,
+  beautifulsoup4, feedparser, numpy, pandas, scipy, scikit-learn, statsmodels — all ship 3.13 wheels.
+- **Local LLM does NOT require heavy Python ML.** Ollama is a **separate native binary**; the app talks
+  to it over **HTTP only**. Full LLM capability works on 3.13 with just `httpx`/`requests` — no
+  `torch`/`transformers` in the app at all.
+- **Heavy ML libraries are dropped from the core.** `torch`, `onnx`/`onnxruntime`, `tensorflow`,
+  `pyAudioAnalysis`, and the deepfake stack are **removed** for v1 because they are (a) currently
+  **fabricated** (the "deepfake CNN" never runs inference), (b) heavy and **CPU-only here**, and
+  (c) a per-package 3.13-wheel risk (`pyAudioAnalysis` is unmaintained; `igraph`/`leidenalg`/`gensim`
+  must each be verified before use). Any future ML feature must justify its weight and prove a 3.13 wheel.
+- **One dependency manifest, 3.13-pinned.** Replace the six disagreeing requirements files with a single
+  root `pyproject.toml` (`requires-python = ">=3.13"`) + optional extras (`[llm]`, `[analysis]`, `[dev]`).
+  Delete the AI-"corrective" comments and impossible pins.
+
+### 0.3 Security model for a single local user (simplifies the P0s)
+
+Because the only listener is loopback and the only user is you:
+- **Auth:** none required for v1 *provided* the server binds strictly to `127.0.0.1` and is never exposed
+  by a Qubes firewall rule. (A single optional API token can be added later if proxied.) This **resolves**
+  the "no auth on endpoints" finding *for this deployment* — by removing network exposure rather than
+  adding RBAC.
+- **`/metrics`:** loopback-only like everything else.
+- **Installer safety still mandatory:** no unconfirmed `rm -rf`, no unverified `curl | sh`, never discard
+  package-manager stderr — correctness/safety issues regardless of single-user.
+- **Front-end assets vendored locally** (no Google Fonts / CDN React) — required for offline/Qubes and
+  for the privacy principle.
+
+---
+
 ## 1. One-sentence definition
 
 Open-Omniscience is a **local-first, open-source intelligence platform for investigative journalists**
@@ -41,8 +107,8 @@ that is a defect, not a tradeoff.
 1. **Local-first & offline-capable.** Runs entirely on the user's machine/server. Must function with
    no internet except during scraping itself. Suitable for air-gapped use (with pre-staged data/models).
 2. **Privacy-preserving.** No telemetry. **No user data ever leaves the machine** — especially LLM
-   processing (local via Ollama only). ⚠️ DECIDE: the current GUI pulls Google Fonts + React/Recharts
-   from CDNs, which violates this. Confirm we vendor all front-end assets locally.
+   processing (local via Ollama only). ✅ RESOLVED (§0): all front-end assets (fonts, JS libs) are
+   **vendored locally** — no CDN calls — required for the Qubes/offline posture.
 3. **100% FOSS.** All code and models open-source. ⚠️ DECIDE: License is **GPLv3** at the root but
    **AGPL-3.0** in Pillar 3 — pick one project-wide (AGPL is stricter for network use).
 4. **Ethical by construction.** Respect `robots.txt`, rate limits, identify the bot, public data only,
@@ -188,11 +254,10 @@ Pillars are *enrichers* that read from and write back to the shared store.
 - **Core GUI:** search interface, results browsing, source management, export, basic dashboards.
 - **Pillar dashboards (later):** financial heatmaps/charts, commodity views, monitoring/alerts, email
   inbox, correlation explorer.
-- ⚠️ DECIDE: **Web UI vs desktop app.** Docs simultaneously describe a browser app at `localhost:8000`
-  **and** a Tkinter desktop app (installer pulls `python3-tk`, QA mentions "GUI/Tkinter testing"). Pick
-  one primary surface. (Recommendation: web UI served by FastAPI; drop Tkinter.)
-- ⚠️ DECIDE: Front-end stack — current mix is vanilla JS + React/Recharts via CDN. Pick one and vendor
-  it locally (offline/privacy requirement).
+- ✅ RESOLVED (§0): **web UI served by FastAPI at `127.0.0.1:8000`; Tkinter desktop app is dropped**
+  (remove `python3-tk`). Open in the AppVM's browser.
+- ✅ RESOLVED (§0): front-end is **vanilla JS + vendored libraries (served from `/static`)** — no CDN.
+  ⚠️ DECIDE (minor): keep charts lightweight (e.g. a small vendored charting lib) vs none in v1.
 
 ### 5.13 Reporting & Defensible Output (P1)
 - Generate investigation reports that bundle findings **with their provenance** (sources, timestamps,
@@ -205,21 +270,23 @@ Pillars are *enrichers* that read from and write back to the shared store.
 
 ## 6. Non-functional requirements
 
-- **Platform:** Debian 13 primary. ⚠️ DECIDE: other Linux / cross-platform support level.
-- **Python:** single target version, consistently configured everywhere. ⚠️ DECIDE: 3.12 (what CI/
-  tooling actually targets) vs 3.13 (what `.python-version` claims but dependencies can't satisfy).
-- **Install footprint:** a true **minimal core** (web + DB + search, lightweight) separable from heavy
-  optional extras (ML/LLM). One coherent dependency strategy — not six disagreeing manifests.
-- **Security:** parameterized DB access only (no blocklist "sanitizers"); real auth on any networked
-  deployment; no secrets in code; metrics endpoint protected; safe installer (no unconfirmed `rm -rf`,
-  no unverified `curl|sh`).
-  ⚠️ DECIDE: **Deployment/threat model** — single-user localhost desktop (minimal auth needed) vs
-  self-hosted multi-user server (full auth + RBAC needed) vs both. This decision drives the whole
-  security model.
-- **Performance:** non-blocking I/O for network/LLM work; bounded concurrency; the app stays responsive
-  while scraping/inferring. Targets (throughput/latency) defined per realistic hardware, not aspirational.
-- **Offline:** all assets, models, and fonts local; documented air-gap procedure.
-- **Observability:** structured logs, honest health checks, Prometheus metrics — reflecting real state.
+- **Platform:** ✅ RESOLVED (§0) — **Qubes OS Debian AppVM** is the *only* supported target for v1
+  (built and tested there). Plain Debian 13 may work but is not a goal; no cross-platform commitment.
+- **Python:** ✅ RESOLVED (§0) — **3.13**, consistently across `pyproject.toml`, `.python-version`, and
+  any CI. Drop dependencies that lack 3.13 wheels (see §0.2).
+- **Install footprint:** a true **minimal core** (web + DB + search, lightweight) separable from optional
+  extras (`[llm]`, `[analysis]`). **One** `pyproject.toml` — not six disagreeing manifests. Installer
+  respects Qubes persistence (§0.1): system deps in TemplateVM, venv+data in `/home`.
+- **Security:** ✅ RESOLVED (§0) — single local user, **loopback-only**, so no RBAC. Still mandatory:
+  parameterized DB access only (delete the blocklist "sanitizer"), no secrets in code, loopback `/metrics`,
+  and a **safe installer** (no unconfirmed `rm -rf`, no unverified `curl | sh`, never discard pkg stderr).
+- **Performance:** non-blocking I/O for network/LLM work; bounded concurrency; app stays responsive while
+  scraping/inferring. **CPU-only** assumptions (no GPU in Qubes). Targets defined per realistic AppVM
+  resources, not aspirational.
+- **Offline:** all assets, fonts, and (pre-pulled) models local; documented procedure to operate with the
+  NetVM detached after data/models are fetched.
+- **Observability:** structured logs (under `/home`), honest health checks, loopback Prometheus metrics —
+  reflecting real state.
 
 ## 7. Explicit non-goals / out of scope (proposed — adjust)
 
@@ -237,18 +304,26 @@ Pillars are *enrichers* that read from and write back to the shared store.
 - Exported evidence: optionally **signed**, with a verifiable manifest (hashes + Merkle/GPG) so a third
   party can confirm integrity. This is the concrete meaning of "Pillar 4: Legal Admissibility."
 
-## 9. Decisions I need from you (consolidated `⚠️ DECIDE` list)
+## 9. Decisions (consolidated)
 
-1. **MVP scope:** core spine only first, or core + which pillar(s)?
-2. **Rebuild strategy:** greenfield rewrite of a small core vs. salvage/repair the existing scaffold.
-3. **Deployment & threat model:** single-user localhost vs multi-user server vs both (drives auth).
-4. **Media forensics (Pillar 3):** cut / rebuild-real / keep-but-label-experimental.
-5. **Financial (5) & commodity (6):** real targets now, later, or cut? Realistic first scope?
-6. **Email:** IMAP+RSS only, or full newsletter-API integrations?
-7. **GUI:** web vs desktop (Tkinter); front-end stack; vendor assets locally.
-8. **Platform/Python/DB/Redis:** confirm targets.
-9. **License:** GPLv3 vs AGPL-3.0, project-wide.
-10. **Out-of-scope confirmation:** forecasting, social ingestion, etc.
+**✅ Resolved by the deployment context (§0):**
+- **3. Deployment & threat model** → single local user, Qubes Debian AppVM, loopback-only, no RBAC.
+- **7. GUI** → web UI at `127.0.0.1:8000`, vanilla JS, assets vendored locally; Tkinter dropped.
+- **8. Platform/Python** → Qubes Debian AppVM, Python 3.13, SQLite default (Postgres/Redis **out** for v1).
+
+**⚠️ Still open (your call — sensible defaults proposed):**
+1. **MVP scope:** *proposed* — Trustworthy Core only first (Phase 1), then LLM. Confirm.
+2. **Rebuild strategy:** *proposed* — salvage the thin good parts (DB models, `ethical_scraper`,
+   `async_db`, FastAPI skeleton), delete the fabricated pillars, rebuild the core around them. Confirm vs.
+   full greenfield.
+4. **Media forensics (Pillar 3):** *proposed* — **(a) cut** deepfake/propaganda/bias for v1 (also
+   3.13/CPU-hostile), **keep** real metadata/EXIF validation. Confirm.
+5. **Financial (5) & commodity (6):** *proposed* — defer to Phase 3, then build **one** thin vertical.
+   Which first?
+6. **Email:** *proposed* — IMAP + RSS-to-email only for v1; defer newsletter-API integrations. Confirm.
+9. **License:** GPLv3 vs AGPL-3.0 project-wide — still needs a decision.
+10. **Out-of-scope confirmation:** forecasting, social-media ingestion, STIX/TAXII, SMS/chat alerts —
+    *proposed* out for v1.
 
 ## 10. Suggested phasing (proposal, not a commitment)
 
