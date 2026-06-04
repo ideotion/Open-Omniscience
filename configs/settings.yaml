@@ -76,7 +76,7 @@ export:
   
 # Security settings
 security:
-  cors_origins: ["*"]  # CORS allowed origins
+  cors_origins: ["http://127.0.0.1:8000", "http://localhost:8000"]  # loopback only
   cors_allow_credentials: true
-  cors_allow_methods: ["*"]
-  cors_allow_headers: ["*"]
+  cors_allow_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+  cors_allow_headers: ["Authorization", "Content-Type", "Accept"]
