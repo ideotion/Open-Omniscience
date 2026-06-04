@@ -131,7 +131,11 @@ extend-exclude = ["migrations", "quarantine", "build", "dist", ".venv"]
 # Sensible, non-pedantic default. E/F = pyflakes+pycodestyle, I = isort,
 # UP = pyupgrade, B = bugbear, C4 = comprehensions, SIM = simplify.
 select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
-ignore = ["E501"]  # line length is advisory; ruff-format handles wrapping
+ignore = [
+    "E501",   # line length is advisory; ruff-format handles wrapping
+    "B008",   # Depends() in arg defaults is the idiomatic FastAPI pattern
+    "UP042",  # (str, Enum) is intentional for JSON-serialisable enums
+]
 
 [tool.mypy]
 python_version = "3.13"

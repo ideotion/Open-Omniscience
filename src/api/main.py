@@ -80,6 +80,9 @@ from src.api.ingestion import router as ingestion_router
 # Import commodity router (price time-series + honest news correlation)
 from src.api.commodity import router as commodity_router
 
+# Import monitoring router (real source uptime + corpus anomalies)
+from src.api.monitoring import router as monitoring_router
+
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
 logger = setup_logging("api")
@@ -185,6 +188,9 @@ app.include_router(ingestion_router)
 
 # Include commodity router
 app.include_router(commodity_router)
+
+# Include monitoring router
+app.include_router(monitoring_router)
 
 # General health check endpoint
 @app.get("/api/health")

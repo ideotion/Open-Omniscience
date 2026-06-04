@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from src.database.models import Source
 from src.database.session import get_db
 from src.ingest import EthicalFetcher
+from src.ingest.email import fetch_imap, ingest_emails
 from src.ingest.pipeline import ingest_source, ingest_url
 
 router = APIRouter(prefix="/api", tags=["ingestion"])
@@ -40,6 +41,15 @@ def get_fetcher() -> EthicalFetcher:
 class IngestUrlRequest(BaseModel):
     source_id: int
     url: str
+
+
+class IngestEmailRequest(BaseModel):
+    host: str
+    user: str
+    password: str
+    folder: str = "INBOX"
+    limit: int = 50
+    use_ssl: bool = True
 
 
 def _get_source(db: Session, source_id: int) -> Source:
@@ -67,6 +77,26 @@ def ingest_source_endpoint(
         )
     tally = ingest_source(db, source, fetcher=fetcher)
     return {"source_id": source_id, "source": source.name, "tally": tally}
+
+
+@router.post("/sources/{source_id}/ingest-email")
+def ingest_email_endpoint(
+    source_id: int,
+    req: IngestEmailRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Fetch emails from an IMAP mailbox and fold them into the corpus.
+
+    Credentials are used transiently (not stored). Emails become searchable
+    Article rows under the given source. Single-user, loopback-only by design.
+    """
+    source = _get_source(db, source_id)
+    raws = fetch_imap(
+        req.host, req.user, req.password,
+        folder=req.folder, limit=req.limit, use_ssl=req.use_ssl,
+    )
+    tally = ingest_emails(db, source, raws)
+    return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}
 
 
 @router.post("/ingest")
