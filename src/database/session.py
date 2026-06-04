@@ -105,6 +105,12 @@ def init_db() -> None:
 
     ensure_fts(engine)
 
+    # Mark a freshly-created DB at the current migration baseline so future schema
+    # changes apply via `alembic upgrade head`. No-op if already alembic-managed.
+    from src.database.migrate import stamp_if_unstamped
+
+    stamp_if_unstamped(engine)
+
 
 def get_session() -> SASession:
     """Return a new session. Caller is responsible for closing it.
