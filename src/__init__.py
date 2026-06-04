@@ -29,9 +29,6 @@ __author__ = "Open-Omniscience Team"
 __license__ = "GPLv3"
 
 # Pillar 4 modules
-from . import crypto
-from . import audit
-from . import compliance
-from . import reports
+from . import audit, compliance, crypto, reports
 
 __all__ = ['crypto', 'audit', 'compliance', 'reports']

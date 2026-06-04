@@ -27,9 +27,9 @@ This module provides FastAPI endpoints for keyword extraction and management.
 Author: Open Omniscience Team
 """
 
-from pathlib import Path
-from typing import Optional, List, Dict, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -37,7 +37,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 # Import database models and session
-from src.database.models import get_session, Keyword, KeywordCategory, Article, ArticleKeyword
+from src.database.models import Article, ArticleKeyword, Keyword, KeywordCategory, get_session
 from src.database.source_manager import SourceManager
 
 # Import services
@@ -46,6 +46,7 @@ from src.services.text_processor import text_processor
 
 # Configure logging
 from src.utils.logging_config import setup_logging
+
 logger = setup_logging("api.keyword")
 
 # Create router
@@ -62,8 +63,8 @@ async def extract_keywords(
     text: str = Query(..., description="Text to extract keywords from"),
     language: str = Query("en", description="Language code"),
     include_ngrams: bool = Query(True, description="Whether to include n-grams"),
-    min_frequency: Optional[int] = Query(None, description="Minimum frequency for keywords"),
-    top_n: Optional[int] = Query(None, description="Number of top keywords to return")
+    min_frequency: int | None = Query(None, description="Minimum frequency for keywords"),
+    top_n: int | None = Query(None, description="Number of top keywords to return")
 ):
     """Extract keywords from text."""
     try:
@@ -86,7 +87,7 @@ async def extract_keywords(
 async def extract_article_keywords(
     request: Request,
     article_text: str = Query(..., description="Article content"),
-    title: Optional[str] = Query("", description="Article title"),
+    title: str | None = Query("", description="Article title"),
     language: str = Query("en", description="Language code"),
     title_weight: float = Query(2.0, description="Weight for title keywords")
 ):
@@ -117,7 +118,7 @@ async def get_keyword_categories(request: Request):
 @limiter.limit("100/hour")
 async def categorize_keywords(
     request: Request,
-    keywords: List[str] = Query(..., description="List of keywords to categorize")
+    keywords: list[str] = Query(..., description="List of keywords to categorize")
 ):
     """Categorize a list of keywords."""
     try:

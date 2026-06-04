@@ -28,13 +28,14 @@ including URL normalization, link text extraction, and position tracking.
 Author: Open Omniscience Team
 """
 
-import re
-from urllib.parse import urljoin, urlparse, urlunparse
-from bs4 import BeautifulSoup
-from typing import List, Dict, Optional, Any
-from datetime import datetime, timezone
 import hashlib
 import logging
+import re
+from datetime import UTC, datetime, timezone
+from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin, urlparse, urlunparse
+
+from bs4 import BeautifulSoup
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -83,8 +84,8 @@ class LinkExtractor:
             'quantserve.com', 'chartbeat.com', 'newrelic.com'
         }
     
-    def extract_links(self, html_content: str, base_url: Optional[str] = None, 
-                     article_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    def extract_links(self, html_content: str, base_url: str | None = None, 
+                     article_id: int | None = None) -> list[dict[str, Any]]:
         """
         Extract all links from HTML content.
         
@@ -147,8 +148,8 @@ class LinkExtractor:
         
         return extracted_links
     
-    def _extract_link_from_element(self, element, base_url: Optional[str], 
-                                  article_id: Optional[int], position: int) -> Optional[Dict[str, Any]]:
+    def _extract_link_from_element(self, element, base_url: str | None, 
+                                  article_id: int | None, position: int) -> dict[str, Any] | None:
         """
         Extract link information from a BeautifulSoup element.
         
@@ -222,11 +223,11 @@ class LinkExtractor:
             'is_absolute': bool(parsed_url.scheme and parsed_url.netloc),
             'is_relative': not bool(parsed_url.scheme and parsed_url.netloc),
             'article_id': article_id,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
     
-    def _extract_links_with_regex(self, html_content: str, base_url: Optional[str], 
-                                 article_id: Optional[int]) -> List[Dict[str, Any]]:
+    def _extract_links_with_regex(self, html_content: str, base_url: str | None, 
+                                 article_id: int | None) -> list[dict[str, Any]]:
         """
         Fallback method to extract links using regex when BeautifulSoup fails.
         
@@ -281,7 +282,7 @@ class LinkExtractor:
                         'is_absolute': bool(parsed_url.scheme and parsed_url.netloc),
                         'is_relative': not bool(parsed_url.scheme and parsed_url.netloc),
                         'article_id': article_id,
-                        'created_at': datetime.now(timezone.utc).isoformat()
+                        'created_at': datetime.now(UTC).isoformat()
                     }
                     extracted_links.append(link_info)
         
@@ -407,9 +408,9 @@ class LinkExtractor:
         else:
             return 'internal'
     
-    def filter_links(self, links: List[Dict[str, Any]], link_types: Optional[List[str]] = None,
-                    domains: Optional[List[str]] = None, 
-                    classifications: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def filter_links(self, links: list[dict[str, Any]], link_types: list[str] | None = None,
+                    domains: list[str] | None = None, 
+                    classifications: list[str] | None = None) -> list[dict[str, Any]]:
         """
         Filter links based on various criteria.
         
@@ -436,7 +437,7 @@ class LinkExtractor:
         
         return filtered
     
-    def get_link_statistics(self, links: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def get_link_statistics(self, links: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Calculate statistics for a list of links.
         

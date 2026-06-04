@@ -32,18 +32,19 @@ This module provides centralized functions for:
 Author: Ideotion
 """
 
-from urllib.parse import urlparse, urlunparse, parse_qs
-import requests
 import hashlib
 import logging
-from typing import Optional, Dict, List
 from pathlib import Path
+from typing import Dict, List, Optional
+from urllib.parse import parse_qs, urlparse, urlunparse
+
+import requests
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Known domain aliases for equivalent domain checking
-DOMAIN_ALIASES: Dict[str, List[str]] = {
+DOMAIN_ALIASES: dict[str, list[str]] = {
     "bbc.com": ["bbc.co.uk"],
     "theguardian.com": ["guardian.co.uk"],
     "independent.co.uk": ["independent.com"],
@@ -231,7 +232,7 @@ def generate_content_hash(content: str) -> str:
     return hashlib.sha256(cleaned_content.encode("utf-8")).hexdigest()
 
 
-def get_domain_from_url(url: str) -> Optional[str]:
+def get_domain_from_url(url: str) -> str | None:
     """
     Extract the domain from a URL.
 
@@ -251,7 +252,7 @@ def get_domain_from_url(url: str) -> Optional[str]:
         return None
 
 
-def get_base_url(url: str) -> Optional[str]:
+def get_base_url(url: str) -> str | None:
     """
     Get the base URL (scheme + netloc) from a URL.
 

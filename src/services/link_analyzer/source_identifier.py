@@ -28,11 +28,12 @@ about external sources referenced in articles.
 Author: Open Omniscience Team
 """
 
-import re
-from urllib.parse import urlparse
-from typing import List, Dict, Optional, Any
-from datetime import datetime, timezone
 import logging
+import re
+from datetime import UTC, datetime, timezone
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -94,7 +95,7 @@ class SourceIdentifier:
             ]
         }
     
-    def _load_known_sources(self) -> Dict[str, Dict[str, Any]]:
+    def _load_known_sources(self) -> dict[str, dict[str, Any]]:
         """
         Load known sources from configuration or database.
         
@@ -105,7 +106,7 @@ class SourceIdentifier:
         # For now, return an empty dict that can be populated
         return {}
     
-    def identify_sources(self, links: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def identify_sources(self, links: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Identify sources from a list of links.
         
@@ -136,7 +137,7 @@ class SourceIdentifier:
         
         return identified_sources
     
-    def identify_source(self, domain: str, url: str = "") -> Optional[Dict[str, Any]]:
+    def identify_source(self, domain: str, url: str = "") -> dict[str, Any] | None:
         """
         Identify a source from a domain or URL.
         
@@ -176,7 +177,7 @@ class SourceIdentifier:
             'source_type': source_type,
             'credibility_score': 50.0,  # Default score
             'is_verified': False,
-            'identified_at': datetime.now(timezone.utc).isoformat()
+            'identified_at': datetime.now(UTC).isoformat()
         }
         
         # Try to extract additional information from the website
@@ -243,7 +244,7 @@ class SourceIdentifier:
         
         return domain.capitalize()
     
-    def extract_source_metadata(self, domain: str, url: str = "") -> Dict[str, Any]:
+    def extract_source_metadata(self, domain: str, url: str = "") -> dict[str, Any]:
         """
         Extract metadata from a source's website.
         
@@ -326,7 +327,7 @@ class SourceIdentifier:
         
         return metadata
     
-    def match_to_known_source(self, domain: str, url: str = "") -> Optional[Dict[str, Any]]:
+    def match_to_known_source(self, domain: str, url: str = "") -> dict[str, Any] | None:
         """
         Match a domain or URL to a known source.
         
@@ -352,7 +353,7 @@ class SourceIdentifier:
         
         return None
     
-    def add_known_source(self, domain: str, source_info: Dict[str, Any]) -> bool:
+    def add_known_source(self, domain: str, source_info: dict[str, Any]) -> bool:
         """
         Add a known source to the database.
         
@@ -381,7 +382,7 @@ class SourceIdentifier:
         self.known_sources[domain_lower] = source_info
         return True
     
-    def get_source_types(self) -> List[str]:
+    def get_source_types(self) -> list[str]:
         """
         Get all available source types.
         
@@ -390,7 +391,7 @@ class SourceIdentifier:
         """
         return list(self.source_type_patterns.keys())
     
-    def get_source_statistics(self, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def get_source_statistics(self, sources: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Get statistics about identified sources.
         

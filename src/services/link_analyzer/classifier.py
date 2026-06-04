@@ -33,11 +33,11 @@ This module provides functionality for classifying links into categories such as
 Author: Open Omniscience Team
 """
 
-import re
-from urllib.parse import urlparse
-from typing import List, Dict, Optional, Any
-from datetime import datetime, timezone
 import logging
+import re
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ class LinkClassifier:
         # Compile regex patterns for efficiency
         self._compile_patterns()
     
-    def _load_default_rules(self) -> List[Dict[str, Any]]:
+    def _load_default_rules(self) -> list[dict[str, Any]]:
         """
         Load default classification rules.
         
@@ -260,7 +260,7 @@ class LinkClassifier:
                     logger.error(f"Error compiling pattern {rule['pattern']}: {e}")
                     rule['compiled_pattern'] = None
     
-    def classify_links(self, links: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def classify_links(self, links: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Classify a list of links.
         
@@ -280,7 +280,7 @@ class LinkClassifier:
         
         return classified_links
     
-    def classify_link(self, link: Dict[str, Any]) -> str:
+    def classify_link(self, link: dict[str, Any]) -> str:
         """
         Classify a single link.
         
@@ -331,7 +331,7 @@ class LinkClassifier:
     
     def add_custom_rule(self, rule_name: str, pattern: str, classification_type: str, 
                        priority: int = 1, is_active: bool = True, 
-                       apply_to: List[str] = None) -> bool:
+                       apply_to: list[str] = None) -> bool:
         """
         Add a custom classification rule.
         
@@ -413,7 +413,7 @@ class LinkClassifier:
         logger.error(f"Rule with name '{rule_name}' not found")
         return False
     
-    def get_rules(self) -> List[Dict[str, Any]]:
+    def get_rules(self) -> list[dict[str, Any]]:
         """
         Get all classification rules.
         
@@ -432,7 +432,7 @@ class LinkClassifier:
             for rule in self.classification_rules
         ]
     
-    def classify_link_with_context(self, link: Dict[str, Any], article_content: str = "", 
+    def classify_link_with_context(self, link: dict[str, Any], article_content: str = "", 
                                    surrounding_text: str = "") -> str:
         """
         Classify a link with additional context.
@@ -454,7 +454,7 @@ class LinkClassifier:
         
         return classification
     
-    def _classify_by_context(self, link: Dict[str, Any], article_content: str, 
+    def _classify_by_context(self, link: dict[str, Any], article_content: str, 
                            surrounding_text: str) -> str:
         """
         Classify a link based on context.
@@ -495,7 +495,7 @@ class LinkClassifier:
         # Default to basic classification
         return self.classify_link(link)
     
-    def get_classification_statistics(self, links: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def get_classification_statistics(self, links: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Get statistics about link classifications.
         

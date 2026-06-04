@@ -28,11 +28,11 @@ including groups, metadata, and discovery functionality.
 Author: Ideotion
 """
 
-from pathlib import Path
-from typing import Optional, List, Dict, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -43,6 +43,7 @@ from src.database.source_manager import SourceManager
 
 # Import logging config
 from src.utils.logging_config import setup_logging
+
 logger = setup_logging("source_management_api")
 
 # Create router
@@ -54,14 +55,14 @@ limiter = Limiter(key_func=get_remote_address)
 
 # ==================== SOURCE ENDPOINTS ====================
 
-@router.get("/", response_model=List[Dict])
+@router.get("/", response_model=list[dict])
 @limiter.limit("100/hour")
 async def list_sources(
     request: Request,
-    enabled: Optional[bool] = None,
-    priority: Optional[int] = None,
-    tags: Optional[str] = None,
-    group_id: Optional[int] = None,
+    enabled: bool | None = None,
+    priority: int | None = None,
+    tags: str | None = None,
+    group_id: int | None = None,
     limit: int = 100,
     offset: int = 0
 ):
@@ -123,7 +124,7 @@ async def list_sources(
         return results
 
 
-@router.get("/{source_id}", response_model=Dict)
+@router.get("/{source_id}", response_model=dict)
 @limiter.limit("100/hour")
 async def get_source(request: Request, source_id: int):
     """
@@ -185,9 +186,9 @@ async def get_source(request: Request, source_id: int):
         return result
 
 
-@router.post("/", response_model=Dict)
+@router.post("/", response_model=dict)
 @limiter.limit("50/hour")
-async def create_source(request: Request, source_data: Dict):
+async def create_source(request: Request, source_data: dict):
     """
     Create a new source.
     """
@@ -217,9 +218,9 @@ async def create_source(request: Request, source_data: Dict):
         }
 
 
-@router.put("/{source_id}", response_model=Dict)
+@router.put("/{source_id}", response_model=dict)
 @limiter.limit("50/hour")
-async def update_source(request: Request, source_id: int, source_data: Dict):
+async def update_source(request: Request, source_id: int, source_data: dict):
     """
     Update a source.
     """
@@ -238,7 +239,7 @@ async def update_source(request: Request, source_id: int, source_data: Dict):
         }
 
 
-@router.delete("/{source_id}", response_model=Dict)
+@router.delete("/{source_id}", response_model=dict)
 @limiter.limit("20/hour")
 async def delete_source(request: Request, source_id: int):
     """
@@ -256,9 +257,9 @@ async def delete_source(request: Request, source_id: int):
 
 # ==================== BATCH SOURCE OPERATIONS ====================
 
-@router.post("/batch/enable", response_model=Dict)
+@router.post("/batch/enable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_enable_sources(request: Request, source_ids: List[int]):
+async def batch_enable_sources(request: Request, source_ids: list[int]):
     """
     Enable multiple sources.
     """
@@ -269,9 +270,9 @@ async def batch_enable_sources(request: Request, source_ids: List[int]):
         return {"message": f"Enabled {count} sources"}
 
 
-@router.post("/batch/disable", response_model=Dict)
+@router.post("/batch/disable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_disable_sources(request: Request, source_ids: List[int]):
+async def batch_disable_sources(request: Request, source_ids: list[int]):
     """
     Disable multiple sources.
     """
@@ -282,9 +283,9 @@ async def batch_disable_sources(request: Request, source_ids: List[int]):
         return {"message": f"Disabled {count} sources"}
 
 
-@router.post("/batch/priority", response_model=Dict)
+@router.post("/batch/priority", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_priority(request: Request, source_ids: List[int], priority: int = Query(..., ge=1, le=3)):
+async def batch_set_priority(request: Request, source_ids: list[int], priority: int = Query(..., ge=1, le=3)):
     """
     Set priority for multiple sources.
     """
@@ -295,9 +296,9 @@ async def batch_set_priority(request: Request, source_ids: List[int], priority: 
         return {"message": f"Set priority {priority} for {count} sources"}
 
 
-@router.post("/batch/rate-limit", response_model=Dict)
+@router.post("/batch/rate-limit", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_rate_limit(request: Request, source_ids: List[int], rate_limit_ms: int = Query(..., ge=100, le=60000)):
+async def batch_set_rate_limit(request: Request, source_ids: list[int], rate_limit_ms: int = Query(..., ge=100, le=60000)):
     """
     Set rate limit for multiple sources.
     """
@@ -308,9 +309,9 @@ async def batch_set_rate_limit(request: Request, source_ids: List[int], rate_lim
         return {"message": f"Set rate limit {rate_limit_ms}ms for {count} sources"}
 
 
-@router.post("/batch/tags/add", response_model=Dict)
+@router.post("/batch/tags/add", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_add_tags(request: Request, source_ids: List[int], tags: List[str]):
+async def batch_add_tags(request: Request, source_ids: list[int], tags: list[str]):
     """
     Add tags to multiple sources.
     """
@@ -321,9 +322,9 @@ async def batch_add_tags(request: Request, source_ids: List[int], tags: List[str
         return {"message": f"Added tags {tags} to {count} sources"}
 
 
-@router.post("/batch/tags/remove", response_model=Dict)
+@router.post("/batch/tags/remove", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_remove_tags(request: Request, source_ids: List[int], tags: List[str]):
+async def batch_remove_tags(request: Request, source_ids: list[int], tags: list[str]):
     """
     Remove tags from multiple sources.
     """
@@ -336,9 +337,9 @@ async def batch_remove_tags(request: Request, source_ids: List[int], tags: List[
 
 # ==================== GROUP ENDPOINTS ====================
 
-@router.get("/groups/", response_model=List[Dict])
+@router.get("/groups/", response_model=list[dict])
 @limiter.limit("100/hour")
-async def list_groups(request: Request, tag_based: Optional[bool] = None):
+async def list_groups(request: Request, tag_based: bool | None = None):
     """
     List all source groups.
     """
@@ -371,7 +372,7 @@ async def list_groups(request: Request, tag_based: Optional[bool] = None):
         return results
 
 
-@router.get("/groups/{group_id}", response_model=Dict)
+@router.get("/groups/{group_id}", response_model=dict)
 @limiter.limit("100/hour")
 async def get_group(request: Request, group_id: int):
     """
@@ -416,9 +417,9 @@ async def get_group(request: Request, group_id: int):
         return result
 
 
-@router.post("/groups/", response_model=Dict)
+@router.post("/groups/", response_model=dict)
 @limiter.limit("50/hour")
-async def create_group(request: Request, group_data: Dict):
+async def create_group(request: Request, group_data: dict):
     """
     Create a new source group.
     """
@@ -448,9 +449,9 @@ async def create_group(request: Request, group_data: Dict):
         }
 
 
-@router.put("/groups/{group_id}", response_model=Dict)
+@router.put("/groups/{group_id}", response_model=dict)
 @limiter.limit("50/hour")
-async def update_group(request: Request, group_id: int, group_data: Dict):
+async def update_group(request: Request, group_id: int, group_data: dict):
     """
     Update a source group.
     """
@@ -468,7 +469,7 @@ async def update_group(request: Request, group_id: int, group_data: Dict):
         }
 
 
-@router.delete("/groups/{group_id}", response_model=Dict)
+@router.delete("/groups/{group_id}", response_model=dict)
 @limiter.limit("20/hour")
 async def delete_group(request: Request, group_id: int):
     """
@@ -486,9 +487,9 @@ async def delete_group(request: Request, group_id: int):
 
 # ==================== GROUP-SOURCE ASSOCIATION ENDPOINTS ====================
 
-@router.post("/groups/{group_id}/sources", response_model=Dict)
+@router.post("/groups/{group_id}/sources", response_model=dict)
 @limiter.limit("50/hour")
-async def add_sources_to_group(request: Request, group_id: int, source_ids: List[int]):
+async def add_sources_to_group(request: Request, group_id: int, source_ids: list[int]):
     """
     Add sources to a group.
     """
@@ -499,9 +500,9 @@ async def add_sources_to_group(request: Request, group_id: int, source_ids: List
         return {"message": f"Added {count} sources to group {group_id}"}
 
 
-@router.delete("/groups/{group_id}/sources", response_model=Dict)
+@router.delete("/groups/{group_id}/sources", response_model=dict)
 @limiter.limit("50/hour")
-async def remove_sources_from_group(request: Request, group_id: int, source_ids: List[int]):
+async def remove_sources_from_group(request: Request, group_id: int, source_ids: list[int]):
     """
     Remove sources from a group.
     """
@@ -512,9 +513,9 @@ async def remove_sources_from_group(request: Request, group_id: int, source_ids:
         return {"message": f"Removed {count} sources from group {group_id}"}
 
 
-@router.post("/{source_id}/groups", response_model=Dict)
+@router.post("/{source_id}/groups", response_model=dict)
 @limiter.limit("50/hour")
-async def add_source_to_groups(request: Request, source_id: int, group_ids: List[int]):
+async def add_source_to_groups(request: Request, source_id: int, group_ids: list[int]):
     """
     Add a source to multiple groups.
     """
@@ -525,9 +526,9 @@ async def add_source_to_groups(request: Request, source_id: int, group_ids: List
         return {"message": f"Added source {source_id} to {count} groups"}
 
 
-@router.delete("/{source_id}/groups", response_model=Dict)
+@router.delete("/{source_id}/groups", response_model=dict)
 @limiter.limit("50/hour")
-async def remove_source_from_groups(request: Request, source_id: int, group_ids: List[int]):
+async def remove_source_from_groups(request: Request, source_id: int, group_ids: list[int]):
     """
     Remove a source from multiple groups.
     """
@@ -540,7 +541,7 @@ async def remove_source_from_groups(request: Request, source_id: int, group_ids:
 
 # ==================== TAG-BASED GROUP ENDPOINTS ====================
 
-@router.post("/groups/tag-based", response_model=Dict)
+@router.post("/groups/tag-based", response_model=dict)
 @limiter.limit("50/hour")
 async def create_tag_based_group(request: Request, name: str, tag_pattern: str, **kwargs):
     """
@@ -558,7 +559,7 @@ async def create_tag_based_group(request: Request, name: str, tag_pattern: str, 
         }
 
 
-@router.post("/groups/{group_id}/refresh", response_model=Dict)
+@router.post("/groups/{group_id}/refresh", response_model=dict)
 @limiter.limit("20/hour")
 async def refresh_tag_based_group(request: Request, group_id: int):
     """
@@ -580,7 +581,7 @@ async def refresh_tag_based_group(request: Request, group_id: int):
         return {"message": f"Refreshed tag-based group {group_id}"}
 
 
-@router.post("/groups/refresh-all", response_model=Dict)
+@router.post("/groups/refresh-all", response_model=dict)
 @limiter.limit("10/hour")
 async def refresh_all_tag_based_groups(request: Request):
     """
@@ -595,7 +596,7 @@ async def refresh_all_tag_based_groups(request: Request):
 
 # ==================== METADATA ENDPOINTS ====================
 
-@router.get("/{source_id}/metadata", response_model=Dict)
+@router.get("/{source_id}/metadata", response_model=dict)
 @limiter.limit("100/hour")
 async def get_metadata(request: Request, source_id: int):
     """
@@ -631,9 +632,9 @@ async def get_metadata(request: Request, source_id: int):
         }
 
 
-@router.post("/{source_id}/metadata", response_model=Dict)
+@router.post("/{source_id}/metadata", response_model=dict)
 @limiter.limit("50/hour")
-async def create_metadata(request: Request, source_id: int, metadata_data: Dict):
+async def create_metadata(request: Request, source_id: int, metadata_data: dict):
     """
     Create metadata for a source.
     """
@@ -647,9 +648,9 @@ async def create_metadata(request: Request, source_id: int, metadata_data: Dict)
         }
 
 
-@router.put("/{source_id}/metadata", response_model=Dict)
+@router.put("/{source_id}/metadata", response_model=dict)
 @limiter.limit("50/hour")
-async def update_metadata(request: Request, source_id: int, metadata_data: Dict):
+async def update_metadata(request: Request, source_id: int, metadata_data: dict):
     """
     Update metadata for a source.
     """
@@ -666,7 +667,7 @@ async def update_metadata(request: Request, source_id: int, metadata_data: Dict)
         }
 
 
-@router.delete("/{source_id}/metadata", response_model=Dict)
+@router.delete("/{source_id}/metadata", response_model=dict)
 @limiter.limit("20/hour")
 async def delete_metadata(request: Request, source_id: int):
     """
@@ -684,9 +685,9 @@ async def delete_metadata(request: Request, source_id: int):
 
 # ==================== BATCH GROUP OPERATIONS ====================
 
-@router.post("/groups/batch/enable", response_model=Dict)
+@router.post("/groups/batch/enable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_enable_groups(request: Request, group_ids: List[int]):
+async def batch_enable_groups(request: Request, group_ids: list[int]):
     """
     Enable all sources in multiple groups.
     """
@@ -697,9 +698,9 @@ async def batch_enable_groups(request: Request, group_ids: List[int]):
         return {"message": f"Enabled {count} sources in {len(group_ids)} groups"}
 
 
-@router.post("/groups/batch/disable", response_model=Dict)
+@router.post("/groups/batch/disable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_disable_groups(request: Request, group_ids: List[int]):
+async def batch_disable_groups(request: Request, group_ids: list[int]):
     """
     Disable all sources in multiple groups.
     """
@@ -710,9 +711,9 @@ async def batch_disable_groups(request: Request, group_ids: List[int]):
         return {"message": f"Disabled {count} sources in {len(group_ids)} groups"}
 
 
-@router.post("/groups/batch/priority", response_model=Dict)
+@router.post("/groups/batch/priority", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_group_priority(request: Request, group_ids: List[int], priority: int = Query(..., ge=1, le=3)):
+async def batch_set_group_priority(request: Request, group_ids: list[int], priority: int = Query(..., ge=1, le=3)):
     """
     Set priority for all sources in multiple groups.
     """
@@ -723,9 +724,9 @@ async def batch_set_group_priority(request: Request, group_ids: List[int], prior
         return {"message": f"Set priority {priority} for {count} sources in {len(group_ids)} groups"}
 
 
-@router.post("/groups/batch/rate-limit", response_model=Dict)
+@router.post("/groups/batch/rate-limit", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_group_rate_limit(request: Request, group_ids: List[int], rate_limit_ms: int = Query(..., ge=100, le=60000)):
+async def batch_set_group_rate_limit(request: Request, group_ids: list[int], rate_limit_ms: int = Query(..., ge=100, le=60000)):
     """
     Set rate limit for all sources in multiple groups.
     """
@@ -738,9 +739,9 @@ async def batch_set_group_rate_limit(request: Request, group_ids: List[int], rat
 
 # ==================== SOURCE DISCOVERY ENDPOINTS ====================
 
-@router.post("/discover/rss", response_model=Dict)
+@router.post("/discover/rss", response_model=dict)
 @limiter.limit("20/hour")
-async def discover_rss_feeds(request: Request, source_ids: Optional[List[int]] = None, timeout: int = 10):
+async def discover_rss_feeds(request: Request, source_ids: list[int] | None = None, timeout: int = 10):
     """
     Discover RSS feeds for sources that don't have them.
     
@@ -764,7 +765,7 @@ async def discover_rss_feeds(request: Request, source_ids: Optional[List[int]] =
         }
 
 
-@router.post("/discover/topic", response_model=Dict)
+@router.post("/discover/topic", response_model=dict)
 @limiter.limit("20/hour")
 async def discover_sources_by_topic(request: Request, topic: str, max_sources: int = 20, region: str = "wt-wt"):
     """
@@ -790,9 +791,9 @@ async def discover_sources_by_topic(request: Request, topic: str, max_sources: i
         }
 
 
-@router.post("/discover/add", response_model=Dict)
+@router.post("/discover/add", response_model=dict)
 @limiter.limit("20/hour")
-async def add_discovered_sources(request: Request, sources: List[Dict], group_name: Optional[str] = None):
+async def add_discovered_sources(request: Request, sources: list[dict], group_name: str | None = None):
     """
     Add discovered sources to the database.
     
@@ -823,7 +824,7 @@ async def add_discovered_sources(request: Request, sources: List[Dict], group_na
 
 # ==================== IMPORT/EXPORT ENDPOINTS ====================
 
-@router.post("/import", response_model=Dict)
+@router.post("/import", response_model=dict)
 @limiter.limit("10/hour")
 async def import_sources(request: Request):
     """
@@ -845,9 +846,9 @@ async def import_sources(request: Request):
         }
 
 
-@router.get("/export", response_model=Dict)
+@router.get("/export", response_model=dict)
 @limiter.limit("10/hour")
-async def export_sources(request: Request, group_id: Optional[int] = None):
+async def export_sources(request: Request, group_id: int | None = None):
     """
     Export sources to YAML format.
     
@@ -888,7 +889,7 @@ async def export_sources(request: Request, group_id: Optional[int] = None):
 
 # ==================== STATISTICS ENDPOINTS ====================
 
-@router.get("/stats", response_model=Dict)
+@router.get("/stats", response_model=dict)
 @limiter.limit("100/hour")
 async def get_source_statistics(request: Request):
     """
@@ -923,7 +924,7 @@ async def get_source_statistics(request: Request):
 
 # ==================== SEARCH AND DISCOVERY ENDPOINTS ====================
 
-@router.get("/search", response_model=Dict)
+@router.get("/search", response_model=dict)
 @limiter.limit("50/hour")
 async def search_sources(
     request: Request,

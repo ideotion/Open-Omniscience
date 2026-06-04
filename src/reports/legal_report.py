@@ -21,10 +21,10 @@ For inquiries, contact: open-omniscience@ideotion.com
 # Legal Report Module for Open-Omniscience Pillar 4
 # Generate tamper-proof reports in Markdown/PDF format
 
-import json
 import hashlib
-from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+import json
+from datetime import UTC, datetime, timezone
+from typing import Any, Dict, List, Optional
 
 
 class LegalReportGenerator:
@@ -32,7 +32,7 @@ class LegalReportGenerator:
         pass
 
     def generate_markdown_report(self, data, title="Legal Report"):
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         data_hash = self._compute_data_hash(data)
         
         report = "# " + title + "\n\n"

@@ -34,13 +34,13 @@ Author: Ideotion
 
 # Redirect all imports to the centralized URL utilities
 from src.utils.url_utils import (
-    normalize_domain,
-    is_equivalent_domain,
     canonicalize_url,
-    resolve_redirects,
     generate_content_hash,
-    get_domain_from_url,
     get_base_url,
+    get_domain_from_url,
+    is_equivalent_domain,
+    normalize_domain,
+    resolve_redirects,
 )
 
 __all__ = [

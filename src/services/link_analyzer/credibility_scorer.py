@@ -28,9 +28,10 @@ based on various factors and rules.
 Author: Open Omniscience Team
 """
 
-from typing import List, Dict, Optional, Any
-from datetime import datetime, timezone
 import logging
+from datetime import UTC, datetime, timezone
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 
 # Configure logging
@@ -80,7 +81,7 @@ class CredibilityScorer:
             'unknown': 50
         }
     
-    def _load_default_rules(self) -> List[Dict[str, Any]]:
+    def _load_default_rules(self) -> list[dict[str, Any]]:
         """
         Load default credibility scoring rules.
         
@@ -150,7 +151,7 @@ class CredibilityScorer:
             }
         ]
     
-    def calculate_score(self, source_info: Dict[str, Any]) -> float:
+    def calculate_score(self, source_info: dict[str, Any]) -> float:
         """
         Calculate credibility score for a single source.
         
@@ -213,7 +214,7 @@ class CredibilityScorer:
         
         return score
     
-    def calculate_scores(self, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def calculate_scores(self, sources: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Calculate credibility scores for multiple sources.
         
@@ -234,12 +235,12 @@ class CredibilityScorer:
             results[source_id] = {
                 'credibility_score': score,
                 'source_info': source,
-                'calculated_at': datetime.now(timezone.utc).isoformat()
+                'calculated_at': datetime.now(UTC).isoformat()
             }
         
         return results
     
-    def _get_factor_value(self, source_info: Dict[str, Any], factor: str) -> Optional[float]:
+    def _get_factor_value(self, source_info: dict[str, Any], factor: str) -> float | None:
         """
         Get the value of a factor from source information.
         
@@ -292,7 +293,7 @@ class CredibilityScorer:
         
         return None
     
-    def update_source_score(self, source_id: str, new_info: Dict[str, Any]) -> Optional[float]:
+    def update_source_score(self, source_id: str, new_info: dict[str, Any]) -> float | None:
         """
         Update the credibility score for a source with new information.
         
@@ -315,8 +316,8 @@ class CredibilityScorer:
         
         return score
     
-    def rank_sources_by_credibility(self, sources: List[Dict[str, Any]], 
-                                   limit: int = 10) -> List[Dict[str, Any]]:
+    def rank_sources_by_credibility(self, sources: list[dict[str, Any]], 
+                                   limit: int = 10) -> list[dict[str, Any]]:
         """
         Rank sources by credibility score.
         
@@ -342,8 +343,8 @@ class CredibilityScorer:
         # Return top N
         return scored_sources[:limit]
     
-    def identify_low_credibility_sources(self, sources: List[Dict[str, Any]], 
-                                        threshold: float = 60.0) -> List[Dict[str, Any]]:
+    def identify_low_credibility_sources(self, sources: list[dict[str, Any]], 
+                                        threshold: float = 60.0) -> list[dict[str, Any]]:
         """
         Identify sources with low credibility scores.
         
@@ -369,8 +370,8 @@ class CredibilityScorer:
         
         return low_credibility
     
-    def get_credibility_distribution(self, sources: List[Dict[str, Any]], 
-                                     bins: int = 10) -> Dict[str, Any]:
+    def get_credibility_distribution(self, sources: list[dict[str, Any]], 
+                                     bins: int = 10) -> dict[str, Any]:
         """
         Get the distribution of credibility scores.
         
@@ -502,7 +503,7 @@ class CredibilityScorer:
         logger.error(f"Rule with name '{rule_name}' not found")
         return False
     
-    def get_rules(self) -> List[Dict[str, Any]]:
+    def get_rules(self) -> list[dict[str, Any]]:
         """
         Get all scoring rules.
         
@@ -550,7 +551,7 @@ class CredibilityScorer:
         else:
             return 'Poor'
     
-    def get_source_type_scores(self) -> Dict[str, float]:
+    def get_source_type_scores(self) -> dict[str, float]:
         """
         Get the base credibility scores for each source type.
         
@@ -581,7 +582,7 @@ class CredibilityScorer:
         self.source_type_scores[source_type] = score
         return True
     
-    def get_factor_weights(self) -> Dict[str, float]:
+    def get_factor_weights(self) -> dict[str, float]:
         """
         Get the weights for each factor.
         

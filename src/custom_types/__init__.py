@@ -28,13 +28,14 @@ to improve type safety and code clarity.
 Author: Ideotion
 """
 
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, TypedDict, TypeVar
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple, TypedDict, TypeVar, Union
 
 # Type variable for generic types
 T = TypeVar('T')
 from enum import Enum
+
 import requests
 
 # =============================================================================
@@ -74,13 +75,13 @@ class SourceConfig(TypedDict, total=False):
     url: URL
     enabled: bool
     rate_limit_ms: RateLimit
-    scan_config: Dict[str, Any]
-    rss_url: Optional[URL]
-    sitemap_url: Optional[URL]
-    language: Optional[str]
-    region: Optional[str]
-    country: Optional[str]
-    reliability_score: Optional[Score]
+    scan_config: dict[str, Any]
+    rss_url: URL | None
+    sitemap_url: URL | None
+    language: str | None
+    region: str | None
+    country: str | None
+    reliability_score: Score | None
 
 class DatabaseConfig(TypedDict, total=False):
     """Database configuration."""
@@ -94,10 +95,10 @@ class DatabaseConfig(TypedDict, total=False):
 class AppConfig(TypedDict, total=False):
     """Application configuration."""
     database: DatabaseConfig
-    scraper: Dict[str, Any]
-    api: Dict[str, Any]
-    llm: Dict[str, Any]
-    logging: Dict[str, Any]
+    scraper: dict[str, Any]
+    api: dict[str, Any]
+    llm: dict[str, Any]
+    logging: dict[str, Any]
 
 # =============================================================================
 # Data Model Types
@@ -110,16 +111,16 @@ class ArticleData(TypedDict, total=False):
     canonical_url: URL
     title: str
     content: str
-    published_at: Optional[Timestamp]
+    published_at: Timestamp | None
     retrieved_at: Timestamp
     source_domain: Domain
     source_name: str
-    language: Optional[str]
-    region: Optional[str]
-    country: Optional[str]
-    author: Optional[str]
-    tags: List[str]
-    metadata: Dict[str, Any]
+    language: str | None
+    region: str | None
+    country: str | None
+    author: str | None
+    tags: list[str]
+    metadata: dict[str, Any]
     content_hash: ContentHash
 
 class SourceData(TypedDict, total=False):
@@ -127,15 +128,15 @@ class SourceData(TypedDict, total=False):
     id: SourceID
     domain: Domain
     name: str
-    url: Optional[URL]
-    rss_url: Optional[URL]
+    url: URL | None
+    rss_url: URL | None
     enabled: bool
     rate_limit_ms: RateLimit
-    reliability_score: Optional[Score]
-    language: Optional[str]
-    region: Optional[str]
-    country: Optional[str]
-    last_scraped: Optional[Timestamp]
+    reliability_score: Score | None
+    language: str | None
+    region: str | None
+    country: str | None
+    last_scraped: Timestamp | None
     article_count: int
 
 # =============================================================================
@@ -147,17 +148,17 @@ class HTTPResponse(TypedDict, total=False):
     status_code: int
     content: bytes
     text: str
-    headers: Dict[str, str]
+    headers: dict[str, str]
     url: URL
 
 class ScrapeResult(TypedDict, total=False):
     """Result of a scraping operation."""
     success: bool
     url: URL
-    content: Optional[str]
-    error: Optional[str]
-    status_code: Optional[int]
-    headers: Optional[Dict[str, str]]
+    content: str | None
+    error: str | None
+    status_code: int | None
+    headers: dict[str, str] | None
 
 # =============================================================================
 # LLM Types
@@ -179,7 +180,7 @@ class LLMResult(TypedDict, total=False):
     response: str
     tokens_used: int
     processing_time: float
-    confidence: Optional[Confidence]
+    confidence: Confidence | None
 
 # =============================================================================
 # Analysis Types
@@ -189,9 +190,9 @@ class AnalysisResult(TypedDict, total=False):
     """Result from analysis operations."""
     article_id: ArticleID
     analysis_type: str
-    results: Dict[str, Any]
-    score: Optional[Score]
-    confidence: Optional[Confidence]
+    results: dict[str, Any]
+    score: Score | None
+    confidence: Confidence | None
     processed_at: Timestamp
 
 class SimilarityResult(TypedDict, total=False):
@@ -212,7 +213,7 @@ class PipelineConfig(TypedDict, total=False):
     batch_size: int
     retry_attempts: int
     timeout: int
-    enabled_sources: List[SourceID]
+    enabled_sources: list[SourceID]
 
 class PipelineStatus(str, Enum):
     """Status of a pipeline operation."""
@@ -227,22 +228,22 @@ class PipelineStatus(str, Enum):
 # =============================================================================
 
 # Type for JSON-compatible data
-JSONData = Union[Dict[str, Any], List[Any], str, int, float, bool, None]
+JSONData = Union[dict[str, Any], list[Any], str, int, float, bool, None]
 
 # Type for configuration dictionaries
-ConfigDict = Dict[str, Any]
+ConfigDict = dict[str, Any]
 
 # Type for metadata dictionaries
-MetadataDict = Dict[str, Any]
+MetadataDict = dict[str, Any]
 
 # Type for error information
-ErrorInfo = Dict[str, Any]
+ErrorInfo = dict[str, Any]
 
 # Type for result with success/failure
-Result = Tuple[bool, T]
+Result = tuple[bool, T]
 
 # Type for paginated results
-PaginatedResult = Dict[str, Union[List[T], int, bool]]
+PaginatedResult = dict[str, list[T] | int | bool]
 
 # =============================================================================
 # Request/Response Types
@@ -251,29 +252,29 @@ PaginatedResult = Dict[str, Union[List[T], int, bool]]
 class APIResponse(TypedDict, total=False):
     """Standard API response structure."""
     success: bool
-    data: Optional[Any]
-    error: Optional[str]
-    message: Optional[str]
-    count: Optional[int]
-    page: Optional[int]
-    total_pages: Optional[int]
+    data: Any | None
+    error: str | None
+    message: str | None
+    count: int | None
+    page: int | None
+    total_pages: int | None
 
 class SearchRequest(TypedDict, total=False):
     """Search request structure."""
     query: str
-    sources: Optional[List[SourceID]]
-    date_from: Optional[ISODateString]
-    date_to: Optional[ISODateString]
-    language: Optional[str]
-    region: Optional[str]
-    limit: Optional[int]
-    offset: Optional[int]
-    sort_by: Optional[str]
-    sort_order: Optional[str]
+    sources: list[SourceID] | None
+    date_from: ISODateString | None
+    date_to: ISODateString | None
+    language: str | None
+    region: str | None
+    limit: int | None
+    offset: int | None
+    sort_by: str | None
+    sort_order: str | None
 
 class SearchResponse(TypedDict, total=False):
     """Search response structure."""
-    results: List[ArticleData]
+    results: list[ArticleData]
     total: int
     limit: int
     offset: int
@@ -293,10 +294,10 @@ class ExportFormat(str, Enum):
 class ExportRequest(TypedDict, total=False):
     """Export request structure."""
     format: ExportFormat
-    date_from: Optional[ISODateString]
-    date_to: Optional[ISODateString]
-    sources: Optional[List[SourceID]]
-    fields: Optional[List[str]]
+    date_from: ISODateString | None
+    date_to: ISODateString | None
+    sources: list[SourceID] | None
+    fields: list[str] | None
     include_metadata: bool
 
 # =============================================================================
@@ -316,7 +317,7 @@ NormalizedDomain = str
 DeduplicationKey = str
 
 # Type for rate limiting
-RateLimitConfig = Dict[str, Union[int, float, str]]
+RateLimitConfig = dict[str, int | float | str]
 
 # Type for caching
 CacheKey = str

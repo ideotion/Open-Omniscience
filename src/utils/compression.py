@@ -38,19 +38,20 @@ Features:
 Author: Ideotion
 """
 
-import zlib
 import bz2
-import lzma
-import json
 import hashlib
-import time
+import json
 import logging
-from typing import Any, BinaryIO, Callable, Dict, List, Optional, Tuple, Union
+import lzma
+import struct
+import time
+import zlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 from io import BytesIO
-import struct
+from pathlib import Path
+from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ class CompressionConfig:
     blosc_cname: str = "lz4"  # Blosc compressor name
     blosc_shuffle: int = 1  # Blosc shuffle mode
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert configuration to dictionary."""
         return {
             "algorithm": self.algorithm.value,
@@ -99,7 +100,7 @@ class CompressionConfig:
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "CompressionConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "CompressionConfig":
         """Create configuration from dictionary."""
         return cls(
             algorithm=CompressionAlgorithm(data.get("algorithm", "zstandard")),
@@ -127,7 +128,7 @@ class CompressionStats:
     decompression_time: float
     compression_ratio: float
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "algorithm": self.algorithm.value,
@@ -169,7 +170,7 @@ class Compressor:
     """
     
     # Algorithm implementations
-    _ALGORITHMS: Dict[CompressionAlgorithm, Dict[str, Any]] = {
+    _ALGORITHMS: dict[CompressionAlgorithm, dict[str, Any]] = {
         CompressionAlgorithm.NONE: {
             "compress": lambda data, config: data,
             "decompress": lambda data, config: data,
@@ -193,7 +194,7 @@ class Compressor:
     }
     
     # Default configurations for each algorithm
-    _DEFAULT_CONFIGS: Dict[CompressionAlgorithm, CompressionConfig] = {
+    _DEFAULT_CONFIGS: dict[CompressionAlgorithm, CompressionConfig] = {
         CompressionAlgorithm.NONE: CompressionConfig(algorithm=CompressionAlgorithm.NONE, level=0),
         CompressionAlgorithm.ZLIB: CompressionConfig(algorithm=CompressionAlgorithm.ZLIB, level=6),
         CompressionAlgorithm.BZ2: CompressionConfig(algorithm=CompressionAlgorithm.BZ2, level=6),
@@ -205,7 +206,7 @@ class Compressor:
         CompressionAlgorithm.SNAPPY: CompressionConfig(algorithm=CompressionAlgorithm.SNAPPY, level=6)
     }
     
-    def __init__(self, config: Optional[CompressionConfig] = None):
+    def __init__(self, config: CompressionConfig | None = None):
         """
         Initialize the compressor.
         
@@ -301,15 +302,15 @@ class Compressor:
         """Check if a compression algorithm is available."""
         return self._ALGORITHMS[algorithm]["available"]
     
-    def get_available_algorithms(self) -> List[CompressionAlgorithm]:
+    def get_available_algorithms(self) -> list[CompressionAlgorithm]:
         """Get list of available compression algorithms."""
         return [alg for alg in CompressionAlgorithm if self.is_available(alg)]
     
     def compress(
         self, 
-        data: Union[str, bytes],
-        algorithm: Optional[CompressionAlgorithm] = None,
-        config: Optional[CompressionConfig] = None
+        data: str | bytes,
+        algorithm: CompressionAlgorithm | None = None,
+        config: CompressionConfig | None = None
     ) -> bytes:
         """
         Compress data using the specified algorithm.
@@ -372,7 +373,7 @@ class Compressor:
     def decompress(
         self, 
         compressed_data: bytes,
-        expected_algorithm: Optional[CompressionAlgorithm] = None
+        expected_algorithm: CompressionAlgorithm | None = None
     ) -> bytes:
         """
         Decompress data.
@@ -456,7 +457,7 @@ class Compressor:
         )
         return header
     
-    def _parse_header(self, header: bytes) -> Tuple[CompressionAlgorithm, int, int, bytes]:
+    def _parse_header(self, header: bytes) -> tuple[CompressionAlgorithm, int, int, bytes]:
         """Parse a compression header."""
         if len(header) != HEADER_SIZE:
             raise CompressionError(f"Invalid header size: {len(header)}")
@@ -487,10 +488,10 @@ class Compressor:
     
     def compress_with_stats(
         self, 
-        data: Union[str, bytes],
-        algorithm: Optional[CompressionAlgorithm] = None,
-        config: Optional[CompressionConfig] = None
-    ) -> Tuple[bytes, CompressionStats]:
+        data: str | bytes,
+        algorithm: CompressionAlgorithm | None = None,
+        config: CompressionConfig | None = None
+    ) -> tuple[bytes, CompressionStats]:
         """
         Compress data and return statistics.
         
@@ -539,9 +540,9 @@ class Compressor:
     
     def benchmark(
         self, 
-        data: Union[str, bytes],
-        algorithms: Optional[List[CompressionAlgorithm]] = None
-    ) -> List[CompressionStats]:
+        data: str | bytes,
+        algorithms: list[CompressionAlgorithm] | None = None
+    ) -> list[CompressionStats]:
         """
         Benchmark compression performance across multiple algorithms.
         
@@ -567,10 +568,10 @@ class Compressor:
     
     def get_best_algorithm(
         self, 
-        data: Union[str, bytes],
-        algorithms: Optional[List[CompressionAlgorithm]] = None,
+        data: str | bytes,
+        algorithms: list[CompressionAlgorithm] | None = None,
         optimize_for: str = "ratio"  # "ratio", "speed", or "balanced"
-    ) -> Tuple[CompressionAlgorithm, CompressionStats]:
+    ) -> tuple[CompressionAlgorithm, CompressionStats]:
         """
         Find the best compression algorithm for the given data.
         
@@ -616,7 +617,7 @@ class ChunkedCompressor:
     where loading the entire data into memory is not feasible.
     """
     
-    def __init__(self, compressor: Optional[Compressor] = None, chunk_size: int = 65536):
+    def __init__(self, compressor: Compressor | None = None, chunk_size: int = 65536):
         """
         Initialize the chunked compressor.
         
@@ -629,9 +630,9 @@ class ChunkedCompressor:
     
     def compress_file(
         self, 
-        input_path: Union[str, Path],
-        output_path: Union[str, Path],
-        algorithm: Optional[CompressionAlgorithm] = None
+        input_path: str | Path,
+        output_path: str | Path,
+        algorithm: CompressionAlgorithm | None = None
     ) -> CompressionStats:
         """
         Compress a file in chunks.
@@ -701,8 +702,8 @@ class ChunkedCompressor:
     
     def decompress_file(
         self, 
-        input_path: Union[str, Path],
-        output_path: Union[str, Path]
+        input_path: str | Path,
+        output_path: str | Path
     ) -> CompressionStats:
         """
         Decompress a file in chunks.
@@ -754,7 +755,7 @@ class ChunkedCompressor:
             compression_ratio=compressed_size / original_size if original_size > 0 else 0
         )
     
-    def _compute_file_hash(self, file_path: Union[str, Path]) -> bytes:
+    def _compute_file_hash(self, file_path: str | Path) -> bytes:
         """Compute SHA-256 hash of a file."""
         hasher = hashlib.sha256()
         file_path = Path(file_path)
@@ -778,7 +779,7 @@ class StreamingCompressor:
     Streaming compressor for handling large data streams.
     """
     
-    def __init__(self, compressor: Optional[Compressor] = None):
+    def __init__(self, compressor: Compressor | None = None):
         """
         Initialize the streaming compressor.
         
@@ -791,7 +792,7 @@ class StreamingCompressor:
         self, 
         input_stream: BinaryIO,
         output_stream: BinaryIO,
-        algorithm: Optional[CompressionAlgorithm] = None,
+        algorithm: CompressionAlgorithm | None = None,
         chunk_size: int = 65536
     ) -> CompressionStats:
         """
@@ -921,7 +922,7 @@ class DatabaseCompressor:
     particularly large text fields like article content.
     """
     
-    def __init__(self, compressor: Optional[Compressor] = None):
+    def __init__(self, compressor: Compressor | None = None):
         """
         Initialize the database compressor.
         
@@ -929,7 +930,7 @@ class DatabaseCompressor:
             compressor: Compressor instance to use.
         """
         self.compressor = compressor or Compressor()
-        self._field_configs: Dict[str, CompressionConfig] = {}
+        self._field_configs: dict[str, CompressionConfig] = {}
     
     def set_field_config(self, field_name: str, config: CompressionConfig) -> None:
         """
@@ -944,8 +945,8 @@ class DatabaseCompressor:
     def compress_field(
         self, 
         field_name: str, 
-        value: Union[str, bytes, None]
-    ) -> Optional[bytes]:
+        value: str | bytes | None
+    ) -> bytes | None:
         """
         Compress a database field value.
         
@@ -973,8 +974,8 @@ class DatabaseCompressor:
     def decompress_field(
         self, 
         field_name: str, 
-        value: Optional[bytes]
-    ) -> Optional[Union[str, bytes]]:
+        value: bytes | None
+    ) -> str | bytes | None:
         """
         Decompress a database field value.
         

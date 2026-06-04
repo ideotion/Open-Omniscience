@@ -33,19 +33,27 @@ This module provides comprehensive source management functionality including:
 Author: Ideotion
 """
 
-import yaml
 import logging
-from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Set, Any
 from datetime import datetime
-from sqlalchemy import and_, or_, not_, func, desc, asc
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+import yaml
+from sqlalchemy import and_, asc, desc, func, not_, or_
 from sqlalchemy.orm import Session
 
 # Import database models
-from src.database.models import Source, SourceGroup, SourceMetadata, source_group_association, get_session
+from src.database.models import (
+    Source,
+    SourceGroup,
+    SourceMetadata,
+    get_session,
+    source_group_association,
+)
 
 # Import logging config
 from src.utils.logging_config import setup_logging
+
 logger = setup_logging("source_manager")
 
 # Import DuckDuckGo search
@@ -60,7 +68,7 @@ class SourceManager:
     with support for batch operations and advanced querying.
     """
     
-    def __init__(self, session: Optional[Session] = None):
+    def __init__(self, session: Session | None = None):
         """
         Initialize the SourceManager.
         
@@ -86,19 +94,19 @@ class SourceManager:
     
     # ==================== SOURCE OPERATIONS ====================
     
-    def get_source_by_id(self, source_id: int) -> Optional[Source]:
+    def get_source_by_id(self, source_id: int) -> Source | None:
         """Get a source by its ID."""
         return self.session.query(Source).filter_by(id=source_id).first()
     
-    def get_source_by_domain(self, domain: str) -> Optional[Source]:
+    def get_source_by_domain(self, domain: str) -> Source | None:
         """Get a source by its domain."""
         return self.session.query(Source).filter_by(domain=domain).first()
     
-    def get_source_by_name(self, name: str) -> Optional[Source]:
+    def get_source_by_name(self, name: str) -> Source | None:
         """Get a source by its name."""
         return self.session.query(Source).filter_by(name=name).first()
     
-    def get_all_sources(self, limit: int = None, offset: int = 0) -> List[Source]:
+    def get_all_sources(self, limit: int = None, offset: int = 0) -> list[Source]:
         """Get all sources with optional pagination."""
         query = self.session.query(Source)
         if limit:
@@ -107,7 +115,7 @@ class SourceManager:
             query = query.offset(offset)
         return query.all()
     
-    def get_sources_by_tags(self, tags: List[str], match_all: bool = False) -> List[Source]:
+    def get_sources_by_tags(self, tags: list[str], match_all: bool = False) -> list[Source]:
         """
         Get sources by tags.
         
@@ -135,14 +143,14 @@ class SourceManager:
             # Sources must have any tag
             return self.session.query(Source).filter(or_(*conditions)).all()
     
-    def get_sources_by_group(self, group_id: int) -> List[Source]:
+    def get_sources_by_group(self, group_id: int) -> list[Source]:
         """Get all sources in a specific group."""
         group = self.session.query(SourceGroup).filter_by(id=group_id).first()
         if group:
             return group.sources.all()
         return []
     
-    def get_sources_by_group_name(self, group_name: str) -> List[Source]:
+    def get_sources_by_group_name(self, group_name: str) -> list[Source]:
         """Get all sources in a group by group name."""
         group = self.session.query(SourceGroup).filter_by(name=group_name).first()
         if group:
@@ -183,7 +191,7 @@ class SourceManager:
         logger.info(f"Created new source: {name} ({domain})")
         return source
     
-    def update_source(self, source_id: int, **kwargs) -> Optional[Source]:
+    def update_source(self, source_id: int, **kwargs) -> Source | None:
         """
         Update a source.
         
@@ -229,7 +237,7 @@ class SourceManager:
     
     # ==================== BATCH SOURCE OPERATIONS ====================
     
-    def enable_sources(self, source_ids: List[int]) -> int:
+    def enable_sources(self, source_ids: list[int]) -> int:
         """
         Enable multiple sources.
         
@@ -246,7 +254,7 @@ class SourceManager:
         logger.info(f"Enabled {result} sources")
         return result
     
-    def disable_sources(self, source_ids: List[int]) -> int:
+    def disable_sources(self, source_ids: list[int]) -> int:
         """
         Disable multiple sources.
         
@@ -263,7 +271,7 @@ class SourceManager:
         logger.info(f"Disabled {result} sources")
         return result
     
-    def set_source_priority(self, source_ids: List[int], priority: int) -> int:
+    def set_source_priority(self, source_ids: list[int], priority: int) -> int:
         """
         Set priority for multiple sources.
         
@@ -281,7 +289,7 @@ class SourceManager:
         logger.info(f"Set priority {priority} for {result} sources")
         return result
     
-    def set_source_rate_limit(self, source_ids: List[int], rate_limit_ms: int) -> int:
+    def set_source_rate_limit(self, source_ids: list[int], rate_limit_ms: int) -> int:
         """
         Set rate limit for multiple sources.
         
@@ -299,7 +307,7 @@ class SourceManager:
         logger.info(f"Set rate limit {rate_limit_ms}ms for {result} sources")
         return result
     
-    def add_tags_to_sources(self, source_ids: List[int], tags: List[str]) -> int:
+    def add_tags_to_sources(self, source_ids: list[int], tags: list[str]) -> int:
         """
         Add tags to multiple sources.
         
@@ -329,7 +337,7 @@ class SourceManager:
         logger.info(f"Added tags {tags} to {len(sources)} sources")
         return len(sources)
     
-    def remove_tags_from_sources(self, source_ids: List[int], tags: List[str]) -> int:
+    def remove_tags_from_sources(self, source_ids: list[int], tags: list[str]) -> int:
         """
         Remove tags from multiple sources.
         
@@ -361,15 +369,15 @@ class SourceManager:
     
     # ==================== GROUP OPERATIONS ====================
     
-    def get_group_by_id(self, group_id: int) -> Optional[SourceGroup]:
+    def get_group_by_id(self, group_id: int) -> SourceGroup | None:
         """Get a group by its ID."""
         return self.session.query(SourceGroup).filter_by(id=group_id).first()
     
-    def get_group_by_name(self, name: str) -> Optional[SourceGroup]:
+    def get_group_by_name(self, name: str) -> SourceGroup | None:
         """Get a group by its name."""
         return self.session.query(SourceGroup).filter_by(name=name).first()
     
-    def get_all_groups(self, limit: int = None, offset: int = 0) -> List[SourceGroup]:
+    def get_all_groups(self, limit: int = None, offset: int = 0) -> list[SourceGroup]:
         """Get all groups with optional pagination."""
         query = self.session.query(SourceGroup)
         if limit:
@@ -412,7 +420,7 @@ class SourceManager:
         logger.info(f"Created new group: {name}")
         return group
     
-    def update_group(self, group_id: int, **kwargs) -> Optional[SourceGroup]:
+    def update_group(self, group_id: int, **kwargs) -> SourceGroup | None:
         """
         Update a group.
         
@@ -458,7 +466,7 @@ class SourceManager:
     
     # ==================== GROUP-SOURCE ASSOCIATION OPERATIONS ====================
     
-    def add_sources_to_group(self, group_id: int, source_ids: List[int]) -> int:
+    def add_sources_to_group(self, group_id: int, source_ids: list[int]) -> int:
         """
         Add sources to a group.
         
@@ -491,7 +499,7 @@ class SourceManager:
         logger.info(f"Added {added_count} sources to group {group.name}")
         return added_count
     
-    def remove_sources_from_group(self, group_id: int, source_ids: List[int]) -> int:
+    def remove_sources_from_group(self, group_id: int, source_ids: list[int]) -> int:
         """
         Remove sources from a group.
         
@@ -524,7 +532,7 @@ class SourceManager:
         logger.info(f"Removed {removed_count} sources from group {group.name}")
         return removed_count
     
-    def add_source_to_groups(self, source_id: int, group_ids: List[int]) -> int:
+    def add_source_to_groups(self, source_id: int, group_ids: list[int]) -> int:
         """
         Add a source to multiple groups.
         
@@ -552,7 +560,7 @@ class SourceManager:
         logger.info(f"Added source {source.name} to {added_count} groups")
         return added_count
     
-    def remove_source_from_groups(self, source_id: int, group_ids: List[int]) -> int:
+    def remove_source_from_groups(self, source_id: int, group_ids: list[int]) -> int:
         """
         Remove a source from multiple groups.
         
@@ -580,7 +588,7 @@ class SourceManager:
         logger.info(f"Removed source {source.name} from {removed_count} groups")
         return removed_count
     
-    def get_source_groups(self, source_id: int) -> List[SourceGroup]:
+    def get_source_groups(self, source_id: int) -> list[SourceGroup]:
         """Get all groups a source belongs to."""
         source = self.session.query(Source).filter_by(id=source_id).first()
         if source:
@@ -619,7 +627,7 @@ class SourceManager:
         logger.info(f"Created tag-based group: {name} with pattern {tag_pattern}")
         return group
     
-    def update_tag_based_group(self, group_id: int, tag_pattern: str) -> Optional[SourceGroup]:
+    def update_tag_based_group(self, group_id: int, tag_pattern: str) -> SourceGroup | None:
         """
         Update a tag-based group and refresh its source membership.
         
@@ -679,7 +687,7 @@ class SourceManager:
     
     # ==================== METADATA OPERATIONS ====================
     
-    def get_metadata(self, source_id: int) -> Optional[SourceMetadata]:
+    def get_metadata(self, source_id: int) -> SourceMetadata | None:
         """Get metadata for a source."""
         return self.session.query(SourceMetadata).filter_by(source_id=source_id).first()
     
@@ -706,7 +714,7 @@ class SourceManager:
         logger.info(f"Created metadata for source {source_id}")
         return metadata
     
-    def update_metadata(self, source_id: int, **kwargs) -> Optional[SourceMetadata]:
+    def update_metadata(self, source_id: int, **kwargs) -> SourceMetadata | None:
         """
         Update metadata for a source.
         
@@ -750,19 +758,19 @@ class SourceManager:
         logger.info(f"Deleted metadata for source {source_id}")
         return True
     
-    def get_sources_by_country(self, country: str) -> List[Source]:
+    def get_sources_by_country(self, country: str) -> list[Source]:
         """Get sources by country code."""
         metadata_list = self.session.query(SourceMetadata).filter_by(country=country).all()
         source_ids = [m.source_id for m in metadata_list]
         return self.session.query(Source).filter(Source.id.in_(source_ids)).all()
     
-    def get_sources_by_language(self, language: str) -> List[Source]:
+    def get_sources_by_language(self, language: str) -> list[Source]:
         """Get sources by language code."""
         metadata_list = self.session.query(SourceMetadata).filter_by(language=language).all()
         source_ids = [m.source_id for m in metadata_list]
         return self.session.query(Source).filter(Source.id.in_(source_ids)).all()
     
-    def get_sources_robots_allowed(self, allowed: bool = True) -> List[Source]:
+    def get_sources_robots_allowed(self, allowed: bool = True) -> list[Source]:
         """Get sources based on robots.txt permission."""
         metadata_list = self.session.query(SourceMetadata).filter_by(robots_allowed=allowed).all()
         source_ids = [m.source_id for m in metadata_list]
@@ -770,7 +778,7 @@ class SourceManager:
     
     # ==================== BATCH GROUP OPERATIONS ====================
     
-    def enable_groups(self, group_ids: List[int]) -> int:
+    def enable_groups(self, group_ids: list[int]) -> int:
         """
         Enable all sources in multiple groups.
         
@@ -787,7 +795,7 @@ class SourceManager:
         source_ids = [s.id for s in sources]
         return self.enable_sources(source_ids)
     
-    def disable_groups(self, group_ids: List[int]) -> int:
+    def disable_groups(self, group_ids: list[int]) -> int:
         """
         Disable all sources in multiple groups.
         
@@ -804,7 +812,7 @@ class SourceManager:
         source_ids = [s.id for s in sources]
         return self.disable_sources(source_ids)
     
-    def set_group_priority(self, group_ids: List[int], priority: int) -> int:
+    def set_group_priority(self, group_ids: list[int], priority: int) -> int:
         """
         Set priority for all sources in multiple groups.
         
@@ -822,7 +830,7 @@ class SourceManager:
         source_ids = [s.id for s in sources]
         return self.set_source_priority(source_ids, priority)
     
-    def set_group_rate_limit(self, group_ids: List[int], rate_limit_ms: int) -> int:
+    def set_group_rate_limit(self, group_ids: list[int], rate_limit_ms: int) -> int:
         """
         Set rate limit for all sources in multiple groups.
         
@@ -842,7 +850,7 @@ class SourceManager:
     
     # ==================== SOURCE DISCOVERY ====================
     
-    def discover_rss_feeds(self, source_ids: List[int] = None, timeout: int = 10) -> List[Dict]:
+    def discover_rss_feeds(self, source_ids: list[int] = None, timeout: int = 10) -> list[dict]:
         """
         Discover RSS feeds for sources that don't have them.
         
@@ -889,7 +897,7 @@ class SourceManager:
         
         return results
     
-    def discover_sources_by_topic(self, topic: str, max_sources: int = 20, **kwargs) -> List[Dict]:
+    def discover_sources_by_topic(self, topic: str, max_sources: int = 20, **kwargs) -> list[dict]:
         """
         Discover new sources for a specific topic using DuckDuckGo.
         
@@ -903,7 +911,7 @@ class SourceManager:
         """
         return DuckDuckGoSearch.discover_sources_by_topic(topic, max_sources, **kwargs)
     
-    def add_discovered_sources(self, discovered_sources: List[Dict], group_name: str = None) -> List[Source]:
+    def add_discovered_sources(self, discovered_sources: list[dict], group_name: str = None) -> list[Source]:
         """
         Add discovered sources to the database.
         
@@ -956,7 +964,7 @@ class SourceManager:
     
     # ==================== IMPORT/EXPORT OPERATIONS ====================
     
-    def import_sources_from_yaml(self, file_path: str) -> Dict[str, int]:
+    def import_sources_from_yaml(self, file_path: str) -> dict[str, int]:
         """
         Import sources from a YAML file.
         
@@ -966,7 +974,7 @@ class SourceManager:
         Returns:
             Dictionary with counts of added, updated, and skipped sources
         """
-        with open(file_path, 'r') as f:
+        with open(file_path) as f:
             data = yaml.safe_load(f)
         
         sources_data = data.get('sources', [])
@@ -1053,7 +1061,7 @@ class SourceManager:
     
     # ==================== STATISTICS AND ANALYTICS ====================
     
-    def get_source_statistics(self) -> Dict[str, Any]:
+    def get_source_statistics(self) -> dict[str, Any]:
         """
         Get statistics about sources.
         

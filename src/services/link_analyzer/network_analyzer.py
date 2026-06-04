@@ -28,9 +28,10 @@ including graph analysis, centrality measures, and community detection.
 Author: Open Omniscience Team
 """
 
-from typing import List, Dict, Optional, Any, Tuple, Set
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Set, Tuple
+
 import networkx as nx
 import numpy as np
 
@@ -79,7 +80,7 @@ class NetworkAnalyzer:
             'hub': 'Hub score (HITS)'
         }
     
-    def build_network_graph(self, relationships: List[Dict[str, Any]], 
+    def build_network_graph(self, relationships: list[dict[str, Any]], 
                            graph_type: str = 'directed') -> nx.Graph:
         """
         Build a network graph from relationships.
@@ -128,8 +129,8 @@ class NetworkAnalyzer:
         
         return graph
     
-    def analyze_network(self, relationships: List[Dict[str, Any]], 
-                       graph_type: str = 'directed') -> Dict[str, Any]:
+    def analyze_network(self, relationships: list[dict[str, Any]], 
+                       graph_type: str = 'directed') -> dict[str, Any]:
         """
         Analyze the network of source relationships.
         
@@ -192,7 +193,7 @@ class NetworkAnalyzer:
             'graph_properties': self._calculate_graph_properties(graph)
         }
     
-    def _calculate_centrality_measures(self, graph: nx.Graph, graph_type: str) -> Dict[str, Any]:
+    def _calculate_centrality_measures(self, graph: nx.Graph, graph_type: str) -> dict[str, Any]:
         """
         Calculate various centrality measures for the graph.
         
@@ -295,7 +296,7 @@ class NetworkAnalyzer:
         
         return centrality
     
-    def _detect_communities(self, graph: nx.Graph, graph_type: str) -> Dict[str, Any]:
+    def _detect_communities(self, graph: nx.Graph, graph_type: str) -> dict[str, Any]:
         """
         Detect communities in the graph.
         
@@ -345,7 +346,7 @@ class NetworkAnalyzer:
         
         return communities
     
-    def _identify_influential_sources(self, graph: nx.Graph, centrality: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _identify_influential_sources(self, graph: nx.Graph, centrality: dict[str, Any]) -> list[dict[str, Any]]:
         """
         Identify influential sources based on centrality measures.
         
@@ -417,7 +418,7 @@ class NetworkAnalyzer:
         # Return top 10
         return influential_sources[:10]
     
-    def _calculate_graph_properties(self, graph: nx.Graph) -> Dict[str, Any]:
+    def _calculate_graph_properties(self, graph: nx.Graph) -> dict[str, Any]:
         """
         Calculate various graph properties.
         
@@ -575,7 +576,7 @@ class NetworkAnalyzer:
             logger.error(f"Error generating network visualization: {e}")
             return False
     
-    def get_network_statistics(self, relationships: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def get_network_statistics(self, relationships: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Get comprehensive statistics about the source relationship network.
         
@@ -633,8 +634,8 @@ class NetworkAnalyzer:
             'anomaly_rate': temporal_anomalies / total_relationships if total_relationships > 0 else 0
         }
     
-    def find_connected_sources(self, source_domain: str, relationships: List[Dict[str, Any]],
-                              max_depth: int = 2) -> Dict[str, Any]:
+    def find_connected_sources(self, source_domain: str, relationships: list[dict[str, Any]],
+                              max_depth: int = 2) -> dict[str, Any]:
         """
         Find sources connected to a given source within a certain depth.
         
@@ -679,7 +680,7 @@ class NetworkAnalyzer:
             'total_connected': len(connected_sources) + len(connected_articles)
         }
     
-    def get_graph_types(self) -> Dict[str, str]:
+    def get_graph_types(self) -> dict[str, str]:
         """
         Get all available graph types with descriptions.
         
@@ -688,7 +689,7 @@ class NetworkAnalyzer:
         """
         return self.graph_types.copy()
     
-    def get_centrality_measures(self) -> Dict[str, str]:
+    def get_centrality_measures(self) -> dict[str, str]:
         """
         Get all available centrality measures with descriptions.
         

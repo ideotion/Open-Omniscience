@@ -28,13 +28,14 @@ relationships, including time delta calculations, anomaly detection, and trend a
 Author: Open Omniscience Team
 """
 
+import logging
 import re
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Optional, Any, Tuple
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
 from dateutil import parser as date_parser
 from dateutil.relativedelta import relativedelta
-import logging
-import numpy as np
 from scipy import stats
 
 # Configure logging
@@ -66,8 +67,8 @@ class TemporalAnalyzer:
             'article_after_source_1month+': (30, float('inf'))
         }
     
-    def analyze_temporal_patterns(self, article_id: int, relationships: List[Dict[str, Any]],
-                                article_published_at: Optional[str] = None) -> Dict[str, Any]:
+    def analyze_temporal_patterns(self, article_id: int, relationships: list[dict[str, Any]],
+                                article_published_at: str | None = None) -> dict[str, Any]:
         """
         Analyze temporal patterns for an article's source relationships.
         
@@ -149,8 +150,8 @@ class TemporalAnalyzer:
         
         return result
     
-    def analyze_temporal_trends(self, articles_data: List[Dict[str, Any]], 
-                               time_range: Optional[Tuple[str, str]] = None) -> Dict[str, Any]:
+    def analyze_temporal_trends(self, articles_data: list[dict[str, Any]], 
+                               time_range: tuple[str, str] | None = None) -> dict[str, Any]:
         """
         Analyze temporal trends across multiple articles.
         
@@ -252,8 +253,8 @@ class TemporalAnalyzer:
             'source_type_trends': source_type_trends
         }
     
-    def detect_temporal_anomalies(self, relationships: List[Dict[str, Any]], 
-                                 threshold_days: float = 0.0) -> List[Dict[str, Any]]:
+    def detect_temporal_anomalies(self, relationships: list[dict[str, Any]], 
+                                 threshold_days: float = 0.0) -> list[dict[str, Any]]:
         """
         Detect temporal anomalies in relationships.
         
@@ -314,7 +315,7 @@ class TemporalAnalyzer:
         
         return 'unknown'
     
-    def _calculate_temporal_statistics(self, time_deltas: List[float]) -> Dict[str, Any]:
+    def _calculate_temporal_statistics(self, time_deltas: list[float]) -> dict[str, Any]:
         """
         Calculate statistics for a list of time deltas.
         
@@ -361,7 +362,7 @@ class TemporalAnalyzer:
                 'time_delta_range': 0
             }
     
-    def _parse_date(self, date_str: str) -> Optional[datetime]:
+    def _parse_date(self, date_str: str) -> datetime | None:
         """
         Parse a date string into a datetime object.
         
@@ -384,7 +385,7 @@ class TemporalAnalyzer:
             
             # If no timezone, assume UTC
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
             
             return dt
             
@@ -392,7 +393,7 @@ class TemporalAnalyzer:
             logger.warning(f"Error parsing date {date_str}: {e}")
             return None
     
-    def calculate_correlation(self, time_series1: List[float], time_series2: List[float]) -> float:
+    def calculate_correlation(self, time_series1: list[float], time_series2: list[float]) -> float:
         """
         Calculate correlation between two time series.
         
@@ -413,8 +414,8 @@ class TemporalAnalyzer:
             logger.warning(f"Error calculating correlation: {e}")
             return 0.0
     
-    def identify_temporal_clusters(self, relationships: List[Dict[str, Any]], 
-                                  threshold_days: float = 7.0) -> List[Dict[str, Any]]:
+    def identify_temporal_clusters(self, relationships: list[dict[str, Any]], 
+                                  threshold_days: float = 7.0) -> list[dict[str, Any]]:
         """
         Identify temporal clusters of source references.
         
@@ -464,7 +465,7 @@ class TemporalAnalyzer:
         
         return result_clusters
     
-    def generate_temporal_report(self, articles_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def generate_temporal_report(self, articles_data: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Generate a comprehensive temporal analysis report.
         
@@ -475,7 +476,7 @@ class TemporalAnalyzer:
             Dictionary containing comprehensive temporal analysis
         """
         report = {
-            'generated_at': datetime.now(timezone.utc).isoformat(),
+            'generated_at': datetime.now(UTC).isoformat(),
             'summary': {},
             'detailed_analysis': {},
             'recommendations': []

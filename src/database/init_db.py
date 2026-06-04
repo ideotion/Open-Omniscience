@@ -28,15 +28,17 @@ sources from the configs/sources.yml file.
 Author: Ideotion
 """
 
-import yaml
 import logging
 from pathlib import Path
 
+import yaml
+
 # Import database models
-from src.database.models import Base, engine, Session, Source
+from src.database.models import Base, Session, Source, engine
 
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
+
 logger = setup_logging("init_db")
 
 
@@ -58,7 +60,7 @@ def init_db():
         logger.error(f"Sources file not found at {sources_yml_path}")
         return
     
-    with open(sources_yml_path, "r") as f:
+    with open(sources_yml_path) as f:
         sources_data = yaml.safe_load(f)
     
     if not sources_data or "sources" not in sources_data:

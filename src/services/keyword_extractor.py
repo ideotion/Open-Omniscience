@@ -27,10 +27,10 @@ This module provides comprehensive keyword extraction capabilities for articles.
 Author: Open Omniscience Team
 """
 
-from typing import List, Dict, Set, Optional, Tuple, Any
 import logging
 import re
 from collections import Counter
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +39,8 @@ class KeywordExtractor:
     """Extracts keywords from articles and text content."""
     
     def __init__(self, min_keyword_length=3, max_keyword_length=50, min_frequency=1):
-        from .text_processor import text_processor as default_text_processor
         from .stopwords import stopwords_manager as default_stopwords
+        from .text_processor import text_processor as default_text_processor
         
         self.text_processor = default_text_processor
         self.stopwords_manager = default_stopwords

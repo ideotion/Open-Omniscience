@@ -28,15 +28,16 @@ Orchestrates the flow of data through all pillars:
 4. Legal Admissibility (Pillar 4)
 """
 
-import time
+import asyncio
 import hashlib
 import json
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Callable, Union
-from enum import Enum
 import logging
-import asyncio
+import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 
@@ -68,24 +69,24 @@ class PipelineConfig:
     log_level: str = "INFO"
     
     # Pillar-specific configs
-    pillar1: Dict[str, Any] = field(default_factory=dict)
-    pillar2: Dict[str, Any] = field(default_factory=dict)
-    pillar3: Dict[str, Any] = field(default_factory=dict)
-    pillar4: Dict[str, Any] = field(default_factory=dict)
+    pillar1: dict[str, Any] = field(default_factory=dict)
+    pillar2: dict[str, Any] = field(default_factory=dict)
+    pillar3: dict[str, Any] = field(default_factory=dict)
+    pillar4: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class PipelineResult:
     """Result of a pipeline execution."""
     success: bool
-    data: Optional[Dict[str, Any]] = None
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    data: dict[str, Any] | None = None
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     start_time: float = 0.0
     end_time: float = 0.0
     duration: float = 0.0
-    pillar_results: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    pillar_results: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -94,10 +95,10 @@ class IngestedData:
     url: str
     content: str
     raw_content: bytes
-    headers: Dict[str, str]
+    headers: dict[str, str]
     timestamp: float = field(default_factory=time.time)
     source_type: str = "web"
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     
     @property
     def content_hash(self) -> str:
@@ -109,7 +110,7 @@ class IngestedData:
         """Get the domain of the URL."""
         return urlparse(self.url).netloc
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "url": self.url,
@@ -135,7 +136,7 @@ class OpenOmnisciencePipeline:
     Each step can be run independently or as part of the full pipeline.
     """
 
-    def __init__(self, config: Optional[PipelineConfig] = None):
+    def __init__(self, config: PipelineConfig | None = None):
         """
         Initialize the pipeline.
         
@@ -186,9 +187,9 @@ class OpenOmnisciencePipeline:
     def _init_pillar2(self):
         """Initialize Pillar 2 (Data Processing)."""
         try:
-            from pillar2.src.analysis.statistical_tests import StatisticalTests
             from pillar2.src.analysis.peer_review import PeerReviewSimulator
             from pillar2.src.analysis.reproducibility import ReproducibilityCalculator
+            from pillar2.src.analysis.statistical_tests import StatisticalTests
             
             return {
                 "statistical_tests": StatisticalTests(),
@@ -216,11 +217,13 @@ class OpenOmnisciencePipeline:
     def _init_pillar4(self):
         """Initialize Pillar 4 (Legal Admissibility)."""
         try:
-            from pillar4.src.legal.validator import LegalValidator
-            from pillar4.src.crypto.provenance import DataLineageTracker
-            from pillar4.src.audit.chain_of_custody import DataLineageTracker as ChainOfCustodyTracker
-            from pillar4.src.compliance.gdpr import GDPRComplianceChecker
+            from pillar4.src.audit.chain_of_custody import (
+                DataLineageTracker as ChainOfCustodyTracker,
+            )
             from pillar4.src.compliance.copyright import CopyrightComplianceChecker
+            from pillar4.src.compliance.gdpr import GDPRComplianceChecker
+            from pillar4.src.crypto.provenance import DataLineageTracker
+            from pillar4.src.legal.validator import LegalValidator
             
             return {
                 "validator": LegalValidator(),
@@ -335,7 +338,7 @@ class OpenOmnisciencePipeline:
         
         return result
 
-    def process_urls(self, urls: List[str]) -> List[PipelineResult]:
+    def process_urls(self, urls: list[str]) -> list[PipelineResult]:
         """
         Process multiple URLs through the pipeline.
         
@@ -365,7 +368,7 @@ class OpenOmnisciencePipeline:
         
         return results
 
-    async def process_urls_async(self, urls: List[str]) -> List[PipelineResult]:
+    async def process_urls_async(self, urls: list[str]) -> list[PipelineResult]:
         """
         Process multiple URLs asynchronously.
         
@@ -453,7 +456,7 @@ class OpenOmnisciencePipeline:
             },
         )
 
-    def _process(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _process(self, data: dict[str, Any]) -> dict[str, Any]:
         """
         Process data (Pillar 2).
         
@@ -490,7 +493,7 @@ class OpenOmnisciencePipeline:
         
         return results
 
-    def _analyze(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze(self, data: dict[str, Any]) -> dict[str, Any]:
         """
         Analyze data (Pillar 3).
         
@@ -522,7 +525,7 @@ class OpenOmnisciencePipeline:
         
         return results
 
-    def _validate_legal(self, data: Dict[str, Any]) -> Any:
+    def _validate_legal(self, data: dict[str, Any]) -> Any:
         """
         Validate data for legal compliance (Pillar 4).
         
@@ -547,7 +550,7 @@ class OpenOmnisciencePipeline:
         
         return {"status": "not_validated", "note": "Legal validation not available"}
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get pipeline statistics."""
         pillar_stats = {}
         
@@ -592,7 +595,7 @@ class OpenOmnisciencePipeline:
 _default_pipeline = None
 
 
-def get_pipeline(config: Optional[PipelineConfig] = None) -> OpenOmnisciencePipeline:
+def get_pipeline(config: PipelineConfig | None = None) -> OpenOmnisciencePipeline:
     """
     Get or create the default pipeline.
     
@@ -633,7 +636,7 @@ def process_single(url: str) -> PipelineResult:
         pipeline.stop()
 
 
-async def process_multiple(urls: List[str]) -> List[PipelineResult]:
+async def process_multiple(urls: list[str]) -> list[PipelineResult]:
     """
     Process multiple URLs through the pipeline asynchronously.
     

@@ -29,7 +29,7 @@ Components:
 - copyright: Check robots.txt and ToS locally, rate limits (Phase 4.4)
 """
 
-from .gdpr import GDPRCompliance, anonymize_pii
 from .copyright import CopyrightCompliance, check_robots_txt
+from .gdpr import GDPRCompliance, anonymize_pii
 
 __all__ = ["GDPRCompliance", "anonymize_pii", "CopyrightCompliance", "check_robots_txt"]

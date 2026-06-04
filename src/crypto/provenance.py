@@ -29,13 +29,13 @@ Author: Open-Omniscience Team
 License: MIT
 """
 
-import sqlite3
 import hashlib
 import json
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timezone
 import os
+import sqlite3
+from datetime import UTC, datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 from .merkle_tree import MerkleTree, compute_merkle_root
 
@@ -54,7 +54,7 @@ class DataProvenance:
     """
     
     def __init__(self, data_id: str, data: Any, source: str = "unknown", 
-                 metadata: Optional[Dict[str, Any]] = None):
+                 metadata: dict[str, Any] | None = None):
         """
         Initialize provenance record for data.
         
@@ -67,7 +67,7 @@ class DataProvenance:
         self.data_id = data_id
         self.source = source
         self.metadata = metadata or {}
-        self.timestamp = datetime.now(timezone.utc).isoformat()
+        self.timestamp = datetime.now(UTC).isoformat()
         
         # Compute hashes
         data_str = json.dumps(data, sort_keys=True) if not isinstance(data, str) else data
@@ -97,7 +97,7 @@ class DataProvenance:
         """Check if data has been modified since creation."""
         return self.original_hash == self.current_hash
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             'data_id': self.data_id,
@@ -110,7 +110,7 @@ class DataProvenance:
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'DataProvenance':
+    def from_dict(cls, data: dict[str, Any]) -> 'DataProvenance':
         """Create DataProvenance from dictionary."""
         provenance = cls(
             data_id=data['data_id'],
@@ -154,7 +154,7 @@ class ProvenanceLedger:
             create_if_not_exists: Create database if it doesn't exist
         """
         self.db_path = Path(db_path)
-        self.connection: Optional[sqlite3.Connection] = None
+        self.connection: sqlite3.Connection | None = None
         self._initialize_database(create_if_not_exists)
     
     def _initialize_database(self, create_if_not_exists: bool) -> None:
@@ -223,7 +223,7 @@ class ProvenanceLedger:
         self.connection.commit()
     
     def add_data(self, data_id: str, data: Any, source: str = "unknown", 
-                 metadata: Optional[Dict[str, Any]] = None, batch_id: Optional[int] = None) -> DataProvenance:
+                 metadata: dict[str, Any] | None = None, batch_id: int | None = None) -> DataProvenance:
         """
         Add a new data entry to the ledger.
         
@@ -262,7 +262,7 @@ class ProvenanceLedger:
         self.connection.commit()
         return provenance
     
-    def add_data_batch(self, data_items: List[Tuple[str, Any, str, Dict[str, Any]]], 
+    def add_data_batch(self, data_items: list[tuple[str, Any, str, dict[str, Any]]], 
                        description: str = "") -> int:
         """
         Add a batch of data items and create a Merkle tree for them.
@@ -292,7 +292,7 @@ class ProvenanceLedger:
             tree.root_hash,
             len(data_list),
             tree.height,
-            datetime.now(timezone.utc).isoformat(),
+            datetime.now(UTC).isoformat(),
             description
         ))
         
@@ -305,7 +305,7 @@ class ProvenanceLedger:
         self.connection.commit()
         return merkle_tree_id
     
-    def get_data_provenance(self, data_id: str) -> Optional[DataProvenance]:
+    def get_data_provenance(self, data_id: str) -> DataProvenance | None:
         """
         Retrieve provenance information for a data item.
         
@@ -335,7 +335,7 @@ class ProvenanceLedger:
         
         return provenance
     
-    def get_merkle_tree(self, tree_id: int) -> Optional[Dict[str, Any]]:
+    def get_merkle_tree(self, tree_id: int) -> dict[str, Any] | None:
         """
         Retrieve Merkle tree information by ID.
         
@@ -364,7 +364,7 @@ class ProvenanceLedger:
             'description': row[5]
         }
     
-    def get_data_by_merkle_tree(self, tree_id: int) -> List[DataProvenance]:
+    def get_data_by_merkle_tree(self, tree_id: int) -> list[DataProvenance]:
         """
         Get all data entries associated with a Merkle tree.
         
@@ -451,7 +451,7 @@ class ProvenanceLedger:
         return computed_root_hash == expected_root_hash
     
     def record_custody_change(self, data_id: str, action: str, user_id: str = None,
-                              new_data: Any = None, metadata: Dict[str, Any] = None) -> bool:
+                              new_data: Any = None, metadata: dict[str, Any] = None) -> bool:
         """
         Record a change in custody or modification of data.
         
@@ -488,7 +488,7 @@ class ProvenanceLedger:
         
         # Record the custody change
         metadata_json = json.dumps(metadata or {})
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         
         cursor.execute("""
             INSERT INTO provenance_chain 
@@ -499,7 +499,7 @@ class ProvenanceLedger:
         self.connection.commit()
         return True
     
-    def get_custody_chain(self, data_id: str) -> List[Dict[str, Any]]:
+    def get_custody_chain(self, data_id: str) -> list[dict[str, Any]]:
         """
         Get the complete chain of custody for a data item.
         
@@ -533,7 +533,7 @@ class ProvenanceLedger:
         
         return results
     
-    def get_all_data_entries(self, limit: int = None) -> List[DataProvenance]:
+    def get_all_data_entries(self, limit: int = None) -> list[DataProvenance]:
         """
         Get all data entries in the ledger.
         
@@ -568,7 +568,7 @@ class ProvenanceLedger:
         
         return results
     
-    def get_all_merkle_trees(self, limit: int = None) -> List[Dict[str, Any]]:
+    def get_all_merkle_trees(self, limit: int = None) -> list[dict[str, Any]]:
         """
         Get all Merkle trees in the ledger.
         
@@ -636,8 +636,8 @@ def create_provenance_ledger(db_path: str = ProvenanceLedger.DEFAULT_DB_PATH) ->
 
 # Example usage and testing
 if __name__ == "__main__":
-    import tempfile
     import shutil
+    import tempfile
     
     # Create a temporary directory for testing
     temp_dir = tempfile.mkdtemp()

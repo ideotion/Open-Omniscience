@@ -33,33 +33,46 @@ including endpoints for:
 Author: Open Omniscience Team
 """
 
+import logging
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Optional, Any
-from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request, Body
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-import logging
+from slowapi.util import get_remote_address
 
 # Import database models and session
 from src.database.models import (
-    Article, ExternalSource, SourceArticle, ArticleLink, 
-    ArticleSourceRelationship, LinkClassificationRule, SourceCredibilityRule,
-    get_session
+    Article,
+    ArticleLink,
+    ArticleSourceRelationship,
+    ExternalSource,
+    LinkClassificationRule,
+    SourceArticle,
+    SourceCredibilityRule,
+    get_session,
 )
 
 # Import link analyzer services
 from src.services.link_analyzer import (
-    LinkAnalyzerService, LinkExtractor, LinkClassifier, 
-    SourceIdentifier, SourceScraper, RelationshipTracker,
-    TemporalAnalyzer, NetworkAnalyzer, CredibilityScorer, link_analyzer
+    CredibilityScorer,
+    LinkAnalyzerService,
+    LinkClassifier,
+    LinkExtractor,
+    NetworkAnalyzer,
+    RelationshipTracker,
+    SourceIdentifier,
+    SourceScraper,
+    TemporalAnalyzer,
+    link_analyzer,
 )
 
 # Configure logging
 from src.utils.logging_config import setup_logging
+
 logger = setup_logging("api.link_analysis")
 
 # Create router
@@ -83,13 +96,13 @@ credibility_scorer = CredibilityScorer()
 # Link Extraction Endpoints
 # ============================================================================
 
-@router.post("/extract-links", response_model=Dict[str, Any])
+@router.post("/extract-links", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def extract_links(
     request: Request,
     html_content: str = Query(..., description="HTML content to extract links from"),
-    base_url: Optional[str] = Query(None, description="Base URL for resolving relative links"),
-    article_id: Optional[int] = Query(None, description="ID of the article")
+    base_url: str | None = Query(None, description="Base URL for resolving relative links"),
+    article_id: int | None = Query(None, description="ID of the article")
 ):
     """
     Extract links from HTML content.
@@ -116,11 +129,11 @@ async def extract_links(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/classify-links", response_model=Dict[str, Any])
+@router.post("/classify-links", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def classify_links(
     request: Request,
-    links: List[Dict[str, Any]] = Body(..., description="List of links to classify")
+    links: list[dict[str, Any]] = Body(..., description="List of links to classify")
 ):
     """
     Classify a list of links into categories.
@@ -149,11 +162,11 @@ async def classify_links(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/identify-sources", response_model=Dict[str, Any])
+@router.post("/identify-sources", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def identify_sources(
     request: Request,
-    links: List[Dict[str, Any]] = Body(..., description="List of links to identify sources from")
+    links: list[dict[str, Any]] = Body(..., description="List of links to identify sources from")
 ):
     """
     Identify external sources from a list of links.
@@ -181,14 +194,14 @@ async def identify_sources(
 # Comprehensive Analysis Endpoints
 # ============================================================================
 
-@router.post("/analyze-article", response_model=Dict[str, Any])
+@router.post("/analyze-article", response_model=dict[str, Any])
 @limiter.limit("5/minute")
 async def analyze_article(
     request: Request,
     html_content: str = Body(..., description="HTML content of the article"),
-    article_url: Optional[str] = Body(None, description="URL of the article"),
-    article_id: Optional[int] = Body(None, description="ID of the article in database"),
-    published_at: Optional[str] = Body(None, description="Publication date of the article (ISO format)")
+    article_url: str | None = Body(None, description="URL of the article"),
+    article_id: int | None = Body(None, description="ID of the article in database"),
+    published_at: str | None = Body(None, description="Publication date of the article (ISO format)")
 ):
     """
     Perform comprehensive analysis of an article's links and sources.
@@ -253,7 +266,7 @@ async def analyze_article(
 # Source Scraping Endpoints
 # ============================================================================
 
-@router.post("/scrape-source", response_model=Dict[str, Any])
+@router.post("/scrape-source", response_model=dict[str, Any])
 @limiter.limit("5/minute")
 async def scrape_source(
     request: Request,
@@ -288,7 +301,7 @@ async def scrape_source(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/check-url", response_model=Dict[str, Any])
+@router.get("/check-url", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def check_url(
     request: Request,
@@ -318,11 +331,11 @@ async def check_url(
 # Temporal Analysis Endpoints
 # ============================================================================
 
-@router.post("/temporal-analysis", response_model=Dict[str, Any])
+@router.post("/temporal-analysis", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def temporal_analysis(request: Request, 
-    relationships: List[Dict[str, Any]] = Body(..., description="List of relationships to analyze"),
-    article_published_at: Optional[str] = Body(None, description="Publication date of the article")
+    relationships: list[dict[str, Any]] = Body(..., description="List of relationships to analyze"),
+    article_published_at: str | None = Body(None, description="Publication date of the article")
 ):
     """
     Perform temporal analysis on article-source relationships.
@@ -343,10 +356,10 @@ async def temporal_analysis(request: Request,
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/detect-anomalies", response_model=Dict[str, Any])
+@router.post("/detect-anomalies", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def detect_anomalies(request: Request, 
-    relationships: List[Dict[str, Any]] = Body(..., description="List of relationships to check for anomalies"),
+    relationships: list[dict[str, Any]] = Body(..., description="List of relationships to check for anomalies"),
     threshold_days: float = Body(0.0, description="Time delta threshold for anomaly detection")
 ):
     """
@@ -371,10 +384,10 @@ async def detect_anomalies(request: Request,
 # Network Analysis Endpoints
 # ============================================================================
 
-@router.post("/network-analysis", response_model=Dict[str, Any])
+@router.post("/network-analysis", response_model=dict[str, Any])
 @limiter.limit("5/minute")
 async def network_analysis(request: Request, 
-    relationships: List[Dict[str, Any]] = Body(..., description="List of relationships to analyze"),
+    relationships: list[dict[str, Any]] = Body(..., description="List of relationships to analyze"),
     graph_type: str = Body("directed", description="Type of graph to build")
 ):
     """
@@ -394,10 +407,10 @@ async def network_analysis(request: Request,
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/network-statistics", response_model=Dict[str, Any])
+@router.post("/network-statistics", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def network_statistics(request: Request, 
-    relationships: List[Dict[str, Any]] = Body(..., description="List of relationships to analyze")
+    relationships: list[dict[str, Any]] = Body(..., description="List of relationships to analyze")
 ):
     """
     Get statistics about the source relationship network.
@@ -420,10 +433,10 @@ async def network_statistics(request: Request,
 # Credibility Scoring Endpoints
 # ============================================================================
 
-@router.post("/credibility-score", response_model=Dict[str, Any])
+@router.post("/credibility-score", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def credibility_score(request: Request, 
-    source_info: Dict[str, Any] = Body(..., description="Source information to score")
+    source_info: dict[str, Any] = Body(..., description="Source information to score")
 ):
     """
     Calculate credibility score for a source.
@@ -445,10 +458,10 @@ async def credibility_score(request: Request,
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/credibility-scores", response_model=Dict[str, Any])
+@router.post("/credibility-scores", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def credibility_scores(request: Request, 
-    sources: List[Dict[str, Any]] = Body(..., description="List of sources to score")
+    sources: list[dict[str, Any]] = Body(..., description="List of sources to score")
 ):
     """
     Calculate credibility scores for multiple sources.
@@ -467,10 +480,10 @@ async def credibility_scores(request: Request,
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/rank-sources", response_model=Dict[str, Any])
+@router.post("/rank-sources", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def rank_sources(request: Request, 
-    sources: List[Dict[str, Any]] = Body(..., description="List of sources to rank"),
+    sources: list[dict[str, Any]] = Body(..., description="List of sources to rank"),
     limit: int = Body(10, description="Maximum number of sources to return")
 ):
     """
@@ -490,10 +503,10 @@ async def rank_sources(request: Request,
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/credibility-distribution", response_model=Dict[str, Any])
+@router.post("/credibility-distribution", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def credibility_distribution(request: Request, 
-    sources: List[Dict[str, Any]] = Body(..., description="List of sources to analyze"),
+    sources: list[dict[str, Any]] = Body(..., description="List of sources to analyze"),
     bins: int = Body(10, description="Number of bins for histogram")
 ):
     """
@@ -517,7 +530,7 @@ async def credibility_distribution(request: Request,
 # Classification Rule Management Endpoints
 # ============================================================================
 
-@router.get("/classification-rules", response_model=Dict[str, Any])
+@router.get("/classification-rules", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def get_classification_rules(request: Request):
     """
@@ -537,7 +550,7 @@ async def get_classification_rules(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/classification-rules", response_model=Dict[str, Any])
+@router.post("/classification-rules", response_model=dict[str, Any])
 @limiter.limit("5/minute")
 async def add_classification_rule(request: Request, 
     rule_name: str = Body(..., description="Name of the rule"),
@@ -545,7 +558,7 @@ async def add_classification_rule(request: Request,
     classification_type: str = Body(..., description="Classification type"),
     priority: int = Body(1, description="Priority of the rule"),
     is_active: bool = Body(True, description="Whether the rule is active"),
-    apply_to: List[str] = Body(["domain"], description="Fields to apply the rule to")
+    apply_to: list[str] = Body(["domain"], description="Fields to apply the rule to")
 ):
     """
     Add a custom classification rule.
@@ -566,7 +579,7 @@ async def add_classification_rule(request: Request,
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/classification-rules/{rule_name}", response_model=Dict[str, Any])
+@router.delete("/classification-rules/{rule_name}", response_model=dict[str, Any])
 @limiter.limit("5/minute")
 async def remove_classification_rule(request: Request, 
     rule_name: str
@@ -592,7 +605,7 @@ async def remove_classification_rule(request: Request,
 # Health Check Endpoint
 # ============================================================================
 
-@router.get("/health", response_model=Dict[str, Any])
+@router.get("/health", response_model=dict[str, Any])
 @limiter.limit("10/minute")
 async def health_check(request: Request):
     """
@@ -604,7 +617,7 @@ async def health_check(request: Request):
     return JSONResponse(content={
         "success": True,
         "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "services": {
             "link_extractor": "available",
             "link_classifier": "available",

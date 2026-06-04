@@ -25,48 +25,43 @@ For inquiries, contact: open-omniscience@ideotion.com
 # It also serves the HTML5 frontend static files and includes rate limiting.
 # Author: Ideotion
 
-from pathlib import Path
-from typing import Optional, List, Any, Dict
-from datetime import datetime, timezone
-from contextlib import asynccontextmanager
-from importlib.metadata import version as _pkg_version, PackageNotFoundError
-import os
-
-from fastapi import FastAPI, Query, HTTPException, Request, Depends, Header
-from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
-from prometheus_client import make_asgi_app, Counter, Gauge, Histogram
 import csv
 import io
 import logging
+import os
 import re
 import time
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timezone
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 
 # Import database models and session
 from sqlalchemy.orm import Session
-from src.database.models import Article, Source, get_session
-from src.database.session import get_db, init_db, dispose_engine, session_scope
-from src.database.fts import search_ids, SearchQueryError
 
-# Import security utilities
-from src.utils.security import (
-    sanitize_html, escape_html,
-    get_security_headers, SecurityError
-)
+# Import commodity router (price time-series + honest news correlation)
+from src.api.commodity import router as commodity_router
 
-# Import source management router
-from src.api.source_management import router as source_management_router
-
-# Import keyword management router
-from src.api.keyword_management import router as keyword_management_router
+# Import ingestion router (ethical scrape -> extract -> store)
+from src.api.ingestion import router as ingestion_router
 
 # Import keyword analysis router
 from src.api.keyword_analysis import router as keyword_analysis_router
+
+# Import keyword management router
+from src.api.keyword_management import router as keyword_management_router
 
 # Import link analysis router
 from src.api.link_analysis import router as link_analysis_router
@@ -74,23 +69,27 @@ from src.api.link_analysis import router as link_analysis_router
 # Import LLM router (clean Ollama HTTP client; replaces the legacy routes.llm)
 from src.api.llm import router as llm_router
 
-# Import ingestion router (ethical scrape -> extract -> store)
-from src.api.ingestion import router as ingestion_router
-
-# Import commodity router (price time-series + honest news correlation)
-from src.api.commodity import router as commodity_router
-
 # Import monitoring router (real source uptime + corpus anomalies)
 from src.api.monitoring import router as monitoring_router
 
 # Import reporting router (signed, tamper-evident evidence bundles)
 from src.api.reporting import router as reporting_router
 
+# Import source management router
+from src.api.source_management import router as source_management_router
+
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
+from src.database.fts import SearchQueryError, search_ids
+from src.database.models import Article, Source, get_session
+from src.database.session import dispose_engine, get_db, init_db, session_scope
 
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
+
+# Import security utilities
+from src.utils.security import SecurityError, escape_html, get_security_headers, sanitize_html
+
 logger = setup_logging("api")
 
 # Single source of truth for the app version: the installed package metadata
@@ -211,7 +210,7 @@ async def health_check():
     return {
         "status": "healthy",
         "version": APP_VERSION,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 # Serve static files (HTML5 frontend)
@@ -253,7 +252,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
-def _validate_date(value: Optional[str], field_name: str) -> None:
+def _validate_date(value: str | None, field_name: str) -> None:
     """Raise HTTP 400 if `value` is set but not an ISO date (YYYY-MM-DD)."""
     if value:
         try:
@@ -268,11 +267,11 @@ def _validate_date(value: Optional[str], field_name: str) -> None:
 def _structured_filters(
     session,
     *,
-    source: Optional[str],
-    start_date: Optional[str],
-    end_date: Optional[str],
-    language: Optional[str],
-    tags: Optional[str],
+    source: str | None,
+    start_date: str | None,
+    end_date: str | None,
+    language: str | None,
+    tags: str | None,
 ) -> list:
     """Build the non-text SQLAlchemy filter conditions.
 
@@ -315,13 +314,13 @@ def _structured_filters(
 def _query_articles(
     session,
     *,
-    query: Optional[str],
-    source: Optional[str],
-    start_date: Optional[str],
-    end_date: Optional[str],
-    language: Optional[str],
-    tags: Optional[str],
-    limit: Optional[int],
+    query: str | None,
+    source: str | None,
+    start_date: str | None,
+    end_date: str | None,
+    language: str | None,
+    tags: str | None,
+    limit: int | None,
     offset: int,
 ) -> tuple[list, int]:
     """Return ``(articles, total)`` applying full-text search + structured filters.
@@ -337,7 +336,7 @@ def _query_articles(
         end_date=end_date, language=language, tags=tags,
     )
 
-    fts_ids: Optional[list] = None
+    fts_ids: list | None = None
     if query:
         try:
             fts_ids = search_ids(session, query)
@@ -375,12 +374,12 @@ def _query_articles(
 @limiter.limit("100/hour")
 async def search_articles(
     request: Request,
-    query: Optional[str] = None,
-    source: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    language: Optional[str] = None,
-    tags: Optional[str] = None,
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -436,12 +435,12 @@ async def search_articles(
 async def export_articles(
     request: Request,
     format: str = "csv",
-    query: Optional[str] = None,
-    source: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    language: Optional[str] = None,
-    tags: Optional[str] = None,
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -536,7 +535,7 @@ async def list_sources(request: Request, db: Session = Depends(get_db)):
 async def read_root():
     index_path = Path(__file__).parent.parent / "static" / "index.html"
     if index_path.exists():
-        with open(index_path, "r") as f:
+        with open(index_path) as f:
             return HTMLResponse(content=f.read(), status_code=200)
     else:
         return HTMLResponse(content="<h1>Welcome to Open Omniscience</h1><p>API is running. See <a href='/docs'>API Documentation</a></p>", status_code=200)

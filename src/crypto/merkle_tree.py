@@ -29,8 +29,8 @@ License: MIT
 """
 
 import hashlib
-from typing import List, Optional, Tuple, Any
 import json
+from typing import Any, List, Optional, Tuple
 
 
 class MerkleNode:
@@ -106,7 +106,7 @@ class MerkleTree:
         height: Height of the tree
     """
     
-    def __init__(self, data_list: List[Any]):
+    def __init__(self, data_list: list[Any]):
         """
         Initialize a Merkle tree from a list of data items.
         
@@ -123,7 +123,7 @@ class MerkleTree:
         self.root = self._build_tree(self.leaves)
         self.height = self._calculate_height(len(data_list))
     
-    def _build_tree(self, nodes: List[MerkleNode]) -> MerkleNode:
+    def _build_tree(self, nodes: list[MerkleNode]) -> MerkleNode:
         """
         Recursively build the Merkle tree from leaf nodes.
         
@@ -161,7 +161,7 @@ class MerkleTree:
         """Get the root hash of the Merkle tree."""
         return self.root.hash_value
     
-    def get_proof(self, index: int) -> List[Tuple[str, bool]]:
+    def get_proof(self, index: int) -> list[tuple[str, bool]]:
         """
         Get a Merkle proof for a leaf at the given index.
         
@@ -225,7 +225,7 @@ class MerkleTree:
         
         return proof
     
-    def verify_proof(self, leaf_data: Any, proof: List[Tuple[str, bool]], 
+    def verify_proof(self, leaf_data: Any, proof: list[tuple[str, bool]], 
                     expected_root_hash: str) -> bool:
         """
         Verify a Merkle proof for given leaf data.
@@ -321,7 +321,7 @@ class MerkleTree:
         raise NotImplementedError("Full tree reconstruction requires original data")
 
 
-def compute_merkle_root(data_list: List[Any]) -> str:
+def compute_merkle_root(data_list: list[Any]) -> str:
     """
     Convenience function to compute Merkle root hash from a list of data.
     
@@ -338,7 +338,7 @@ def compute_merkle_root(data_list: List[Any]) -> str:
     return tree.root_hash
 
 
-def verify_data_integrity(data_list: List[Any], expected_root_hash: str) -> bool:
+def verify_data_integrity(data_list: list[Any], expected_root_hash: str) -> bool:
     """
     Verify that a list of data items produces the expected Merkle root hash.
     

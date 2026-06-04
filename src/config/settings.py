@@ -9,12 +9,13 @@ Author: Ideotion
 License: GNU GPLv3
 """
 
-from pathlib import Path
-import os
-import yaml
-from typing import Any, Dict, Optional
-from dataclasses import dataclass, field
 import logging
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import yaml
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -54,8 +55,8 @@ class Config:
     cors_allow_credentials: bool = True
     cors_allow_methods: str = "GET,POST,PUT,DELETE,OPTIONS"
     cors_allow_headers: str = "Authorization,Content-Type,Accept,Origin,User-Agent"
-    secret_key: Optional[str] = None
-    csrf_secret: Optional[str] = None
+    secret_key: str | None = None
+    csrf_secret: str | None = None
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     
@@ -90,7 +91,7 @@ class Config:
     repo_root: Path = field(default_factory=lambda: Path(__file__).parent.parent.parent.resolve())
     
     # Additional configuration that doesn't fit in the above categories
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
     
     def __post_init__(self):
         """Initialize configuration from various sources."""
@@ -188,7 +189,7 @@ class Config:
         settings_file = configs_dir / "settings.yaml"
         if settings_file.exists():
             try:
-                with open(settings_file, "r") as f:
+                with open(settings_file) as f:
                     settings = yaml.safe_load(f)
                     self._apply_yaml_config(settings)
             except Exception as e:
@@ -198,13 +199,13 @@ class Config:
         sources_file = configs_dir / "sources.yml"
         if sources_file.exists():
             try:
-                with open(sources_file, "r") as f:
+                with open(sources_file) as f:
                     sources_config = yaml.safe_load(f)
                     self.extra["sources"] = sources_config.get("sources", [])
             except Exception as e:
                 logger.warning(f"Failed to load sources.yml: {e}")
     
-    def _apply_yaml_config(self, config: Dict[str, Any]):
+    def _apply_yaml_config(self, config: dict[str, Any]):
         """Apply configuration from a YAML dictionary."""
         if not config:
             return
@@ -305,7 +306,7 @@ class Config:
 
 
 # Global configuration instance
-_config: Optional[Config] = None
+_config: Config | None = None
 
 
 def get_config() -> Config:

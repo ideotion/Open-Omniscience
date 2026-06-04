@@ -24,24 +24,24 @@ Open-Omniscience - Duplicate Detector
 Detects duplicate content using URL canonicalization, hashing, and TTL-based caching.
 """
 
-import time
 import hashlib
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Set, Tuple
-from urllib.parse import urlparse, urlunparse
 import logging
 import re
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Set, Tuple
+from urllib.parse import urlparse, urlunparse
 
 
 @dataclass
 class DuplicateCheckResult:
     """Result of a duplicate check."""
     is_duplicate: bool
-    original_url: Optional[str] = None
-    original_hash: Optional[str] = None
+    original_url: str | None = None
+    original_hash: str | None = None
     similarity_score: float = 0.0
     timestamp: float = field(default_factory=time.time)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class DuplicateDetector:
@@ -72,13 +72,13 @@ class DuplicateDetector:
         self.max_cache_size = max_cache_size
         
         # URL cache: canonical_url -> (timestamp, original_url)
-        self.url_cache: Dict[str, Tuple[float, str]] = {}
+        self.url_cache: dict[str, tuple[float, str]] = {}
         
         # Content hash cache: hash -> (timestamp, original_url)
-        self.hash_cache: Dict[str, Tuple[float, str]] = {}
+        self.hash_cache: dict[str, tuple[float, str]] = {}
         
         # Text content cache for similarity: hash -> (timestamp, text)
-        self.text_cache: Dict[str, Tuple[float, str]] = {}
+        self.text_cache: dict[str, tuple[float, str]] = {}
         
         # Statistics
         self.stats = {
@@ -130,7 +130,7 @@ class DuplicateDetector:
             metadata={"method": "url_canonicalization"},
         )
 
-    def check_content(self, content: str, url: Optional[str] = None) -> DuplicateCheckResult:
+    def check_content(self, content: str, url: str | None = None) -> DuplicateCheckResult:
         """
         Check if content is a duplicate.
         
@@ -225,7 +225,7 @@ class DuplicateDetector:
         # Clean up old entries
         self._cleanup_cache()
 
-    def canonicalize_url(self, url: str) -> Optional[str]:
+    def canonicalize_url(self, url: str) -> str | None:
         """
         Canonicalize a URL for duplicate detection.
         
@@ -411,7 +411,7 @@ class DuplicateDetector:
         self.text_cache.clear()
         self.logger.info("Duplicate detector cache cleared")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get duplicate detector statistics."""
         return {
             "total_checks": self.stats["total_checks"],

@@ -21,9 +21,9 @@ License: GNU GPLv3
 from .settings import (
     Config,
     get_config,
-    reset_config,
     get_database_url,
     get_sources_config_path,
+    reset_config,
 )
 
 __all__ = [

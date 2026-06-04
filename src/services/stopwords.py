@@ -28,9 +28,9 @@ used in keyword extraction and text processing.
 Author: Open Omniscience Team
 """
 
-from typing import Set, Dict, List, Optional
-from pathlib import Path
 import logging
+from pathlib import Path
+from typing import Dict, List, Optional, Set
 
 # Configure logging
 logger = logging.getLogger(__name__)
