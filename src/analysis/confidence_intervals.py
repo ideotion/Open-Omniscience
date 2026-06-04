@@ -733,14 +733,14 @@ class ConfidenceIntervals:
         Returns:
             ConfidenceInterval for the odds ratio
         """
-        # Calculate odds ratio
-        or_estimate = (a * d) / (b * c) if b * c > 0 else float('inf')
-        
-        # Calculate standard error of log(OR)
-        if b * c > 0:
-            se_log_or = np.sqrt(1/a + 1/b + 1/c + 1/d)
-        else:
-            se_log_or = float('inf')
+        # Haldane-Anscombe continuity correction: add 0.5 to all cells when any
+        # cell is zero. Without it, 1/a + 1/b + 1/c + 1/d raises ZeroDivisionError
+        # (and OR/SE are undefined) for the common zero-cell case.
+        if min(a, b, c, d) == 0:
+            a, b, c, d = a + 0.5, b + 0.5, c + 0.5, d + 0.5
+
+        or_estimate = (a * d) / (b * c)
+        se_log_or = np.sqrt(1 / a + 1 / b + 1 / c + 1 / d)
         
         # Critical value
         critical = self._get_critical_value('normal', confidence_level)
@@ -784,16 +784,12 @@ class ConfidenceIntervals:
         Returns:
             ConfidenceInterval for the relative risk
         """
-        # Calculate relative risk
-        rr_estimate = (a / (a + b)) / (c / (c + d)) if (a + b) > 0 and (c + d) > 0 else float('inf')
-        
-        # Calculate standard error of log(RR)
-        if (a + b) > 0 and (c + d) > 0 and a > 0 and c > 0:
-            se_log_rr = np.sqrt(
-                (b / (a * (a + b))) + (d / (c * (c + d)))
-            )
-        else:
-            se_log_rr = float('inf')
+        # Continuity correction for zero cells (see odds_ratio_ci).
+        if min(a, b, c, d) == 0:
+            a, b, c, d = a + 0.5, b + 0.5, c + 0.5, d + 0.5
+
+        rr_estimate = (a / (a + b)) / (c / (c + d))
+        se_log_rr = np.sqrt((b / (a * (a + b))) + (d / (c * (c + d))))
         
         # Critical value
         critical = self._get_critical_value('normal', confidence_level)

@@ -569,7 +569,7 @@ async def refresh_tag_based_group(request: Request, group_id: int):
     
     with SourceManager() as manager:
         # First get the group to get its tag_pattern
-        group = manager.get_group(group_id)
+        group = manager.get_group_by_id(group_id)
         if not group:
             raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
         

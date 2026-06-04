@@ -291,8 +291,6 @@ class StatisticalTests:
         if len(obs) != len(exp):
             raise ValueError(f"Observed and expected must have same length. Got {len(obs)} and {len(exp)}")
         
-        chi2_stat, p_value = chi2.sf(obs, exp)
-        # Using chi2_contingency for goodness of fit
         chi2_stat, p_value = stats.chisquare(obs, f_exp=exp)
         df = len(obs) - 1
         
@@ -487,11 +485,11 @@ class StatisticalTests:
             ss_res = np.sum((y_arr - y_pred) ** 2)
             ss_tot = np.sum((y_arr - np.mean(y_arr)) ** 2)
             
-            # Standard error of slope and intercept
-            x_mean = np.mean(x_arr)
-            x_var = np.var(x_arr, ddof=1)
+            # Standard error of slope and intercept.
+            # SE(intercept) = SE(slope) * sqrt(sum(x^2) / n)  (matches statsmodels);
+            # the previous form divided by var(x) and produced wrong intervals.
             se_slope = std_err
-            se_intercept = std_err * np.sqrt(np.sum(x_arr**2) / (n * x_var))
+            se_intercept = se_slope * np.sqrt(np.sum(x_arr**2) / n)
             
             # t-critical value for 95% CI
             t_crit = t_dist.ppf(0.975, df=n-2)
@@ -779,8 +777,17 @@ class StatisticalTests:
 
 # ==================== MODULE-LEVEL FUNCTIONS ====================
 
-# Create a default instance for convenience
-_default_tests = StatisticalTests()
+# Lazily-created default instance: instantiating eagerly at import would call
+# _validate_dependencies() and hard-fail (ImportError) in a scipy-less env,
+# defeating the optional-dependency guard.
+_default_tests: "StatisticalTests | None" = None
+
+
+def _get_default_tests() -> "StatisticalTests":
+    global _default_tests
+    if _default_tests is None:
+        _default_tests = StatisticalTests()
+    return _default_tests
 
 
 def t_test_independent(
@@ -790,7 +797,7 @@ def t_test_independent(
     alternative: str = 'two-sided'
 ) -> TestResult:
     """Independent t-test (module-level function)."""
-    return _default_tests.t_test_independent(sample1, sample2, equal_var, alternative)
+    return _get_default_tests().t_test_independent(sample1, sample2, equal_var, alternative)
 
 
 def t_test_paired(
@@ -799,7 +806,7 @@ def t_test_paired(
     alternative: str = 'two-sided'
 ) -> TestResult:
     """Paired t-test (module-level function)."""
-    return _default_tests.t_test_paired(sample1, sample2, alternative)
+    return _get_default_tests().t_test_paired(sample1, sample2, alternative)
 
 
 def one_way_anova(
@@ -807,14 +814,14 @@ def one_way_anova(
     equal_var: bool = True
 ) -> TestResult:
     """One-way ANOVA (module-level function)."""
-    return _default_tests.one_way_anova(*groups, equal_var=equal_var)
+    return _get_default_tests().one_way_anova(*groups, equal_var=equal_var)
 
 
 def chi_square_independence(
     contingency_table: list | np.ndarray | pd.DataFrame
 ) -> TestResult:
     """Chi-square test of independence (module-level function)."""
-    return _default_tests.chi_square_independence(contingency_table)
+    return _get_default_tests().chi_square_independence(contingency_table)
 
 
 def pearson_correlation(
@@ -822,7 +829,7 @@ def pearson_correlation(
     y: list | np.ndarray | pd.Series
 ) -> TestResult:
     """Pearson correlation (module-level function)."""
-    return _default_tests.pearson_correlation(x, y)
+    return _get_default_tests().pearson_correlation(x, y)
 
 
 def linear_regression(
@@ -830,4 +837,4 @@ def linear_regression(
     y: list | np.ndarray | pd.Series
 ) -> dict[str, Any]:
     """Linear regression (module-level function)."""
-    return _default_tests.linear_regression(x, y)
+    return _get_default_tests().linear_regression(x, y)
