@@ -50,8 +50,16 @@ Useful env vars: `OO_DATA_DIR` (where the SQLite DB + data live), `OO_HOST`/`OO_
 
 ## C. The end-to-end loop (UI or API)
 
-**In the UI:** add a source (name + domain, optionally an RSS URL) → *Ingest* a
-feed or a single URL → *Search* with Boolean operators → *Export* CSV/JSON.
+> **Sources are preconfigured.** On first launch (or during `install.sh --appvm`)
+> the curated catalog in `configs/sources.yml` (~1,900 public-interest outlets,
+> ~1,780 unique) is seeded automatically — so you can start ingesting immediately.
+> Re-seeding is idempotent. Disable auto-seed with `OO_AUTOSEED=0`; re-seed
+> manually with `python scripts/seed_sources.py` or `POST /api/sources/seed-defaults`.
+> Feed URLs/robots policies change over time; the ethical fetcher refuses anything
+> it can't confirm, so prune/extend the list to suit your investigation.
+
+**In the UI:** pick (or add) a source → *Ingest* a feed or a single URL → *Search*
+with Boolean operators → *Export* CSV/JSON.
 
 **Via the API:**
 ```bash

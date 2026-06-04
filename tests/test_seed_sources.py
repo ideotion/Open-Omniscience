@@ -24,9 +24,13 @@ sources:
   - name: Example One
     domain: one.example
     rss_url: https://one.example/feed.xml
-    tags: a,b
+    tags: [a, b]            # list form, as in the real catalog
+    reliability_score: 9
+    language: en
+    country: US
   - name: Example Two
     domain: two.example
+    tags: single
   - {}                       # malformed -> skipped
   - name: No Domain          # missing domain -> skipped
 """
@@ -46,6 +50,21 @@ def test_loader_skips_malformed(tmp_path):
     assert [r["name"] for r in rows] == ["Example One", "Example Two"]
 
 
+def test_seed_maps_rich_fields_and_tags_list(tmp_path):
+    p = tmp_path / "s.yaml"
+    p.write_text(_YAML)
+    rows = load_sources_from_yaml(p)
+    s = _session()
+    seed_sources(s, rows)
+    one = s.query(Source).filter_by(domain="one.example").one()
+    assert one.tags == "a,b"            # list joined to CSV
+    assert one.reliability_score == 9   # rich field mapped
+    assert one.language == "en" and one.country == "US"
+    two = s.query(Source).filter_by(domain="two.example").one()
+    assert two.tags == "single"         # scalar tag preserved
+    s.close()
+
+
 def test_seed_is_idempotent(tmp_path):
     p = tmp_path / "s.yaml"
     p.write_text(_YAML)
@@ -59,18 +78,20 @@ def test_seed_is_idempotent(tmp_path):
     s.close()
 
 
-def test_default_yaml_is_valid_and_nonempty():
-    # The shipped curated file must parse and contain usable entries.
+def test_default_catalog_is_large_and_valid():
+    # The shipped catalog (configs/sources.yml) must parse and be substantial.
     rows = load_sources_from_yaml(DEFAULT_SOURCES_PATH)
-    assert len(rows) >= 3
+    assert len(rows) >= 500
     assert all(r.get("name") and r.get("domain") for r in rows)
 
 
-def test_seed_default_sources_helper():
+def test_seed_default_catalog_dedupes_by_domain():
     s = _session()
     result = seed_default_sources(s)
-    assert result["created"] >= 3
+    # 1900+ entries with some duplicate domains -> created == unique domains.
+    assert result["created"] >= 500
     assert s.query(Source).count() == result["created"]
+    assert result["created"] + result["skipped"] == result["total"]
     s.close()
 
 

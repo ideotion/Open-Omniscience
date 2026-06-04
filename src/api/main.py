@@ -551,6 +551,21 @@ def main() -> None:
     """
     import uvicorn
 
+    # Preconfigure the database on first run so a fresh install is immediately
+    # usable (the curated catalog is seeded only when the sources table is empty).
+    # This runs for real launches but NOT during tests, which import `app`
+    # directly rather than calling main(). Disable with OO_AUTOSEED=0.
+    if os.getenv("OO_AUTOSEED", "1") != "0":
+        try:
+            init_db()
+            from src.ingest.seed_sources import seed_default_sources
+            with session_scope() as session:
+                result = seed_default_sources(session)
+            if result["created"]:
+                logger.info("Seeded %d starter sources on first run.", result["created"])
+        except Exception as exc:  # noqa: BLE001 - never block startup on seeding
+            logger.warning("Could not seed default sources: %s", exc)
+
     host = os.getenv("OO_HOST", "127.0.0.1")
     port = int(os.getenv("OO_PORT", "8000"))
     if host not in ("127.0.0.1", "localhost", "::1"):
