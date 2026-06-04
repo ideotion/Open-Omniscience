@@ -326,6 +326,16 @@ class LRUCache:
         return self.get(key) is not None
 
 
+def _stable_cache_key(name, args, kwargs):
+    """Build a cache key that tolerates unhashable arguments (lists/dicts)."""
+    import hashlib
+    try:
+        raw = repr((args, sorted(kwargs.items())))
+    except Exception:
+        raw = repr((args, list(kwargs.items())))
+    return f"{name}:{hashlib.sha1(raw.encode('utf-8', 'replace')).hexdigest()}"
+
+
 def cached(ttl: int = 300, cache_instance: SimpleCache | None = None):
     """
     Decorator to cache function results with TTL.
@@ -344,7 +354,7 @@ def cached(ttl: int = 300, cache_instance: SimpleCache | None = None):
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
             # Create a cache key from function name and arguments
-            cache_key = f"{func.__name__}:{hash((args, frozenset(kwargs.items())))}"
+            cache_key = _stable_cache_key(func.__name__, args, kwargs)
             
             # Try to get from cache
             cached_result = cache_instance.get(cache_key)
@@ -382,7 +392,7 @@ def lru_cached(max_size: int = 1000, ttl: int = 300, cache_instance: LRUCache | 
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
             # Create a cache key from function name and arguments
-            cache_key = f"{func.__name__}:{hash((args, frozenset(kwargs.items())))}"
+            cache_key = _stable_cache_key(func.__name__, args, kwargs)
             
             # Try to get from cache
             cached_result = cache_instance.get(cache_key)

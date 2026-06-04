@@ -26,19 +26,29 @@ Implements statistical tests using scipy.stats, statsmodels, and pingouin.
 All functions are designed to work offline with 100% FOSS tools.
 """
 
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-from typing import Tuple, Dict, Any, Optional, Union
-from dataclasses import dataclass
 
 # Try to import all required libraries
 try:
     import scipy.stats as stats
-    from scipy.stats import ttest_ind, ttest_rel, ttest_1samp
-    from scipy.stats import chi2_contingency, chi2
-    from scipy.stats import f_oneway, kruskal
-    from scipy.stats import linregress, pearsonr, spearmanr
-    from scipy.stats import norm, t as t_dist
+    from scipy.stats import (
+        chi2,
+        chi2_contingency,
+        f_oneway,
+        kruskal,
+        linregress,
+        norm,
+        pearsonr,
+        spearmanr,
+        ttest_1samp,
+        ttest_ind,
+        ttest_rel,
+    )
+    from scipy.stats import t as t_dist
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
@@ -64,13 +74,13 @@ class TestResult:
     test_name: str
     statistic: float
     p_value: float
-    degrees_of_freedom: Optional[float] = None
-    effect_size: Optional[float] = None
-    confidence_interval: Optional[Tuple[float, float]] = None
-    sample_size: Optional[int] = None
-    notes: Optional[str] = None
+    degrees_of_freedom: float | None = None
+    effect_size: float | None = None
+    confidence_interval: tuple[float, float] | None = None
+    sample_size: int | None = None
+    notes: str | None = None
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert result to dictionary."""
         return {
             'test_name': self.test_name,
@@ -123,8 +133,8 @@ class StatisticalTests:
     
     def t_test_independent(
         self,
-        sample1: Union[list, np.ndarray, pd.Series],
-        sample2: Union[list, np.ndarray, pd.Series],
+        sample1: list | np.ndarray | pd.Series,
+        sample2: list | np.ndarray | pd.Series,
         equal_var: bool = True,
         alternative: str = 'two-sided'
     ) -> TestResult:
@@ -175,8 +185,8 @@ class StatisticalTests:
     
     def t_test_paired(
         self,
-        sample1: Union[list, np.ndarray, pd.Series],
-        sample2: Union[list, np.ndarray, pd.Series],
+        sample1: list | np.ndarray | pd.Series,
+        sample2: list | np.ndarray | pd.Series,
         alternative: str = 'two-sided'
     ) -> TestResult:
         """
@@ -217,7 +227,7 @@ class StatisticalTests:
     
     def t_test_one_sample(
         self,
-        sample: Union[list, np.ndarray, pd.Series],
+        sample: list | np.ndarray | pd.Series,
         popmean: float = 0.0,
         alternative: str = 'two-sided'
     ) -> TestResult:
@@ -256,8 +266,8 @@ class StatisticalTests:
     
     def chi_square_goodness_of_fit(
         self,
-        observed: Union[list, np.ndarray],
-        expected: Union[list, np.ndarray, str] = 'uniform'
+        observed: list | np.ndarray,
+        expected: list | np.ndarray | str = 'uniform'
     ) -> TestResult:
         """
         Chi-square goodness of fit test.
@@ -281,8 +291,6 @@ class StatisticalTests:
         if len(obs) != len(exp):
             raise ValueError(f"Observed and expected must have same length. Got {len(obs)} and {len(exp)}")
         
-        chi2_stat, p_value = chi2.sf(obs, exp)
-        # Using chi2_contingency for goodness of fit
         chi2_stat, p_value = stats.chisquare(obs, f_exp=exp)
         df = len(obs) - 1
         
@@ -297,7 +305,7 @@ class StatisticalTests:
     
     def chi_square_independence(
         self,
-        contingency_table: Union[list, np.ndarray, pd.DataFrame]
+        contingency_table: list | np.ndarray | pd.DataFrame
     ) -> TestResult:
         """
         Chi-square test of independence.
@@ -343,7 +351,7 @@ class StatisticalTests:
     
     def one_way_anova(
         self,
-        *groups: Union[list, np.ndarray, pd.Series],
+        *groups: list | np.ndarray | pd.Series,
         equal_var: bool = True
     ) -> TestResult:
         """
@@ -414,7 +422,7 @@ class StatisticalTests:
         self,
         data: pd.DataFrame,
         formula: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Two-way ANOVA using statsmodels.
         
@@ -444,9 +452,9 @@ class StatisticalTests:
     
     def linear_regression(
         self,
-        x: Union[list, np.ndarray, pd.Series],
-        y: Union[list, np.ndarray, pd.Series]
-    ) -> Dict[str, Any]:
+        x: list | np.ndarray | pd.Series,
+        y: list | np.ndarray | pd.Series
+    ) -> dict[str, Any]:
         """
         Simple linear regression.
         
@@ -477,11 +485,11 @@ class StatisticalTests:
             ss_res = np.sum((y_arr - y_pred) ** 2)
             ss_tot = np.sum((y_arr - np.mean(y_arr)) ** 2)
             
-            # Standard error of slope and intercept
-            x_mean = np.mean(x_arr)
-            x_var = np.var(x_arr, ddof=1)
+            # Standard error of slope and intercept.
+            # SE(intercept) = SE(slope) * sqrt(sum(x^2) / n)  (matches statsmodels);
+            # the previous form divided by var(x) and produced wrong intervals.
             se_slope = std_err
-            se_intercept = std_err * np.sqrt(np.sum(x_arr**2) / (n * x_var))
+            se_intercept = se_slope * np.sqrt(np.sum(x_arr**2) / n)
             
             # t-critical value for 95% CI
             t_crit = t_dist.ppf(0.975, df=n-2)
@@ -509,7 +517,7 @@ class StatisticalTests:
         self,
         data: pd.DataFrame,
         formula: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Multiple linear regression using statsmodels.
         
@@ -546,8 +554,8 @@ class StatisticalTests:
     
     def pearson_correlation(
         self,
-        x: Union[list, np.ndarray, pd.Series],
-        y: Union[list, np.ndarray, pd.Series]
+        x: list | np.ndarray | pd.Series,
+        y: list | np.ndarray | pd.Series
     ) -> TestResult:
         """
         Pearson correlation test.
@@ -577,8 +585,8 @@ class StatisticalTests:
     
     def spearman_correlation(
         self,
-        x: Union[list, np.ndarray, pd.Series],
-        y: Union[list, np.ndarray, pd.Series]
+        x: list | np.ndarray | pd.Series,
+        y: list | np.ndarray | pd.Series
     ) -> TestResult:
         """
         Spearman rank correlation test.
@@ -610,8 +618,8 @@ class StatisticalTests:
     
     def mann_whitney_u(
         self,
-        sample1: Union[list, np.ndarray, pd.Series],
-        sample2: Union[list, np.ndarray, pd.Series],
+        sample1: list | np.ndarray | pd.Series,
+        sample2: list | np.ndarray | pd.Series,
         alternative: str = 'two-sided'
     ) -> TestResult:
         """
@@ -655,8 +663,8 @@ class StatisticalTests:
     
     def wilcoxon_signed_rank(
         self,
-        sample1: Union[list, np.ndarray, pd.Series],
-        sample2: Union[list, np.ndarray, pd.Series] = None,
+        sample1: list | np.ndarray | pd.Series,
+        sample2: list | np.ndarray | pd.Series = None,
         alternative: str = 'two-sided'
     ) -> TestResult:
         """
@@ -693,9 +701,9 @@ class StatisticalTests:
     
     def tukey_hsd(
         self,
-        data: Union[list, np.ndarray, pd.Series],
-        groups: Union[list, np.ndarray, pd.Series]
-    ) -> Dict[str, Any]:
+        data: list | np.ndarray | pd.Series,
+        groups: list | np.ndarray | pd.Series
+    ) -> dict[str, Any]:
         """
         Tukey's Honestly Significant Difference test for post-hoc ANOVA comparisons.
         
@@ -727,7 +735,7 @@ class StatisticalTests:
     
     # ==================== UTILITY METHODS ====================
     
-    def _to_array(self, data: Union[list, np.ndarray, pd.Series]) -> np.ndarray:
+    def _to_array(self, data: list | np.ndarray | pd.Series) -> np.ndarray:
         """Convert input to numpy array."""
         if isinstance(data, pd.Series):
             return data.values
@@ -738,7 +746,7 @@ class StatisticalTests:
         else:
             raise TypeError(f"Unsupported data type: {type(data)}")
     
-    def summarize_results(self, results: Union[TestResult, list]) -> pd.DataFrame:
+    def summarize_results(self, results: TestResult | list) -> pd.DataFrame:
         """
         Convert test results to a summary DataFrame.
         
@@ -769,55 +777,64 @@ class StatisticalTests:
 
 # ==================== MODULE-LEVEL FUNCTIONS ====================
 
-# Create a default instance for convenience
-_default_tests = StatisticalTests()
+# Lazily-created default instance: instantiating eagerly at import would call
+# _validate_dependencies() and hard-fail (ImportError) in a scipy-less env,
+# defeating the optional-dependency guard.
+_default_tests: "StatisticalTests | None" = None
+
+
+def _get_default_tests() -> "StatisticalTests":
+    global _default_tests
+    if _default_tests is None:
+        _default_tests = StatisticalTests()
+    return _default_tests
 
 
 def t_test_independent(
-    sample1: Union[list, np.ndarray, pd.Series],
-    sample2: Union[list, np.ndarray, pd.Series],
+    sample1: list | np.ndarray | pd.Series,
+    sample2: list | np.ndarray | pd.Series,
     equal_var: bool = True,
     alternative: str = 'two-sided'
 ) -> TestResult:
     """Independent t-test (module-level function)."""
-    return _default_tests.t_test_independent(sample1, sample2, equal_var, alternative)
+    return _get_default_tests().t_test_independent(sample1, sample2, equal_var, alternative)
 
 
 def t_test_paired(
-    sample1: Union[list, np.ndarray, pd.Series],
-    sample2: Union[list, np.ndarray, pd.Series],
+    sample1: list | np.ndarray | pd.Series,
+    sample2: list | np.ndarray | pd.Series,
     alternative: str = 'two-sided'
 ) -> TestResult:
     """Paired t-test (module-level function)."""
-    return _default_tests.t_test_paired(sample1, sample2, alternative)
+    return _get_default_tests().t_test_paired(sample1, sample2, alternative)
 
 
 def one_way_anova(
-    *groups: Union[list, np.ndarray, pd.Series],
+    *groups: list | np.ndarray | pd.Series,
     equal_var: bool = True
 ) -> TestResult:
     """One-way ANOVA (module-level function)."""
-    return _default_tests.one_way_anova(*groups, equal_var=equal_var)
+    return _get_default_tests().one_way_anova(*groups, equal_var=equal_var)
 
 
 def chi_square_independence(
-    contingency_table: Union[list, np.ndarray, pd.DataFrame]
+    contingency_table: list | np.ndarray | pd.DataFrame
 ) -> TestResult:
     """Chi-square test of independence (module-level function)."""
-    return _default_tests.chi_square_independence(contingency_table)
+    return _get_default_tests().chi_square_independence(contingency_table)
 
 
 def pearson_correlation(
-    x: Union[list, np.ndarray, pd.Series],
-    y: Union[list, np.ndarray, pd.Series]
+    x: list | np.ndarray | pd.Series,
+    y: list | np.ndarray | pd.Series
 ) -> TestResult:
     """Pearson correlation (module-level function)."""
-    return _default_tests.pearson_correlation(x, y)
+    return _get_default_tests().pearson_correlation(x, y)
 
 
 def linear_regression(
-    x: Union[list, np.ndarray, pd.Series],
-    y: Union[list, np.ndarray, pd.Series]
-) -> Dict[str, Any]:
+    x: list | np.ndarray | pd.Series,
+    y: list | np.ndarray | pd.Series
+) -> dict[str, Any]:
     """Linear regression (module-level function)."""
-    return _default_tests.linear_regression(x, y)
+    return _get_default_tests().linear_regression(x, y)

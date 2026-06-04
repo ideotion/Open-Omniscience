@@ -197,13 +197,15 @@ def sanitize_url(url: str) -> str:
     """
     if not url:
         return url
-    
-    # Remove javascript: and data: schemes
+
+    # Strip leading/trailing whitespace and control chars BEFORE the scheme check:
+    # browsers ignore leading whitespace, so " javascript:alert(1)" would otherwise
+    # bypass the check and still execute.
+    url = re.sub(r'[\x00-\x20\x7f]+', '', url)
+
+    # Remove dangerous schemes
     if url.lower().startswith(('javascript:', 'data:', 'vbscript:', 'file:')):
         return ""
-    
-    # Remove any null bytes
-    url = url.replace('\x00', '')
     
     # Validate URL structure
     from urllib.parse import urlparse

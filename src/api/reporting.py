@@ -50,8 +50,17 @@ def export_evidence(req: EvidenceRequest, db: Session = Depends(get_db)) -> dict
     return build_signed_bundle(articles, key, case_name=req.case_name)
 
 
+class VerifyRequest(BaseModel):
+    bundle: dict
+    trusted_public_key: str | None = None
+
+
 @router.post("/evidence/verify")
-def verify_evidence(bundle: dict) -> dict:
-    """Verify a previously-exported bundle (convenience; verification needs no DB)."""
-    ok, reason = verify_bundle(bundle)
+def verify_evidence(req: VerifyRequest) -> dict:
+    """Verify a previously-exported bundle (convenience; verification needs no DB).
+
+    Pass ``trusted_public_key`` (the signer's known key) to prove provenance, not
+    just integrity -- otherwise a valid signature only proves "signed by some key".
+    """
+    ok, reason = verify_bundle(req.bundle, trusted_public_key=req.trusted_public_key)
     return {"verified": ok, "reason": reason}

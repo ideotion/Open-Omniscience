@@ -25,11 +25,15 @@ from src.reporting.evidence import verify_bundle  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: python scripts/verify_evidence.py <bundle.json>", file=sys.stderr)
+    if len(argv) not in (2, 3):
+        print("usage: python scripts/verify_evidence.py <bundle.json> [trusted_public_key_hex]",
+              file=sys.stderr)
+        print("  Pass the signer's known public key to prove provenance (not just integrity).",
+              file=sys.stderr)
         return 2
     bundle = json.loads(Path(argv[1]).read_text())
-    ok, reason = verify_bundle(bundle)
+    trusted = argv[2] if len(argv) == 3 else None
+    ok, reason = verify_bundle(bundle, trusted_public_key=trusted)
     manifest = bundle.get("manifest", {})
     print(f"bundle_version : {manifest.get('bundle_version')}")
     print(f"case_name      : {manifest.get('case_name')}")

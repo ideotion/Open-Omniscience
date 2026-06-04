@@ -27,23 +27,19 @@ For inquiries, contact: open-omniscience@ideotion.com
 
 import csv
 import io
-import logging
 import os
-import re
 import time
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
@@ -51,20 +47,26 @@ from slowapi.util import get_remote_address
 # Import database models and session
 from sqlalchemy.orm import Session
 
-# Import commodity router (price time-series + honest news correlation)
-from src.api.commodity import router as commodity_router
+# Commodity, scientific-analysis and keyword routers all depend on the [analysis]
+# extra (numpy/scipy/pandas/scikit-learn). Import them defensively so a core-only
+# install still boots with the spine (ingest + search + export); they are included
+# below only when their dependencies are present.
+try:
+    from src.api.commodity import router as commodity_router
+    from src.api.analysis import router as analysis_router
+    from src.api.keyword_analysis import router as keyword_analysis_router
+    from src.api.keyword_management import router as keyword_management_router
+    _ANALYSIS_AVAILABLE = True
+except ImportError:
+    commodity_router = analysis_router = None
+    keyword_analysis_router = keyword_management_router = None
+    _ANALYSIS_AVAILABLE = False
 
 # Import ingestion router (ethical scrape -> extract -> store)
 from src.api.ingestion import router as ingestion_router
 
-# Import keyword analysis router
-from src.api.keyword_analysis import router as keyword_analysis_router
-
-# Import keyword management router
-from src.api.keyword_management import router as keyword_management_router
-
-# Import link analysis router
-from src.api.link_analysis import router as link_analysis_router
+# Link-analysis router quarantined in v0.4: its services (credibility scorer,
+# source scraper, network analyzer) produced fabricated outputs (see docs/AUDIT_2026-06.md).
 
 # Import LLM router (clean Ollama HTTP client; replaces the legacy routes.llm)
 from src.api.llm import router as llm_router
@@ -81,14 +83,13 @@ from src.api.source_management import router as source_management_router
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
 from src.database.fts import SearchQueryError, search_ids
-from src.database.models import Article, Source, get_session
+from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
 
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
 
 # Import security utilities
-from src.utils.security import SecurityError, escape_html, get_security_headers, sanitize_html
 
 logger = setup_logging("api")
 
@@ -152,7 +153,7 @@ metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
 
 # Rate limiter setup
-limiter = Limiter(key_func=get_remote_address)
+from src.api.ratelimit import limiter
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
@@ -176,23 +177,23 @@ app.add_middleware(
 # Include source management router
 app.include_router(source_management_router)
 
-# Include keyword management router
-app.include_router(keyword_management_router)
-
-# Include keyword analysis router
-app.include_router(keyword_analysis_router)
-
-# Include link analysis router
-app.include_router(link_analysis_router)
-
 # Include LLM router
 app.include_router(llm_router)
 
 # Include ingestion router
 app.include_router(ingestion_router)
 
-# Include commodity router
-app.include_router(commodity_router)
+# Include analysis-dependent routers only if the [analysis] extra is installed.
+if _ANALYSIS_AVAILABLE:
+    app.include_router(commodity_router)
+    app.include_router(analysis_router)
+    app.include_router(keyword_management_router)
+    app.include_router(keyword_analysis_router)
+else:
+    logger.warning(
+        "Commodity, statistical-analysis & keyword endpoints disabled: install the "
+        "[analysis] extra (pip install -e '.[analysis]') to enable them."
+    )
 
 # Include monitoring router
 app.include_router(monitoring_router)

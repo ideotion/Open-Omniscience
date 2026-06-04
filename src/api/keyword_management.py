@@ -27,18 +27,10 @@ This module provides FastAPI endpoints for keyword extraction and management.
 Author: Open Omniscience Team
 """
 
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 # Import database models and session
-from src.database.models import Article, ArticleKeyword, Keyword, KeywordCategory, get_session
-from src.database.source_manager import SourceManager
 
 # Import services
 from src.services.keyword_extractor import keyword_extractor
@@ -53,12 +45,12 @@ logger = setup_logging("api.keyword")
 router = APIRouter(prefix="/api/keywords", tags=["Keywords"])
 
 # Rate limiter
-limiter = Limiter(key_func=get_remote_address)
+from src.api.ratelimit import limiter
 
 
 @router.get("/extract", response_model=dict)
 @limiter.limit("100/hour")
-async def extract_keywords(
+def extract_keywords(
     request: Request,
     text: str = Query(..., description="Text to extract keywords from"),
     language: str = Query("en", description="Language code"),
@@ -84,7 +76,7 @@ async def extract_keywords(
 
 @router.post("/extract/article", response_model=dict)
 @limiter.limit("100/hour")
-async def extract_article_keywords(
+def extract_article_keywords(
     request: Request,
     article_text: str = Query(..., description="Article content"),
     title: str | None = Query("", description="Article title"),
@@ -104,7 +96,7 @@ async def extract_article_keywords(
 
 @router.get("/categories", response_model=dict)
 @limiter.limit("100/hour")
-async def get_keyword_categories(request: Request):
+def get_keyword_categories(request: Request):
     """Get all keyword categories."""
     try:
         categories = list(keyword_extractor.keyword_categories.keys())
@@ -116,7 +108,7 @@ async def get_keyword_categories(request: Request):
 
 @router.get("/categorize", response_model=dict)
 @limiter.limit("100/hour")
-async def categorize_keywords(
+def categorize_keywords(
     request: Request,
     keywords: list[str] = Query(..., description="List of keywords to categorize")
 ):
@@ -131,7 +123,7 @@ async def categorize_keywords(
 
 @router.get("/top", response_model=dict)
 @limiter.limit("100/hour")
-async def get_top_keywords(
+def get_top_keywords(
     request: Request,
     text: str = Query(..., description="Text to analyze"),
     language: str = Query("en", description="Language code"),
@@ -151,7 +143,7 @@ async def get_top_keywords(
 
 @router.get("/phrases", response_model=dict)
 @limiter.limit("100/hour")
-async def extract_key_phrases(
+def extract_key_phrases(
     request: Request,
     text: str = Query(..., description="Text to analyze"),
     language: str = Query("en", description="Language code"),
@@ -173,7 +165,7 @@ async def extract_key_phrases(
 
 @router.get("/statistics", response_model=dict)
 @limiter.limit("100/hour")
-async def get_keyword_statistics(
+def get_keyword_statistics(
     request: Request,
     text: str = Query(..., description="Text to analyze"),
     language: str = Query("en", description="Language code")
@@ -189,7 +181,7 @@ async def get_keyword_statistics(
 
 @router.get("/process", response_model=dict)
 @limiter.limit("100/hour")
-async def process_text(
+def process_text(
     request: Request,
     text: str = Query(..., description="Text to process"),
     language: str = Query("en", description="Language code")
@@ -205,7 +197,7 @@ async def process_text(
 
 @router.get("/frequencies", response_model=dict)
 @limiter.limit("100/hour")
-async def get_word_frequencies(
+def get_word_frequencies(
     request: Request,
     text: str = Query(..., description="Text to analyze"),
     language: str = Query("en", description="Language code")

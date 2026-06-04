@@ -63,25 +63,39 @@ class MerkleNode:
         self.is_leaf = left is None and right is None
         
         if self.is_leaf:
-            # Leaf node: hash the data
+            # Leaf node: hash the data (with leaf domain prefix)
             data_str = json.dumps(data, sort_keys=True) if not isinstance(data, str) else data
-            self.hash_value = self._sha256_hash(data_str.encode('utf-8'))
+            self.hash_value = self._leaf_hash(data_str)
         else:
-            # Internal node: hash the concatenation of child hashes
+            # Internal node: hash the concatenation of child hashes (node prefix)
             if left and right:
-                combined = left.hash_value + right.hash_value
-                self.hash_value = self._sha256_hash(combined.encode('utf-8'))
+                self.hash_value = self._node_hash(left.hash_value, right.hash_value)
             elif left:
                 # Odd number of nodes, duplicate last hash
-                combined = left.hash_value + left.hash_value
-                self.hash_value = self._sha256_hash(combined.encode('utf-8'))
+                self.hash_value = self._node_hash(left.hash_value, left.hash_value)
             else:
                 self.hash_value = self._sha256_hash(b'')
-    
+
+    # Domain separation (prevents the second-preimage attack where a 2-leaf
+    # subtree's root can be presented as a single leaf): leaves and internal
+    # nodes are hashed with distinct one-byte prefixes.
+    _LEAF_PREFIX = b"\x00"
+    _NODE_PREFIX = b"\x01"
+
     @staticmethod
     def _sha256_hash(data: bytes) -> str:
         """Compute SHA-256 hash of data."""
         return hashlib.sha256(data).hexdigest()
+
+    @staticmethod
+    def _leaf_hash(data_str: str) -> str:
+        return hashlib.sha256(MerkleNode._LEAF_PREFIX + data_str.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _node_hash(left_hash: str, right_hash: str) -> str:
+        return hashlib.sha256(
+            MerkleNode._NODE_PREFIX + (left_hash + right_hash).encode("utf-8")
+        ).hexdigest()
     
     def __repr__(self) -> str:
         return f"MerkleNode(hash={self.hash_value[:8]}..., is_leaf={self.is_leaf})"
@@ -238,23 +252,17 @@ class MerkleTree:
         Returns:
             True if the proof is valid, False otherwise
         """
-        # Hash the leaf data
-        leaf_hash = MerkleNode._sha256_hash(
-            json.dumps(leaf_data, sort_keys=True).encode('utf-8') 
-            if not isinstance(leaf_data, str) else leaf_data.encode('utf-8')
-        )
-        
-        current_hash = leaf_hash
-        
+        # Hash the leaf data (same leaf domain prefix as node construction)
+        data_str = (json.dumps(leaf_data, sort_keys=True)
+                    if not isinstance(leaf_data, str) else leaf_data)
+        current_hash = MerkleNode._leaf_hash(data_str)
+
         for sibling_hash, is_right_sibling in proof:
             if is_right_sibling:
-                # Sibling is to the right, so current + sibling
-                combined = current_hash + sibling_hash
+                current_hash = MerkleNode._node_hash(current_hash, sibling_hash)
             else:
-                # Sibling is to the left, so sibling + current
-                combined = sibling_hash + current_hash
-            current_hash = MerkleNode._sha256_hash(combined.encode('utf-8'))
-        
+                current_hash = MerkleNode._node_hash(sibling_hash, current_hash)
+
         return current_hash == expected_root_hash
     
     def verify_leaf(self, index: int) -> bool:

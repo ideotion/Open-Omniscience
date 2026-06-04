@@ -23,7 +23,9 @@ _MAX_UPLOAD = 50 * 1024 * 1024
 @router.post("/image-metadata")
 async def image_metadata(file: UploadFile) -> dict:
     """Extract format, dimensions, EXIF and GPS from an uploaded image."""
-    data = await file.read()
+    # Read at most _MAX_UPLOAD+1 bytes so an oversized upload is rejected WITHOUT
+    # first buffering the whole thing into memory.
+    data = await file.read(_MAX_UPLOAD + 1)
     if len(data) > _MAX_UPLOAD:
         raise HTTPException(status_code=413, detail="Image exceeds 50 MB limit.")
     try:

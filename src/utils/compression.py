@@ -72,6 +72,23 @@ class CompressionAlgorithm(str, Enum):
     SNAPPY = "snappy"
 
 
+# Stable 1-byte id per algorithm for the header. The previous scheme stored only
+# the first byte of the name, so bz2/blosc, zlib/zstandard and lzma/lz4 collided
+# and decompressed with the WRONG codec (data loss). These ids are unique.
+_ALGO_IDS: dict[CompressionAlgorithm, int] = {
+    CompressionAlgorithm.NONE: 0,
+    CompressionAlgorithm.ZLIB: 1,
+    CompressionAlgorithm.BZ2: 2,
+    CompressionAlgorithm.LZMA: 3,
+    CompressionAlgorithm.ZSTANDARD: 4,
+    CompressionAlgorithm.LZ4: 5,
+    CompressionAlgorithm.BLOSC: 6,
+    CompressionAlgorithm.GZIP: 7,
+    CompressionAlgorithm.SNAPPY: 8,
+}
+_ID_ALGOS: dict[int, CompressionAlgorithm] = {v: k for k, v in _ALGO_IDS.items()}
+
+
 @dataclass
 class CompressionConfig:
     """Configuration for compression operations."""
@@ -149,7 +166,8 @@ class CompressionStats:
 # Header format: [magic:4][algorithm:1][level:1][original_size:8][hash:32]
 # Total: 44 bytes
 COMPRESSION_MAGIC = b'OMNC'  # Open Omniscience Compression
-HEADER_SIZE = 44
+# struct '<4sBBHQ32s' = 4 + 1 + 1 + 2 + 8 + 32 = 48 bytes (was wrongly 44).
+HEADER_SIZE = 48
 
 
 # =============================================================================
@@ -449,7 +467,7 @@ class Compressor:
         header = struct.pack(
             '<4sBBHQ32s',
             COMPRESSION_MAGIC,
-            algorithm.value.encode('ascii')[0],  # First byte of algorithm name
+            _ALGO_IDS[algorithm],  # unique algorithm id (not the ambiguous first byte)
             level,
             0,  # Reserved
             original_size,
@@ -472,14 +490,11 @@ class Compressor:
         if magic != COMPRESSION_MAGIC:
             raise CompressionError(f"Invalid magic number: {magic}")
         
-        # Convert algorithm byte to CompressionAlgorithm
-        algo_char = chr(algo_byte)
-        for algorithm in CompressionAlgorithm:
-            if algorithm.value.startswith(algo_char):
-                break
-        else:
-            raise CompressionError(f"Unknown algorithm: {algo_char}")
-        
+        # Convert the unique algorithm id back to a CompressionAlgorithm
+        algorithm = _ID_ALGOS.get(algo_byte)
+        if algorithm is None:
+            raise CompressionError(f"Unknown algorithm id: {algo_byte}")
+
         return algorithm, level, original_size, data_hash
     
     def _compute_hash(self, data: bytes) -> bytes:

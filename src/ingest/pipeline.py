@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from enum import Enum
 
 import feedparser
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
@@ -99,7 +100,14 @@ def ingest_url(
         updated_at=now,
     )
     session.add(article)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # Another entry in the same feed loop (or a concurrent writer) inserted the
+        # same content hash between the _exists check and here. Roll back so the
+        # loop continues, and report the duplicate rather than aborting the batch.
+        session.rollback()
+        return IngestOutcome(url, IngestResult.DUPLICATE, detail="content hash already stored (race)")
     return IngestOutcome(url, IngestResult.STORED, article_id=article.id)
 
 

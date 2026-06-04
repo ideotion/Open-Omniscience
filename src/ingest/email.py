@@ -21,9 +21,11 @@ import email
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from email.header import decode_header
 from email.message import Message
 from email.utils import parsedate_to_datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
@@ -41,6 +43,23 @@ class ParsedEmail:
     body_text: str
 
 
+def _decode_part(part: Message) -> str:
+    """Decode a message part's bytes using its declared charset (not just UTF-8).
+
+    Ignoring the charset corrupts every non-UTF-8 newsletter (iso-8859-1,
+    windows-1252, ...) into mojibake, poisoning the stored content, its hash, the
+    search index and word count.
+    """
+    payload = part.get_payload(decode=True)
+    if payload is None:
+        return ""
+    charset = part.get_content_charset() or "utf-8"
+    try:
+        return payload.decode(charset, errors="replace")
+    except (LookupError, ValueError):
+        return payload.decode("utf-8", errors="replace")
+
+
 def _strip_html(html: str) -> str:
     text = _TAG_RE.sub(" ", html)
     return re.sub(r"\s+", " ", text).strip()
@@ -53,21 +72,32 @@ def _extract_body(msg: Message) -> str:
         for part in msg.walk():
             ctype = part.get_content_type()
             if ctype == "text/plain" and plain is None:
-                plain = part.get_payload(decode=True)
+                plain = part
             elif ctype == "text/html" and html is None:
-                html = part.get_payload(decode=True)
-        if plain:
-            return plain.decode(errors="replace").strip()
-        if html:
-            return _strip_html(html.decode(errors="replace"))
+                html = part
+        if plain is not None:
+            return _decode_part(plain).strip()
+        if html is not None:
+            return _strip_html(_decode_part(html))
         return ""
-    payload = msg.get_payload(decode=True)
-    if payload is None:
-        return ""
-    text = payload.decode(errors="replace")
     if msg.get_content_type() == "text/html":
-        return _strip_html(text)
-    return text.strip()
+        return _strip_html(_decode_part(msg))
+    return _decode_part(msg).strip()
+
+
+def _header(msg: Message, name: str, default: str = "") -> str:
+    """Return a header decoded to a clean str (RFC2047-aware, never a Header object)."""
+    raw = msg.get(name)
+    if raw is None:
+        return default
+    try:
+        parts = decode_header(str(raw))
+        return "".join(
+            (b.decode(enc or "utf-8", errors="replace") if isinstance(b, bytes) else b)
+            for b, enc in parts
+        ).strip()
+    except Exception:
+        return str(raw).strip()
 
 
 def parse_email(raw: bytes) -> ParsedEmail:
@@ -79,10 +109,13 @@ def parse_email(raw: bytes) -> ParsedEmail:
             date = parsedate_to_datetime(msg["Date"])
         except (TypeError, ValueError):
             date = None
+    message_id = _header(msg, "Message-ID")
+    if not message_id:
+        message_id = f"no-id-{generate_content_hash(raw.decode(errors='replace'))[:16]}"
     return ParsedEmail(
-        message_id=(msg.get("Message-ID") or "").strip() or f"no-id-{generate_content_hash(raw.decode(errors='replace'))[:16]}",
-        subject=(msg.get("Subject") or "(no subject)").strip(),
-        from_addr=(msg.get("From") or "").strip(),
+        message_id=message_id,
+        subject=_header(msg, "Subject", "(no subject)"),
+        from_addr=_header(msg, "From"),
         date=date,
         body_text=_extract_body(msg),
     )
@@ -150,6 +183,12 @@ def ingest_emails(session: Session, source: Source, raw_messages: list[bytes]) -
             created_at=now,
             updated_at=now,
         ))
-        session.commit()
-        tally["stored"] += 1
+        try:
+            session.commit()
+            tally["stored"] += 1
+        except IntegrityError:
+            # A concurrent/duplicate insert (the unique hash/canonical_url) raced the
+            # _exists check. Roll back so the next message isn't aborted, count as dup.
+            session.rollback()
+            tally["duplicate"] += 1
     return tally

@@ -422,8 +422,7 @@ class DuckDuckGoSearch:
         """Check if content appears to be XML."""
         # Look for XML declaration or RSS/Atom tags
         xml_patterns = [
-            r'<?xml\s',  # XML declaration with space/version
-            r'<?xml>',   # XML declaration with >
+            r'<\?xml',  # XML declaration ('?' must be escaped; '<?' made '<' optional)
             r'<rss\s',
             r'<rss>',
             r'<feed\s',

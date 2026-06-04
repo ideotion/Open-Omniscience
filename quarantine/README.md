@@ -48,6 +48,19 @@ dead weight that obscured the real code. Removed from `src/` (history preserved)
 Postgres async session) and `src/database/migrations/*` (Alembic) were
 deliberately **kept**.
 
+## `pillars/` — the original six-pillar trees (intent preserved in src/)
+
+~50k lines that the running app never imported. Each pillar's genuine *intent* now
+lives as a small, honest, tested module in `src/` — see
+[`docs/PILLAR_INTENT_MAP.md`](../docs/PILLAR_INTENT_MAP.md). Pillar 2's real
+statistical code was **salvaged into `src/analysis/`** before parking the rest.
+Kept here for reference/history; not deleted.
+
+## `dead_src/main_pipeline.py` — retired legacy orchestrator
+
+The legacy pipeline (the only consumer of the pillar trees, via defensive
+try/except imports). Superseded by `src/ingest/` (the real ethical pipeline).
+
 ## `legacy_database_search.py` — superseded dead code
 
 The former `src/database/search.py` (1310 lines) advertised SQLite FTS5 / Postgres

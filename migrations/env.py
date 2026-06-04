@@ -26,6 +26,15 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def _include_object(obj, name, type_, reflected, compare_to):
+    """Ignore the SQLite FTS5 virtual table and its shadow tables, which are created
+    at runtime by src/database/fts.py and are not part of the ORM metadata -- so
+    `alembic check` (the CI drift gate) does not flag them as 'removed'."""
+    if type_ == "table" and (name == "article_fts" or name.startswith("article_fts_")):
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     """Emit SQL without a DB connection (`alembic upgrade --sql`)."""
     context.configure(
@@ -34,6 +43,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         render_as_batch=True,  # SQLite-safe ALTERs
+        include_object=_include_object,
         compare_type=True,
     )
     with context.begin_transaction():
@@ -47,6 +57,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             render_as_batch=True,  # SQLite-safe ALTERs
+            include_object=_include_object,
             compare_type=True,
         )
         with context.begin_transaction():

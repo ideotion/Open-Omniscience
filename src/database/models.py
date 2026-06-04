@@ -551,7 +551,8 @@ class Article(Base):
         self.compressed_content = None
     
     def __repr__(self):
-        return f"<Article(title='{self.title[:50]}...', source='{self.source.name if self.source else 'Unknown'}')>"
+        title = (self.title or "")[:50]
+        return f"<Article(id={self.id}, title='{title}...', source_id={self.source_id})>"
 
 
 

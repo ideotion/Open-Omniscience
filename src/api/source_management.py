@@ -30,15 +30,12 @@ Author: Ideotion
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.orm import Session
 
 # Import database models and SourceManager
-from src.database.models import Source, SourceGroup, SourceMetadata, get_session
+from src.database.session import get_db
 from src.database.source_manager import SourceManager
 
 # Import logging config
@@ -50,7 +47,7 @@ logger = setup_logging("source_management_api")
 router = APIRouter(prefix="/api/sources", tags=["Source Management"])
 
 # Rate limiter
-limiter = Limiter(key_func=get_remote_address)
+from src.api.ratelimit import limiter
 
 
 # ==================== SOURCE ENDPOINTS ====================
@@ -64,8 +61,7 @@ async def list_sources(
     tags: str | None = None,
     group_id: int | None = None,
     limit: int = 100,
-    offset: int = 0
-):
+    offset: int = 0, db: Session = Depends(get_db)):
     """
     List all sources with optional filters.
     
@@ -79,7 +75,7 @@ async def list_sources(
     """
     logger.info(f"List sources request: enabled={enabled}, priority={priority}, tags={tags}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         # Start with all sources
         if group_id:
             sources = manager.get_sources_by_group(group_id)
@@ -126,13 +122,13 @@ async def list_sources(
 
 @router.get("/{source_id}", response_model=dict)
 @limiter.limit("100/hour")
-async def get_source(request: Request, source_id: int):
+async def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
     Get a specific source by ID.
     """
     logger.info(f"Get source request: source_id={source_id}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         source = manager.get_source_by_id(source_id)
         if not source:
             raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
@@ -188,7 +184,7 @@ async def get_source(request: Request, source_id: int):
 
 @router.post("/", response_model=dict)
 @limiter.limit("50/hour")
-async def create_source(request: Request, source_data: dict):
+async def create_source(request: Request, source_data: dict, db: Session = Depends(get_db)):
     """
     Create a new source.
     """
@@ -199,7 +195,7 @@ async def create_source(request: Request, source_data: dict):
         if field not in source_data:
             raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         source = manager.create_source(
             name=source_data['name'],
             domain=source_data['domain'],
@@ -220,13 +216,13 @@ async def create_source(request: Request, source_data: dict):
 
 @router.put("/{source_id}", response_model=dict)
 @limiter.limit("50/hour")
-async def update_source(request: Request, source_id: int, source_data: dict):
+async def update_source(request: Request, source_id: int, source_data: dict, db: Session = Depends(get_db)):
     """
     Update a source.
     """
     logger.info(f"Update source request: source_id={source_id}, data={source_data}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         source = manager.update_source(source_id, **source_data)
         if not source:
             raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
@@ -241,13 +237,13 @@ async def update_source(request: Request, source_id: int, source_data: dict):
 
 @router.delete("/{source_id}", response_model=dict)
 @limiter.limit("20/hour")
-async def delete_source(request: Request, source_id: int):
+async def delete_source(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
     Delete a source.
     """
     logger.info(f"Delete source request: source_id={source_id}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         success = manager.delete_source(source_id)
         if not success:
             raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
@@ -259,78 +255,78 @@ async def delete_source(request: Request, source_id: int):
 
 @router.post("/batch/enable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_enable_sources(request: Request, source_ids: list[int]):
+async def batch_enable_sources(request: Request, source_ids: list[int], db: Session = Depends(get_db)):
     """
     Enable multiple sources.
     """
     logger.info(f"Batch enable sources: {source_ids}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.enable_sources(source_ids)
         return {"message": f"Enabled {count} sources"}
 
 
 @router.post("/batch/disable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_disable_sources(request: Request, source_ids: list[int]):
+async def batch_disable_sources(request: Request, source_ids: list[int], db: Session = Depends(get_db)):
     """
     Disable multiple sources.
     """
     logger.info(f"Batch disable sources: {source_ids}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.disable_sources(source_ids)
         return {"message": f"Disabled {count} sources"}
 
 
 @router.post("/batch/priority", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_priority(request: Request, source_ids: list[int], priority: int = Query(..., ge=1, le=3)):
+async def batch_set_priority(request: Request, source_ids: list[int], priority: int = Query(..., ge=1, le=3), db: Session = Depends(get_db)):
     """
     Set priority for multiple sources.
     """
     logger.info(f"Batch set priority: {source_ids} to {priority}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.set_source_priority(source_ids, priority)
         return {"message": f"Set priority {priority} for {count} sources"}
 
 
 @router.post("/batch/rate-limit", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_rate_limit(request: Request, source_ids: list[int], rate_limit_ms: int = Query(..., ge=100, le=60000)):
+async def batch_set_rate_limit(request: Request, source_ids: list[int], rate_limit_ms: int = Query(..., ge=100, le=60000), db: Session = Depends(get_db)):
     """
     Set rate limit for multiple sources.
     """
     logger.info(f"Batch set rate limit: {source_ids} to {rate_limit_ms}ms")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.set_source_rate_limit(source_ids, rate_limit_ms)
         return {"message": f"Set rate limit {rate_limit_ms}ms for {count} sources"}
 
 
 @router.post("/batch/tags/add", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_add_tags(request: Request, source_ids: list[int], tags: list[str]):
+async def batch_add_tags(request: Request, source_ids: list[int], tags: list[str], db: Session = Depends(get_db)):
     """
     Add tags to multiple sources.
     """
     logger.info(f"Batch add tags: {tags} to {source_ids}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.add_tags_to_sources(source_ids, tags)
         return {"message": f"Added tags {tags} to {count} sources"}
 
 
 @router.post("/batch/tags/remove", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_remove_tags(request: Request, source_ids: list[int], tags: list[str]):
+async def batch_remove_tags(request: Request, source_ids: list[int], tags: list[str], db: Session = Depends(get_db)):
     """
     Remove tags from multiple sources.
     """
     logger.info(f"Batch remove tags: {tags} from {source_ids}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.remove_tags_from_sources(source_ids, tags)
         return {"message": f"Removed tags {tags} from {count} sources"}
 
@@ -339,13 +335,13 @@ async def batch_remove_tags(request: Request, source_ids: list[int], tags: list[
 
 @router.get("/groups/", response_model=list[dict])
 @limiter.limit("100/hour")
-async def list_groups(request: Request, tag_based: bool | None = None):
+async def list_groups(request: Request, tag_based: bool | None = None, db: Session = Depends(get_db)):
     """
     List all source groups.
     """
     logger.info(f"List groups request: tag_based={tag_based}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         groups = manager.get_all_groups()
         
         if tag_based is not None:
@@ -374,13 +370,13 @@ async def list_groups(request: Request, tag_based: bool | None = None):
 
 @router.get("/groups/{group_id}", response_model=dict)
 @limiter.limit("100/hour")
-async def get_group(request: Request, group_id: int):
+async def get_group(request: Request, group_id: int, db: Session = Depends(get_db)):
     """
     Get a specific group by ID.
     """
     logger.info(f"Get group request: group_id={group_id}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         group = manager.get_group_by_id(group_id)
         if not group:
             raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
@@ -419,7 +415,7 @@ async def get_group(request: Request, group_id: int):
 
 @router.post("/groups/", response_model=dict)
 @limiter.limit("50/hour")
-async def create_group(request: Request, group_data: dict):
+async def create_group(request: Request, group_data: dict, db: Session = Depends(get_db)):
     """
     Create a new source group.
     """
@@ -430,7 +426,7 @@ async def create_group(request: Request, group_data: dict):
         if field not in group_data:
             raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         group = manager.create_group(
             name=group_data['name'],
             description=group_data.get('description', ''),
@@ -451,13 +447,13 @@ async def create_group(request: Request, group_data: dict):
 
 @router.put("/groups/{group_id}", response_model=dict)
 @limiter.limit("50/hour")
-async def update_group(request: Request, group_id: int, group_data: dict):
+async def update_group(request: Request, group_id: int, group_data: dict, db: Session = Depends(get_db)):
     """
     Update a source group.
     """
     logger.info(f"Update group request: group_id={group_id}, data={group_data}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         group = manager.update_group(group_id, **group_data)
         if not group:
             raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
@@ -471,13 +467,13 @@ async def update_group(request: Request, group_id: int, group_data: dict):
 
 @router.delete("/groups/{group_id}", response_model=dict)
 @limiter.limit("20/hour")
-async def delete_group(request: Request, group_id: int):
+async def delete_group(request: Request, group_id: int, db: Session = Depends(get_db)):
     """
     Delete a source group.
     """
     logger.info(f"Delete group request: group_id={group_id}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         success = manager.delete_group(group_id)
         if not success:
             raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
@@ -489,52 +485,52 @@ async def delete_group(request: Request, group_id: int):
 
 @router.post("/groups/{group_id}/sources", response_model=dict)
 @limiter.limit("50/hour")
-async def add_sources_to_group(request: Request, group_id: int, source_ids: list[int]):
+async def add_sources_to_group(request: Request, group_id: int, source_ids: list[int], db: Session = Depends(get_db)):
     """
     Add sources to a group.
     """
     logger.info(f"Add sources to group: {source_ids} to group {group_id}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.add_sources_to_group(group_id, source_ids)
         return {"message": f"Added {count} sources to group {group_id}"}
 
 
 @router.delete("/groups/{group_id}/sources", response_model=dict)
 @limiter.limit("50/hour")
-async def remove_sources_from_group(request: Request, group_id: int, source_ids: list[int]):
+async def remove_sources_from_group(request: Request, group_id: int, source_ids: list[int], db: Session = Depends(get_db)):
     """
     Remove sources from a group.
     """
     logger.info(f"Remove sources from group: {source_ids} from group {group_id}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.remove_sources_from_group(group_id, source_ids)
         return {"message": f"Removed {count} sources from group {group_id}"}
 
 
 @router.post("/{source_id}/groups", response_model=dict)
 @limiter.limit("50/hour")
-async def add_source_to_groups(request: Request, source_id: int, group_ids: list[int]):
+async def add_source_to_groups(request: Request, source_id: int, group_ids: list[int], db: Session = Depends(get_db)):
     """
     Add a source to multiple groups.
     """
     logger.info(f"Add source to groups: source {source_id} to groups {group_ids}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.add_source_to_groups(source_id, group_ids)
         return {"message": f"Added source {source_id} to {count} groups"}
 
 
 @router.delete("/{source_id}/groups", response_model=dict)
 @limiter.limit("50/hour")
-async def remove_source_from_groups(request: Request, source_id: int, group_ids: list[int]):
+async def remove_source_from_groups(request: Request, source_id: int, group_ids: list[int], db: Session = Depends(get_db)):
     """
     Remove a source from multiple groups.
     """
     logger.info(f"Remove source from groups: source {source_id} from groups {group_ids}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.remove_source_from_groups(source_id, group_ids)
         return {"message": f"Removed source {source_id} from {count} groups"}
 
@@ -543,14 +539,14 @@ async def remove_source_from_groups(request: Request, source_id: int, group_ids:
 
 @router.post("/groups/tag-based", response_model=dict)
 @limiter.limit("50/hour")
-async def create_tag_based_group(request: Request, name: str, tag_pattern: str, **kwargs):
+async def create_tag_based_group(request: Request, name: str, tag_pattern: str, db: Session = Depends(get_db)):
     """
     Create a tag-based group.
     """
     logger.info(f"Create tag-based group: {name} with pattern {tag_pattern}")
     
-    with SourceManager() as manager:
-        group = manager.create_tag_based_group(name, tag_pattern, **kwargs)
+    with SourceManager(session=db) as manager:
+        group = manager.create_tag_based_group(name, tag_pattern)
         return {
             "id": group.id,
             "name": group.name,
@@ -561,15 +557,15 @@ async def create_tag_based_group(request: Request, name: str, tag_pattern: str, 
 
 @router.post("/groups/{group_id}/refresh", response_model=dict)
 @limiter.limit("20/hour")
-async def refresh_tag_based_group(request: Request, group_id: int):
+async def refresh_tag_based_group(request: Request, group_id: int, db: Session = Depends(get_db)):
     """
     Refresh a tag-based group to update its source membership.
     """
     logger.info(f"Refresh tag-based group: {group_id}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         # First get the group to get its tag_pattern
-        group = manager.get_group(group_id)
+        group = manager.get_group_by_id(group_id)
         if not group:
             raise HTTPException(status_code=404, detail=f"Group with ID {group_id} not found")
         
@@ -583,13 +579,13 @@ async def refresh_tag_based_group(request: Request, group_id: int):
 
 @router.post("/groups/refresh-all", response_model=dict)
 @limiter.limit("10/hour")
-async def refresh_all_tag_based_groups(request: Request):
+async def refresh_all_tag_based_groups(request: Request, db: Session = Depends(get_db)):
     """
     Refresh all tag-based groups.
     """
     logger.info("Refresh all tag-based groups")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.refresh_tag_based_groups()
         return {"message": f"Refreshed {count} tag-based groups"}
 
@@ -598,13 +594,13 @@ async def refresh_all_tag_based_groups(request: Request):
 
 @router.get("/{source_id}/metadata", response_model=dict)
 @limiter.limit("100/hour")
-async def get_metadata(request: Request, source_id: int):
+async def get_metadata(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
     Get metadata for a source.
     """
     logger.info(f"Get metadata request: source_id={source_id}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         metadata = manager.get_metadata(source_id)
         if not metadata:
             raise HTTPException(status_code=404, detail=f"Metadata for source {source_id} not found")
@@ -634,13 +630,13 @@ async def get_metadata(request: Request, source_id: int):
 
 @router.post("/{source_id}/metadata", response_model=dict)
 @limiter.limit("50/hour")
-async def create_metadata(request: Request, source_id: int, metadata_data: dict):
+async def create_metadata(request: Request, source_id: int, metadata_data: dict, db: Session = Depends(get_db)):
     """
     Create metadata for a source.
     """
     logger.info(f"Create metadata request: source_id={source_id}, data={metadata_data}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         metadata = manager.create_metadata(source_id, **metadata_data)
         return {
             "source_id": metadata.source_id,
@@ -650,13 +646,13 @@ async def create_metadata(request: Request, source_id: int, metadata_data: dict)
 
 @router.put("/{source_id}/metadata", response_model=dict)
 @limiter.limit("50/hour")
-async def update_metadata(request: Request, source_id: int, metadata_data: dict):
+async def update_metadata(request: Request, source_id: int, metadata_data: dict, db: Session = Depends(get_db)):
     """
     Update metadata for a source.
     """
     logger.info(f"Update metadata request: source_id={source_id}, data={metadata_data}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         metadata = manager.update_metadata(source_id, **metadata_data)
         if not metadata:
             raise HTTPException(status_code=404, detail=f"Metadata for source {source_id} not found")
@@ -669,13 +665,13 @@ async def update_metadata(request: Request, source_id: int, metadata_data: dict)
 
 @router.delete("/{source_id}/metadata", response_model=dict)
 @limiter.limit("20/hour")
-async def delete_metadata(request: Request, source_id: int):
+async def delete_metadata(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
     Delete metadata for a source.
     """
     logger.info(f"Delete metadata request: source_id={source_id}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         success = manager.delete_metadata(source_id)
         if not success:
             raise HTTPException(status_code=404, detail=f"Metadata for source {source_id} not found")
@@ -687,52 +683,52 @@ async def delete_metadata(request: Request, source_id: int):
 
 @router.post("/groups/batch/enable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_enable_groups(request: Request, group_ids: list[int]):
+async def batch_enable_groups(request: Request, group_ids: list[int], db: Session = Depends(get_db)):
     """
     Enable all sources in multiple groups.
     """
     logger.info(f"Batch enable groups: {group_ids}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.enable_groups(group_ids)
         return {"message": f"Enabled {count} sources in {len(group_ids)} groups"}
 
 
 @router.post("/groups/batch/disable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_disable_groups(request: Request, group_ids: list[int]):
+async def batch_disable_groups(request: Request, group_ids: list[int], db: Session = Depends(get_db)):
     """
     Disable all sources in multiple groups.
     """
     logger.info(f"Batch disable groups: {group_ids}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.disable_groups(group_ids)
         return {"message": f"Disabled {count} sources in {len(group_ids)} groups"}
 
 
 @router.post("/groups/batch/priority", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_group_priority(request: Request, group_ids: list[int], priority: int = Query(..., ge=1, le=3)):
+async def batch_set_group_priority(request: Request, group_ids: list[int], priority: int = Query(..., ge=1, le=3), db: Session = Depends(get_db)):
     """
     Set priority for all sources in multiple groups.
     """
     logger.info(f"Batch set group priority: {group_ids} to {priority}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.set_group_priority(group_ids, priority)
         return {"message": f"Set priority {priority} for {count} sources in {len(group_ids)} groups"}
 
 
 @router.post("/groups/batch/rate-limit", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_group_rate_limit(request: Request, group_ids: list[int], rate_limit_ms: int = Query(..., ge=100, le=60000)):
+async def batch_set_group_rate_limit(request: Request, group_ids: list[int], rate_limit_ms: int = Query(..., ge=100, le=60000), db: Session = Depends(get_db)):
     """
     Set rate limit for all sources in multiple groups.
     """
     logger.info(f"Batch set group rate limit: {group_ids} to {rate_limit_ms}ms")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         count = manager.set_group_rate_limit(group_ids, rate_limit_ms)
         return {"message": f"Set rate limit {rate_limit_ms}ms for {count} sources in {len(group_ids)} groups"}
 
@@ -741,7 +737,7 @@ async def batch_set_group_rate_limit(request: Request, group_ids: list[int], rat
 
 @router.post("/discover/rss", response_model=dict)
 @limiter.limit("20/hour")
-async def discover_rss_feeds(request: Request, source_ids: list[int] | None = None, timeout: int = 10):
+async def discover_rss_feeds(request: Request, source_ids: list[int] | None = None, timeout: int = 10, db: Session = Depends(get_db)):
     """
     Discover RSS feeds for sources that don't have them.
     
@@ -751,7 +747,7 @@ async def discover_rss_feeds(request: Request, source_ids: list[int] | None = No
     """
     logger.info(f"Discover RSS feeds request: source_ids={source_ids}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         results = manager.discover_rss_feeds(source_ids, timeout=timeout)
         
         # Count how many got RSS feeds
@@ -767,7 +763,7 @@ async def discover_rss_feeds(request: Request, source_ids: list[int] | None = No
 
 @router.post("/discover/topic", response_model=dict)
 @limiter.limit("20/hour")
-async def discover_sources_by_topic(request: Request, topic: str, max_sources: int = 20, region: str = "wt-wt"):
+async def discover_sources_by_topic(request: Request, topic: str, max_sources: int = 20, region: str = "wt-wt", db: Session = Depends(get_db)):
     """
     Discover new sources for a specific topic.
     
@@ -778,7 +774,7 @@ async def discover_sources_by_topic(request: Request, topic: str, max_sources: i
     """
     logger.info(f"Discover sources by topic: {topic}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         sources = manager.discover_sources_by_topic(topic, max_sources, region=region)
         
         return {
@@ -793,7 +789,7 @@ async def discover_sources_by_topic(request: Request, topic: str, max_sources: i
 
 @router.post("/discover/add", response_model=dict)
 @limiter.limit("20/hour")
-async def add_discovered_sources(request: Request, sources: list[dict], group_name: str | None = None):
+async def add_discovered_sources(request: Request, sources: list[dict], group_name: str | None = None, db: Session = Depends(get_db)):
     """
     Add discovered sources to the database.
     
@@ -803,7 +799,7 @@ async def add_discovered_sources(request: Request, sources: list[dict], group_na
     """
     logger.info(f"Add discovered sources: {len(sources)} sources, group={group_name}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         created_sources = manager.add_discovered_sources(sources, group_name)
         
         return {
@@ -826,7 +822,7 @@ async def add_discovered_sources(request: Request, sources: list[dict], group_na
 
 @router.post("/import", response_model=dict)
 @limiter.limit("10/hour")
-async def import_sources(request: Request):
+async def import_sources(request: Request, db: Session = Depends(get_db)):
     """
     Import sources from YAML configuration.
     """
@@ -835,7 +831,7 @@ async def import_sources(request: Request):
     # For now, use the existing sources.yml file
     yaml_path = Path(__file__).parent.parent.parent.parent / "configs" / "sources.yml"
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         result = manager.import_sources_from_yaml(str(yaml_path))
         
         return {
@@ -848,7 +844,7 @@ async def import_sources(request: Request):
 
 @router.get("/export", response_model=dict)
 @limiter.limit("10/hour")
-async def export_sources(request: Request, group_id: int | None = None):
+async def export_sources(request: Request, group_id: int | None = None, db: Session = Depends(get_db)):
     """
     Export sources to YAML format.
     
@@ -857,7 +853,7 @@ async def export_sources(request: Request, group_id: int | None = None):
     """
     logger.info(f"Export sources: group_id={group_id}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         # For now, return the data as JSON (YAML export would be a file download)
         if group_id:
             sources = manager.get_sources_by_group(group_id)
@@ -891,13 +887,13 @@ async def export_sources(request: Request, group_id: int | None = None):
 
 @router.get("/stats", response_model=dict)
 @limiter.limit("100/hour")
-async def get_source_statistics(request: Request):
+async def get_source_statistics(request: Request, db: Session = Depends(get_db)):
     """
     Get statistics about sources, groups, and metadata.
     """
     logger.info("Get source statistics")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         stats = manager.get_source_statistics()
         
         return {
@@ -930,8 +926,7 @@ async def search_sources(
     request: Request,
     query: str,
     limit: int = 20,
-    offset: int = 0
-):
+    offset: int = 0, db: Session = Depends(get_db)):
     """
     Search for sources by name, domain, or tags.
     
@@ -942,7 +937,7 @@ async def search_sources(
     """
     logger.info(f"Search sources: query={query}")
     
-    with SourceManager() as manager:
+    with SourceManager(session=db) as manager:
         # Search by name, domain, or tags
         query_lower = query.lower()
         
