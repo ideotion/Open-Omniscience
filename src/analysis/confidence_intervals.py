@@ -26,25 +26,27 @@ Implements confidence interval calculations for various statistical measures
 using scipy.stats, statsmodels, and numpy.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Tuple, Dict, Any, Optional, Union, List
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
 
 # Try to import required libraries
 try:
     import scipy.stats as stats
-    from scipy.stats import norm, t as t_dist, chi2, f as f_dist
-    from scipy.stats import sem
+    from scipy.stats import chi2, norm, sem
+    from scipy.stats import f as f_dist
+    from scipy.stats import t as t_dist
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
 
 try:
     import statsmodels.api as sm
-    from statsmodels.stats.weightstats import DescrStatsW
     from statsmodels.stats.proportion import proportion_confint
+    from statsmodels.stats.weightstats import DescrStatsW
     HAS_STATSMODELS = True
 except ImportError:
     HAS_STATSMODELS = False
@@ -65,11 +67,11 @@ class ConfidenceInterval:
     upper: float
     confidence_level: float
     method: str
-    standard_error: Optional[float] = None
-    degrees_of_freedom: Optional[float] = None
-    sample_size: Optional[int] = None
+    standard_error: float | None = None
+    degrees_of_freedom: float | None = None
+    sample_size: int | None = None
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             'estimate': self.estimate,
@@ -125,7 +127,7 @@ class ConfidenceIntervals:
         self,
         distribution: str,
         confidence_level: float,
-        df: Optional[float] = None
+        df: float | None = None
     ) -> float:
         """
         Get critical value for a given distribution and confidence level.
@@ -161,9 +163,9 @@ class ConfidenceIntervals:
     
     def mean_ci(
         self,
-        data: Union[list, np.ndarray, pd.Series],
+        data: list | np.ndarray | pd.Series,
         confidence_level: float = 0.95,
-        population_std: Optional[float] = None
+        population_std: float | None = None
     ) -> ConfidenceInterval:
         """
         Confidence interval for the population mean.
@@ -212,7 +214,7 @@ class ConfidenceIntervals:
     
     def mean_ci_normal(
         self,
-        data: Union[list, np.ndarray, pd.Series],
+        data: list | np.ndarray | pd.Series,
         confidence_level: float = 0.95
     ) -> ConfidenceInterval:
         """
@@ -231,7 +233,7 @@ class ConfidenceIntervals:
     
     def mean_ci_t(
         self,
-        data: Union[list, np.ndarray, pd.Series],
+        data: list | np.ndarray | pd.Series,
         confidence_level: float = 0.95
     ) -> ConfidenceInterval:
         """
@@ -428,8 +430,8 @@ class ConfidenceIntervals:
     
     def diff_means_ci(
         self,
-        sample1: Union[list, np.ndarray, pd.Series],
-        sample2: Union[list, np.ndarray, pd.Series],
+        sample1: list | np.ndarray | pd.Series,
+        sample2: list | np.ndarray | pd.Series,
         confidence_level: float = 0.95,
         equal_var: bool = True
     ) -> ConfidenceInterval:
@@ -531,7 +533,7 @@ class ConfidenceIntervals:
     
     def variance_ci(
         self,
-        data: Union[list, np.ndarray, pd.Series],
+        data: list | np.ndarray | pd.Series,
         confidence_level: float = 0.95
     ) -> ConfidenceInterval:
         """
@@ -569,7 +571,7 @@ class ConfidenceIntervals:
     
     def std_dev_ci(
         self,
-        data: Union[list, np.ndarray, pd.Series],
+        data: list | np.ndarray | pd.Series,
         confidence_level: float = 0.95
     ) -> ConfidenceInterval:
         """
@@ -598,8 +600,8 @@ class ConfidenceIntervals:
     
     def regression_slope_ci(
         self,
-        x: Union[list, np.ndarray, pd.Series],
-        y: Union[list, np.ndarray, pd.Series],
+        x: list | np.ndarray | pd.Series,
+        y: list | np.ndarray | pd.Series,
         confidence_level: float = 0.95
     ) -> ConfidenceInterval:
         """
@@ -654,8 +656,8 @@ class ConfidenceIntervals:
     
     def regression_prediction_ci(
         self,
-        x: Union[list, np.ndarray, pd.Series],
-        y: Union[list, np.ndarray, pd.Series],
+        x: list | np.ndarray | pd.Series,
+        y: list | np.ndarray | pd.Series,
         x_new: float,
         confidence_level: float = 0.95
     ) -> ConfidenceInterval:
@@ -818,9 +820,9 @@ class ConfidenceIntervals:
     
     def batch_mean_ci(
         self,
-        data: Union[list, np.ndarray, pd.Series],
-        confidence_levels: List[float] = [0.90, 0.95, 0.99]
-    ) -> Dict[float, ConfidenceInterval]:
+        data: list | np.ndarray | pd.Series,
+        confidence_levels: list[float] = [0.90, 0.95, 0.99]
+    ) -> dict[float, ConfidenceInterval]:
         """
         Calculate mean confidence intervals for multiple confidence levels.
         
@@ -837,9 +839,9 @@ class ConfidenceIntervals:
         self,
         successes: int,
         trials: int,
-        confidence_levels: List[float] = [0.90, 0.95, 0.99],
+        confidence_levels: list[float] = [0.90, 0.95, 0.99],
         method: str = 'wilson'
-    ) -> Dict[float, ConfidenceInterval]:
+    ) -> dict[float, ConfidenceInterval]:
         """
         Calculate proportion confidence intervals for multiple confidence levels.
         
@@ -866,7 +868,7 @@ class ConfidenceIntervals:
     
     # ==================== UTILITY METHODS ====================
     
-    def _to_array(self, data: Union[list, np.ndarray, pd.Series]) -> np.ndarray:
+    def _to_array(self, data: list | np.ndarray | pd.Series) -> np.ndarray:
         """Convert input to numpy array."""
         if isinstance(data, pd.Series):
             return data.values
