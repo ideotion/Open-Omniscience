@@ -47,7 +47,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/articles/similarity")
 @limiter.limit("50/hour")
-async def calculate_article_similarity(
+def calculate_article_similarity(
     request: Request,
     article_id1: int = Query(..., description="First article ID"),
     article_id2: int = Query(..., description="Second article ID"),

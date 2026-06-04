@@ -149,9 +149,13 @@ def canonicalize_url(url: str) -> str:
         }
         filtered_query = {k: v for k, v in query.items() if k.lower() not in tracking_params}
         
-        # Sort remaining query parameters for consistency
+        # Sort remaining query parameters for consistency, preserving ALL values of
+        # multi-valued params (a=1&a=2 must not collapse to a=1 -- that changes
+        # semantics and dedup).
         sorted_query = dict(sorted(filtered_query.items()))
-        clean_query = "&".join(f"{k}={v[0]}" for k, v in sorted_query.items()) if sorted_query else ""
+        clean_query = "&".join(
+            f"{k}={val}" for k, vals in sorted_query.items() for val in vals
+        )
 
         # Normalize path
         path = parsed.path

@@ -24,14 +24,23 @@ router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 
 @router.get("/health")
 def sources_health(
+    limit: int = Query(25, ge=1, le=200, description="Max sources to probe in one call"),
     db: Session = Depends(get_db),
     fetcher: EthicalFetcher = Depends(get_fetcher),
 ) -> dict:
-    """Run a real reachability check against every enabled source."""
-    sources = db.query(Source).filter((Source.enabled.is_(True)) | (Source.enabled.is_(None))).all()
+    """Run a real reachability check against enabled sources.
+
+    Checks run sequentially through the rate-limited fetcher, so a hard cap
+    (``limit``) prevents an accidental very-long hang when the catalog is large
+    (the seeded catalog has ~1,800 sources).
+    """
+    sources = (db.query(Source)
+               .filter((Source.enabled.is_(True)) | (Source.enabled.is_(None)))
+               .order_by(Source.priority, Source.id)
+               .limit(limit).all())
     results = [check_source(s, fetcher=fetcher).to_dict() for s in sources]
     summary = Counter(r["status"] for r in results)
-    return {"checked": len(results), "summary": dict(summary), "sources": results}
+    return {"checked": len(results), "limit": limit, "summary": dict(summary), "sources": results}
 
 
 @router.get("/anomalies")
