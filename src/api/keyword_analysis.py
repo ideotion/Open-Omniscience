@@ -29,11 +29,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
 
-from src.database.models import Article, Source, get_session
+from src.database.models import Article
+from src.database.session import get_db
 from src.services.article_intelligence import article_intelligence_analyzer
 from src.utils.logging_config import setup_logging
 
@@ -49,17 +51,15 @@ async def calculate_article_similarity(
     request: Request,
     article_id1: int = Query(..., description="First article ID"),
     article_id2: int = Query(..., description="Second article ID"),
-    method: str = Query("cosine", description="Similarity method")
+    method: str = Query("cosine", description="Similarity method"),
+    db: Session = Depends(get_db),
 ):
-    session = get_session()
-    try:
-        article1 = session.query(Article).filter(Article.id == article_id1).first()
-        article2 = session.query(Article).filter(Article.id == article_id2).first()
-        if not article1 or not article2:
-            raise HTTPException(status_code=404, detail="One or both articles not found")
-        similarity = article_intelligence_analyzer.calculate_similarity(
-            article1.content, article2.content, method=method
-        )
-        return {"article_id1": article_id1, "article_id2": article_id2, "similarity": similarity, "method": method}
-    finally:
-        session.close()
+    article1 = db.query(Article).filter(Article.id == article_id1).first()
+    article2 = db.query(Article).filter(Article.id == article_id2).first()
+    if not article1 or not article2:
+        raise HTTPException(status_code=404, detail="One or both articles not found")
+    similarity = article_intelligence_analyzer.calculate_similarity(
+        article1.content, article2.content, method=method
+    )
+    return {"article_id1": article_id1, "article_id2": article_id2,
+            "similarity": similarity, "method": method}
