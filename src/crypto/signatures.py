@@ -38,11 +38,24 @@ class SignatureResult:
         self.timestamp = datetime.now(UTC).isoformat()
 
 class GPGSigner:
+    """Placeholder GPG signer -- NOT implemented.
+
+    The previous stubs returned None from sign/verify, i.e. a "signer" that
+    silently produced no signature and a "verifier" that silently passed. That is
+    a dangerous no-op for anything relying on it. Real, working signing lives in
+    ``src/reporting/evidence.py`` (Ed25519 + Merkle). These methods now raise so a
+    caller can never mistake a no-op for a valid signature.
+    """
+
     def __init__(self, gpg_path="gpg"):
         self.gpg_path = gpg_path
 
     def sign_data(self, data, key_id=None):
-        pass
+        raise NotImplementedError(
+            "GPG signing is not implemented; use src.reporting.evidence (Ed25519)."
+        )
 
     def verify_signature(self, data, signature):
-        pass
+        raise NotImplementedError(
+            "GPG verification is not implemented; use src.reporting.evidence.verify_bundle."
+        )
