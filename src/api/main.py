@@ -71,8 +71,8 @@ from src.api.keyword_analysis import router as keyword_analysis_router
 # Import keyword management router
 from src.api.keyword_management import router as keyword_management_router
 
-# Import link analysis router
-from src.api.link_analysis import router as link_analysis_router
+# Link-analysis router quarantined in v0.4: its services (credibility scorer,
+# source scraper, network analyzer) produced fabricated outputs (see docs/AUDIT_2026-06.md).
 
 # Import LLM router (clean Ollama HTTP client; replaces the legacy routes.llm)
 from src.api.llm import router as llm_router
@@ -189,9 +189,6 @@ app.include_router(keyword_management_router)
 
 # Include keyword analysis router
 app.include_router(keyword_analysis_router)
-
-# Include link analysis router
-app.include_router(link_analysis_router)
 
 # Include LLM router
 app.include_router(llm_router)
