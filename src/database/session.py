@@ -100,6 +100,11 @@ def init_db() -> None:
 
     Base.metadata.create_all(engine)
 
+    # Build the full-text search index (SQLite FTS5). No-op on other backends.
+    from src.database.fts import ensure_fts
+
+    ensure_fts(engine)
+
 
 def get_session() -> SASession:
     """Return a new session. Caller is responsible for closing it.

@@ -12,19 +12,21 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch, MagicMock
 
-# Add src to path for imports
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-# Import after path is set
-from api.main import app, DATABASE_URL
-from database.models import Base, engine, get_session, Article, Source
+from src.api.main import app
+from src.database.models import Base, engine, get_session, Article, Source
+from src.database.session import init_db
 
 
 @pytest.fixture
 def test_client():
-    """Create a test client for the FastAPI app."""
-    return TestClient(app)
+    """Create a test client for the FastAPI app.
+
+    Using TestClient as a context manager runs the app lifespan, which calls
+    init_db() to create the schema + FTS index (the schema is no longer created
+    as an import-time side effect).
+    """
+    with TestClient(app) as client:
+        yield client
 
 
 @pytest.fixture
@@ -250,8 +252,7 @@ class TestCORSMiddleware:
         # Note: TestClient doesn't automatically add CORS headers in responses
         # This is expected behavior - CORS middleware works in production
         # We verify the middleware is configured correctly in the app
-        from api.main import app
-        
+
         # Check that CORS middleware is configured
         # The middleware is added in main.py and will work in production
         # TestClient doesn't simulate CORS headers, so we just verify the app has the middleware

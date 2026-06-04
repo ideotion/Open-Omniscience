@@ -27,7 +27,9 @@ For inquiries, contact: open-omniscience@ideotion.com
 
 from pathlib import Path
 from typing import Optional, List, Any, Dict
-from datetime import datetime
+from datetime import datetime, timezone
+from contextlib import asynccontextmanager
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
 import os
 
 from fastapi import FastAPI, Query, HTTPException, Request, Depends, Header
@@ -46,11 +48,14 @@ import re
 import time
 
 # Import database models and session
+from sqlalchemy.orm import Session
 from src.database.models import Article, Source, get_session
+from src.database.session import get_db, init_db, dispose_engine, session_scope
+from src.database.fts import search_ids, SearchQueryError
 
 # Import security utilities
 from src.utils.security import (
-    sanitize_html, escape_html, validate_and_sanitize_search_query,
+    sanitize_html, escape_html,
     get_security_headers, SecurityError
 )
 
@@ -73,11 +78,36 @@ from src.api.routes.llm import router as llm_router
 from src.utils.logging_config import setup_logging
 logger = setup_logging("api")
 
-# Database setup - use environment variable or default
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{Path(__file__).parent.parent.parent / 'data' / 'open_omniscience.db'}")
+# Single source of truth for the app version: the installed package metadata
+# (pyproject.toml). Falls back gracefully if running from an uninstalled tree.
+try:
+    APP_VERSION = _pkg_version("open-omniscience")
+except PackageNotFoundError:  # pragma: no cover - only when not pip-installed
+    APP_VERSION = "0.0.0+local"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: create schema + FTS index, then dispose on shutdown.
+
+    Replaces the deprecated @app.on_event hooks (D1). Metric initialisation is
+    best-effort so the API still starts on a brand-new/empty database.
+    """
+    init_db()
+    try:
+        with session_scope() as session:
+            ARTICLES_COUNT.set(session.query(Article).count())
+            SOURCES_COUNT.set(session.query(Source).count())
+    except Exception as exc:  # noqa: BLE001 - never block startup on metrics
+        logger.warning(f"Could not initialise metrics at startup: {exc}")
+    logger.info(f"Open Omniscience API {APP_VERSION} started")
+    yield
+    dispose_engine()
+    logger.info("Open Omniscience API shut down cleanly")
+
 
 # Initialize FastAPI app
-app = FastAPI(title="Open Omniscience API", version="0.02")
+app = FastAPI(title="Open Omniscience API", version=APP_VERSION, lifespan=lifespan)
 
 # Prometheus metrics
 REQUEST_COUNT = Counter(
@@ -150,8 +180,8 @@ async def health_check():
     """Check API health status"""
     return {
         "status": "healthy",
-        "version": "0.02",
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "version": APP_VERSION,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 # Serve static files (HTML5 frontend)
@@ -181,20 +211,6 @@ async def monitor_requests(request: Request, call_next):
     
     return response
 
-# Update metrics on startup
-@app.on_event("startup")
-async def startup_event():
-    session = get_session()
-    try:
-        from src.database.models import Article, Source
-        articles_count = session.query(Article).count()
-        sources_count = session.query(Source).count()
-        ARTICLES_COUNT.set(articles_count)
-        SOURCES_COUNT.set(sources_count)
-        logger.info(f"Metrics initialized: {articles_count} articles, {sources_count} sources")
-    finally:
-        session.close()
-
 # Rate limit exceeded handler
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
@@ -207,93 +223,121 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
-def parse_search_query(query: str) -> dict:
+def _validate_date(value: Optional[str], field_name: str) -> None:
+    """Raise HTTP 400 if `value` is set but not an ISO date (YYYY-MM-DD)."""
+    if value:
+        try:
+            datetime.fromisoformat(value)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid {field_name} format. Use YYYY-MM-DD.",
+            )
+
+
+def _structured_filters(
+    session,
+    *,
+    source: Optional[str],
+    start_date: Optional[str],
+    end_date: Optional[str],
+    language: Optional[str],
+    tags: Optional[str],
+) -> list:
+    """Build the non-text SQLAlchemy filter conditions.
+
+    All values are bound as parameters by SQLAlchemy -- no string interpolation
+    into SQL. Date strings are pre-validated by the caller.
     """
-    Parse a search query into a structured format for Boolean searches.
-    Supports:
-    - AND: "term1 AND term2"
-    - OR: "term1 OR term2"
-    - NOT: "term1 NOT term2"
-    - Phrases: "\"exact phrase\""
-    - Parentheses: "(term1 OR term2) AND term3"
+    from sqlalchemy import false, or_
 
-    Args:
-        query: The raw search query.
+    filters: list = []
 
-    Returns:
-        A dictionary with parsed terms and operators.
-        
-    Raises:
-        HTTPException: If the query contains potentially dangerous content.
+    if source:
+        source_obj = session.query(Source).filter_by(name=source).first()
+        if not source_obj:
+            raise HTTPException(status_code=404, detail=f"Source '{source}' not found.")
+        filters.append(Article.source_id == source_obj.id)
+
+    if start_date:
+        filters.append(Article.published_at >= datetime.fromisoformat(start_date))
+    if end_date:
+        filters.append(Article.published_at <= datetime.fromisoformat(end_date))
+
+    if language:
+        filters.append(Article.language == language)
+
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        if tag_list:
+            # .ilike(pattern) binds `pattern` as a parameter; the f-string only
+            # builds the literal pattern value, not SQL. (No bindparam name reuse.)
+            tag_conditions = [Source.tags.ilike(f"%{t}%") for t in tag_list]
+            source_ids = [
+                sid for (sid,) in session.query(Source.id)
+                .filter(or_(*tag_conditions)).distinct()
+            ]
+            filters.append(Article.source_id.in_(source_ids) if source_ids else false())
+
+    return filters
+
+
+def _query_articles(
+    session,
+    *,
+    query: Optional[str],
+    source: Optional[str],
+    start_date: Optional[str],
+    end_date: Optional[str],
+    language: Optional[str],
+    tags: Optional[str],
+    limit: Optional[int],
+    offset: int,
+) -> tuple[list, int]:
+    """Return ``(articles, total)`` applying full-text search + structured filters.
+
+    Text search uses SQLite FTS5 (real Boolean AND/OR/NOT, phrases, parenthesised
+    precedence) and orders results by relevance; otherwise results are ordered by
+    recency. ``limit=None`` returns every match (used by export).
     """
-    if not query:
-        return {"terms": [], "operators": []}
+    from sqlalchemy import and_
 
-    # Validate and sanitize the search query
-    try:
-        query = validate_and_sanitize_search_query(query)
-    except SecurityError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    filters = _structured_filters(
+        session, source=source, start_date=start_date,
+        end_date=end_date, language=language, tags=tags,
+    )
 
-    # Replace parentheses with spaces for now (simplified)
-    query = query.replace("(", " ").replace(")", " ")
+    fts_ids: Optional[list] = None
+    if query:
+        try:
+            fts_ids = search_ids(session, query)
+        except SearchQueryError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}")
 
-    # Tokenize the query
-    tokens = re.split(r'\s+(AND|OR|NOT)\s+', query, flags=re.IGNORECASE)
-    tokens = [token.strip() for token in tokens if token.strip()]
+    if fts_ids is not None:
+        # A text query was given. fts_ids is relevance-ordered (best first).
+        if not fts_ids:
+            return [], 0
+        q = session.query(Article).filter(Article.id.in_(fts_ids))
+        if filters:
+            q = q.filter(and_(*filters))
+        rows = q.all()
+        rank = {aid: i for i, aid in enumerate(fts_ids)}
+        rows.sort(key=lambda a: rank.get(a.id, 1 << 30))
+        total = len(rows)
+        if limit is not None:
+            rows = rows[offset:offset + limit]
+        return rows, total
 
-    # Process tokens
-    terms = []
-    operators = []
-    current_operator = "AND"  # Default operator
-
-    for token in tokens:
-        if token.upper() in ["AND", "OR", "NOT"]:
-            operators.append(token.upper())
-            current_operator = token.upper()
-        else:
-            # Remove quotes for exact phrases
-            if token.startswith('"') and token.endswith('"'):
-                terms.append({"value": token[1:-1], "exact": True, "operator": current_operator})
-            else:
-                terms.append({"value": token, "exact": False, "operator": current_operator})
-            current_operator = "AND"  # Reset to default
-
-    return {"terms": terms, "operators": operators}
-
-
-def build_sqlalchemy_filter(parsed_query: dict, session) -> List:
-    """
-    Build SQLAlchemy filter conditions from a parsed query.
-
-    Args:
-        parsed_query: The parsed query dictionary.
-        session: SQLAlchemy session (unused but kept for compatibility).
-
-    Returns:
-        A list of SQLAlchemy filter conditions.
-    """
-    from sqlalchemy import or_, and_, not_, bindparam
-
-    filters = []
-    for term in parsed_query["terms"]:
-        if term["exact"]:
-            # Fixed: Use contains() with bindparam to prevent SQL injection
-            # This is safer than string concatenation with wildcards
-            param = bindparam('search_term', term["value"])
-            filters.append(Article.content.ilike('%' + param + '%'))
-        else:
-            # Split into words for OR logic
-            words = term["value"].split()
-            word_conditions = []
-            for word in words:
-                # Fixed: Use contains() with bindparam to prevent SQL injection
-                param = bindparam('search_word', word)
-                word_conditions.append(Article.content.ilike('%' + param + '%'))
-            filters.append(or_(*word_conditions))
-
-    # Combine filters based on operators (simplified: assume AND for all)
-    return and_(*filters) if filters else []
+    # No text query: browse by recency.
+    q = session.query(Article)
+    if filters:
+        q = q.filter(and_(*filters))
+    total = q.count()
+    q = q.order_by(Article.published_at.desc(), Article.id.desc())
+    if limit is not None:
+        q = q.offset(offset).limit(limit)
+    return q.all(), total
 
 
 # API Endpoints
@@ -308,13 +352,15 @@ async def search_articles(
     language: Optional[str] = None,
     tags: Optional[str] = None,
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
+    db: Session = Depends(get_db),
 ):
     """
     Search and filter articles with advanced options.
 
     Parameters:
-    - query: Text to search in article content (supports Boolean operators).
+    - query: Boolean full-text search over title+content. Supports AND/OR/NOT,
+      "quoted phrases", and parentheses with correct precedence (SQLite FTS5).
     - source: Filter by source name.
     - start_date: Filter by start date (YYYY-MM-DD).
     - end_date: Filter by end date (YYYY-MM-DD).
@@ -325,114 +371,34 @@ async def search_articles(
     """
     logger.info(f"Search request: query={query}, source={source}, limit={limit}, offset={offset}")
 
-    # Validate pagination parameters
     if limit < 1 or limit > 1000:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset must be non-negative")
+    _validate_date(start_date, "start_date")
+    _validate_date(end_date, "end_date")
 
-    # Validate date formats
-    if start_date:
-        try:
-            datetime.fromisoformat(start_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD.")
-    if end_date:
-        try:
-            datetime.fromisoformat(end_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD.")
+    articles, total = _query_articles(
+        db, query=query, source=source, start_date=start_date, end_date=end_date,
+        language=language, tags=tags, limit=limit, offset=offset,
+    )
 
-    session = get_session()
-    try:
-        filters = []
-
-        # Parse and apply text query
-        if query:
-            parsed_query = parse_search_query(query)
-            query_filters = build_sqlalchemy_filter(parsed_query, session)
-            # query_filters is either a SQLAlchemy clause or empty list
-            if not (isinstance(query_filters, list) and len(query_filters) == 0):
-                if isinstance(query_filters, list):
-                    filters.extend(query_filters)
-                else:
-                    filters.append(query_filters)
-
-        # Apply source filter
-        if source:
-            source_obj = session.query(Source).filter_by(name=source).first()
-            if source_obj:
-                filters.append(Article.source_id == source_obj.id)
-            else:
-                raise HTTPException(status_code=404, detail=f"Source '{source}' not found.")
-
-        # Apply date filters
-        if start_date:
-            try:
-                start_dt = datetime.fromisoformat(start_date)
-                filters.append(Article.published_at >= start_dt)
-            except ValueError:
-                pass
-        if end_date:
-            try:
-                end_dt = datetime.fromisoformat(end_date)
-                filters.append(Article.published_at <= end_dt)
-            except ValueError:
-                pass
-
-        # Apply language filter
-        if language:
-            filters.append(Article.language == language)
-
-        # Apply tags filter (filter by source tags)
-        if tags:
-            tag_list = [tag.strip() for tag in tags.split(",")]
-            # Find sources with any of the tags
-            from sqlalchemy import or_, bindparam
-            tag_conditions = []
-            for tag in tag_list:
-                # Fixed: Use proper parameter binding to prevent SQL injection
-                param = bindparam('tag_param', tag)
-                tag_conditions.append(Source.tags.ilike('%' + param + '%'))
-            source_ids = session.query(Source.id).filter(or_(*tag_conditions)).distinct().all()
-            source_ids = [sid for (sid,) in source_ids]
-            if source_ids:
-                filters.append(Article.source_id.in_(source_ids))
-
-        # Execute query
-        from sqlalchemy import and_
-        query_filters = and_(*filters) if filters else True
-        articles_query = session.query(Article).filter(query_filters)
-
-        # Count total results
-        total = articles_query.count()
-
-        # Apply pagination
-        articles = articles_query.offset(offset).limit(limit).all()
-
-        # Format results
-        results = [
-            {
-                "id": a.id,
-                "title": a.title,
-                "url": a.url,
-                "canonical_url": a.canonical_url,
-                "source": a.source.name if a.source else "Unknown",
-                "published_at": a.published_at.isoformat() if a.published_at else None,
-                "language": a.language,
-                "content": a.content[:500] + "..." if len(a.content) > 500 else a.content,  # Truncate long content
-                "hash": a.hash
-            } for a in articles
-        ]
-
-        return {
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-            "results": results
+    results = [
+        {
+            "id": a.id,
+            "title": a.title,
+            "url": a.url,
+            "canonical_url": a.canonical_url,
+            "source": a.source.name if a.source else "Unknown",
+            "published_at": a.published_at.isoformat() if a.published_at else None,
+            "language": a.language,
+            "content": (a.content[:500] + "...") if a.content and len(a.content) > 500 else (a.content or ""),
+            "hash": a.hash,
         }
-    finally:
-        session.close()
+        for a in articles
+    ]
+
+    return {"total": total, "limit": limit, "offset": offset, "results": results}
 
 
 @app.get("/api/articles/export")
@@ -445,14 +411,15 @@ async def export_articles(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     language: Optional[str] = None,
-    tags: Optional[str] = None
+    tags: Optional[str] = None,
+    db: Session = Depends(get_db),
 ):
     """
     Export articles in CSV or JSON format with advanced filters.
 
     Parameters:
     - format: Export format (csv or json).
-    - query: Text to search in article content.
+    - query: Boolean full-text search (same syntax as /api/articles).
     - source: Filter by source name.
     - start_date: Filter by start date (YYYY-MM-DD).
     - end_date: Filter by end date (YYYY-MM-DD).
@@ -461,120 +428,56 @@ async def export_articles(
     """
     logger.info(f"Export request: format={format}, query={query}, source={source}")
 
-    # Validate date formats
-    if start_date:
-        try:
-            datetime.fromisoformat(start_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD.")
-    if end_date:
-        try:
-            datetime.fromisoformat(end_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD.")
+    if format not in ("csv", "json"):
+        raise HTTPException(status_code=400, detail="Unsupported format. Use 'csv' or 'json'.")
+    _validate_date(start_date, "start_date")
+    _validate_date(end_date, "end_date")
 
-    session = get_session()
-    try:
-        filters = []
+    # limit=None -> export every matching row, faithful to the filter.
+    articles, _total = _query_articles(
+        db, query=query, source=source, start_date=start_date, end_date=end_date,
+        language=language, tags=tags, limit=None, offset=0,
+    )
 
-        # Parse and apply text query
-        if query:
-            parsed_query = parse_search_query(query)
-            query_filters = build_sqlalchemy_filter(parsed_query, session)
-            # query_filters is either a SQLAlchemy clause or empty list
-            if not (isinstance(query_filters, list) and len(query_filters) == 0):
-                if isinstance(query_filters, list):
-                    filters.extend(query_filters)
-                else:
-                    filters.append(query_filters)
+    if format == "csv":
+        stream = io.StringIO()
+        writer = csv.writer(stream)
+        writer.writerow(["ID", "Title", "URL", "Canonical URL", "Source", "Published At", "Language", "Content", "Hash"])
+        for a in articles:
+            writer.writerow([
+                a.id,
+                a.title or "",
+                a.url or "",
+                a.canonical_url or "",
+                a.source.name if a.source else "",
+                a.published_at.isoformat() if a.published_at else "",
+                a.language or "",
+                a.content or "",
+                a.hash or "",
+            ])
+        return StreamingResponse(
+            iter([stream.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=articles.csv"},
+        )
 
-        # Apply source filter
-        if source:
-            source_obj = session.query(Source).filter_by(name=source).first()
-            if source_obj:
-                filters.append(Article.source_id == source_obj.id)
-
-        # Apply date filters
-        if start_date:
-            try:
-                start_dt = datetime.fromisoformat(start_date)
-                filters.append(Article.published_at >= start_dt)
-            except ValueError:
-                pass
-        if end_date:
-            try:
-                end_dt = datetime.fromisoformat(end_date)
-                filters.append(Article.published_at <= end_dt)
-            except ValueError:
-                pass
-
-        # Apply language filter
-        if language:
-            filters.append(Article.language == language)
-
-        # Apply tags filter
-        if tags:
-            tag_list = [tag.strip() for tag in tags.split(",")]
-            from sqlalchemy import or_, bindparam
-            tag_conditions = []
-            for tag in tag_list:
-                # Fixed: Use proper parameter binding to prevent SQL injection
-                param = bindparam('tag_param', tag)
-                tag_conditions.append(Source.tags.ilike('%' + param + '%'))
-            source_ids = session.query(Source.id).filter(or_(*tag_conditions)).distinct().all()
-            source_ids = [sid for (sid,) in source_ids]
-            if source_ids:
-                filters.append(Article.source_id.in_(source_ids))
-
-        # Execute query
-        from sqlalchemy import and_
-        query_filters = and_(*filters) if filters else True
-        articles = session.query(Article).filter(query_filters).all()
-
-        if format == "csv":
-            stream = io.StringIO()
-            writer = csv.writer(stream)
-            writer.writerow(["ID", "Title", "URL", "Canonical URL", "Source", "Published At", "Language", "Content", "Hash"])
-            for a in articles:
-                writer.writerow([
-                    a.id,
-                    a.title or "",
-                    a.url or "",
-                    a.canonical_url or "",
-                    a.source.name if a.source else "",
-                    a.published_at.isoformat() if a.published_at else "",
-                    a.language or "",
-                    a.content or "",
-                    a.hash or ""
-                ])
-            response = StreamingResponse(
-                iter([stream.getvalue()]),
-                media_type="text/csv",
-                headers={"Content-Disposition": "attachment; filename=articles.csv"}
-            )
-            return response
-
-        elif format == "json":
-            return JSONResponse(
-                content=[
-                    {
-                        "id": a.id,
-                        "title": a.title,
-                        "url": a.url,
-                        "canonical_url": a.canonical_url,
-                        "source": a.source.name if a.source else "Unknown",
-                        "published_at": a.published_at.isoformat() if a.published_at else None,
-                        "language": a.language,
-                        "content": a.content,
-                        "hash": a.hash
-                    } for a in articles
-                ]
-            )
-        else:
-            raise HTTPException(status_code=400, detail="Unsupported format. Use 'csv' or 'json'.")
-
-    finally:
-        session.close()
+    # format == "json" (validated above)
+    return JSONResponse(
+        content=[
+            {
+                "id": a.id,
+                "title": a.title,
+                "url": a.url,
+                "canonical_url": a.canonical_url,
+                "source": a.source.name if a.source else "Unknown",
+                "published_at": a.published_at.isoformat() if a.published_at else None,
+                "language": a.language,
+                "content": a.content,
+                "hash": a.hash,
+            }
+            for a in articles
+        ]
+    )
 
 
 @app.get("/api/sources", response_model=list)
@@ -610,3 +513,26 @@ async def read_root():
             return HTMLResponse(content=f.read(), status_code=200)
     else:
         return HTMLResponse(content="<h1>Welcome to Open Omniscience</h1><p>API is running. See <a href='/docs'>API Documentation</a></p>", status_code=200)
+
+
+def main() -> None:
+    """Console entrypoint (``open-omniscience``).
+
+    Binds to loopback only by default: this is a single-user, local-first app and
+    must never be exposed on a network interface (see PRODUCT_SYNTHESIS §0.3). Set
+    OO_HOST/OO_PORT to override deliberately.
+    """
+    import uvicorn
+
+    host = os.getenv("OO_HOST", "127.0.0.1")
+    port = int(os.getenv("OO_PORT", "8000"))
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        logger.warning(
+            "Binding to %s exposes the app beyond loopback; this app has no auth "
+            "and is intended for single-user local use only.", host,
+        )
+    uvicorn.run(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+    main()
