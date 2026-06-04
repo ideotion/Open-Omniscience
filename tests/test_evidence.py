@@ -73,6 +73,30 @@ def test_tampered_manifest_breaks_signature(tmp_path):
     assert "signature" in reason.lower()
 
 
+def test_tamper_and_resign_caught_by_pinned_key(tmp_path):
+    """The chain-of-custody fix: an attacker tampers, re-signs with THEIR OWN key,
+    and swaps in their public key. Integrity-only verify passes, but pinning the
+    real signer's key catches it."""
+    from src.reporting.evidence import build_manifest, public_key_hex, sign_manifest
+    signer = load_or_create_signing_key(tmp_path / "signer.pem")
+    bundle = build_signed_bundle([_Art(1, "alpha")], signer, case_name="Real")
+    real_key = public_key_hex(signer)
+
+    # Attacker forges an item, rebuilds the manifest, signs with their own key.
+    attacker = load_or_create_signing_key(tmp_path / "attacker.pem")
+    forged_manifest = build_manifest([_Art(1, "FORGED CONTENT")], case_name="Real")
+    forged = sign_manifest(forged_manifest, attacker)
+
+    # Integrity-only verify is fooled (self-consistent bundle).
+    assert verify_bundle(forged)[0] is True
+    # Pinning the real signer's key catches the forgery.
+    ok, reason = verify_bundle(forged, trusted_public_key=real_key)
+    assert ok is False
+    assert "untrusted key" in reason.lower()
+    # The genuine bundle verifies against the pinned key.
+    assert verify_bundle(bundle, trusted_public_key=real_key)[0] is True
+
+
 def test_wrong_key_fails(tmp_path):
     key = load_or_create_signing_key(tmp_path / "k.pem")
     bundle = build_signed_bundle([_Art(1, "alpha")], key)
@@ -151,7 +175,7 @@ def test_export_and_verify_via_api(client):
     bundle = r.json()
     assert bundle["manifest"]["item_count"] == 1
     # round-trip through the verify endpoint
-    v = client.post("/api/reports/evidence/verify", json=bundle)
+    v = client.post("/api/reports/evidence/verify", json={"bundle": bundle})
     assert v.json()["verified"] is True
 
 

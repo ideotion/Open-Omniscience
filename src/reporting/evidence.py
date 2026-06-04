@@ -91,11 +91,17 @@ def canonical_bytes(payload: dict) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
+def _leaf(item: dict) -> str:
+    """Merkle leaf = hash of the ENTIRE canonical item, so every provenance field
+    (url, canonical_url, source_id, published_at, stored_hash, content_sha256) is
+    covered by the Merkle root -- not just the content hash."""
+    return hashlib.sha256(canonical_bytes(item)).hexdigest()
+
+
 def build_manifest(articles, *, case_name: str | None = None) -> dict:
     """Build the unsigned manifest (items + Merkle root + metadata)."""
     items = [_article_item(a) for a in articles]
-    # Merkle leaves are the per-item content hashes, in item order.
-    leaves = [it["content_sha256"] for it in items]
+    leaves = [_leaf(it) for it in items]
     merkle_root = compute_merkle_root(leaves) if leaves else None
     return {
         "bundle_version": BUNDLE_VERSION,
@@ -126,29 +132,42 @@ def build_signed_bundle(articles, key: Ed25519PrivateKey, *, case_name: str | No
 # Independent verification (no app/DB needed -- just the bundle + crypto)
 # --------------------------------------------------------------------------- #
 
-def verify_bundle(bundle: dict) -> tuple[bool, str]:
-    """Verify a bundle's Merkle root and signature.
+def verify_bundle(bundle: dict, *, trusted_public_key: str | None = None) -> tuple[bool, str]:
+    """Verify a bundle's Merkle root and Ed25519 signature.
 
-    Returns (ok, reason). Recomputes the Merkle root from the items (detecting any
-    tampered content hash) and checks the Ed25519 signature over the manifest.
+    Returns (ok, reason). Recomputes the Merkle root from the full items (detecting
+    any tampered field) and checks the signature over the manifest.
+
+    IMPORTANT (chain of custody): a valid signature only proves "signed by the key
+    embedded in the bundle". An attacker can tamper, re-sign with their OWN key, and
+    swap in their public key. To prove the bundle came from a specific signer, pass
+    ``trusted_public_key`` (the signer's known/pinned public key); verification then
+    requires the bundle's key to match it. Without it, the result note says the key
+    is unpinned.
     """
     manifest = bundle.get("manifest")
     if not manifest:
         return False, "no manifest"
 
-    # 1. Recompute the Merkle root from the items as presented.
-    leaves = [it.get("content_sha256", "") for it in manifest.get("items", [])]
+    bundle_key = bundle.get("public_key")
+    if trusted_public_key is not None and bundle_key != trusted_public_key:
+        return False, "signed by an untrusted key (does not match the pinned public key)"
+
+    # 1. Recompute the Merkle root from the full items as presented.
+    leaves = [_leaf(it) for it in manifest.get("items", [])]
     recomputed = compute_merkle_root(leaves) if leaves else None
     if recomputed != manifest.get("merkle_root"):
-        return False, "merkle root mismatch (an item hash was altered/added/removed)"
+        return False, "merkle root mismatch (an item was altered/added/removed)"
 
     # 2. Verify the signature over the canonical manifest bytes.
     try:
-        pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(bundle["public_key"]))
+        pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(bundle_key))
         pub.verify(bytes.fromhex(bundle["signature"]), canonical_bytes(manifest))
-    except (KeyError, ValueError):
+    except (KeyError, ValueError, TypeError):
         return False, "malformed signature or public key"
     except InvalidSignature:
         return False, "signature does not match (manifest altered or wrong key)"
 
-    return True, "ok"
+    if trusted_public_key is None:
+        return True, f"ok (signed by unpinned key {bundle_key[:16]}...; pin the key to prove provenance)"
+    return True, "ok (signature valid and key matches the pinned trusted key)"

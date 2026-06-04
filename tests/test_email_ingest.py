@@ -43,6 +43,18 @@ def test_parse_plain_email():
     assert p.date is not None
 
 
+def test_parse_respects_declared_charset():
+    # A windows-1252 / latin-1 body must decode correctly, not become mojibake.
+    raw = (
+        b"From: n@news.example\r\nSubject: Caf\xe9\r\nMessage-ID: <c@x>\r\n"
+        b"Content-Type: text/plain; charset=iso-8859-1\r\n\r\n"
+        b"Caf\xe9 r\xe9sum\xe9 na\xefve\r\n"
+    )
+    p = parse_email(raw)
+    assert "Café résumé naïve" in p.body_text
+    assert "�" not in p.body_text  # no replacement chars
+
+
 def test_parse_html_email_strips_tags():
     p = parse_email(HTML)
     assert "Rare earth prices climbed" in p.body_text
