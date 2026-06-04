@@ -70,7 +70,7 @@ def list_prices(
                 price = convert_price(r.price, r.unit, unit)
                 u = unit
             except UnitError as exc:
-                raise HTTPException(status_code=400, detail=str(exc))
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         out.append({
             "observed_on": r.observed_on.isoformat(), "price": price,
             "currency": r.currency, "unit": u, "market": r.market,
@@ -100,7 +100,7 @@ def correlation(
         try:
             ids = search_ids(db, query)
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}")
+            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
         if not ids:
             article_dates = []
         else:

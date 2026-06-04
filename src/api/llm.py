@@ -12,7 +12,7 @@ provenance (model + prompt version + timestamp) as ArticleAnalysis rows.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -90,9 +90,9 @@ def llm_generate(req: GenerateRequest, client: OllamaClient = Depends(get_llm_cl
     try:
         result = client.generate(req.prompt, model=model, system=req.system)
     except LLMUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"model": result.model, "text": result.text}
 
 
@@ -115,9 +115,9 @@ def summarize_article(
     try:
         result = client.generate(prompt, model=model, system=_SUMMARY_SYSTEM)
     except LLMUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     analysis = ArticleAnalysis(
         article_id=article.id,
@@ -125,7 +125,7 @@ def summarize_article(
         result=result.text,
         model=result.model,
         prompt_version=SUMMARY_PROMPT_VERSION,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     db.add(analysis)
     db.commit()

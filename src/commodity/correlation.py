@@ -66,7 +66,7 @@ def _daily_price_changes(points: list[tuple[date, float]]) -> dict[date, float]:
     """Absolute day-over-day price change keyed by the later date."""
     ordered = sorted(points, key=lambda p: p[0])
     changes: dict[date, float] = {}
-    for (d0, p0), (d1, p1) in zip(ordered, ordered[1:]):
+    for (_d0, p0), (d1, p1) in zip(ordered, ordered[1:], strict=False):
         changes[d1] = p1 - p0
     return changes
 
