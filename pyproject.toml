@@ -60,6 +60,8 @@ dependencies = [
     # Tamper-evident reporting (Ed25519 signatures + Merkle) is a core value
     # proposition of this tool, so its crypto lib ships in the core.
     "cryptography>=42.0",
+    # Image metadata / EXIF verification (honest extraction, no forensics claims).
+    "pillow>=10.3",
     # Utilities
     "structlog>=24.1",
     "python-dateutil>=2.9",

@@ -104,6 +104,12 @@ checks (through the ethical fetcher); `GET /api/monitoring/anomalies` flags
 article-volume spikes by z-score. **Email:** `POST /api/sources/{id}/ingest-email`
 (IMAP) folds messages into the same searchable corpus.
 
+**Image metadata verification — Phase 4.** `POST /api/verify/image-metadata`
+(upload an image) returns its format, dimensions, EXIF and GPS with plain factual
+observations (e.g. editing-software tag present, no capture timestamp). Scoped
+honestly as *metadata checks* — **not** deepfake/manipulation detection (that was
+fabricated and is quarantined).
+
 **Signed evidence bundles — Phase 5.** The search panel's **Export signed
 evidence** button (or `POST /api/reports/evidence`) produces a Merkle-rooted,
 Ed25519-signed bundle. Anyone can verify it offline, without this app:

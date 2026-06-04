@@ -20,9 +20,10 @@ The guiding rule for this project (see `docs/PRODUCT_SYNTHESIS.md` §3.5/§3.7):
 | `test_deepfake_detector.py` | Tested the fabricated detector; moved with it. |
 
 ### What to do instead (future work)
-- **Revive metadata/EXIF/ID3 validation first** — `pillar3/src/analysis/metadata_validator.py`
-  is genuinely useful and honest, and is the right scope to ship as "metadata checks"
-  (explicitly *not* "deepfake detection").
+- **Metadata/EXIF validation — DONE (v0.4).** Revived as a clean, Pillow-based,
+  honest implementation in `src/verification/metadata.py` + `POST /api/verify/
+  image-metadata`, scoped explicitly as "metadata checks" (not deepfake detection).
+  The old cv2-based `pillar3/.../metadata_validator.py` is superseded.
 - If media forensics is ever rebuilt, use a **real, published, evaluated FOSS model**,
   call its inference, and report measured accuracy — or label outputs clearly as an
   "experimental heuristic, not evidence."

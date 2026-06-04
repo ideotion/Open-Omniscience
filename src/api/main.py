@@ -86,6 +86,9 @@ from src.api.monitoring import router as monitoring_router
 # Import reporting router (signed, tamper-evident evidence bundles)
 from src.api.reporting import router as reporting_router
 
+# Import verification router (honest image metadata/EXIF)
+from src.api.verification import router as verification_router
+
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
 logger = setup_logging("api")
@@ -197,6 +200,9 @@ app.include_router(monitoring_router)
 
 # Include reporting router
 app.include_router(reporting_router)
+
+# Include verification router
+app.include_router(verification_router)
 
 # General health check endpoint
 @app.get("/api/health")
