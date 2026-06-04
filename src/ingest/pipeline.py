@@ -13,7 +13,7 @@ no raw-requests bypass, and no silently-stored junk.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 
 import feedparser
@@ -83,7 +83,7 @@ def ingest_url(
 
     # Prefer the page's declared canonical link; fall back to the final fetched URL.
     canonical_final = canonicalize_url(doc.canonical_url or fetched.final_url)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     article = Article(
         url=fetched.requested_url,
         canonical_url=canonical_final,

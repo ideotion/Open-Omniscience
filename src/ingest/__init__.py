@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -140,7 +140,7 @@ class EthicalFetcher:
             status_code=response.status_code,
             content=response.text,
             content_type=content_type,
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
         )
 
     # -- robots ------------------------------------------------------------ #

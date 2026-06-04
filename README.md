@@ -1,32 +1,41 @@
 # Open Omniscience
 
-**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
-
-> **IMPORTANT:** This is an **early concept release** that is **completely unusable** in its current state. The application **does not work** and requires **extensive debugging and development** before it can be used. **Do not expect this to function** - this is a work in progress for future development.
-
-**An Open-Source, Ethical, Global Intelligence Platform for Investigative Journalism with Local LLM Support**
+**An Open-Source, Ethical, Global Intelligence Platform for Investigative Journalism**
 
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.04 (Early Concept - Non-Functional)
+**Version:** 0.4 (working core — alpha)
 **License:** [GNU GPLv3](LICENSE)
-**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
-
-![Open Omniscience Logo](https://via.placeholder.com/150?text=Open+Omniscience)
 
 ---
 
-## ⚠️ CRITICAL WARNING: EARLY DEVELOPMENT STAGE
+## Status — v0.4: the trustworthy core works
 
-**THIS SOFTWARE IS NOT READY FOR USE.**
+This release rebuilds the project around a small, **genuinely working and tested**
+spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
 
-- ❌ **Does not work** in current state
-- ❌ **Requires extensive debugging**
-- ❌ **Completely unusable** for production or testing
-- ❌ **No functionality guaranteed**
-- ❌ **For development purposes only**
+**What works now (tested end-to-end):**
+- ✅ Add sources; **ethically ingest** an RSS feed or a single URL — robots.txt
+  respected **fail-closed**, per-host rate limiting, one fetch path, no raw bypass.
+- ✅ Robust article extraction (trafilatura); nothing stored if there's no real body.
+- ✅ Unified SQLite store with **provenance** (source, URL, canonical, content hash,
+  fetch time) and content-hash / canonical-URL **deduplication**.
+- ✅ **Boolean full-text search** (SQLite FTS5): real `AND`/`OR`/`NOT`, `"phrases"`,
+  parentheses with correct precedence — fully parameterized.
+- ✅ CSV/JSON export; a dependency-free, offline web UI at `127.0.0.1:8000`.
+- ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
 
+**Deferred to later phases (see [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md)):**
+local LLM analysis via Ollama (Phase 2); one financial/commodity vertical with
+correlation (Phase 3); email + monitoring (Phase 4); signed chain-of-custody
+reporting (Phase 5).
+
+**Honesty note:** several previously-advertised "analysis" components (deepfake,
+propaganda, cognitive-bias, bot detection) were **fabricated** — returning
+hardcoded or heuristic scores while claiming real detection — and have been
+**quarantined** (`quarantine/`, see [docs/SALVAGE_MAP.md](docs/SALVAGE_MAP.md))
+rather than shipped as if they worked.
 
 ---
 
