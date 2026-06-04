@@ -29,7 +29,7 @@ Includes tables for sources and articles, with relationships and indexes.
 Author: Ideotion
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float, Index, Table, TypeDecorator, LargeBinary
+from sqlalchemy import Column, Integer, String, Text, DateTime, Date, Boolean, ForeignKey, Float, Index, Table, TypeDecorator, LargeBinary
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Union
@@ -1043,6 +1043,35 @@ class ArticleAnalysis(Base):
 
     def __repr__(self) -> str:
         return f"<ArticleAnalysis(article_id={self.article_id}, kind='{self.kind}', model='{self.model}')>"
+
+
+class CommodityPrice(Base):
+    """A single observed commodity price point (time series).
+
+    Stored alongside articles in the unified DB so price movements can be
+    correlated with news. ``currency`` and ``unit`` are recorded explicitly --
+    prices are NOT silently mixed across currencies/units (see src/commodity/units.py
+    for correct, tested unit conversion).
+    """
+
+    __tablename__ = "commodity_prices"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(32), nullable=False, index=True)  # e.g. "Nd", "Dy"
+    market = Column(String(100), nullable=True)              # e.g. "china_spot", "USGS"
+    observed_on = Column(Date, nullable=False, index=True)
+    price = Column(Float, nullable=False)
+    currency = Column(String(8), nullable=False, default="USD")
+    unit = Column(String(16), nullable=False, default="kg")  # mass unit (kg, t, lb, ozt, ...)
+    source = Column(String(255), nullable=True)              # provenance: where it came from
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_commodity_symbol_date", "symbol", "observed_on"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<CommodityPrice({self.symbol} {self.observed_on} {self.price} {self.currency}/{self.unit})>"
 
 
 

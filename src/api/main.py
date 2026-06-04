@@ -77,6 +77,9 @@ from src.api.llm import router as llm_router
 # Import ingestion router (ethical scrape -> extract -> store)
 from src.api.ingestion import router as ingestion_router
 
+# Import commodity router (price time-series + honest news correlation)
+from src.api.commodity import router as commodity_router
+
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
 logger = setup_logging("api")
@@ -179,6 +182,9 @@ app.include_router(llm_router)
 
 # Include ingestion router
 app.include_router(ingestion_router)
+
+# Include commodity router
+app.include_router(commodity_router)
 
 # General health check endpoint
 @app.get("/api/health")
