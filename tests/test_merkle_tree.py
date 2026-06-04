@@ -85,11 +85,14 @@ class TestMerkleNode(unittest.TestCase):
         right = MerkleNode("right")
         parent = MerkleNode(left=left, right=right)
         
-        # Manually compute expected hash
+        # Internal nodes use the 0x01 domain-separation prefix (leaves use 0x00)
         combined = left.hash_value + right.hash_value
-        expected_hash = hashlib.sha256(combined.encode('utf-8')).hexdigest()
-        
+        expected_hash = hashlib.sha256(b"\x01" + combined.encode('utf-8')).hexdigest()
+
         self.assertEqual(parent.hash_value, expected_hash)
+        # No second-preimage: the same material without the prefix must NOT match.
+        self.assertNotEqual(parent.hash_value,
+                            hashlib.sha256(combined.encode('utf-8')).hexdigest())
     
     def test_node_equality(self):
         """Test node equality based on hash values."""
