@@ -13,11 +13,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.commodity.correlation import correlate_price_with_news
+from src.commodity.csv_import import parse_price_csv
 from src.commodity.units import UnitError, convert_price
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, CommodityPrice
@@ -51,6 +52,29 @@ def import_prices(symbol: str, req: ImportPricesRequest, db: Session = Depends(g
         ))
     db.commit()
     return {"symbol": symbol, "imported": len(req.points)}
+
+
+@router.post("/{symbol}/prices/import-csv")
+async def import_prices_csv(symbol: str, file: UploadFile, db: Session = Depends(get_db)) -> dict:
+    """Bulk-import price points for a symbol from an uploaded CSV.
+
+    Required columns: a date column (date/observed_on/day) and a price column
+    (price/value/close). Optional: currency, unit, market. Malformed rows are
+    reported rather than silently dropped.
+    """
+    raw = await file.read()
+    parsed = parse_price_csv(raw.decode("utf-8", errors="replace"))
+    if not parsed.points and parsed.errors:
+        raise HTTPException(status_code=400, detail="; ".join(parsed.errors[:5]))
+    for p in parsed.points:
+        db.add(CommodityPrice(
+            symbol=symbol, market=p.get("market"), observed_on=p["observed_on"],
+            price=p["price"], currency=p.get("currency", "USD"),
+            unit=p.get("unit", "kg"), source=f"csv:{file.filename}",
+        ))
+    db.commit()
+    return {"symbol": symbol, "imported": len(parsed.points),
+            "skipped": len(parsed.errors), "errors": parsed.errors[:20]}
 
 
 @router.get("/{symbol}/prices")
