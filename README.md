@@ -9,7 +9,7 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.03 (Early Concept - Non-Functional)
+**Version:** 0.04 (Early Concept - Non-Functional)
 **License:** [GNU GPLv3](LICENSE)
 **Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
 
@@ -27,7 +27,6 @@
 - ❌ **No functionality guaranteed**
 - ❌ **For development purposes only**
 
-**Please do not attempt to install or use this software expecting it to function.** This is a conceptual framework that needs significant work before it becomes operational.
 
 ---
 
@@ -46,7 +45,7 @@ This project is a **Debian-based Linux application** built on Python, leveraging
 
 ## ⚠️ Disclaimer
 
-**Open Omniscience** is an **early concept release** that is **not functional** and **not ready for any use**. This project was initially forked from [HTTrack](https://www.httrack.com/), a website copier tool.
+**Open Omniscience** is an **early concept release** that is **not functional** and **not ready for any use**. This project was initially forked from [HTTrack](https://www.httrack.com/), a website copier tool designed by Xavier Roche (kudos to him!).
 
 ### Early Development Status
 
@@ -762,7 +761,11 @@ This master documentation file provides a single entry point for all Open-Omnisc
 
 ## 📅 Changelog
 
-### Version 0.03 (Current)
+### Version 0.04 (Current)
+- Comprehensive debugging
+- GUI complete redesign
+
+### Version 0.03
 - **NEW:** Local LLM support with comprehensive text processing capabilities
 - **NEW:** 40 pre-configured models (Gemma 4, Llama 4, Phi-4, Qwen 3, NLLB, T5, BERT, etc.)
 - **NEW:** 10+ API endpoints for LLM operations
