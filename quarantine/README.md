@@ -28,5 +28,14 @@ The guiding rule for this project (see `docs/PRODUCT_SYNTHESIS.md` §3.5/§3.7):
   call its inference, and report measured accuracy — or label outputs clearly as an
   "experimental heuristic, not evidence."
 
+## `legacy_database_search.py` — superseded dead code
+
+The former `src/database/search.py` (1310 lines) advertised SQLite FTS5 / Postgres
+full-text search but was **never imported** by the application; the real, tested
+search lives in `src/database/fts.py`. Parked here to avoid confusion. Mine it for
+any genuinely useful Postgres-FTS ideas if/when a Postgres backend is built.
+
+---
+
 Restoring a file means: rebuild its logic so the output reflects a real method,
 add honest tests, then move it back and wire it in deliberately.
