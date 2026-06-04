@@ -57,6 +57,9 @@ dependencies = [
     # absent rather than silently degrading -- see src/utils/security.py).
     "bleach>=6.1",
     "bcrypt>=4.1",
+    # Tamper-evident reporting (Ed25519 signatures + Merkle) is a core value
+    # proposition of this tool, so its crypto lib ships in the core.
+    "cryptography>=42.0",
     # Utilities
     "structlog>=24.1",
     "python-dateutil>=2.9",
@@ -87,9 +90,8 @@ analysis = [
     "vaderSentiment>=3.3.2",
 ]
 
-# Defensible reporting / chain-of-custody (Phase 5).
+# Optional GPG-based signing path (cryptography/Ed25519 is in core).
 crypto = [
-    "cryptography>=42.0",
     "python-gnupg>=0.5.2",
 ]
 
