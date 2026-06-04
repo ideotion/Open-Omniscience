@@ -29,288 +29,31 @@ Includes tables for sources and articles, with relationships and indexes.
 Author: Ideotion
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float, create_engine, Index, Table, TypeDecorator, LargeBinary
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float, Index, Table, TypeDecorator, LargeBinary
+from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Union
 from contextlib import contextmanager
 import os
 from pathlib import Path
 
-# Get the absolute path to the repository root
-REPO_ROOT = Path(__file__).parent.parent.parent.resolve()
-
-# Ensure the data directory exists
-DATA_DIR = REPO_ROOT / "data"
-os.makedirs(DATA_DIR, exist_ok=True)
-
-# Also ensure audit and logs directories exist
-AUDIT_DIR = REPO_ROOT / "audit"
-LOGS_DIR = REPO_ROOT / "logs"
-os.makedirs(AUDIT_DIR, exist_ok=True)
-os.makedirs(LOGS_DIR, exist_ok=True)
-
-# Database URL: Default to SQLite, but can be overridden for PostgreSQL
-# To use PostgreSQL, set DATABASE_URL to:
-# postgresql://user:password@localhost:5432/open_omniscience
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'open_omniscience.db'}")
-
-# Database configuration for performance optimization
-DATABASE_CONFIG = {
-    # SQLite specific optimizations
-    "sqlite": {
-        "connect_args": {
-            "check_same_thread": False,  # Allow access from multiple threads
-            "timeout": 30,  # Connection timeout in seconds
-            "isolation_level": None,  # Use default isolation level
-        },
-        "poolclass": None,  # SQLite doesn't need connection pooling
-        "pool_size": 0,
-        "max_overflow": 0,
-        # SQLite-specific optimizations
-        "pool_pre_ping": True,
-        "pool_use_lifo": True,
-    },
-    # PostgreSQL specific optimizations
-    "postgresql": {
-        "pool_size": 10,  # Number of connections to keep open
-        "max_overflow": 20,  # Number of connections to allow beyond pool_size
-        "pool_timeout": 30,  # Seconds to wait for a connection
-        "pool_recycle": 3600,  # Recycle connections after 1 hour
-        "pool_pre_ping": True,  # Test connections for liveness before use
-        "pool_use_lifo": True,  # Use LIFO for better connection reuse
-        "echo": False,
-        "echo_pool": False,  # Log connection pool activity
-        # PostgreSQL-specific optimizations
-        "isolation_level": "READ COMMITTED",
-        "connect_args": {
-            "connect_timeout": 10,  # Connection timeout
-            "application_name": "OpenOmniscience",
-        },
-    },
-    # MySQL specific optimizations
-    "mysql": {
-        "pool_size": 10,
-        "max_overflow": 20,
-        "pool_timeout": 30,
-        "pool_recycle": 3600,
-        "pool_pre_ping": True,
-        "pool_use_lifo": True,
-        "echo": False,
-        "connect_args": {
-            "connect_timeout": 10,
-            "charset": "utf8mb4",
-        },
-    },
-    # Common optimizations
-    "common": {
-        "echo": False,
-        "future": True,  # Use SQLAlchemy 2.0 style
-    }
-}
-
-
-# Advanced connection pool configuration
-class ConnectionPoolConfig:
-    """
-    Advanced connection pool configuration.
-    
-    This class provides fine-grained control over database connection pooling
-    for optimal performance in different deployment scenarios.
-    """
-    
-    def __init__(
-        self,
-        pool_size: int = 10,
-        max_overflow: int = 20,
-        pool_timeout: int = 30,
-        pool_recycle: int = 3600,
-        pool_pre_ping: bool = True,
-        pool_use_lifo: bool = True,
-        max_lifetime: int = 0,  # 0 = no limit
-        pool_reset_on_return: str = "rollback",  # "rollback", "commit", or None
-    ):
-        """
-        Initialize connection pool configuration.
-        
-        Args:
-            pool_size: Number of connections to keep open.
-            max_overflow: Number of connections to allow beyond pool_size.
-            pool_timeout: Seconds to wait for a connection.
-            pool_recycle: Recycle connections after this many seconds.
-            pool_pre_ping: Test connections for liveness before use.
-            pool_use_lifo: Use LIFO for connection reuse.
-            max_lifetime: Maximum lifetime of a connection in seconds (0 = no limit).
-            pool_reset_on_return: What to do when returning connections to the pool.
-        """
-        self.pool_size = pool_size
-        self.max_overflow = max_overflow
-        self.pool_timeout = pool_timeout
-        self.pool_recycle = pool_recycle
-        self.pool_pre_ping = pool_pre_ping
-        self.pool_use_lifo = pool_use_lifo
-        self.max_lifetime = max_lifetime
-        self.pool_reset_on_return = pool_reset_on_return
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert configuration to dictionary."""
-        return {
-            "pool_size": self.pool_size,
-            "max_overflow": self.max_overflow,
-            "pool_timeout": self.pool_timeout,
-            "pool_recycle": self.pool_recycle,
-            "pool_pre_ping": self.pool_pre_ping,
-            "pool_use_lifo": self.pool_use_lifo,
-            "max_lifetime": self.max_lifetime,
-            "pool_reset_on_return": self.pool_reset_on_return,
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ConnectionPoolConfig":
-        """Create configuration from dictionary."""
-        return cls(
-            pool_size=data.get("pool_size", 10),
-            max_overflow=data.get("max_overflow", 20),
-            pool_timeout=data.get("pool_timeout", 30),
-            pool_recycle=data.get("pool_recycle", 3600),
-            pool_pre_ping=data.get("pool_pre_ping", True),
-            pool_use_lifo=data.get("pool_use_lifo", True),
-            max_lifetime=data.get("max_lifetime", 0),
-            pool_reset_on_return=data.get("pool_reset_on_return", "rollback"),
-        )
-
-
-# Pre-configured pool configurations for different scenarios
-POOL_CONFIGS = {
-    "development": ConnectionPoolConfig(
-        pool_size=5,
-        max_overflow=10,
-        pool_timeout=10,
-        pool_recycle=300,
-        pool_pre_ping=True,
-        pool_use_lifo=True,
-    ),
-    "production": ConnectionPoolConfig(
-        pool_size=20,
-        max_overflow=50,
-        pool_timeout=30,
-        pool_recycle=3600,
-        pool_pre_ping=True,
-        pool_use_lifo=True,
-        max_lifetime=7200,  # 2 hours
-    ),
-    "high_concurrency": ConnectionPoolConfig(
-        pool_size=50,
-        max_overflow=100,
-        pool_timeout=60,
-        pool_recycle=1800,
-        pool_pre_ping=True,
-        pool_use_lifo=True,
-        max_lifetime=3600,  # 1 hour
-    ),
-    "low_memory": ConnectionPoolConfig(
-        pool_size=5,
-        max_overflow=5,
-        pool_timeout=10,
-        pool_recycle=600,
-        pool_pre_ping=True,
-        pool_use_lifo=True,
-    ),
-}
-
-
-def get_pool_config(profile: str = "production") -> ConnectionPoolConfig:
-    """
-    Get connection pool configuration for a specific profile.
-    
-    Args:
-        profile: Configuration profile name.
-        
-    Returns:
-        ConnectionPoolConfig instance.
-    """
-    return POOL_CONFIGS.get(profile, POOL_CONFIGS["production"])
-
-
-# Determine database type and apply appropriate configuration
-def get_database_config(pool_profile: str = "production") -> Dict[str, Any]:
-    """
-    Get database-specific configuration based on the URL and pool profile.
-    
-    Args:
-        pool_profile: Connection pool profile to use.
-        
-    Returns:
-        Dictionary of database configuration options.
-    """
-    config = DATABASE_CONFIG["common"].copy()
-    pool_config = get_pool_config(pool_profile)
-    
-    if DATABASE_URL.startswith("sqlite"):
-        config.update(DATABASE_CONFIG["sqlite"])
-        # SQLite doesn't use connection pooling
-        config.update({
-            "pool_size": 0,
-            "max_overflow": 0,
-        })
-    elif DATABASE_URL.startswith("postgresql"):
-        config.update(DATABASE_CONFIG["postgresql"])
-        # Apply pool configuration
-        config.update({
-            "pool_size": pool_config.pool_size,
-            "max_overflow": pool_config.max_overflow,
-            "pool_timeout": pool_config.pool_timeout,
-            "pool_recycle": pool_config.pool_recycle,
-            "pool_pre_ping": pool_config.pool_pre_ping,
-            "pool_use_lifo": pool_config.pool_use_lifo,
-        })
-        # Add connection lifetime if supported
-        if pool_config.max_lifetime > 0:
-            config["pool_pre_ping"] = True
-    elif DATABASE_URL.startswith("mysql"):
-        config.update(DATABASE_CONFIG["mysql"])
-        config.update({
-            "pool_size": pool_config.pool_size,
-            "max_overflow": pool_config.max_overflow,
-            "pool_timeout": pool_config.pool_timeout,
-            "pool_recycle": pool_config.pool_recycle,
-            "pool_pre_ping": pool_config.pool_pre_ping,
-            "pool_use_lifo": pool_config.pool_use_lifo,
-        })
-    
-    return config
-
-# Create the SQLAlchemy engine with performance optimizations
-# Use environment variable to select pool profile, default to "production"
-POOL_PROFILE = os.getenv("DB_POOL_PROFILE", "production")
-engine = create_engine(DATABASE_URL, **get_database_config(pool_profile=POOL_PROFILE))
-
-# Session factory with performance optimizations
-Session = sessionmaker(
-    bind=engine,
-    autocommit=False,  # Use explicit commits for better control
-    autoflush=False,  # Use explicit flushes for better performance
+# Engine, session lifecycle, and the FastAPI dependency live in session.py and
+# have NO import-time side effects (no create_all, no monitoring thread). They are
+# re-exported here because much existing code does
+# `from src.database.models import get_session` etc.
+from src.database.session import (  # noqa: E402
+    engine,
+    Session,
+    SessionLocal,
+    get_session,
+    close_session,
+    session_scope,
+    get_db,
+    init_db,
+    dispose_engine,
 )
 
-# Initialize database monitor
-from src.database.monitoring import init_database_monitor, MonitoringConfig
 
-# Get monitoring configuration from environment
-MONITOR_ENABLED = os.getenv("DB_MONITOR_ENABLED", "true").lower() == "true"
-MONITOR_CONFIG = MonitoringConfig(
-    enabled=MONITOR_ENABLED,
-    slow_query_threshold=float(os.getenv("DB_SLOW_QUERY_THRESHOLD", "0.1")),
-    long_running_threshold=float(os.getenv("DB_LONG_RUNNING_THRESHOLD", "1.0")),
-    log_slow_queries=os.getenv("DB_LOG_SLOW_QUERIES", "true").lower() == "true",
-    log_long_running_queries=os.getenv("DB_LOG_LONG_RUNNING", "true").lower() == "true",
-)
-
-# Initialize the database monitor
-database_monitor = init_database_monitor(engine, MONITOR_CONFIG)
-
-# Start health monitoring if enabled
-if MONITOR_ENABLED:
-    database_monitor.start_health_monitoring()
 
 
 # =============================================================================
@@ -465,55 +208,6 @@ class CompressedJSON(TypeDecorator):
 # =============================================================================
 # Database Configuration Utilities
 # =============================================================================
-
-# Performance utility functions
-def get_session() -> "Session":
-    """
-    Get a new database session with performance optimizations.
-    
-    Returns:
-        A new SQLAlchemy session.
-    """
-    session = Session()
-    return session
-
-def close_session(session: "Session") -> None:
-    """
-    Close a database session properly.
-    
-    Args:
-        session: The session to close.
-    """
-    try:
-        session.close()
-    except Exception:
-        pass
-
-# Context manager for database sessions
-from contextlib import contextmanager
-
-@contextmanager
-def session_scope():
-    """
-    Provide a transactional scope around a series of operations.
-    
-    Usage:
-        with session_scope() as session:
-            # Do database operations
-            session.add(some_object)
-            session.commit()
-    
-    This ensures that the session is properly closed even if an error occurs.
-    """
-    session = Session()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
 
 # Base class for declarative models
 Base = declarative_base()
@@ -1323,18 +1017,12 @@ class SourceCredibilityRule(Base):
 # Add relationships to existing Article model
 Article.links = relationship("ArticleLink", back_populates="article", cascade="all, delete-orphan")
 
-# Create all tables in the database
-Base.metadata.create_all(engine)
-
-# Utility function to get a new database session
-def get_session():
-    """Return a new database session."""
-    return Session()
 
 
 # Example usage
 if __name__ == "__main__":
     # Test database connection and table creation
+    init_db()
     session = get_session()
     
     # Check if tables exist
