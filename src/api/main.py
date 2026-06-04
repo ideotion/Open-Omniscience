@@ -71,8 +71,8 @@ from src.api.keyword_analysis import router as keyword_analysis_router
 # Import link analysis router
 from src.api.link_analysis import router as link_analysis_router
 
-# Import LLM router
-from src.api.routes.llm import router as llm_router
+# Import LLM router (clean Ollama HTTP client; replaces the legacy routes.llm)
+from src.api.llm import router as llm_router
 
 # Import ingestion router (ethical scrape -> extract -> store)
 from src.api.ingestion import router as ingestion_router

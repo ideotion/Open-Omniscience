@@ -1018,6 +1018,33 @@ class SourceCredibilityRule(Base):
 Article.links = relationship("ArticleLink", back_populates="article", cascade="all, delete-orphan")
 
 
+class ArticleAnalysis(Base):
+    """A derived analytic result for an article (LLM summary, translation, ...).
+
+    Carries provenance so no number/text is ever shown without its origin
+    (PRODUCT_SYNTHESIS §8): which model produced it, with which prompt version,
+    and when. This is how LLM output is stored "with provenance".
+    """
+
+    __tablename__ = "article_analyses"
+
+    id = Column(Integer, primary_key=True)
+    article_id = Column(
+        Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind = Column(String(50), nullable=False)  # summary | translation | entities | ...
+    result = Column(Text, nullable=False)
+    # provenance
+    model = Column(String(100), nullable=False)
+    prompt_version = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    article = relationship("Article", backref="analyses")
+
+    def __repr__(self) -> str:
+        return f"<ArticleAnalysis(article_id={self.article_id}, kind='{self.kind}', model='{self.model}')>"
+
+
 
 # Example usage
 if __name__ == "__main__":
