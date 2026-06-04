@@ -32,8 +32,6 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 # Import database models and SourceManager
@@ -49,7 +47,7 @@ logger = setup_logging("source_management_api")
 router = APIRouter(prefix="/api/sources", tags=["Source Management"])
 
 # Rate limiter
-limiter = Limiter(key_func=get_remote_address)
+from src.api.ratelimit import limiter
 
 
 # ==================== SOURCE ENDPOINTS ====================

@@ -27,23 +27,19 @@ For inquiries, contact: open-omniscience@ideotion.com
 
 import csv
 import io
-import logging
 import os
-import re
 import time
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
@@ -87,14 +83,13 @@ from src.api.source_management import router as source_management_router
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
 from src.database.fts import SearchQueryError, search_ids
-from src.database.models import Article, Source, get_session
+from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
 
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
 
 # Import security utilities
-from src.utils.security import SecurityError, escape_html, get_security_headers, sanitize_html
 
 logger = setup_logging("api")
 
@@ -158,7 +153,7 @@ metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
 
 # Rate limiter setup
-limiter = Limiter(key_func=get_remote_address)
+from src.api.ratelimit import limiter
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 

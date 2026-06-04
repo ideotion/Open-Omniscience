@@ -25,13 +25,8 @@ Keyword Analysis API for Open Omniscience
 Author: Open Omniscience Team
 """
 
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from src.database.models import Article
@@ -42,7 +37,7 @@ from src.utils.logging_config import setup_logging
 logger = setup_logging("api.keyword_analysis")
 
 router = APIRouter(prefix="/api/analysis", tags=["Analysis"])
-limiter = Limiter(key_func=get_remote_address)
+from src.api.ratelimit import limiter
 
 
 @router.post("/articles/similarity")

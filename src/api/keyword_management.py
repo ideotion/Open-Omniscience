@@ -27,18 +27,10 @@ This module provides FastAPI endpoints for keyword extraction and management.
 Author: Open Omniscience Team
 """
 
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 # Import database models and session
-from src.database.models import Article, ArticleKeyword, Keyword, KeywordCategory, get_session
-from src.database.source_manager import SourceManager
 
 # Import services
 from src.services.keyword_extractor import keyword_extractor
@@ -53,7 +45,7 @@ logger = setup_logging("api.keyword")
 router = APIRouter(prefix="/api/keywords", tags=["Keywords"])
 
 # Rate limiter
-limiter = Limiter(key_func=get_remote_address)
+from src.api.ratelimit import limiter
 
 
 @router.get("/extract", response_model=dict)
