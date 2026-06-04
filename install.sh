@@ -122,6 +122,9 @@ install_appvm() {
     c_grn "Initialising the database ..."
     python -c "from src.database.session import init_db; init_db(); print('  database ready')"
 
+    c_grn "Seeding curated starter sources (idempotent; nothing is fetched yet) ..."
+    python scripts/seed_sources.py || c_ylw "  (seeding skipped; you can add sources in the UI)"
+
     cat <<EOF
 
 $(c_grn "AppVM install complete.")  App + data live under: $INSTALL_DIR

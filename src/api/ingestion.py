@@ -23,6 +23,7 @@ from src.database.session import get_db
 from src.ingest import EthicalFetcher
 from src.ingest.email import fetch_imap, ingest_emails
 from src.ingest.pipeline import ingest_source, ingest_url
+from src.ingest.seed_sources import seed_default_sources
 
 router = APIRouter(prefix="/api", tags=["ingestion"])
 
@@ -57,6 +58,13 @@ def _get_source(db: Session, source_id: int) -> Source:
     if source is None:
         raise HTTPException(status_code=404, detail=f"Source id {source_id} not found.")
     return source
+
+
+@router.post("/sources/seed-defaults")
+def seed_defaults_endpoint(db: Session = Depends(get_db)) -> dict:
+    """Register the curated starter sources (idempotent; nothing is fetched)."""
+    result = seed_default_sources(db)
+    return {"seeded": result}
 
 
 @router.post("/sources/{source_id}/ingest")

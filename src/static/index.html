@@ -121,6 +121,7 @@
         <div><label for="s-tags">Tags</label><input id="s-tags" placeholder="politics,world"></div>
       </div>
       <button onclick="addSource()">Add source</button>
+      <button class="secondary" onclick="seedDefaults()" title="Register a curated starter set of public-interest RSS sources">Seed starter sources</button>
       <div style="overflow:auto; margin-top:12px;"><table id="sources"></table></div>
     </section>
   </main>
@@ -173,6 +174,14 @@
       sel.innerHTML = sources.filter(s => s.rss_url).map(s =>
         `<option value="${s.id}">${esc(s.name)}</option>`).join("")
         || '<option value="">(no sources with an RSS feed)</option>';
+    }
+
+    async function seedDefaults() {
+      try {
+        const r = await api("/api/sources/seed-defaults", {method: "POST"});
+        toast(`Seeded ${r.seeded.created} new source(s) (${r.seeded.skipped} already present).`);
+        loadSources();
+      } catch (e) { toast("Seed failed: " + e.message, "err"); }
     }
 
     async function addSource() {

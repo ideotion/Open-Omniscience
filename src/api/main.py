@@ -512,26 +512,23 @@ async def export_articles(
 
 @app.get("/api/sources", response_model=list)
 @limiter.limit("100/hour")
-async def list_sources(request: Request):
+async def list_sources(request: Request, db: Session = Depends(get_db)):
     """List all available news sources with optional filters."""
     logger.info("List sources request")
-    session = get_session()
-    try:
-        sources = session.query(Source).all()
-        return [
-            {
-                "id": s.id,
-                "name": s.name,
-                "domain": s.domain,
-                "rss_url": s.rss_url,
-                "rate_limit_ms": s.rate_limit_ms,
-                "enabled": s.enabled,
-                "priority": s.priority,
-                "tags": s.tags.split(",") if s.tags else []
-            } for s in sources
-        ]
-    finally:
-        session.close()
+    sources = db.query(Source).all()
+    return [
+        {
+            "id": s.id,
+            "name": s.name,
+            "domain": s.domain,
+            "rss_url": s.rss_url,
+            "rate_limit_ms": s.rate_limit_ms,
+            "enabled": s.enabled,
+            "priority": s.priority,
+            "tags": s.tags.split(",") if s.tags else [],
+        }
+        for s in sources
+    ]
 
 
 # Root endpoint to serve index.html

@@ -1,0 +1,32 @@
+# Curated starter sources for Open Omniscience.
+#
+# These are well-known, public-interest outlets that publish open RSS feeds and
+# are appropriate starting points for an investigative corpus. Feed URLs and
+# robots policies change over time -- the ethical fetcher will refuse anything it
+# cannot confirm, so VERIFY these before relying on them and prune/extend to suit
+# your investigation. Nothing here is scraped until you run an ingest.
+sources:
+  - name: BBC News (World)
+    domain: bbci.co.uk
+    rss_url: https://feeds.bbci.co.uk/news/world/rss.xml
+    tags: news,world
+  - name: The Guardian (World)
+    domain: theguardian.com
+    rss_url: https://www.theguardian.com/world/rss
+    tags: news,world
+  - name: NPR News
+    domain: npr.org
+    rss_url: https://feeds.npr.org/1001/rss.xml
+    tags: news,us
+  - name: ProPublica
+    domain: propublica.org
+    rss_url: https://www.propublica.org/feeds/propublica/main
+    tags: investigative
+  - name: Bellingcat
+    domain: bellingcat.com
+    rss_url: https://www.bellingcat.com/feed/
+    tags: osint,investigative
+  - name: Al Jazeera
+    domain: aljazeera.com
+    rss_url: https://www.aljazeera.com/xml/rss/all.xml
+    tags: news,world
