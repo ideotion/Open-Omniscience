@@ -51,8 +51,16 @@ from slowapi.util import get_remote_address
 # Import database models and session
 from sqlalchemy.orm import Session
 
-# Import commodity router (price time-series + honest news correlation)
-from src.api.commodity import router as commodity_router
+# Commodity + scientific-analysis routers depend on the [analysis] extra (scipy/
+# numpy). Import them defensively so a core-only install still boots; they are
+# included below only if their dependencies are present.
+try:
+    from src.api.commodity import router as commodity_router
+    from src.api.analysis import router as analysis_router
+    _ANALYSIS_AVAILABLE = True
+except ImportError:
+    commodity_router = analysis_router = None
+    _ANALYSIS_AVAILABLE = False
 
 # Import ingestion router (ethical scrape -> extract -> store)
 from src.api.ingestion import router as ingestion_router
@@ -191,8 +199,15 @@ app.include_router(llm_router)
 # Include ingestion router
 app.include_router(ingestion_router)
 
-# Include commodity router
-app.include_router(commodity_router)
+# Include analysis-dependent routers only if the [analysis] extra is installed.
+if _ANALYSIS_AVAILABLE:
+    app.include_router(commodity_router)
+    app.include_router(analysis_router)
+else:
+    logger.warning(
+        "Commodity & statistical-analysis endpoints disabled: install the "
+        "[analysis] extra (pip install -e '.[analysis]') to enable them."
+    )
 
 # Include monitoring router
 app.include_router(monitoring_router)
