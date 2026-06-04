@@ -4,6 +4,27 @@
 **Working branch:** `0.04` (direct, per owner's instruction).
 **Companion doc:** [`PRODUCT_SYNTHESIS.md`](PRODUCT_SYNTHESIS.md) (what we're building & why).
 
+> ## Implementation status (v0.4)
+> **Phases 0–5 implemented and tested** on the `claude/kind-lovelace-ulpTc` branch
+> (full suite green; see [`QUICKSTART.md`](QUICKSTART.md)):
+> - **Phase 0/1 — Trustworthy core ✅:** single 3.13 manifest; clean DB session
+>   layer (no import-time side effects); one ethical fetch path (robots fail-closed)
+>   → trafilatura extraction → dedup/provenance; FTS5 Boolean search with correct
+>   precedence; CSV/JSON export; offline vanilla UI; safe Qubes installer; honest
+>   docs; security blocklist & silent fallbacks removed; fabricated detectors quarantined.
+> - **Phase 2 — Local LLM ✅:** Ollama HTTP client (real model catalog, loud 503
+>   degradation); summarize persists with provenance.
+> - **Phase 3 — Commodity vertical ✅:** price time-series; correct unit conversion;
+>   REAL scipy correlation (coefficient + p-value + n), no fabricated stats.
+> - **Phase 4 — Enrichers ✅ (partial):** real source-uptime monitoring + z-score
+>   anomalies; email (IMAP) into the unified corpus. Metadata/EXIF still deferred.
+> - **Phase 5 — Defensible reporting ✅:** Merkle + Ed25519 signed evidence bundles;
+>   standalone offline verifier (`scripts/verify_evidence.py`).
+>
+> Live integration of the whole flow verified against a running server. Remaining:
+> live runs needing the operator's machine (real Ollama model, real scrape targets,
+> real IMAP), metadata/EXIF revival, and burning down legacy lint debt.
+
 ## Operating rules for this plan
 
 - **Trustworthy core first.** No pillar work until the spine (ingest → store → search → export) is

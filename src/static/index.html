@@ -62,7 +62,10 @@
   <header>
     <h1>Open&nbsp;Omniscience</h1>
     <span class="v" id="version">v—</span>
-    <span class="status" id="health">checking…</span>
+    <span class="status" id="health">checking…
+      <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
+      <a href="/docs" target="_blank" rel="noopener" style="margin-left:10px">API docs</a>
+    </span>
   </header>
 
   <main>
@@ -81,6 +84,7 @@
         <button onclick="doSearch()">Search</button>
         <button class="secondary" onclick="exportResults('csv')">Export CSV</button>
         <button class="secondary" onclick="exportResults('json')">Export JSON</button>
+        <button class="secondary" onclick="exportEvidence()" title="Signed, tamper-evident bundle">Export signed evidence</button>
       </div>
       <div id="search-meta" class="hint"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="results"></table></div>
@@ -241,7 +245,10 @@
                  <div class="muted" style="font-size:12px">${esc((a.content||"").slice(0,160))}…</div></td>
              <td>${esc(a.source)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
              <td>${esc(a.language||"")}</td>
-             <td><a href="${esc(a.url)}" target="_blank" rel="noopener">open</a></td></tr>`
+             <td><a href="${esc(a.url)}" target="_blank" rel="noopener">open</a>
+                 <button class="secondary" style="margin-top:4px;padding:3px 8px"
+                   onclick="summarize(${a.id}, this)">Summarize</button>
+                 <div class="summary muted" style="font-size:12px;margin-top:4px"></div></td></tr>`
           ).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`);
       } catch (e) { toast("Search failed: " + e.message, "err"); }
     }
@@ -251,8 +258,40 @@
       window.open("/api/articles/export?" + p.toString(), "_blank");
     }
 
+    async function loadLlmHealth() {
+      try {
+        const h = await api("/api/llm/health");
+        const el = $("llm");
+        if (h.available) { el.className = "pill ok"; el.textContent = `LLM ✓ (${h.installed_models.length} models)`; }
+        else { el.className = "pill warn"; el.textContent = "LLM offline"; el.title = h.detail || ""; }
+      } catch (e) { $("llm").textContent = "LLM —"; }
+    }
+
+    async function summarize(id, btn) {
+      const cell = btn.parentElement.querySelector(".summary");
+      cell.textContent = "Summarizing locally…";
+      try {
+        const r = await api(`/api/llm/articles/${id}/summarize`, {method: "POST", body: "{}"});
+        cell.textContent = `“${r.result}”  — ${r.model}`;
+      } catch (e) { cell.textContent = ""; toast("Summarize: " + e.message, "err"); }
+    }
+
+    async function exportEvidence() {
+      const q = $("q").value.trim();
+      if (!q) { toast("Enter a search query to scope the evidence bundle.", "err"); return; }
+      try {
+        const bundle = await api("/api/reports/evidence",
+          {method: "POST", body: JSON.stringify({query: q, case_name: q})});
+        const blob = new Blob([JSON.stringify(bundle, null, 2)], {type: "application/json"});
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "evidence-bundle.json"; a.click();
+        toast(`Signed bundle: ${bundle.manifest.item_count} item(s), verify with scripts/verify_evidence.py`);
+      } catch (e) { toast("Evidence export: " + e.message, "err"); }
+    }
+
     $("q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
-    loadHealth(); loadSources(); doSearch();
+    loadHealth(); loadLlmHealth(); loadSources(); doSearch();
   </script>
 </body>
 </html>

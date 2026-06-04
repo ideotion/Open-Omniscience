@@ -77,6 +77,42 @@ Interactive API docs: **http://127.0.0.1:8000/docs**.
 
 ---
 
+## D. Analysis capabilities (Phases 2–5)
+
+All are local-first and degrade loudly (never fabricate). Full schemas at `/docs`.
+
+**Local LLM (Ollama) — Phase 2.** Install Ollama in the TemplateVM, then
+`ollama pull llama3.2:3b`. The UI header shows LLM status; each search result has a
+**Summarize** button. API:
+```bash
+curl http://127.0.0.1:8000/api/llm/health          # {available, installed_models}
+curl -X POST http://127.0.0.1:8000/api/llm/articles/1/summarize -d '{}'  # persisted with provenance
+```
+If Ollama isn't running, these return HTTP 503 with a clear message — not a fake summary.
+
+**Commodity prices + honest correlation — Phase 3.**
+```bash
+curl -X POST http://127.0.0.1:8000/api/commodities/Nd/prices -H 'Content-Type: application/json' \
+  -d '{"points":[{"observed_on":"2026-01-01","price":100,"unit":"kg"}]}'
+curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
+```
+Correlation returns a real coefficient + p-value + n from scipy (Pearson/Spearman),
+with a "correlation ≠ causation" caveat; too little overlap → `insufficient_data`.
+
+**Monitoring — Phase 4.** `GET /api/monitoring/health` performs real reachability
+checks (through the ethical fetcher); `GET /api/monitoring/anomalies` flags
+article-volume spikes by z-score. **Email:** `POST /api/sources/{id}/ingest-email`
+(IMAP) folds messages into the same searchable corpus.
+
+**Signed evidence bundles — Phase 5.** The search panel's **Export signed
+evidence** button (or `POST /api/reports/evidence`) produces a Merkle-rooted,
+Ed25519-signed bundle. Anyone can verify it offline, without this app:
+```bash
+python scripts/verify_evidence.py evidence-bundle.json   # exit 0 = verified
+```
+
+---
+
 ## What "ethical ingest" guarantees
 
 - robots.txt is fetched, cached per host, and **fail-closed**: if it can't be
