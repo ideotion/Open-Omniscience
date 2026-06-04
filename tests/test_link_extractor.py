@@ -1,10 +1,9 @@
 """
 Behavioral tests for the link extractor (Action Plan Phase 6.4).
 
-Covers the genuinely-correct, useful behavior of a live but previously-untested
-enricher: link extraction, relative-URL resolution against a base, and summary
-statistics. (The link_type internal/external classification is a known weak spot
-of this P2 enricher and is intentionally not pinned here.)
+Covers link extraction, relative-URL resolution against a base, internal/external
+classification by same-site domain (fixed in v0.4), non-web scheme handling, and
+summary statistics.
 """
 
 from __future__ import annotations
@@ -44,6 +43,20 @@ def test_statistics_shape():
     assert stats["total_links"] == len(links)
     assert stats["unique_domains"] >= 1
     assert set(stats) >= {"total_links", "unique_domains", "internal_links", "external_links"}
+
+
+def test_internal_external_by_domain():
+    links = {l["url"]: l["link_type"] for l in _le().extract_links(_HTML, base_url="https://example.com")}
+    # same-site (incl. resolved relative) -> internal; other-site -> external
+    assert links["https://example.com/about"] == "internal"
+    assert links["https://example.com/local/page"] == "internal"
+    assert links["https://other.example/story"] == "external"
+
+
+def test_non_web_scheme_not_mislabelled():
+    links = {l["url"]: l["link_type"] for l in _le().extract_links(_HTML, base_url="https://example.com")}
+    # mailto must NOT be labelled 'internal' (the pre-v0.4 bug)
+    assert links["mailto:a@b.com"] == "email"
 
 
 def test_empty_html_yields_no_links():

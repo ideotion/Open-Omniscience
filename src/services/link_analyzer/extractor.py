@@ -202,8 +202,9 @@ class LinkExtractor:
         # Parse URL components
         parsed_url = urlparse(link_url)
         
-        # Determine link type
-        link_type = self._determine_link_type(link_url, parsed_url, tag_name)
+        # Determine link type (base domain enables same-site internal/external)
+        base_domain = urlparse(base_url).netloc if base_url else ""
+        link_type = self._determine_link_type(link_url, parsed_url, tag_name, base_domain)
         
         # Extract HTML attributes
         html_attributes = dict(element.attrs)
@@ -272,7 +273,9 @@ class LinkExtractor:
                         'normalized_url': normalized_url,
                         'link_text': link_text.strip() if link_text else "",
                         'position': match.start(),
-                        'link_type': self._determine_link_type(url, parsed_url, tag.split('_')[0]),
+                        'link_type': self._determine_link_type(
+                            url, parsed_url, tag.split('_')[0],
+                            urlparse(base_url).netloc if base_url else ""),
                         'html_tag': tag.split('_')[0],
                         'html_attributes': {},
                         'domain': parsed_url.netloc.lower() if parsed_url.netloc else "",
@@ -339,15 +342,16 @@ class LinkExtractor:
             logger.warning(f"Error normalizing URL {url}: {e}")
             return url.lower() if url else ""
     
-    def _determine_link_type(self, url: str, parsed_url, tag_name: str) -> str:
+    def _determine_link_type(self, url: str, parsed_url, tag_name: str, base_domain: str = "") -> str:
         """
         Determine the type of a link based on URL and tag.
-        
+
         Args:
-            url: The URL
+            url: The URL (already resolved to absolute when a base was available)
             parsed_url: Parsed URL components
             tag_name: HTML tag name
-            
+            base_domain: netloc of the page being analysed, for internal/external
+
         Returns:
             Link type string
         """
@@ -402,11 +406,21 @@ class LinkExtractor:
                 elif extension in self.media_extensions:
                     return 'media'
         
-        # Default to external for absolute URLs, internal for relative
-        if parsed_url.scheme and parsed_url.netloc:
-            return 'external'
-        else:
-            return 'internal'
+        # Non-web schemes get their own category rather than a misleading
+        # internal/external label.
+        scheme = (parsed_url.scheme or "").lower()
+        if scheme in ("mailto", "tel", "sms"):
+            return "email" if scheme == "mailto" else "tel"
+        if scheme in ("javascript", "data", "file"):
+            return "other"
+
+        # internal vs external is same-site vs cross-site (by domain). Relative
+        # links (no netloc, e.g. an unresolved anchor) are treated as internal.
+        if parsed_url.netloc:
+            if base_domain and parsed_url.netloc.lower() == base_domain.lower():
+                return "internal"
+            return "external"
+        return "internal"
     
     def filter_links(self, links: list[dict[str, Any]], link_types: list[str] | None = None,
                     domains: list[str] | None = None, 
