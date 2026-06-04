@@ -1,526 +1,258 @@
 <!DOCTYPE html>
+<!--
+  Open Omniscience - single-page UI for the trustworthy core.
+  Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+  Deliberately dependency-free: no CDN, no React, no web fonts. Everything is
+  inline and local so it works offline inside a Qubes AppVM with the NetVM
+  detached. It only exposes capabilities that actually work: manage sources,
+  ethically ingest (RSS feed or single URL), Boolean full-text search, export.
+-->
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Open Omniscience - An Open-Source Global Intelligence Platform for Investigative Journalism">
-    <meta name="theme-color" content="#1976d2">
-    
-    <title>Open Omniscience - Global Intelligence Platform</title>
-    
-    <!-- Preload critical resources -->
-    <link rel="preload" href="css/variables.css" as="style">
-    <link rel="preload" href="css/main.css" as="style">
-    <link rel="preload" href="css/layouts/main.css" as="style">
-    
-    <!-- Load CSS -->
-    <link rel="stylesheet" href="css/variables.css">
-    <link rel="stylesheet" href="css/main.css">
-    <link rel="stylesheet" href="css/utilities.css">
-    <link rel="stylesheet" href="css/components/buttons.css">
-    <link rel="stylesheet" href="css/components/forms.css">
-    <link rel="stylesheet" href="css/components/tables.css">
-    <link rel="stylesheet" href="css/components/modals.css">
-    <link rel="stylesheet" href="css/components/notifications.css">
-    <link rel="stylesheet" href="css/layouts/main.css">
-    
-    <!-- Font Awesome 6 - Using CDN for now, will be replaced with local -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" 
-          integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" 
-          crossorigin="anonymous" referrerpolicy="no-referrer" />
-    
-    <!-- Recharts for visualization -->
-    <script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.min.js" defer></script>
-    
-    <!-- Google Fonts fallback (Inter is self-hosted in main.css) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Omniscience</title>
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #181b22; --panel2: #20242e; --fg: #e6e8ec;
+      --muted: #9aa3b2; --accent: #5b9dd9; --ok: #4caf7d; --warn: #d9a441;
+      --err: #d96c6c; --border: #2a2f3a;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg);
+      font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    header { padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+      display: flex; align-items: baseline; gap: 12px; }
+    header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+    header .v { color: var(--muted); font-size: 12px; }
+    header .status { margin-left: auto; font-size: 12px; color: var(--muted); }
+    main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 20px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .panel h2 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase;
+      letter-spacing: .04em; color: var(--muted); }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+    input, select, textarea {
+      width: 100%; background: var(--panel2); border: 1px solid var(--border);
+      color: var(--fg); border-radius: 6px; padding: 8px 10px; font: inherit; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 140px; }
+    button {
+      background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+      padding: 9px 14px; font: inherit; cursor: pointer; margin-top: 10px; }
+    button.secondary { background: var(--panel2); border: 1px solid var(--border); color: var(--fg); }
+    button:active { transform: translateY(1px); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    .muted { color: var(--muted); }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
+      background: var(--panel2); border: 1px solid var(--border); }
+    .pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.err { color: var(--err); }
+    #toast { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 50; }
+    .note { padding: 10px 14px; border-radius: 8px; background: var(--panel2);
+      border: 1px solid var(--border); max-width: 360px; font-size: 14px; }
+    .note.ok { border-color: var(--ok); } .note.err { border-color: var(--err); }
+    a { color: var(--accent); }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
+  </style>
 </head>
 <body>
-    <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
-        <div class="loading-content">
-            <div class="loading-spinner"></div>
-            <p class="loading-message">Loading...</p>
-            <p class="loading-submessage">Please wait while we fetch your data</p>
+  <header>
+    <h1>Open&nbsp;Omniscience</h1>
+    <span class="v" id="version">v—</span>
+    <span class="status" id="health">checking…</span>
+  </header>
+
+  <main>
+    <!-- Search -->
+    <section class="panel">
+      <h2>Search the corpus</h2>
+      <label for="q">Boolean query <span class="muted">(AND / OR / NOT, "phrases", parentheses)</span></label>
+      <input id="q" placeholder='e.g.  (climate OR energy) AND policy NOT opinion' autocomplete="off">
+      <div class="row">
+        <div><label for="f-source">Source</label><input id="f-source" placeholder="exact name (optional)"></div>
+        <div><label for="f-lang">Language</label><input id="f-lang" placeholder="en (optional)"></div>
+        <div><label for="f-from">From</label><input id="f-from" type="date"></div>
+        <div><label for="f-to">To</label><input id="f-to" type="date"></div>
+      </div>
+      <div class="row">
+        <button onclick="doSearch()">Search</button>
+        <button class="secondary" onclick="exportResults('csv')">Export CSV</button>
+        <button class="secondary" onclick="exportResults('json')">Export JSON</button>
+      </div>
+      <div id="search-meta" class="hint"></div>
+      <div style="overflow:auto; margin-top:10px;"><table id="results"></table></div>
+    </section>
+
+    <!-- Ingest -->
+    <section class="panel">
+      <h2>Ingest</h2>
+      <div class="row">
+        <div>
+          <label for="ing-source">Ingest a source's RSS feed</label>
+          <select id="ing-source"></select>
         </div>
-    </div>
-
-    <!-- Toast Notification Container -->
-    <div id="toastContainer" class="toast-container top-right"></div>
-
-    <!-- Skip to main content link for accessibility -->
-    <a href="#main-content" class="skip-link sr-only">Skip to main content</a>
-
-    <!-- Page Header -->
-    <header class="page-header">
-        <div class="header">
-            <div class="header-content">
-                <a href="index.html" class="header-brand">
-                    <i class="fas fa-globe" aria-hidden="true"></i>
-                    <h1>Open <span>Omniscience</span></h1>
-                </a>
-                <div class="header-actions">
-                    <a href="llm.html" class="icon-btn icon-btn-primary" title="Local LLM" aria-label="Open Local LLM interface">
-                        <i class="fas fa-brain" aria-hidden="true"></i>
-                    </a>
-                    <button id="settingsButton" class="icon-btn icon-btn-primary" title="Settings" aria-label="Open settings">
-                        <i class="fas fa-cog" aria-hidden="true"></i>
-                    </button>
-                    <button id="themeToggle" class="icon-btn icon-btn-primary" title="Toggle Theme" aria-label="Toggle between light and dark theme">
-                        <i class="fas fa-moon" aria-hidden="true"></i>
-                    </button>
-                    <button id="sourceManagerBtn" class="btn btn-secondary" title="Source Manager" aria-label="Open source manager">
-                        <i class="fas fa-cogs" aria-hidden="true"></i>
-                        <span>Sources</span>
-                    </button>
-                </div>
-            </div>
-            <p class="header-subtitle">An Open-Source Global Intelligence Platform for Investigative Journalism with Local LLM Support</p>
+        <div style="flex:0 0 auto; align-self:end;">
+          <button onclick="ingestSource()">Fetch feed</button>
         </div>
-    </header>
+      </div>
+      <label for="ing-url">…or ingest a single article URL</label>
+      <div class="row">
+        <div><input id="ing-url" placeholder="https://example.com/article"></div>
+        <div style="flex:0 0 auto;"><button onclick="ingestUrl()">Ingest URL</button></div>
+      </div>
+      <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
+      <div id="ingest-result" class="hint"></div>
+    </section>
 
-    <!-- Main Content -->
-    <main id="main-content" class="page-main">
-        <div class="main-content">
-            <!-- Breadcrumb -->
-            <nav class="breadcrumb" aria-label="Breadcrumb">
-                <ol>
-                    <li><a href="index.html"><i class="fas fa-home" aria-hidden="true"></i> Home</a></li>
-                    <li aria-current="page">Search</li>
-                </ol>
-            </nav>
+    <!-- Sources -->
+    <section class="panel">
+      <h2>Sources</h2>
+      <div class="row">
+        <div><label for="s-name">Name</label><input id="s-name" placeholder="Example News"></div>
+        <div><label for="s-domain">Domain</label><input id="s-domain" placeholder="example.com"></div>
+        <div><label for="s-rss">RSS URL</label><input id="s-rss" placeholder="https://example.com/feed.xml"></div>
+        <div><label for="s-tags">Tags</label><input id="s-tags" placeholder="politics,world"></div>
+      </div>
+      <button onclick="addSource()">Add source</button>
+      <div style="overflow:auto; margin-top:12px;"><table id="sources"></table></div>
+    </section>
+  </main>
 
-            <!-- Page Header -->
-            <div class="page-header-content">
-                <div class="page-title">
-                    <i class="fas fa-search" aria-hidden="true"></i>
-                    <h1>Search Articles</h1>
-                </div>
-                <p class="page-subtitle">Discover and analyze news from diverse global sources</p>
-            </div>
+  <div id="toast"></div>
 
-            <!-- Search Section -->
-            <section class="section" aria-labelledby="search-heading">
-                <div class="section-content">
-                    <form id="searchForm" class="search-form" aria-label="Article search form">
-                        <!-- Search Input with Suggestions -->
-                        <div class="form-group">
-                            <label for="query">Search Query <span class="label-optional">(Supports: AND, OR, NOT, "exact phrase")</span></label>
-                            <div class="search-input-wrapper">
-                                <input 
-                                    type="search" 
-                                    id="query" 
-                                    name="query" 
-                                    class="search-input input input-lg" 
-                                    placeholder="Enter keywords (e.g., 'climate AND change NOT politics')"
-                                    autocomplete="off"
-                                    aria-describedby="query-help"
-                                    aria-autocomplete="list"
-                                >
-                                <i class="fas fa-search search-icon" aria-hidden="true"></i>
-                                <div id="searchSuggestions" class="search-suggestions" role="listbox"></div>
-                            </div>
-                            <small id="query-help" class="help-text">Use Boolean operators: AND, OR, NOT, or "exact phrase"</small>
-                        </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g,
+      c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])));
 
-                        <!-- Filters Row -->
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="source">Source</label>
-                                <select id="source" name="source" class="select">
-                                    <option value="">All Sources</option>
-                                    <!-- Sources will be populated dynamically -->
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="language">Language</label>
-                                <select id="language" name="language" class="select">
-                                    <option value="">All Languages</option>
-                                    <option value="en">English</option>
-                                    <option value="fr">French</option>
-                                    <option value="es">Spanish</option>
-                                    <option value="de">German</option>
-                                    <option value="ar">Arabic</option>
-                                    <option value="zh">Chinese</option>
-                                    <option value="ru">Russian</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="tags">Tags</label>
-                                <input type="text" id="tags" name="tags" class="input" placeholder="e.g., news, geopolitical">
-                                <small class="help-text">Comma-separated list of tags</small>
-                            </div>
-                        </div>
+    function toast(msg, kind="ok") {
+      const n = document.createElement("div");
+      n.className = "note " + kind; n.textContent = msg;
+      $("toast").appendChild(n);
+      setTimeout(() => n.remove(), 5000);
+    }
 
-                        <!-- Date Range -->
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="startDate">Start Date</label>
-                                <input type="date" id="startDate" name="startDate" class="input">
-                            </div>
-                            <div class="form-group">
-                                <label for="endDate">End Date</label>
-                                <input type="date" id="endDate" name="endDate" class="input">
-                            </div>
-                        </div>
+    async function api(path, opts={}) {
+      const res = await fetch(path, {
+        headers: {"Content-Type": "application/json"}, ...opts,
+      });
+      const text = await res.text();
+      let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+      if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
+      return data;
+    }
 
-                        <!-- Action Buttons -->
-                        <div class="form-group">
-                            <div class="btn-group">
-                                <button type="submit" id="searchButton" class="btn btn-primary btn-lg">
-                                    <i class="fas fa-search" aria-hidden="true"></i>
-                                    <span>Search</span>
-                                </button>
-                                <button type="button" id="exportCSV" class="btn btn-success btn-lg">
-                                    <i class="fas fa-file-csv" aria-hidden="true"></i>
-                                    <span>Export CSV</span>
-                                </button>
-                                <button type="button" id="exportJSON" class="btn btn-success btn-lg">
-                                    <i class="fas fa-file-code" aria-hidden="true"></i>
-                                    <span>Export JSON</span>
-                                </button>
-                                <button type="button" id="clearFilters" class="btn btn-secondary btn-lg">
-                                    <i class="fas fa-times" aria-hidden="true"></i>
-                                    <span>Clear</span>
-                                </button>
-                            </div>
-                        </div>
+    async function loadHealth() {
+      try {
+        const h = await api("/api/health");
+        $("version").textContent = "v" + h.version;
+        $("health").innerHTML = '<span class="pill ok">healthy</span>';
+      } catch (e) {
+        $("health").innerHTML = '<span class="pill err">offline</span>';
+      }
+    }
 
-                        <!-- Search History -->
-                        <div id="searchHistory" class="search-history" style="display: none; margin-top: var(--space-4);">
-                            <h4><i class="fas fa-clock" aria-hidden="true"></i> Recent Searches</h4>
-                            <div id="searchHistoryList" class="search-history-list"></div>
-                        </div>
-                    </form>
-                </div>
-            </section>
+    async function loadSources() {
+      let sources = [];
+      try { sources = await api("/api/sources"); } catch (e) { toast("Could not load sources: " + e.message, "err"); }
+      const t = $("sources");
+      t.innerHTML = "<tr><th>Name</th><th>Domain</th><th>RSS</th><th>Tags</th></tr>" +
+        (sources.length ? sources.map(s =>
+          `<tr><td>${esc(s.name)}</td><td>${esc(s.domain)}</td>
+           <td>${s.rss_url ? esc(s.rss_url) : '<span class="muted">—</span>'}</td>
+           <td>${(s.tags||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join(" ")}</td></tr>`
+        ).join("") : `<tr><td colspan="4" class="muted">No sources yet. Add one below.</td></tr>`);
+      const sel = $("ing-source");
+      sel.innerHTML = sources.filter(s => s.rss_url).map(s =>
+        `<option value="${s.id}">${esc(s.name)}</option>`).join("")
+        || '<option value="">(no sources with an RSS feed)</option>';
+    }
 
-            <!-- Saved Searches Section -->
-            <section class="section" aria-labelledby="saved-searches-heading" style="display: none;">
-                <div class="section-content">
-                    <div class="section-header">
-                        <h2 id="saved-searches-heading" class="section-title">
-                            <i class="fas fa-star" aria-hidden="true"></i>
-                            Saved Searches
-                        </h2>
-                        <div class="section-actions">
-                            <button id="saveCurrentSearch" class="btn btn-primary">
-                                <i class="fas fa-save" aria-hidden="true"></i>
-                                <span>Save Current</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div id="savedSearchesList" class="saved-searches-list"></div>
-                </div>
-            </section>
+    async function addSource() {
+      const body = {
+        name: $("s-name").value.trim(),
+        domain: $("s-domain").value.trim(),
+        rss_url: $("s-rss").value.trim() || null,
+        tags: $("s-tags").value.trim(),
+      };
+      if (!body.name || !body.domain) { toast("Name and domain are required.", "err"); return; }
+      try {
+        await api("/api/sources/", {method: "POST", body: JSON.stringify(body)});
+        toast("Source added.");
+        ["s-name","s-domain","s-rss","s-tags"].forEach(id => $(id).value = "");
+        loadSources();
+      } catch (e) { toast("Add failed: " + e.message, "err"); }
+    }
 
-            <!-- Visualization Section -->
-            <section class="section" aria-labelledby="analytics-heading">
-                <div class="section-content">
-                    <div class="section-header">
-                        <h2 id="analytics-heading" class="section-title">
-                            <i class="fas fa-chart-bar" aria-hidden="true"></i>
-                            Analytics
-                        </h2>
-                    </div>
-                    <div class="charts-container">
-                        <div class="chart card">
-                            <div class="card-header">
-                                <h3><i class="fas fa-newspaper" aria-hidden="true"></i> Articles by Source</h3>
-                            </div>
-                            <div class="card-body">
-                                <div id="sourceChart" class="chart-content" style="height: 300px;"></div>
-                            </div>
-                        </div>
-                        <div class="chart card">
-                            <div class="card-header">
-                                <h3><i class="fas fa-calendar-alt" aria-hidden="true"></i> Articles Over Time</h3>
-                            </div>
-                            <div class="card-body">
-                                <div id="timeChart" class="chart-content" style="height: 300px;"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
+    function tally(t) {
+      return Object.entries(t).filter(([k,v]) => v > 0)
+        .map(([k,v]) => `${esc(k)}: ${v}`).join(", ") || "nothing new";
+    }
 
-            <!-- Results Section -->
-            <section class="section" aria-labelledby="results-heading">
-                <div class="section-content">
-                    <div class="section-header">
-                        <h2 id="results-heading" class="section-title">
-                            <i class="fas fa-newspaper" aria-hidden="true"></i>
-                            Results
-                        </h2>
-                        <div class="section-actions">
-                            <div class="results-info" id="resultsInfo"></div>
-                        </div>
-                    </div>
+    async function ingestSource() {
+      const id = $("ing-source").value;
+      if (!id) { toast("No RSS source selected.", "err"); return; }
+      $("ingest-result").textContent = "Fetching feed… (rate-limited, may take a moment)";
+      try {
+        const r = await api(`/api/sources/${id}/ingest`, {method: "POST"});
+        $("ingest-result").textContent = "Feed result — " + tally(r.tally);
+        toast("Ingest complete."); doSearch();
+      } catch (e) { $("ingest-result").textContent = ""; toast("Ingest failed: " + e.message, "err"); }
+    }
 
-                    <!-- Loading State -->
-                    <div class="loading-overlay" id="resultsLoading" style="display: none;">
-                        <div class="loading-content">
-                            <div class="loading-spinner"></div>
-                            <p>Loading articles...</p>
-                        </div>
-                    </div>
+    async function ingestUrl() {
+      const url = $("ing-url").value.trim();
+      const id = $("ing-source").value;
+      if (!url) { toast("Enter a URL.", "err"); return; }
+      if (!id) { toast("Select a source to attribute it to.", "err"); return; }
+      $("ingest-result").textContent = "Fetching…";
+      try {
+        const r = await api("/api/ingest", {method: "POST",
+          body: JSON.stringify({source_id: Number(id), url})});
+        $("ingest-result").innerHTML = `Result: <span class="pill ${r.result==='stored'?'ok':'warn'}">${esc(r.result)}</span>` +
+          (r.detail ? ` — ${esc(r.detail)}` : "");
+        if (r.result === "stored") { $("ing-url").value = ""; doSearch(); }
+      } catch (e) { $("ingest-result").textContent = ""; toast("Ingest failed: " + e.message, "err"); }
+    }
 
-                    <!-- Error Message -->
-                    <div class="alert alert-error" id="errorMessage" style="display: none;"></div>
+    function searchParams() {
+      const p = new URLSearchParams();
+      const q = $("q").value.trim(); if (q) p.set("query", q);
+      const src = $("f-source").value.trim(); if (src) p.set("source", src);
+      const lang = $("f-lang").value.trim(); if (lang) p.set("language", lang);
+      if ($("f-from").value) p.set("start_date", $("f-from").value);
+      if ($("f-to").value) p.set("end_date", $("f-to").value);
+      return p;
+    }
 
-                    <!-- Empty State -->
-                    <div class="table-empty" id="emptyState" style="display: none;">
-                        <i class="fas fa-search" aria-hidden="true"></i>
-                        <h3>No Articles Found</h3>
-                        <p>Try adjusting your search criteria or filters.</p>
-                        <div class="empty-actions">
-                            <button class="btn btn-primary" onclick="clearFilters()">
-                                <i class="fas fa-times" aria-hidden="true"></i>
-                                Clear Filters
-                            </button>
-                            <button class="btn btn-secondary" onclick="showSearchTips()">
-                                <i class="fas fa-question-circle" aria-hidden="true"></i>
-                                Search Tips
-                            </button>
-                        </div>
-                    </div>
+    async function doSearch() {
+      const p = searchParams(); p.set("limit", "50");
+      try {
+        const data = await api("/api/articles?" + p.toString());
+        $("search-meta").textContent = `${data.total} result(s)` + (data.total > data.results.length ?
+          ` (showing ${data.results.length})` : "");
+        const t = $("results");
+        t.innerHTML = "<tr><th>Title</th><th>Source</th><th>Published</th><th>Lang</th><th></th></tr>" +
+          (data.results.length ? data.results.map(a =>
+            `<tr><td><div>${esc(a.title) || '<span class="muted">(untitled)</span>'}</div>
+                 <div class="muted" style="font-size:12px">${esc((a.content||"").slice(0,160))}…</div></td>
+             <td>${esc(a.source)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
+             <td>${esc(a.language||"")}</td>
+             <td><a href="${esc(a.url)}" target="_blank" rel="noopener">open</a></td></tr>`
+          ).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`);
+      } catch (e) { toast("Search failed: " + e.message, "err"); }
+    }
 
-                    <!-- Results Table -->
-                    <div class="table-container">
-                        <table id="articlesTable" class="table table-hoverable" aria-label="Search results">
-                            <thead>
-                                <tr>
-                                    <th class="select-all">
-                                        <div class="checkbox">
-                                            <input type="checkbox" id="selectAllArticles" aria-label="Select all articles">
-                                            <span class="custom-control"></span>
-                                        </div>
-                                    </th>
-                                    <th class="sortable" data-sort="title">Title</th>
-                                    <th class="sortable" data-sort="source">Source</th>
-                                    <th class="sortable" data-sort="language">Language</th>
-                                    <th class="sortable" data-sort="publishedAt">Published At</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="articlesTableBody">
-                                <!-- Articles will be loaded dynamically -->
-                                <!-- Skeleton rows for loading -->
-                                <tr class="skeleton-row">
-                                    <td><div class="skeleton skeleton-text"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                </tr>
-                                <tr class="skeleton-row">
-                                    <td><div class="skeleton skeleton-text"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                </tr>
-                                <tr class="skeleton-row">
-                                    <td><div class="skeleton skeleton-text"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                    <td><div class="skeleton skeleton-text short"></div></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+    function exportResults(fmt) {
+      const p = searchParams(); p.set("format", fmt);
+      window.open("/api/articles/export?" + p.toString(), "_blank");
+    }
 
-                    <!-- Pagination -->
-                    <div class="pagination">
-                        <button type="button" id="prevPage" class="pagination-btn" disabled aria-label="Previous page">
-                            <i class="fas fa-chevron-left" aria-hidden="true"></i>
-                            <span>Previous</span>
-                        </button>
-                        <span id="pageInfo" class="page-info">Page 1 of 1</span>
-                        <button type="button" id="nextPage" class="pagination-btn" disabled aria-label="Next page">
-                            <span>Next</span>
-                            <i class="fas fa-chevron-right" aria-hidden="true"></i>
-                        </button>
-                    </div>
-
-                    <!-- Bottom Pagination -->
-                    <div class="pagination">
-                        <button type="button" id="prevPageBottom" class="pagination-btn" disabled aria-label="Previous page">
-                            <i class="fas fa-chevron-left" aria-hidden="true"></i>
-                            <span>Previous</span>
-                        </button>
-                        <span id="pageInfoBottom" class="page-info">Page 1 of 1</span>
-                        <button type="button" id="nextPageBottom" class="pagination-btn" disabled aria-label="Next page">
-                            <span>Next</span>
-                            <i class="fas fa-chevron-right" aria-hidden="true"></i>
-                        </button>
-                    </div>
-                </div>
-            </section>
-        </div>
-    </main>
-
-    <!-- Bottom Navigation for Mobile -->
-    <nav class="bottom-nav no-print">
-        <button class="nav-item active" data-page="search" aria-label="Search">
-            <i class="fas fa-search" aria-hidden="true"></i>
-            <span>Search</span>
-        </button>
-        <button class="nav-item" data-page="sources" onclick="window.location.href='source-manager.html'" aria-label="Sources">
-            <i class="fas fa-cogs" aria-hidden="true"></i>
-            <span>Sources</span>
-        </button>
-        <button class="nav-item" data-page="analytics" aria-label="Analytics">
-            <i class="fas fa-chart-bar" aria-hidden="true"></i>
-            <span>Analytics</span>
-        </button>
-        <button class="nav-item" data-page="settings" aria-label="Settings">
-            <i class="fas fa-cog" aria-hidden="true"></i>
-            <span>Settings</span>
-        </button>
-    </nav>
-
-    <!-- Settings Modal -->
-    <div id="settingsModal" class="modal modal-md">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2><i class="fas fa-cog" aria-hidden="true"></i> Settings</h2>
-                <button id="closeSettings" class="modal-close" aria-label="Close settings">
-                    <i class="fas fa-times" aria-hidden="true"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form id="settingsForm" class="form">
-                    <div class="form-group">
-                        <label for="defaultSource">Default Source</label>
-                        <select id="defaultSource" name="defaultSource" class="select">
-                            <option value="">None</option>
-                            <!-- Sources will be populated dynamically -->
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="defaultLanguage">Default Language</label>
-                        <select id="defaultLanguage" name="defaultLanguage" class="select">
-                            <option value="">None</option>
-                            <option value="en">English</option>
-                            <option value="fr">French</option>
-                            <option value="es">Spanish</option>
-                            <option value="de">German</option>
-                            <option value="ar">Arabic</option>
-                            <option value="zh">Chinese</option>
-                            <option value="ru">Russian</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="theme">Theme</label>
-                        <select id="theme" name="theme" class="select">
-                            <option value="light">Light</option>
-                            <option value="dark">Dark</option>
-                            <option value="system">System Default</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="articlesPerPage">Articles Per Page</label>
-                        <select id="articlesPerPage" name="articlesPerPage" class="select">
-                            <option value="10">10</option>
-                            <option value="20" selected>20</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <div class="btn-group">
-                            <button type="button" id="saveSettings" class="btn btn-primary">
-                                <i class="fas fa-save" aria-hidden="true"></i>
-                                Save
-                            </button>
-                            <button type="button" id="resetSettings" class="btn btn-secondary">
-                                <i class="fas fa-undo" aria-hidden="true"></i>
-                                Reset
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- Article Preview Modal -->
-    <div id="articlePreviewModal" class="modal modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="previewTitle"></h2>
-                <button id="closePreview" class="modal-close" aria-label="Close preview">
-                    <i class="fas fa-times" aria-hidden="true"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="preview-meta mb-4">
-                    <span class="badge badge-primary" id="previewSource"></span>
-                    <span class="badge badge-secondary ml-2" id="previewDate"></span>
-                    <span class="badge badge-info ml-2" id="previewLanguage"></span>
-                </div>
-                <div class="preview-content" id="previewContent"></div>
-                <div class="preview-tags mt-4" id="previewTags"></div>
-            </div>
-            <div class="modal-footer modal-footer-left">
-                <div class="btn-group">
-                    <button id="openArticleUrl" class="btn btn-primary" target="_blank">
-                        <i class="fas fa-external-link-alt" aria-hidden="true"></i>
-                        Open Original
-                    </button>
-                    <button id="saveArticle" class="btn btn-secondary">
-                        <i class="fas fa-bookmark" aria-hidden="true"></i>
-                        Save
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- JavaScript -->
-    <!-- Service Worker Registration (must be loaded first) -->
-    <script>
-        // Register service worker if supported
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('DOMContentLoaded', () => {
-                navigator.serviceWorker.register('/static/sw.js', {
-                    scope: '/',
-                    type: 'module'
-                }).then((registration) => {
-                    console.log('Service Worker registered:', registration);
-                }).catch((error) => {
-                    console.error('Service Worker registration failed:', error);
-                });
-            });
-        }
-    </script>
-    
-    <!-- Load React and Recharts for charts -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin async></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin async></script>
-    
-    <!-- Utility Libraries -->
-    <script type="module" src="js/utils/storage.js" defer></script>
-    <script type="module" src="js/utils/dom.js" defer></script>
-    <script type="module" src="js/utils/format.js" defer></script>
-    <script type="module" src="js/utils/validation.js" defer></script>
-    <script type="module" src="js/utils/lazy-load.js" defer></script>
-    <script type="module" src="js/utils/service-worker.js" defer></script>
-    
-    <!-- Component Libraries -->
-    <script type="module" src="js/components/notifications.js" defer></script>
-    <script type="module" src="js/components/tables.js" defer></script>
-    
-    <!-- API and Application -->
-    <script type="module" src="js/api.js" defer></script>
-    <script type="module" src="js/pages/dashboard.js" defer></script>
-    <script type="module" src="js/main.js" defer></script>
+    $("q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+    loadHealth(); loadSources(); doSearch();
+  </script>
 </body>
 </html>
