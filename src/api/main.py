@@ -51,25 +51,23 @@ from slowapi.util import get_remote_address
 # Import database models and session
 from sqlalchemy.orm import Session
 
-# Commodity + scientific-analysis routers depend on the [analysis] extra (scipy/
-# numpy). Import them defensively so a core-only install still boots; they are
-# included below only if their dependencies are present.
+# Commodity, scientific-analysis and keyword routers all depend on the [analysis]
+# extra (numpy/scipy/pandas/scikit-learn). Import them defensively so a core-only
+# install still boots with the spine (ingest + search + export); they are included
+# below only when their dependencies are present.
 try:
     from src.api.commodity import router as commodity_router
     from src.api.analysis import router as analysis_router
+    from src.api.keyword_analysis import router as keyword_analysis_router
+    from src.api.keyword_management import router as keyword_management_router
     _ANALYSIS_AVAILABLE = True
 except ImportError:
     commodity_router = analysis_router = None
+    keyword_analysis_router = keyword_management_router = None
     _ANALYSIS_AVAILABLE = False
 
 # Import ingestion router (ethical scrape -> extract -> store)
 from src.api.ingestion import router as ingestion_router
-
-# Import keyword analysis router
-from src.api.keyword_analysis import router as keyword_analysis_router
-
-# Import keyword management router
-from src.api.keyword_management import router as keyword_management_router
 
 # Link-analysis router quarantined in v0.4: its services (credibility scorer,
 # source scraper, network analyzer) produced fabricated outputs (see docs/AUDIT_2026-06.md).
@@ -184,12 +182,6 @@ app.add_middleware(
 # Include source management router
 app.include_router(source_management_router)
 
-# Include keyword management router
-app.include_router(keyword_management_router)
-
-# Include keyword analysis router
-app.include_router(keyword_analysis_router)
-
 # Include LLM router
 app.include_router(llm_router)
 
@@ -200,9 +192,11 @@ app.include_router(ingestion_router)
 if _ANALYSIS_AVAILABLE:
     app.include_router(commodity_router)
     app.include_router(analysis_router)
+    app.include_router(keyword_management_router)
+    app.include_router(keyword_analysis_router)
 else:
     logger.warning(
-        "Commodity & statistical-analysis endpoints disabled: install the "
+        "Commodity, statistical-analysis & keyword endpoints disabled: install the "
         "[analysis] extra (pip install -e '.[analysis]') to enable them."
     )
 
