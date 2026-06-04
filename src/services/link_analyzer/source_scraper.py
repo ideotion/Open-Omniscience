@@ -28,13 +28,14 @@ to extract metadata, content, and publication information.
 Author: Open Omniscience Team
 """
 
+import hashlib
+import logging
 import re
 import time
-import hashlib
-from urllib.parse import urlparse, urljoin
-from typing import List, Dict, Optional, Any, Tuple
-from datetime import datetime, timezone
-import logging
+from datetime import UTC, datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -84,7 +85,7 @@ class SourceScraper:
         # Track visited URLs to avoid duplicates
         self.visited_urls = set()
     
-    def scrape_source_article(self, url: str, source_info: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    def scrape_source_article(self, url: str, source_info: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """
         Scrape an article from an external source.
         
@@ -142,8 +143,8 @@ class SourceScraper:
             logger.error(f"Error scraping {url}: {e}")
             return None
     
-    def scrape_multiple_articles(self, urls: List[str], source_info: Optional[Dict[str, Any]] = None, 
-                                max_articles: int = 10) -> List[Dict[str, Any]]:
+    def scrape_multiple_articles(self, urls: list[str], source_info: dict[str, Any] | None = None, 
+                                max_articles: int = 10) -> list[dict[str, Any]]:
         """
         Scrape multiple articles from external sources.
         
@@ -170,7 +171,7 @@ class SourceScraper:
         
         return scraped_articles
     
-    def _fetch_url(self, url: str) -> Optional[requests.Response]:
+    def _fetch_url(self, url: str) -> requests.Response | None:
         """
         Fetch a URL with retries and error handling.
         
@@ -208,7 +209,7 @@ class SourceScraper:
         
         return None
     
-    def _apply_rate_limiting(self, source_info: Optional[Dict[str, Any]] = None):
+    def _apply_rate_limiting(self, source_info: dict[str, Any] | None = None):
         """
         Apply rate limiting based on source information.
         
@@ -282,7 +283,7 @@ class SourceScraper:
             logger.warning(f"Error normalizing URL {url}: {e}")
             return url.lower() if url else ""
     
-    def _extract_article_info(self, soup: BeautifulSoup, url: str) -> Dict[str, Any]:
+    def _extract_article_info(self, soup: BeautifulSoup, url: str) -> dict[str, Any]:
         """
         Extract article information from BeautifulSoup object.
         
@@ -339,12 +340,12 @@ class SourceScraper:
         article_info.update(metadata)
         
         # Set timestamps
-        article_info['scraped_at'] = datetime.now(timezone.utc).isoformat()
-        article_info['last_accessed_at'] = datetime.now(timezone.utc).isoformat()
+        article_info['scraped_at'] = datetime.now(UTC).isoformat()
+        article_info['last_accessed_at'] = datetime.now(UTC).isoformat()
         
         return article_info
     
-    def _extract_title(self, soup: BeautifulSoup) -> Optional[str]:
+    def _extract_title(self, soup: BeautifulSoup) -> str | None:
         """Extract article title from HTML."""
         # Try different methods to find the title
         
@@ -376,7 +377,7 @@ class SourceScraper:
         
         return None
     
-    def _extract_author(self, soup: BeautifulSoup) -> Optional[str]:
+    def _extract_author(self, soup: BeautifulSoup) -> str | None:
         """Extract article author from HTML."""
         # Try different methods to find the author
         
@@ -407,7 +408,7 @@ class SourceScraper:
         
         return None
     
-    def _extract_published_date(self, soup: BeautifulSoup) -> Optional[str]:
+    def _extract_published_date(self, soup: BeautifulSoup) -> str | None:
         """Extract publication date from HTML."""
         # Try different methods to find the publication date
         
@@ -450,7 +451,7 @@ class SourceScraper:
         
         return None
     
-    def _extract_content(self, soup: BeautifulSoup) -> Optional[str]:
+    def _extract_content(self, soup: BeautifulSoup) -> str | None:
         """Extract main article content from HTML."""
         # Try different methods to find the main content
         
@@ -497,7 +498,7 @@ class SourceScraper:
         
         return None
     
-    def _extract_summary(self, soup: BeautifulSoup) -> Optional[str]:
+    def _extract_summary(self, soup: BeautifulSoup) -> str | None:
         """Extract article summary/description from HTML."""
         # Try different methods to find the summary
         
@@ -528,7 +529,7 @@ class SourceScraper:
         
         return None
     
-    def _extract_language(self, soup: BeautifulSoup) -> Optional[str]:
+    def _extract_language(self, soup: BeautifulSoup) -> str | None:
         """Extract language from HTML."""
         # Check for lang attribute on html tag
         html_tag = soup.find('html')
@@ -546,7 +547,7 @@ class SourceScraper:
         
         return None
     
-    def _extract_metadata(self, soup: BeautifulSoup) -> Dict[str, Any]:
+    def _extract_metadata(self, soup: BeautifulSoup) -> dict[str, Any]:
         """Extract additional metadata from HTML."""
         metadata = {}
         
@@ -663,7 +664,7 @@ class SourceScraper:
         
         return sentiment
     
-    def check_url_accessibility(self, url: str) -> Tuple[bool, Optional[int], Optional[str]]:
+    def check_url_accessibility(self, url: str) -> tuple[bool, int | None, str | None]:
         """
         Check if a URL is accessible.
         
@@ -680,7 +681,7 @@ class SourceScraper:
         except requests.exceptions.RequestException:
             return False, None, None
     
-    def get_robots_txt(self, domain: str) -> Optional[str]:
+    def get_robots_txt(self, domain: str) -> str | None:
         """
         Fetch robots.txt for a domain.
         
@@ -710,7 +711,7 @@ class SourceScraper:
         
         return None
     
-    def parse_robots_txt(self, robots_txt: str) -> Dict[str, Any]:
+    def parse_robots_txt(self, robots_txt: str) -> dict[str, Any]:
         """
         Parse robots.txt content.
         

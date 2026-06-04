@@ -29,10 +29,10 @@ Author: Ideotion
 """
 
 import logging
+import os
+from datetime import UTC, datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from datetime import datetime, timezone
-import os
 
 # Ensure audit directory exists
 AUDIT_DIR = Path(__file__).parent.parent.parent / "audit"
@@ -100,8 +100,8 @@ def log_audit_trail(action: str, details: dict, user: str = None):
         details: Dictionary of details about the action.
         user: Optional user identifier (default: None for automated actions).
     """
-    audit_file = AUDIT_DIR / f"{datetime.now(timezone.utc).strftime('%Y%m%d')}_OpenOmniscience_AUDIT_TRAIL.md"
-    timestamp = datetime.now(timezone.utc).isoformat() + "Z"
+    audit_file = AUDIT_DIR / f"{datetime.now(UTC).strftime('%Y%m%d')}_OpenOmniscience_AUDIT_TRAIL.md"
+    timestamp = datetime.now(UTC).isoformat() + "Z"
 
     # Format details as a string
     details_str = ", ".join(f"{k}: {v}" for k, v in details.items())

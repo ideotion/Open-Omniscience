@@ -27,11 +27,11 @@ This module provides comprehensive text processing capabilities for keyword extr
 Author: Open Omniscience Team
 """
 
-import re
 import html
+import re
 import unicodedata
-from typing import List, Dict, Tuple, Optional
 from collections import Counter
+from typing import Dict, List, Optional, Tuple
 
 
 class TextProcessor:

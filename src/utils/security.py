@@ -33,11 +33,11 @@ This module provides security-related utilities including:
 Author: Ideotion
 """
 
-import re
 import html
-from typing import Any, Dict, List, Optional, Union
-from pathlib import Path
 import logging
+import re
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -150,7 +150,7 @@ def validate_and_sanitize_filename(filename: str) -> str:
     return filename
 
 
-def safe_path_join(base_path: Union[str, Path], *parts: str) -> Path:
+def safe_path_join(base_path: str | Path, *parts: str) -> Path:
     """
     Safely join path components to prevent path traversal.
     
@@ -335,7 +335,7 @@ SECURITY_HEADERS = {
 }
 
 
-def get_security_headers() -> Dict[str, str]:
+def get_security_headers() -> dict[str, str]:
     """
     Get security headers for HTTP responses.
     

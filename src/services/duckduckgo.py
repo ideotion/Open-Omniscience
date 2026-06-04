@@ -32,15 +32,17 @@ to discover new sources and identify RSS feeds. It includes:
 Author: Ideotion
 """
 
-import requests
+import logging
 import re
 import time
-from typing import List, Dict, Optional, Tuple
-from urllib.parse import urlparse, urljoin
 from pathlib import Path
-import logging
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
+
+import requests
 
 from src.utils.logging_config import setup_logging
+
 logger = setup_logging("duckduckgo")
 
 
@@ -105,7 +107,7 @@ class DuckDuckGoSearch:
     
     @classmethod
     def search(cls, query: str, max_results: int = 10, region: str = "wt-wt", 
-               safe_search: str = "1", time_range: Optional[str] = None) -> List[Dict]:
+               safe_search: str = "1", time_range: str | None = None) -> list[dict]:
         """
         Perform a web search using DuckDuckGo.
         
@@ -157,7 +159,7 @@ class DuckDuckGoSearch:
             raise Exception(f"DuckDuckGo search failed: {e}")
     
     @classmethod
-    def _parse_results(cls, html: str, max_results: int) -> List[Dict]:
+    def _parse_results(cls, html: str, max_results: int) -> list[dict]:
         """
         Parse search results from DuckDuckGo HTML.
         
@@ -213,7 +215,7 @@ class DuckDuckGoSearch:
         return results
     
     @classmethod
-    def _clean_url(cls, url: str) -> Optional[str]:
+    def _clean_url(cls, url: str) -> str | None:
         """Clean and validate a URL from search results."""
         if not url:
             return None
@@ -274,7 +276,7 @@ class DuckDuckGoSearch:
         return text
     
     @classmethod
-    def discover_rss_feeds(cls, url: str, timeout: int = 10) -> List[str]:
+    def discover_rss_feeds(cls, url: str, timeout: int = 10) -> list[str]:
         """
         Discover RSS feeds for a given URL.
         
@@ -368,7 +370,7 @@ class DuckDuckGoSearch:
             return []
     
     @classmethod
-    def _resolve_url(cls, path: str, base_url: str) -> Optional[str]:
+    def _resolve_url(cls, path: str, base_url: str) -> str | None:
         """Resolve a relative URL path against a base URL."""
         try:
             if path.startswith('http://') or path.startswith('https://'):
@@ -438,7 +440,7 @@ class DuckDuckGoSearch:
     
     @classmethod
     def discover_sources_by_topic(cls, topic: str, max_sources: int = 20, 
-                                  region: str = "wt-wt") -> List[Dict]:
+                                  region: str = "wt-wt") -> list[dict]:
         """
         Discover news sources for a specific topic.
         
@@ -497,7 +499,7 @@ class DuckDuckGoSearch:
             return []
     
     @classmethod
-    def find_missing_rss_feeds(cls, sources: List[Dict], timeout: int = 10) -> List[Dict]:
+    def find_missing_rss_feeds(cls, sources: list[dict], timeout: int = 10) -> list[dict]:
         """
         Find missing RSS feeds for a list of sources.
         
@@ -543,22 +545,22 @@ class DuckDuckGoSearch:
 
 
 # Convenience functions for module-level usage
-def search(query: str, max_results: int = 10, **kwargs) -> List[Dict]:
+def search(query: str, max_results: int = 10, **kwargs) -> list[dict]:
     """Perform a DuckDuckGo web search."""
     return DuckDuckGoSearch.search(query, max_results, **kwargs)
 
 
-def discover_rss_feeds(url: str, **kwargs) -> List[str]:
+def discover_rss_feeds(url: str, **kwargs) -> list[str]:
     """Discover RSS feeds for a URL."""
     return DuckDuckGoSearch.discover_rss_feeds(url, **kwargs)
 
 
-def discover_sources_by_topic(topic: str, **kwargs) -> List[Dict]:
+def discover_sources_by_topic(topic: str, **kwargs) -> list[dict]:
     """Discover sources for a topic."""
     return DuckDuckGoSearch.discover_sources_by_topic(topic, **kwargs)
 
 
-def find_missing_rss_feeds(sources: List[Dict], **kwargs) -> List[Dict]:
+def find_missing_rss_feeds(sources: list[dict], **kwargs) -> list[dict]:
     """Find missing RSS feeds for sources."""
     return DuckDuckGoSearch.find_missing_rss_feeds(sources, **kwargs)
 

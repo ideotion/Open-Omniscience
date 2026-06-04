@@ -22,8 +22,8 @@ For inquiries, contact: open-omniscience@ideotion.com
 # Scraper package for Open Omniscience
 # Placeholder file to make scraper a Python package
 
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -31,11 +31,11 @@ class ScrapeResult:
     """Result of a website scrape."""
     success: bool
     url: str
-    content: Optional[str] = None
-    title: Optional[str] = None
-    links: Optional[List[str]] = None
-    metadata: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    content: str | None = None
+    title: str | None = None
+    links: list[str] | None = None
+    metadata: dict[str, Any] | None = None
+    error: str | None = None
 
 
 def scrape_website(url: str, depth: int = 1, **kwargs) -> ScrapeResult:

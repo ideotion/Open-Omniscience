@@ -29,32 +29,44 @@ Includes tables for sources and articles, with relationships and indexes.
 Author: Ideotion
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Date, Boolean, ForeignKey, Float, Index, Table, TypeDecorator, LargeBinary
-from sqlalchemy.orm import declarative_base, relationship
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Union
-from contextlib import contextmanager
 import os
+from contextlib import contextmanager
+from datetime import UTC, datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Table,
+    Text,
+    TypeDecorator,
+)
+from sqlalchemy.orm import declarative_base, relationship
 
 # Engine, session lifecycle, and the FastAPI dependency live in session.py and
 # have NO import-time side effects (no create_all, no monitoring thread). They are
 # re-exported here because much existing code does
 # `from src.database.models import get_session` etc.
 from src.database.session import (  # noqa: E402
-    engine,
     Session,
     SessionLocal,
-    get_session,
     close_session,
-    session_scope,
-    get_db,
-    init_db,
     dispose_engine,
+    engine,
+    get_db,
+    get_session,
+    init_db,
+    session_scope,
 )
-
-
-
 
 # =============================================================================
 # Compressed Text Type for SQLAlchemy
@@ -90,7 +102,7 @@ class CompressedText(TypeDecorator):
         from src.utils.compression import database_compressor
         self.compressor = database_compressor
     
-    def process_bind_param(self, value: Optional[Union[str, bytes]], dialect: Any) -> Optional[bytes]:
+    def process_bind_param(self, value: str | bytes | None, dialect: Any) -> bytes | None:
         """
         Process the value before storing in the database.
         
@@ -110,7 +122,7 @@ class CompressedText(TypeDecorator):
         # Compress the text
         return self.compressor.compress_text_for_storage(value)
     
-    def process_result_value(self, value: Optional[bytes], dialect: Any) -> Optional[str]:
+    def process_result_value(self, value: bytes | None, dialect: Any) -> str | None:
         """
         Process the value after retrieving from the database.
         
@@ -156,11 +168,12 @@ class CompressedJSON(TypeDecorator):
         """Initialize the CompressedJSON type."""
         super().__init__(*args, **kwargs)
         import json
+
         from src.utils.compression import database_compressor
         self.json = json
         self.compressor = database_compressor
     
-    def process_bind_param(self, value: Any, dialect: Any) -> Optional[bytes]:
+    def process_bind_param(self, value: Any, dialect: Any) -> bytes | None:
         """
         Process the value before storing in the database.
         
@@ -180,7 +193,7 @@ class CompressedJSON(TypeDecorator):
         # Compress the JSON string
         return self.compressor.compress_text_for_storage(json_str)
     
-    def process_result_value(self, value: Optional[bytes], dialect: Any) -> Any:
+    def process_result_value(self, value: bytes | None, dialect: Any) -> Any:
         """
         Process the value after retrieving from the database.
         
@@ -219,7 +232,7 @@ source_group_association = Table(
     Base.metadata,
     Column('source_id', Integer, ForeignKey('sources.id'), primary_key=True),
     Column('group_id', Integer, ForeignKey('source_groups.id'), primary_key=True),
-    Column('added_at', DateTime, default=lambda: datetime.now(timezone.utc)),
+    Column('added_at', DateTime, default=lambda: datetime.now(UTC)),
     # Indexes for performance
     Index('idx_source_group_source_id', 'source_id'),
     Index('idx_source_group_group_id', 'group_id'),
@@ -258,8 +271,8 @@ class SourceGroup(Base):
     priority = Column(Integer, default=2)
     rate_limit_ms = Column(Integer, default=2000)
     enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Many-to-many relationship with sources
     sources = relationship(
@@ -459,8 +472,8 @@ class Article(Base):
     published_at = Column(DateTime)
     language = Column(String(10))
     hash = Column(String(64), nullable=False, unique=True)  # SHA-256 hash length is 64
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, onupdate=lambda: datetime.now(UTC))
     
     # Enhanced metadata fields
     region = Column(String(50))  # Geographic region
@@ -553,7 +566,7 @@ article_keyword_association = Table(
     Column('frequency', Integer, default=1),
     Column('position', Integer),
     Column('relevance_score', Float, default=0.0),
-    Column('created_at', DateTime, default=lambda: datetime.now(timezone.utc)),
+    Column('created_at', DateTime, default=lambda: datetime.now(UTC)),
     # Indexes for performance
     Index('idx_article_keyword_article_id', 'article_id'),
     Index('idx_article_keyword_keyword_id', 'keyword_id'),
@@ -583,8 +596,8 @@ class KeywordCategory(Base):
     parent_id = Column(Integer, ForeignKey("keyword_categories.id"))
     color = Column(String(20), default="#666666")
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Self-referential relationship for hierarchical categories
     parent = relationship("KeywordCategory", remote_side=[id], back_populates="children")
@@ -631,8 +644,8 @@ class Keyword(Base):
     is_entity = Column(Boolean, default=False)
     entity_type = Column(String(50))
     relevance_score = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Relationships
     category = relationship("KeywordCategory", back_populates="keywords")
@@ -681,7 +694,7 @@ class ArticleKeyword(Base):
     first_position = Column(Integer)
     last_position = Column(Integer)
     relevance_score = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     
     def __repr__(self):
         return f"<ArticleKeyword(article_id={self.article_id}, keyword_id={self.keyword_id}, frequency={self.frequency})>"
@@ -712,8 +725,8 @@ class LinkClassificationRule(Base):
     classification_type = Column(String(50), nullable=False)  # source, reference, ad, social, navigation, other
     priority = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Indexes for performance
     __table_args__ = (
@@ -769,8 +782,8 @@ class ExternalSource(Base):
     social_media_followers = Column(Integer)
     is_verified = Column(Boolean, default=False)
     last_verified_at = Column(DateTime)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Relationships
     source_articles = relationship("SourceArticle", back_populates="external_source", cascade="all, delete-orphan")
@@ -826,8 +839,8 @@ class SourceArticle(Base):
     sentiment_score = Column(Float)
     is_accessible = Column(Boolean, default=True)
     last_accessed_at = Column(DateTime)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Relationships
     external_source = relationship("ExternalSource", back_populates="source_articles")
@@ -889,8 +902,8 @@ class ArticleLink(Base):
     last_checked_at = Column(DateTime)
     redirect_url = Column(String(1000))
     http_status = Column(Integer)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Relationships
     article = relationship("Article", back_populates="links")
@@ -950,8 +963,8 @@ class ArticleSourceRelationship(Base):
     is_temporal_anomaly = Column(Boolean, default=False)
     confidence_score = Column(Float, default=0.0)  # 0-1
     notes = Column(Text)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Relationships
     article = relationship("Article")
@@ -1000,8 +1013,8 @@ class SourceCredibilityRule(Base):
     max_value = Column(Float, default=100.0)
     is_inverse = Column(Boolean, default=False)  # True for factors where higher = worse (e.g., alexa rank)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Indexes for performance
     __table_args__ = (
@@ -1037,7 +1050,7 @@ class ArticleAnalysis(Base):
     # provenance
     model = Column(String(100), nullable=False)
     prompt_version = Column(String(50), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     article = relationship("Article", backref="analyses")
 
@@ -1064,7 +1077,7 @@ class CommodityPrice(Base):
     currency = Column(String(8), nullable=False, default="USD")
     unit = Column(String(16), nullable=False, default="kg")  # mass unit (kg, t, lb, ozt, ...)
     source = Column(String(255), nullable=True)              # provenance: where it came from
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("ix_commodity_symbol_date", "symbol", "observed_on"),

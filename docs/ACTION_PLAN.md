@@ -284,3 +284,77 @@ or commodity (Pillar 6) first.**
 5. [ ] Phase 1.5 — search rewrite with Boolean tests (the highest-value correctness fix).
 
 > After each numbered item: run tests, commit on `0.04` with a precise message, move on.
+
+---
+
+# Phase 6 — Path to Functional v1.0 (post-merge upgrade)
+
+Phases 0–5 delivered a *working prototype*. Phase 6 makes the **repository** (not
+just the running app) genuinely functional and trustworthy. See
+[`QUALITY_CHECKUP.md`](QUALITY_CHECKUP.md) for the findings that drive this.
+
+Operating rule unchanged: every item ends green and tested; delete-before-build;
+no silent failure; honest provenance.
+
+### 6.1 Purge the dead/fabricated bulk (biggest quality lever)
+> ~64% of `src/` is never loaded by the app. Removing it makes the repo readable
+> and removes latent footguns. Verify each module is referenced by *no* other
+> `src/` or `tests/` file before moving it to `quarantine/` (kept in history).
+- [ ] Remove fabricated/over-engineered orphans: `scraper/distributed.py`,
+      `llm/optimizer.py`, `database/query_optimizer.py` (also kills its **latent
+      SQL injection**), `api/performance.py`, `utils/performance.py`,
+      `database/optimization.py`, the superseded `compliance/ethical_scraper.py`.
+- [ ] **Keep** legitimately-deferred infra: `database/async_db.py` (future Postgres),
+      `database/migrations/*` (Alembic), `main_pipeline.py` (still test-referenced).
+- [ ] Decide the fate of the legacy LLM module (`llm/config.py` etc. with the
+      hallucinated catalog) — it survives only to satisfy `test_llm.py`. Either
+      rewrite those tests against the new `llm/ollama.py` and delete the legacy
+      module, or quarantine both together.
+- [ ] **Acceptance:** full suite green after each batch; `src/` live-LOC ratio
+      rises well above 50%; `ruff check src/` findings drop sharply.
+
+### 6.2 Immediate utility — seed real, ethical sources
+- [ ] Ship a small curated list of **real, robots-friendly RSS feeds** (e.g. major
+      wire services / public-interest outlets) as `configs/default_sources.yaml`.
+- [ ] `scripts/seed_sources.py` (and an installer `--seed` step) to load them.
+- [ ] **Acceptance:** a fresh install can ingest and search real news with zero
+      manual setup; tested with a fixture feed.
+
+### 6.3 Real migration path
+- [ ] Wire Alembic to the live models; generate the baseline + a migration for the
+      new tables (`article_analyses`, `commodity_prices`). `init_db()` stays for
+      fresh installs; existing DBs upgrade via `alembic upgrade head`.
+- [ ] **Acceptance:** an old DB (pre-v0.4 schema) upgrades cleanly; tested.
+
+### 6.4 Harden the live legacy routers
+- [ ] Add behavioural tests for the source/keyword/link routers actually wired in
+      (`source_management`, `keyword_management`, `keyword_analysis`, `link_analysis`):
+      create/list/update/delete a source; extract keywords; classify a link.
+- [ ] Fix anything they get wrong (route each through the ethical fetcher; ensure
+      parameterized DB access). Replace any remaining `datetime.utcnow()` in *live*
+      code with timezone-aware now.
+- [ ] **Acceptance:** each live router has at least one happy-path + one error test.
+
+### 6.5 Pillar 2 as the honesty gate
+- [ ] Surface the genuine scientific-rigor utilities (real scipy/statsmodels) so any
+      numeric the app returns carries method + uncertainty (extend what the
+      commodity correlation already does to other computed values).
+- [ ] **Acceptance:** tests assert no constant/hardcoded confidence in live outputs.
+
+### 6.6 Lint debt burn-down (safe + incremental)
+- [ ] Run `ruff --fix` **per-module on live files only**, never repo-wide (a blanket
+      fix once removed intentional back-compat re-exports). Add `ruff format`.
+- [ ] Flip CI ruff from advisory to blocking once live modules are clean.
+- [ ] **Acceptance:** `ruff check src/<live tree>` clean; CI lint blocking.
+
+### 6.7 Verticals & remaining enrichers (lower priority)
+- [ ] One real, thin commodity scraper from an open source (e.g. USGS) feeding the
+      existing price/correlation machinery — ethical path reused, fixture-tested.
+- [ ] Currency conversion with an explicit, dated FX rate (never a hardcoded guess).
+- [ ] Newsletter-API email sources (Substack/Mailchimp) beyond IMAP, if wanted.
+
+## Definition of "Functional v1.0"
+A fresh Qubes AppVM install seeds real sources, ingests and searches live news,
+summarizes locally via Ollama, exports a verifiable evidence bundle — and the
+repository a maintainer opens contains *only code that runs*, is lint-clean on the
+live tree, migrates cleanly, and has a test for every exposed endpoint.

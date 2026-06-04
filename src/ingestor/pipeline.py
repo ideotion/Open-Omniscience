@@ -35,20 +35,22 @@ Author: Ideotion
 
 import logging
 import time
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from datetime import datetime, timezone
 from typing import Optional
+
+from src.database.models import Article, Source, get_session
+from src.ingestor.deduplicator import DeduplicationConfig, Deduplicator
+from src.ingestor.normalizer import ArticleNormalizer
 
 # Import local modules
 from src.scraper.scraper import Scraper
 from src.scraper.source_monitor import SourceMonitor
-from src.utils.url_utils import canonicalize_url, resolve_redirects, generate_content_hash
-from src.ingestor.normalizer import ArticleNormalizer
-from src.ingestor.deduplicator import Deduplicator, DeduplicationConfig
-from src.database.models import Article, Source, get_session
 
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
+from src.utils.url_utils import canonicalize_url, generate_content_hash, resolve_redirects
+
 logger = setup_logging("pipeline")
 
 # Retry configuration
@@ -272,7 +274,7 @@ class IngestionPipeline:
                     try:
                         published_at = datetime.fromisoformat(published_at)
                     except ValueError:
-                        published_at = datetime.now(timezone.utc)
+                        published_at = datetime.now(UTC)
                         logger.warning(f"Invalid date format for article: {article.get('url', 'unknown')}")
                 
                 # Create new article record

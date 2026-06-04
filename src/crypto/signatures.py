@@ -21,6 +21,9 @@ For inquiries, contact: open-omniscience@ideotion.com
 # Digital Signatures Module for Open-Omniscience Pillar 4
 # GPG signing and verification functionality
 
+from datetime import UTC
+
+
 class GPGNotAvailableError(Exception):
     pass
 
@@ -32,7 +35,7 @@ class SignatureResult:
         self.fingerprint = fingerprint
         self.key_id = key_id
         from datetime import datetime, timezone
-        self.timestamp = datetime.now(timezone.utc).isoformat()
+        self.timestamp = datetime.now(UTC).isoformat()
 
 class GPGSigner:
     def __init__(self, gpg_path="gpg"):

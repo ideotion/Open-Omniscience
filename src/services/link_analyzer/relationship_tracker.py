@@ -28,12 +28,13 @@ and their external sources, including temporal analysis.
 Author: Open Omniscience Team
 """
 
+import logging
 import re
-from datetime import datetime, timezone
-from typing import List, Dict, Optional, Any, Tuple
+from datetime import UTC, datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
 from dateutil import parser as date_parser
 from dateutil.relativedelta import relativedelta
-import logging
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -66,9 +67,9 @@ class RelationshipTracker:
             'background': 'Source provides background information'
         }
     
-    def track_relationships(self, article_id: int, classified_links: List[Dict[str, Any]], 
-                           identified_sources: List[Dict[str, Any]], 
-                           article_published_at: Optional[str] = None) -> List[Dict[str, Any]]:
+    def track_relationships(self, article_id: int, classified_links: list[dict[str, Any]], 
+                           identified_sources: list[dict[str, Any]], 
+                           article_published_at: str | None = None) -> list[dict[str, Any]]:
         """
         Track relationships between an article and its external sources.
         
@@ -148,8 +149,8 @@ class RelationshipTracker:
                 'time_delta_days': time_delta_days,
                 'is_temporal_anomaly': is_temporal_anomaly,
                 'confidence_score': confidence_score,
-                'created_at': datetime.now(timezone.utc).isoformat(),
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(UTC).isoformat(),
+                'updated_at': datetime.now(UTC).isoformat()
             }
             
             # Add source article information if available
@@ -160,7 +161,7 @@ class RelationshipTracker:
         
         return relationships
     
-    def _determine_relationship_type(self, link: Dict[str, Any], source_info: Dict[str, Any]) -> str:
+    def _determine_relationship_type(self, link: dict[str, Any], source_info: dict[str, Any]) -> str:
         """
         Determine the type of relationship based on link and source information.
         
@@ -233,8 +234,8 @@ class RelationshipTracker:
         
         return 'mention'
     
-    def _calculate_temporal_info(self, article_date: Optional[datetime], 
-                               source_date_str: Optional[str]) -> Tuple[Optional[float], bool]:
+    def _calculate_temporal_info(self, article_date: datetime | None, 
+                               source_date_str: str | None) -> tuple[float | None, bool]:
         """
         Calculate temporal information between article and source.
         
@@ -270,7 +271,7 @@ class RelationshipTracker:
             logger.warning(f"Error calculating temporal info: {e}")
             return None, False
     
-    def _calculate_confidence_score(self, link: Dict[str, Any], source_info: Dict[str, Any], 
+    def _calculate_confidence_score(self, link: dict[str, Any], source_info: dict[str, Any], 
                                    relationship_type: str) -> float:
         """
         Calculate confidence score for a relationship.
@@ -319,7 +320,7 @@ class RelationshipTracker:
         
         return confidence
     
-    def _parse_date(self, date_str: str) -> Optional[datetime]:
+    def _parse_date(self, date_str: str) -> datetime | None:
         """
         Parse a date string into a datetime object.
         
@@ -342,7 +343,7 @@ class RelationshipTracker:
             
             # If no timezone, assume UTC
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
             
             return dt
             
@@ -350,8 +351,8 @@ class RelationshipTracker:
             logger.warning(f"Error parsing date {date_str}: {e}")
             return None
     
-    def analyze_temporal_patterns(self, article_id: int, relationships: List[Dict[str, Any]],
-                                article_published_at: Optional[str] = None) -> Dict[str, Any]:
+    def analyze_temporal_patterns(self, article_id: int, relationships: list[dict[str, Any]],
+                                article_published_at: str | None = None) -> dict[str, Any]:
         """
         Analyze temporal patterns in article-source relationships.
         
@@ -425,7 +426,7 @@ class RelationshipTracker:
             'source_types': source_types
         }
     
-    def get_relationship_statistics(self, relationships: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def get_relationship_statistics(self, relationships: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Get statistics about relationships.
         
@@ -476,7 +477,7 @@ class RelationshipTracker:
             'avg_confidence': avg_confidence
         }
     
-    def identify_temporal_anomalies(self, relationships: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def identify_temporal_anomalies(self, relationships: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Identify temporal anomalies in relationships.
         
@@ -494,7 +495,7 @@ class RelationshipTracker:
         
         return anomalies
     
-    def get_relationship_types(self) -> Dict[str, str]:
+    def get_relationship_types(self) -> dict[str, str]:
         """
         Get all available relationship types with descriptions.
         
@@ -505,12 +506,12 @@ class RelationshipTracker:
     
     def create_relationship(self, article_id: int, source_id: int, 
                            relationship_type: str = 'reference',
-                           link_id: Optional[int] = None,
-                           source_article_id: Optional[int] = None,
-                           time_delta_days: Optional[float] = None,
+                           link_id: int | None = None,
+                           source_article_id: int | None = None,
+                           time_delta_days: float | None = None,
                            is_temporal_anomaly: bool = False,
                            confidence_score: float = 0.5,
-                           notes: str = '') -> Dict[str, Any]:
+                           notes: str = '') -> dict[str, Any]:
         """
         Create a new relationship record.
         
@@ -538,6 +539,6 @@ class RelationshipTracker:
             'is_temporal_anomaly': is_temporal_anomaly,
             'confidence_score': confidence_score,
             'notes': notes,
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'updated_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat(),
+            'updated_at': datetime.now(UTC).isoformat()
         }

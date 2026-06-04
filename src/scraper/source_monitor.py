@@ -29,21 +29,23 @@ to avoid redundant external calls.
 Author: Ideotion
 """
 
-import time
 import hashlib
 import json
 import logging
-from pathlib import Path
-from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Tuple
+import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta, timezone
 from enum import Enum
-import requests
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
 import feedparser
+import requests
 from bs4 import BeautifulSoup
 
 # Configure logging
 from src.utils.logging_config import setup_logging
+
 logger = setup_logging("source_monitor")
 
 
@@ -62,18 +64,18 @@ class SourceHealth:
     domain: str
     status: SourceStatus
     response_time_ms: float = 0.0
-    last_checked: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    last_success: Optional[datetime] = None
+    last_checked: datetime = field(default_factory=lambda: datetime.now(UTC))
+    last_success: datetime | None = None
     consecutive_failures: int = 0
-    error_message: Optional[str] = None
-    content_type: Optional[str] = None
+    error_message: str | None = None
+    content_type: str | None = None
     content_length: int = 0
     
     def is_healthy(self) -> bool:
         """Check if source is healthy."""
         return self.status == SourceStatus.HEALTHY
     
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
             "domain": self.domain,
@@ -100,9 +102,9 @@ class CachedResponse:
     
     def is_expired(self) -> bool:
         """Check if cache has expired."""
-        return datetime.now(timezone.utc) > self.expires
+        return datetime.now(UTC) > self.expires
     
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
             "url": self.url,
@@ -132,7 +134,7 @@ class SourceMonitor:
     HEALTH_CHECK_TIMEOUT = 10  # seconds
     SLOW_THRESHOLD_MS = 5000  # 5 seconds
     
-    def __init__(self, config_path: Optional[str] = None, cache_dir: Optional[str] = None):
+    def __init__(self, config_path: str | None = None, cache_dir: str | None = None):
         """
         Initialize the source monitor.
         
@@ -161,9 +163,9 @@ class SourceMonitor:
         self.health_history_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Initialize caches
-        self._response_cache: Dict[str, CachedResponse] = {}
-        self._health_cache: Dict[str, SourceHealth] = {}
-        self._health_history: List[Dict] = []
+        self._response_cache: dict[str, CachedResponse] = {}
+        self._health_cache: dict[str, SourceHealth] = {}
+        self._health_history: list[dict] = []
         
         # Load persistent data
         self._load_health_history()
@@ -177,11 +179,11 @@ class SourceMonitor:
         
         logger.info(f"SourceMonitor initialized with {len(self.sources)} sources")
     
-    def _load_sources(self) -> List[Dict]:
+    def _load_sources(self) -> list[dict]:
         """Load sources from configuration file."""
         import yaml
         try:
-            with open(self.config_path, "r") as f:
+            with open(self.config_path) as f:
                 config = yaml.safe_load(f)
                 return config.get("sources", [])
         except FileNotFoundError:
@@ -196,7 +198,7 @@ class SourceMonitor:
         cache_file = self.cache_dir / "response_cache.json"
         if cache_file.exists():
             try:
-                with open(cache_file, "r") as f:
+                with open(cache_file) as f:
                     self._response_cache = json.load(f)
                     logger.info(f"Loaded {len(self._response_cache)} cached responses")
             except (json.JSONDecodeError, Exception) as e:
@@ -216,7 +218,7 @@ class SourceMonitor:
         if self.health_history_path.exists():
             try:
                 import json
-                with open(self.health_history_path, "r") as f:
+                with open(self.health_history_path) as f:
                     self._health_history = json.load(f)
                 logger.info(f"Loaded {len(self._health_history)} health history entries")
             except Exception as e:
@@ -235,7 +237,7 @@ class SourceMonitor:
         """Generate SHA-256 hash of content."""
         return hashlib.sha256(content).hexdigest()
     
-    def check_source_health(self, source: Dict) -> SourceHealth:
+    def check_source_health(self, source: dict) -> SourceHealth:
         """
         Check the health of a single source.
         
@@ -336,7 +338,7 @@ class SourceMonitor:
                 response_time_ms=response_time_ms,
                 content_type=content_type,
                 content_length=content_length,
-                last_success=datetime.now(timezone.utc)
+                last_success=datetime.now(UTC)
             )
             
         except requests.exceptions.Timeout:
@@ -359,7 +361,7 @@ class SourceMonitor:
                 error_message=str(e)
             )
     
-    def check_all_sources(self) -> Dict[str, SourceHealth]:
+    def check_all_sources(self) -> dict[str, SourceHealth]:
         """
         Check health of all configured sources.
         
@@ -378,7 +380,7 @@ class SourceMonitor:
             
             # Update health history
             self._health_history.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "domain": domain,
                 "status": health.status.value,
                 "response_time_ms": health.response_time_ms,
@@ -406,7 +408,7 @@ class SourceMonitor:
         
         return health_results
     
-    def get_source_health(self, domain: str) -> Optional[SourceHealth]:
+    def get_source_health(self, domain: str) -> SourceHealth | None:
         """
         Get the current health status of a source.
         
@@ -418,7 +420,7 @@ class SourceMonitor:
         """
         return self._health_cache.get(domain)
     
-    def get_healthy_sources(self) -> List[str]:
+    def get_healthy_sources(self) -> list[str]:
         """
         Get list of domains for healthy sources.
         
@@ -427,7 +429,7 @@ class SourceMonitor:
         """
         return [domain for domain, health in self._health_cache.items() if health.is_healthy()]
     
-    def get_unhealthy_sources(self) -> List[str]:
+    def get_unhealthy_sources(self) -> list[str]:
         """
         Get list of domains for unhealthy sources.
         
@@ -456,8 +458,8 @@ class SourceMonitor:
             url=url,
             content=content,
             content_type=content_type,
-            timestamp=datetime.now(timezone.utc),
-            expires=datetime.now(timezone.utc) + timedelta(seconds=ttl),
+            timestamp=datetime.now(UTC),
+            expires=datetime.now(UTC) + timedelta(seconds=ttl),
             hash=self._generate_hash(content)
         )
         
@@ -472,7 +474,7 @@ class SourceMonitor:
         
         return cached
     
-    def get_cached_response(self, url: str) -> Optional[CachedResponse]:
+    def get_cached_response(self, url: str) -> CachedResponse | None:
         """
         Get a cached response if available and not expired.
         
@@ -489,7 +491,7 @@ class SourceMonitor:
     
     def _cleanup_cache(self):
         """Remove expired and excess cache entries."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         
         # Remove expired entries
         expired_urls = [
@@ -518,14 +520,14 @@ class SourceMonitor:
         self._save_cache()
         logger.info("Cache cleared")
     
-    def get_cache_stats(self) -> Dict:
+    def get_cache_stats(self) -> dict:
         """
         Get cache statistics.
         
         Returns:
             Dictionary with cache statistics.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         valid_count = sum(1 for c in self._response_cache.values() if not c.is_expired())
         expired_count = sum(1 for c in self._response_cache.values() if c.is_expired())
         
@@ -537,7 +539,7 @@ class SourceMonitor:
             "cache_dir": str(self.cache_dir)
         }
     
-    def get_health_stats(self) -> Dict:
+    def get_health_stats(self) -> dict:
         """
         Get health monitoring statistics.
         
@@ -557,10 +559,10 @@ class SourceMonitor:
             "healthy_sources": healthy,
             "unhealthy_sources": unhealthy,
             "average_response_time_ms": avg_response_time,
-            "last_check": datetime.now(timezone.utc).isoformat()
+            "last_check": datetime.now(UTC).isoformat()
         }
     
-    def get_source_info(self, domain: str) -> Optional[Dict]:
+    def get_source_info(self, domain: str) -> dict | None:
         """
         Get information about a specific source from configuration.
         

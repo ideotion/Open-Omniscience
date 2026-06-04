@@ -28,13 +28,14 @@ including URL normalization, link text extraction, and position tracking.
 Author: Open Omniscience Team
 """
 
-import re
-from urllib.parse import urljoin, urlparse, urlunparse
-from bs4 import BeautifulSoup
-from typing import List, Dict, Optional, Any
-from datetime import datetime, timezone
 import hashlib
 import logging
+import re
+from datetime import UTC, datetime, timezone
+from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin, urlparse, urlunparse
+
+from bs4 import BeautifulSoup
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -83,8 +84,8 @@ class LinkExtractor:
             'quantserve.com', 'chartbeat.com', 'newrelic.com'
         }
     
-    def extract_links(self, html_content: str, base_url: Optional[str] = None, 
-                     article_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    def extract_links(self, html_content: str, base_url: str | None = None, 
+                     article_id: int | None = None) -> list[dict[str, Any]]:
         """
         Extract all links from HTML content.
         
@@ -147,8 +148,8 @@ class LinkExtractor:
         
         return extracted_links
     
-    def _extract_link_from_element(self, element, base_url: Optional[str], 
-                                  article_id: Optional[int], position: int) -> Optional[Dict[str, Any]]:
+    def _extract_link_from_element(self, element, base_url: str | None, 
+                                  article_id: int | None, position: int) -> dict[str, Any] | None:
         """
         Extract link information from a BeautifulSoup element.
         
@@ -201,8 +202,9 @@ class LinkExtractor:
         # Parse URL components
         parsed_url = urlparse(link_url)
         
-        # Determine link type
-        link_type = self._determine_link_type(link_url, parsed_url, tag_name)
+        # Determine link type (base domain enables same-site internal/external)
+        base_domain = urlparse(base_url).netloc if base_url else ""
+        link_type = self._determine_link_type(link_url, parsed_url, tag_name, base_domain)
         
         # Extract HTML attributes
         html_attributes = dict(element.attrs)
@@ -222,11 +224,11 @@ class LinkExtractor:
             'is_absolute': bool(parsed_url.scheme and parsed_url.netloc),
             'is_relative': not bool(parsed_url.scheme and parsed_url.netloc),
             'article_id': article_id,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(UTC).isoformat()
         }
     
-    def _extract_links_with_regex(self, html_content: str, base_url: Optional[str], 
-                                 article_id: Optional[int]) -> List[Dict[str, Any]]:
+    def _extract_links_with_regex(self, html_content: str, base_url: str | None, 
+                                 article_id: int | None) -> list[dict[str, Any]]:
         """
         Fallback method to extract links using regex when BeautifulSoup fails.
         
@@ -271,7 +273,9 @@ class LinkExtractor:
                         'normalized_url': normalized_url,
                         'link_text': link_text.strip() if link_text else "",
                         'position': match.start(),
-                        'link_type': self._determine_link_type(url, parsed_url, tag.split('_')[0]),
+                        'link_type': self._determine_link_type(
+                            url, parsed_url, tag.split('_')[0],
+                            urlparse(base_url).netloc if base_url else ""),
                         'html_tag': tag.split('_')[0],
                         'html_attributes': {},
                         'domain': parsed_url.netloc.lower() if parsed_url.netloc else "",
@@ -281,7 +285,7 @@ class LinkExtractor:
                         'is_absolute': bool(parsed_url.scheme and parsed_url.netloc),
                         'is_relative': not bool(parsed_url.scheme and parsed_url.netloc),
                         'article_id': article_id,
-                        'created_at': datetime.now(timezone.utc).isoformat()
+                        'created_at': datetime.now(UTC).isoformat()
                     }
                     extracted_links.append(link_info)
         
@@ -338,15 +342,16 @@ class LinkExtractor:
             logger.warning(f"Error normalizing URL {url}: {e}")
             return url.lower() if url else ""
     
-    def _determine_link_type(self, url: str, parsed_url, tag_name: str) -> str:
+    def _determine_link_type(self, url: str, parsed_url, tag_name: str, base_domain: str = "") -> str:
         """
         Determine the type of a link based on URL and tag.
-        
+
         Args:
-            url: The URL
+            url: The URL (already resolved to absolute when a base was available)
             parsed_url: Parsed URL components
             tag_name: HTML tag name
-            
+            base_domain: netloc of the page being analysed, for internal/external
+
         Returns:
             Link type string
         """
@@ -401,15 +406,25 @@ class LinkExtractor:
                 elif extension in self.media_extensions:
                     return 'media'
         
-        # Default to external for absolute URLs, internal for relative
-        if parsed_url.scheme and parsed_url.netloc:
-            return 'external'
-        else:
-            return 'internal'
+        # Non-web schemes get their own category rather than a misleading
+        # internal/external label.
+        scheme = (parsed_url.scheme or "").lower()
+        if scheme in ("mailto", "tel", "sms"):
+            return "email" if scheme == "mailto" else "tel"
+        if scheme in ("javascript", "data", "file"):
+            return "other"
+
+        # internal vs external is same-site vs cross-site (by domain). Relative
+        # links (no netloc, e.g. an unresolved anchor) are treated as internal.
+        if parsed_url.netloc:
+            if base_domain and parsed_url.netloc.lower() == base_domain.lower():
+                return "internal"
+            return "external"
+        return "internal"
     
-    def filter_links(self, links: List[Dict[str, Any]], link_types: Optional[List[str]] = None,
-                    domains: Optional[List[str]] = None, 
-                    classifications: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def filter_links(self, links: list[dict[str, Any]], link_types: list[str] | None = None,
+                    domains: list[str] | None = None, 
+                    classifications: list[str] | None = None) -> list[dict[str, Any]]:
         """
         Filter links based on various criteria.
         
@@ -436,7 +451,7 @@ class LinkExtractor:
         
         return filtered
     
-    def get_link_statistics(self, links: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def get_link_statistics(self, links: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Calculate statistics for a list of links.
         

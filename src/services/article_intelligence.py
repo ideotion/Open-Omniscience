@@ -25,16 +25,17 @@ Article Intelligence Analysis for Open Omniscience
 Author: Open Omniscience Team
 """
 
-from pathlib import Path
-from typing import List, Dict, Any
-from datetime import datetime, timezone, timedelta
-from collections import Counter, defaultdict
 import math
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Dict, List
+
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from src.database.models import get_session, Article, Source
+from src.database.models import Article, Source, get_session
 from src.services.keyword_extractor import keyword_extractor
 from src.services.text_processor import text_processor
 from src.utils.logging_config import setup_logging

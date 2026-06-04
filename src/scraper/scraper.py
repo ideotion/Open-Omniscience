@@ -19,25 +19,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 For inquiries, contact: open-omniscience@ideotion.com
 """
 
-import requests
-from bs4 import BeautifulSoup
-import yaml
-import csv
-import feedparser
-from urllib.robotparser import RobotFileParser
-from urllib.parse import urlparse, ParseResult
-from pathlib import Path
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass
-from enum import Enum
-import time
-import logging
 import concurrent.futures
+import csv
+import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from datetime import UTC, datetime, timezone
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from urllib.parse import ParseResult, urlparse
+from urllib.robotparser import RobotFileParser
+
+import feedparser
+import requests
+import yaml
+from bs4 import BeautifulSoup
 
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
+
 logger = setup_logging("scraper")
 
 
@@ -54,12 +56,12 @@ class DownloadResult:
     status: Status
     content: str = ""
     url: str = ""
-    headers: Optional[Dict[str, str]] = None
+    headers: dict[str, str] | None = None
     error: str = ""
 
 
 class Scraper:
-    def __init__(self, config_path: Optional[str] = None, max_workers: int = 5) -> None:
+    def __init__(self, config_path: str | None = None, max_workers: int = 5) -> None:
         """
         Initialize the Scraper with configuration and settings.
         
@@ -76,14 +78,14 @@ class Scraper:
             config_path = str(self.repo_root / "configs" / "sources.yml")
         
         try:
-            with open(config_path, "r") as f:
-                self.sources: List[Dict[str, Any]] = yaml.safe_load(f)["sources"]
+            with open(config_path) as f:
+                self.sources: list[dict[str, Any]] = yaml.safe_load(f)["sources"]
         except FileNotFoundError:
             logger.error(f"Config file not found at {config_path}")
-            self.sources: List[Dict[str, Any]] = []
+            self.sources: list[dict[str, Any]] = []
         except yaml.YAMLError as e:
             logger.error(f"Invalid YAML in config file: {e}")
-            self.sources: List[Dict[str, Any]] = []
+            self.sources: list[dict[str, Any]] = []
         
         # Use dynamic path for audit log
         self.audit_dir: Path = self.repo_root / "audit"
@@ -105,9 +107,9 @@ class Scraper:
     def _log_error(self, error_msg: str) -> None:
         """Log an error message to the error log file."""
         with open(self.error_log, "a") as f:
-            f.write(f"{datetime.now(timezone.utc).isoformat() + 'Z'}, {error_msg}\n")
+            f.write(f"{datetime.now(UTC).isoformat() + 'Z'}, {error_msg}\n")
 
-    def _get_domain(self, source: Dict[str, Any]) -> str:
+    def _get_domain(self, source: dict[str, Any]) -> str:
         """
         Extract domain from source config, handling both 'domain' and 'url' fields.
         
@@ -127,7 +129,7 @@ class Scraper:
             logger.warning(f"Source {source.get('name', 'unknown')} has no domain or url field")
             return ""
 
-    def _get_rate_limit(self, source: Dict[str, Any]) -> int:
+    def _get_rate_limit(self, source: dict[str, Any]) -> int:
         """
         Get rate limit from source config, with default fallback.
         
@@ -139,7 +141,7 @@ class Scraper:
         """
         return source.get("rate_limit_ms", source.get("scan_config", {}).get("frequency_ms", 2000))
 
-    def _is_enabled(self, source: Dict[str, Any]) -> bool:
+    def _is_enabled(self, source: dict[str, Any]) -> bool:
         """
         Check if source is enabled, with default fallback.
         
@@ -171,7 +173,7 @@ class Scraper:
             logger.warning(f"Could not fetch robots.txt for {domain}: {e}")
             return True  # Assume allowed if robots.txt is unreachable
 
-    def _retry_request(self, url: str, max_retries: int = 3, initial_delay: float = 1) -> Optional[requests.Response]:
+    def _retry_request(self, url: str, max_retries: int = 3, initial_delay: float = 1) -> requests.Response | None:
         """
         Retry a request with exponential backoff.
         
@@ -219,7 +221,7 @@ class Scraper:
             )
         
         try:
-            response: Optional[requests.Response] = self._retry_request(url)
+            response: requests.Response | None = self._retry_request(url)
             if response and response.status_code == 200:
                 return DownloadResult(
                     status=Status.SUCCESS,
@@ -251,7 +253,7 @@ class Scraper:
                     # Extract or default values
                     title = entry.get("title", "No Title")
                     content = entry.get("description", "") or entry.get("summary", "") or "No Content"
-                    published_at = entry.get("published", datetime.now(timezone.utc).isoformat())
+                    published_at = entry.get("published", datetime.now(UTC).isoformat())
                     url = entry.get("link", rss_url)
 
                     # Clean content: remove HTML tags if present
@@ -294,7 +296,7 @@ class Scraper:
 
                     # Try to extract publication date
                     time_element = article.select_one("time, .date, .published")
-                    published_at = time_element.get("datetime") if time_element and time_element.has_attr("datetime") else datetime.now(timezone.utc).isoformat()
+                    published_at = time_element.get("datetime") if time_element and time_element.has_attr("datetime") else datetime.now(UTC).isoformat()
 
                     # Try to extract language from HTML lang attribute or meta
                     language = soup.html.get("lang", "en") if soup.html else "en"
@@ -362,7 +364,7 @@ class Scraper:
         with open(self.audit_log, "a") as f:
             writer = csv.writer(f)
             writer.writerow([
-                datetime.now(timezone.utc).isoformat() + "Z",
+                datetime.now(UTC).isoformat() + "Z",
                 url,
                 source,
                 status,

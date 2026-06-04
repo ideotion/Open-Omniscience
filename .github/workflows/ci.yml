@@ -29,5 +29,10 @@ jobs:
         run: ruff check src/ tests/
         continue-on-error: true  # advisory until the legacy style debt is burned down
 
+      - name: Migration drift (models vs Alembic baseline)
+        run: |
+          alembic upgrade head
+          alembic check
+
       - name: Test (pytest)
         run: python -m pytest -q

@@ -31,16 +31,18 @@ Author: Ideotion
 """
 
 import hashlib
-import numpy as np
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Set, Any
-from dataclasses import dataclass
-from collections import defaultdict
 import re
 import string
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+import numpy as np
 
 # Configure logging
 from src.utils.logging_config import setup_logging
+
 logger = setup_logging("deduplicator")
 
 
@@ -70,7 +72,7 @@ class DeduplicationConfig:
     enable_content_hash: bool = True
     
     @classmethod
-    def from_dict(cls, config_dict: Dict) -> "DeduplicationConfig":
+    def from_dict(cls, config_dict: dict) -> "DeduplicationConfig":
         """Create from dictionary."""
         return cls(**{k: v for k, v in config_dict.items() if k in cls.__dataclass_fields__})
 
@@ -95,7 +97,7 @@ class MinHash:
         self.hash_size = hash_size
         self._coefficients = self._generate_coefficients(num_perm)
     
-    def _generate_coefficients(self, num_perm: int) -> List[Tuple[int, int]]:
+    def _generate_coefficients(self, num_perm: int) -> list[tuple[int, int]]:
         """Generate random coefficients for hash functions."""
         # Use a simple deterministic approach for reproducibility
         np.random.seed(42)
@@ -128,7 +130,7 @@ class MinHash:
                 return False
         return True
     
-    def signature(self, tokens: Set[str]) -> np.ndarray:
+    def signature(self, tokens: set[str]) -> np.ndarray:
         """
         Compute MinHash signature for a set of tokens.
         
@@ -193,8 +195,8 @@ class LSH:
         """
         self.bands = bands
         self.rows = rows
-        self.buckets: Dict[int, Set[str]] = defaultdict(set)
-        self.signatures: Dict[str, np.ndarray] = {}
+        self.buckets: dict[int, set[str]] = defaultdict(set)
+        self.signatures: dict[str, np.ndarray] = {}
     
     def add_document(self, doc_id: str, signature: np.ndarray):
         """
@@ -227,7 +229,7 @@ class LSH:
         band_bytes = band.tobytes()
         return int(hashlib.sha256(band_bytes).hexdigest(), 16) % (2 ** 32)
     
-    def query(self, signature: np.ndarray, threshold: float = 0.85) -> Set[str]:
+    def query(self, signature: np.ndarray, threshold: float = 0.85) -> set[str]:
         """
         Query for similar documents.
         
@@ -306,12 +308,12 @@ class TFIDFVectorizer:
         """
         self.min_df = min_df
         self.max_df = max_df
-        self.vocabulary: Dict[str, int] = {}
-        self.idf: Dict[str, float] = {}
+        self.vocabulary: dict[str, int] = {}
+        self.idf: dict[str, float] = {}
         self.doc_count = 0
-        self._doc_freq: Dict[str, int] = defaultdict(int)
+        self._doc_freq: dict[str, int] = defaultdict(int)
     
-    def _tokenize(self, text: str) -> List[str]:
+    def _tokenize(self, text: str) -> list[str]:
         """Tokenize text into words."""
         # Lowercase
         text = text.lower()
@@ -323,7 +325,7 @@ class TFIDFVectorizer:
         words = [w for w in words if len(w) > 2]
         return words
     
-    def fit(self, documents: List[str]):
+    def fit(self, documents: list[str]):
         """
         Fit the vectorizer on a list of documents.
         
@@ -455,7 +457,7 @@ class ContentHasher:
         """
         return hashlib.md5(content.encode('utf-8', errors='ignore')).hexdigest()
     
-    def chunk_hashes(self, content: str) -> List[str]:
+    def chunk_hashes(self, content: str) -> list[str]:
         """
         Compute hashes for chunks of content.
         
@@ -485,7 +487,7 @@ class Deduplicator:
     - TF-IDF + Cosine similarity (semantic duplicates)
     """
     
-    def __init__(self, config: Optional[DeduplicationConfig] = None):
+    def __init__(self, config: DeduplicationConfig | None = None):
         """
         Initialize the deduplicator.
         
@@ -520,13 +522,13 @@ class Deduplicator:
             )
         
         # Document stores
-        self._content_hashes: Set[str] = set()
-        self._minhash_signatures: Dict[str, np.ndarray] = {}
-        self._tfidf_vectors: Dict[str, np.ndarray] = {}
+        self._content_hashes: set[str] = set()
+        self._minhash_signatures: dict[str, np.ndarray] = {}
+        self._tfidf_vectors: dict[str, np.ndarray] = {}
         
         logger.info("Deduplicator initialized")
     
-    def _extract_text_features(self, text: str) -> Set[str]:
+    def _extract_text_features(self, text: str) -> set[str]:
         """
         Extract text features (shingles) for MinHash.
         
@@ -573,7 +575,7 @@ class Deduplicator:
         text = text.strip()
         return text
     
-    def add_document(self, doc_id: str, text: str, metadata: Optional[Dict] = None):
+    def add_document(self, doc_id: str, text: str, metadata: dict | None = None):
         """
         Add a document to the deduplication index.
         
@@ -602,7 +604,7 @@ class Deduplicator:
             # For now, we'll just store the text
             pass
     
-    def is_duplicate(self, text: str, threshold: Optional[float] = None) -> Tuple[bool, Optional[str]]:
+    def is_duplicate(self, text: str, threshold: float | None = None) -> tuple[bool, str | None]:
         """
         Check if text is a duplicate.
         
@@ -636,7 +638,7 @@ class Deduplicator:
         
         return False, None
     
-    def find_similar(self, text: str, threshold: float = 0.85, limit: int = 10) -> List[Tuple[str, float]]:
+    def find_similar(self, text: str, threshold: float = 0.85, limit: int = 10) -> list[tuple[str, float]]:
         """
         Find documents similar to the given text.
         
@@ -670,7 +672,7 @@ class Deduplicator:
         
         return results[:limit]
     
-    def batch_deduplicate(self, documents: List[Dict]) -> Dict[str, List[str]]:
+    def batch_deduplicate(self, documents: list[dict]) -> dict[str, list[str]]:
         """
         Deduplicate a batch of documents.
         
@@ -721,7 +723,7 @@ class Deduplicator:
         
         logger.info("Deduplicator cleared")
     
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> dict:
         """
         Get deduplication statistics.
         

@@ -36,15 +36,16 @@ Author: Ideotion
 """
 
 import re
-import unicodedata
-from pathlib import Path
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass
 import string
+import unicodedata
+from dataclasses import dataclass
+from datetime import UTC, datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 # Configure logging
 from src.utils.logging_config import setup_logging
+
 logger = setup_logging("normalizer")
 
 
@@ -55,16 +56,16 @@ class NormalizedArticle:
     canonical_url: str
     title: str
     content: str
-    published_at: Optional[datetime]
+    published_at: datetime | None
     language: str
-    region: Optional[str]
-    country: Optional[str]
-    author: Optional[str]
+    region: str | None
+    country: str | None
+    author: str | None
     source_domain: str
-    tags: List[str]
-    metadata: Dict[str, Any]
+    tags: list[str]
+    metadata: dict[str, Any]
     
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
             "url": self.url,
@@ -285,7 +286,7 @@ class DateNormalizer:
     ]
     
     @classmethod
-    def parse_date(cls, date_str: str) -> Optional[datetime]:
+    def parse_date(cls, date_str: str) -> datetime | None:
         """
         Parse a date string into a datetime object.
         
@@ -307,7 +308,7 @@ class DateNormalizer:
                 dt = datetime.strptime(date_str, fmt)
                 # If timezone naive, assume UTC
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.replace(tzinfo=UTC)
                 return dt
             except ValueError:
                 continue
@@ -317,7 +318,7 @@ class DateNormalizer:
             from dateutil.parser import parse
             dt = parse(date_str)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
             return dt
         except ImportError:
             pass
@@ -328,7 +329,7 @@ class DateNormalizer:
         return None
     
     @classmethod
-    def normalize_date(cls, date_str: str) -> Optional[str]:
+    def normalize_date(cls, date_str: str) -> str | None:
         """
         Normalize a date string to ISO 8601 format.
         
@@ -535,7 +536,7 @@ class RegionDetector:
     }
     
     @classmethod
-    def detect_country(cls, text: str) -> Optional[str]:
+    def detect_country(cls, text: str) -> str | None:
         """
         Detect country from text.
         
@@ -558,7 +559,7 @@ class RegionDetector:
         return None
     
     @classmethod
-    def detect_region(cls, text: str) -> Optional[str]:
+    def detect_region(cls, text: str) -> str | None:
         """
         Detect region from text.
         
@@ -655,7 +656,7 @@ class ArticleNormalizer:
         self.region_detector = RegionDetector()
         self.url_normalizer = URLNormalizer()
     
-    def normalize(self, article_data: Dict) -> NormalizedArticle:
+    def normalize(self, article_data: dict) -> NormalizedArticle:
         """
         Normalize article data.
         
@@ -745,7 +746,7 @@ class ArticleNormalizer:
             metadata=metadata
         )
     
-    def batch_normalize(self, articles: List[Dict]) -> List[NormalizedArticle]:
+    def batch_normalize(self, articles: list[dict]) -> list[NormalizedArticle]:
         """
         Normalize a batch of articles.
         

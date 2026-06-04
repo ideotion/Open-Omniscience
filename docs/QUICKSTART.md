@@ -46,12 +46,30 @@ open-omniscience                   # serve at http://127.0.0.1:8000
 Useful env vars: `OO_DATA_DIR` (where the SQLite DB + data live), `OO_HOST`/`OO_PORT`,
 `OO_FETCH_MIN_INTERVAL` (per-host politeness delay, seconds).
 
+### Upgrading an existing database
+
+Fresh installs build the schema automatically (`init_db()`), and the database is
+stamped at the current migration baseline. When a future release changes the
+schema, upgrade an existing database with:
+```bash
+alembic upgrade head
+```
+`alembic check` reports whether the models and migrations are in sync (CI guards this).
+
 ---
 
 ## C. The end-to-end loop (UI or API)
 
-**In the UI:** add a source (name + domain, optionally an RSS URL) → *Ingest* a
-feed or a single URL → *Search* with Boolean operators → *Export* CSV/JSON.
+> **Sources are preconfigured.** On first launch (or during `install.sh --appvm`)
+> the curated catalog in `configs/sources.yml` (~1,900 public-interest outlets,
+> ~1,780 unique) is seeded automatically — so you can start ingesting immediately.
+> Re-seeding is idempotent. Disable auto-seed with `OO_AUTOSEED=0`; re-seed
+> manually with `python scripts/seed_sources.py` or `POST /api/sources/seed-defaults`.
+> Feed URLs/robots policies change over time; the ethical fetcher refuses anything
+> it can't confirm, so prune/extend the list to suit your investigation.
+
+**In the UI:** pick (or add) a source → *Ingest* a feed or a single URL → *Search*
+with Boolean operators → *Export* CSV/JSON.
 
 **Via the API:**
 ```bash

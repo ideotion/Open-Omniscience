@@ -30,11 +30,12 @@ This module provides simple caching utilities for:
 Author: Ideotion
 """
 
-import time
-import threading
-from typing import Any, Callable, Dict, Optional, Tuple, TypeVar
-from functools import wraps
 import logging
+import threading
+import time
+from collections.abc import Callable
+from functools import wraps
+from typing import Any, Dict, Optional, Tuple, TypeVar
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -58,14 +59,14 @@ class SimpleCache:
             max_size: Maximum number of items to store in the cache.
             default_ttl: Default time-to-live in seconds for cached items.
         """
-        self._cache: Dict[str, Tuple[Any, float]] = {}
+        self._cache: dict[str, tuple[Any, float]] = {}
         self._max_size = max_size
         self._default_ttl = default_ttl
         self._lock = threading.RLock()
         self._hits = 0
         self._misses = 0
     
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """
         Get a value from the cache.
         
@@ -90,7 +91,7 @@ class SimpleCache:
             self._hits += 1
             return value
     
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+    def set(self, key: str, value: Any, ttl: int | None = None) -> None:
         """
         Set a value in the cache.
         
@@ -163,7 +164,7 @@ class SimpleCache:
         with self._lock:
             return len(self._cache)
     
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Return cache statistics."""
         with self._lock:
             return {
@@ -196,14 +197,14 @@ class LRUCache:
             max_size: Maximum number of items to store in the cache.
             default_ttl: Default time-to-live in seconds for cached items.
         """
-        self._cache: Dict[str, Tuple[Any, float, float]] = {}  # key: (value, expiry_time, last_access_time)
+        self._cache: dict[str, tuple[Any, float, float]] = {}  # key: (value, expiry_time, last_access_time)
         self._max_size = max_size
         self._default_ttl = default_ttl
         self._lock = threading.RLock()
         self._hits = 0
         self._misses = 0
     
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """
         Get a value from the cache.
         
@@ -230,7 +231,7 @@ class LRUCache:
             self._hits += 1
             return value
     
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+    def set(self, key: str, value: Any, ttl: int | None = None) -> None:
         """
         Set a value in the cache.
         
@@ -308,7 +309,7 @@ class LRUCache:
         with self._lock:
             return len(self._cache)
     
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Return cache statistics."""
         with self._lock:
             return {
@@ -325,7 +326,7 @@ class LRUCache:
         return self.get(key) is not None
 
 
-def cached(ttl: int = 300, cache_instance: Optional[SimpleCache] = None):
+def cached(ttl: int = 300, cache_instance: SimpleCache | None = None):
     """
     Decorator to cache function results with TTL.
     
@@ -362,7 +363,7 @@ def cached(ttl: int = 300, cache_instance: Optional[SimpleCache] = None):
     return decorator
 
 
-def lru_cached(max_size: int = 1000, ttl: int = 300, cache_instance: Optional[LRUCache] = None):
+def lru_cached(max_size: int = 1000, ttl: int = 300, cache_instance: LRUCache | None = None):
     """
     Decorator to cache function results with LRU eviction and TTL.
     

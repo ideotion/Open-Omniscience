@@ -33,14 +33,15 @@ This module provides comprehensive link analysis functionality including:
 Author: Open Omniscience Team
 """
 
-from .extractor import LinkExtractor
 from .classifier import LinkClassifier
+from .credibility_scorer import CredibilityScorer
+from .extractor import LinkExtractor
+from .network_analyzer import NetworkAnalyzer
+from .relationship_tracker import RelationshipTracker
 from .source_identifier import SourceIdentifier
 from .source_scraper import SourceScraper
-from .relationship_tracker import RelationshipTracker
 from .temporal_analyzer import TemporalAnalyzer
-from .network_analyzer import NetworkAnalyzer
-from .credibility_scorer import CredibilityScorer
+
 
 # Main service class that combines all functionality
 class LinkAnalyzerService:

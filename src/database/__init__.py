@@ -24,20 +24,20 @@ For inquiries, contact: open-omniscience@ideotion.com
 
 # Import key database functions for convenience
 
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class QueryResult:
     """Result of a database query."""
     success: bool
-    data: Optional[List[Dict[str, Any]]] = None
+    data: list[dict[str, Any]] | None = None
     count: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
-def query_data(query: Dict[str, Any], collection: str = 'articles', **kwargs) -> QueryResult:
+def query_data(query: dict[str, Any], collection: str = 'articles', **kwargs) -> QueryResult:
     """
     Query data from a collection.
     
@@ -60,7 +60,7 @@ def query_data(query: Dict[str, Any], collection: str = 'articles', **kwargs) ->
     )
 
 
-def store_data(data: Any, collection: str = 'articles', **kwargs) -> Dict[str, Any]:
+def store_data(data: Any, collection: str = 'articles', **kwargs) -> dict[str, Any]:
     """
     Store data in a collection.
     
@@ -83,7 +83,7 @@ def store_data(data: Any, collection: str = 'articles', **kwargs) -> Dict[str, A
     }
 
 
-def search_collection(query: str, collection: str = 'articles', **kwargs) -> Dict[str, Any]:
+def search_collection(query: str, collection: str = 'articles', **kwargs) -> dict[str, Any]:
     """
     Search a collection.
     

@@ -30,11 +30,11 @@ Components:
 - signatures: GPG signing and verification (Phase 4.2)
 """
 
-from .merkle_tree import MerkleTree, MerkleNode
-from .provenance import ProvenanceLedger, DataProvenance
+from .merkle_tree import MerkleNode, MerkleTree
+from .provenance import DataProvenance, ProvenanceLedger
 
 try:
-    from .signatures import GPGSigner, SignatureResult, GPGNotAvailableError
+    from .signatures import GPGNotAvailableError, GPGSigner, SignatureResult
     HAS_SIGNATURES = True
 except Exception:
     HAS_SIGNATURES = False

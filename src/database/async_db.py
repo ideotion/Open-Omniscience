@@ -35,38 +35,39 @@ Author: Ideotion
 import asyncio
 import logging
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Type, Union
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 from sqlalchemy import (
-    Column, 
-    Integer, 
-    String, 
-    Text, 
-    DateTime, 
-    Boolean, 
-    ForeignKey, 
-    Float, 
-    Index, 
-    Table, 
-    TypeDecorator, 
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
     LargeBinary,
-    select, 
-    func, 
-    and_, 
-    or_, 
-    desc, 
+    String,
+    Table,
+    Text,
+    TypeDecorator,
+    and_,
     asc,
+    desc,
+    func,
+    or_,
+    select,
 )
 from sqlalchemy.ext.asyncio import (
-    AsyncSession, 
-    create_async_engine, 
+    AsyncSession,
     async_sessionmaker,
+    create_async_engine,
 )
 from sqlalchemy.orm import (
-    declarative_base, 
-    relationship, 
+    declarative_base,
+    relationship,
     sessionmaker,
 )
 from sqlalchemy.sql import Select
@@ -124,7 +125,7 @@ ASYNC_DATABASE_CONFIG = {
 }
 
 
-def get_async_database_config() -> Dict[str, Any]:
+def get_async_database_config() -> dict[str, Any]:
     """Get async database configuration based on URL."""
     config = ASYNC_DATABASE_CONFIG["sqlite"].copy()
     
@@ -163,7 +164,7 @@ class AsyncCompressedText(TypeDecorator):
     impl = LargeBinary
     cache_ok = True
     
-    def process_bind_param(self, value: Optional[Union[str, bytes]], dialect: Any) -> Optional[bytes]:
+    def process_bind_param(self, value: str | bytes | None, dialect: Any) -> bytes | None:
         if value is None:
             return None
         if isinstance(value, bytes):
@@ -171,7 +172,7 @@ class AsyncCompressedText(TypeDecorator):
         from src.utils.compression import database_compressor
         return database_compressor.compress_text_for_storage(value)
     
-    def process_result_value(self, value: Optional[bytes], dialect: Any) -> Optional[str]:
+    def process_result_value(self, value: bytes | None, dialect: Any) -> str | None:
         if value is None:
             return None
         from src.utils.compression import database_compressor
@@ -183,18 +184,20 @@ class AsyncCompressedJSON(TypeDecorator):
     impl = LargeBinary
     cache_ok = True
     
-    def process_bind_param(self, value: Any, dialect: Any) -> Optional[bytes]:
+    def process_bind_param(self, value: Any, dialect: Any) -> bytes | None:
         if value is None:
             return None
         import json
+
         from src.utils.compression import database_compressor
         json_str = json.dumps(value, ensure_ascii=False, default=str)
         return database_compressor.compress_text_for_storage(json_str)
     
-    def process_result_value(self, value: Optional[bytes], dialect: Any) -> Any:
+    def process_result_value(self, value: bytes | None, dialect: Any) -> Any:
         if value is None:
             return None
         import json
+
         from src.utils.compression import database_compressor
         json_str = database_compressor.decompress_text_from_storage(value)
         return json.loads(json_str)
@@ -210,7 +213,7 @@ async_source_group_association = Table(
     AsyncBase.metadata,
     Column('source_id', Integer, ForeignKey('async_sources.id'), primary_key=True),
     Column('group_id', Integer, ForeignKey('async_source_groups.id'), primary_key=True),
-    Column('added_at', DateTime, default=lambda: datetime.now(timezone.utc)),
+    Column('added_at', DateTime, default=lambda: datetime.now(UTC)),
     Index('idx_async_source_group_source_id', 'source_id'),
     Index('idx_async_source_group_group_id', 'group_id'),
 )
@@ -229,8 +232,8 @@ class AsyncSourceGroup(AsyncBase):
     priority = Column(Integer, default=2)
     rate_limit_ms = Column(Integer, default=2000)
     enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     sources = relationship(
         "AsyncSource",
@@ -333,8 +336,8 @@ class AsyncArticle(AsyncBase):
     published_at = Column(DateTime)
     language = Column(String(10))
     hash = Column(String(64), nullable=False, unique=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, onupdate=lambda: datetime.now(UTC))
     
     region = Column(String(50))
     country = Column(String(2))
@@ -394,7 +397,7 @@ class AsyncArticle(AsyncBase):
 # =============================================================================
 
 @asynccontextmanager
-async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_async_session() -> AsyncGenerator[AsyncSession]:
     """
     Context manager for async database sessions.
     
@@ -415,7 +418,7 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @asynccontextmanager
-async def async_session_scope() -> AsyncGenerator[AsyncSession, None]:
+async def async_session_scope() -> AsyncGenerator[AsyncSession]:
     """
     Transactional scope for async operations.
     
@@ -459,9 +462,9 @@ class AsyncCRUD:
     @staticmethod
     async def get(
         session: AsyncSession, 
-        model: Type, 
+        model: type, 
         id: int
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Get a record by ID."""
         result = await session.execute(
             select(model).where(model.id == id)
@@ -471,10 +474,10 @@ class AsyncCRUD:
     @staticmethod
     async def get_by_field(
         session: AsyncSession, 
-        model: Type, 
+        model: type, 
         field: str, 
         value: Any
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Get a record by field value."""
         result = await session.execute(
             select(model).where(getattr(model, field) == value)
@@ -484,9 +487,9 @@ class AsyncCRUD:
     @staticmethod
     async def get_all(
         session: AsyncSession, 
-        model: Type,
-        limit: Optional[int] = None
-    ) -> List[Any]:
+        model: type,
+        limit: int | None = None
+    ) -> list[Any]:
         """Get all records."""
         query = select(model)
         if limit:
@@ -498,12 +501,12 @@ class AsyncCRUD:
     @staticmethod
     async def get_paginated(
         session: AsyncSession,
-        model: Type,
+        model: type,
         page: int = 1,
         page_size: int = 20,
-        order_by: Optional[str] = None,
+        order_by: str | None = None,
         descending: bool = True
-    ) -> Tuple[List[Any], int, int]:
+    ) -> tuple[list[Any], int, int]:
         """
         Get paginated records.
         
@@ -563,7 +566,7 @@ class AsyncCRUD:
     @staticmethod
     async def delete_by_id(
         session: AsyncSession, 
-        model: Type, 
+        model: type, 
         id: int
     ) -> bool:
         """Delete a record by ID."""
@@ -577,11 +580,11 @@ class AsyncCRUD:
     @staticmethod
     async def search(
         session: AsyncSession,
-        model: Type,
+        model: type,
         search_term: str,
-        search_fields: List[str],
+        search_fields: list[str],
         limit: int = 50
-    ) -> List[Any]:
+    ) -> list[Any]:
         """Search records by multiple fields."""
         conditions = []
         for field in search_fields:
@@ -600,9 +603,9 @@ class AsyncCRUD:
     @staticmethod
     async def get_by_hash(
         session: AsyncSession, 
-        model: Type, 
+        model: type, 
         hash_value: str
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Get a record by hash value (for duplicate detection)."""
         if hasattr(model, 'hash'):
             result = await session.execute(
@@ -626,18 +629,18 @@ class AsyncQueryBuilder:
     
     async def build_article_query(
         self,
-        source_id: Optional[int] = None,
-        language: Optional[str] = None,
-        region: Optional[str] = None,
-        country: Optional[str] = None,
-        published_after: Optional[datetime] = None,
-        published_before: Optional[datetime] = None,
-        search_term: Optional[str] = None,
+        source_id: int | None = None,
+        language: str | None = None,
+        region: str | None = None,
+        country: str | None = None,
+        published_after: datetime | None = None,
+        published_before: datetime | None = None,
+        search_term: str | None = None,
         limit: int = 50,
         offset: int = 0,
         order_by: str = "published_at",
         descending: bool = True
-    ) -> List[AsyncArticle]:
+    ) -> list[AsyncArticle]:
         """Build a complex article query."""
         query = select(AsyncArticle)
         
@@ -689,10 +692,10 @@ class AsyncQueryBuilder:
     
     async def get_article_count(
         self,
-        source_id: Optional[int] = None,
-        language: Optional[str] = None,
-        region: Optional[str] = None,
-        published_after: Optional[datetime] = None
+        source_id: int | None = None,
+        language: str | None = None,
+        region: str | None = None,
+        published_after: datetime | None = None
     ) -> int:
         """Get count of articles matching criteria."""
         query = select(func.count()).select_from(AsyncArticle)
@@ -716,9 +719,9 @@ class AsyncQueryBuilder:
         self,
         hours: int = 24,
         limit: int = 100
-    ) -> List[AsyncArticle]:
+    ) -> list[AsyncArticle]:
         """Get articles published in the last N hours."""
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
         
         query = select(AsyncArticle)
         query = query.where(AsyncArticle.published_at >= cutoff)
@@ -740,10 +743,10 @@ class AsyncBatchProcessor:
     
     @staticmethod
     async def process_in_batches(
-        items: List[Any],
+        items: list[Any],
         batch_size: int = 100,
         process_func: callable = None
-    ) -> List[Any]:
+    ) -> list[Any]:
         """Process items in async batches."""
         results = []
         
@@ -760,10 +763,10 @@ class AsyncBatchProcessor:
     @staticmethod
     async def batch_create(
         session: AsyncSession,
-        model: Type,
-        data_list: List[Dict[str, Any]],
+        model: type,
+        data_list: list[dict[str, Any]],
         batch_size: int = 100
-    ) -> List[Any]:
+    ) -> list[Any]:
         """Create multiple records in batches."""
         created_objects = []
         
@@ -785,9 +788,9 @@ class AsyncBatchProcessor:
     @staticmethod
     async def batch_update(
         session: AsyncSession,
-        model: Type,
-        filter_conditions: Dict[str, Any],
-        update_data: Dict[str, Any],
+        model: type,
+        filter_conditions: dict[str, Any],
+        update_data: dict[str, Any],
         batch_size: int = 100
     ) -> int:
         """Update records in batches."""
@@ -815,7 +818,7 @@ class AsyncBatchProcessor:
         session: AsyncSession,
         query: Select,
         chunk_size: int = 100
-    ) -> AsyncGenerator[List[Any], None]:
+    ) -> AsyncGenerator[list[Any]]:
         """
         Execute a query in async chunks.
         
@@ -847,15 +850,15 @@ class AsyncQueryOptimizer:
     """
     
     def __init__(self):
-        self._cache: Dict[str, Any] = {}
-        self._cache_ttl: Dict[str, float] = {}
+        self._cache: dict[str, Any] = {}
+        self._cache_ttl: dict[str, float] = {}
         self._cache_timeout = 300  # 5 minutes
     
     async def cached_query(
         self,
         session: AsyncSession,
         query: Select,
-        cache_key: Optional[str] = None
+        cache_key: str | None = None
     ) -> Any:
         """Execute a query with caching."""
         if cache_key is None:
@@ -888,7 +891,7 @@ class AsyncQueryOptimizer:
         """Execute a coroutine with timeout."""
         try:
             return await asyncio.wait_for(coroutine, timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(f"Query timed out after {timeout} seconds")
             raise
 
