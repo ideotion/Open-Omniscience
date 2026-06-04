@@ -1,462 +1,147 @@
-#!/bin/bash
-# Open-Omniscience - Debian 13 Installer
-# =========================================
-# This script provides a simple, clean installation of Open-Omniscience
-# for Debian 13 (Trixie) ONLY.
+#!/usr/bin/env bash
 #
-# Usage:
-#   curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/0.03/install.sh | bash
-#   OR: ./install.sh
+# Open Omniscience installer  --  Qubes OS Debian AppVM, Python 3.13, single user.
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 #
-# Author: Open-Omniscience Team
-# License: GNU GPLv3
+# Qubes reminder: in an AppVM only /home, /usr/local and /rw persist across a
+# reboot; the root filesystem is reset from the TemplateVM every boot. Therefore
+# this installer is split into two explicit modes:
+#
+#   sudo ./install.sh --template     run ONCE in the TEMPLATEVM: installs the
+#                                    system packages (python3.13, venv, git, ...)
+#                                    so they persist. Then shut down the template
+#                                    and reboot the AppVM.
+#
+#   ./install.sh --appvm             run in the APPVM (no sudo): creates the
+#                                    virtualenv and installs the app under /home
+#                                    (which persists). This is the normal install.
+#
+# Safety (vs the legacy installer): never an unconfirmed 'rm -rf'; never a blind
+# 'curl | sh'; never '2>/dev/null' that hides package-manager errors. Set -euo.
 
 set -euo pipefail
 
-# ============================================================================
-# Configuration
-# ============================================================================
+APP_NAME="open-omniscience"
+# Default install root lives under the persistent AppVM /home.
+INSTALL_DIR="${OO_INSTALL_DIR:-$HOME/$APP_NAME}"
+PY="${OO_PYTHON:-python3.13}"
 
-REPO_URL="https://github.com/ideotion/Open-Omniscience.git"
-REPO_BRANCH="0.03"
-INSTALL_DIR="${HOME}/open-omniscience"
+c_red()  { printf '\033[31m%s\033[0m\n' "$*"; }
+c_grn()  { printf '\033[32m%s\033[0m\n' "$*"; }
+c_ylw()  { printf '\033[33m%s\033[0m\n' "$*"; }
+info()   { printf '  %s\n' "$*"; }
+die()    { c_red "ERROR: $*"; exit 1; }
 
-# Open-Omniscience Eye Logo
-LOGO='                           .-=+*#%@@@@@@@@@@%#*+-:                                         
-                      .-+#@@@@@@%%@@@@@@@@@%%%@@@@@@#+:                                    
-                   -+%@@@#*=:.-*#*#@*-@=+@#*#*-.:-+*%@@@#=:                                
-                -*@@%+-.    +%+. *#.  @: .*#..=%+     :=#@@%+:                             
-             .+@%*-       :%+##+%*    @:   *%=*#+%-       :=#@%=                           
-           :#%+.         -@:   ##+****@#***+#@   .%=          -*%+.                        
-         :*+.           .@:   :@.     @:     @-   .@:            -**.                      
-       .=-              *#    *#      @:     *#    *#              .==                     
-      :-                #%****@%******@#*****%@****%%                 =                    
-       .=:              *#    *#      @:     +#    +#               --                     
-         -*=.           :@.   -@      @:     %=   .@-            :++.                      
-           -##-          +%.   %*=+**#@#**+=*%    #*          .=%*.                        
-             :*@#=.       =%=+#*%#.   @:  .*@*#*=%+        :+%%=.                          
-                =#@@*=.    .*%- .#*   @:  +%. :%#:     :=#@@*:                             
-                  .=#@@@#+-: .+#*=*@=.@--%#=*#+. .:=*%@@%*-                                
-                      :+#@@@@@%**%@@@@@@@@@%**#%@@@@%*=.                                   
-                          .-+*%@@@@@@@@@@@@@@@%#+=:                                        
-                                 .::-----::.                                              '
+usage() {
+    cat <<EOF
+Open Omniscience installer
 
-# Colors for output# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+Usage:
+  sudo ./install.sh --template   Install system packages in the TemplateVM (run once)
+       ./install.sh --appvm      Install the app + venv under \$HOME in the AppVM
+       ./install.sh --help
 
-# ============================================================================
-# Logging Functions
-# ============================================================================
-
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
-    exit 1
-}
-
-log_header() {
-    echo -e "${CYAN}$1${NC}"
-}
-
-# ============================================================================
-# Installation Options
-# ============================================================================
-
-INSTALL_TYPE="minimal"
-INSTALL_TORCH="false"
-INSTALL_OLLAMA="false"
-
-is_interactive() {
-    if [ -t 0 ]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-show_installation_options() {
-    if [[ "${INSTALL_OPTION:-}" == "2" || "${FULL_INSTALL:-false}" == "true" ]]; then
-        INSTALL_TYPE="full"
-        INSTALL_TORCH="true"
-        INSTALL_OLLAMA="true"
-        return
-    elif [[ "${INSTALL_OPTION:-}" == "3" ]]; then
-        INSTALL_TYPE="custom"
-        INSTALL_TORCH="${INSTALL_TORCH:-false}"
-        INSTALL_OLLAMA="${INSTALL_OLLAMA:-false}"
-        return
-    fi
-    
-    if is_interactive; then
-        clear
-        echo -e "$LOGO"
-        echo ""
-        log_header "=========================================="
-        log_header "  Open-Omniscience Installation Options"
-        log_header "=========================================="
-        echo ""
-        echo "Please select your installation type:"
-        echo ""
-        log_header "Option 1: Minimal Installation (RECOMMENDED)"
-        echo "   Download Size: ~200-300 MB"
-        echo "   Disk Space: ~800-1200 MB"
-        echo "   Memory: 2GB+"
-        echo ""
-        echo "   Core web scraping and data management"
-        echo "   API server and web interface"
-        echo "   Basic analysis features (numpy, scipy, scikit-learn)"
-        echo "   Network analysis (networkx)"
-        echo "   SQLite database support"
-        echo "   NO Local LLM support (torch, transformers)"
-        echo "   NO Deepfake detection"
-        echo "   NO Advanced AI features"
-        echo ""
-        log_header "Option 2: Full Installation (Advanced)"
-        echo "   Download Size: ~2-5 GB"
-        echo "   Disk Space: ~10-20 GB"
-        echo "   Memory: 8GB+ (16GB recommended)"
-        echo ""
-        echo "   All minimal features"
-        echo "   Local LLM support"
-        echo "   Deepfake detection"
-        echo "   Advanced AI analysis"
-        echo "   All machine learning models"
-        echo ""
-        log_header "Option 3: Custom Installation"
-        echo "   Choose which large packages to install"
-        echo ""
-        echo -n "Enter your choice [1-3] (Default: 1): "
-        read -r choice
-        case "$choice" in
-            2)
-                INSTALL_TYPE="full"
-                INSTALL_TORCH="true"
-                INSTALL_OLLAMA="true"
-                ;;
-            3)
-                INSTALL_TYPE="custom"
-                custom_installation_menu
-                ;;
-            *)
-                INSTALL_TYPE="minimal"
-                INSTALL_TORCH="false"
-                INSTALL_OLLAMA="false"
-                ;;
-        esac
-    else
-        log_info "Running in non-interactive mode. Using minimal installation."
-        log_info "To select a different installation type, use:"
-        log_info "  Full:   INSTALL_OPTION=2 curl ... | bash"
-        log_info "  Custom: INSTALL_OPTION=3 INSTALL_TORCH=true INSTALL_OLLAMA=true curl ... | bash"
-        echo ""
-        if [[ "${FULL_INSTALL:-false}" == "true" ]]; then
-            INSTALL_TYPE="full"
-            INSTALL_TORCH="true"
-            INSTALL_OLLAMA="true"
-        fi
-    fi
-}
-
-custom_installation_menu() {
-    if [[ "${INSTALL_TORCH:-}" == "true" || "${INSTALL_OLLAMA:-}" == "true" ]]; then
-        INSTALL_TYPE="custom"
-        return
-    fi
-    if is_interactive; then
-        clear
-        echo -e "$LOGO"
-        echo ""
-        log_header "=========================================="
-        log_header "  Custom Installation Options"
-        log_header "=========================================="
-        echo ""
-        echo "Select which large packages to install:"
-        echo ""
-        echo "1. PyTorch (torch) - Required for deep learning"
-        echo "   Size: ~500-800 MB"
-        echo "   Enables: Deepfake detection, advanced AI features"
-        echo -n "   Install? [y/N]: "
-        read -r answer
-        if [[ "$answer" =~ ^[Yy]$ ]]; then
-            INSTALL_TORCH="true"
-        fi
-        echo ""
-        echo "2. Ollama - Local LLM runtime"
-        echo "   Size: ~50-100 MB (plus model downloads)"
-        echo "   Enables: Local LLM text processing"
-        echo -n "   Install? [y/N]: "
-        read -r answer
-        if [[ "$answer" =~ ^[Yy]$ ]]; then
-            INSTALL_OLLAMA="true"
-        fi
-        echo ""
-        if [[ "$INSTALL_TORCH" == "true" || "$INSTALL_OLLAMA" == "true" ]]; then
-            INSTALL_TYPE="custom"
-        else
-            INSTALL_TYPE="minimal"
-        fi
-    else
-        INSTALL_TYPE="custom"
-        INSTALL_TORCH="${INSTALL_TORCH:-false}"
-        INSTALL_OLLAMA="${INSTALL_OLLAMA:-false}"
-    fi
-}
-
-# ============================================================================
-# Cleanup Functions
-# ============================================================================
-
-cleanup_previous() {
-    log_info "Checking for previous installations..."
-    if [ -d "$INSTALL_DIR" ]; then
-        log_info "Found previous installation at $INSTALL_DIR"
-        log_info "Removing old installation..."
-        rm -rf "$INSTALL_DIR"
-        log_success "Previous installation removed"
-    fi
-    if [ -f "$HOME/.local/share/applications/open-omniscience.desktop" ]; then
-        log_info "Removing old desktop launcher..."
-        rm -f "$HOME/.local/share/applications/open-omniscience.desktop"
-    fi
-    if [ -f "/usr/local/bin/open-omniscience" ]; then
-        log_info "Removing old symlink..."
-        run_with_sudo rm -f "/usr/local/bin/open-omniscience"
-    fi
-}
-
-# ============================================================================
-# Environment Detection
-# ============================================================================
-
-check_debian() {
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        if [[ "$ID" != "debian" ]]; then
-            log_error "This installer is for Debian 13 only."
-        fi
-        if [[ "$VERSION_ID" != "13" && "$VERSION_ID" != *"13"* ]]; then
-            log_warning "This installer is designed for Debian 13 (Trixie). You are running $VERSION_ID."
-            read -p "Continue anyway? [y/N]: " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                log_error "Installation aborted. Please use Debian 13."
-            fi
-        fi
-        log_info "Detected Debian $VERSION_ID"
-    else
-        log_error "Cannot determine OS. This installer is for Debian 13 only."
-    fi
-}
-
-is_root() {
-    [ "$(id -u)" -eq 0 ]
-}
-
-run_with_sudo() {
-    if is_root; then
-        "$@"
-    else
-        sudo "$@"
-    fi
-}
-
-# ============================================================================
-# Installation Functions
-# ============================================================================
-
-install_dependencies() {
-    log_info "Installing system dependencies..."
-    run_with_sudo apt-get update -qq
-    run_with_sudo apt-get install -y -qq git python3 python3-pip python3-venv python3-tk curl wget
-    if [[ "$INSTALL_OLLAMA" == "true" ]]; then
-        log_info "Installing Ollama..."
-        if ! command -v ollama &>/dev/null; then
-            if ! curl -fsSL https://ollama.com/install.sh | sh 2>/dev/null; then
-                log_warning "Failed to install Ollama. LLM features will not be available."
-                INSTALL_OLLAMA="false"
-            else
-                log_success "Ollama installed"
-            fi
-        else
-            log_info "Ollama already installed"
-        fi
-    fi
-    log_success "System dependencies installed"
-}
-
-clone_repository() {
-    log_info "Cloning repository..."
-    if [ -d "$INSTALL_DIR/.git" ]; then
-        log_info "Repository already exists at $INSTALL_DIR"
-        cd "$INSTALL_DIR"
-        git fetch origin "$REPO_BRANCH" 2>/dev/null || log_error "Failed to fetch repository"
-        git checkout "$REPO_BRANCH" 2>/dev/null || log_error "Failed to checkout branch"
-        git pull origin "$REPO_BRANCH" 2>/dev/null || log_error "Failed to update repository"
-    else
-        git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR" 2>&1 || log_error "Failed to clone repository"
-        cd "$INSTALL_DIR"
-    fi
-    log_success "Repository cloned to $INSTALL_DIR"
-}
-
-setup_python() {
-    log_info "Setting up Python environment..."
-    cd "$INSTALL_DIR"
-    if [ ! -d "venv" ]; then
-        log_info "Creating virtual environment..."
-        python3 -m venv venv 2>/dev/null || log_error "Failed to create virtual environment."
-    else
-        log_info "Virtual environment already exists, updating..."
-        source venv/bin/activate
-        pip install --upgrade pip
-        deactivate
-    fi
-    log_info "Activating virtual environment..."
-    source "$INSTALL_DIR/venv/bin/activate"
-    log_info "Upgrading pip..."
-    pip install --upgrade pip
-    log_info "Installing Python dependencies..."
-    if [ -f "requirements-minimal.txt" ]; then
-        pip install -r requirements-minimal.txt 2>/dev/null || log_error "Failed to install minimal Python dependencies"
-    else
-        log_error "requirements-minimal.txt not found"
-    fi
-    if [[ "$INSTALL_TYPE" == "full" ]]; then
-        log_info "Installing full dependencies..."
-        if [ -f "requirements.txt" ]; then
-            pip install -r requirements.txt 2>/dev/null || log_warning "Failed to install some full dependencies."
-        fi
-    elif [[ "$INSTALL_TYPE" == "custom" ]]; then
-        if [[ "$INSTALL_TORCH" == "true" ]]; then
-            log_info "Installing PyTorch..."
-            pip install torch>=2.2.0 2>/dev/null || log_warning "Failed to install PyTorch."
-        fi
-        if [[ "$INSTALL_TORCH" == "true" ]]; then
-            log_info "Installing ML packages..."
-            pip install transformers==4.40.0 onnx==1.16.0 onnxruntime>=1.20.0 2>/dev/null || log_warning "Failed to install some ML packages"
-        fi
-    fi
-    log_success "Python environment set up"
-}
-
-create_launcher() {
-    if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
-        log_info "Creating desktop launcher..."
-        mkdir -p "$HOME/.local/share/applications"
-        cat > "$HOME/.local/share/applications/open-omniscience.desktop" <<EOF
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Open-Omniscience
-GenericName=Global Intelligence Platform
-Comment=Ethical Global Intelligence Platform for Investigative Journalism
-Exec=bash -c "cd $INSTALL_DIR && source venv/bin/activate && uvicorn src.api.main:app --host 0.0.0.0 --port 8000"
-Icon=$INSTALL_DIR/package/deb/open-omniscience.svg
-Terminal=true
-Categories=Utility;News;Information;
-Path=$INSTALL_DIR
-StartupWMClass=OpenOmniscience
+Env overrides: OO_INSTALL_DIR (default \$HOME/$APP_NAME), OO_PYTHON (default python3.13)
 EOF
-        chmod +x "$HOME/.local/share/applications/open-omniscience.desktop"
-        if command -v update-desktop-database &>/dev/null; then
-            update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+}
+
+# --------------------------------------------------------------------------- #
+# TemplateVM: system packages (persist only when installed in the template)
+# --------------------------------------------------------------------------- #
+install_template() {
+    [ "$(id -u)" -eq 0 ] || die "--template must be run as root (sudo) in the TemplateVM."
+    command -v apt-get >/dev/null 2>&1 || die "apt-get not found; this targets a Debian TemplateVM."
+
+    c_grn "Installing system packages in the TemplateVM..."
+    # No 2>/dev/null: we WANT to see apt errors.
+    apt-get update
+    apt-get install -y \
+        python3.13 python3.13-venv python3.13-dev \
+        build-essential git sqlite3 ca-certificates curl
+
+    if "$PY" --version >/dev/null 2>&1; then
+        c_grn "OK: $("$PY" --version) is available."
+    else
+        c_ylw "WARNING: $PY is not on PATH on this Debian release."
+        info  "Install Python 3.13 from a trusted backport/source and re-run, or set"
+        info  "OO_PYTHON to the 3.13 interpreter path."
+    fi
+
+    cat <<EOF
+
+$(c_grn "TemplateVM step complete.")
+Next:
+  1. Shut down this TemplateVM.
+  2. Reboot the AppVM so the new system packages are visible.
+  3. In the AppVM, run:  ./install.sh --appvm
+EOF
+}
+
+# --------------------------------------------------------------------------- #
+# AppVM: virtualenv + app under /home (persistent)
+# --------------------------------------------------------------------------- #
+install_appvm() {
+    [ "$(id -u)" -ne 0 ] || die "--appvm should NOT be run as root; run it as your user in the AppVM."
+    command -v "$PY" >/dev/null 2>&1 || die "$PY not found. Run 'sudo ./install.sh --template' in the TemplateVM first, then reboot the AppVM."
+
+    case "$("$PY" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')" in
+        3.13|3.14) : ;;
+        *) die "$PY is $("$PY" --version); Python 3.13+ is required." ;;
+    esac
+
+    # Locate the repo: prefer the directory this script lives in.
+    local src_dir
+    src_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    if [ "$src_dir" != "$INSTALL_DIR" ]; then
+        if [ -e "$INSTALL_DIR" ]; then
+            # NEVER silently destroy an existing install. Back it up, with consent.
+            c_ylw "An install already exists at: $INSTALL_DIR"
+            read -r -p "Move it aside to a timestamped backup and continue? [y/N] " ans
+            [ "$ans" = "y" ] || [ "$ans" = "Y" ] || die "Aborted by user (nothing changed)."
+            local backup="${INSTALL_DIR}.bak.$(date +%Y%m%d-%H%M%S)"
+            mv "$INSTALL_DIR" "$backup"
+            c_grn "Backed up previous install to: $backup"
         fi
-        log_success "Desktop launcher created"
-    else
-        log_info "No GUI environment detected. Skipping desktop launcher."
+        c_grn "Copying source to $INSTALL_DIR ..."
+        mkdir -p "$INSTALL_DIR"
+        cp -a "$src_dir/." "$INSTALL_DIR/"
     fi
-}
 
-show_feature_summary() {
-    echo ""
-    log_header "=========================================="
-    log_header "  Installation Summary"
-    log_header "=========================================="
-    echo ""
-    echo "Installation Type: $INSTALL_TYPE"
-    echo ""
-    log_success "Core Features:"
-    echo "   Web scraping and data ingestion"
-    echo "   API server and web interface"
-    echo "   Basic analysis and search"
-    echo "   SQLite database support"
-    echo ""
-    if [[ "$INSTALL_TORCH" == "true" ]]; then
-        log_success "AI Features: Enabled"
-        echo "   Deepfake detection"
-        echo "   Advanced machine learning"
-        echo "   Image and audio analysis"
-    else
-        log_warning "AI Features: Not installed (requires PyTorch)"
-    fi
-    echo ""
-    if [[ "$INSTALL_OLLAMA" == "true" ]]; then
-        log_success "LLM Features: Enabled"
-        echo "   Local LLM text processing"
-        echo "   Text generation and analysis"
-        echo "   Translation capabilities"
-        echo ""
-        log_info "To use LLM features, download models:"
-        echo "   ollama pull gemma4:e2b"
-    else
-        log_warning "LLM Features: Not installed (requires Ollama)"
-    fi
-    echo ""
-}
+    cd "$INSTALL_DIR"
 
-# ============================================================================
-# Main Installation
-# ============================================================================
+    c_grn "Creating virtualenv (.venv) under \$HOME ..."
+    [ -d .venv ] || "$PY" -m venv .venv
+    # shellcheck disable=SC1091
+    . .venv/bin/activate
+
+    c_grn "Installing the app (core + analysis extras) ..."
+    python -m pip install --upgrade pip setuptools wheel
+    python -m pip install -e ".[analysis]"
+
+    c_grn "Initialising the database ..."
+    python -c "from src.database.session import init_db; init_db(); print('  database ready')"
+
+    cat <<EOF
+
+$(c_grn "AppVM install complete.")  App + data live under: $INSTALL_DIR
+
+To run (loopback only):
+  cd "$INSTALL_DIR" && . .venv/bin/activate && open-omniscience
+  # then open http://127.0.0.1:8000 in the AppVM browser
+
+Optional local LLM (Phase 2): install Ollama in the TEMPLATEVM (verify its
+checksum first -- do not pipe curl straight to a shell), then pull a small model.
+EOF
+}
 
 main() {
-    echo ""
-    echo -e "$LOGO"
-    echo ""
-    echo "  Open-Omniscience - Debian 13 Installer"
-    echo "  =================================="
-    echo ""
-    show_installation_options
-    cleanup_previous
-    check_debian
-    install_dependencies
-    clone_repository
-    setup_python
-    create_launcher
-    show_feature_summary
-    echo ""
-    log_success "Installation Complete!"
-    echo ""
-    echo "  Open-Omniscience has been installed to: $INSTALL_DIR"
-    echo ""
-    echo "  To start Open-Omniscience:"
-    echo "    cd $INSTALL_DIR"
-    echo "    source venv/bin/activate"
-    echo "    uvicorn src.api.main:app --reload"
-    echo ""
-    echo "  Then open: http://localhost:8000"
-    echo ""
-    echo "  For production deployment:"
-    echo "    pip install gunicorn"
-    echo "    gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 src.api.main:app"
-    echo ""
-    log_warning "If the virtual environment doesn't activate properly, you may need to restart your terminal or system."
-    echo ""
+    case "${1:-}" in
+        --template) install_template ;;
+        --appvm)    install_appvm ;;
+        -h|--help|"") usage ;;
+        *) usage; die "unknown option: $1" ;;
+    esac
 }
 
 main "$@"

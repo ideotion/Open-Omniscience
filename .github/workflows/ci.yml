@@ -1,0 +1,33 @@
+# Open Omniscience CI -- the single, working workflow.
+# Replaces six legacy workflows that referenced a nonexistent requirements-all.txt,
+# targeted Python 3.12, and ran on branches this repo does not use.
+name: CI
+
+on:
+  push:
+    branches: ["0.04", "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install (core + analysis + dev)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,dev]"
+
+      - name: Lint (ruff)
+        run: ruff check src/ tests/
+        continue-on-error: true  # advisory until the legacy style debt is burned down
+
+      - name: Test (pytest)
+        run: python -m pytest -q
