@@ -74,6 +74,9 @@ from src.api.link_analysis import router as link_analysis_router
 # Import LLM router
 from src.api.routes.llm import router as llm_router
 
+# Import ingestion router (ethical scrape -> extract -> store)
+from src.api.ingestion import router as ingestion_router
+
 # Configure logging using shared config
 from src.utils.logging_config import setup_logging
 logger = setup_logging("api")
@@ -173,6 +176,9 @@ app.include_router(link_analysis_router)
 
 # Include LLM router
 app.include_router(llm_router)
+
+# Include ingestion router
+app.include_router(ingestion_router)
 
 # General health check endpoint
 @app.get("/api/health")
