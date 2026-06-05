@@ -73,6 +73,8 @@ Usage:
   ./install.sh --appvm         Qubes AppVM: Core + Analysis under \$HOME (no prompts)
   sudo ./install.sh --template Qubes TemplateVM: install system packages (run once)
   ./install.sh --unattended    Scripted install (driven by OO_* env vars)
+  ./install.sh --check         Health check (Python, data, db, LLM, launcher)
+  ./install.sh --uninstall     Remove the virtualenv and launcher (data kept by default)
   ./install.sh --help
 
 After install, a "${BOLD}Open Omniscience${RST}" launcher appears in your applications
@@ -328,6 +330,79 @@ Next:
 EOF
 }
 
+# --------------------------------------------------------------------------- #
+# Health check -- delegates to `open-omniscience doctor` inside the venv.
+# --------------------------------------------------------------------------- #
+do_check() {
+    cd "$SRC_DIR"
+    [ -d .venv ] || die "Not installed yet (no .venv). Run ./install.sh first."
+    # shellcheck disable=SC1091
+    . .venv/bin/activate
+    exec open-omniscience doctor
+}
+
+# --------------------------------------------------------------------------- #
+# Uninstall -- remove only what we created. Never deletes data without an
+# explicit, separate confirmation; never touches the cloned repo itself.
+# --------------------------------------------------------------------------- #
+do_uninstall() {
+    banner
+    step "Uninstalling Open Omniscience"
+
+    # Discover the data dir (best-effort) before we remove the venv.
+    local data_dir=""
+    if [ -d "$SRC_DIR/.venv" ]; then
+        data_dir="$("$SRC_DIR/.venv/bin/python" -c 'from src.paths import data_dir; print(data_dir())' 2>/dev/null || true)"
+    fi
+
+    # Collect launcher files that exist.
+    local apps="$HOME/.local/share/applications/$APP_NAME.desktop"
+    local desk; desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
+    local desk_file="$desk/$APP_NAME.desktop"
+    local mac_file="$HOME/Desktop/Open Omniscience.command"
+
+    say ""
+    say "  The following will be ${BOLD}removed${RST}:"
+    [ -d "$SRC_DIR/.venv" ] && say "    • virtualenv:  $SRC_DIR/.venv"
+    [ -f "$apps" ]          && say "    • launcher:    $apps"
+    [ -f "$desk_file" ]     && say "    • launcher:    $desk_file"
+    [ -f "$mac_file" ]      && say "    • launcher:    $mac_file"
+    say "  Your repository ($SRC_DIR) and your data will be ${BOLD}kept${RST} unless you choose otherwise."
+    say ""
+
+    if ! ask_yn "Proceed with removing the virtualenv and launcher?" n; then
+        warn "Aborted; nothing was removed."
+        return 0
+    fi
+
+    rm -f "$apps" "$desk_file" "$mac_file"
+    command -v update-desktop-database >/dev/null 2>&1 && \
+        update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+    [ -d "$SRC_DIR/.venv" ] && rm -rf "$SRC_DIR/.venv"
+    ok "Removed virtualenv and launcher."
+
+    # Data is precious -- ask separately, defaulting to keep.
+    if [ -n "$data_dir" ] && [ -d "$data_dir" ]; then
+        say ""
+        say "  Your data (database, signing keys, exports) lives at:"
+        say "    ${BOLD}$data_dir${RST}"
+        if ask_yn "Also DELETE this data directory? This cannot be undone." n; then
+            if ask_yn "Are you sure? Permanently delete $data_dir ?" n; then
+                rm -rf "$data_dir"
+                ok "Deleted data directory."
+            else
+                warn "Kept data directory."
+            fi
+        else
+            warn "Kept data directory ($data_dir)."
+        fi
+    fi
+
+    say ""
+    ok "${BOLD}Uninstall complete.${RST}"
+    say "  To remove the app entirely, delete the folder: ${DIM}rm -rf '$SRC_DIR'${RST}"
+}
+
 main() {
     case "${1:-}" in
         ""|--menu|--interactive) run_interactive ;;
@@ -335,6 +410,8 @@ main() {
         --appvm)                 OO_UNATTENDED=1 OO_COMPONENTS="analysis" OO_MAKE_LAUNCHER="${OO_MAKE_LAUNCHER:-1}" \
                                  UNATTENDED=1 do_install "analysis" ;;
         --unattended)            UNATTENDED=1; do_install "${OO_COMPONENTS-analysis}" ;;
+        --check|--doctor)        do_check ;;
+        --uninstall)             do_uninstall ;;
         -h|--help)               usage ;;
         *)                       usage; die "unknown option: $1" ;;
     esac

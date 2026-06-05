@@ -106,3 +106,57 @@ def test_bootstrap_points_at_canonical_repo_and_hands_off():
 
 def test_icon_asset_exists():
     assert (REPO / "assets/icon.svg").is_file()
+
+
+def test_help_lists_check_and_uninstall():
+    r = subprocess.run(["bash", str(REPO / "install.sh"), "--help"],
+                       capture_output=True, text=True)
+    assert "--check" in r.stdout
+    assert "--uninstall" in r.stdout
+
+
+def test_uninstall_removes_venv_and_launcher_but_keeps_data(tmp_path):
+    # Build an isolated copy of the script so we never touch the real .venv.
+    app = tmp_path / "app"
+    (app / "assets").mkdir(parents=True)
+    shutil.copy(REPO / "install.sh", app / "install.sh")
+    shutil.copy(REPO / "assets/logo.txt", app / "assets/logo.txt")
+    fake_venv = app / ".venv"
+    fake_venv.mkdir()
+    (fake_venv / "marker").write_text("x")  # prove rm -rf removed the tree
+
+    home = tmp_path / "home"
+    apps = home / ".local/share/applications"
+    apps.mkdir(parents=True)
+    (home / "Desktop").mkdir(parents=True)
+    menu_launcher = apps / "open-omniscience.desktop"
+    desk_launcher = home / "Desktop/open-omniscience.desktop"
+    menu_launcher.write_text("[Desktop Entry]\n")
+    desk_launcher.write_text("[Desktop Entry]\n")
+
+    env = {"HOME": str(home), "PATH": os.environ["PATH"]}
+    # No TTY (piped stdin) -> text prompts; answer "yes" to the single proceed prompt.
+    r = subprocess.run(["bash", str(app / "install.sh"), "--uninstall"],
+                       input="y\n", capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr + r.stdout
+    assert not fake_venv.exists(), "virtualenv should be removed"
+    assert not menu_launcher.exists(), "apps-menu launcher should be removed"
+    assert not desk_launcher.exists(), "desktop launcher should be removed"
+
+
+def test_uninstall_aborts_on_no(tmp_path):
+    app = tmp_path / "app"
+    (app / "assets").mkdir(parents=True)
+    shutil.copy(REPO / "install.sh", app / "install.sh")
+    shutil.copy(REPO / "assets/logo.txt", app / "assets/logo.txt")
+    fake_venv = app / ".venv"
+    fake_venv.mkdir()
+
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {"HOME": str(home), "PATH": os.environ["PATH"]}
+    r = subprocess.run(["bash", str(app / "install.sh"), "--uninstall"],
+                       input="n\n", capture_output=True, text=True, env=env)
+    assert r.returncode == 0
+    assert fake_venv.exists(), "nothing should be removed when the user declines"
+    assert "nothing was removed" in r.stdout

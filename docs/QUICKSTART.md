@@ -44,6 +44,14 @@ launcher is `Open Omniscience.command` on your Desktop.)
 
 Prefer the terminal? `cd ~/open-omniscience && ./scripts/launch.sh` does the same.
 
+**Check or remove it later:**
+```bash
+./install.sh --check        # health report: Python, data dir, database, LLM, launcher
+#   (same as: open-omniscience doctor)
+./install.sh --uninstall    # remove the virtualenv + launcher; your data is kept
+                            #   (it asks separately, defaulting to NO, before deleting data)
+```
+
 ---
 
 ## A. On a Qubes OS Debian AppVM (the target)

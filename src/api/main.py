@@ -547,10 +547,31 @@ async def read_root():
 def main() -> None:
     """Console entrypoint (``open-omniscience``).
 
+    Subcommands:
+      (none) / serve   Run the local web app (loopback only).
+      doctor           Print a health-check report and exit.
+
     Binds to loopback only by default: this is a single-user, local-first app and
     must never be exposed on a network interface (see PRODUCT_SYNTHESIS §0.3). Set
     OO_HOST/OO_PORT to override deliberately.
     """
+    import sys
+
+    argv = sys.argv[1:]
+    if argv and argv[0] in ("doctor", "check", "--doctor", "--check"):
+        from src.diagnostics import run_doctor
+        sys.exit(run_doctor())
+    if argv and argv[0] in ("-h", "--help", "help"):
+        print(
+            "Usage: open-omniscience [serve|doctor]\n"
+            "  serve   (default) run the local web app at http://127.0.0.1:8000\n"
+            "  doctor  print a health-check report (Python, data, db, LLM, launcher)\n"
+        )
+        return
+    _serve()
+
+
+def _serve() -> None:
     import uvicorn
 
     # Preconfigure the database on first run so a fresh install is immediately
