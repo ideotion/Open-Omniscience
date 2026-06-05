@@ -51,9 +51,22 @@ ok()    { printf '%s  ok%s %s\n' "$GRN" "$RST" "$*"; }
 warn()  { printf '%s  !!%s %s\n' "$YLW" "$RST" "$*"; }
 die()   { printf '%sERROR:%s %s\n' "$RED$BOLD" "$RST" "$*" >&2; exit 1; }
 
-# Use whiptail for a real boxed TUI when available; otherwise plain prompts.
+# Where to read interactive answers from. Under `curl | bash`, stdin is the
+# script itself (a pipe), not the keyboard -- so reading prompts from stdin would
+# get EOF/garbage. Prompt from the controlling terminal (/dev/tty) when stdin is a
+# pipe but a terminal is attached (stdout is a TTY). With no terminal at all (CI,
+# fully non-interactive), fall back to safe defaults instead of blocking.
+INTERACTIVE=0
+TTY_IN="/dev/stdin"
+if [ -t 0 ]; then
+    INTERACTIVE=1
+elif [ -t 1 ] && [ -r /dev/tty ]; then
+    INTERACTIVE=1; TTY_IN="/dev/tty"
+fi
+
+# Use whiptail for a real boxed TUI when available AND we have a terminal to drive it.
 HAVE_WHIPTAIL=0
-if command -v whiptail >/dev/null 2>&1 && [ -t 0 ]; then HAVE_WHIPTAIL=1; fi
+if command -v whiptail >/dev/null 2>&1 && [ "$INTERACTIVE" = "1" ]; then HAVE_WHIPTAIL=1; fi
 UNATTENDED="${OO_UNATTENDED:-0}"
 
 banner() {
@@ -86,40 +99,48 @@ EOF
 # Component selection
 # --------------------------------------------------------------------------- #
 # Echoes a comma-separated extras list (may be empty). Core is always installed.
+# Sets the global CHOSEN_EXTRAS (a comma-separated extras string, possibly empty).
+# IMPORTANT: this function must NOT be called via command substitution -- it prints
+# UI (banners/prompts) to stdout/stderr, so capturing its stdout would fold that UI
+# into the result. Returning through a global keeps the menu and the value separate.
+CHOSEN_EXTRAS=""
 choose_components() {
-    if [ "$UNATTENDED" = "1" ]; then
-        printf '%s' "${OO_COMPONENTS:-analysis}"
+    if [ "$UNATTENDED" = "1" ] || [ "$INTERACTIVE" = "0" ]; then
+        CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis}"
         return
     fi
     if [ "$HAVE_WHIPTAIL" = "1" ]; then
-        whiptail --title "Open Omniscience -- choose components" \
+        # Strip whiptail's surrounding quotes and join selections with commas.
+        CHOSEN_EXTRAS="$(whiptail --title "Open Omniscience -- choose components" \
             --checklist "Core (scrape, store, search, export) is always installed.\nSelect optional add-ons (Space to toggle, Enter to confirm):" \
             14 72 2 \
             "analysis" "Quantitative analysis, keywords, framing, sentiment" ON \
             "llm"      "Local LLM tools (summarize / translate via Ollama)"  OFF \
-            3>&1 1>&2 2>&3 | tr ' ' ','
-    else
-        say ""
-        say "${BOLD}Choose components${RST} (Core is always installed):"
-        local extras=""
-        if ask_yn "Install Analysis tools (keywords, framing, sentiment)?" y; then extras="analysis"; fi
-        if ask_yn "Install Local-LLM tools (summarize / translate via Ollama)?" n; then
-            extras="${extras:+$extras,}llm"
-        fi
-        printf '%s' "$extras"
+            3>&1 1>&2 2>&3 < "$TTY_IN" | tr -d '"' | tr ' ' ',')"
+        return
     fi
+    say ""
+    say "${BOLD}Choose components${RST} (Core is always installed):"
+    local extras=""
+    if ask_yn "Install Analysis tools (keywords, framing, sentiment)?" y; then extras="analysis"; fi
+    if ask_yn "Install Local-LLM tools (summarize / translate via Ollama)?" n; then
+        extras="${extras:+$extras,}llm"
+    fi
+    CHOSEN_EXTRAS="$extras"
 }
 
 # ask_yn "question" default(y/n) -> returns 0 for yes
 ask_yn() {
     local q="$1" def="${2:-n}" ans
-    if [ "$UNATTENDED" = "1" ]; then [ "$def" = "y" ]; return; fi
+    # No terminal (unattended or piped with no tty) -> take the default, never block.
+    if [ "$UNATTENDED" = "1" ] || [ "$INTERACTIVE" = "0" ]; then [ "$def" = "y" ]; return; fi
     if [ "$HAVE_WHIPTAIL" = "1" ]; then
-        if [ "$def" = "y" ]; then whiptail --yesno "$q" 10 70; else whiptail --defaultno --yesno "$q" 10 70; fi
+        if [ "$def" = "y" ]; then whiptail --yesno "$q" 10 70 < "$TTY_IN"; else whiptail --defaultno --yesno "$q" 10 70 < "$TTY_IN"; fi
         return
     fi
     local hint="[y/N]"; [ "$def" = "y" ] && hint="[Y/n]"
-    read -r -p "  $q $hint " ans || true
+    # Read from the controlling terminal: under `curl | bash` stdin is the script.
+    read -r -p "  $q $hint " ans < "$TTY_IN" || true
     ans="${ans:-$def}"
     [ "$ans" = "y" ] || [ "$ans" = "Y" ]
 }
@@ -149,6 +170,12 @@ create_venv() {
 pip_install() {
     local extras="$1" spec=".[$extras]"
     [ -n "$extras" ] || spec="."
+    # Defense in depth: extras must be a simple comma-separated token list. If
+    # anything else slipped in (e.g. captured UI text), fail loudly with a clear
+    # message instead of handing pip a malformed '.[...]' spec.
+    if [ -n "$extras" ] && ! printf '%s' "$extras" | grep -qE '^[A-Za-z0-9_.,-]+$'; then
+        die "Internal error: invalid component spec '$extras'. Please report this."
+    fi
     if [ "${OO_SKIP_PIP:-0}" = "1" ]; then warn "OO_SKIP_PIP=1 -- skipping pip install ($spec)"; return; fi
     step "Installing the app: $spec"
     python -m pip install --upgrade pip setuptools wheel >/dev/null
@@ -308,7 +335,8 @@ do_install() {
 
 run_interactive() {
     banner
-    local extras; extras="$(choose_components)"
+    choose_components            # sets CHOSEN_EXTRAS (does not pollute stdout)
+    local extras="$CHOSEN_EXTRAS"
     step "Selected components: core${extras:+, $extras}"
     do_install "$extras"
 }
@@ -374,7 +402,10 @@ do_uninstall() {
     say "  Your repository ($SRC_DIR) and your data will be ${BOLD}kept${RST} unless you choose otherwise."
     say ""
 
-    if ! ask_yn "Proceed with removing the virtualenv and launcher?" n; then
+    # OO_ASSUME_YES=1 confirms the venv/launcher removal non-interactively (for
+    # scripted uninstalls). It deliberately does NOT auto-confirm data deletion
+    # below -- destroying data always requires a real, interactive yes.
+    if [ "${OO_ASSUME_YES:-0}" != "1" ] && ! ask_yn "Proceed with removing the virtualenv and launcher?" n; then
         warn "Aborted; nothing was removed."
         return 0
     fi
