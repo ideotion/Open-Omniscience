@@ -28,8 +28,8 @@ This script demonstrates the usage of the statistical validation engine.
 
 import numpy as np
 import pandas as pd
-from src.analysis.statistical_tests import StatisticalTests, t_test_independent
-from src.analysis.confidence_intervals import ConfidenceIntervals
+from pillar2.src.analysis.statistical_tests import StatisticalTests, t_test_independent
+from pillar2.src.analysis.confidence_intervals import ConfidenceIntervals
 
 
 def main():

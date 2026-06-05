@@ -72,6 +72,24 @@ class LLMConfig:
     max_context_length: int = 8192
     max_tokens: int = 4096
     
+    # Caching settings
+    cache_enabled: bool = True
+    max_cache_size: int = 10000
+    cache_ttl: int = 3600  # 1 hour
+    
+    # Batch processing
+    batch_enabled: bool = True
+    max_batch_size: int = 10
+    batch_timeout: float = 30.0  # seconds
+    
+    # Rate limiting
+    rate_limit: float = 10.0  # requests per minute
+    max_concurrent_requests: int = 5
+    
+    # Retry logic
+    max_retries: int = 3
+    retry_delay: float = 2.0
+    
     def __post_init__(self):
         """Initialize default models"""
         if not self.default_models:

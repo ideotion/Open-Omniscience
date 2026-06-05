@@ -15,14 +15,15 @@ Usage:
     frontend (vanilla JavaScript) and consume the Pillar 5 API endpoints.
 """
 
-from pillar5.src.gui.metric_explorer import MetricExplorer
-from pillar5.src.gui.correlation_view import CorrelationView
-from pillar5.src.gui.instrument_browser import InstrumentBrowser
-from pillar5.src.gui.financial_dashboard import FinancialDashboard
+# GUI modules are planned for future development
+# from pillar5.src.gui.metric_explorer import MetricExplorer
+# from pillar5.src.gui.correlation_view import CorrelationView
+# from pillar5.src.gui.instrument_browser import InstrumentBrowser
+# from pillar5.src.gui.financial_dashboard import FinancialDashboard
 
 __all__ = [
-    'MetricExplorer',
-    'CorrelationView',
-    'InstrumentBrowser',
-    'FinancialDashboard',
+    # 'MetricExplorer',
+    # 'CorrelationView',
+    # 'InstrumentBrowser',
+    # 'FinancialDashboard',
 ]

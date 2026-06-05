@@ -29,7 +29,7 @@ This script demonstrates the peer-review simulation and reproducibility scoring 
 import sys
 sys.path.insert(0, '/workspace')
 
-from src.analysis.peer_review import (
+from pillar2.src.analysis.peer_review import (
     PeerReviewSimulator,
     PeerReviewSession,
     ReviewResult,
@@ -37,8 +37,8 @@ from src.analysis.peer_review import (
     ReviewStatus,
     ReviewDecision
 )
-from src.analysis.consensus import ConsensusCalculator, ConsensusResult
-from src.analysis.reproducibility import (
+from pillar2.src.analysis.consensus import ConsensusCalculator, ConsensusResult
+from pillar2.src.analysis.reproducibility import (
     ReproducibilityCalculator,
     ReproducibilityScore,
     DataLineageTracker,

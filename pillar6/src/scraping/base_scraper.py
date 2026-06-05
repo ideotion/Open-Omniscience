@@ -21,8 +21,8 @@ import aiohttp
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 
-from src.utils.rate_limiter import RateLimiter
-from src.utils.retry import retry_with_backoff
+from pillar6.src.utils.rate_limiter import RateLimiter
+from pillar6.src.utils.retry import retry_with_backoff
 
 # Configure logging
 logger = logging.getLogger(__name__)

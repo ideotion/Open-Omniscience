@@ -7,12 +7,17 @@ This module contains comprehensive documentation for Open-Omniscience Pillar 5:
 - User guides
 - Deployment instructions
 - Configuration reference
+
+Note: Documentation is stored in markdown files. This module provides access
+to the documentation content when needed.
 """
 
-from pillar5.docs.architecture import *
-from pillar5.docs.api import *
-from pillar5.docs.user_guide import *
-from pillar5.docs.deployment import *
+# Documentation is stored in markdown files, not Python modules
+# These imports are commented out as the source files are .md, not .py
+# from pillar5.docs.architecture import *
+# from pillar5.docs.api import *
+# from pillar5.docs.user_guide import *
+# from pillar5.docs.deployment import *
 
 __all__ = [
     # Architecture

@@ -859,9 +859,13 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
+# Create alias for compatibility
+RareEarthAPI = app
+
 # Export everything
 __all__ = [
     "app",
+    "RareEarthAPI",
     "router",
     "ElementResponse",
     "MarketResponse",

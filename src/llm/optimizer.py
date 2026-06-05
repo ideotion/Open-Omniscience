@@ -313,7 +313,8 @@ class ModelSelector:
         Args:
             config: LLM configuration.
         """
-        self.config = config or config
+        from .config import get_llm_config
+        self.config = config or get_llm_config()
         self._model_capabilities: Dict[str, List[ModelCapability]] = {}
     
     def select_model(
@@ -556,7 +557,8 @@ class PromptOptimizer:
         Args:
             config: LLM configuration.
         """
-        self.config = config or config
+        from .config import get_llm_config
+        self.config = config or get_llm_config()
     
     def optimize(
         self, 
@@ -735,7 +737,8 @@ class ResponseCache:
         Args:
             config: LLM configuration.
         """
-        self.config = config or config
+        from .config import get_llm_config
+        self.config = config or get_llm_config()
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._access_times: Dict[str, float] = {}
         self._lock = threading.Lock()
@@ -869,7 +872,8 @@ class LLMClient:
         Args:
             config: LLM configuration.
         """
-        self.config = config or config
+        from .config import get_llm_config
+        self.config = config or get_llm_config()
         self.model_selector = model_selector
         self.prompt_optimizer = prompt_optimizer
         self.cache = response_cache

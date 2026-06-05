@@ -193,12 +193,26 @@ async def create_source(request: Request, source_data: Dict):
     """
     logger.info(f"Create source request: {source_data}")
     
+    # Validate required fields
     required_fields = ['name', 'domain']
     for field in required_fields:
         if field not in source_data:
-            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+            raise HTTPException(status_code=422, detail=f"Missing required field: {field}")
+        if not source_data[field] or not str(source_data[field]).strip():
+            raise HTTPException(status_code=422, detail=f"Field '{field}' cannot be empty")
+    
+    # Validate field types
+    if not isinstance(source_data['name'], str):
+        raise HTTPException(status_code=422, detail="Field 'name' must be a string")
+    if not isinstance(source_data['domain'], str):
+        raise HTTPException(status_code=422, detail="Field 'domain' must be a string")
     
     with SourceManager() as manager:
+        # Check if source already exists
+        existing = manager.session.query(Source).filter_by(domain=source_data['domain']).first()
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Source with domain '{source_data['domain']}' already exists")
+        
         source = manager.create_source(
             name=source_data['name'],
             domain=source_data['domain'],
