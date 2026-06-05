@@ -56,10 +56,11 @@ try:
     from src.api.analysis import router as analysis_router
     from src.api.keyword_analysis import router as keyword_analysis_router
     from src.api.keyword_management import router as keyword_management_router
+    from src.api.framing import router as framing_router
     _ANALYSIS_AVAILABLE = True
 except ImportError:
     commodity_router = analysis_router = None
-    keyword_analysis_router = keyword_management_router = None
+    keyword_analysis_router = keyword_management_router = framing_router = None
     _ANALYSIS_AVAILABLE = False
 
 # Import ingestion router (ethical scrape -> extract -> store)
@@ -189,6 +190,7 @@ if _ANALYSIS_AVAILABLE:
     app.include_router(analysis_router)
     app.include_router(keyword_management_router)
     app.include_router(keyword_analysis_router)
+    app.include_router(framing_router)
 else:
     logger.warning(
         "Commodity, statistical-analysis & keyword endpoints disabled: install the "

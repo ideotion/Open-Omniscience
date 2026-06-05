@@ -37,6 +37,14 @@ _SUMMARY_SYSTEM = (
     "Summarize the article factually and neutrally in 3-5 sentences. Do not add "
     "information that is not in the text. If the text is not a coherent article, say so."
 )
+
+TRANSLATE_PROMPT_VERSION = "translate-v1"
+_TRANSLATE_SYSTEM = (
+    "You are a faithful translator for an investigative journalist. Translate the "
+    "article into {target} as accurately and literally as the language allows. "
+    "Preserve names, numbers, quotes and meaning exactly; do NOT summarize, "
+    "interpret, soften, or add anything. Output only the translation."
+)
 # Keep prompts within a small CPU model's context.
 _MAX_CHARS = 6000
 
@@ -58,6 +66,11 @@ class GenerateRequest(BaseModel):
 
 
 class SummarizeRequest(BaseModel):
+    model: str | None = None
+
+
+class TranslateRequest(BaseModel):
+    target_language: str = "English"
     model: str | None = None
 
 
@@ -135,6 +148,58 @@ def summarize_article(
         "kind": "summary",
         "model": result.model,
         "prompt_version": SUMMARY_PROMPT_VERSION,
+        "result": result.text,
+        "created_at": analysis.created_at.isoformat(),
+    }
+
+
+@router.post("/articles/{article_id}/translate")
+def translate_article(
+    article_id: int,
+    req: TranslateRequest,
+    db: Session = Depends(get_db),
+    client: OllamaClient = Depends(get_llm_client),
+) -> dict:
+    """Translate a stored article into a target language with a local model.
+
+    A faithful translation (not a summary) is persisted with provenance so foreign
+    sources become part of the searchable corpus -- widening world awareness without
+    any text leaving the machine.
+    """
+    article = db.query(Article).filter_by(id=article_id).first()
+    if article is None:
+        raise HTTPException(status_code=404, detail=f"Article {article_id} not found.")
+    if not article.content:
+        raise HTTPException(status_code=400, detail="Article has no content to translate.")
+
+    model = req.model or DEFAULT_MODEL
+    system = _TRANSLATE_SYSTEM.format(target=req.target_language)
+    prompt = f"Title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
+    try:
+        result = client.generate(prompt, model=model, system=system)
+    except LLMUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    analysis = ArticleAnalysis(
+        article_id=article.id,
+        kind="translation",
+        result=result.text,
+        model=result.model,
+        prompt_version=f"{TRANSLATE_PROMPT_VERSION}:{req.target_language}",
+        created_at=datetime.now(UTC),
+    )
+    db.add(analysis)
+    db.commit()
+    return {
+        "analysis_id": analysis.id,
+        "article_id": article.id,
+        "kind": "translation",
+        "source_language": article.language,
+        "target_language": req.target_language,
+        "model": result.model,
+        "prompt_version": analysis.prompt_version,
         "result": result.text,
         "created_at": analysis.created_at.isoformat(),
     }
