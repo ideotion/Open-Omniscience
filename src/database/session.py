@@ -24,7 +24,6 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -34,13 +33,14 @@ from sqlalchemy.orm import sessionmaker
 # --------------------------------------------------------------------------- #
 # Paths & URL
 # --------------------------------------------------------------------------- #
-# Repo root: src/database/session.py -> parents[2]. On a real deployment the data
-# directory lives under the persistent AppVM /home; here it is repo-local.
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = Path(os.getenv("OO_DATA_DIR", REPO_ROOT / "data"))
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Data directory resolution is centralised in src.paths so a source checkout, an
+# editable install under $HOME, and a wheel install into a read-only location all
+# behave correctly (see that module's docstring). OO_DATA_DIR still wins.
+from src.paths import data_dir, default_sqlite_url
 
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'open_omniscience.db'}")
+DATA_DIR = data_dir()
+
+DATABASE_URL = os.getenv("DATABASE_URL", default_sqlite_url())
 _IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
 

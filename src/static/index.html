@@ -85,7 +85,9 @@
         <button class="secondary" onclick="exportResults('csv')">Export CSV</button>
         <button class="secondary" onclick="exportResults('json')">Export JSON</button>
         <button class="secondary" onclick="exportEvidence()" title="Signed, tamper-evident bundle">Export signed evidence</button>
+        <button class="secondary" onclick="compareFraming()" title="How different outlets cover this">Compare framing</button>
       </div>
+      <div id="framing" style="margin-top:10px"></div>
       <div id="search-meta" class="hint"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="results"></table></div>
     </section>
@@ -257,6 +259,8 @@
              <td><a href="${esc(a.url)}" target="_blank" rel="noopener">open</a>
                  <button class="secondary" style="margin-top:4px;padding:3px 8px"
                    onclick="summarize(${a.id}, this)">Summarize</button>
+                 <button class="secondary" style="margin-top:4px;padding:3px 8px"
+                   onclick="translateArticle(${a.id}, this)">Translate</button>
                  <div class="summary muted" style="font-size:12px;margin-top:4px"></div></td></tr>`
           ).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`);
       } catch (e) { toast("Search failed: " + e.message, "err"); }
@@ -283,6 +287,34 @@
         const r = await api(`/api/llm/articles/${id}/summarize`, {method: "POST", body: "{}"});
         cell.textContent = `“${r.result}”  — ${r.model}`;
       } catch (e) { cell.textContent = ""; toast("Summarize: " + e.message, "err"); }
+    }
+
+    async function translateArticle(id, btn) {
+      const cell = btn.parentElement.querySelector(".summary");
+      cell.textContent = "Translating locally…";
+      try {
+        const r = await api(`/api/llm/articles/${id}/translate`,
+          {method: "POST", body: JSON.stringify({target_language: "English"})});
+        cell.textContent = `[${r.source_language || "?"}→${r.target_language}] ${r.result}  — ${r.model}`;
+      } catch (e) { cell.textContent = ""; toast("Translate: " + e.message, "err"); }
+    }
+
+    async function compareFraming() {
+      const q = $("q").value.trim();
+      const el = $("framing");
+      el.innerHTML = "<span class='muted'>Comparing how outlets frame this…</span>";
+      try {
+        const d = await api("/api/framing" + (q ? "?query=" + encodeURIComponent(q) : ""));
+        if (!d.framing || !d.framing.length) { el.innerHTML = "<span class='muted'>No coverage to compare.</span>"; return; }
+        const rows = d.framing.map(f =>
+          `<tr><td>${esc(f.source)}</td>
+               <td><span class="pill ${f.tone_label==='positive'?'ok':f.tone_label==='negative'?'err':''}">${f.tone_label} ${f.avg_tone.toFixed(2)}</span></td>
+               <td class="muted">${f.article_count}</td>
+               <td class="muted" style="font-size:12px">${(f.top_terms||[]).slice(0,6).map(esc).join(", ")}</td></tr>`
+        ).join("");
+        el.innerHTML = `<table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table>
+          <div class="hint">${esc(d.caveat)}</div>`;
+      } catch (e) { el.innerHTML = ""; toast("Framing: " + e.message, "err"); }
     }
 
     async function exportEvidence() {

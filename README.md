@@ -57,6 +57,18 @@ This project is a **Debian-based Linux application** built on Python, leveraging
 This is a **local-first, single-user** app for a **Qubes OS Debian AppVM** on
 **Python 3.13**, bound to loopback only. Full instructions: **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
+**One command (then double-click to run):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/scripts/bootstrap.sh | bash
+```
+It clones the repo and runs `./install.sh`, a small menu where you pick **Core**
+(scrape/store/search/export), optional **Analysis tools**, and optional **Local LLM
+tools** (Ollama + a model) — re-run it any time to add more. It then creates an
+**Open Omniscience** launcher in your apps menu and on the Desktop; double-click it
+to start the app and open the browser. *(Inspect the tiny
+[bootstrap](scripts/bootstrap.sh) before piping any script to a shell, or clone and
+run `./install.sh` yourself.)*
+
 ```bash
 # Local dev (any Linux with Python 3.13):
 python3.13 -m venv .venv && . .venv/bin/activate
@@ -66,7 +78,7 @@ open-omniscience          # serves http://127.0.0.1:8000 (auto-seeds ~1,780 sour
 ```
 
 On Qubes: `sudo ./install.sh --template` (in the TemplateVM, then reboot the AppVM)
-→ `./install.sh --appvm`.
+→ `./install.sh`.
 
 The loop: pick/add a source → **ingest** an RSS feed or URL (ethical: robots.txt
 fail-closed, rate-limited) → **search** with Boolean operators (`AND`/`OR`/`NOT`,
