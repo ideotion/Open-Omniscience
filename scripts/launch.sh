@@ -25,6 +25,7 @@ fi
 . .venv/bin/activate
 
 bold=$'\033[1m'; blu=$'\033[36m'; rst=$'\033[0m'
+[ -f "$DIR/assets/logo.txt" ] && { printf '\n%s' "$blu$bold"; cat "$DIR/assets/logo.txt"; printf '%s' "$rst"; }
 cat <<EOF
 
 ${bold}${blu}Open Omniscience${rst} is starting...

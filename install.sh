@@ -57,15 +57,11 @@ if command -v whiptail >/dev/null 2>&1 && [ -t 0 ]; then HAVE_WHIPTAIL=1; fi
 UNATTENDED="${OO_UNATTENDED:-0}"
 
 banner() {
-    cat <<EOF
-${BOLD}${BLU}
-   ___                    ___                _      _
-  / _ \ _ __  ___ _ _    / _ \ _ __  _ _  (_)___ __(_)___ _ _  __ ___
- | (_) | '_ \/ -_) ' \  | (_) | '  \| ' \| (_-</ _| / -_) ' \/ _/ -_)
-  \___/| .__/\___|_||_|  \___/|_|_|_|_||_|_/__/\__|_\___|_||_\__\___|
-       |_|${RST}
-  ${DIM}Local-first, ethical intelligence platform for investigative journalism${RST}
-EOF
+    if [ -f "$SRC_DIR/assets/logo.txt" ]; then
+        printf '%s' "$BLU$BOLD"; cat "$SRC_DIR/assets/logo.txt"; printf '%s' "$RST"
+    fi
+    printf '%s        Open Omniscience%s\n' "$BOLD" "$RST"
+    printf '%s  Local-first, ethical intelligence platform for investigative journalism%s\n' "$DIM" "$RST"
 }
 
 usage() {
