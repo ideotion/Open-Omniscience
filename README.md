@@ -59,7 +59,7 @@ This is a **local-first, single-user** app for a **Qubes OS Debian AppVM** on
 
 **One command (then double-click to run):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/main/scripts/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/scripts/bootstrap.sh | bash
 ```
 It clones the repo and runs `./install.sh`, a small menu where you pick **Core**
 (scrape/store/search/export), optional **Analysis tools**, and optional **Local LLM

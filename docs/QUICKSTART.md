@@ -11,7 +11,7 @@ only, no accounts. Local LLM and the vertical pillars come in later phases.
 If you just want to use the app (no command-line knowledge needed afterwards):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/main/scripts/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/scripts/bootstrap.sh | bash
 ```
 
 > **Inspect before you trust.** Piping a script into your shell runs code on your

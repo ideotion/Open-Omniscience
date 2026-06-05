@@ -72,7 +72,9 @@ def test_unattended_install_creates_launcher(tmp_path):
     assert desktop.is_file(), "applications-menu launcher not created"
     body = desktop.read_text()
     assert f"Exec={REPO}/scripts/launch.sh" in body
-    assert f"Icon={REPO}/assets/icon.svg" in body
+    # Prefer the PNG (rendered more reliably than SVG across desktops); it is
+    # committed, so the launcher should point at it.
+    assert f"Icon={REPO}/assets/icon.png" in body
     assert "Terminal=true" in body
     # required freedesktop fields are present
     for field in ("[Desktop Entry]", "Type=Application", "Name=", "Exec=", "Icon="):
@@ -102,6 +104,32 @@ def test_bootstrap_points_at_canonical_repo_and_hands_off():
     body = (REPO / "scripts/bootstrap.sh").read_text()
     assert "ideotion/Open-Omniscience" in body
     assert "exec ./install.sh" in body  # delegates to the inspectable in-repo installer
+
+
+def test_bootstrap_does_not_hardcode_nonexistent_main_branch():
+    # The repo's default branch is not "main"; pinning to it would 404. The
+    # bootstrap should track the default branch unless OO_BRANCH is set.
+    body = (REPO / "scripts/bootstrap.sh").read_text()
+    assert 'OO_BRANCH:-main' not in body
+    assert 'BRANCH="${OO_BRANCH:-}"' in body
+
+
+def test_install_links_resolve_to_default_branch_via_head():
+    # raw.githubusercontent .../HEAD/... always resolves to the default branch,
+    # so the documented one-liner keeps working regardless of its name.
+    for doc in ("README.md", "docs/QUICKSTART.md", "scripts/bootstrap.sh"):
+        text = (REPO / doc).read_text()
+        assert "raw.githubusercontent.com/ideotion/Open-Omniscience/main/" not in text, \
+            f"{doc} still points the curl install at a non-existent 'main' branch"
+        assert "Open-Omniscience/HEAD/scripts/bootstrap.sh" in text
+
+
+def test_png_icon_exists_and_is_valid():
+    png = REPO / "assets/icon.png"
+    assert png.is_file(), "PNG icon fallback is missing"
+    # Validate it really is a 256x256 PNG (cheap header check, no Pillow needed).
+    sig = png.read_bytes()[:8]
+    assert sig == b"\x89PNG\r\n\x1a\n", "icon.png is not a PNG"
 
 
 def test_icon_asset_exists():

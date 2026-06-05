@@ -251,6 +251,10 @@ EOF
     local apps="$HOME/.local/share/applications"
     local desktop_file="$apps/$APP_NAME.desktop"
     mkdir -p "$apps"
+    # PNG is rendered far more reliably than SVG by file managers / minimal desktops
+    # (notably some Qubes AppVMs); fall back to the SVG source if the PNG is missing.
+    local icon="$SRC_DIR/assets/icon.png"
+    [ -f "$icon" ] || icon="$SRC_DIR/assets/icon.svg"
     cat > "$desktop_file" <<EOF
 [Desktop Entry]
 Version=1.0
@@ -259,7 +263,7 @@ Name=Open Omniscience
 GenericName=Intelligence Platform
 Comment=Local-first intelligence platform for investigative journalism
 Exec=$SRC_DIR/scripts/launch.sh
-Icon=$SRC_DIR/assets/icon.svg
+Icon=$icon
 Terminal=true
 Categories=Utility;News;Office;
 Keywords=news;intelligence;journalism;research;osint;
