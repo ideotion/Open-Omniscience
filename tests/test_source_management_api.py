@@ -61,6 +61,15 @@ def test_missing_required_field_400(client):
     assert client.post("/api/sources/", json={"name": "NoDomain"}).status_code == 400
 
 
+def test_blank_required_field_400(client):
+    # Present-but-empty / whitespace-only values must be rejected, not stored as a
+    # junk source (regression guard ported from the abandoned 0.03 debug branch).
+    assert client.post("/api/sources/", json={"name": "  ", "domain": "x.example"}).status_code == 400
+    assert client.post("/api/sources/", json={"name": "X", "domain": ""}).status_code == 400
+    assert client.post("/api/sources/", json={"name": "X", "domain": 123}).status_code == 400
+
+
+
 def test_group_flow_and_refresh_endpoint(client):
     # create a tag-based group, then refresh it (this endpoint used to 500 on a
     # nonexistent manager.get_group()).

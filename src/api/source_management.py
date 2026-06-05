@@ -194,6 +194,10 @@ async def create_source(request: Request, source_data: dict, db: Session = Depen
     for field in required_fields:
         if field not in source_data:
             raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+        # Reject blank/whitespace-only values, which would otherwise create a junk
+        # source (e.g. an empty domain). Keep the existing 400 status for consistency.
+        if not isinstance(source_data[field], str) or not source_data[field].strip():
+            raise HTTPException(status_code=400, detail=f"Field '{field}' must be a non-empty string")
     
     with SourceManager(session=db) as manager:
         source = manager.create_source(
