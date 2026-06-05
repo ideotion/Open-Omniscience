@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Open Omniscience app icon. GPL-3.0-or-later. An open eye over a globe:
+     awareness of the whole world, openly. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f2747"/>
+      <stop offset="1" stop-color="#0a1830"/>
+    </linearGradient>
+    <radialGradient id="iris" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#48b4ff"/>
+      <stop offset="0.7" stop-color="#1f7fd6"/>
+      <stop offset="1" stop-color="#0c4a86"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="256" height="256" rx="48" fill="url(#bg)"/>
+
+  <!-- eye outline -->
+  <path d="M40 128 Q128 56 216 128 Q128 200 40 128 Z"
+        fill="none" stroke="#7fd0ff" stroke-width="8" stroke-linejoin="round"/>
+
+  <!-- iris as a small globe -->
+  <circle cx="128" cy="128" r="46" fill="url(#iris)"/>
+  <g stroke="#bfe6ff" stroke-width="3" fill="none" opacity="0.85">
+    <circle cx="128" cy="128" r="46"/>
+    <ellipse cx="128" cy="128" rx="20" ry="46"/>
+    <line x1="82" y1="128" x2="174" y2="128"/>
+    <path d="M86 104 Q128 116 170 104"/>
+    <path d="M86 152 Q128 140 170 152"/>
+  </g>
+  <circle cx="128" cy="128" r="16" fill="#04203f"/>
+  <circle cx="120" cy="120" r="6" fill="#dff1ff" opacity="0.9"/>
+</svg>

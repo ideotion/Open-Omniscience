@@ -22,7 +22,6 @@ from src.database.models import Article, ArticleAnalysis, Base, Source
 from src.database.session import get_db
 from src.llm.ollama import OllamaClient
 
-
 # --------------------------------------------------------------------------- #
 # framing (pure function)
 # --------------------------------------------------------------------------- #
@@ -68,7 +67,8 @@ def client(tmp_path):
     with Sess() as s:
         a = Source(name="Le Monde", domain="lemonde.fr", language="fr")
         b = Source(name="Guardian", domain="theguardian.com", language="en")
-        s.add_all([a, b]); s.flush()
+        s.add_all([a, b])
+        s.flush()
         s.add_all([
             Article(url="https://lemonde.fr/1", canonical_url="https://lemonde.fr/1", source_id=a.id,
                     title="Élection", content="le scandale de corruption a indigné les électeurs",

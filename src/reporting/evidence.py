@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,8 +39,8 @@ BUNDLE_VERSION = "oo-evidence-1"
 # --------------------------------------------------------------------------- #
 
 def _default_key_path() -> Path:
-    base = Path(os.getenv("OO_DATA_DIR", Path(__file__).resolve().parents[2] / "data"))
-    return base / "keys" / "evidence_ed25519.pem"
+    from src.paths import data_dir
+    return data_dir() / "keys" / "evidence_ed25519.pem"
 
 
 def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:

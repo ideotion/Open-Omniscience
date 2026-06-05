@@ -6,6 +6,46 @@ only, no accounts. Local LLM and the vertical pillars come in later phases.
 
 ---
 
+## 0. The easy way — one command, then double-click to run
+
+If you just want to use the app (no command-line knowledge needed afterwards):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/main/scripts/bootstrap.sh | bash
+```
+
+> **Inspect before you trust.** Piping a script into your shell runs code on your
+> machine. The bootstrap is deliberately tiny — read it first if you like
+> ([scripts/bootstrap.sh](../scripts/bootstrap.sh)); all it does is check for
+> git + Python 3.13, clone this repo into `~/open-omniscience`, and hand off to
+> the in-repo `./install.sh`. You can equally clone yourself and run `./install.sh`.
+
+`install.sh` then shows a small menu (a boxed TUI if `whiptail` is present,
+otherwise plain prompts) where you choose:
+
+| Component | What you get |
+|-----------|--------------|
+| **Core** *(always)* | scrape · store with provenance · Boolean search · export |
+| **Analysis tools** | keywords · framing comparison · sentiment |
+| **Local LLM tools** | summarize & translate via **Ollama** (optionally installs Ollama + a small model for you) |
+
+You can re-run `./install.sh` any time to **add the LLM tools later** — it's
+idempotent and only installs what's missing.
+
+**Then just double-click to launch.** The installer offers to create an
+**Open Omniscience** launcher. To start the app afterwards:
+
+- open your applications menu and search **Open Omniscience**, **or**
+- double-click the **Open Omniscience** icon on your **Desktop**.
+
+A small terminal window appears, the app starts, and your browser opens to
+**http://127.0.0.1:8000**. **Close that window to stop the app.** (On macOS the
+launcher is `Open Omniscience.command` on your Desktop.)
+
+Prefer the terminal? `cd ~/open-omniscience && ./scripts/launch.sh` does the same.
+
+---
+
 ## A. On a Qubes OS Debian AppVM (the target)
 
 Qubes resets an AppVM's root filesystem on every boot; only `/home` (and
@@ -20,12 +60,15 @@ Shut the TemplateVM down, then **reboot the AppVM** so the packages are visible.
 
 **2. In the AppVM (as your user, no sudo):**
 ```bash
-./install.sh --appvm              # creates .venv + installs the app under $HOME
+./install.sh                      # interactive menu: pick components, optional launcher
+# or non-interactively (Core + Analysis, creates the launcher):
+./install.sh --appvm
 ```
 
 **3. Run it (binds to 127.0.0.1 only):**
+Double-click the **Open Omniscience** launcher (apps menu / Desktop), or:
 ```bash
-cd ~/open-omniscience && . .venv/bin/activate && open-omniscience
+cd ~/open-omniscience && ./scripts/launch.sh    # starts the app + opens the browser
 ```
 Open **http://127.0.0.1:8000** in the AppVM browser.
 
@@ -99,9 +142,10 @@ Interactive API docs: **http://127.0.0.1:8000/docs**.
 
 All are local-first and degrade loudly (never fabricate). Full schemas at `/docs`.
 
-**Local LLM (Ollama) — Phase 2.** Install Ollama in the TemplateVM, then
-`ollama pull llama3.2:3b`. The UI header shows LLM status; each search result has a
-**Summarize** button. API:
+**Local LLM (Ollama) — Phase 2.** Easiest: choose **Local LLM tools** in
+`./install.sh` (it can install Ollama and pull a small model for you). Manually:
+install Ollama, then `ollama pull llama3.2:3b`. The UI header shows LLM status;
+each search result has **Summarize** and **Translate** buttons. API:
 ```bash
 curl http://127.0.0.1:8000/api/llm/health          # {available, installed_models}
 curl -X POST http://127.0.0.1:8000/api/llm/articles/1/summarize -d '{}'  # persisted with provenance
