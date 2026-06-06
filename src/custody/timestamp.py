@@ -35,7 +35,6 @@ import base64
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Optional
 
 # Public OpenTimestamps calendar servers (operated by the OTS project & community).
 DEFAULT_CALENDARS = (
@@ -46,11 +45,11 @@ DEFAULT_CALENDARS = (
 
 try:  # pragma: no cover - availability is environment-dependent
     from opentimestamps.calendar import RemoteCalendar  # type: ignore
-    from opentimestamps.core.op import OpSHA256  # type: ignore
     from opentimestamps.core.notary import (  # type: ignore
         BitcoinBlockHeaderAttestation,
         PendingAttestation,
     )
+    from opentimestamps.core.op import OpSHA256  # type: ignore
     from opentimestamps.core.serialize import (  # type: ignore
         BytesDeserializationContext,
         BytesSerializationContext,
@@ -85,8 +84,8 @@ class TimestampProof:
 
     kind: str
     digest: str  # hex of the timestamped digest
-    asserted_time: Optional[str]
-    proof_b64: Optional[str]
+    asserted_time: str | None
+    proof_b64: str | None
     detail: str
 
     def to_dict(self) -> dict:
@@ -99,7 +98,7 @@ class TimestampProof:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "TimestampProof":
+    def from_dict(cls, d: dict) -> TimestampProof:
         return cls(
             kind=d["kind"],
             digest=d["digest"],

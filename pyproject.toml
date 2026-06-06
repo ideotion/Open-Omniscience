@@ -97,6 +97,20 @@ crypto = [
     "python-gnupg>=0.5.2",
 ]
 
+# Post-quantum chain-of-custody signatures. The custody log signs with Ed25519
+# alone if this is absent (and labels itself honestly); installing this upgrades
+# new signatures to hybrid Ed25519 + ML-DSA (FIPS 204) for quantum resistance.
+pqc = [
+    "pqcrypto>=0.3.4",
+]
+
+# Independent "existed no later than T" timestamping via OpenTimestamps (anchors
+# an opaque hash into Bitcoin; no wallet, no fee). Without it, custody entries use
+# a self-asserted local time and anchoring falls back to the offline local book.
+timestamping = [
+    "opentimestamps>=0.4.5",
+]
+
 dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",

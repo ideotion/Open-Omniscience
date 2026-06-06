@@ -32,7 +32,6 @@ import sqlite3
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Optional
 
 from src.custody.timestamp import (
     OTS_AVAILABLE,
@@ -63,7 +62,7 @@ class AnchorReceipt:
     provider: str
     merkle_root: str
     created_at: str
-    locator: Optional[str]  # provider-specific id/proof (e.g. base64 .ots, tx hash)
+    locator: str | None  # provider-specific id/proof (e.g. base64 .ots, tx hash)
     detail: str
 
     def to_dict(self) -> dict:
@@ -221,8 +220,7 @@ def available_providers() -> dict[str, str]:
             if OTS_AVAILABLE
             else "needs the 'timestamping' extra"
         ),
-        **{n: "not implemented (see docs); public-chain anchoring has privacy risks"
-           for n in _PUBLIC_CHAIN_NAMES},
+        **dict.fromkeys(_PUBLIC_CHAIN_NAMES, "not implemented (see docs); public-chain anchoring has privacy risks"),
     }
 
 

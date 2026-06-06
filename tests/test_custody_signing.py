@@ -19,7 +19,7 @@ from __future__ import annotations
 import pytest
 
 from src.custody import signing
-from src.custody.signing import HybridSigner, PublicIdentity, canonical_bytes, verify
+from src.custody.signing import HybridSigner, canonical_bytes, verify
 
 DATA = b"the quick brown fox"
 

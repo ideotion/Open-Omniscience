@@ -30,7 +30,6 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 from src.custody import signing
 from src.custody.signing import HybridSigner, PublicIdentity, canonical_bytes
@@ -62,7 +61,7 @@ class CustodyEntry:
     item_id: str
     item_hash: str
     action: str
-    actor: Optional[str]
+    actor: str | None
     metadata: dict
     prev_entry_hash: str
     entry_hash: str
@@ -90,7 +89,7 @@ class CustodyEntry:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "CustodyEntry":
+    def from_dict(cls, d: dict) -> CustodyEntry:
         return cls(
             seq=d["seq"],
             item_id=d["item_id"],
@@ -142,7 +141,7 @@ class CustodyLog:
         self.conn.commit()
 
     # -- write ------------------------------------------------------------- #
-    def _last(self) -> Optional[CustodyEntry]:
+    def _last(self) -> CustodyEntry | None:
         row = self.conn.execute(
             "SELECT * FROM custody_entries ORDER BY seq DESC LIMIT 1"
         ).fetchone()

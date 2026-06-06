@@ -86,7 +86,13 @@ class Config:
     articles_per_page: int = 20
     default_language: str = "en"
     theme: str = "system"
-    
+
+    # Chain of custody: when true, every successful ingest appends a signed,
+    # hash-chained custody entry (src/custody). Off by default -- it is an
+    # explicit, opt-in evidentiary feature, not silent always-on behaviour, and it
+    # has a (small) per-article signing cost. Toggle with OO_CUSTODY_ON_INGEST=1.
+    custody_on_ingest: bool = False
+
     # Path to the repository root
     repo_root: Path = field(default_factory=lambda: Path(__file__).parent.parent.parent.resolve())
     
@@ -154,7 +160,9 @@ class Config:
             self.audit_enabled = audit_enabled.lower() == "true"
         if audit_log_dir := os.getenv("AUDIT_LOG_DIR"):
             self.audit_log_dir = audit_log_dir
-        
+        if custody_on_ingest := os.getenv("OO_CUSTODY_ON_INGEST"):
+            self.custody_on_ingest = custody_on_ingest.lower() in ("1", "true", "yes")
+
         # LLM
         if ollama_host := os.getenv("OLLAMA_HOST"):
             self.ollama_host = ollama_host

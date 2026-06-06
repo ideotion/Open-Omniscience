@@ -54,7 +54,9 @@ def test_ots_stamp_raises_when_unavailable(monkeypatch):
 def test_ots_stamp_rejects_wrong_digest_length():
     if not ts.OTS_AVAILABLE:
         pytest.skip("opentimestamps not installed")
-    with pytest.raises(Exception):
+    from src.custody.timestamp import TimestampError
+
+    with pytest.raises(TimestampError):
         ots_stamp(b"too short")
 
 

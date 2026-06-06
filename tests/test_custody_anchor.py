@@ -56,7 +56,9 @@ def test_public_chain_providers_refuse_honestly():
 
 
 def test_unknown_provider_raises():
-    with pytest.raises(Exception):
+    from src.custody.anchor import AnchorError
+
+    with pytest.raises(AnchorError):
         get_provider("dogecoin")
 
 

@@ -36,10 +36,9 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
@@ -80,7 +79,7 @@ def _keys_dir() -> Path:
     return d
 
 
-def _passphrase() -> Optional[bytes]:
+def _passphrase() -> bytes | None:
     p = os.getenv("OO_KEY_PASSPHRASE")
     return p.encode("utf-8") if p else None
 
@@ -114,8 +113,8 @@ class PublicIdentity:
     """The public half of a signer -- everything a third party needs to verify."""
 
     ed25519_pub: str  # hex
-    ml_dsa_variant: Optional[str]  # e.g. "ml_dsa_65" or None
-    ml_dsa_pub: Optional[str]  # hex or None
+    ml_dsa_variant: str | None  # e.g. "ml_dsa_65" or None
+    ml_dsa_pub: str | None  # hex or None
 
     def to_dict(self) -> dict:
         return {
@@ -174,7 +173,7 @@ class HybridSigner:
         return key
 
     # -- ML-DSA ------------------------------------------------------------ #
-    def _load_or_create_mldsa(self) -> tuple[Optional[bytes], Optional[bytes]]:
+    def _load_or_create_mldsa(self) -> tuple[bytes | None, bytes | None]:
         if not PQC_AVAILABLE:
             return None, None
         if self._mldsa_path.exists():
@@ -233,7 +232,7 @@ def _verify_ed25519(pub_hex: str, sig_hex: str, data: bytes) -> bool:
         return False
 
 
-def _verify_mldsa(variant: str, pub_hex: str, sig_hex: str, data: bytes) -> Optional[bool]:
+def _verify_mldsa(variant: str, pub_hex: str, sig_hex: str, data: bytes) -> bool | None:
     """Return True/False, or None if this verifier cannot check the variant."""
     if not PQC_AVAILABLE or variant != _MLDSA_VARIANT:
         return None

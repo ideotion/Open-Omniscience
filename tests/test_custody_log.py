@@ -18,7 +18,6 @@ import pytest
 
 from src.custody.log import (
     CustodyAction,
-    CustodyEntry,
     CustodyLog,
     verify_entries,
     verify_export,
@@ -57,7 +56,7 @@ def test_entries_for_item(log):
 def test_chain_links_are_sequential(log):
     _seed(log)
     entries = log.all_entries()
-    for prev, cur in zip(entries, entries[1:]):
+    for prev, cur in zip(entries, entries[1:], strict=False):
         assert cur.prev_entry_hash == prev.entry_hash
 
 

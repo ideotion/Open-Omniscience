@@ -19,6 +19,17 @@ Open Omniscience v0.4 targets a **single local user** on a **Qubes OS Debian App
   with `scripts/verify_evidence.py <bundle.json> [signer_public_key]` — pass the
   signer's key to prove *provenance*, not just integrity. Verification needs nothing
   but the bundle + key (no DB, no trust in this tool).
+- An append-only, hash-chained, **signed custody log** (`src/custody/`) records
+  ongoing actions on an item; verify offline with `scripts/verify_custody.py`.
+  Signatures are **hybrid Ed25519 + post-quantum ML-DSA** when the `pqc` extra is
+  installed (honestly labelled `ed25519` otherwise; hybrid verification requires
+  *both* components — never a silent downgrade). Independent time comes from
+  **OpenTimestamps** (Bitcoin-anchored); a self-asserted local time is the offline
+  default. See `docs/CHAIN_OF_CUSTODY.md` for the full model and its limits.
+- **Privacy caveat:** anchoring to a public blockchain is permanent publication and
+  can deanonymise; it is opt-in, defaults to the offline local provider, and is
+  documented with a warning. Custody auto-logging on ingest is opt-in
+  (`OO_CUSTODY_ON_INGEST=1`), off by default.
 
 ## Hardening already in place
 
