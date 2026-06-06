@@ -19,6 +19,12 @@
       --muted: #9aa3b2; --accent: #5b9dd9; --ok: #4caf7d; --warn: #d9a441;
       --err: #d96c6c; --border: #2a2f3a;
     }
+    /* Light theme: applied when Settings → theme = light (or system + OS is light). */
+    html[data-theme="light"] {
+      --bg: #f5f6f8; --panel: #ffffff; --panel2: #eef1f5; --fg: #1b1f27;
+      --muted: #5c6573; --accent: #2f6fb3; --ok: #2e8b57; --warn: #b07a17;
+      --err: #c0392b; --border: #d7dce3;
+    }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--fg);
       font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -90,6 +96,7 @@
     <button data-tab="ingest">Ingest</button>
     <button data-tab="sources">Sources &amp; Database</button>
     <button data-tab="custody">Chain of custody</button>
+    <button data-tab="settings">Settings</button>
   </nav>
 
   <main>
@@ -231,6 +238,50 @@
       <div style="overflow:auto; margin-top:8px;"><table id="cust-entries"></table></div>
     </section>
     </div>
+
+    <!-- ============================ SETTINGS ========================= -->
+    <div class="tab-page" id="tab-settings">
+    <section class="panel">
+      <h2>Preferences</h2>
+      <div class="row">
+        <div>
+          <label for="set-theme">Theme</label>
+          <select id="set-theme">
+            <option value="system">System</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </div>
+        <div>
+          <label for="set-limit">Default search results</label>
+          <input id="set-limit" type="number" min="1" max="1000" step="1">
+        </div>
+      </div>
+      <button onclick="saveSettings()">Save preferences</button>
+      <div class="hint">Stored locally in <code>app_settings.json</code> under the data directory — no telemetry, nothing leaves the machine.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Backup &amp; restore</h2>
+      <div id="backup-status" class="hint">Checking backend…</div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="downloadBackup()">Download backup (.db)</button>
+      </div>
+      <div class="hint">A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.</div>
+
+      <hr>
+
+      <label for="restore-file">Restore from a backup file <span class="muted">(replaces the current corpus)</span></label>
+      <input type="file" id="restore-file" accept=".db,.sqlite,.sqlite3,application/x-sqlite3">
+      <button class="danger" onclick="restoreBackup()">Restore (destructive)</button>
+      <div class="hint" style="color:var(--warn)">
+        Restore <strong>replaces</strong> your current corpus with the uploaded file. The file is validated first
+        (must be a genuine Open Omniscience SQLite database), and your current corpus is snapshotted to a
+        <code>pre-restore-*.db</code> beside the database so the operation is reversible.
+      </div>
+      <div id="restore-result" class="hint"></div>
+    </section>
+    </div>
   </main>
 
   <div id="toast"></div>
@@ -262,6 +313,7 @@
     const TAB_LOADERS = {
       sources: () => { loadDbStats(); loadManagedSources(); },
       custody: loadCustody,
+      settings: loadSettings,
     };
     const _loaded = new Set();
 
@@ -292,6 +344,76 @@
       } catch (e) {
         $("health").innerHTML = '<span class="pill err">offline</span>';
       }
+    }
+
+    // -- Settings tab ------------------------------------------------------- //
+    // Local UI preferences. DEFAULT_LIMIT feeds the search; theme is applied to <html>.
+    let DEFAULT_LIMIT = 50;
+    const _media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+
+    function applyTheme(theme) {
+      const effective = theme === "system"
+        ? (_media && _media.matches ? "light" : "dark")
+        : theme;
+      document.documentElement.setAttribute("data-theme", effective);
+    }
+
+    async function loadSettings() {
+      try {
+        const s = await api("/api/settings");
+        $("set-theme").value = s.theme;
+        $("set-limit").value = s.default_result_limit;
+        DEFAULT_LIMIT = s.default_result_limit;
+        applyTheme(s.theme);
+      } catch (e) { toast("Could not load settings: " + e.message, "err"); }
+      // Backup support is backend-dependent; reflect reality, never assume.
+      try {
+        const st = await api("/api/database/stats");
+        $("backup-status").innerHTML = st.backup_supported
+          ? `Backend <span class="pill ok">${esc(st.backend)}</span> — backup &amp; restore available.`
+          : `Backend <span class="pill warn">${esc(st.backend)}</span> — file backup/restore is SQLite-only; use the backend's native dump tool.`;
+        document.querySelectorAll("#tab-settings .danger, #tab-settings button.secondary")
+          .forEach(b => { b.disabled = !st.backup_supported; });
+      } catch (e) { $("backup-status").textContent = "Backup status unavailable: " + e.message; }
+    }
+
+    async function saveSettings() {
+      const body = {
+        theme: $("set-theme").value,
+        default_result_limit: Number($("set-limit").value),
+      };
+      try {
+        const s = await api("/api/settings", {method: "PUT", body: JSON.stringify(body)});
+        DEFAULT_LIMIT = s.default_result_limit;
+        applyTheme(s.theme);
+        toast("Preferences saved.");
+      } catch (e) { toast("Save failed: " + e.message, "err"); }
+    }
+
+    function downloadBackup() {
+      // Stream the snapshot straight to disk via a normal navigation download.
+      window.open("/api/database/backup", "_blank");
+      toast("Preparing backup download…");
+    }
+
+    async function restoreBackup() {
+      const f = $("restore-file").files[0];
+      if (!f) { toast("Choose a backup file first.", "err"); return; }
+      if (!confirm(`Restore from "${f.name}"? This REPLACES your current corpus. ` +
+                   `A pre-restore snapshot will be saved beside the database.`)) return;
+      $("restore-result").textContent = "Validating and restoring…";
+      try {
+        const fd = new FormData(); fd.append("file", f);
+        // Let the browser set the multipart Content-Type/boundary (don't force JSON).
+        const res = await fetch("/api/database/restore", {method: "POST", body: fd});
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        $("restore-result").innerHTML =
+          `<span class="pill ok">restored</span> ${data.tables_seen} tables, ${humanBytes(data.bytes)}. ` +
+          `Pre-restore snapshot: <code>${esc(data.pre_restore_snapshot)}</code>`;
+        toast("Corpus restored.");
+        loadDbStats(); loadSources(); doSearch();
+      } catch (e) { $("restore-result").textContent = ""; toast("Restore failed: " + e.message, "err"); }
     }
 
     // -- Database tab ------------------------------------------------------- //
@@ -443,7 +565,7 @@
     }
 
     async function doSearch() {
-      const p = searchParams(); p.set("limit", "50");
+      const p = searchParams(); p.set("limit", String(DEFAULT_LIMIT));
       try {
         const data = await api("/api/articles?" + p.toString());
         $("search-meta").textContent = `${data.total} result(s)` + (data.total > data.results.length ?
@@ -645,7 +767,15 @@
     $("q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
 
     // Initial load: always-on essentials; per-tab data loads lazily on first view.
-    loadHealth(); loadLlmHealth(); loadSources(); doSearch();
+    // Settings is loaded eagerly so the theme + default result limit apply app-wide
+    // (mark it loaded so opening the tab doesn't refetch). Theme follows the OS when
+    // set to "system".
+    _loaded.add("settings");
+    loadSettings().then(doSearch);
+    if (_media) _media.addEventListener("change", () => {
+      if ($("set-theme").value === "system") applyTheme("system");
+    });
+    loadHealth(); loadLlmHealth(); loadSources();
     // Honour a deep-link like /#sources on first load.
     const initial = (location.hash || "#search").slice(1);
     if (document.getElementById("tab-" + initial)) showTab(initial);

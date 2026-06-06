@@ -10,6 +10,8 @@ move when rows are added, and that only present tables are reported.
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi.testclient import TestClient
 
 from src.api.main import app
@@ -36,9 +38,14 @@ def test_stats_shape_and_backend():
 
 
 def test_source_count_increments_with_real_rows():
+    # Unique domain so the test is idempotent against the persistent dev DB
+    # (domain is UNIQUE); cleaned up afterwards to leave no trace.
+    domain = f"stat-probe-{uuid.uuid4().hex}.test"
     with TestClient(app) as client:
         before = client.get("/api/database/stats").json()["counts"]["sources"]
         with session_scope() as s:
-            s.add(Source(name="Stat Probe", domain="stat-probe.test"))
+            s.add(Source(name="Stat Probe", domain=domain))
         after = client.get("/api/database/stats").json()["counts"]["sources"]
-    assert after == before + 1
+        assert after == before + 1
+        with session_scope() as s:
+            s.query(Source).filter_by(domain=domain).delete()

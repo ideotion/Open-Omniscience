@@ -84,8 +84,11 @@ from src.api.custody import router as custody_router
 # Import source management router
 from src.api.source_management import router as source_management_router
 
-# Import database overview router (honest read-only corpus statistics)
+# Import database overview router (honest read-only corpus statistics + backup/restore)
 from src.api.database import router as database_router
+
+# Import application settings router (GUI-editable preferences)
+from src.api.settings import router as settings_router
 
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
@@ -186,6 +189,9 @@ app.include_router(source_management_router)
 
 # Include database overview router
 app.include_router(database_router)
+
+# Include application settings router
+app.include_router(settings_router)
 
 # Include LLM router
 app.include_router(llm_router)
