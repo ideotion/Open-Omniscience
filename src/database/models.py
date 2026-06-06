@@ -1182,6 +1182,91 @@ class KeywordMention(Base):
         return f"<KeywordMention(kw={self.keyword_id} art={self.article_id} x{self.count})>"
 
 
+class WikiPage(Base):
+    """A tracked Wikipedia page in one language edition (e.g. en, fr, ar).
+
+    Editions are per-*language*, not per-country (mapped to countries only in the
+    UI). We keep ONE full-text baseline snapshot per page (``baseline_text``,
+    compressed) taken when tracking starts; everything after is stored as per-edit
+    diffs on :class:`WikiRevision`, so cosmetic edits cost almost nothing and the
+    store scales with edit activity, not article size.
+    """
+
+    __tablename__ = "wiki_pages"
+
+    id = Column(Integer, primary_key=True)
+    wiki = Column(String(16), nullable=False)          # language edition code, e.g. "en"
+    title = Column(String(512), nullable=False)
+    pageid = Column(Integer)                            # MediaWiki page id
+    watched = Column(Boolean, default=True)
+    category = Column(String(255))                     # optional grouping (e.g. a watchlist name)
+    baseline_revid = Column(Integer)                   # revid the baseline_text corresponds to
+    baseline_text = Column(CompressedText)             # one full snapshot; later versions = baseline + diffs
+    last_revid = Column(Integer)                       # newest revid we have stored
+    last_checked_at = Column(DateTime)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    revisions = relationship("WikiRevision", back_populates="page", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_wikipage_wiki_title", "wiki", "title", unique=True),
+        Index("ix_wikipage_watched", "watched"),
+        Index("ix_wikipage_category", "category"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<WikiPage({self.wiki}:{self.title})>"
+
+
+class WikiRevision(Base):
+    """One stored edit (revision) of a tracked page: a delta, not a re-copy.
+
+    Holds the edit's metadata (editor, comment, flags, byte delta), the **diff**
+    (added/removed text, compressed) rather than the whole new article, optional
+    ORES model scores (a labelled-by-ORES assertion, with provenance), and the
+    honest large-edit flag + reasons computed at ingest. Any historical full text
+    is reconstructable by replaying diffs from the page baseline.
+    """
+
+    __tablename__ = "wiki_revisions"
+
+    id = Column(Integer, primary_key=True)
+    page_id = Column(Integer, ForeignKey("wiki_pages.id", ondelete="CASCADE"), nullable=False)
+    revid = Column(Integer, nullable=False)
+    parent_revid = Column(Integer)
+    timestamp = Column(DateTime, index=True)
+    editor = Column(String(255))
+    editor_anon = Column(Boolean, default=False)
+    comment = Column(Text)
+    size = Column(Integer)                  # new article size in bytes
+    delta_bytes = Column(Integer)           # size - parent size (signed)
+    tags = Column(String(500))              # MediaWiki change tags, comma-separated
+    minor = Column(Boolean, default=False)
+    bot = Column(Boolean, default=False)
+    diff = Column(CompressedText)           # added/removed text for this edit
+
+    # ORES (Wikimedia) model scores -- attributed, optional enrichment.
+    ores_damaging = Column(Float)
+    ores_goodfaith = Column(Float)
+    ores_provenance = Column(String(80))
+
+    # Honest large-edit detection computed at ingest.
+    flagged = Column(Boolean, default=False)
+    flag_reasons = Column(String(500))      # comma-separated reason codes
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    page = relationship("WikiPage", back_populates="revisions")
+
+    __table_args__ = (
+        Index("ix_wikirev_page_revid", "page_id", "revid", unique=True),
+        Index("ix_wikirev_page_time", "page_id", "timestamp"),
+        Index("ix_wikirev_flagged", "flagged"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<WikiRevision(page={self.page_id} rev={self.revid} d={self.delta_bytes})>"
+
+
 
 # Example usage
 if __name__ == "__main__":
