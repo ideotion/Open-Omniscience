@@ -24,12 +24,16 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
 - ✅ **Boolean full-text search** (SQLite FTS5): real `AND`/`OR`/`NOT`, `"phrases"`,
   parentheses with correct precedence — fully parameterized.
 - ✅ CSV/JSON export; a dependency-free, offline web UI at `127.0.0.1:8000`.
+- ✅ **Honest chain of custody**: append-only, hash-chained, **signed** custody log
+  (hybrid Ed25519 + post-quantum ML-DSA), timestamping (self-asserted local, or
+  Bitcoin-anchored **OpenTimestamps**), and offline verification — all toggleable
+  from a **Chain of custody** UI panel, with the effective state always shown
+  honestly (see [docs/CHAIN_OF_CUSTODY.md](docs/CHAIN_OF_CUSTODY.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
 
 **Deferred to later phases (see [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md)):**
 local LLM analysis via Ollama (Phase 2); one financial/commodity vertical with
-correlation (Phase 3); email + monitoring (Phase 4); signed chain-of-custody
-reporting (Phase 5).
+correlation (Phase 3); email + monitoring (Phase 4).
 
 **Honesty note:** several previously-advertised "analysis" components (deepfake,
 propaganda, cognitive-bias, bot detection) were **fabricated** — returning

@@ -22,6 +22,9 @@ The app binds to loopback only and (for a single local user) requires no auth.
 | `GET /api/monitoring/...` | Real source-uptime health + corpus-volume anomalies |
 | `POST /api/verify/image-metadata` | Honest image EXIF/metadata extraction |
 | `POST /api/reports/evidence`, `/evidence/verify` | Signed, tamper-evident evidence bundles |
+| `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`, `GET /api/custody/export`, `POST /api/custody/verify` | Append-only, hash-chained signed chain-of-custody log + offline verification |
+| `GET/PUT /api/custody/settings` | Runtime custody preferences (post-quantum signing, anchoring mode, auto-log) — reports *effective*, availability-aware state |
+| `POST /api/custody/anchor`, `GET /api/custody/providers` | Anchor a Merkle root (local / OpenTimestamps) + provider availability |
 | `… /api/keywords/...`, `/api/analysis/articles/similarity` | Keyword extraction + article similarity |
 
 Routers marked **[analysis]** (commodities, statistics, keywords) require the
@@ -33,3 +36,9 @@ Behaviour notes:
   limited); LLM endpoints return **503** if Ollama is unavailable (never a fake answer).
 - Evidence verification: pass the signer's public key to prove provenance, not just
   integrity (see [QUICKSTART](QUICKSTART.md) and `scripts/verify_evidence.py`).
+- Custody settings are *preferences*, not guarantees: `GET/PUT /api/custody/settings`
+  always report the **effective** state (preference **and** library availability), so
+  post-quantum / OpenTimestamps never appear enabled when the supporting extra is
+  absent. Anchoring defaults to the offline `local` provider; OpenTimestamps and
+  public-chain anchoring carry a privacy warning (see
+  [CHAIN_OF_CUSTODY](CHAIN_OF_CUSTODY.md)).

@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — honest chain of custody (Phase 5)
+
+The deferred "signed chain-of-custody reporting" pillar, built honestly and made
+operator-configurable:
+
+- **Custody core (`src/custody/`):** an append-only, hash-chained, **signed** log
+  of actions on an item; **hybrid Ed25519 + post-quantum ML-DSA** signatures with
+  AND semantics and honest labels (never a silent downgrade); "existed no later
+  than T" timestamping via a self-asserted local clock or Bitcoin-anchored
+  **OpenTimestamps**; pluggable anchoring (offline `local` default, OpenTimestamps,
+  and public-chain providers that refuse honestly rather than faking receipts).
+  Offline verification via `scripts/verify_custody.py`.
+- **GUI-configurable settings (`src/custody/settings.py`):** post-quantum signing,
+  anchoring mode, and auto-log-on-ingest are now runtime-editable from a **Chain of
+  custody** web-UI panel and `GET/PUT /api/custody/settings`, persisted to
+  `custody_settings.json`. The API/UI always report the **effective** state
+  (preference *and* library availability), so PQC/OpenTimestamps can never appear
+  enabled when the supporting extra is absent. Auto-log defaults to the legacy
+  `OO_CUSTODY_ON_INGEST` flag until a preference is saved.
+- Documented in [CHAIN_OF_CUSTODY.md](CHAIN_OF_CUSTODY.md); endpoints added to
+  [API_DOCUMENTATION.md](API_DOCUMENTATION.md).
+
 ## 0.4 — Trustworthy core + honesty pass
 
 A near-total rebuild around a small, genuinely-working spine, plus a ruthless
