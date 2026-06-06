@@ -96,6 +96,7 @@
     <button data-tab="ingest">Ingest</button>
     <button data-tab="sources">Sources &amp; Database</button>
     <button data-tab="markets">Markets</button>
+    <button data-tab="insights">Insights</button>
     <button data-tab="custody">Chain of custody</button>
     <button data-tab="settings">Settings</button>
   </nav>
@@ -395,6 +396,72 @@
     </section>
     </div>
 
+    <!-- ============================ INSIGHTS ========================= -->
+    <div class="tab-page" id="tab-insights">
+    <section class="panel">
+      <h2>Keyword &amp; entity insights</h2>
+      <p class="muted" style="margin-top:0">Analytics over keywords and entities extracted from
+        <em>ingested article text</em> (people, companies and places are single units). Trends,
+        associations (PMI) and context are real aggregates with sample sizes — nothing is invented.</p>
+      <div id="ins-status" class="hint">Loading…</div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="indexCorpus()">Index corpus</button>
+        <span id="ins-progress" class="hint" style="align-self:center"></span>
+      </div>
+      <nav class="tabs" style="position:static;padding:0;border:0;margin-top:10px">
+        <button class="active" data-ins="explore" onclick="showInsightCat('explore')">Explore</button>
+        <button data-ins="trends" onclick="showInsightCat('trends')">Trends</button>
+        <button data-ins="map" onclick="showInsightCat('map')">Map</button>
+      </nav>
+    </section>
+
+    <section class="panel ins-view" id="ins-explore">
+      <div class="row">
+        <div style="flex:3"><label for="ins-term">Keyword or entity</label>
+          <input id="ins-term" placeholder="e.g. inflation, Emmanuel Macron, Rio Tinto"
+                 onkeydown="if(event.key==='Enter')exploreTerm()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="exploreTerm()">Explore</button></div>
+      </div>
+      <div id="ins-trend" style="margin-top:12px"></div>
+      <h2 style="margin:14px 0 6px;font-size:13px">Associated keywords (mind-map)</h2>
+      <div id="ins-mindmap"></div>
+      <h2 style="margin:14px 0 6px;font-size:13px">In context</h2>
+      <div id="ins-context"></div>
+    </section>
+
+    <section class="panel ins-view" id="ins-trends" style="display:none">
+      <div class="row">
+        <div><label for="trd-window">Window (days)</label><input id="trd-window" type="number" value="7" min="1" max="365"></div>
+        <div><label for="trd-base">Baseline (days)</label><input id="trd-base" type="number" value="30" min="1" max="3650"></div>
+        <div><label for="trd-kind">Kind</label><select id="trd-kind">
+          <option value="">all</option><option value="term">terms</option><option value="entity">entities</option>
+          <option value="person">people</option><option value="org">orgs</option><option value="location">places</option></select></div>
+        <div><label for="trd-country">Country</label><input id="trd-country" placeholder="fr (optional)"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="loadTrends()">Refresh</button></div>
+      </div>
+      <div class="row" style="gap:20px;margin-top:8px">
+        <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Rising</h2><div id="trd-rising"></div></div>
+        <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Top</h2><div id="trd-top"></div></div>
+      </div>
+      <div id="trd-method" class="hint" style="margin-top:8px"></div>
+    </section>
+
+    <section class="panel ins-view" id="ins-map" style="display:none">
+      <div class="row">
+        <div><label for="map-days">Window (days)</label><input id="map-days" type="number" value="30" min="1" max="3650"></div>
+        <div><label for="map-kind">Kind</label><select id="map-kind">
+          <option value="">all</option><option value="term">terms</option><option value="entity">entities</option>
+          <option value="person">people</option><option value="org">orgs</option><option value="location">places</option></select></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="loadMap()">Refresh</button></div>
+      </div>
+      <div class="hint" style="margin-top:6px">Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).</div>
+      <h2 style="margin:12px 0 6px;font-size:13px">By country</h2>
+      <div style="overflow:auto"><table id="map-countries"></table></div>
+      <h2 style="margin:12px 0 6px;font-size:13px">By city</h2>
+      <div style="overflow:auto"><table id="map-cities"></table></div>
+    </section>
+    </div>
+
     <!-- ============================ SETTINGS ========================= -->
     <div class="tab-page" id="tab-settings">
     <section class="panel">
@@ -469,6 +536,7 @@
     const TAB_LOADERS = {
       ingest: loadScheduler,
       markets: loadMarkets,
+      insights: loadInsights,
       sources: () => { loadDbStats(); loadCoverage(); loadManagedSources(); },
       custody: loadCustody,
       settings: loadSettings,
@@ -1056,6 +1124,151 @@
       } catch (e) {
         $("mkt-chart").innerHTML = `<div class="note err">Correlation unavailable: ${esc(e.message)}</div>`;
       }
+    }
+
+    // -- Insights (keyword & entity analytics) ------------------------------ //
+    const _insLoaded = new Set();
+
+    function showInsightCat(cat) {
+      document.querySelectorAll("#tab-insights [data-ins]").forEach(b =>
+        b.classList.toggle("active", b.dataset.ins === cat));
+      document.querySelectorAll("#tab-insights .ins-view").forEach(v =>
+        v.style.display = (v.id === "ins-" + cat) ? "" : "none");
+      if (!_insLoaded.has(cat)) {
+        _insLoaded.add(cat);
+        if (cat === "trends") loadTrends();
+        if (cat === "map") loadMap();
+      }
+    }
+
+    async function loadInsights() {
+      try {
+        const s = await api("/api/insights/status");
+        $("ins-status").innerHTML =
+          `<span class="pill ${s.remaining===0?'ok':'warn'}">${s.indexed_articles}/${s.total_articles} articles indexed</span> ` +
+          `· ${s.keywords.toLocaleString()} keywords (${s.entities.toLocaleString()} entities) · ${s.mentions.toLocaleString()} mentions` +
+          (s.remaining ? ` · <strong>${s.remaining}</strong> to index` : "");
+      } catch (e) { $("ins-status").textContent = "Status unavailable: " + e.message; }
+    }
+
+    let _indexing = false;
+    async function indexCorpus() {
+      if (_indexing) return;
+      _indexing = true;
+      try {
+        let guard = 0;
+        for (;;) {
+          const r = await api("/api/insights/reindex?limit=300", {method: "POST"});
+          $("ins-progress").textContent = `indexed ${r.indexed}, ${r.remaining} remaining…`;
+          await loadInsights();
+          if (r.remaining === 0 || r.indexed === 0 || ++guard > 500) break;
+        }
+        $("ins-progress").textContent = "Indexing complete.";
+        toast("Corpus indexed.");
+      } catch (e) { toast("Indexing failed: " + e.message, "err"); }
+      finally { _indexing = false; }
+    }
+
+    function pickTerm(t) { $("ins-term").value = t; showInsightCat("explore"); exploreTerm(); }
+
+    function trendSvg(points) {
+      if (!points.length) return '<div class="muted">No mentions over time yet — index the corpus first.</div>';
+      const w = 680, h = 140, pad = 30, ys = points.map(p => p.count), maxY = Math.max(...ys, 1);
+      const X = i => pad + (w - 2*pad) * (points.length < 2 ? 0.5 : i/(points.length-1));
+      const Y = v => h - pad - (h - 2*pad) * (v / maxY);
+      const line = points.map((p, i) => `${X(i).toFixed(1)},${Y(p.count).toFixed(1)}`).join(" ");
+      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
+        <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${line}"></polyline>
+        <text x="${pad}" y="14" fill="var(--muted)" font-size="11">${maxY}</text>
+        <text x="${pad}" y="${h-8}" fill="var(--muted)" font-size="11">${esc(points[0].date)}</text>
+        <text x="${w-pad}" y="${h-8}" fill="var(--muted)" font-size="11" text-anchor="end">${esc(points[points.length-1].date)}</text>
+      </svg>`;
+    }
+
+    function mindmapSvg(center, pairs) {
+      if (!pairs.length) return '<div class="muted">No strong associations yet.</div>';
+      const w = 680, h = 440, cx = w/2, cy = h/2, top = pairs.slice(0, 14);
+      const maxP = Math.max(...top.map(p => p.pmi), 0.1);
+      let edges = "", nodes = "";
+      top.forEach((p, i) => {
+        const ang = (i / top.length) * 2 * Math.PI - Math.PI/2;
+        const r = 110 + 110 * (1 - Math.max(0, p.pmi) / maxP);   // stronger PMI -> closer
+        const x = cx + r * Math.cos(ang), y = cy + r * Math.sin(ang);
+        edges += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="${Math.max(1, Math.min(4, p.cooccur/2)).toFixed(1)}"></line>`;
+        const col = p.kind === "term" ? "var(--muted)" : "var(--accent)";
+        nodes += `<g style="cursor:pointer" onclick='pickTerm(${JSON.stringify(p.term)})'>
+          <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" fill="${col}"></circle>
+          <text x="${x.toFixed(1)}" y="${(y-9).toFixed(1)}" fill="var(--fg)" font-size="11" text-anchor="middle">${esc(p.term)} <tspan fill="var(--muted)">${p.pmi}</tspan></text></g>`;
+      });
+      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
+        ${edges}${nodes}
+        <circle cx="${cx}" cy="${cy}" r="9" fill="var(--ok)"></circle>
+        <text x="${cx}" y="${(cy-13)}" fill="var(--fg)" font-size="13" text-anchor="middle" font-weight="600">${esc(center)}</text>
+      </svg><div class="hint">Edge width = co-occurrence; distance = PMI (closer is stronger). Click a node to recenter.</div>`;
+    }
+
+    async function exploreTerm() {
+      const term = $("ins-term").value.trim();
+      if (!term) { toast("Enter a keyword or entity.", "err"); return; }
+      $("ins-trend").innerHTML = '<div class="muted">Loading…</div>';
+      $("ins-mindmap").innerHTML = ""; $("ins-context").innerHTML = "";
+      try {
+        const [tr, assoc, ctx] = await Promise.all([
+          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term)),
+          api("/api/insights/associations?term=" + encodeURIComponent(term)),
+          api("/api/insights/context?term=" + encodeURIComponent(term)),
+        ]);
+        if (!tr.resolved) { $("ins-trend").innerHTML = `<div class="note err">No indexed mentions of “${esc(term)}”. Index the corpus, or try another term.</div>`; return; }
+        const r = tr.resolved;
+        $("ins-trend").innerHTML =
+          `<div style="margin-bottom:6px">Resolved to <strong>${esc(r.term)}</strong> ` +
+          `<span class="pill">${esc(r.kind)}</span> · ${tr.total} mentions in ${tr.articles} articles</div>` +
+          trendSvg(tr.points);
+        $("ins-mindmap").innerHTML = mindmapSvg(r.term, assoc.pairs) +
+          (assoc.caveat ? `<div class="hint">${esc(assoc.caveat)}</div>` : "");
+        $("ins-context").innerHTML = (ctx.mentions || []).length
+          ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
+               <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(m.country):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
+                 ${m.url?`· <a href="${esc(m.url)}" target="_blank" rel="noopener">open</a>`:""}</div>
+               <div>${esc(m.snippet)}</div></div>`).join("")
+          : '<div class="muted">No context snippets.</div>';
+      } catch (e) { $("ins-trend").innerHTML = ""; toast("Explore failed: " + e.message, "err"); }
+    }
+
+    function termListHtml(terms, extra) {
+      if (!terms.length) return '<div class="muted">Nothing yet — index the corpus.</div>';
+      return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border)">
+        <a href="#" onclick='pickTerm(${JSON.stringify(t.term)});return false'>${esc(t.term)}</a>
+        <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
+    }
+
+    async function loadTrends() {
+      const wd = $("trd-window").value, bd = $("trd-base").value, kind = $("trd-kind").value, cc = $("trd-country").value.trim();
+      const qp = (extra) => `kind=${encodeURIComponent(kind)}${cc?"&country="+encodeURIComponent(cc):""}${extra||""}`;
+      try {
+        const [rising, top] = await Promise.all([
+          api(`/api/insights/trending?window_days=${wd}&baseline_days=${bd}&${qp()}`),
+          api(`/api/insights/top?days=${wd}&${qp()}`),
+        ]);
+        $("trd-rising").innerHTML = termListHtml(rising.terms, t => `↑${t.growth}× (recent ${t.recent}, prior ${t.prior})`);
+        $("trd-top").innerHTML = termListHtml(top.terms, t => `${t.mentions} mentions · ${t.articles} articles`);
+        $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
+      } catch (e) { toast("Trends failed: " + e.message, "err"); }
+    }
+
+    async function loadMap() {
+      const days = $("map-days").value, kind = $("map-kind").value;
+      try {
+        const d = await api(`/api/insights/map?days=${days}&kind=${encodeURIComponent(kind)}`);
+        const rowsFor = (areas, label) => areas.length
+          ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
+              `<tr><td><strong>${esc(a.code||a.name)}</strong></td><td>` +
+              a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${JSON.stringify(t.term)})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
+              `</td></tr>`).join("")
+          : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
+        $("map-countries").innerHTML = rowsFor(d.countries, "Country");
+        $("map-cities").innerHTML = rowsFor(d.cities, "City");
+      } catch (e) { toast("Map failed: " + e.message, "err"); }
     }
 
     function searchParams() {
