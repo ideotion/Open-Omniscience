@@ -97,6 +97,32 @@ def parse_recentchanges(payload: dict) -> list[dict]:
     return out
 
 
+def build_current_text_params(title: str) -> dict:
+    """Params for the current wikitext + revid of a page (for a baseline snapshot)."""
+    return {
+        "action": "query", "prop": "revisions", "titles": title,
+        "rvprop": "ids|timestamp|content|size", "rvslots": "main", "rvlimit": 1,
+        "format": "json", "formatversion": 2,
+    }
+
+
+def parse_current_text(payload: dict) -> dict:
+    """Parse a current-text response -> {revid, text, size, pageid, title} or {}."""
+    pages = (payload or {}).get("query", {}).get("pages", [])
+    if not pages:
+        return {}
+    pg = pages[0]
+    revs = pg.get("revisions", [])
+    if not revs:
+        return {}
+    r = revs[0]
+    slot = (r.get("slots", {}) or {}).get("main", {})
+    return {
+        "revid": r.get("revid"), "text": slot.get("content", ""),
+        "size": r.get("size"), "pageid": pg.get("pageid"), "title": pg.get("title"),
+    }
+
+
 def build_compare_params(from_rev: int, to_rev: int) -> dict:
     """Params for a server-computed diff between two revisions."""
     return {"action": "compare", "fromrev": from_rev, "torev": to_rev,

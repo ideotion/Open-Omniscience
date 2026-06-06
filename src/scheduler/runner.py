@@ -50,6 +50,26 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
             if isinstance(v, int):
                 agg[k] = agg.get(k, 0) + v
 
+    # Wiki mode tracks watched Wikipedia pages (revisions/diffs/flags), not sources.
+    if settings.mode == "wiki":
+        from src.wiki.client import WikiClient
+        from src.wiki.track import track_watched
+
+        res = track_watched(session, WikiClient(), limit_pages=settings.max_sources_per_run)
+        finished = datetime.now(UTC)
+        return {
+            "mode": "wiki",
+            "sources_processed": res["pages"],
+            "articles_stored": 0,
+            "wiki_new_revisions": res["new_revisions"],
+            "wiki_flagged": res["flagged"],
+            "pages_fetched": 0,
+            "tally": {"new_revisions": res["new_revisions"], "flagged": res["flagged"]},
+            "started_at": started.isoformat(),
+            "finished_at": finished.isoformat(),
+            "duration_s": round((finished - started).total_seconds(), 2),
+        }
+
     # Markets mode iterates configured extraction rules, not sources.
     if settings.mode == "markets":
         from src.markets.pipeline import run_rules
