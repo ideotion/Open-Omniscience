@@ -59,12 +59,16 @@ diff + provenance (revid, editor, timestamp), which plugs into the existing
 
 ## Status
 
-- **Done (Phase 1):** schema (`wiki_pages`, `wiki_revisions`; migration
-  `d4e5f6a7b8c9`), the MediaWiki API parser (`src/wiki/mediawiki.py`), and the
-  edit-flagging logic (`src/wiki/flagging.py`) — pure, unit-tested with fixtures.
-- **Next:** live polling client + scheduler `wiki` mode + ORES client; the
-  Wikipedia tab (watchlist, flagged-edit feed, diff viewer, evidence export;
-  diffs feed the Insights analytics); then the offline baseline downloader.
+- **Done:** schema (`wiki_pages`, `wiki_revisions`; migration `d4e5f6a7b8c9`);
+  the MediaWiki API parser + live client (`mediawiki.py`, `client.py`); the
+  edit-flagging logic (`flagging.py`); ORES client (`ores.py`); the tracking
+  orchestrator (`track.py`, baseline + delta storage); the scheduler `wiki` mode;
+  the **API** (`/api/wiki/*`) and the **Wikipedia tab** (watchlist, track now,
+  flagged-changes feed, diff viewer); and the **offline baseline downloader**
+  (`dumps.py` — per-language, resumable, size probe) with its UI panel. All pure
+  logic + orchestration unit-tested with fixtures (no network).
+- **Next:** cross-link wiki diffs into the Insights keyword analytics; optional
+  EventStreams firehose; evidence-export of a flagged diff via chain-of-custody.
 
 ## Ethics
 

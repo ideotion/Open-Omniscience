@@ -515,6 +515,20 @@
       <div style="overflow:auto;margin-top:10px"><table id="wiki-changes"></table></div>
       <div id="wiki-diff" style="margin-top:10px"></div>
     </section>
+
+    <section class="panel">
+      <h2>Offline baseline (per-language, optional)</h2>
+      <p class="muted" style="margin-top:0">Heavy and separate from live tracking. Downloads the official
+        Wikimedia current-text dump for an edition (resumable). enwiki ≈ tens of GB; most editions are far
+        smaller. Not needed for change-tracking — only for offline reading/search.</p>
+      <div class="row">
+        <div><label for="dump-lang">Edition</label><input id="dump-lang" value="en" placeholder="en / fr / …"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="probeDump()">Estimate size</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
+        <div id="dump-estimate" class="hint" style="align-self:center"></div>
+      </div>
+      <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>
+    </section>
     </div>
 
     <!-- ============================ SETTINGS ========================= -->
@@ -1396,7 +1410,53 @@
           `${s.revisions.toLocaleString()} tracked edits · ` +
           `<span class="pill ${s.flagged?'warn':'ok'}">${s.flagged} flagged</span>`;
       } catch (e) { $("wiki-status").textContent = "Status unavailable: " + e.message; }
-      loadWikiPages(); loadWikiChanges();
+      loadWikiPages(); loadWikiChanges(); loadWikiDumps();
+    }
+
+    async function loadWikiDumps() {
+      try {
+        const d = await api("/api/wiki/dumps");
+        const t = $("dump-table");
+        if (!d.downloads.length) { t.innerHTML = `<tr><td class="muted">No offline downloads.</td></tr>`; return; }
+        t.innerHTML = "<tr><th>Edition</th><th>Progress</th><th>Status</th><th></th></tr>" +
+          d.downloads.map(e => `<tr>
+            <td><strong>${esc(e.wiki)}</strong> <span class="muted">${esc(e.kind)}</span></td>
+            <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:""}</td>
+            <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
+            <td style="white-space:nowrap">
+              ${e.status==='downloading'?`<button class="tiny secondary" onclick="pauseDump(${JSON.stringify(esc(e.key))})">Pause</button>`:
+                (e.status!=='done'?`<button class="tiny secondary" onclick="startDump(${JSON.stringify(esc(e.wiki))})">Resume</button>`:"")}
+              <button class="tiny danger" onclick="deleteDump(${JSON.stringify(esc(e.key))})">Delete</button>
+            </td></tr>`).join("");
+      } catch (e) { /* dumps optional */ }
+    }
+
+    async function probeDump() {
+      const w = $("dump-lang").value.trim() || "en";
+      $("dump-estimate").textContent = "Checking size…";
+      try {
+        const d = await api(`/api/wiki/dumps/probe?wiki=${encodeURIComponent(w)}`);
+        $("dump-estimate").textContent = d.size_bytes ? `≈ ${humanBytes(d.size_bytes)} for ${d.wiki}` : "size unknown";
+      } catch (e) { $("dump-estimate").textContent = "size check failed"; }
+    }
+
+    async function startDump(wiki) {
+      const w = wiki || $("dump-lang").value.trim() || "en";
+      if (!wiki && !confirm(`Download the ${w} current-text dump? This can be very large (tens of GB for big editions).`)) return;
+      try { await api("/api/wiki/dumps/start", {method:"POST", body: JSON.stringify({wiki: w})});
+        toast("Download started."); loadWikiDumps();
+        // refresh progress a few times
+        let n=0; const poll=setInterval(()=>{ loadWikiDumps(); if(++n>40) clearInterval(poll); }, 3000);
+      } catch (e) { toast("Start failed: " + e.message, "err"); }
+    }
+    async function pauseDump(key) {
+      try { await api("/api/wiki/dumps/pause?key="+encodeURIComponent(key), {method:"POST"}); loadWikiDumps(); }
+      catch (e) { toast("Pause failed: " + e.message, "err"); }
+    }
+    async function deleteDump(key) {
+      if (!confirm("Delete this download and its file?")) return;
+      try { await api("/api/wiki/dumps?key="+encodeURIComponent(key), {method:"DELETE"}); loadWikiDumps(); }
+      catch (e) { toast("Delete failed: " + e.message, "err"); }
     }
 
     async function loadWikiPages() {

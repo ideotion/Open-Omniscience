@@ -75,12 +75,13 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   a tracked source whose *edits* are the data — one baseline snapshot then
   diffs/deltas (not re-copies), with honest large-edit/revisionism flagging (size
   delta, revert/blank tags, anon/burst, optional **ORES** scores), a flagged-edit
-  feed and diff viewer. See [docs/WIKIPEDIA.md](docs/WIKIPEDIA.md).
+  feed and diff viewer, plus an optional **offline baseline downloader**
+  (per-language, resumable, size-probed) kept separate from live tracking. See
+  [docs/WIKIPEDIA.md](docs/WIKIPEDIA.md).
 
 **In progress / next:**
-- 🚧 Wikipedia **offline baseline downloader** (per-language, with size estimates,
-  resumable) — kept separate from live tracking; local LLM analysis via Ollama;
-  email + monitoring.
+- 🚧 Local LLM analysis via Ollama; email + monitoring; cross-linking Wikipedia
+  diffs into the Insights keyword analytics.
 
 See [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md) for the full phasing.
 

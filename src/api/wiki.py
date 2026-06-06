@@ -140,6 +140,56 @@ def changes(
     return {"count": len(rows), "changes": [_serialize_rev(r, page=p) for r, p in rows]}
 
 
+# ----------------------------- offline dumps -------------------------------- #
+# Separate, optional, heavy: per-language baseline downloads (resumable).
+
+
+class StartDump(BaseModel):
+    wiki: str
+    kind: str = "pages-articles"
+
+
+@router.get("/dumps")
+def dumps_list() -> dict:
+    from src.wiki.dumps import get_manager
+
+    return {"downloads": get_manager().list()}
+
+
+@router.get("/dumps/probe")
+def dumps_probe(wiki: str, kind: str = "pages-articles") -> dict:
+    from src.wiki.dumps import dump_url, get_manager
+
+    size = get_manager().probe_size(wiki, kind)
+    return {"wiki": wiki.lower(), "kind": kind, "url": dump_url(wiki, kind), "size_bytes": size}
+
+
+@router.post("/dumps/start")
+def dumps_start(payload: StartDump) -> dict:
+    from src.wiki.dumps import get_manager
+
+    if not payload.wiki.strip():
+        raise HTTPException(status_code=400, detail="wiki is required.")
+    try:
+        return get_manager().start(payload.wiki, payload.kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/dumps/pause")
+def dumps_pause(key: str) -> dict:
+    from src.wiki.dumps import get_manager
+
+    return {"paused": get_manager().pause(key)}
+
+
+@router.delete("/dumps")
+def dumps_delete(key: str) -> dict:
+    from src.wiki.dumps import get_manager
+
+    return {"deleted": get_manager().delete(key)}
+
+
 @router.get("/revisions/{rev_id}")
 def revision_detail(rev_id: int, db: Session = Depends(get_db)) -> dict:
     r = db.query(WikiRevision).filter_by(id=rev_id).first()
