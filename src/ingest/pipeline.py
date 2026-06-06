@@ -108,7 +108,41 @@ def ingest_url(
         # loop continues, and report the duplicate rather than aborting the batch.
         session.rollback()
         return IngestOutcome(url, IngestResult.DUPLICATE, detail="content hash already stored (race)")
+    _maybe_record_custody(article)
     return IngestOutcome(url, IngestResult.STORED, article_id=article.id)
+
+
+def _maybe_record_custody(article: Article) -> None:
+    """Opt-in: append a signed custody entry for a freshly stored article.
+
+    Best-effort and fail-open: custody logging must never break ingestion, so any
+    error here is swallowed (and logged). Controlled by the GUI-editable custody
+    setting ``auto_log_on_ingest`` (which defaults to the legacy
+    OO_CUSTODY_ON_INGEST flag until a preference is saved). The item_hash is the
+    article's content hash, so the custody entry binds to exactly the bytes that
+    were stored.
+    """
+    try:
+        from src.custody.settings import load_settings
+
+        prefs = load_settings()
+        if not prefs.auto_log_on_ingest:
+            return
+        from src.custody.log import CustodyAction, CustodyLog
+
+        with CustodyLog() as log:
+            log.record(
+                f"article:{article.id}",
+                article.hash,
+                CustodyAction.INGEST,
+                actor=prefs.default_actor or "ingest-pipeline",
+                metadata={"url": article.url, "canonical_url": article.canonical_url,
+                          "source_id": article.source_id},
+            )
+    except Exception:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
+        import logging
+
+        logging.getLogger(__name__).warning("custody logging on ingest failed", exc_info=True)
 
 
 def ingest_source(

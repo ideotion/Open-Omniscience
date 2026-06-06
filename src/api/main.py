@@ -78,6 +78,9 @@ from src.api.monitoring import router as monitoring_router
 # Import reporting router (signed, tamper-evident evidence bundles)
 from src.api.reporting import router as reporting_router
 
+# Import custody router (append-only signed chain-of-custody log + anchoring)
+from src.api.custody import router as custody_router
+
 # Import source management router
 from src.api.source_management import router as source_management_router
 
@@ -202,6 +205,7 @@ app.include_router(monitoring_router)
 
 # Include reporting router
 app.include_router(reporting_router)
+app.include_router(custody_router)
 
 # Include verification router
 app.include_router(verification_router)
