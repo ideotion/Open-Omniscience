@@ -102,6 +102,25 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
     }
 
 
+@router.get("/coverage")
+def country_coverage(db: Session = Depends(get_db)) -> dict:
+    """How many countries the source catalog reaches, plus the gaps.
+
+    Counts are computed from the country code on each source (real data), scored
+    against the ISO 3166-1 set — so progress toward worldwide coverage is measured,
+    never asserted. ``missing`` lists country codes with no source yet; ``thin``
+    lists covered countries with very few.
+    """
+    from src.catalog.coverage import country_counts_from_session, coverage_report
+
+    counts = country_counts_from_session(db)
+    report = coverage_report(counts)
+    # Trim potentially long lists for the UI; full data stays available via counts.
+    report["missing"] = report["missing"][:60]
+    report["per_country"] = dict(sorted(counts.items()))
+    return report
+
+
 @router.get("/backup")
 def download_backup() -> FileResponse:
     """Stream a consistent SQLite snapshot of the corpus as a download.

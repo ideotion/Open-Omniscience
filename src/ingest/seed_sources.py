@@ -28,6 +28,11 @@ DEFAULT_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "source
 # catalog is not duplicated.
 MARKETS_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "markets_sources.yml"
 
+# Optional, generator-produced worldwide catalog (news organisations + official
+# institutions by country, from Wikidata). Absent until a maintainer runs
+# scripts/build_world_news_catalog.py; seeded automatically once present.
+WORLD_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "world_news_sources.yml"
+
 # YAML keys that map 1:1 to Source columns (everything except name/domain/tags,
 # which are handled explicitly).
 _PASSTHROUGH_FIELDS = (
@@ -87,12 +92,15 @@ def seed_sources(session: Session, sources: list[dict]) -> dict[str, int]:
 def seed_default_sources(session: Session, path: Path | None = None) -> dict[str, int]:
     """Convenience: load the curated catalog(s) and seed them.
 
-    With the default catalog (``path is None``) the worldwide markets catalog is
-    appended too, so a fresh install ships ready to ingest financial-market,
-    stock-exchange and commodity/rare-earth coverage. An explicit ``path`` seeds
-    only that file (used by tests). Dedup-by-domain handles any overlap.
+    With the default catalog (``path is None``) the worldwide markets catalog and,
+    when present, the generated world news+institutions catalog are appended too,
+    so a fresh install ships ready to ingest market and global political coverage.
+    An explicit ``path`` seeds only that file (used by tests). Dedup-by-domain
+    handles any overlap across the catalogs.
     """
     sources = load_sources_from_yaml(path)
-    if path is None and MARKETS_SOURCES_PATH.exists():
-        sources = sources + load_sources_from_yaml(MARKETS_SOURCES_PATH)
+    if path is None:
+        for extra in (MARKETS_SOURCES_PATH, WORLD_SOURCES_PATH):
+            if extra.exists():
+                sources = sources + load_sources_from_yaml(extra)
     return seed_sources(session, sources)

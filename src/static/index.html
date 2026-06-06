@@ -201,6 +201,16 @@
     </section>
 
     <section class="panel">
+      <h2>World coverage</h2>
+      <div class="hint" style="margin-bottom:10px">How many countries the source catalog reaches
+        (by each source's country code, scored against ISO&nbsp;3166). Measured from the data — and
+        it shows exactly which countries still have no source, to drive expansion.</div>
+      <div id="coverage-summary" class="stat-grid"><div class="muted">Loading…</div></div>
+      <div id="coverage-gaps" class="hint" style="margin-top:10px"></div>
+      <button class="secondary" onclick="loadCoverage()">Refresh</button>
+    </section>
+
+    <section class="panel">
       <h2>Add a source</h2>
       <div class="row">
         <div><label for="s-name">Name</label><input id="s-name" placeholder="Example News"></div>
@@ -431,7 +441,7 @@
     const TAB_LOADERS = {
       ingest: loadScheduler,
       markets: loadMarkets,
-      sources: () => { loadDbStats(); loadManagedSources(); },
+      sources: () => { loadDbStats(); loadCoverage(); loadManagedSources(); },
       custody: loadCustody,
       settings: loadSettings,
     };
@@ -555,6 +565,24 @@
       } catch (e) { el.innerHTML = `<div class="note err">Could not load stats: ${esc(e.message)}</div>`; }
     }
 
+    // -- World coverage ----------------------------------------------------- //
+    async function loadCoverage() {
+      const el = $("coverage-summary");
+      el.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const c = await api("/api/database/coverage");
+        el.innerHTML =
+          `<div class="stat"><div class="n">${c.covered}/${c.total_countries}</div><div class="k">countries</div></div>` +
+          `<div class="stat"><div class="n">${c.coverage_pct}%</div><div class="k">coverage</div></div>` +
+          `<div class="stat"><div class="n">${c.missing_count}</div><div class="k">missing</div></div>` +
+          `<div class="stat"><div class="n">${(c.thin||[]).length}</div><div class="k">thin (&lt;${c.thin_threshold})</div></div>`;
+        const missing = (c.missing || []);
+        $("coverage-gaps").innerHTML = missing.length
+          ? `Missing (sample): ` + missing.map(x => `<span class="pill">${esc(x)}</span>`).join(" ")
+          : `<span class="pill ok">every listed country has at least one source</span>`;
+      } catch (e) { el.innerHTML = `<div class="note err">Coverage unavailable: ${esc(e.message)}</div>`; }
+    }
+
     // -- Sources: ingest dropdown + add + seed ------------------------------ //
     async function loadSources() {
       let sources = [];
@@ -569,7 +597,7 @@
       try {
         const r = await api("/api/sources/seed-defaults", {method: "POST"});
         toast(`Seeded ${r.seeded.created} new source(s) (${r.seeded.skipped} already present).`);
-        loadSources(); loadManagedSources(); loadDbStats();
+        loadSources(); loadManagedSources(); loadDbStats(); loadCoverage();
       } catch (e) { toast("Seed failed: " + e.message, "err"); }
     }
 

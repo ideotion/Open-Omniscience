@@ -1,0 +1,42 @@
+# Open Omniscience — world catalog generator query config.
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# Drives scripts/build_world_news_catalog.py. It queries Wikidata (CC0) per
+# country (ISO 3166-1 alpha-2, via P297) for entities of the listed Wikidata
+# *type* item-ids that have an official website (P856). Edit freely — this is the
+# single place to tune what counts as a "source" worldwide.
+#
+# How to find/verify a Wikidata type id: open https://www.wikidata.org, search the
+# concept (e.g. "newspaper"), the id is the "Q…" on its page. Subtypes are included
+# automatically (P31/P279*), so a broad type pulls its specialisations too.
+#
+# label_lang: preferred language for entity names (falls back to English).
+# limit: max rows per (country, spec) query.
+
+label_lang: en
+limit: 3000
+
+specs:
+  # ---- News media ---------------------------------------------------------- #
+  # Confident, widely-used types. Add/remove ids to widen or narrow coverage.
+  - source_type: news
+    tags: [news, world-catalog]
+    type_qids:
+      - Q11032      # newspaper
+      - Q1110794    # daily newspaper
+      - Q1153191    # online newspaper
+      - Q192283     # news agency
+      - Q1616075    # television station
+      - Q14350      # radio station
+      - Q1002697    # periodical (magazines etc.)
+
+  # ---- Official institutions ---------------------------------------------- #
+  # Primary-source political channels. VERIFY these ids on wikidata.org for your
+  # needs before a full run — wrong ids simply return fewer rows (never fabricated
+  # data). Start conservative and widen as you confirm results per country.
+  - source_type: institution
+    tags: [government, institution, world-catalog]
+    type_qids:
+      - Q189445     # legislature        (verify)
+      - Q192350     # ministry           (verify)
+      - Q327333     # government agency   (verify)
