@@ -647,6 +647,11 @@ class Keyword(Base):
     relevance_score = Column(Float, default=0.0)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+    # Provenance: which extractor labelled this term (e.g. "baseline", "spacy",
+    # "llm:<model>"). An entity type is a *labelled-by-X assertion*, never ground
+    # truth -- this records the X (PRODUCT_SYNTHESIS §8).
+    extractor = Column(String(40))
     
     # Relationships
     category = relationship("KeywordCategory", back_populates="keywords")
@@ -1133,6 +1138,48 @@ class MarketExtractionRule(Base):
 
     def __repr__(self) -> str:
         return f"<MarketExtractionRule({self.symbol} <- {self.selector!r} @ {self.url})>"
+
+
+class KeywordMention(Base):
+    """One article's mention of a keyword/entity, with context + denormalised facets.
+
+    The foundation of keyword analytics. One row per (article, keyword): ``count``
+    is how many times the term occurs in that article and ``first_offset`` points
+    at the first occurrence so the surrounding sentence can be reconstructed from
+    ``Article.content`` on read (we store offsets, not snippets, to stay lean).
+
+    ``observed_on`` (the article's publish/ingest date), ``country`` and ``city``
+    are denormalised from the article's source so trend, map and per-region
+    queries are a single indexed scan instead of a multi-join. ``extractor``
+    records how the keyword was found (provenance).
+    """
+
+    __tablename__ = "keyword_mentions"
+
+    id = Column(Integer, primary_key=True)
+    keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
+    article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
+    count = Column(Integer, nullable=False, default=1)
+    first_offset = Column(Integer)                 # char offset in Article.content
+    observed_on = Column(Date, index=True)         # denormalised article date (for trends)
+    country = Column(String(2))                    # denormalised source country (for the map)
+    city = Column(String(120))                     # denormalised source city, when known
+    extractor = Column(String(40))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    keyword = relationship("Keyword")
+    article = relationship("Article")
+
+    __table_args__ = (
+        # One mention row per article+keyword; re-indexing updates it in place.
+        Index("ix_mention_keyword_article", "keyword_id", "article_id", unique=True),
+        Index("ix_mention_keyword_date", "keyword_id", "observed_on"),
+        Index("ix_mention_country", "country"),
+        Index("ix_mention_article", "article_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<KeywordMention(kw={self.keyword_id} art={self.article_id} x{self.count})>"
 
 
 
