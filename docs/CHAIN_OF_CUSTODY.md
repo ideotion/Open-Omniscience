@@ -90,6 +90,25 @@ on your own clock or key:
 
 REST: `POST /api/custody/anchor`, `GET /api/custody/providers`.
 
+### 5. Settings — `src/custody/settings.py` (GUI‑configurable)
+Custody behaviour is operator‑controlled at runtime, not just via env/YAML.
+Preferences persist to `custody_settings.json` under the data dir and are edited
+from the **Chain of custody** panel in the web UI (or the REST API):
+
+- **`pqc_enabled`** — request hybrid Ed25519 + ML‑DSA signing.
+- **`anchoring_mode`** — `local` (default) or `opentimestamps`.
+- **`auto_log_on_ingest`** — append a signed entry on every successful ingest
+  (defaults to the legacy `OO_CUSTODY_ON_INGEST` flag until a preference is saved).
+- **`default_actor`** — optional actor label for auto‑logged entries.
+
+**Honesty invariant.** A toggle is a *request*, not a guarantee. The API and GUI
+always surface the **effective** state (preference **AND** library availability):
+if PQC is enabled but `pqcrypto` is not installed, the signer stays Ed25519‑only
+and the UI says so — it never shows a green "hybrid" light it cannot back up. Same
+for OpenTimestamps without the `timestamping` extra.
+
+REST: `GET /api/custody/settings`, `PUT /api/custody/settings`.
+
 A typical "maximum proof" workflow:
 
 ```

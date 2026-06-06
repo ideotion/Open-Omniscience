@@ -116,14 +116,17 @@ def _maybe_record_custody(article: Article) -> None:
     """Opt-in: append a signed custody entry for a freshly stored article.
 
     Best-effort and fail-open: custody logging must never break ingestion, so any
-    error here is swallowed (and logged). Enable with OO_CUSTODY_ON_INGEST=1 (see
-    Config.custody_on_ingest). The item_hash is the article's content hash, so the
-    custody entry binds to exactly the bytes that were stored.
+    error here is swallowed (and logged). Controlled by the GUI-editable custody
+    setting ``auto_log_on_ingest`` (which defaults to the legacy
+    OO_CUSTODY_ON_INGEST flag until a preference is saved). The item_hash is the
+    article's content hash, so the custody entry binds to exactly the bytes that
+    were stored.
     """
     try:
-        from src.config import get_config
+        from src.custody.settings import load_settings
 
-        if not get_config().custody_on_ingest:
+        prefs = load_settings()
+        if not prefs.auto_log_on_ingest:
             return
         from src.custody.log import CustodyAction, CustodyLog
 
@@ -132,7 +135,7 @@ def _maybe_record_custody(article: Article) -> None:
                 f"article:{article.id}",
                 article.hash,
                 CustodyAction.INGEST,
-                actor="ingest-pipeline",
+                actor=prefs.default_actor or "ingest-pipeline",
                 metadata={"url": article.url, "canonical_url": article.canonical_url,
                           "source_id": article.source_id},
             )

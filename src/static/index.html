@@ -126,6 +126,59 @@
       <button class="secondary" onclick="seedDefaults()" title="Register a curated starter set of public-interest RSS sources">Seed starter sources</button>
       <div style="overflow:auto; margin-top:12px;"><table id="sources"></table></div>
     </section>
+
+    <!-- Chain of custody -->
+    <section class="panel">
+      <h2>Chain of custody</h2>
+      <p class="muted" style="margin-top:0">
+        Tamper-evident, signed provenance for legal defensibility. Toggles below are
+        <em>preferences</em>; the status line shows what this build can actually do.
+      </p>
+
+      <div id="custody-status" class="hint">Loading custody settings…</div>
+
+      <div class="row" style="margin-top:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="cust-pqc" style="width:auto"> Post-quantum signatures
+          <span class="muted" title="Add an ML-DSA (FIPS 204) signature alongside Ed25519 so the chain stays verifiable against a future quantum adversary.">(?)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="cust-ots" style="width:auto"> OpenTimestamps anchoring
+          <span class="muted" title="Anchor entries into Bitcoin via public calendars. Independent proof of time, but requires network egress and reveals your IP/timing to the calendars.">(?)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="cust-autolog" style="width:auto"> Auto-log on ingest
+        </label>
+      </div>
+      <div id="cust-ots-warn" class="hint" style="display:none;color:#b45309">
+        Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the
+        calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div><label for="cust-actor">Default actor <span class="muted">(optional)</span></label>
+          <input id="cust-actor" placeholder="e.g. j.doe@newsroom"></div>
+      </div>
+      <button onclick="saveCustody()">Save custody settings</button>
+
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0">
+
+      <div class="row">
+        <div style="flex:2"><label for="cust-item">Item id</label>
+          <input id="cust-item" placeholder="e.g. article:42"></div>
+      </div>
+      <div class="row">
+        <button class="secondary" onclick="viewChain()">View chain</button>
+        <button class="secondary" onclick="verifyChain()">Verify</button>
+        <button class="secondary" onclick="exportCustody()" title="Offline-verifiable bundle">Export bundle</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div style="flex:2"><label for="cust-root">Merkle root (hex) to anchor</label>
+          <input id="cust-root" placeholder="64-char SHA-256 hex"></div>
+        <div><label>&nbsp;</label><button class="secondary" onclick="anchorRoot()">Anchor root</button></div>
+      </div>
+      <div id="cust-result" class="hint" style="margin-top:8px"></div>
+      <div style="overflow:auto; margin-top:8px;"><table id="cust-entries"></table></div>
+    </section>
   </main>
 
   <div id="toast"></div>
@@ -331,8 +384,120 @@
       } catch (e) { toast("Evidence export: " + e.message, "err"); }
     }
 
+    // -- Chain of custody --------------------------------------------------- //
+    function renderCustodyStatus(s) {
+      const id = s.signer || {};
+      const trunc = (h) => h ? esc(h.slice(0, 16)) + "…" : "—";
+      const pqcPill = s.pqc_effective
+        ? '<span class="pill ok">hybrid (Ed25519 + ML-DSA)</span>'
+        : (s.pqc_enabled && !s.pqc_available
+            ? '<span class="pill warn">requested, library not installed</span>'
+            : '<span class="pill">Ed25519 only</span>');
+      const otsPill = s.ots_effective
+        ? '<span class="pill ok">OpenTimestamps (Bitcoin)</span>'
+        : (s.anchoring_mode === "opentimestamps" && !s.ots_available
+            ? '<span class="pill warn">requested, library not installed</span>'
+            : '<span class="pill">local-only</span>');
+      $("custody-status").innerHTML =
+        `Signing: ${pqcPill} &nbsp; Timestamps: ${otsPill} &nbsp;` +
+        `<span class="pill ${s.key_protection==='aes256gcm-scrypt'?'ok':'warn'}" ` +
+        `title="Set OO_KEY_PASSPHRASE to encrypt keys at rest">keys: ${esc(s.key_protection)}</span>` +
+        `<div class="muted" style="font-size:12px;margin-top:4px">` +
+        `Ed25519 pub ${trunc(id.ed25519_pub)}` +
+        (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>`;
+    }
+
+    function applyCustodyToggles(s) {
+      $("cust-pqc").checked = !!s.pqc_enabled;
+      $("cust-ots").checked = s.anchoring_mode === "opentimestamps";
+      $("cust-autolog").checked = !!s.auto_log_on_ingest;
+      $("cust-actor").value = s.default_actor || "";
+      $("cust-ots-warn").style.display = $("cust-ots").checked ? "block" : "none";
+    }
+
+    async function loadCustody() {
+      try {
+        const s = await api("/api/custody/settings");
+        renderCustodyStatus(s); applyCustodyToggles(s);
+      } catch (e) { $("custody-status").textContent = "Custody settings unavailable: " + e.message; }
+    }
+
+    async function saveCustody() {
+      const body = {
+        pqc_enabled: $("cust-pqc").checked,
+        anchoring_mode: $("cust-ots").checked ? "opentimestamps" : "local",
+        auto_log_on_ingest: $("cust-autolog").checked,
+        default_actor: $("cust-actor").value.trim() || null,
+      };
+      try {
+        const s = await api("/api/custody/settings", {method: "PUT", body: JSON.stringify(body)});
+        renderCustodyStatus(s); applyCustodyToggles(s);
+        if (s.pqc_enabled && !s.pqc_available)
+          toast("PQC requested, but the 'pqc' extra is not installed — signing stays Ed25519-only.", "warn");
+        else if (s.anchoring_mode === "opentimestamps" && !s.ots_available)
+          toast("OpenTimestamps requested, but the 'timestamping' extra is not installed.", "warn");
+        else toast("Custody settings saved.");
+      } catch (e) { toast("Save failed: " + e.message, "err"); }
+    }
+
+    function custItem() {
+      const id = $("cust-item").value.trim();
+      if (!id) { toast("Enter an item id (e.g. article:42).", "err"); return null; }
+      return id;
+    }
+
+    async function viewChain() {
+      const id = custItem(); if (!id) return;
+      try {
+        const d = await api("/api/custody/" + encodeURIComponent(id));
+        const t = $("cust-entries");
+        t.innerHTML = "<tr><th>#</th><th>Action</th><th>Actor</th><th>Time</th><th>Sig</th></tr>" +
+          d.entries.map(e =>
+            `<tr><td>${e.seq}</td><td>${esc(e.action)}</td><td>${esc(e.actor||"—")}</td>
+             <td class="muted" style="font-size:12px">${esc((e.timestamp&&e.timestamp.asserted_time||e.timestamp&&e.timestamp.kind)||"—")}</td>
+             <td><span class="pill">${esc(e.signature&&e.signature.algorithm||"?")}</span></td></tr>`).join("");
+        $("cust-result").textContent = `${d.entry_count} custody entr${d.entry_count===1?"y":"ies"}.`;
+      } catch (e) { $("cust-entries").innerHTML = ""; toast("View chain: " + e.message, "err"); }
+    }
+
+    async function verifyChain() {
+      const id = custItem(); if (!id) return;
+      try {
+        const d = await api("/api/custody/" + encodeURIComponent(id) + "/verify");
+        $("cust-result").innerHTML = d.verified
+          ? '<span class="pill ok">verified</span> chain intact, signatures valid.'
+          : '<span class="pill err">FAILED</span> ' + esc((d.issues||[]).join("; "));
+      } catch (e) { toast("Verify: " + e.message, "err"); }
+    }
+
+    async function exportCustody() {
+      const id = $("cust-item").value.trim();
+      try {
+        const bundle = await api("/api/custody/export" + (id ? "?item_id=" + encodeURIComponent(id) : ""));
+        const blob = new Blob([JSON.stringify(bundle, null, 2)], {type: "application/json"});
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "custody-bundle.json"; a.click();
+        toast(`Bundle: ${bundle.entry_count} entr${bundle.entry_count===1?"y":"ies"} — verify with scripts/verify_custody.py`);
+      } catch (e) { toast("Export: " + e.message, "err"); }
+    }
+
+    async function anchorRoot() {
+      const root = $("cust-root").value.trim();
+      if (!root) { toast("Enter a Merkle root (hex).", "err"); return; }
+      const provider = $("cust-ots").checked ? "opentimestamps" : "local";
+      try {
+        const r = await api("/api/custody/anchor",
+          {method: "POST", body: JSON.stringify({merkle_root: root, provider})});
+        $("cust-result").innerHTML = `Anchored via <span class="pill ok">${esc(r.provider)}</span> — ${esc(r.detail)}`;
+      } catch (e) { toast("Anchor: " + e.message, "err"); }
+    }
+
+    $("cust-ots").addEventListener("change", () =>
+      $("cust-ots-warn").style.display = $("cust-ots").checked ? "block" : "none");
+
     $("q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
-    loadHealth(); loadLlmHealth(); loadSources(); doSearch();
+    loadHealth(); loadLlmHealth(); loadSources(); doSearch(); loadCustody();
   </script>
 </body>
 </html>

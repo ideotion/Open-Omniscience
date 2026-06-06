@@ -132,7 +132,18 @@ class HybridSigner:
     Ed25519-only and says so via :pyattr:`is_hybrid`.
     """
 
-    def __init__(self, ed25519_path: Path | None = None, mldsa_path: Path | None = None):
+    def __init__(
+        self,
+        ed25519_path: Path | None = None,
+        mldsa_path: Path | None = None,
+        *,
+        use_pqc: bool = True,
+    ):
+        # ``use_pqc`` is the operator's *preference* (see src/custody/settings).
+        # When False we sign Ed25519-only and label the result "ed25519" even if
+        # the post-quantum library is installed -- the toggle can suppress PQC but
+        # the label can never claim quantum resistance that was not produced.
+        self._use_pqc = use_pqc
         self._ed_path = ed25519_path or (_keys_dir() / "custody_ed25519.pem")
         self._mldsa_path = mldsa_path or (_keys_dir() / "custody_ml_dsa_65.key")
         for p in (self._ed_path, self._mldsa_path):
@@ -145,6 +156,16 @@ class HybridSigner:
     @property
     def is_hybrid(self) -> bool:
         return self._mldsa_sk is not None
+
+    @property
+    def pqc_requested(self) -> bool:
+        """Whether post-quantum signing was *asked for* (regardless of availability)."""
+        return self._use_pqc
+
+    @property
+    def pqc_unavailable_but_requested(self) -> bool:
+        """True when the operator wants PQC but the library cannot provide it."""
+        return self._use_pqc and not PQC_AVAILABLE
 
     @property
     def key_protection(self) -> str:
@@ -174,7 +195,7 @@ class HybridSigner:
 
     # -- ML-DSA ------------------------------------------------------------ #
     def _load_or_create_mldsa(self) -> tuple[bytes | None, bytes | None]:
-        if not PQC_AVAILABLE:
+        if not self._use_pqc or not PQC_AVAILABLE:
             return None, None
         if self._mldsa_path.exists():
             blob = self._mldsa_path.read_bytes()

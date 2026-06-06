@@ -33,7 +33,13 @@ from enum import Enum
 
 from src.custody import signing
 from src.custody.signing import HybridSigner, PublicIdentity, canonical_bytes
-from src.custody.timestamp import TimestampProof, local_timestamp, sha256
+from src.custody.timestamp import (
+    TimestampProof,
+    TimestampUnavailable,
+    local_timestamp,
+    ots_stamp,
+    sha256,
+)
 
 GENESIS_PREV = "0" * 64
 LOG_VERSION = "oo-custody-1"
@@ -107,13 +113,30 @@ class CustodyEntry:
 class CustodyLog:
     """SQLite-backed append-only custody log."""
 
-    def __init__(self, db_path: str | None = None, signer: HybridSigner | None = None):
+    def __init__(
+        self,
+        db_path: str | None = None,
+        signer: HybridSigner | None = None,
+        anchoring_mode: str | None = None,
+    ):
         if db_path is None:
             from src.paths import data_dir
 
             db_path = str(data_dir() / "custody_log.db")
         self.db_path = db_path
-        self.signer = signer or HybridSigner()
+        # Honour the operator's GUI-configured preferences when not overridden.
+        # The signer's PQC use and the default anchoring mode both come from the
+        # persisted custody settings unless explicitly passed in (tests / callers).
+        if signer is None or anchoring_mode is None:
+            from src.custody.settings import load_settings
+
+            prefs = load_settings()
+            if signer is None:
+                signer = HybridSigner(use_pqc=prefs.pqc_enabled)
+            if anchoring_mode is None:
+                anchoring_mode = prefs.anchoring_mode
+        self.signer = signer
+        self.anchoring_mode = anchoring_mode
         self.conn = sqlite3.connect(db_path)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self._init_db()
@@ -181,7 +204,7 @@ class CustodyLog:
             "prev_entry_hash": prev_hash,
         }
         digest = sha256(canonical_bytes(partial))
-        ts = (timestamp or local_timestamp(digest)).to_dict()
+        ts = (timestamp or self._default_timestamp(digest)).to_dict()
         core = {**partial, "timestamp": ts}
         entry_hash = _entry_digest(core)
         sig = self.signer.sign(canonical_bytes(core))
@@ -219,6 +242,28 @@ class CustodyLog:
             signature=sig,
             timestamp=ts,
         )
+
+    def _default_timestamp(self, digest: bytes) -> TimestampProof:
+        """Pick the timestamp proof for a new entry per the configured anchoring mode.
+
+        ``local`` (default) is offline and always available. ``opentimestamps``
+        attempts an independent Bitcoin-anchored proof; if that is unavailable
+        (library missing / offline) we fall back to a local proof whose ``detail``
+        says so plainly -- we never fabricate an OTS proof, and ingestion is never
+        broken by an unreachable calendar.
+        """
+        if self.anchoring_mode == "opentimestamps":
+            try:
+                return ots_stamp(digest)
+            except TimestampUnavailable as exc:
+                proof = local_timestamp(digest)
+                proof.detail = (
+                    "OpenTimestamps was requested but unavailable (" + str(exc) + "); "
+                    "recorded a local self-asserted time instead. NOT independent "
+                    "third-party proof."
+                )
+                return proof
+        return local_timestamp(digest)
 
     # -- read -------------------------------------------------------------- #
     @staticmethod

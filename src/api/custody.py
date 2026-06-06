@@ -16,6 +16,14 @@ from pydantic import BaseModel
 
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
 from src.custody.log import CustodyAction, CustodyLog, verify_export
+from src.custody.settings import (
+    VALID_ANCHORING,
+    CustodySettingsError,
+    availability,
+    load_settings,
+    save_settings,
+)
+from src.custody.signing import HybridSigner
 
 router = APIRouter(prefix="/api/custody", tags=["custody"])
 
@@ -65,6 +73,53 @@ def export(item_id: str | None = None) -> dict:
         return log.export(item_id=item_id)
     finally:
         log.close()
+
+
+def _settings_status() -> dict:
+    """Combine stored preferences with what the build can actually do.
+
+    The response always exposes both the *requested* preference and the
+    *effective* reality, so the GUI can never show a PQC/OTS toggle as "on" when
+    the supporting library is not installed.
+    """
+    prefs = load_settings()
+    avail = availability()
+    # Build the signer the way the log would, to report the real identity that
+    # would sign entries under the current preference (creates keys on first use).
+    signer = HybridSigner(use_pqc=prefs.pqc_enabled)
+    return {
+        **prefs.to_dict(),
+        "anchoring_modes": list(VALID_ANCHORING),
+        "pqc_available": avail["pqc_available"],
+        "pqc_effective": signer.is_hybrid,  # signed as hybrid only if truly available
+        "ots_available": avail["ots_available"],
+        "ots_effective": prefs.anchoring_mode == "opentimestamps" and avail["ots_available"],
+        "key_protection": signer.key_protection,
+        "signer": signer.public_identity().to_dict(),
+    }
+
+
+class SettingsUpdate(BaseModel):
+    pqc_enabled: bool | None = None
+    anchoring_mode: str | None = None
+    auto_log_on_ingest: bool | None = None
+    default_actor: str | None = None
+
+
+@router.get("/settings")
+def get_settings() -> dict:
+    """Return custody preferences plus their effective (availability-aware) state."""
+    return _settings_status()
+
+
+@router.put("/settings")
+def put_settings(req: SettingsUpdate) -> dict:
+    """Update custody preferences (partial). Returns the new effective state."""
+    try:
+        save_settings(req.model_dump(exclude_unset=True))
+    except CustodySettingsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _settings_status()
 
 
 @router.get("/{item_id}")
