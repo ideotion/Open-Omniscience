@@ -100,6 +100,33 @@ def test_unattended_install_without_launcher_opt_out(tmp_path):
     assert not (home / ".local/share/applications/open-omniscience.desktop").exists()
 
 
+def test_curl_pipe_install_does_not_leak_menu_into_pip_spec(tmp_path):
+    # Regression: under `curl | bash`, stdin is the piped script, not a TTY. The
+    # component menu used to print its prompt to stdout, which the caller captured
+    # as the extras value -- so pip received ".[<menu text>]" and crashed with
+    # InvalidRequirement. The menu must yield a clean extras spec instead.
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {
+        "HOME": str(home),
+        "PATH": os.environ["PATH"],
+        "OO_SKIP_PIP": "1",
+        "OO_SKIP_DB": "1",
+        "OO_MAKE_LAUNCHER": "0",
+    }
+    # No --unattended: exercise the interactive menu. input="" => stdin is a
+    # non-TTY pipe (exactly the curl|bash case), with no terminal -> safe defaults.
+    r = subprocess.run(["bash", str(REPO / "install.sh")],
+                       input="", capture_output=True, text=True, env=env)
+    out = r.stdout + r.stderr
+    assert r.returncode == 0, out
+    assert "(.[analysis])" in out                          # clean, well-formed spec
+    assert "Selected components: core, analysis" in out
+    # The failure signatures we must never reintroduce:
+    assert "InvalidRequirement" not in out
+    assert "Traceback" not in out
+
+
 def test_bootstrap_points_at_canonical_repo_and_hands_off():
     body = (REPO / "scripts/bootstrap.sh").read_text()
     assert "ideotion/Open-Omniscience" in body
@@ -162,17 +189,19 @@ def test_uninstall_removes_venv_and_launcher_but_keeps_data(tmp_path):
     menu_launcher.write_text("[Desktop Entry]\n")
     desk_launcher.write_text("[Desktop Entry]\n")
 
-    env = {"HOME": str(home), "PATH": os.environ["PATH"]}
-    # No TTY (piped stdin) -> text prompts; answer "yes" to the single proceed prompt.
+    # No TTY here (piped stdin), so confirm non-interactively via OO_ASSUME_YES.
+    # (Data deletion is never auto-confirmed; the fake venv has no python, so the
+    # data-dir step is skipped anyway.)
+    env = {"HOME": str(home), "PATH": os.environ["PATH"], "OO_ASSUME_YES": "1"}
     r = subprocess.run(["bash", str(app / "install.sh"), "--uninstall"],
-                       input="y\n", capture_output=True, text=True, env=env)
+                       input="", capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr + r.stdout
     assert not fake_venv.exists(), "virtualenv should be removed"
     assert not menu_launcher.exists(), "apps-menu launcher should be removed"
     assert not desk_launcher.exists(), "desktop launcher should be removed"
 
 
-def test_uninstall_aborts_on_no(tmp_path):
+def test_uninstall_aborts_without_confirmation(tmp_path):
     app = tmp_path / "app"
     (app / "assets").mkdir(parents=True)
     shutil.copy(REPO / "install.sh", app / "install.sh")
@@ -182,9 +211,11 @@ def test_uninstall_aborts_on_no(tmp_path):
 
     home = tmp_path / "home"
     home.mkdir()
+    # No tty and no OO_ASSUME_YES -> the proceed prompt safely defaults to "no",
+    # so nothing is removed. (Safety: never destroy without explicit confirmation.)
     env = {"HOME": str(home), "PATH": os.environ["PATH"]}
     r = subprocess.run(["bash", str(app / "install.sh"), "--uninstall"],
-                       input="n\n", capture_output=True, text=True, env=env)
+                       input="", capture_output=True, text=True, env=env)
     assert r.returncode == 0
-    assert fake_venv.exists(), "nothing should be removed when the user declines"
+    assert fake_venv.exists(), "nothing should be removed without confirmation"
     assert "nothing was removed" in r.stdout
