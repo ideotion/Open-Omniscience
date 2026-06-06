@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — tabbed UI, markets, worldwide coverage, insights, wiki
+
+A large feature wave (all tested; dependency-free vanilla-JS UI; no fabricated data):
+
+- **Tabbed UI + management:** Sources & Database (live stats, source management,
+  world coverage), Settings (theme + SQLite **backup/restore**), in-app
+  **scheduler** (start/stop, rss/crawl/markets modes) and a **bounded recursive
+  crawler** (same-domain discovery, robots fail-closed, depth/page caps).
+- **Markets:** per-source **price-extraction rules** (numbers only from a verified
+  CSS selector — `Test` action), **official CSV price feeds** (FRED→World Bank/EIA)
+  + custom-URL import, charts and honest price↔news correlation, and a packaged
+  worldwide markets catalog. See [MARKETS.md](MARKETS.md).
+- **Worldwide source catalog:** a **data-derived generator** (Wikidata CC0 +
+  optional GDELT/Media Cloud) for news + institutions per country, coverage report,
+  and **CSV import/export** of the source list. See [WORLD_NEWS_CATALOG.md](WORLD_NEWS_CATALOG.md).
+- **Insights — keyword & entity analytics:** extraction at ingest (people/orgs/
+  places as single units; opt-in spaCy), a mention store with context, and
+  trends / PMI associations / per-country-city map. See [INSIGHTS.md](INSIGHTS.md).
+- **Wikipedia change-tracking (foundation):** per-language editions, delta storage
+  (diffs not re-copies), and honest large-edit/revisionism flagging (incl. ORES).
+  See [WIKIPEDIA.md](WIKIPEDIA.md).
+
+New migrations: `b7c1d2e3f4a5` (market rules), `c3d4e5f6a7b8` (keyword mentions),
+`d4e5f6a7b8c9` (wiki tracking).
+
 ## Unreleased — honest chain of custody (Phase 5)
 
 The deferred "signed chain-of-custody reporting" pillar, built honestly and made

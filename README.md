@@ -30,9 +30,11 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   from a **Chain of custody** UI panel, with the effective state always shown
   honestly (see [docs/CHAIN_OF_CUSTODY.md](docs/CHAIN_OF_CUSTODY.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
-- ✅ **Tabbed web UI** (Search · Ingest · Sources & Database · Markets · Chain of
-  custody · Settings) with a **Database** panel (real row counts + on-disk size)
-  and inline **source management** (enable/disable, priority, delete).
+- ✅ **Tabbed web UI** (Search · Ingest · Sources & Database · Markets · Insights ·
+  Chain of custody · Settings) with a **Database** panel (real row counts + on-disk
+  size), inline **source management** (enable/disable, priority, delete), and a
+  **World coverage** view (countries covered vs not, sources + topic keywords per
+  country).
 - ✅ **Settings**: theme (system/dark/light) and a SQLite **backup/restore**
   — consistent online-backup download, and a *validated*, snapshotted restore
   (refuses anything that isn't a genuine Open Omniscience database).
@@ -55,9 +57,30 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   **World Bank "Pink Sheet"** and **EIA** series) plus a **custom-URL importer**
   to pull any CSV series into the commodity store — idempotent, missing values
   skipped, failures reported (never fabricated).
+- ✅ **CSV import/export of the source list** (`/api/catalog`) with a documented
+  column format + downloadable template; import upserts by domain, bad rows are
+  reported, not dropped.
+- ✅ **Data-derived worldwide catalog generator** (Wikidata CC0 + optional
+  GDELT/Media Cloud merge) for news media **and** official institutions per
+  country, with a coverage report driving gaps — see
+  [docs/WORLD_NEWS_CATALOG.md](docs/WORLD_NEWS_CATALOG.md).
+- ✅ **Keyword & entity analytics** (the **Insights** tab): keywords/entities are
+  extracted from ingested article text (people/orgs/places as single units),
+  stored as mentions with context, and surfaced as **trends**, PMI **associations**
+  ("mind-map"), in-context snippets, and a per-country/per-city **map** view —
+  every figure a real aggregate with method + caveat. See [docs/INSIGHTS.md](docs/INSIGHTS.md).
 
-**Deferred to later phases (see [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md)):**
-local LLM analysis via Ollama (Phase 2); email + monitoring (Phase 4).
+**In progress / next:**
+- 🚧 **Wikipedia change-tracking** (the **Wikipedia** tab): treat each language
+  edition as a tracked source whose *edits* are the data — store diffs/deltas (not
+  re-copies), detect & document large-scale / revisionist edits (size delta,
+  revert/blank tags, anon/burst, optional ORES scores). Schema + API parser +
+  flagging are in; live polling, tab and offline baseline downloader are next. See
+  [docs/WIKIPEDIA.md](docs/WIKIPEDIA.md).
+- 🚧 Graphical zoomable world map (city pins) for Insights; spaCy `[nlp]` entity
+  extractor (opt-in); local LLM analysis via Ollama; email + monitoring.
+
+See [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md) for the full phasing.
 
 **Honesty note:** several previously-advertised "analysis" components (deepfake,
 propaganda, cognitive-bias, bot detection) were **fabricated** — returning

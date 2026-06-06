@@ -201,6 +201,25 @@ alembic downgrade -1
 | `hash` | STRING(64) | SHA-256 hash of the content (for duplicate detection) |
 | `created_at` | DATETIME | Timestamp when the article was ingested |
 
+> The columns above are the core fields; the live schema (`src/database/models.py`)
+> and the Alembic migrations under `migrations/versions/` are the source of truth.
+> `articles` also carries provenance/analysis fields (author, word_count, region,
+> country, sentiment) and a compressed-content column.
+
+#### Other tables (see models / migrations for full columns)
+
+| Table | Purpose |
+|-------|---------|
+| `source_groups`, `source_metadata`, `source_group_association` | Source grouping + geo/robots metadata |
+| `commodity_prices` | Observed price points (symbol, date, price, currency, **unit**, market, source) — charts + price↔news correlation |
+| `market_extraction_rules` | Per-source rule (CSS selector / attribute / regex) locating one instrument's price on one page; category financial/stock/commodity |
+| `keywords` | Distinct keyword/entity term (normalized, language, `is_entity`/`entity_type`, **`extractor`** provenance) |
+| `keyword_mentions` | One per (article, keyword): count + first char offset + denormalised `observed_on`/`country`/`city` — powers Insights trends, associations, context, map |
+| `wiki_pages` | A tracked Wikipedia page in one language edition; holds **one** compressed full-text baseline |
+| `wiki_revisions` | One tracked edit: **diff + signed byte delta** + flags/tags (not a re-copy), optional ORES scores, honest large-edit flag + reasons |
+| `article_analyses` | Derived LLM results (summary/translation) with model + prompt provenance |
+| `keyword_categories`, `external_sources`, `article_links`, … | Keyword categorisation + link/source-relationship tracking |
+
 ### Indexes:
 - `idx_article_hash`: Unique index on `hash` (for duplicate detection).
 - `idx_article_canonical_url`: Index on `canonical_url` (for URL lookups).
