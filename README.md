@@ -44,6 +44,13 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   rules** turn structured pages into a real `CommodityPrice` series (a number is
   stored only where a CSS selector lands on one — never guessed), with inline
   charts and honest price↔news **correlation** (real coefficient + p-value + n).
+- ✅ **Packaged worldwide markets catalog** (~110 sources): stock & securities
+  exchanges across every region, commodity/metals/energy/derivatives exchanges
+  (incl. GFEX rare-earth futures), commodity & rare-earth price/data sources
+  (SMM, USGS, World Bank, Fastmarkets, …) and financial publishers — seeded on
+  first run so the app is ready to ingest market coverage. (Live *price* numbers
+  still come only from a verified extraction rule or a CSV import — see
+  [docs/MARKETS.md](docs/MARKETS.md) — never a guessed selector.)
 
 **Deferred to later phases (see [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md)):**
 local LLM analysis via Ollama (Phase 2); email + monitoring (Phase 4).

@@ -22,6 +22,12 @@ from src.database.models import Source
 # The full curated catalog shipped with the project.
 DEFAULT_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "sources.yml"
 
+# Curated worldwide markets catalog (stock/commodity exchanges, price/data sources,
+# financial publishers). Seeded alongside the news catalog so the app ships ready to
+# ingest market coverage. Dedup-by-domain means an outlet already in the news
+# catalog is not duplicated.
+MARKETS_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "markets_sources.yml"
+
 # YAML keys that map 1:1 to Source columns (everything except name/domain/tags,
 # which are handled explicitly).
 _PASSTHROUGH_FIELDS = (
@@ -79,5 +85,14 @@ def seed_sources(session: Session, sources: list[dict]) -> dict[str, int]:
 
 
 def seed_default_sources(session: Session, path: Path | None = None) -> dict[str, int]:
-    """Convenience: load the curated catalog and seed it."""
-    return seed_sources(session, load_sources_from_yaml(path))
+    """Convenience: load the curated catalog(s) and seed them.
+
+    With the default catalog (``path is None``) the worldwide markets catalog is
+    appended too, so a fresh install ships ready to ingest financial-market,
+    stock-exchange and commodity/rare-earth coverage. An explicit ``path`` seeds
+    only that file (used by tests). Dedup-by-domain handles any overlap.
+    """
+    sources = load_sources_from_yaml(path)
+    if path is None and MARKETS_SOURCES_PATH.exists():
+        sources = sources + load_sources_from_yaml(MARKETS_SOURCES_PATH)
+    return seed_sources(session, sources)

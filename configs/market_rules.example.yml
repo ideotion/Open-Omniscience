@@ -1,0 +1,58 @@
+# Open Omniscience — EXAMPLE market price-extraction rules (TEMPLATES).
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# ⚠️  These are TEMPLATES, not shipped working rules, and are deliberately NOT
+#     seeded into the database. A price-extraction rule says exactly where one
+#     number lives on one page (a CSS selector). Two hard realities mean we cannot
+#     honestly pre-package working selectors for the whole world:
+#
+#       1. Most modern exchange/quote pages render prices with JavaScript, so the
+#          number is NOT in the static HTML our ethical fetcher receives — a CSS
+#          selector finds nothing there.
+#       2. Selectors change whenever a site is redesigned.
+#
+#     Shipping unverified selectors would produce fabricated or wrong numbers,
+#     which this project refuses to do (PRODUCT_SYNTHESIS §3.5). So instead:
+#
+#     • Copy an entry below into the Markets tab (Add a price rule), point it at a
+#       real page, then press **Test**. Test fetches the page once and shows the
+#       EXACT value found, or the exact reason it didn't match — tune the selector
+#       until it's right, with honest feedback every time.
+#     • For authoritative numeric series (USGS, World Bank "Pink Sheet", EIA, FRED,
+#       central banks), prefer the CSV path — it is reliable and machine-readable:
+#       POST the file to /api/commodities/{symbol}/prices/import-csv. See docs/MARKETS.md.
+#
+# Fields mirror MarketExtractionRule: category (financial|stock|commodity), symbol,
+# url, selector, optional attribute / value_regex, currency, unit, market.
+
+rules:
+  # --- A server-rendered page where the price sits in a known element -------- #
+  - category: commodity
+    symbol: XAU
+    label: "Gold spot (EXAMPLE — verify selector)"
+    url: "https://example-exchange.test/quote/gold"
+    selector: "#last-price"          # replace with the real element id/class
+    currency: USD
+    unit: ozt
+    market: spot
+
+  # --- Reading a numeric value from an attribute (e.g. a data- attribute) ---- #
+  - category: stock
+    symbol: AAPL
+    label: "Apple last (EXAMPLE — verify selector)"
+    url: "https://example-exchange.test/quote/AAPL"
+    selector: ".quote-last"
+    attribute: "data-value"          # read this attribute instead of the text
+    currency: USD
+    unit: share
+
+  # --- Narrowing messy text to just the number with a capture-group regex ---- #
+  - category: commodity
+    symbol: Nd
+    label: "Neodymium oxide (EXAMPLE — verify selector)"
+    url: "https://example-metals.test/rare-earth/neodymium"
+    selector: "td.price-cell"
+    value_regex: "([0-9][0-9.,]*)\\s*USD"   # capture group 1 is parsed as the number
+    currency: USD
+    unit: kg
+    market: china_spot

@@ -1,0 +1,945 @@
+# Open Omniscience — curated worldwide MARKETS source catalog.
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# Seeded automatically alongside configs/sources.yml so the app ships ready to
+# ingest financial-market, stock-exchange and commodity/rare-earth coverage. These
+# are *sources* (the sites the ethical fetcher ingests from), identified by their
+# stable primary domains. They are public market infrastructure and publishers; no
+# credentials, no paywalled content, robots.txt always respected (fail-closed).
+#
+# What this file does NOT contain: per-page CSS price-extraction rules. A live
+# price series is only produced where an operator has pinpointed the exact figure
+# on a specific page (Markets tab → add rule → Test), because most exchange/quote
+# pages are JavaScript-rendered and selectors rot — shipping unverified selectors
+# would mean fabricated numbers, which this project refuses to do. See
+# configs/market_rules.example.yml for honest, clearly-labelled rule templates.
+#
+# source_type is one of: stock_exchange | commodity | financial
+# rss_url is intentionally omitted (left empty) for most entries: a wrong feed URL
+# is just noise. Ingest these via the recursive crawler, or add a verified RSS feed
+# per source from the Sources tab.
+
+sources:
+  # ======================================================================== #
+  # STOCK & SECURITIES EXCHANGES — Americas
+  # ======================================================================== #
+  - name: New York Stock Exchange
+    domain: nyse.com
+    source_type: stock_exchange
+    region: north-america
+    country: US
+    language: en
+    reliability_score: 9
+    tags: [markets, stock-exchange, equities, americas]
+  - name: Nasdaq
+    domain: nasdaq.com
+    source_type: stock_exchange
+    region: north-america
+    country: US
+    language: en
+    reliability_score: 9
+    tags: [markets, stock-exchange, equities, americas]
+  - name: Cboe Global Markets
+    domain: cboe.com
+    source_type: stock_exchange
+    region: north-america
+    country: US
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, options, americas]
+  - name: Toronto Stock Exchange (TMX)
+    domain: tsx.com
+    source_type: stock_exchange
+    region: north-america
+    country: CA
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, americas]
+  - name: B3 — Brasil Bolsa Balcão
+    domain: b3.com.br
+    source_type: stock_exchange
+    region: south-america
+    country: BR
+    language: pt
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, americas]
+  - name: Bolsa Mexicana de Valores
+    domain: bmv.com.mx
+    source_type: stock_exchange
+    region: north-america
+    country: MX
+    language: es
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, americas]
+  - name: Bolsa de Santiago
+    domain: bolsadesantiago.com
+    source_type: stock_exchange
+    region: south-america
+    country: CL
+    language: es
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, americas]
+  - name: Bolsa de Valores de Colombia
+    domain: bvc.com.co
+    source_type: stock_exchange
+    region: south-america
+    country: CO
+    language: es
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, americas]
+  - name: Bolsa de Valores de Lima
+    domain: bvl.com.pe
+    source_type: stock_exchange
+    region: south-america
+    country: PE
+    language: es
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, americas]
+  - name: Bolsas y Mercados Argentinos (BYMA)
+    domain: byma.com.ar
+    source_type: stock_exchange
+    region: south-america
+    country: AR
+    language: es
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, americas]
+  - name: Bermuda Stock Exchange
+    domain: bsx.com
+    source_type: stock_exchange
+    region: north-america
+    country: BM
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, americas]
+  - name: Jamaica Stock Exchange
+    domain: jamstockex.com
+    source_type: stock_exchange
+    region: north-america
+    country: JM
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, americas]
+  - name: Trinidad and Tobago Stock Exchange
+    domain: stockex.co.tt
+    source_type: stock_exchange
+    region: north-america
+    country: TT
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, americas]
+
+  # ======================================================================== #
+  # STOCK & SECURITIES EXCHANGES — Europe
+  # ======================================================================== #
+  - name: London Stock Exchange
+    domain: londonstockexchange.com
+    source_type: stock_exchange
+    region: europe
+    country: GB
+    language: en
+    reliability_score: 9
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Euronext
+    domain: euronext.com
+    source_type: stock_exchange
+    region: europe
+    country: NL
+    language: en
+    reliability_score: 9
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Deutsche Börse
+    domain: deutsche-boerse.com
+    source_type: stock_exchange
+    region: europe
+    country: DE
+    language: en
+    reliability_score: 9
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Börse Frankfurt
+    domain: boerse-frankfurt.de
+    source_type: stock_exchange
+    region: europe
+    country: DE
+    language: de
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, europe]
+  - name: SIX Swiss Exchange
+    domain: six-group.com
+    source_type: stock_exchange
+    region: europe
+    country: CH
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Nasdaq Nordic
+    domain: nasdaqomxnordic.com
+    source_type: stock_exchange
+    region: europe
+    country: SE
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, europe, nordic]
+  - name: Bolsa de Madrid (BME)
+    domain: bolsamadrid.es
+    source_type: stock_exchange
+    region: europe
+    country: ES
+    language: es
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Borsa Italiana
+    domain: borsaitaliana.it
+    source_type: stock_exchange
+    region: europe
+    country: IT
+    language: it
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Wiener Börse
+    domain: wienerborse.at
+    source_type: stock_exchange
+    region: europe
+    country: AT
+    language: de
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Warsaw Stock Exchange (GPW)
+    domain: gpw.pl
+    source_type: stock_exchange
+    region: europe
+    country: PL
+    language: pl
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Borsa İstanbul
+    domain: borsaistanbul.com
+    source_type: stock_exchange
+    region: europe
+    country: TR
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Moscow Exchange
+    domain: moex.com
+    source_type: stock_exchange
+    region: europe
+    country: RU
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Athens Exchange
+    domain: athexgroup.gr
+    source_type: stock_exchange
+    region: europe
+    country: GR
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Budapest Stock Exchange
+    domain: bse.hu
+    source_type: stock_exchange
+    region: europe
+    country: HU
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Prague Stock Exchange
+    domain: pse.cz
+    source_type: stock_exchange
+    region: europe
+    country: CZ
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Bucharest Stock Exchange
+    domain: bvb.ro
+    source_type: stock_exchange
+    region: europe
+    country: RO
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Luxembourg Stock Exchange
+    domain: bourse.lu
+    source_type: stock_exchange
+    region: europe
+    country: LU
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, bonds, europe]
+  - name: Nasdaq Iceland / Ljubljana / Zagreb (regional)
+    domain: zse.hr
+    source_type: stock_exchange
+    region: europe
+    country: HR
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, europe]
+  - name: Bulgarian Stock Exchange
+    domain: bse-sofia.bg
+    source_type: stock_exchange
+    region: europe
+    country: BG
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, europe]
+
+  # ======================================================================== #
+  # STOCK & SECURITIES EXCHANGES — Asia-Pacific
+  # ======================================================================== #
+  - name: Japan Exchange Group (Tokyo)
+    domain: jpx.co.jp
+    source_type: stock_exchange
+    region: asia
+    country: JP
+    language: en
+    reliability_score: 9
+    tags: [markets, stock-exchange, equities, derivatives, asia]
+  - name: Shanghai Stock Exchange
+    domain: sse.com.cn
+    source_type: stock_exchange
+    region: asia
+    country: CN
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Shenzhen Stock Exchange
+    domain: szse.cn
+    source_type: stock_exchange
+    region: asia
+    country: CN
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Hong Kong Exchanges and Clearing (HKEX)
+    domain: hkex.com.hk
+    source_type: stock_exchange
+    region: asia
+    country: HK
+    language: en
+    reliability_score: 9
+    tags: [markets, stock-exchange, equities, asia]
+  - name: National Stock Exchange of India
+    domain: nseindia.com
+    source_type: stock_exchange
+    region: asia
+    country: IN
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, asia]
+  - name: BSE (Bombay Stock Exchange)
+    domain: bseindia.com
+    source_type: stock_exchange
+    region: asia
+    country: IN
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Korea Exchange (KRX)
+    domain: krx.co.kr
+    source_type: stock_exchange
+    region: asia
+    country: KR
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Taiwan Stock Exchange
+    domain: twse.com.tw
+    source_type: stock_exchange
+    region: asia
+    country: TW
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Singapore Exchange (SGX)
+    domain: sgx.com
+    source_type: stock_exchange
+    region: asia
+    country: SG
+    language: en
+    reliability_score: 9
+    tags: [markets, stock-exchange, equities, commodities, asia]
+  - name: Australian Securities Exchange (ASX)
+    domain: asx.com.au
+    source_type: stock_exchange
+    region: oceania
+    country: AU
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, oceania]
+  - name: Bursa Malaysia
+    domain: bursamalaysia.com
+    source_type: stock_exchange
+    region: asia
+    country: MY
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, commodities, asia]
+  - name: Indonesia Stock Exchange (IDX)
+    domain: idx.co.id
+    source_type: stock_exchange
+    region: asia
+    country: ID
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Stock Exchange of Thailand (SET)
+    domain: set.or.th
+    source_type: stock_exchange
+    region: asia
+    country: TH
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Philippine Stock Exchange
+    domain: pse.com.ph
+    source_type: stock_exchange
+    region: asia
+    country: PH
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Ho Chi Minh City Stock Exchange (HOSE)
+    domain: hsx.vn
+    source_type: stock_exchange
+    region: asia
+    country: VN
+    language: vi
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, asia]
+  - name: New Zealand Exchange (NZX)
+    domain: nzx.com
+    source_type: stock_exchange
+    region: oceania
+    country: NZ
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, oceania]
+  - name: Pakistan Stock Exchange
+    domain: psx.com.pk
+    source_type: stock_exchange
+    region: asia
+    country: PK
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Dhaka Stock Exchange
+    domain: dsebd.org
+    source_type: stock_exchange
+    region: asia
+    country: BD
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Colombo Stock Exchange
+    domain: cse.lk
+    source_type: stock_exchange
+    region: asia
+    country: LK
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, asia]
+  - name: Kazakhstan Stock Exchange (KASE)
+    domain: kase.kz
+    source_type: stock_exchange
+    region: asia
+    country: KZ
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, asia]
+
+  # ======================================================================== #
+  # STOCK & SECURITIES EXCHANGES — Middle East & Africa
+  # ======================================================================== #
+  - name: Saudi Exchange (Tadawul)
+    domain: saudiexchange.sa
+    source_type: stock_exchange
+    region: middle-east
+    country: SA
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, middle-east]
+  - name: Abu Dhabi Securities Exchange
+    domain: adx.ae
+    source_type: stock_exchange
+    region: middle-east
+    country: AE
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, middle-east]
+  - name: Dubai Financial Market
+    domain: dfm.ae
+    source_type: stock_exchange
+    region: middle-east
+    country: AE
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, middle-east]
+  - name: Qatar Stock Exchange
+    domain: qe.com.qa
+    source_type: stock_exchange
+    region: middle-east
+    country: QA
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, middle-east]
+  - name: Boursa Kuwait
+    domain: boursakuwait.com.kw
+    source_type: stock_exchange
+    region: middle-east
+    country: KW
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, middle-east]
+  - name: Bahrain Bourse
+    domain: bahrainbourse.com
+    source_type: stock_exchange
+    region: middle-east
+    country: BH
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, middle-east]
+  - name: Tel Aviv Stock Exchange (TASE)
+    domain: tase.co.il
+    source_type: stock_exchange
+    region: middle-east
+    country: IL
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, middle-east]
+  - name: Amman Stock Exchange
+    domain: ase.com.jo
+    source_type: stock_exchange
+    region: middle-east
+    country: JO
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, middle-east]
+  - name: Egyptian Exchange (EGX)
+    domain: egx.com.eg
+    source_type: stock_exchange
+    region: africa
+    country: EG
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, africa]
+  - name: Johannesburg Stock Exchange (JSE)
+    domain: jse.co.za
+    source_type: stock_exchange
+    region: africa
+    country: ZA
+    language: en
+    reliability_score: 8
+    tags: [markets, stock-exchange, equities, commodities, africa]
+  - name: Nigerian Exchange (NGX)
+    domain: ngxgroup.com
+    source_type: stock_exchange
+    region: africa
+    country: NG
+    language: en
+    reliability_score: 7
+    tags: [markets, stock-exchange, equities, africa]
+  - name: Nairobi Securities Exchange
+    domain: nse.co.ke
+    source_type: stock_exchange
+    region: africa
+    country: KE
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, africa]
+  - name: Casablanca Stock Exchange
+    domain: casablanca-bourse.com
+    source_type: stock_exchange
+    region: africa
+    country: MA
+    language: fr
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, africa]
+  - name: BRVM (Bourse Régionale des Valeurs Mobilières)
+    domain: brvm.org
+    source_type: stock_exchange
+    region: africa
+    country: CI
+    language: fr
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, africa]
+  - name: Stock Exchange of Mauritius
+    domain: stockexchangeofmauritius.com
+    source_type: stock_exchange
+    region: africa
+    country: MU
+    language: en
+    reliability_score: 6
+    tags: [markets, stock-exchange, equities, africa]
+
+  # ======================================================================== #
+  # COMMODITY, METALS, ENERGY & DERIVATIVES EXCHANGES
+  # ======================================================================== #
+  - name: CME Group
+    domain: cmegroup.com
+    source_type: commodity
+    region: north-america
+    country: US
+    language: en
+    reliability_score: 9
+    tags: [markets, commodity, futures, metals, energy, agriculture]
+  - name: Intercontinental Exchange (ICE)
+    domain: ice.com
+    source_type: commodity
+    region: north-america
+    country: US
+    language: en
+    reliability_score: 9
+    tags: [markets, commodity, futures, energy, softs]
+  - name: London Metal Exchange (LME)
+    domain: lme.com
+    source_type: commodity
+    region: europe
+    country: GB
+    language: en
+    reliability_score: 9
+    tags: [markets, commodity, metals, base-metals, futures]
+  - name: Shanghai Futures Exchange (SHFE)
+    domain: shfe.com.cn
+    source_type: commodity
+    region: asia
+    country: CN
+    language: en
+    reliability_score: 8
+    tags: [markets, commodity, metals, energy, futures]
+  - name: Dalian Commodity Exchange
+    domain: dce.com.cn
+    source_type: commodity
+    region: asia
+    country: CN
+    language: en
+    reliability_score: 8
+    tags: [markets, commodity, agriculture, futures]
+  - name: Zhengzhou Commodity Exchange
+    domain: czce.com.cn
+    source_type: commodity
+    region: asia
+    country: CN
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, agriculture, futures]
+  - name: Shanghai International Energy Exchange (INE)
+    domain: ine.cn
+    source_type: commodity
+    region: asia
+    country: CN
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, energy, crude-oil, futures]
+  - name: Guangzhou Futures Exchange
+    domain: gfex.com.cn
+    source_type: commodity
+    region: asia
+    country: CN
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, rare-earth, industrial-silicon, futures]
+  - name: Multi Commodity Exchange of India (MCX)
+    domain: mcxindia.com
+    source_type: commodity
+    region: asia
+    country: IN
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, metals, energy, futures]
+  - name: National Commodity & Derivatives Exchange (NCDEX)
+    domain: ncdex.com
+    source_type: commodity
+    region: asia
+    country: IN
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, agriculture, futures]
+  - name: Eurex
+    domain: eurex.com
+    source_type: commodity
+    region: europe
+    country: DE
+    language: en
+    reliability_score: 8
+    tags: [markets, derivatives, futures, europe]
+  - name: Minneapolis Grain Exchange (MGEX)
+    domain: mgex.com
+    source_type: commodity
+    region: north-america
+    country: US
+    language: en
+    reliability_score: 6
+    tags: [markets, commodity, agriculture, grain, futures]
+  - name: Matba Rofex
+    domain: matbarofex.com.ar
+    source_type: commodity
+    region: south-america
+    country: AR
+    language: es
+    reliability_score: 6
+    tags: [markets, commodity, agriculture, futures]
+
+  # ======================================================================== #
+  # COMMODITY & RARE-EARTH PRICE / DATA / INTELLIGENCE SOURCES
+  # ======================================================================== #
+  - name: Shanghai Metals Market (SMM)
+    domain: metal.com
+    source_type: commodity
+    region: asia
+    country: CN
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, rare-earth, metals, prices]
+  - name: Asian Metal
+    domain: asianmetal.com
+    source_type: commodity
+    region: asia
+    country: CN
+    language: en
+    reliability_score: 6
+    tags: [markets, commodity, rare-earth, metals, prices]
+  - name: Kitco
+    domain: kitco.com
+    source_type: commodity
+    region: north-america
+    country: CA
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, precious-metals, gold, prices]
+  - name: Trading Economics
+    domain: tradingeconomics.com
+    source_type: commodity
+    region: global
+    country: US
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, prices, indicators, data]
+  - name: USGS National Minerals Information Center
+    domain: usgs.gov
+    source_type: commodity
+    region: north-america
+    country: US
+    language: en
+    reliability_score: 9
+    tags: [markets, commodity, rare-earth, minerals, official-data]
+  - name: U.S. Energy Information Administration (EIA)
+    domain: eia.gov
+    source_type: commodity
+    region: north-america
+    country: US
+    language: en
+    reliability_score: 9
+    tags: [markets, commodity, energy, official-data]
+  - name: World Bank Commodity Markets (Pink Sheet)
+    domain: worldbank.org
+    source_type: commodity
+    region: global
+    country: US
+    language: en
+    reliability_score: 9
+    tags: [markets, commodity, prices, official-data]
+  - name: International Energy Agency (IEA)
+    domain: iea.org
+    source_type: commodity
+    region: europe
+    country: FR
+    language: en
+    reliability_score: 9
+    tags: [markets, commodity, energy, official-data]
+  - name: OPEC
+    domain: opec.org
+    source_type: commodity
+    region: middle-east
+    country: AT
+    language: en
+    reliability_score: 8
+    tags: [markets, commodity, energy, crude-oil, official-data]
+  - name: Fastmarkets
+    domain: fastmarkets.com
+    source_type: commodity
+    region: europe
+    country: GB
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, rare-earth, metals, prices]
+  - name: Argus Media
+    domain: argusmedia.com
+    source_type: commodity
+    region: europe
+    country: GB
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, energy, metals, prices]
+  - name: Benchmark Mineral Intelligence
+    domain: benchmarkminerals.com
+    source_type: commodity
+    region: europe
+    country: GB
+    language: en
+    reliability_score: 7
+    tags: [markets, commodity, rare-earth, battery-metals, prices]
+  - name: S&P Global Commodity Insights
+    domain: spglobal.com
+    source_type: commodity
+    region: north-america
+    country: US
+    language: en
+    reliability_score: 8
+    tags: [markets, commodity, energy, metals, prices]
+  - name: Mining.com
+    domain: mining.com
+    source_type: commodity
+    region: north-america
+    country: CA
+    language: en
+    reliability_score: 6
+    tags: [markets, commodity, mining, metals, news]
+  - name: The Northern Miner
+    domain: northernminer.com
+    source_type: commodity
+    region: north-america
+    country: CA
+    language: en
+    reliability_score: 6
+    tags: [markets, commodity, mining, metals, news]
+  - name: Adamas Intelligence
+    domain: adamasintel.com
+    source_type: commodity
+    region: north-america
+    country: CA
+    language: en
+    reliability_score: 6
+    tags: [markets, commodity, rare-earth, intelligence]
+
+  # ======================================================================== #
+  # FINANCIAL NEWS & MARKET DATA PUBLISHERS
+  # ======================================================================== #
+  - name: Bloomberg
+    domain: bloomberg.com
+    source_type: financial
+    region: global
+    country: US
+    language: en
+    reliability_score: 8
+    tags: [markets, financial, news, data]
+  - name: Reuters
+    domain: reuters.com
+    source_type: financial
+    region: global
+    country: GB
+    language: en
+    reliability_score: 9
+    tags: [markets, financial, news, data]
+  - name: Financial Times
+    domain: ft.com
+    source_type: financial
+    region: global
+    country: GB
+    language: en
+    reliability_score: 9
+    tags: [markets, financial, news]
+  - name: The Wall Street Journal
+    domain: wsj.com
+    source_type: financial
+    region: global
+    country: US
+    language: en
+    reliability_score: 8
+    tags: [markets, financial, news]
+  - name: CNBC
+    domain: cnbc.com
+    source_type: financial
+    region: global
+    country: US
+    language: en
+    reliability_score: 7
+    tags: [markets, financial, news]
+  - name: MarketWatch
+    domain: marketwatch.com
+    source_type: financial
+    region: global
+    country: US
+    language: en
+    reliability_score: 7
+    tags: [markets, financial, news, data]
+  - name: Yahoo Finance
+    domain: finance.yahoo.com
+    source_type: financial
+    region: global
+    country: US
+    language: en
+    reliability_score: 7
+    tags: [markets, financial, news, data, quotes]
+  - name: Investing.com
+    domain: investing.com
+    source_type: financial
+    region: global
+    country: US
+    language: en
+    reliability_score: 7
+    tags: [markets, financial, data, quotes, commodities]
+  - name: Seeking Alpha
+    domain: seekingalpha.com
+    source_type: financial
+    region: global
+    country: US
+    language: en
+    reliability_score: 6
+    tags: [markets, financial, analysis]
+  - name: Barron's
+    domain: barrons.com
+    source_type: financial
+    region: global
+    country: US
+    language: en
+    reliability_score: 7
+    tags: [markets, financial, news, analysis]
+  - name: Morningstar
+    domain: morningstar.com
+    source_type: financial
+    region: global
+    country: US
+    language: en
+    reliability_score: 7
+    tags: [markets, financial, data, research]
+  - name: Nikkei Asia
+    domain: asia.nikkei.com
+    source_type: financial
+    region: asia
+    country: JP
+    language: en
+    reliability_score: 8
+    tags: [markets, financial, news, asia]
+  - name: Caixin Global
+    domain: caixinglobal.com
+    source_type: financial
+    region: asia
+    country: CN
+    language: en
+    reliability_score: 7
+    tags: [markets, financial, news, asia]
+  - name: The Economic Times — Markets
+    domain: economictimes.indiatimes.com
+    source_type: financial
+    region: asia
+    country: IN
+    language: en
+    reliability_score: 7
+    tags: [markets, financial, news, asia]
+  - name: Moneycontrol
+    domain: moneycontrol.com
+    source_type: financial
+    region: asia
+    country: IN
+    language: en
+    reliability_score: 6
+    tags: [markets, financial, news, data, asia]
+  - name: Benzinga
+    domain: benzinga.com
+    source_type: financial
+    region: global
+    country: US
+    language: en
+    reliability_score: 6
+    tags: [markets, financial, news]
