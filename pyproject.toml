@@ -92,6 +92,14 @@ analysis = [
     "vaderSentiment>=3.3.2",
 ]
 
+# Optional real Named-Entity Recognition for the Insights tab (people / orgs /
+# places). Local, CPU-friendly, offline once a model is downloaded. The baseline
+# extractor works without this; when present, get_extractor("spacy") uses it.
+# After install, fetch a model, e.g.:  python -m spacy download en_core_web_sm
+nlp = [
+    "spacy>=3.7",
+]
+
 # Optional GPG-based signing path (cryptography/Ed25519 is in core).
 crypto = [
     "python-gnupg>=0.5.2",

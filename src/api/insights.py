@@ -103,8 +103,24 @@ def insights_map(
     top_per_area: int = Query(5, ge=1, le=20),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Top keywords per country and per city (for the world map)."""
-    return q.map_data(db, days=days, kind=_kind(kind), top_per_area=top_per_area)
+    """Top keywords per country and per city (for the world map).
+
+    City entries are enriched with lat/lon from the city gazetteer (disambiguated
+    by country) so the UI can plot them; cities not in the gazetteer keep their
+    keyword data but carry no coordinates (honest: no fabricated position).
+    """
+    from src.catalog.cities import build_index, load_cities, lookup
+
+    data = q.map_data(db, days=days, kind=_kind(kind), top_per_area=top_per_area)
+    index = build_index(load_cities())
+    placed = 0
+    for city in data.get("cities", []):
+        hit = lookup(index, city.get("name", ""), city.get("country"))
+        if hit:
+            city["lat"], city["lon"] = hit.lat, hit.lon
+            placed += 1
+    data["cities_placed"] = placed
+    return data
 
 
 def _kind(kind: str | None) -> str | None:

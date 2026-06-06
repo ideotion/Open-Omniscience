@@ -456,6 +456,14 @@
         <div style="flex:0 0 auto;align-self:end"><button onclick="loadMap()">Refresh</button></div>
       </div>
       <div class="hint" style="margin-top:6px">Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).</div>
+      <h2 style="margin:12px 0 6px;font-size:13px">Map (cities)</h2>
+      <div class="row" style="margin-bottom:6px">
+        <button class="tiny secondary" onclick="zoomMap(0.7)">＋ zoom</button>
+        <button class="tiny secondary" onclick="zoomMap(1.4)">－ zoom</button>
+        <button class="tiny secondary" onclick="resetMap()">reset</button>
+        <span class="hint" style="align-self:center">drag to pan · hover a dot for details · zoom in to read city names</span>
+      </div>
+      <div id="map-svg"></div>
       <h2 style="margin:12px 0 6px;font-size:13px">By country</h2>
       <div style="overflow:auto"><table id="map-countries"></table></div>
       <h2 style="margin:12px 0 6px;font-size:13px">By city</h2>
@@ -1304,16 +1312,76 @@
       } catch (e) { toast("Trends failed: " + e.message, "err"); }
     }
 
+    // World map: equirectangular projection, viewBox-based zoom/pan (no deps).
+    const MAP_W = 720, MAP_H = 360;
+    let MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H};
+    const lon2x = lon => (Number(lon) + 180) / 360 * MAP_W;
+    const lat2y = lat => (90 - Number(lat)) / 180 * MAP_H;
+
+    function applyVB() {
+      const svg = document.getElementById("oo-map");
+      if (svg) svg.setAttribute("viewBox", `${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`);
+    }
+    function zoomMap(f) {
+      const cx = MAP_VB.x + MAP_VB.w/2, cy = MAP_VB.y + MAP_VB.h/2;
+      MAP_VB.w = Math.min(MAP_W, Math.max(40, MAP_VB.w * f));
+      MAP_VB.h = Math.min(MAP_H, Math.max(20, MAP_VB.h * f));
+      MAP_VB.x = cx - MAP_VB.w/2; MAP_VB.y = cy - MAP_VB.h/2;
+      applyVB();
+    }
+    function resetMap() { MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; applyVB(); }
+
+    function buildMapSvg(cities) {
+      const placed = cities.filter(c => c.lat != null && c.lon != null);
+      // graticule every 30 degrees
+      let grid = "";
+      for (let lon = -180; lon <= 180; lon += 30)
+        grid += `<line x1="${lon2x(lon)}" y1="0" x2="${lon2x(lon)}" y2="${MAP_H}" stroke="var(--border)" stroke-width="0.3"/>`;
+      for (let lat = -90; lat <= 90; lat += 30)
+        grid += `<line x1="0" y1="${lat2y(lat)}" x2="${MAP_W}" y2="${lat2y(lat)}" stroke="var(--border)" stroke-width="0.3"/>`;
+      const maxM = Math.max(1, ...placed.map(c => (c.top||[]).reduce((s,t)=>s+t.mentions,0)));
+      const dots = placed.map(c => {
+        const x = lon2x(c.lon).toFixed(1), y = lat2y(c.lat).toFixed(1);
+        const m = (c.top||[]).reduce((s,t)=>s+t.mentions,0);
+        const r = (1.5 + 4*Math.sqrt(m/maxM)).toFixed(1);
+        const terms = (c.top||[]).map(t=>t.term+" "+t.mentions).join(", ");
+        return `<g><circle cx="${x}" cy="${y}" r="${r}" fill="var(--accent)" fill-opacity="0.75">
+            <title>${esc(c.name)}${c.country?" ("+esc(c.country)+")":""}: ${esc(terms)}</title></circle>
+          <text x="${x}" y="${(y-Number(r)-1).toFixed(1)}" fill="var(--fg)" font-size="4" text-anchor="middle">${esc(c.name)}</text></g>`;
+      }).join("");
+      if (!placed.length)
+        return `<div class="muted">No placed cities yet. Index the corpus (sources need a city), or generate the full gazetteer (scripts/build_city_gazetteer.py).</div>`;
+      return `<svg id="oo-map" viewBox="0 0 ${MAP_W} ${MAP_H}" width="100%" style="max-width:${MAP_W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab">
+        ${grid}${dots}</svg>`;
+    }
+
+    function wireMapDrag() {
+      const svg = document.getElementById("oo-map");
+      if (!svg) return;
+      let dragging = false, sx = 0, sy = 0;
+      svg.addEventListener("mousedown", e => { dragging = true; sx = e.clientX; sy = e.clientY; svg.style.cursor = "grabbing"; });
+      window.addEventListener("mouseup", () => { dragging = false; if (svg) svg.style.cursor = "grab"; });
+      svg.addEventListener("mousemove", e => {
+        if (!dragging) return;
+        const rect = svg.getBoundingClientRect();
+        MAP_VB.x -= (e.clientX - sx) * MAP_VB.w / rect.width;
+        MAP_VB.y -= (e.clientY - sy) * MAP_VB.h / rect.height;
+        sx = e.clientX; sy = e.clientY; applyVB();
+      });
+    }
+
     async function loadMap() {
       const days = $("map-days").value, kind = $("map-kind").value;
       try {
         const d = await api(`/api/insights/map?days=${days}&kind=${encodeURIComponent(kind)}`);
         const rowsFor = (areas, label) => areas.length
           ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
-              `<tr><td><strong>${esc(a.code||a.name)}</strong></td><td>` +
+              `<tr><td><strong>${esc(a.code||a.name)}</strong>${a.country&&a.name?` <span class="muted">${esc(a.country)}</span>`:""}</td><td>` +
               a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${JSON.stringify(t.term)})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
               `</td></tr>`).join("")
           : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
+        $("map-svg").innerHTML = buildMapSvg(d.cities || []);
+        MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; wireMapDrag();
         $("map-countries").innerHTML = rowsFor(d.countries, "Country");
         $("map-cities").innerHTML = rowsFor(d.cities, "City");
       } catch (e) { toast("Map failed: " + e.message, "err"); }

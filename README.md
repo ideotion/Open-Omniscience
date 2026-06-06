@@ -65,20 +65,22 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   country, with a coverage report driving gaps — see
   [docs/WORLD_NEWS_CATALOG.md](docs/WORLD_NEWS_CATALOG.md).
 - ✅ **Keyword & entity analytics** (the **Insights** tab): keywords/entities are
-  extracted from ingested article text (people/orgs/places as single units),
-  stored as mentions with context, and surfaced as **trends**, PMI **associations**
-  ("mind-map"), in-context snippets, and a per-country/per-city **map** view —
-  every figure a real aggregate with method + caveat. See [docs/INSIGHTS.md](docs/INSIGHTS.md).
+  extracted from ingested article text (people/orgs/places as single units; opt-in
+  spaCy `[nlp]` for real NER), stored as mentions with context, and surfaced as
+  **trends**, PMI **associations** ("mind-map"), in-context snippets, and an
+  **interactive map** (zoomable SVG with city pins by real lat/lon + per-country/
+  city tables) — every figure a real aggregate with method + caveat. See
+  [docs/INSIGHTS.md](docs/INSIGHTS.md).
+- ✅ **Wikipedia change-tracking** (the **Wikipedia** tab): each language edition is
+  a tracked source whose *edits* are the data — one baseline snapshot then
+  diffs/deltas (not re-copies), with honest large-edit/revisionism flagging (size
+  delta, revert/blank tags, anon/burst, optional **ORES** scores), a flagged-edit
+  feed and diff viewer. See [docs/WIKIPEDIA.md](docs/WIKIPEDIA.md).
 
 **In progress / next:**
-- 🚧 **Wikipedia change-tracking** (the **Wikipedia** tab): treat each language
-  edition as a tracked source whose *edits* are the data — store diffs/deltas (not
-  re-copies), detect & document large-scale / revisionist edits (size delta,
-  revert/blank tags, anon/burst, optional ORES scores). Schema + API parser +
-  flagging are in; live polling, tab and offline baseline downloader are next. See
-  [docs/WIKIPEDIA.md](docs/WIKIPEDIA.md).
-- 🚧 Graphical zoomable world map (city pins) for Insights; spaCy `[nlp]` entity
-  extractor (opt-in); local LLM analysis via Ollama; email + monitoring.
+- 🚧 Wikipedia **offline baseline downloader** (per-language, with size estimates,
+  resumable) — kept separate from live tracking; local LLM analysis via Ollama;
+  email + monitoring.
 
 See [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md) for the full phasing.
 

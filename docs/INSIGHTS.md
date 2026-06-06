@@ -57,6 +57,10 @@ ingest an article ──► extract (baseline / opt-in spaCy) ──► KeywordM
   caveat that small samples are noisy.
 - Entity kinds carry extractor provenance; the baseline never claims a precise
   person/org/place type it cannot justify.
-- Region on the map is the **source's** country/city (the reliable signal). A
-  graphical zoomable map with city pins (needing a coordinate gazetteer) is the
-  documented next step; today the Map view is live tables.
+- Region on the map is the **source's** country/city (the reliable signal). The
+  Map view now includes an **interactive equirectangular SVG** (zoom/pan, city
+  labels on zoom) plotting cities by real lat/lon from a **gazetteer**: a small
+  sample ships (`configs/cities.sample.yml`); the full set is generated from
+  Wikidata (`scripts/build_city_gazetteer.py` → `configs/cities.yml`). A city with
+  no gazetteer match keeps its keyword data but **no plotted position** (never a
+  fabricated location). Country/city tables remain alongside the map.

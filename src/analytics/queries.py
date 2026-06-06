@@ -268,12 +268,30 @@ def map_data(session, *, days: int | None = 30, kind: str | None = None,
                 lst.append({"term": kw.term, "kind": kind_of(kw), "mentions": int(m)})
         return areas
 
+    def _agg_cities():
+        q = (
+            session.query(KeywordMention.city, KeywordMention.country, Keyword,
+                          func.sum(KeywordMention.count).label("m"))
+            .join(Keyword, Keyword.id == KeywordMention.keyword_id)
+            .filter(KeywordMention.city.isnot(None))
+        )
+        if days:
+            q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
+        q = _apply_kind(q, kind)
+        rows = q.group_by(KeywordMention.city, KeywordMention.country, Keyword.id).order_by(
+            func.sum(KeywordMention.count).desc()).all()
+        out: dict[tuple, dict] = {}
+        for city, country, kw, m in rows:
+            slot = out.setdefault((city, country), {"name": city, "country": country, "top": []})
+            if len(slot["top"]) < top_per_area and int(m) >= min_mentions:
+                slot["top"].append({"term": kw.term, "kind": kind_of(kw), "mentions": int(m)})
+        return list(out.values())
+
     countries = _agg(KeywordMention.country)
-    cities = _agg(KeywordMention.city)
     return {
         "days": days, "kind": kind,
         "countries": [{"code": c, "top": t} for c, t in sorted(countries.items())],
-        "cities": [{"name": c, "top": t} for c, t in sorted(cities.items())],
+        "cities": sorted(_agg_cities(), key=lambda c: (c["name"] or "")),
     }
 
 
