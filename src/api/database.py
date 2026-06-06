@@ -104,21 +104,67 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/coverage")
 def country_coverage(db: Session = Depends(get_db)) -> dict:
-    """How many countries the source catalog reaches, plus the gaps.
+    """Summary of how many countries the catalog reaches, plus the gaps.
 
-    Counts are computed from the country code on each source (real data), scored
-    against the ISO 3166-1 set — so progress toward worldwide coverage is measured,
-    never asserted. ``missing`` lists country codes with no source yet; ``thin``
-    lists covered countries with very few.
+    Counts are computed from each source's country code (real data) against the
+    ISO 3166-1 set, so coverage is measured, never asserted. ``missing`` lists
+    country codes with no source; ``thin`` lists covered countries with very few.
     """
     from src.catalog.coverage import country_counts_from_session, coverage_report
 
     counts = country_counts_from_session(db)
     report = coverage_report(counts)
-    # Trim potentially long lists for the UI; full data stays available via counts.
-    report["missing"] = report["missing"][:60]
-    report["per_country"] = dict(sorted(counts.items()))
+    report["missing"] = report["missing"][:80]  # trim for the UI; details in /countries
     return report
+
+
+@router.get("/countries")
+def sources_by_country(db: Session = Depends(get_db)) -> dict:
+    """Per-country breakdown: source count, enabled count, and topic keywords.
+
+    Topic keywords are the aggregated tags of the sources in each country — they
+    show, at a glance, which subjects a country's sources cover (and by absence,
+    which topics may be missing). Countries with no source are returned in
+    ``missing`` so covered vs not-covered is explicit.
+    """
+    from collections import Counter
+
+    from src.catalog.countries import ISO_3166_1_ALPHA2
+    from src.database.models import Source
+
+    rows = db.query(Source.country, Source.enabled, Source.tags).all()
+    per: dict[str, dict] = {}
+    for country, enabled, tags in rows:
+        cc = (country or "").strip().lower() or "(none)"
+        slot = per.setdefault(cc, {"sources": 0, "enabled": 0, "tags": Counter()})
+        slot["sources"] += 1
+        if enabled:
+            slot["enabled"] += 1
+        for t in (tags or "").split(","):
+            t = t.strip()
+            if t:
+                slot["tags"][t] += 1
+
+    countries = [
+        {
+            "code": cc,
+            "sources": d["sources"],
+            "enabled": d["enabled"],
+            "top_tags": d["tags"].most_common(8),
+        }
+        for cc, d in per.items()
+    ]
+    countries.sort(key=lambda c: (-c["sources"], c["code"]))
+
+    present = {cc for cc in per if cc != "(none)"}
+    missing = sorted(c for c in ISO_3166_1_ALPHA2 if c not in present)
+    return {
+        "countries": countries,
+        "covered": len(present),
+        "total_countries": len(ISO_3166_1_ALPHA2),
+        "missing": missing,
+        "missing_count": len(missing),
+    }
 
 
 @router.get("/backup")

@@ -206,8 +206,15 @@
         (by each source's country code, scored against ISO&nbsp;3166). Measured from the data — and
         it shows exactly which countries still have no source, to drive expansion.</div>
       <div id="coverage-summary" class="stat-grid"><div class="muted">Loading…</div></div>
+      <div class="row" style="margin-top:10px">
+        <div style="flex:3"><input id="cov-filter" placeholder="filter countries by code or topic…"
+              oninput="renderCoverageTable()"></div>
+        <div style="flex:0 0 auto;align-self:end">
+          <button class="secondary" onclick="loadCoverage()">Refresh</button>
+        </div>
+      </div>
+      <div style="overflow:auto; margin-top:10px; max-height:420px"><table id="coverage-table"></table></div>
       <div id="coverage-gaps" class="hint" style="margin-top:10px"></div>
-      <button class="secondary" onclick="loadCoverage()">Refresh</button>
     </section>
 
     <section class="panel">
@@ -232,6 +239,27 @@
       </div>
       <div id="src-meta" class="hint"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="src-table"></table></div>
+    </section>
+
+    <section class="panel">
+      <h2>Import / export source list (CSV)</h2>
+      <div class="hint" style="margin-bottom:8px">
+        Columns: <code>name</code>, <code>domain</code> (required) · <code>rss_url</code>,
+        <code>source_type</code>, <code>country</code> (2-letter), <code>language</code>,
+        <code>region</code>, <code>tags</code> (comma-separated, quote the cell),
+        <code>priority</code> (1–3), <code>rate_limit_ms</code>, <code>enabled</code>,
+        <code>reliability_score</code> (1–10). Import upserts by domain (new ones created,
+        existing updated); bad rows are reported, not dropped.
+      </div>
+      <div class="row">
+        <button class="secondary" onclick="window.open('/api/catalog/export.csv','_blank')">Export all (CSV)</button>
+        <button class="secondary" onclick="window.open('/api/catalog/template.csv','_blank')">Download template</button>
+      </div>
+      <hr>
+      <label for="imp-file">Import sources from a CSV file</label>
+      <input type="file" id="imp-file" accept=".csv,text/csv">
+      <button onclick="importSources()">Import CSV</button>
+      <div id="imp-result" class="hint"></div>
     </section>
     </div>
 
@@ -566,21 +594,50 @@
     }
 
     // -- World coverage ----------------------------------------------------- //
+    let COV_COUNTRIES = [];   // cached per-country rows for client-side filtering
+    let COV_MISSING = [];
+
     async function loadCoverage() {
       const el = $("coverage-summary");
       el.innerHTML = '<div class="muted">Loading…</div>';
       try {
-        const c = await api("/api/database/coverage");
+        const [c, d] = await Promise.all([
+          api("/api/database/coverage"),
+          api("/api/database/countries"),
+        ]);
         el.innerHTML =
           `<div class="stat"><div class="n">${c.covered}/${c.total_countries}</div><div class="k">countries</div></div>` +
           `<div class="stat"><div class="n">${c.coverage_pct}%</div><div class="k">coverage</div></div>` +
-          `<div class="stat"><div class="n">${c.missing_count}</div><div class="k">missing</div></div>` +
+          `<div class="stat"><div class="n">${c.missing_count}</div><div class="k">not covered</div></div>` +
           `<div class="stat"><div class="n">${(c.thin||[]).length}</div><div class="k">thin (&lt;${c.thin_threshold})</div></div>`;
-        const missing = (c.missing || []);
-        $("coverage-gaps").innerHTML = missing.length
-          ? `Missing (sample): ` + missing.map(x => `<span class="pill">${esc(x)}</span>`).join(" ")
-          : `<span class="pill ok">every listed country has at least one source</span>`;
+        COV_COUNTRIES = d.countries || [];
+        COV_MISSING = d.missing || [];
+        renderCoverageTable();
       } catch (e) { el.innerHTML = `<div class="note err">Coverage unavailable: ${esc(e.message)}</div>`; }
+    }
+
+    function renderCoverageTable() {
+      const q = ($("cov-filter").value || "").trim().toLowerCase();
+      const rows = COV_COUNTRIES.filter(c => {
+        if (!q) return true;
+        if (c.code.includes(q)) return true;
+        return (c.top_tags || []).some(([t]) => t.toLowerCase().includes(q));
+      });
+      const t = $("coverage-table");
+      t.innerHTML = "<tr><th>Country</th><th>Sources</th><th>Enabled</th><th>Topic keywords (source tags)</th></tr>" +
+        (rows.length ? rows.map(c => {
+          const tags = (c.top_tags || []).map(([t, n]) =>
+            `<span class="pill">${esc(t)} ${n}</span>`).join(" ") || '<span class="muted">—</span>';
+          return `<tr><td><strong>${esc(c.code)}</strong></td><td>${c.sources}</td>
+                  <td class="muted">${c.enabled}</td><td>${tags}</td></tr>`;
+        }).join("") : `<tr><td colspan="4" class="muted">No matching countries.</td></tr>`);
+      // Not-covered list (respect the same filter on the code).
+      const miss = COV_MISSING.filter(x => !q || x.includes(q));
+      $("coverage-gaps").innerHTML = miss.length
+        ? `<strong>Not covered (${miss.length})</strong>: ` +
+          miss.slice(0, 120).map(x => `<span class="pill">${esc(x)}</span>`).join(" ") +
+          (miss.length > 120 ? ` <span class="muted">…and ${miss.length - 120} more</span>` : "")
+        : `<span class="pill ok">every listed country has at least one source</span>`;
     }
 
     // -- Sources: ingest dropdown + add + seed ------------------------------ //
@@ -669,6 +726,25 @@
       try { await api("/api/sources/" + id, {method: "DELETE"});
         toast("Source deleted."); loadManagedSources(); loadSources(); loadDbStats(); }
       catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    async function importSources() {
+      const f = $("imp-file").files[0];
+      if (!f) { toast("Choose a CSV file first.", "err"); return; }
+      $("imp-result").textContent = "Importing…";
+      try {
+        const fd = new FormData(); fd.append("file", f);
+        const res = await fetch("/api/catalog/import", {method: "POST", body: fd});
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.detail || res.statusText);
+        const errs = (d.parse_errors || []).concat(d.errors || []);
+        $("imp-result").innerHTML =
+          `<span class="pill ok">imported</span> created ${d.created}, updated ${d.updated}, ` +
+          `skipped ${d.skipped}.` +
+          (errs.length ? ` <span class="muted">First issues: ${errs.slice(0,5).map(esc).join("; ")}</span>` : "");
+        toast(`Import: +${d.created} new, ${d.updated} updated.`);
+        loadManagedSources(); loadSources(); loadDbStats(); loadCoverage();
+      } catch (e) { $("imp-result").textContent = ""; toast("Import failed: " + e.message, "err"); }
     }
 
     function tally(t) {

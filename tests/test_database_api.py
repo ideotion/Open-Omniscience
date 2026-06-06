@@ -37,6 +37,26 @@ def test_stats_shape_and_backend():
     assert body["table_count"] >= len(body["counts"])
 
 
+def test_countries_breakdown_counts_and_keywords():
+    # Add a couple of sources with country + tags, then check the breakdown.
+    d1 = f"cov-{uuid.uuid4().hex}.test"
+    d2 = f"cov-{uuid.uuid4().hex}.test"
+    with session_scope() as s:
+        s.add(Source(name="Cov A", domain=d1, country="ZZ", tags="politics,economy"))
+        s.add(Source(name="Cov B", domain=d2, country="ZZ", tags="politics,sports", enabled=False))
+    with TestClient(app) as client:
+        body = client.get("/api/database/countries").json()
+    try:
+        row = next(c for c in body["countries"] if c["code"] == "zz")
+        assert row["sources"] >= 2 and row["enabled"] >= 1
+        tag_map = dict(row["top_tags"])
+        assert tag_map.get("politics", 0) >= 2  # aggregated across the two sources
+        assert "missing" in body and isinstance(body["missing"], list)
+    finally:
+        with session_scope() as s:
+            s.query(Source).filter(Source.domain.in_([d1, d2])).delete(synchronize_session=False)
+
+
 def test_source_count_increments_with_real_rows():
     # Unique domain so the test is idempotent against the persistent dev DB
     # (domain is UNIQUE); cleaned up afterwards to leave no trace.

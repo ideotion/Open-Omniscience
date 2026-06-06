@@ -96,6 +96,9 @@ from src.api.scheduler import router as scheduler_router
 # Import markets router (per-source price-extraction rules + structured ingest)
 from src.api.markets import router as markets_router
 
+# Import source-catalog CSV import/export router
+from src.api.source_io import router as source_io_router
+
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
 from src.database.fts import SearchQueryError, search_ids
@@ -229,6 +232,9 @@ app.include_router(scheduler_router)
 
 # Include markets router
 app.include_router(markets_router)
+
+# Include source-catalog CSV import/export router
+app.include_router(source_io_router)
 
 # Include LLM router
 app.include_router(llm_router)
