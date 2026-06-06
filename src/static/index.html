@@ -146,6 +146,46 @@
       <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
       <div id="ingest-result" class="hint"></div>
     </section>
+
+    <section class="panel">
+      <h2>Automatic ingestion (scheduler)</h2>
+      <div id="sched-status" class="hint">Loading scheduler status…</div>
+      <div class="row" style="margin-top:8px">
+        <button onclick="schedulerStart()">Start</button>
+        <button class="secondary" onclick="schedulerStop()">Stop</button>
+        <button class="secondary" onclick="schedulerRunNow()" title="Run one pass immediately">Scrape now</button>
+      </div>
+
+      <hr>
+
+      <div class="row">
+        <div><label for="sch-interval">Interval (minutes)</label>
+          <input id="sch-interval" type="number" min="1" max="10080" step="1"></div>
+        <div><label for="sch-mode">Mode</label>
+          <select id="sch-mode" onchange="toggleCrawlFields()">
+            <option value="rss">RSS feeds</option>
+            <option value="crawl">Recursive crawl</option>
+          </select></div>
+        <div><label for="sch-maxsrc">Max sources / run</label>
+          <input id="sch-maxsrc" type="number" min="1" max="1000" step="1"></div>
+      </div>
+      <div class="row" id="crawl-fields" style="display:none">
+        <div><label for="sch-depth">Crawl depth</label>
+          <input id="sch-depth" type="number" min="0" max="6" step="1"></div>
+        <div><label for="sch-pages">Max pages / source</label>
+          <input id="sch-pages" type="number" min="1" max="500" step="1"></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="sch-autostart" style="width:auto"> Start automatically on launch
+        </label>
+      </div>
+      <button onclick="saveScheduler()">Save schedule</button>
+      <div class="hint">Recursive crawl stays inside each source's own domain, honours robots.txt
+        (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers
+        articles, it does not mirror sites.</div>
+      <div id="sched-last" class="hint" style="margin-top:8px"></div>
+    </section>
     </div>
 
     <!-- ===================== SOURCES & DATABASE ====================== -->
@@ -311,6 +351,7 @@
     // -- Tab navigation ----------------------------------------------------- //
     // Tabs that should (re)load their data the first time they are shown.
     const TAB_LOADERS = {
+      ingest: loadScheduler,
       sources: () => { loadDbStats(); loadManagedSources(); },
       custody: loadCustody,
       settings: loadSettings,
@@ -552,6 +593,81 @@
           (r.detail ? ` — ${esc(r.detail)}` : "");
         if (r.result === "stored") { $("ing-url").value = ""; doSearch(); }
       } catch (e) { $("ingest-result").textContent = ""; toast("Ingest failed: " + e.message, "err"); }
+    }
+
+    // -- Scheduler ---------------------------------------------------------- //
+    function toggleCrawlFields() {
+      $("crawl-fields").style.display = $("sch-mode").value === "crawl" ? "flex" : "none";
+    }
+
+    function renderSchedStatus(st) {
+      const pill = st.running
+        ? (st.active ? '<span class="pill ok">running — scrape in progress</span>'
+                     : '<span class="pill ok">running</span>')
+        : '<span class="pill">stopped</span>';
+      const next = st.next_run ? ` · next ~${esc(st.next_run.slice(0,16).replace("T"," "))}` : "";
+      $("sched-status").innerHTML = pill + next;
+      const r = st.last_result;
+      $("sched-last").innerHTML = st.last_error
+        ? `<span class="pill err">last run failed</span> ${esc(st.last_error)}`
+        : (r ? `Last run (${esc(r.mode)}): <strong>${r.articles_stored}</strong> stored` +
+               (r.pages_fetched ? `, ${r.pages_fetched} pages fetched` : "") +
+               `, ${r.sources_processed} source(s), ${esc(String(r.duration_s))}s ` +
+               `<span class="muted">at ${esc((r.finished_at||"").slice(0,19).replace("T"," "))}</span>`
+             : '<span class="muted">No run yet.</span>');
+    }
+
+    function applySchedConfig(c) {
+      $("sch-interval").value = c.interval_minutes;
+      $("sch-mode").value = c.mode;
+      $("sch-maxsrc").value = c.max_sources_per_run;
+      $("sch-depth").value = c.crawl_max_depth;
+      $("sch-pages").value = c.crawl_max_pages;
+      $("sch-autostart").checked = !!c.autostart;
+      toggleCrawlFields();
+    }
+
+    async function loadScheduler() {
+      try { renderSchedStatus(await api("/api/scheduler/status")); }
+      catch (e) { $("sched-status").textContent = "Scheduler status unavailable: " + e.message; }
+      try { applySchedConfig(await api("/api/scheduler/config")); }
+      catch (e) { /* config panel stays at defaults */ }
+    }
+
+    async function schedulerStart() {
+      try { renderSchedStatus(await api("/api/scheduler/start", {method: "POST"}));
+        toast("Scheduler started."); } catch (e) { toast("Start failed: " + e.message, "err"); }
+    }
+    async function schedulerStop() {
+      try { renderSchedStatus(await api("/api/scheduler/stop", {method: "POST"}));
+        toast("Scheduler stopped."); } catch (e) { toast("Stop failed: " + e.message, "err"); }
+    }
+    async function schedulerRunNow() {
+      try {
+        const st = await api("/api/scheduler/run-now", {method: "POST"});
+        renderSchedStatus(st);
+        toast(st.started ? "Scrape started — results will appear shortly." : "A run is already in progress.");
+        // Poll the status a few times so the last-run summary updates without a manual refresh.
+        let tries = 0;
+        const poll = setInterval(async () => {
+          try { const s = await api("/api/scheduler/status"); renderSchedStatus(s);
+            if ((!s.active && s.last_run) || ++tries > 20) { clearInterval(poll); doSearch(); loadDbStats(); } }
+          catch { clearInterval(poll); }
+        }, 1500);
+      } catch (e) { toast("Run now failed: " + e.message, "err"); }
+    }
+
+    async function saveScheduler() {
+      const body = {
+        interval_minutes: Number($("sch-interval").value),
+        mode: $("sch-mode").value,
+        max_sources_per_run: Number($("sch-maxsrc").value),
+        crawl_max_depth: Number($("sch-depth").value),
+        crawl_max_pages: Number($("sch-pages").value),
+        autostart: $("sch-autostart").checked,
+      };
+      try { applySchedConfig(await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify(body)}));
+        toast("Schedule saved."); } catch (e) { toast("Save failed: " + e.message, "err"); }
     }
 
     function searchParams() {

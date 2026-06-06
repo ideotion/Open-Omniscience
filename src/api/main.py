@@ -90,6 +90,9 @@ from src.api.database import router as database_router
 # Import application settings router (GUI-editable preferences)
 from src.api.settings import router as settings_router
 
+# Import scheduler router (in-app background ingester control surface)
+from src.api.scheduler import router as scheduler_router
+
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
 from src.database.fts import SearchQueryError, search_ids
@@ -125,8 +128,33 @@ async def lifespan(app: FastAPI):
             SOURCES_COUNT.set(session.query(Source).count())
     except Exception as exc:  # noqa: BLE001 - never block startup on metrics
         logger.warning(f"Could not initialise metrics at startup: {exc}")
+
+    # Optionally start the background ingester. Off by default and gated on a
+    # saved preference, so importing the app (e.g. in tests) never starts a thread
+    # or any network activity; OO_NO_SCHEDULER=1 hard-disables it regardless.
+    if os.getenv("OO_NO_SCHEDULER", "0") != "1":
+        try:
+            from src.scheduler.settings import load_settings as _sched_settings
+
+            if _sched_settings().autostart:
+                from src.scheduler.runner import get_scheduler
+
+                get_scheduler().start()
+                logger.info("Background scheduler autostarted (autostart=true).")
+        except Exception as exc:  # noqa: BLE001 - never block startup on the scheduler
+            logger.warning(f"Could not autostart scheduler: {exc}")
+
     logger.info(f"Open Omniscience API {APP_VERSION} started")
     yield
+
+    # Stop the scheduler thread cleanly if it is running (no-op otherwise).
+    try:
+        from src.scheduler.runner import get_scheduler
+
+        get_scheduler().stop()
+    except Exception:  # noqa: BLE001 - best-effort shutdown
+        logger.warning("Error stopping scheduler on shutdown", exc_info=True)
+
     dispose_engine()
     logger.info("Open Omniscience API shut down cleanly")
 
@@ -192,6 +220,9 @@ app.include_router(database_router)
 
 # Include application settings router
 app.include_router(settings_router)
+
+# Include scheduler router
+app.include_router(scheduler_router)
 
 # Include LLM router
 app.include_router(llm_router)

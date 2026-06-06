@@ -74,13 +74,26 @@ def ingest_url(
     except FetchError as exc:
         return IngestOutcome(url, IngestResult.FETCH_FAILED, detail=str(exc))
 
+    return store_fetched(session, source, fetched)
+
+
+def store_fetched(session: Session, source: Source, fetched) -> IngestOutcome:
+    """Extract, dedup and store an already-fetched page.
+
+    Split out of :func:`ingest_url` so callers that have *already* fetched a page
+    (notably the recursive crawler, which harvests links from the same bytes) can
+    store it without a second network round-trip -- preserving the "one fetch per
+    URL" invariant. ``fetched`` is an :class:`~src.ingest.FetchResult`.
+    """
     doc = extract_article(fetched.content, url=fetched.final_url)
     if doc is None:
-        return IngestOutcome(url, IngestResult.EXTRACT_FAILED, detail="no article body extracted")
+        return IngestOutcome(fetched.requested_url, IngestResult.EXTRACT_FAILED,
+                             detail="no article body extracted")
 
     content_hash = generate_content_hash(doc.text)
     if _exists(session, hash=content_hash):
-        return IngestOutcome(url, IngestResult.DUPLICATE, detail="content hash already stored")
+        return IngestOutcome(fetched.requested_url, IngestResult.DUPLICATE,
+                             detail="content hash already stored")
 
     # Prefer the page's declared canonical link; fall back to the final fetched URL.
     canonical_final = canonicalize_url(doc.canonical_url or fetched.final_url)
@@ -103,13 +116,14 @@ def ingest_url(
     try:
         session.commit()
     except IntegrityError:
-        # Another entry in the same feed loop (or a concurrent writer) inserted the
-        # same content hash between the _exists check and here. Roll back so the
-        # loop continues, and report the duplicate rather than aborting the batch.
+        # Another entry in the same loop (or a concurrent writer) inserted the same
+        # content hash between the _exists check and here. Roll back so the loop
+        # continues, and report the duplicate rather than aborting the batch.
         session.rollback()
-        return IngestOutcome(url, IngestResult.DUPLICATE, detail="content hash already stored (race)")
+        return IngestOutcome(fetched.requested_url, IngestResult.DUPLICATE,
+                             detail="content hash already stored (race)")
     _maybe_record_custody(article)
-    return IngestOutcome(url, IngestResult.STORED, article_id=article.id)
+    return IngestOutcome(fetched.requested_url, IngestResult.STORED, article_id=article.id)
 
 
 def _maybe_record_custody(article: Article) -> None:
