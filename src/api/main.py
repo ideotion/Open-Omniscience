@@ -102,6 +102,9 @@ from src.api.source_io import router as source_io_router
 # Import insights router (keyword & entity analytics)
 from src.api.insights import router as insights_router
 
+# Import Wikipedia change-tracking router
+from src.api.wiki import router as wiki_router
+
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
 from src.database.fts import SearchQueryError, search_ids
@@ -241,6 +244,9 @@ app.include_router(source_io_router)
 
 # Include insights router
 app.include_router(insights_router)
+
+# Include Wikipedia change-tracking router
+app.include_router(wiki_router)
 
 # Include LLM router
 app.include_router(llm_router)

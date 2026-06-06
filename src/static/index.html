@@ -97,6 +97,7 @@
     <button data-tab="sources">Sources &amp; Database</button>
     <button data-tab="markets">Markets</button>
     <button data-tab="insights">Insights</button>
+    <button data-tab="wiki">Wikipedia</button>
     <button data-tab="custody">Chain of custody</button>
     <button data-tab="settings">Settings</button>
   </nav>
@@ -462,6 +463,52 @@
     </section>
     </div>
 
+    <!-- ============================ WIKIPEDIA ======================== -->
+    <div class="tab-page" id="tab-wiki">
+    <section class="panel">
+      <h2>Wikipedia change-tracking</h2>
+      <p class="muted" style="margin-top:0">Track watched pages per <strong>language edition</strong>
+        (editions are per-language, not per-country). We store one baseline snapshot per page, then only
+        <em>diffs/deltas</em> of new edits — so cosmetic changes cost almost nothing — and flag large /
+        suspicious edits (size delta, revert/blank tags, anonymous, bursts, optional ORES). Candidates
+        are surfaced for you to judge; nothing is labelled "disinformation".</p>
+      <div id="wiki-status" class="hint">Loading…</div>
+      <div class="row" style="margin-top:6px">
+        <button onclick="trackWikiNow()">Track now</button>
+        <label style="display:flex;align-items:center;gap:6px;align-self:center;cursor:pointer">
+          <input type="checkbox" id="wiki-ores" style="width:auto" checked> use ORES scores
+        </label>
+        <span id="wiki-progress" class="hint" style="align-self:center"></span>
+      </div>
+      <div class="hint" style="margin-top:6px">Offline full-text baseline downloads (per-language, with
+        size estimates) are a separate, optional subsystem — coming next.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Watch a page</h2>
+      <div class="row">
+        <div><label for="wiki-lang">Edition</label><input id="wiki-lang" value="en" placeholder="en / fr / ar …"></div>
+        <div style="flex:3"><label for="wiki-title">Article title</label><input id="wiki-title" placeholder="e.g. Climate change"></div>
+        <div><label for="wiki-cat">Watchlist</label><input id="wiki-cat" placeholder="optional"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="addWikiPage()">Add</button></div>
+      </div>
+      <div style="overflow:auto;margin-top:10px"><table id="wiki-pages"></table></div>
+    </section>
+
+    <section class="panel">
+      <h2>Flagged changes</h2>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;align-self:end;cursor:pointer">
+          <input type="checkbox" id="wiki-flagged-only" style="width:auto" checked onchange="loadWikiChanges()"> flagged only
+        </label>
+        <div><label for="wiki-filter-lang">Edition filter</label><input id="wiki-filter-lang" placeholder="(any)" oninput="loadWikiChanges()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadWikiChanges()">Refresh</button></div>
+      </div>
+      <div style="overflow:auto;margin-top:10px"><table id="wiki-changes"></table></div>
+      <div id="wiki-diff" style="margin-top:10px"></div>
+    </section>
+    </div>
+
     <!-- ============================ SETTINGS ========================= -->
     <div class="tab-page" id="tab-settings">
     <section class="panel">
@@ -537,6 +584,7 @@
       ingest: loadScheduler,
       markets: loadMarkets,
       insights: loadInsights,
+      wiki: loadWiki,
       sources: () => { loadDbStats(); loadCoverage(); loadManagedSources(); },
       custody: loadCustody,
       settings: loadSettings,
@@ -1269,6 +1317,107 @@
         $("map-countries").innerHTML = rowsFor(d.countries, "Country");
         $("map-cities").innerHTML = rowsFor(d.cities, "City");
       } catch (e) { toast("Map failed: " + e.message, "err"); }
+    }
+
+    // -- Wikipedia change-tracking ------------------------------------------ //
+    async function loadWiki() {
+      try {
+        const s = await api("/api/wiki/status");
+        $("wiki-status").innerHTML =
+          `<span class="pill">${s.watched}/${s.pages} pages watched</span> · ` +
+          `${s.revisions.toLocaleString()} tracked edits · ` +
+          `<span class="pill ${s.flagged?'warn':'ok'}">${s.flagged} flagged</span>`;
+      } catch (e) { $("wiki-status").textContent = "Status unavailable: " + e.message; }
+      loadWikiPages(); loadWikiChanges();
+    }
+
+    async function loadWikiPages() {
+      try {
+        const d = await api("/api/wiki/pages");
+        const t = $("wiki-pages");
+        t.innerHTML = "<tr><th>Edition</th><th>Title</th><th>Watchlist</th><th>Checked</th><th>Edits</th><th>Flagged</th><th></th></tr>" +
+          (d.pages.length ? d.pages.map(p => `<tr>
+            <td><strong>${esc(p.wiki)}</strong></td><td>${esc(p.title)}</td>
+            <td class="muted">${esc(p.category||"")}</td>
+            <td class="muted" style="font-size:12px">${p.last_checked_at?esc(p.last_checked_at.slice(0,16).replace("T"," ")):"never"}</td>
+            <td>${p.revisions}</td><td class="muted">${p.flagged}</td>
+            <td style="white-space:nowrap">
+              <button class="tiny secondary" onclick="trackWikiPage(${p.id})">Track</button>
+              <button class="tiny danger" onclick="deleteWikiPage(${p.id}, ${JSON.stringify(esc(p.title))})">Delete</button>
+            </td></tr>`).join("")
+            : `<tr><td colspan="7" class="muted">No watched pages yet. Add one above.</td></tr>`);
+      } catch (e) { toast("Wiki pages: " + e.message, "err"); }
+    }
+
+    async function addWikiPage() {
+      const body = { wiki: $("wiki-lang").value.trim() || "en", title: $("wiki-title").value.trim(),
+                     category: $("wiki-cat").value.trim() || null };
+      if (!body.title) { toast("Enter an article title.", "err"); return; }
+      try { await api("/api/wiki/pages", {method:"POST", body: JSON.stringify(body)});
+        toast("Page added to watchlist."); $("wiki-title").value=""; loadWikiPages(); loadWiki(); }
+      catch (e) { toast("Add failed: " + e.message, "err"); }
+    }
+
+    async function deleteWikiPage(id, title) {
+      if (!confirm(`Stop watching "${title}"? Its stored revisions are removed.`)) return;
+      try { await api("/api/wiki/pages/"+id, {method:"DELETE"}); toast("Removed."); loadWiki(); }
+      catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    const _ores = () => $("wiki-ores").checked ? "true" : "false";
+
+    async function trackWikiPage(id) {
+      toast("Fetching revisions… (ethical: UA + maxlag + rate-limited)");
+      try {
+        const r = await api(`/api/wiki/pages/${id}/track?ores=${_ores()}`, {method:"POST"});
+        toast(r.baseline ? "Baseline captured." : `Stored ${r.new} new edit(s), ${r.flagged} flagged.`);
+        loadWiki();
+      } catch (e) { toast("Track failed: " + e.message, "err"); }
+    }
+
+    async function trackWikiNow() {
+      $("wiki-progress").textContent = "Tracking watched pages…";
+      try {
+        const r = await api(`/api/wiki/track-now?ores=${_ores()}`, {method:"POST"});
+        $("wiki-progress").textContent = `${r.pages} page(s): ${r.new_revisions} new edit(s), ${r.flagged} flagged.`;
+        toast("Tracking complete."); loadWiki();
+      } catch (e) { $("wiki-progress").textContent=""; toast("Track now failed: " + e.message, "err"); }
+    }
+
+    async function loadWikiChanges() {
+      const flagged = $("wiki-flagged-only").checked ? "true" : "false";
+      const w = $("wiki-filter-lang").value.trim();
+      try {
+        const d = await api(`/api/wiki/changes?flagged_only=${flagged}&limit=80` + (w?"&wiki="+encodeURIComponent(w):""));
+        const t = $("wiki-changes");
+        t.innerHTML = "<tr><th>When</th><th>Edition · Page</th><th>Editor</th><th>Δ bytes</th><th>Reasons</th><th>ORES</th><th></th></tr>" +
+          (d.changes.length ? d.changes.map(c => `<tr>
+            <td class="muted" style="font-size:12px">${c.timestamp?esc(c.timestamp.slice(0,16).replace("T"," ")):"—"}</td>
+            <td><strong>${esc(c.wiki)}</strong> · ${esc(c.title)}</td>
+            <td class="muted">${esc(c.editor||"—")}${c.editor_anon?' <span class="pill warn">anon</span>':''}</td>
+            <td class="${(c.delta_bytes||0)<0?'':''}" style="color:${(c.delta_bytes||0)<0?'var(--err)':'var(--ok)'}">${c.delta_bytes==null?'—':(c.delta_bytes>0?'+':'')+c.delta_bytes}</td>
+            <td>${(c.flag_reasons||[]).map(r=>`<span class="pill warn">${esc(r)}</span>`).join(" ")}</td>
+            <td class="muted">${c.ores_damaging!=null?'dmg '+c.ores_damaging.toFixed(2):'—'}</td>
+            <td style="white-space:nowrap">
+              <button class="tiny secondary" onclick="viewWikiDiff(${c.id})">Diff</button>
+              <a class="tiny" href="${esc(c.diff_url)}" target="_blank" rel="noopener">live</a></td></tr>`).join("")
+            : `<tr><td colspan="7" class="muted">No changes yet. Add pages and press “Track now”.</td></tr>`);
+      } catch (e) { toast("Wiki changes: " + e.message, "err"); }
+    }
+
+    async function viewWikiDiff(id) {
+      const el = $("wiki-diff");
+      el.innerHTML = '<div class="muted">Loading diff…</div>';
+      try {
+        const d = await api("/api/wiki/revisions/"+id);
+        const lines = (d.diff||"(no stored diff)").split("\n").map(l => {
+          const cls = l.startsWith("+") ? "ok" : l.startsWith("-") ? "err" : "muted";
+          return `<div style="color:var(--${cls});white-space:pre-wrap;font-size:13px">${esc(l)}</div>`;
+        }).join("");
+        el.innerHTML = `<div class="note" style="max-width:none">
+          <div class="muted" style="font-size:12px;margin-bottom:6px">${esc(d.wiki)} · ${esc(d.title)} · rev ${d.revid}
+            · <a href="${esc(d.diff_url)}" target="_blank" rel="noopener">view on Wikipedia</a></div>${lines}</div>`;
+      } catch (e) { el.innerHTML=""; toast("Diff: " + e.message, "err"); }
     }
 
     function searchParams() {

@@ -39,9 +39,12 @@ def ensure_page(session: Session, wiki: str, title: str, *, category: str | None
 
 def _burst_count(new_revs: list[dict], rev: dict) -> int:
     ts = rev.get("timestamp")
-    if not ts:
+    if not isinstance(ts, datetime):
         return 0
-    return sum(1 for r in new_revs if r.get("timestamp") and abs(r["timestamp"] - ts) <= _BURST_WINDOW)
+    return sum(
+        1 for r in new_revs
+        if isinstance(r.get("timestamp"), datetime) and abs(r["timestamp"] - ts) <= _BURST_WINDOW
+    )
 
 
 def update_page(session: Session, client, page: WikiPage, *, ores_client=None,
