@@ -1,0 +1,188 @@
+"""
+Markets API: per-source price-extraction rules + structured price ingestion.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+Powers the Markets tabs (financial / stock / rare-earth). A rule says exactly
+where one instrument's price lives on one page; running a rule fetches it through
+the ethical path and stores a real CommodityPrice (or records an explicit miss).
+Charting + correlation reuse the existing /api/commodities endpoints, so no
+number is shown without a real series behind it.
+"""
+
+from __future__ import annotations
+
+import os
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from src.database.models import CommodityPrice, MarketExtractionRule, Source
+from src.database.session import get_db
+from src.ingest import EthicalFetcher
+
+router = APIRouter(prefix="/api/markets", tags=["markets"])
+
+VALID_CATEGORIES = ("financial", "stock", "commodity")
+
+# Shared ethical fetcher (persists robots cache + per-host rate-limit state).
+_fetcher = EthicalFetcher(
+    min_interval_s=float(os.getenv("OO_FETCH_MIN_INTERVAL", "1.0")),
+    timeout=float(os.getenv("OO_FETCH_TIMEOUT", "30")),
+)
+
+
+class RuleCreate(BaseModel):
+    source_id: int
+    symbol: str
+    url: str
+    selector: str
+    category: str = "commodity"
+    label: str | None = None
+    attribute: str | None = None
+    value_regex: str | None = None
+    currency: str = "USD"
+    unit: str = "kg"
+    market: str | None = None
+    enabled: bool = True
+
+
+class RuleUpdate(BaseModel):
+    symbol: str | None = None
+    url: str | None = None
+    selector: str | None = None
+    category: str | None = None
+    label: str | None = None
+    attribute: str | None = None
+    value_regex: str | None = None
+    currency: str | None = None
+    unit: str | None = None
+    market: str | None = None
+    enabled: bool | None = None
+
+
+def _serialize(r: MarketExtractionRule) -> dict:
+    return {
+        "id": r.id, "source_id": r.source_id,
+        "source_name": r.source.name if r.source else None,
+        "category": r.category, "symbol": r.symbol, "label": r.label,
+        "url": r.url, "selector": r.selector, "attribute": r.attribute,
+        "value_regex": r.value_regex, "currency": r.currency, "unit": r.unit,
+        "market": r.market, "enabled": r.enabled,
+        "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None,
+        "last_status": r.last_status,
+    }
+
+
+def _get_rule(db: Session, rule_id: int) -> MarketExtractionRule:
+    rule = db.query(MarketExtractionRule).filter_by(id=rule_id).first()
+    if rule is None:
+        raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found.")
+    return rule
+
+
+def _validate_category(category: str) -> None:
+    if category not in VALID_CATEGORIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown category {category!r}; use one of: {', '.join(VALID_CATEGORIES)}",
+        )
+
+
+@router.get("/rules")
+def list_rules(category: str | None = None, db: Session = Depends(get_db)) -> dict:
+    """List extraction rules, optionally filtered to one Markets category."""
+    q = db.query(MarketExtractionRule)
+    if category:
+        _validate_category(category)
+        q = q.filter_by(category=category)
+    rules = q.order_by(MarketExtractionRule.category, MarketExtractionRule.symbol).all()
+    return {"count": len(rules), "rules": [_serialize(r) for r in rules]}
+
+
+@router.post("/rules")
+def create_rule(payload: RuleCreate, db: Session = Depends(get_db)) -> dict:
+    """Create a price-extraction rule for a source."""
+    _validate_category(payload.category)
+    if not db.query(Source.id).filter_by(id=payload.source_id).first():
+        raise HTTPException(status_code=404, detail=f"Source {payload.source_id} not found.")
+    if not payload.symbol.strip() or not payload.url.strip() or not payload.selector.strip():
+        raise HTTPException(status_code=400, detail="symbol, url and selector are required.")
+    rule = MarketExtractionRule(**payload.model_dump())
+    db.add(rule)
+    db.commit()
+    return _serialize(rule)
+
+
+@router.put("/rules/{rule_id}")
+def update_rule(rule_id: int, payload: RuleUpdate, db: Session = Depends(get_db)) -> dict:
+    """Update fields of an existing rule (only provided fields change)."""
+    rule = _get_rule(db, rule_id)
+    data = payload.model_dump(exclude_unset=True)
+    if "category" in data and data["category"] is not None:
+        _validate_category(data["category"])
+    for k, v in data.items():
+        setattr(rule, k, v)
+    db.commit()
+    return _serialize(rule)
+
+
+@router.delete("/rules/{rule_id}")
+def delete_rule(rule_id: int, db: Session = Depends(get_db)) -> dict:
+    """Delete a rule (stored price history is left intact)."""
+    rule = _get_rule(db, rule_id)
+    db.delete(rule)
+    db.commit()
+    return {"deleted": rule_id}
+
+
+@router.post("/rules/{rule_id}/run")
+def run_rule_now(rule_id: int, db: Session = Depends(get_db)) -> dict:
+    """Fetch the page once and apply the rule now (also serves as a 'test' action).
+
+    Returns the structured outcome -- the extracted value on success, or the exact
+    reason it did not match -- so an operator can tune a selector with feedback.
+    """
+    from src.markets.pipeline import run_rule
+
+    rule = _get_rule(db, rule_id)
+    outcome = run_rule(db, rule, fetcher=_fetcher)
+    return outcome.to_dict()
+
+
+@router.get("/overview")
+def overview(category: str | None = None, db: Session = Depends(get_db)) -> dict:
+    """Per-symbol summary for the Markets tabs: latest stored point + rule + count.
+
+    Combines configured rules with whatever price history exists for their symbols
+    (the series itself is fetched from /api/commodities/{symbol}/prices).
+    """
+    if category:
+        _validate_category(category)
+    q = db.query(MarketExtractionRule)
+    if category:
+        q = q.filter_by(category=category)
+    rules = q.order_by(MarketExtractionRule.symbol).all()
+
+    items = []
+    for r in rules:
+        rows = (
+            db.query(CommodityPrice)
+            .filter_by(symbol=r.symbol)
+            .order_by(CommodityPrice.observed_on.desc())
+            .all()
+        )
+        latest = rows[0] if rows else None
+        items.append({
+            **_serialize(r),
+            "points": len(rows),
+            "latest": {
+                "observed_on": latest.observed_on.isoformat(),
+                "price": latest.price,
+                "currency": latest.currency,
+                "unit": latest.unit,
+            } if latest else None,
+        })
+    return {"category": category, "count": len(items), "items": items}

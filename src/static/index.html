@@ -95,6 +95,7 @@
     <button data-tab="search" class="active">Search</button>
     <button data-tab="ingest">Ingest</button>
     <button data-tab="sources">Sources &amp; Database</button>
+    <button data-tab="markets">Markets</button>
     <button data-tab="custody">Chain of custody</button>
     <button data-tab="settings">Settings</button>
   </nav>
@@ -279,6 +280,54 @@
     </section>
     </div>
 
+    <!-- ============================ MARKETS ========================== -->
+    <div class="tab-page" id="tab-markets">
+    <section class="panel">
+      <h2>Markets</h2>
+      <p class="muted" style="margin-top:0">
+        Prices are scraped through the same ethical path as news, but a number is only
+        recorded where you've told us exactly where it lives on the page (a CSS selector).
+        No rule match ⇒ no number — never a guess. Charts and correlation read the real
+        stored series.
+      </p>
+      <nav class="tabs" style="position:static;padding:0;border:0;margin-bottom:8px">
+        <button class="active" data-mkt="financial" onclick="showMarketCat('financial')">Financial</button>
+        <button data-mkt="stock" onclick="showMarketCat('stock')">Stock exchange</button>
+        <button data-mkt="commodity" onclick="showMarketCat('commodity')">Rare earth / commodity</button>
+      </nav>
+      <div style="overflow:auto"><table id="mkt-table"></table></div>
+      <div id="mkt-chart" style="margin-top:12px"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Add a price rule</h2>
+      <div class="row">
+        <div><label for="mkt-source">Source</label><select id="mkt-source"></select></div>
+        <div><label for="mkt-symbol">Symbol</label><input id="mkt-symbol" placeholder="Nd / AAPL / XAU"></div>
+        <div><label for="mkt-label">Label</label><input id="mkt-label" placeholder="Neodymium spot"></div>
+      </div>
+      <div class="row">
+        <div style="flex:3"><label for="mkt-url">Page URL</label><input id="mkt-url" placeholder="https://exchange.example/quote/nd"></div>
+      </div>
+      <div class="row">
+        <div style="flex:2"><label for="mkt-selector">CSS selector <span class="muted">(where the number is)</span></label>
+          <input id="mkt-selector" placeholder="#last-price  /  .quote .value"></div>
+        <div><label for="mkt-attr">Attribute <span class="muted">(optional)</span></label>
+          <input id="mkt-attr" placeholder="data-value"></div>
+      </div>
+      <div class="row">
+        <div style="flex:2"><label for="mkt-regex">Value regex <span class="muted">(optional capture group)</span></label>
+          <input id="mkt-regex" placeholder="at\\s+([\\d.,]+)\\s*USD"></div>
+        <div><label for="mkt-currency">Currency</label><input id="mkt-currency" value="USD"></div>
+        <div><label for="mkt-unit">Unit</label><input id="mkt-unit" value="kg"></div>
+        <div><label for="mkt-market">Market label</label><input id="mkt-market" placeholder="china_spot"></div>
+      </div>
+      <button onclick="addMarketRule()">Add rule</button>
+      <div class="hint">After adding, use <strong>Test</strong> in the table to fetch the page once and see the
+        exact value found — or the exact reason it didn't match — before relying on it.</div>
+    </section>
+    </div>
+
     <!-- ============================ SETTINGS ========================= -->
     <div class="tab-page" id="tab-settings">
     <section class="panel">
@@ -352,6 +401,7 @@
     // Tabs that should (re)load their data the first time they are shown.
     const TAB_LOADERS = {
       ingest: loadScheduler,
+      markets: loadMarkets,
       sources: () => { loadDbStats(); loadManagedSources(); },
       custody: loadCustody,
       settings: loadSettings,
@@ -668,6 +718,161 @@
       };
       try { applySchedConfig(await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify(body)}));
         toast("Schedule saved."); } catch (e) { toast("Save failed: " + e.message, "err"); }
+    }
+
+    // -- Markets ------------------------------------------------------------ //
+    let MKT_CAT = "financial";
+
+    function showMarketCat(cat) {
+      MKT_CAT = cat;
+      document.querySelectorAll("#tab-markets [data-mkt]").forEach(b =>
+        b.classList.toggle("active", b.dataset.mkt === cat));
+      $("mkt-chart").innerHTML = "";
+      loadMarkets();
+    }
+
+    async function loadMarkets() {
+      // Populate the source dropdown (all sources) once per view.
+      try {
+        const sources = await api("/api/sources");
+        $("mkt-source").innerHTML = sources.map(s =>
+          `<option value="${s.id}">${esc(s.name)} (${esc(s.domain)})</option>`).join("")
+          || '<option value="">(no sources — add one first)</option>';
+      } catch (e) { /* leave as-is */ }
+
+      try {
+        const d = await api("/api/markets/overview?category=" + encodeURIComponent(MKT_CAT));
+        renderMarketTable(d.items);
+      } catch (e) { toast("Markets: " + e.message, "err"); }
+    }
+
+    function renderMarketTable(items) {
+      const t = $("mkt-table");
+      if (!items.length) {
+        t.innerHTML = `<tr><td class="muted">No rules in this category yet. Add one below.</td></tr>`;
+        return;
+      }
+      t.innerHTML = "<tr><th>Symbol</th><th>Source</th><th>Latest</th><th>Pts</th><th>Last status</th><th></th></tr>" +
+        items.map(r => {
+          const latest = r.latest
+            ? `${r.latest.price} ${esc(r.latest.currency)}/${esc(r.latest.unit)} <span class="muted">(${esc(r.latest.observed_on)})</span>`
+            : '<span class="muted">—</span>';
+          return `<tr>
+            <td><strong>${esc(r.symbol)}</strong>${r.label?`<div class="muted" style="font-size:12px">${esc(r.label)}</div>`:""}</td>
+            <td class="muted">${esc(r.source_name||"")}</td>
+            <td>${latest}</td>
+            <td class="muted">${r.points}</td>
+            <td class="muted" style="font-size:12px;max-width:240px">${esc(r.last_status||"never run")}</td>
+            <td style="white-space:nowrap">
+              <button class="tiny secondary" onclick="runMarketRule(${r.id})" title="Fetch once and apply the rule">Test</button>
+              <button class="tiny secondary" onclick="chartSymbol(${JSON.stringify(esc(r.symbol))}, ${JSON.stringify(esc(r.unit))})">Chart</button>
+              <button class="tiny secondary" onclick="correlateSymbol(${JSON.stringify(esc(r.symbol))})" title="Correlate price change vs news volume">Correlate</button>
+              <button class="tiny danger" onclick="deleteMarketRule(${r.id})">Delete</button>
+            </td></tr>`;
+        }).join("");
+    }
+
+    async function addMarketRule() {
+      const body = {
+        source_id: Number($("mkt-source").value),
+        symbol: $("mkt-symbol").value.trim(),
+        label: $("mkt-label").value.trim() || null,
+        url: $("mkt-url").value.trim(),
+        selector: $("mkt-selector").value.trim(),
+        attribute: $("mkt-attr").value.trim() || null,
+        value_regex: $("mkt-regex").value.trim() || null,
+        currency: $("mkt-currency").value.trim() || "USD",
+        unit: $("mkt-unit").value.trim() || "kg",
+        market: $("mkt-market").value.trim() || null,
+        category: MKT_CAT,
+      };
+      if (!body.source_id || !body.symbol || !body.url || !body.selector) {
+        toast("Source, symbol, URL and selector are required.", "err"); return;
+      }
+      try {
+        await api("/api/markets/rules", {method: "POST", body: JSON.stringify(body)});
+        toast("Rule added.");
+        ["mkt-symbol","mkt-label","mkt-url","mkt-selector","mkt-attr","mkt-regex","mkt-market"]
+          .forEach(id => $(id).value = "");
+        loadMarkets();
+      } catch (e) { toast("Add failed: " + e.message, "err"); }
+    }
+
+    async function runMarketRule(id) {
+      toast("Fetching and applying rule…");
+      try {
+        const o = await api(`/api/markets/rules/${id}/run`, {method: "POST"});
+        if (o.status === "stored_price")
+          toast(`Stored ${o.value} for ${o.symbol} (${o.observed_on}).`);
+        else if (o.status === "duplicate_price")
+          toast(`Already had a point for ${o.symbol} today (${o.value}).`, "warn");
+        else
+          toast(`${o.status}: ${o.reason || ""}`, "err");
+        loadMarkets();
+      } catch (e) { toast("Run failed: " + e.message, "err"); }
+    }
+
+    async function deleteMarketRule(id) {
+      if (!confirm("Delete this rule? Stored price history is kept.")) return;
+      try { await api(`/api/markets/rules/${id}`, {method: "DELETE"}); toast("Rule deleted."); loadMarkets(); }
+      catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    function sparkSvg(points) {
+      if (!points.length) return '<div class="muted">No price points stored yet — use “Test” to fetch one.</div>';
+      const w = 680, h = 180, pad = 34;
+      const ys = points.map(p => p.price);
+      const minY = Math.min(...ys), maxY = Math.max(...ys), spanY = (maxY - minY) || 1;
+      const X = i => pad + (w - 2*pad) * (points.length < 2 ? 0.5 : i/(points.length-1));
+      const Y = v => h - pad - (h - 2*pad) * ((v - minY)/spanY);
+      const line = points.map((p,i) => `${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(" ");
+      const dots = points.map((p,i) =>
+        `<circle cx="${X(i).toFixed(1)}" cy="${Y(p.price).toFixed(1)}" r="2.5" fill="var(--accent)"></circle>`).join("");
+      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
+        <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${line}"></polyline>${dots}
+        <text x="${pad}" y="16" fill="var(--muted)" font-size="11">${maxY}</text>
+        <text x="${pad}" y="${h-8}" fill="var(--muted)" font-size="11">${minY}</text>
+        <text x="${w-pad}" y="${h-8}" fill="var(--muted)" font-size="11" text-anchor="end">${esc(points[points.length-1].observed_on)}</text>
+        <text x="${pad}" y="${h-8}" fill="var(--muted)" font-size="11" dx="40">${esc(points[0].observed_on)}</text>
+      </svg>`;
+    }
+
+    async function chartSymbol(symbol, unit) {
+      const el = $("mkt-chart");
+      el.innerHTML = `<div class="muted">Loading ${esc(symbol)}…</div>`;
+      try {
+        const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`);
+        el.innerHTML = `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} — ${d.count} point(s)</h2>` +
+          sparkSvg(d.prices) +
+          `<div id="mkt-corr" class="hint" style="margin-top:8px"></div>`;
+      } catch (e) {
+        el.innerHTML = `<div class="note err">Chart unavailable: ${esc(e.message)} ` +
+          `<span class="muted">(commodity analysis endpoints require the [analysis] extra)</span></div>`;
+      }
+    }
+
+    async function correlateSymbol(symbol) {
+      // Correlate the symbol's daily price change against article volume for the
+      // current search query (if any). Honest output: real coefficient/p-value/n.
+      const q = $("q").value.trim();
+      $("mkt-chart").innerHTML = `<div class="muted">Correlating ${esc(symbol)} with news…</div>`;
+      try {
+        const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/correlation` +
+          (q ? "?query=" + encodeURIComponent(q) : ""));
+        let body;
+        if (d.insufficient_data) {
+          body = `<span class="pill warn">insufficient data</span> only ${d.n} overlapping day(s) — need more price + article history.`;
+        } else {
+          const sig = d.significant ? '<span class="pill ok">significant</span>' : '<span class="pill">not significant</span>';
+          body = `<div>method <strong>${esc(d.method)}</strong>, n=${d.n}, ` +
+            `coefficient <strong>${d.coefficient.toFixed(3)}</strong>, p=${d.p_value.toExponential(2)} ${sig}</div>`;
+        }
+        $("mkt-chart").innerHTML =
+          `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} vs news${q?` — “${esc(q)}”`:""}</h2>` +
+          body + `<div class="hint" style="margin-top:6px">${esc(d.caveat || "")}</div>`;
+      } catch (e) {
+        $("mkt-chart").innerHTML = `<div class="note err">Correlation unavailable: ${esc(e.message)}</div>`;
+      }
     }
 
     function searchParams() {

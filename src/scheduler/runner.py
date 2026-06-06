@@ -35,18 +35,11 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     each enabled source is crawled (bounded by the crawl caps in ``settings``).
     Sources are taken highest-priority first, capped at ``max_sources_per_run``.
     """
-    from src.database.models import Source
+    from src.database.models import MarketExtractionRule, Source
     from src.ingest.crawl import CrawlConfig, crawl_source
     from src.ingest.pipeline import ingest_source
 
     started = datetime.now(UTC)
-    sources = (
-        session.query(Source)
-        .filter_by(enabled=True)
-        .order_by(Source.priority.asc(), Source.id.asc())
-        .limit(settings.max_sources_per_run)
-        .all()
-    )
 
     agg: dict[str, int] = {}
     sources_processed = 0
@@ -56,6 +49,40 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         for k, v in tally.items():
             if isinstance(v, int):
                 agg[k] = agg.get(k, 0) + v
+
+    # Markets mode iterates configured extraction rules, not sources.
+    if settings.mode == "markets":
+        from src.markets.pipeline import run_rules
+
+        rules = (
+            session.query(MarketExtractionRule)
+            .filter_by(enabled=True)
+            .order_by(MarketExtractionRule.id.asc())
+            .limit(settings.max_sources_per_run)
+            .all()
+        )
+        result = run_rules(session, rules, fetcher=fetcher)
+        _add(result["tally"])
+        finished = datetime.now(UTC)
+        return {
+            "mode": "markets",
+            "sources_processed": len(rules),
+            "articles_stored": agg.get("stored", 0),
+            "prices_stored": result["prices_stored"],
+            "pages_fetched": 0,
+            "tally": agg,
+            "started_at": started.isoformat(),
+            "finished_at": finished.isoformat(),
+            "duration_s": round((finished - started).total_seconds(), 2),
+        }
+
+    sources = (
+        session.query(Source)
+        .filter_by(enabled=True)
+        .order_by(Source.priority.asc(), Source.id.asc())
+        .limit(settings.max_sources_per_run)
+        .all()
+    )
 
     for source in sources:
         try:

@@ -30,10 +30,23 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   from a **Chain of custody** UI panel, with the effective state always shown
   honestly (see [docs/CHAIN_OF_CUSTODY.md](docs/CHAIN_OF_CUSTODY.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
+- ✅ **Tabbed web UI** (Search · Ingest · Sources & Database · Markets · Chain of
+  custody · Settings) with a **Database** panel (real row counts + on-disk size)
+  and inline **source management** (enable/disable, priority, delete).
+- ✅ **Settings**: theme (system/dark/light) and a SQLite **backup/restore**
+  — consistent online-backup download, and a *validated*, snapshotted restore
+  (refuses anything that isn't a genuine Open Omniscience database).
+- ✅ **Background scheduler**: start/stop + "scrape now", on an interval, in
+  `rss`, `crawl`, or `markets` mode — all through the same ethical fetch path.
+- ✅ **Bounded recursive crawler**: same-domain article *discovery* (not
+  mirroring) with robots fail-closed, rate limiting, and hard depth/page caps.
+- ✅ **Markets** (financial / stock / rare-earth): per-source **price-extraction
+  rules** turn structured pages into a real `CommodityPrice` series (a number is
+  stored only where a CSS selector lands on one — never guessed), with inline
+  charts and honest price↔news **correlation** (real coefficient + p-value + n).
 
 **Deferred to later phases (see [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md)):**
-local LLM analysis via Ollama (Phase 2); one financial/commodity vertical with
-correlation (Phase 3); email + monitoring (Phase 4).
+local LLM analysis via Ollama (Phase 2); email + monitoring (Phase 4).
 
 **Honesty note:** several previously-advertised "analysis" components (deepfake,
 propaganda, cognitive-bias, bot detection) were **fabricated** — returning

@@ -1088,6 +1088,53 @@ class CommodityPrice(Base):
         return f"<CommodityPrice({self.symbol} {self.observed_on} {self.price} {self.currency}/{self.unit})>"
 
 
+class MarketExtractionRule(Base):
+    """Per-source rule for pulling ONE structured price point off a market page.
+
+    Market/financial pages are structured data, not prose: running the article
+    extractor on them yields text, not a clean ``symbol/price`` series. So a price
+    series is only produced where the operator has told us *exactly where the
+    number lives* on a specific page (a CSS selector, optionally narrowed by an
+    attribute and/or a capture-group regex). This is the honest source of truth the
+    Markets tabs chart from -- when a rule matches nothing, ingestion records an
+    explicit failure and stores NO number (PRODUCT_SYNTHESIS §3.5). Pages without a
+    rule are still captured as raw articles via the normal ethical path.
+    """
+
+    __tablename__ = "market_extraction_rules"
+
+    id = Column(Integer, primary_key=True)
+    source_id = Column(Integer, ForeignKey("sources.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    # Which Markets sub-view this instrument belongs to.
+    category = Column(String(20), nullable=False, default="commodity")  # financial|stock|commodity
+    symbol = Column(String(32), nullable=False, index=True)  # e.g. "Nd", "AAPL", "XAU"
+    label = Column(String(120))                              # human name, e.g. "Neodymium spot"
+    url = Column(String(1000), nullable=False)               # the exact page to fetch
+    selector = Column(String(500), nullable=False)           # CSS selector locating the price
+    attribute = Column(String(100))                          # optional: read this attr, not text
+    value_regex = Column(String(300))                        # optional: capture-group regex for the number
+    currency = Column(String(8), nullable=False, default="USD")
+    unit = Column(String(16), nullable=False, default="kg")  # mass unit for commodities
+    market = Column(String(100))                             # market label / provenance
+    enabled = Column(Boolean, default=True)
+    last_run_at = Column(DateTime)
+    last_status = Column(String(255))                        # honest last outcome string
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+    source = relationship("Source")
+
+    __table_args__ = (
+        Index("ix_market_rule_source", "source_id"),
+        Index("ix_market_rule_category", "category"),
+        Index("ix_market_rule_symbol", "symbol"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<MarketExtractionRule({self.symbol} <- {self.selector!r} @ {self.url})>"
+
+
 
 # Example usage
 if __name__ == "__main__":

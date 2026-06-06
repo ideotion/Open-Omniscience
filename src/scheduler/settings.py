@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass
 _LOG = logging.getLogger(__name__)
 
 SETTINGS_VERSION = "oo-scheduler-settings-1"
-VALID_MODES = ("rss", "crawl")
+VALID_MODES = ("rss", "crawl", "markets")
 _MIN_INTERVAL, _MAX_INTERVAL = 1, 7 * 24 * 60  # minutes: 1 min .. 1 week
 
 
