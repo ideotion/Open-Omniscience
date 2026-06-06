@@ -84,6 +84,9 @@ from src.api.custody import router as custody_router
 # Import source management router
 from src.api.source_management import router as source_management_router
 
+# Import database overview router (honest read-only corpus statistics)
+from src.api.database import router as database_router
+
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
 from src.database.fts import SearchQueryError, search_ids
@@ -180,6 +183,9 @@ app.add_middleware(
 
 # Include source management router
 app.include_router(source_management_router)
+
+# Include database overview router
+app.include_router(database_router)
 
 # Include LLM router
 app.include_router(llm_router)
