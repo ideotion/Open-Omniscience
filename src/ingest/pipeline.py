@@ -123,7 +123,38 @@ def store_fetched(session: Session, source: Source, fetched) -> IngestOutcome:
         return IngestOutcome(fetched.requested_url, IngestResult.DUPLICATE,
                              detail="content hash already stored (race)")
     _maybe_record_custody(article)
+    _maybe_index_keywords(session, article, source)
     return IngestOutcome(fetched.requested_url, IngestResult.STORED, article_id=article.id)
+
+
+def _maybe_index_keywords(session: Session, article: Article, source: Source) -> None:
+    """Best-effort keyword/entity indexing on ingest (fast baseline extractor).
+
+    Fail-open and isolated: indexing must never break ingestion, so any error is
+    swallowed (and logged) and the already-committed article is untouched. Disable
+    with OO_NO_INDEX=1. City is taken from the source's metadata when known
+    (the reliable "source-based" location signal).
+    """
+    import os
+
+    if os.getenv("OO_NO_INDEX") == "1":
+        return
+    try:
+        from src.analytics.extract import get_extractor
+        from src.analytics.store import index_article
+
+        city = None
+        try:
+            meta = source.source_metadata
+            city = meta.city if meta else None
+        except Exception:  # noqa: BLE001 - metadata is optional
+            city = None
+        index_article(session, article, extractor=get_extractor("baseline"),
+                      country=source.country, city=city)
+    except Exception:  # noqa: BLE001 - analytics is auxiliary; never fail ingestion
+        session.rollback()
+        import logging
+        logging.getLogger(__name__).warning("keyword indexing on ingest failed", exc_info=True)
 
 
 def _maybe_record_custody(article: Article) -> None:
