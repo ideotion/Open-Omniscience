@@ -1,0 +1,109 @@
+# Open Omniscience — curated official commodity CSV feed catalog.
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# Starter set of machine-readable, no-API-key commodity price series that can be
+# imported straight into the store (Markets tab → Data feeds → Import, or
+# POST /api/markets/feeds/{key}/import). Every point comes from the downloaded
+# file on a real date — nothing is scraped or guessed.
+#
+# Primary provider: FRED (Federal Reserve Bank of St. Louis), which redistributes
+# the **World Bank "Pink Sheet"** commodity series (the "Global price of …" IDs)
+# and **EIA** energy series as clean CSV at a stable URL:
+#     https://fred.stlouisfed.org/graph/fredgraph.csv?id=<SERIES_ID>
+# CSV shape: first column is the date, second is the value; missing values are ".".
+#
+# Comparable sources you can add as custom feeds (Markets → custom feed form):
+#   • World Bank Pink Sheet (xlsx)  https://www.worldbank.org/en/research/commodity-markets
+#   • U.S. EIA energy data (CSV/API) https://www.eia.gov/opendata/
+#   • IMF Primary Commodity Prices   https://www.imf.org/en/Research/commodity-prices
+#
+# These series IDs are accurate to our knowledge; if a provider retires/renames one
+# the import fails *loudly* (HTTP error / no rows) rather than inventing data — fix
+# the URL here or import a custom feed. `unit` is recorded verbatim as provenance
+# (oil is per barrel, gas per MMBtu, metals per metric tonne); cross-unit
+# conversion is only ever applied on explicit request.
+
+feeds:
+  # --- Energy (EIA daily, via FRED) ---------------------------------------- #
+  - key: wti_crude
+    name: "Crude Oil — WTI (Cushing, daily)"
+    symbol: WTI
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO"
+    currency: USD
+    unit: barrel
+    market: EIA/FRED
+  - key: brent_crude
+    name: "Crude Oil — Brent (Europe, daily)"
+    symbol: BRENT
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU"
+    currency: USD
+    unit: barrel
+    market: EIA/FRED
+  - key: natural_gas
+    name: "Natural Gas — Henry Hub (daily)"
+    symbol: NATGAS
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DHHNGSP"
+    currency: USD
+    unit: mmbtu
+    market: EIA/FRED
+
+  # --- Base metals (World Bank "Global price of", monthly, via FRED) -------- #
+  - key: copper
+    name: "Copper (World Bank, monthly)"
+    symbol: COPPER
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCOPPUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+  - key: aluminum
+    name: "Aluminum (World Bank, monthly)"
+    symbol: ALUMINUM
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PALUMUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+  - key: nickel
+    name: "Nickel (World Bank, monthly)"
+    symbol: NICKEL
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PNICKUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+  - key: zinc
+    name: "Zinc (World Bank, monthly)"
+    symbol: ZINC
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PZINCUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+  - key: iron_ore
+    name: "Iron Ore (World Bank, monthly)"
+    symbol: IRON_ORE
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PIORECRUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+  - key: tin
+    name: "Tin (World Bank, monthly)"
+    symbol: TIN
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PTINUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+  - key: lead
+    name: "Lead (World Bank, monthly)"
+    symbol: LEAD
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PLEADUSDM"
+    currency: USD
+    unit: t
+    market: world-bank

@@ -326,6 +326,35 @@
       <div class="hint">After adding, use <strong>Test</strong> in the table to fetch the page once and see the
         exact value found — or the exact reason it didn't match — before relying on it.</div>
     </section>
+
+    <section class="panel">
+      <h2>Official price feeds (CSV import)</h2>
+      <p class="muted" style="margin-top:0">
+        The reliable way to load real history: import a machine-readable CSV series from an
+        official source (FRED redistributes the World Bank “Pink Sheet” and EIA energy series).
+        Every point comes straight from the file — nothing scraped or guessed.
+      </p>
+      <div style="overflow:auto"><table id="feed-table"></table></div>
+
+      <hr>
+      <h2 style="font-size:13px">Custom feed</h2>
+      <div class="row">
+        <div style="flex:3"><label for="feed-url">CSV URL</label>
+          <input id="feed-url" placeholder="https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO"></div>
+        <div><label for="feed-symbol">Symbol</label><input id="feed-symbol" placeholder="WTI"></div>
+      </div>
+      <div class="row">
+        <div><label for="feed-unit">Unit</label><input id="feed-unit" value="t"></div>
+        <div><label for="feed-currency">Currency</label><input id="feed-currency" value="USD"></div>
+        <div><label for="feed-market">Market label</label><input id="feed-market" placeholder="world-bank"></div>
+        <div><label for="feed-datecol">Date column <span class="muted">(opt)</span></label><input id="feed-datecol" placeholder="auto (col 1)"></div>
+        <div><label for="feed-valcol">Value column <span class="muted">(opt)</span></label><input id="feed-valcol" placeholder="auto (col 2)"></div>
+      </div>
+      <button onclick="importCustomFeed()">Import custom feed</button>
+      <div class="hint">Default mapping is column&nbsp;1 = date, column&nbsp;2 = value (the FRED convention).
+        Works with any CSV; missing values (<code>.</code>/blank) are skipped, never stored as zero.</div>
+      <div id="feed-result" class="hint"></div>
+    </section>
     </div>
 
     <!-- ============================ SETTINGS ========================= -->
@@ -744,6 +773,56 @@
         const d = await api("/api/markets/overview?category=" + encodeURIComponent(MKT_CAT));
         renderMarketTable(d.items);
       } catch (e) { toast("Markets: " + e.message, "err"); }
+
+      loadFeeds();
+    }
+
+    // -- Official CSV feeds ------------------------------------------------- //
+    async function loadFeeds() {
+      try {
+        const d = await api("/api/markets/feeds");
+        const t = $("feed-table");
+        if (!d.feeds.length) { t.innerHTML = `<tr><td class="muted">No feeds configured.</td></tr>`; return; }
+        t.innerHTML = "<tr><th>Series</th><th>Symbol</th><th>Unit</th><th>Stored</th><th></th></tr>" +
+          d.feeds.map(f => `<tr>
+            <td>${esc(f.name)}<div class="muted" style="font-size:12px">${esc(f.market||"")}</div></td>
+            <td><strong>${esc(f.symbol)}</strong></td>
+            <td class="muted">${esc(f.currency)}/${esc(f.unit)}</td>
+            <td class="muted">${f.points}</td>
+            <td style="white-space:nowrap">
+              <button class="tiny secondary" onclick="importFeed(${JSON.stringify(esc(f.key))})">Import</button>
+              <button class="tiny secondary" onclick="chartSymbol(${JSON.stringify(esc(f.symbol))}, ${JSON.stringify(esc(f.unit))})">Chart</button>
+            </td></tr>`).join("");
+      } catch (e) { /* feeds optional */ }
+    }
+
+    async function importFeed(key) {
+      toast("Importing feed… (downloads a CSV, may take a moment)");
+      try {
+        const r = await api(`/api/markets/feeds/${encodeURIComponent(key)}/import`, {method: "POST"});
+        toast(`Imported ${r.imported} new point(s) for ${r.symbol} (${r.skipped_existing} already had).`);
+        loadFeeds();
+      } catch (e) { toast("Import failed: " + e.message, "err"); }
+    }
+
+    async function importCustomFeed() {
+      const body = {
+        url: $("feed-url").value.trim(),
+        symbol: $("feed-symbol").value.trim(),
+        unit: $("feed-unit").value.trim() || "t",
+        currency: $("feed-currency").value.trim() || "USD",
+        market: $("feed-market").value.trim() || null,
+        date_column: $("feed-datecol").value.trim() || null,
+        value_column: $("feed-valcol").value.trim() || null,
+      };
+      if (!body.url || !body.symbol) { toast("URL and symbol are required.", "err"); return; }
+      $("feed-result").textContent = "Downloading and importing…";
+      try {
+        const r = await api("/api/markets/feeds/import-url", {method: "POST", body: JSON.stringify(body)});
+        $("feed-result").innerHTML = `<span class="pill ok">imported</span> ${r.imported} new point(s) for ` +
+          `${esc(r.symbol)} (${r.skipped_existing} already present, ${r.received} in feed).`;
+        toast("Feed imported."); loadFeeds();
+      } catch (e) { $("feed-result").textContent = ""; toast("Import failed: " + e.message, "err"); }
     }
 
     function renderMarketTable(items) {

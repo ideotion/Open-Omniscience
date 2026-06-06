@@ -51,6 +51,10 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   first run so the app is ready to ingest market coverage. (Live *price* numbers
   still come only from a verified extraction rule or a CSV import — see
   [docs/MARKETS.md](docs/MARKETS.md) — never a guessed selector.)
+- ✅ **Official CSV price feeds**: a one-click catalog (FRED, which carries the
+  **World Bank "Pink Sheet"** and **EIA** series) plus a **custom-URL importer**
+  to pull any CSV series into the commodity store — idempotent, missing values
+  skipped, failures reported (never fabricated).
 
 **Deferred to later phases (see [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md)):**
 local LLM analysis via Ollama (Phase 2); email + monitoring (Phase 4).

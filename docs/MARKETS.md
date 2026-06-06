@@ -57,19 +57,47 @@ find nothing. This is why working selectors are **not** pre-shipped — guessing
 them would mean fabricated numbers. Server-rendered pages (many official/statistical
 sites, some data tables) work well; heavily client-rendered quote widgets do not.
 
-### 2. CSV import (recommended for authoritative series)
+### 2. Official CSV feeds (recommended — reliable, ships with a catalog)
 
-For trustworthy numeric history, import official data as CSV — reliable and
-machine-readable, no scraping fragility:
+For trustworthy numeric history, import a machine-readable CSV series from an
+official source. This is the reliable path and the app ships a starter catalog
+(`configs/commodity_feeds.yml`) you can import in one click from
+**Markets → Official price feeds**, or via the API:
+
+```
+GET  /api/markets/feeds                # list curated feeds + how many points each has
+POST /api/markets/feeds/{key}/import   # import one (e.g. copper, wti_crude, brent_crude)
+POST /api/markets/feeds/import-url      # import ANY CSV URL you supply (user-customizable)
+```
+
+**Primary provider — FRED** (Federal Reserve Bank of St. Louis): a stable,
+no-API-key CSV endpoint, `https://fred.stlouisfed.org/graph/fredgraph.csv?id=<ID>`,
+which **redistributes the World Bank "Pink Sheet" commodity series** (the
+"Global price of …" IDs — copper `PCOPPUSDM`, brent `POILBREUSDM`, etc.) and
+**EIA** energy series (`DCOILWTICO`, `DHHNGSP`, …). First column is the date,
+second the value; missing values (`.`) are skipped, never stored as zero. Import
+is idempotent per `(symbol, market, date)`.
+
+**Comparable sources** you can add as a custom feed (URL + optional column names):
+- **World Bank** Commodity Markets ("Pink Sheet"): the `.xlsx` is at
+  <https://www.worldbank.org/en/research/commodity-markets>; the same series in
+  clean CSV come via the FRED feeds above.
+- **U.S. EIA** energy open data: <https://www.eia.gov/opendata/>
+- **IMF** Primary Commodity Prices: <https://www.imf.org/en/Research/commodity-prices>
+- **USGS** mineral commodity data (rare earths): <https://www.usgs.gov/centers/national-minerals-information-center>
+
+The default column mapping is column 1 = date, column 2 = value (the FRED
+convention); name `date_column` / `value_column` explicitly for other layouts.
+
+There is also a direct file-upload path for a CSV you already have:
 
 ```
 POST /api/commodities/{symbol}/prices/import-csv      (multipart file upload)
 ```
 
-Good public sources of downloadable series: **USGS** mineral commodity data,
-**World Bank** Commodity Markets ("Pink Sheet"), **EIA** energy data, and **FRED**
-(St. Louis Fed). Required CSV columns: a date column and a price column; optional
-`currency`, `unit`, `market`. Malformed rows are reported, never silently dropped.
+> If a provider renames or retires a series, the import fails **loudly** (HTTP
+> error / no usable rows) rather than inventing data — fix the URL in
+> `configs/commodity_feeds.yml` or use a custom feed.
 
 ## Why no auto-extracted prices on day one?
 

@@ -186,3 +186,73 @@ def overview(category: str | None = None, db: Session = Depends(get_db)) -> dict
             } if latest else None,
         })
     return {"category": category, "count": len(items), "items": items}
+
+
+# ----------------------------- CSV data feeds ------------------------------- #
+# The trustworthy path to real price history: import an official, machine-readable
+# CSV series (FRED / World Bank / EIA / a custom URL) straight into the store.
+
+
+class CustomFeedImport(BaseModel):
+    url: str
+    symbol: str
+    currency: str = "USD"
+    unit: str = "t"
+    market: str | None = None
+    date_column: str | None = None
+    value_column: str | None = None
+
+
+def _symbol_point_count(db: Session, symbol: str) -> int:
+    return db.query(CommodityPrice.id).filter_by(symbol=symbol).count()
+
+
+@router.get("/feeds")
+def list_feeds(db: Session = Depends(get_db)) -> dict:
+    """List curated official CSV feeds and how many points each symbol already has."""
+    from src.markets.feed_catalog import load_feeds
+
+    feeds = load_feeds()
+    out = [{**f.to_dict(), "points": _symbol_point_count(db, f.symbol)} for f in feeds]
+    return {"count": len(out), "feeds": out}
+
+
+@router.post("/feeds/{key}/import")
+def import_catalog_feed(key: str, db: Session = Depends(get_db)) -> dict:
+    """Fetch and import one curated feed by key (e.g. 'copper', 'wti_crude')."""
+    from src.markets.csv_feeds import import_feed
+    from src.markets.feed_catalog import get_feed
+
+    feed = get_feed(key)
+    if feed is None:
+        raise HTTPException(status_code=404, detail=f"Unknown feed {key!r}.")
+    result = import_feed(
+        db, url=feed.url, symbol=feed.symbol, fetcher=_fetcher,
+        date_column=feed.date_column, value_column=feed.value_column,
+        currency=feed.currency, unit=feed.unit, market=feed.market,
+        source=f"feed:{feed.key}:{feed.url}",
+    )
+    if result.status != "imported":
+        raise HTTPException(status_code=502, detail=result.to_dict())
+    return result.to_dict()
+
+
+@router.post("/feeds/import-url")
+def import_custom_feed(payload: CustomFeedImport, db: Session = Depends(get_db)) -> dict:
+    """Import a price series from any CSV URL the user supplies (user-customizable).
+
+    Defaults to column 0 = date and column 1 = value (the FRED convention); either
+    can be named explicitly via date_column / value_column.
+    """
+    from src.markets.csv_feeds import import_feed
+
+    if not payload.url.strip() or not payload.symbol.strip():
+        raise HTTPException(status_code=400, detail="url and symbol are required.")
+    result = import_feed(
+        db, url=payload.url, symbol=payload.symbol, fetcher=_fetcher,
+        date_column=payload.date_column, value_column=payload.value_column,
+        currency=payload.currency, unit=payload.unit, market=payload.market,
+    )
+    if result.status != "imported":
+        raise HTTPException(status_code=502, detail=result.to_dict())
+    return result.to_dict()
