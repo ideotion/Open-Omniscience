@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 _LOG = logging.getLogger(__name__)
 
@@ -36,6 +36,12 @@ class SchedulerSettings:
     max_sources_per_run: int = 25
     crawl_max_depth: int = 2
     crawl_max_pages: int = 50
+
+    # Source selection for rss/crawl runs (empty list = no filter on that facet).
+    # Sources are always also filtered to enabled=True. Tags match ANY (substring).
+    select_languages: list[str] = field(default_factory=list)
+    select_tags: list[str] = field(default_factory=list)
+    select_source_types: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -62,6 +68,21 @@ def _coerce_int(value, fallback: int, lo: int, hi: int) -> int:
         return fallback
 
 
+def _coerce_list(value) -> list[str]:
+    """Normalise a selection facet to a deduped list of lowercase, non-empty tokens."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = value.split(",")
+    out, seen = [], set()
+    for item in value:
+        token = str(item).strip().lower()
+        if token and token not in seen:
+            seen.add(token)
+            out.append(token)
+    return out
+
+
 def load_settings() -> SchedulerSettings:
     """Load scheduler settings, falling back to safe defaults."""
     path = _settings_path()
@@ -84,6 +105,9 @@ def load_settings() -> SchedulerSettings:
         max_sources_per_run=_coerce_int(raw.get("max_sources_per_run"), d.max_sources_per_run, 1, 1000),
         crawl_max_depth=_coerce_int(raw.get("crawl_max_depth"), d.crawl_max_depth, 0, 6),
         crawl_max_pages=_coerce_int(raw.get("crawl_max_pages"), d.crawl_max_pages, 1, 500),
+        select_languages=_coerce_list(raw.get("select_languages")),
+        select_tags=_coerce_list(raw.get("select_tags")),
+        select_source_types=_coerce_list(raw.get("select_source_types")),
     )
 
 
@@ -115,6 +139,10 @@ def save_settings(updates: dict) -> SchedulerSettings:
     _ranged("max_sources_per_run", 1, 1000, "max_sources_per_run")
     _ranged("crawl_max_depth", 0, 6, "crawl_max_depth")
     _ranged("crawl_max_pages", 1, 500, "crawl_max_pages")
+
+    for key in ("select_languages", "select_tags", "select_source_types"):
+        if key in updates:
+            setattr(current, key, _coerce_list(updates[key]))
 
     path = _settings_path()
     tmp = path.with_suffix(".json.tmp")

@@ -28,6 +28,27 @@ from src.scheduler.settings import SchedulerSettings, load_settings
 _LOG = logging.getLogger(__name__)
 
 
+def select_sources(session, settings: SchedulerSettings):
+    """Query of enabled sources matching the scheduler's selection criteria.
+
+    Always enabled-only; optionally narrowed by language / source_type (exact) and
+    tags (match ANY, substring). Ordered highest-priority first. Used by rss/crawl
+    runs and by the targets-preview endpoint so "what will be scraped" is explicit.
+    """
+    from sqlalchemy import or_
+
+    from src.database.models import Source
+
+    q = session.query(Source).filter_by(enabled=True)
+    if settings.select_languages:
+        q = q.filter(Source.language.in_(settings.select_languages))
+    if settings.select_source_types:
+        q = q.filter(Source.source_type.in_(settings.select_source_types))
+    if settings.select_tags:
+        q = q.filter(or_(*[Source.tags.ilike(f"%{t}%") for t in settings.select_tags]))
+    return q.order_by(Source.priority.asc(), Source.id.asc())
+
+
 def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     """Run one ingestion pass over enabled sources and return an aggregated tally.
 
@@ -35,7 +56,7 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     each enabled source is crawled (bounded by the crawl caps in ``settings``).
     Sources are taken highest-priority first, capped at ``max_sources_per_run``.
     """
-    from src.database.models import MarketExtractionRule, Source
+    from src.database.models import MarketExtractionRule
     from src.ingest.crawl import CrawlConfig, crawl_source
     from src.ingest.pipeline import ingest_source
 
@@ -96,13 +117,7 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
             "duration_s": round((finished - started).total_seconds(), 2),
         }
 
-    sources = (
-        session.query(Source)
-        .filter_by(enabled=True)
-        .order_by(Source.priority.asc(), Source.id.asc())
-        .limit(settings.max_sources_per_run)
-        .all()
-    )
+    sources = select_sources(session, settings).limit(settings.max_sources_per_run).all()
 
     for source in sources:
         try:

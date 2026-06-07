@@ -103,6 +103,16 @@
   </nav>
 
   <main>
+    <div id="onboard" class="panel" style="display:none;border-color:var(--accent)">
+      <h2 style="color:var(--fg)">Welcome — your corpus is empty</h2>
+      <p class="muted" style="margin-top:0">Get started by registering the curated source catalog and running a
+        first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.</p>
+      <div class="row">
+        <button onclick="firstRun(this)">Seed sources &amp; run a first ingestion</button>
+        <button class="secondary" onclick="$('onboard').style.display='none'">Dismiss</button>
+      </div>
+      <div id="onboard-status" class="hint" style="margin-top:6px"></div>
+    </div>
     <!-- ============================ SEARCH ============================ -->
     <div class="tab-page active" id="tab-search">
     <section class="panel">
@@ -129,26 +139,6 @@
     <!-- ============================ INGEST ============================ -->
     <div class="tab-page" id="tab-ingest">
     <section class="panel">
-      <h2>Ingest</h2>
-      <div class="row">
-        <div>
-          <label for="ing-source">Ingest a source's RSS feed</label>
-          <select id="ing-source"></select>
-        </div>
-        <div style="flex:0 0 auto; align-self:end;">
-          <button onclick="ingestSource()">Fetch feed</button>
-        </div>
-      </div>
-      <label for="ing-url">…or ingest a single article URL</label>
-      <div class="row">
-        <div><input id="ing-url" placeholder="https://example.com/article"></div>
-        <div style="flex:0 0 auto;"><button onclick="ingestUrl()">Ingest URL</button></div>
-      </div>
-      <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
-      <div id="ingest-result" class="hint"></div>
-    </section>
-
-    <section class="panel">
       <h2>Automatic ingestion (scheduler)</h2>
       <div id="sched-status" class="hint">Loading scheduler status…</div>
       <div class="row" style="margin-top:8px">
@@ -166,6 +156,8 @@
           <select id="sch-mode" onchange="toggleCrawlFields()">
             <option value="rss">RSS feeds</option>
             <option value="crawl">Recursive crawl</option>
+            <option value="markets">Markets (price rules)</option>
+            <option value="wiki">Wikipedia (watched pages)</option>
           </select></div>
         <div><label for="sch-maxsrc">Max sources / run</label>
           <input id="sch-maxsrc" type="number" min="1" max="1000" step="1"></div>
@@ -176,7 +168,17 @@
         <div><label for="sch-pages">Max pages / source</label>
           <input id="sch-pages" type="number" min="1" max="500" step="1"></div>
       </div>
-      <div class="row" style="margin-top:6px">
+
+      <h2 style="font-size:13px;margin:14px 0 4px">Which sources (rss / crawl modes)</h2>
+      <div class="row">
+        <div><label for="sch-langs">Languages</label><input id="sch-langs" placeholder="en, fr (blank = all)"></div>
+        <div><label for="sch-types">Source types</label><input id="sch-types" placeholder="news, financial …"></div>
+        <div style="flex:2"><label for="sch-tags">Tags / keywords (match any)</label><input id="sch-tags" placeholder="politics, markets, climate"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="previewTargets()">Preview targets</button></div>
+      </div>
+      <div id="sched-targets" class="hint" style="margin-top:6px"></div>
+
+      <div class="row" style="margin-top:8px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="sch-autostart" style="width:auto"> Start automatically on launch
         </label>
@@ -186,6 +188,26 @@
         (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers
         articles, it does not mirror sites.</div>
       <div id="sched-last" class="hint" style="margin-top:8px"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Manual ingest</h2>
+      <div class="row">
+        <div>
+          <label for="ing-source">Ingest a source's RSS feed</label>
+          <select id="ing-source"></select>
+        </div>
+        <div style="flex:0 0 auto; align-self:end;">
+          <button onclick="ingestSource()">Fetch feed</button>
+        </div>
+      </div>
+      <label for="ing-url">…or ingest a single article URL</label>
+      <div class="row">
+        <div><input id="ing-url" placeholder="https://example.com/article"></div>
+        <div style="flex:0 0 auto;"><button onclick="ingestUrl()">Ingest URL</button></div>
+      </div>
+      <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
+      <div id="ingest-result" class="hint"></div>
     </section>
     </div>
 
@@ -712,6 +734,41 @@
       } catch (e) { $("restore-result").textContent = ""; toast("Restore failed: " + e.message, "err"); }
     }
 
+    // -- First-run onboarding (empty corpus) -------------------------------- //
+    async function checkEmptyCorpus() {
+      try {
+        const s = await api("/api/database/stats");
+        if ((s.counts && s.counts.articles === 0)) $("onboard").style.display = "";
+      } catch (e) { /* stats unavailable -> no banner */ }
+    }
+
+    async function firstRun(btn) {
+      btn.disabled = true;
+      const st = $("onboard-status");
+      try {
+        const stats = await api("/api/database/stats");
+        if (!stats.counts || stats.counts.sources === 0) {
+          st.textContent = "Seeding curated sources…";
+          await api("/api/sources/seed-defaults", {method: "POST"});
+        }
+        st.textContent = "Running a first ingestion (bounded; may take a moment)…";
+        await api("/api/scheduler/run-now", {method: "POST"});
+        let n = 0;
+        const poll = setInterval(async () => {
+          const s = await api("/api/database/stats").catch(() => null);
+          const arts = s && s.counts ? s.counts.articles : 0;
+          st.textContent = `Ingesting… ${arts} article(s) so far.`;
+          if (arts > 0 || ++n > 40) {
+            clearInterval(poll);
+            if (arts > 0) { st.innerHTML = `<span class="pill ok">done</span> ${arts} article(s) ingested.`;
+              setTimeout(() => { $("onboard").style.display = "none"; }, 2500); doSearch(); loadDbStats && loadDbStats(); }
+            else st.textContent = "No articles yet — check the Sources tab and the scheduler's last run.";
+            btn.disabled = false;
+          }
+        }, 2000);
+      } catch (e) { st.textContent = "First run failed: " + e.message; btn.disabled = false; }
+    }
+
     // -- Database tab ------------------------------------------------------- //
     async function loadDbStats() {
       const el = $("db-stats");
@@ -945,14 +1002,34 @@
       $("sch-depth").value = c.crawl_max_depth;
       $("sch-pages").value = c.crawl_max_pages;
       $("sch-autostart").checked = !!c.autostart;
+      $("sch-langs").value = (c.select_languages || []).join(", ");
+      $("sch-types").value = (c.select_source_types || []).join(", ");
+      $("sch-tags").value = (c.select_tags || []).join(", ");
       toggleCrawlFields();
     }
+
+    const _csv = id => $(id).value.split(",").map(x => x.trim()).filter(Boolean);
 
     async function loadScheduler() {
       try { renderSchedStatus(await api("/api/scheduler/status")); }
       catch (e) { $("sched-status").textContent = "Scheduler status unavailable: " + e.message; }
       try { applySchedConfig(await api("/api/scheduler/config")); }
       catch (e) { /* config panel stays at defaults */ }
+      previewTargets();
+    }
+
+    async function previewTargets() {
+      const el = $("sched-targets");
+      try {
+        const t = await api("/api/scheduler/targets");
+        if (!t.applies) { el.innerHTML = `<span class="muted">Selection applies to RSS / crawl modes; current mode is <strong>${esc(t.mode)}</strong>.</span>`; return; }
+        const langs = Object.entries(t.by_language).map(([k,v])=>`${esc(k)}:${v}`).join("  ");
+        const types = Object.entries(t.by_source_type).map(([k,v])=>`${esc(k)}:${v}`).join("  ");
+        el.innerHTML = `<span class="pill ${t.matched?'ok':'warn'}">${t.matched} sources targeted</span> ` +
+          `of ${t.total_enabled} enabled · this run will process up to <strong>${t.will_process_this_run}</strong>` +
+          `<div class="muted" style="font-size:12px;margin-top:4px">by language: ${langs||'—'}</div>` +
+          `<div class="muted" style="font-size:12px">by type: ${types||'—'}</div>`;
+      } catch (e) { el.textContent = "Could not preview targets: " + e.message; }
     }
 
     async function schedulerStart() {
@@ -986,9 +1063,12 @@
         crawl_max_depth: Number($("sch-depth").value),
         crawl_max_pages: Number($("sch-pages").value),
         autostart: $("sch-autostart").checked,
+        select_languages: _csv("sch-langs"),
+        select_source_types: _csv("sch-types"),
+        select_tags: _csv("sch-tags"),
       };
       try { applySchedConfig(await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify(body)}));
-        toast("Schedule saved."); } catch (e) { toast("Save failed: " + e.message, "err"); }
+        toast("Schedule saved."); previewTargets(); } catch (e) { toast("Save failed: " + e.message, "err"); }
     }
 
     // -- Markets ------------------------------------------------------------ //
@@ -1775,7 +1855,7 @@
     if (_media) _media.addEventListener("change", () => {
       if ($("set-theme").value === "system") applyTheme("system");
     });
-    loadHealth(); loadLlmHealth(); loadSources();
+    loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus();
     // Honour a deep-link like /#sources on first load.
     const initial = (location.hash || "#search").slice(1);
     if (document.getElementById("tab-" + initial)) showTab(initial);
