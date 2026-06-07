@@ -529,8 +529,9 @@
         </label>
         <span id="wiki-progress" class="hint" style="align-self:center"></span>
       </div>
-      <div class="hint" style="margin-top:6px">Offline full-text baseline downloads (per-language, with
-        size estimates) are a separate, optional subsystem — coming next.</div>
+      <div class="hint" style="margin-top:6px">Optional, heavy <strong>offline full-text baselines</strong>
+        (per-language dumps) live in <a href="#settings" onclick="showTab('settings')">Settings → Wikipedia</a>,
+        where you can pick an edition from the list and download it. Not needed for change-tracking above.</div>
     </section>
 
     <section class="panel">
@@ -557,19 +558,6 @@
       <div id="wiki-diff" style="margin-top:10px"></div>
     </section>
 
-    <section class="panel">
-      <h2>Offline baseline (per-language, optional)</h2>
-      <p class="muted" style="margin-top:0">Heavy and separate from live tracking. Downloads the official
-        Wikimedia current-text dump for an edition (resumable). enwiki ≈ tens of GB; most editions are far
-        smaller. Not needed for change-tracking — only for offline reading/search.</p>
-      <div class="row">
-        <div><label for="dump-lang">Edition</label><input id="dump-lang" value="en" placeholder="en / fr / …"></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="probeDump()">Estimate size</button></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
-        <div id="dump-estimate" class="hint" style="align-self:center"></div>
-      </div>
-      <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>
-    </section>
     </div>
 
     <!-- ============================ SETTINGS ========================= -->
@@ -612,6 +600,27 @@
       <textarea id="kf-excluded" rows="5" placeholder="one term per line (or comma-separated)"></textarea>
       <button onclick="saveKeywordFilter()">Save keyword filter</button>
       <div id="kf-result" class="hint"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Wikipedia offline baselines</h2>
+      <p class="muted" style="margin-top:0">Optional, heavy, and separate from live change-tracking. Pick a
+        language edition below and download the official Wikimedia <em>current-text</em> dump (resumable, with
+        pause/resume). Editions are listed largest-first; the real download size is read from the server when you
+        click <em>Estimate size</em> — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller.
+        Baselines are only for offline reading/search — change-tracking (Wikipedia tab) does not need them.</p>
+      <div class="row">
+        <div style="flex:2">
+          <label for="dump-lang">Language edition</label>
+          <select id="dump-lang"><option value="en">Loading editions…</option></select>
+        </div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="probeDump()">Estimate size</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
+        <div id="dump-estimate" class="hint" style="align-self:center"></div>
+      </div>
+      <div class="hint">The list covers the major editions, largest first; sizes shown are coarse heaviness
+        hints, while <em>Estimate size</em> reports the exact current dump size from the server.</div>
+      <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>
     </section>
 
     <section class="panel">
@@ -736,6 +745,23 @@
           .forEach(b => { b.disabled = !st.backup_supported; });
       } catch (e) { $("backup-status").textContent = "Backup status unavailable: " + e.message; }
       loadKeywordFilter();
+      loadWikiLanguages();
+      loadWikiDumps();
+    }
+
+    // -- Wikipedia offline baselines (lives in Settings) -------------------- //
+    const _TIER_LABEL = {huge: "very large", large: "large", medium: "medium", small: "smaller"};
+    async function loadWikiLanguages() {
+      const sel = $("dump-lang");
+      if (!sel) return;
+      try {
+        const d = await api("/api/wiki/languages");
+        const cur = sel.value;
+        sel.innerHTML = d.languages.map(l =>
+          `<option value="${esc(l.code)}">${esc(l.name)} — ${esc(l.autonym)} (${esc(l.code)}, ${esc(_TIER_LABEL[l.tier]||l.tier)})</option>`
+        ).join("");
+        if (cur && d.languages.some(l => l.code === cur)) sel.value = cur;
+      } catch (e) { /* picker is optional; leave the default option */ }
     }
 
     async function loadKeywordFilter() {
@@ -1766,7 +1792,7 @@
     async function loadWiki() {
       try { renderWikiStatus(await api("/api/wiki/status")); }
       catch (e) { if (!_wikiStatusBuilt) $("wiki-status").textContent = "Status unavailable: " + e.message; }
-      loadWikiPages(); loadWikiChanges(); loadWikiDumps();
+      loadWikiPages(); loadWikiChanges();
     }
 
     async function loadWikiDumps() {

@@ -51,11 +51,15 @@ diff + provenance (revid, editor, timestamp), which plugs into the existing
 1. **Watch & track** (lightweight, instant, the default): a watchlist of pages /
    categories per language edition; poll revisions on the in-app scheduler; store
    revisions + diffs + flags; a diff viewer + per-page timeline. No bulk download.
-2. **Offline baseline** (heavy, optional): a **per-language menu** — each edition
-   shows an estimated **size + time** before you commit, with download / pause /
-   resume / delete, kept entirely separate from article scraping. (Size reality:
-   current-text enwiki ≈ 22 GB compressed; full history is terabytes — only needed
-   for offline historical diffs.)
+2. **Offline baseline** (heavy, optional): lives in **Settings → Wikipedia
+   offline baselines** (deliberately out of the way of the lightweight tracker). A
+   **selectable list of language editions** (curated, largest-first, with each
+   language's own name and a coarse size tier) replaces free-text code entry; the
+   exact current dump size is read from the server on demand (`Estimate size`),
+   then download / pause / resume / delete. The list comes from
+   `GET /api/wiki/languages`; the downloader still accepts any edition code.
+   (Size reality: current-text enwiki ≈ 22 GB compressed; full history is
+   terabytes — only needed for offline historical diffs.)
 
 ## Status
 
@@ -64,9 +68,11 @@ diff + provenance (revid, editor, timestamp), which plugs into the existing
   edit-flagging logic (`flagging.py`); ORES client (`ores.py`); the tracking
   orchestrator (`track.py`, baseline + delta storage); the scheduler `wiki` mode;
   the **API** (`/api/wiki/*`) and the **Wikipedia tab** (watchlist, track now,
-  flagged-changes feed, diff viewer); and the **offline baseline downloader**
-  (`dumps.py` — per-language, resumable, size probe) with its UI panel. All pure
-  logic + orchestration unit-tested with fixtures (no network).
+  flagged-changes feed, diff viewer); the **offline baseline downloader**
+  (`dumps.py` — per-language, resumable, size probe) now driven by a **language
+  picker** (`languages.py`, `GET /api/wiki/languages`) relocated to **Settings →
+  Wikipedia offline baselines**. All pure logic + orchestration unit-tested with
+  fixtures (no network).
 - **Next:** cross-link wiki diffs into the Insights keyword analytics; optional
   EventStreams firehose; evidence-export of a flagged diff via chain-of-custody.
 

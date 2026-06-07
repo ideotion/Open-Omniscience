@@ -149,6 +149,14 @@ class StartDump(BaseModel):
     kind: str = "pages-articles"
 
 
+@router.get("/languages")
+def wiki_languages() -> dict:
+    """Curated Wikipedia editions for the offline-baseline picker (code/name/size tier)."""
+    from src.wiki.languages import all_languages
+
+    return {"languages": [lang.to_dict() for lang in all_languages()]}
+
+
 @router.get("/dumps")
 def dumps_list() -> dict:
     from src.wiki.dumps import get_manager
