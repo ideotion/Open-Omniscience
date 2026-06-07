@@ -13,8 +13,15 @@
 # label_lang: preferred language for entity names (falls back to English).
 # limit: max rows per (country, spec) query.
 
+# Scale target: ~249 countries × the media types below, each capped at `limit`,
+# yields tens of thousands of REAL, attributable sources — Wikidata lists official
+# websites for far more outlets than any hand-curated file could. To aim at ~50k+,
+# keep the limit high and the media types broad; the generator dedups by domain and
+# records (never fabricates) anything it can't fetch. Run:
+#   python scripts/build_world_news_catalog.py                       # all countries
+#   python scripts/build_world_news_catalog.py --countries fr,jp,ke  # a subset
 label_lang: en
-limit: 3000
+limit: 5000
 
 specs:
   # ---- News media ---------------------------------------------------------- #
@@ -29,6 +36,8 @@ specs:
       - Q1616075    # television station
       - Q14350      # radio station
       - Q1002697    # periodical (magazines etc.)
+      - Q41298      # magazine
+      - Q15265344   # broadcaster
 
   # ---- Official institutions ---------------------------------------------- #
   # Primary-source political channels. VERIFY these ids on wikidata.org for your

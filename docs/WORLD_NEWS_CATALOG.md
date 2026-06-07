@@ -56,6 +56,43 @@ or `configs/markets_sources.yml`, then writes `configs/world_news_sources.yml` a
 prints a country-coverage summary. Be polite: `--delay` (default 1s) spaces out
 Wikidata queries.
 
+## Scale: reaching tens of thousands of sources (target ~50,000+)
+
+The ambition is **at least ~50,000 sources, several dozen per country**. The honest
+way there is *generation*, not typing:
+
+- **Wikidata is the engine.** `configs/catalog_query.yml` now runs **~249 countries
+  × broad media types** at `limit: 5000` each. Wikidata lists official websites for
+  far more outlets than any hand-list could — a full run realistically yields tens
+  of thousands of real, attributable, per-country, de-duplicated entries. **Run it
+  on a networked machine/CI** (the app sandbox is often egress-restricted) and the
+  seeder picks up the result automatically.
+- **Fold in open datasets** with `--merge-csv` (e.g. a GDELT or Media Cloud export
+  of domains) to push coverage further — still real, attributable URLs.
+- **What we will NOT do:** fabricate ~48k plausible-but-dead RSS URLs. That would
+  poison the corpus and break the project's core promise (*nothing is guessed*). A
+  smaller real catalog beats a huge fake one. The number grows by running the
+  generator, not by inventing rows.
+
+## Political-spectrum catalog (`configs/sources_spectrum.yml`)
+
+Wikidata gives breadth but has **no editorial leaning**. So a hand-curated companion
+catalog ships ~280 real, well-known outlets across ~95 countries and ~30 languages,
+each tagged with:
+
+- a **leaning** (`lean-left`, `lean-center-left`, `lean-center`, `lean-center-right`,
+  `lean-right`) — *reputational and contestable*, drawn from widely-cited media-bias
+  assessments and each outlet's stance; **or**
+- an **ownership** tag (`public-broadcaster`, `state-media`, `wire-agency`) where that
+  matters more than slant — so a truth-seeker can weigh provenance (e.g. RT, Xinhua,
+  Press TV are tagged `state-media`, not "news" alone);
+- plus **topic keywords** (`business`, `investigative`, `tabloid`, `analysis`, …).
+
+These tags are deliberately namespaced and easy to filter (Scheduler "tags"
+targeting, Sources filters) and easy to **override** — leaning is an editorial
+judgement, offered as a starting point, not a verdict. The file is merged at seed
+time, de-duped by domain against the other catalogs.
+
 ## Tuning what counts as a source
 
 Edit `configs/catalog_query.yml`. Each spec is a `source_type` + a list of

@@ -1,0 +1,4134 @@
+# Open Omniscience — curated POLITICAL-SPECTRUM news catalog.
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+# 
+# Real, well-known outlets hand-tagged across the political spectrum and by
+# ownership, with topic keywords — the editorial dimension the Wikidata
+# generator cannot provide. Leaning tags (lean-left … lean-right) are
+# REPUTATIONAL and CONTESTABLE, drawn from widely-cited media-bias
+# assessments and each outlet's stance; ownership tags (public-broadcaster,
+# state-media, wire-agency) describe funding/control, not slant. Edit freely.
+# Nothing is fabricated: every entry is a real outlet with a real domain.
+# RSS is set only where confident; domain-only entries are still valid seeds.
+
+sources:
+- name: CNN
+  domain: cnn.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: US
+  rss_url: http://rss.cnn.com/rss/edition.rss
+- name: MSNBC
+  domain: msnbc.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - general
+  - politics
+  - lean-left
+  - news
+  country: US
+- name: The Atlantic
+  domain: theatlantic.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - politics
+  - culture
+  - lean-center-left
+  - news
+  country: US
+  rss_url: https://www.theatlantic.com/feed/all/
+- name: Vox
+  domain: vox.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - politics
+  - lean-center-left
+  - news
+  country: US
+  rss_url: https://www.vox.com/rss/index.xml
+- name: Newsmax
+  domain: newsmax.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: US
+- name: Foreign Policy
+  domain: foreignpolicy.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - analysis
+  - world
+  - lean-center
+  - news
+  country: US
+- name: Foreign Affairs
+  domain: foreignaffairs.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - analysis
+  - world
+  - lean-center
+  - news
+  country: US
+- name: The Daily Telegraph
+  domain: telegraph.co.uk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: GB
+  rss_url: https://www.telegraph.co.uk/rss.xml
+- name: The Times
+  domain: thetimes.co.uk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: GB
+- name: Daily Mail
+  domain: dailymail.co.uk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - tabloid
+  - lean-right
+  - news
+  country: GB
+  rss_url: https://www.dailymail.co.uk/articles.rss
+- name: Daily Mirror
+  domain: mirror.co.uk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - tabloid
+  - lean-center-left
+  - news
+  country: GB
+- name: The Spectator
+  domain: spectator.co.uk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: GB
+- name: New Statesman
+  domain: newstatesman.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - politics
+  - lean-left
+  - news
+  country: GB
+- name: Sky News
+  domain: news.sky.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: GB
+  rss_url: http://feeds.skynews.com/feeds/rss/world.xml
+- name: Channel 4 News
+  domain: channel4.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: GB
+- name: The Irish Times
+  domain: irishtimes.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: IE
+- name: RTÉ
+  domain: rte.ie
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: IE
+  rss_url: https://www.rte.ie/news/rss/news-headlines.xml
+- name: Irish Independent
+  domain: independent.ie
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: IE
+- name: CBC News
+  domain: cbc.ca
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: CA
+  rss_url: https://www.cbc.ca/cmlink/rss-topstories
+- name: National Post
+  domain: nationalpost.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - general
+  - politics
+  - lean-right
+  - news
+  country: CA
+- name: CTV News
+  domain: ctvnews.ca
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: CA
+- name: Radio-Canada
+  domain: ici.radio-canada.ca
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: fr
+  region: north-america
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: CA
+- name: La Presse
+  domain: lapresse.ca
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: north-america
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: CA
+- name: Le Devoir
+  domain: ledevoir.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: north-america
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: CA
+- name: The Tyee
+  domain: thetyee.ca
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: north-america
+  tags:
+  - politics
+  - lean-left
+  - news
+  country: CA
+- name: The Age
+  domain: theage.com.au
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: oceania
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: AU
+- name: news.com.au
+  domain: news.com.au
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: oceania
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: AU
+- name: Sky News Australia
+  domain: skynews.com.au
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: oceania
+  tags:
+  - general
+  - politics
+  - lean-right
+  - news
+  country: AU
+- name: Crikey
+  domain: crikey.com.au
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: oceania
+  tags:
+  - politics
+  - lean-center-left
+  - news
+  country: AU
+- name: RNZ
+  domain: rnz.co.nz
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: en
+  region: oceania
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: NZ
+  rss_url: https://www.rnz.co.nz/rss/national.xml
+- name: Stuff
+  domain: stuff.co.nz
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: oceania
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: NZ
+- name: Mediapart
+  domain: mediapart.fr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: fr
+  region: europe
+  tags:
+  - investigative
+  - lean-left
+  - news
+  country: FR
+- name: L'Humanité
+  domain: humanite.fr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: fr
+  region: europe
+  tags:
+  - politics
+  - lean-left
+  - news
+  country: FR
+- name: RFI
+  domain: rfi.fr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: fr
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: FR
+- name: L'Obs
+  domain: nouvelobs.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: FR
+- name: La Croix
+  domain: la-croix.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: europe
+  tags:
+  - religion
+  - lean-center
+  - news
+  country: FR
+- name: Valeurs Actuelles
+  domain: valeursactuelles.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: fr
+  region: europe
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: FR
+- name: Marianne
+  domain: marianne.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: europe
+  tags:
+  - politics
+  - lean-center
+  - news
+  country: FR
+- name: Jeune Afrique
+  domain: jeuneafrique.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: europe
+  tags:
+  - africa
+  - lean-center
+  - news
+  country: FR
+- name: Die Zeit
+  domain: zeit.de
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: DE
+- name: Süddeutsche Zeitung
+  domain: sueddeutsche.de
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: DE
+- name: Frankfurter Allgemeine Zeitung
+  domain: faz.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: DE
+- name: Die Welt
+  domain: welt.de
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: DE
+- name: taz
+  domain: taz.de
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-left
+  - news
+  country: DE
+- name: Bild
+  domain: bild.de
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - tabloid
+  - lean-right
+  - news
+  country: DE
+- name: Tagesschau (ARD)
+  domain: tagesschau.de
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: DE
+  rss_url: https://www.tagesschau.de/xml/rss2/
+- name: Focus
+  domain: focus.de
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: DE
+- name: Junge Freiheit
+  domain: jungefreiheit.de
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: DE
+- name: nd (neues deutschland)
+  domain: nd-aktuell.de
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - politics
+  - lean-left
+  - news
+  country: DE
+- name: Der Standard
+  domain: derstandard.at
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: AT
+- name: Die Presse
+  domain: diepresse.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: AT
+- name: Kronen Zeitung
+  domain: krone.at
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - tabloid
+  - lean-right
+  - news
+  country: AT
+- name: ORF
+  domain: orf.at
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: AT
+- name: Neue Zürcher Zeitung
+  domain: nzz.ch
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: CH
+- name: Tages-Anzeiger
+  domain: tagesanzeiger.ch
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: CH
+- name: SRF
+  domain: srf.ch
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: de
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: CH
+- name: Corriere della Sera
+  domain: corriere.it
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: it
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: IT
+- name: La Stampa
+  domain: lastampa.it
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: it
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: IT
+- name: Il Sole 24 Ore
+  domain: ilsole24ore.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: it
+  region: europe
+  tags:
+  - business
+  - lean-center
+  - news
+  country: IT
+- name: Il Fatto Quotidiano
+  domain: ilfattoquotidiano.it
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: it
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-left
+  - news
+  country: IT
+- name: Il Giornale
+  domain: ilgiornale.it
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: it
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-right
+  - news
+  country: IT
+- name: Libero
+  domain: liberoquotidiano.it
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: it
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-right
+  - news
+  country: IT
+- name: il manifesto
+  domain: ilmanifesto.it
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: it
+  region: europe
+  tags:
+  - politics
+  - lean-left
+  - news
+  country: IT
+- name: Avvenire
+  domain: avvenire.it
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: it
+  region: europe
+  tags:
+  - religion
+  - lean-center
+  - news
+  country: IT
+- name: Rai News
+  domain: rainews.it
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: it
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: IT
+- name: El Confidencial
+  domain: elconfidencial.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: europe
+  tags:
+  - investigative
+  - lean-center
+  - news
+  country: ES
+- name: eldiario.es
+  domain: eldiario.es
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: es
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-left
+  - news
+  country: ES
+- name: Público
+  domain: publico.es
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: es
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-left
+  - news
+  country: ES
+- name: La Razón
+  domain: larazon.es
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: es
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-right
+  - news
+  country: ES
+- name: Público (Portugal)
+  domain: publico.pt
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: pt
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: PT
+- name: Expresso
+  domain: expresso.pt
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: pt
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PT
+- name: Diário de Notícias
+  domain: dn.pt
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: pt
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PT
+- name: RTP
+  domain: rtp.pt
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: pt
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: PT
+- name: NOS
+  domain: nos.nl
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: nl
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: NL
+- name: de Volkskrant
+  domain: volkskrant.nl
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: nl
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: NL
+- name: De Telegraaf
+  domain: telegraaf.nl
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: nl
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: NL
+- name: De Standaard
+  domain: standaard.be
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: nl
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: BE
+- name: La Libre Belgique
+  domain: lalibre.be
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: BE
+- name: De Morgen
+  domain: demorgen.be
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: nl
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: BE
+- name: VRT NWS
+  domain: vrt.be
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: nl
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: BE
+- name: POLITICO Europe
+  domain: politico.eu
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - eu
+  - politics
+  - lean-center
+  - news
+  country: BE
+- name: EUobserver
+  domain: euobserver.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - eu
+  - politics
+  - lean-center
+  - news
+  country: BE
+- name: Svenska Dagbladet
+  domain: svd.se
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: sv
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: SE
+- name: Aftonbladet
+  domain: aftonbladet.se
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: sv
+  region: europe
+  tags:
+  - tabloid
+  - lean-center-left
+  - news
+  country: SE
+- name: Expressen
+  domain: expressen.se
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: sv
+  region: europe
+  tags:
+  - tabloid
+  - lean-center-right
+  - news
+  country: SE
+- name: Sveriges Radio
+  domain: sverigesradio.se
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: sv
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: SE
+- name: Aftenposten
+  domain: aftenposten.no
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: 'no'
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: 'NO'
+- name: VG
+  domain: vg.no
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: 'no'
+  region: europe
+  tags:
+  - tabloid
+  - lean-center
+  - news
+  country: 'NO'
+- name: Dagbladet
+  domain: dagbladet.no
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: 'no'
+  region: europe
+  tags:
+  - tabloid
+  - lean-center-left
+  - news
+  country: 'NO'
+- name: NRK
+  domain: nrk.no
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: 'no'
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: 'NO'
+- name: Politiken
+  domain: politiken.dk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: da
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: DK
+- name: Jyllands-Posten
+  domain: jyllands-posten.dk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: da
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: DK
+- name: Berlingske
+  domain: berlingske.dk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: da
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: DK
+- name: DR
+  domain: dr.dk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: da
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: DK
+- name: Dagbladet Information
+  domain: information.dk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: da
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-left
+  - news
+  country: DK
+- name: Helsingin Sanomat
+  domain: hs.fi
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fi
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: FI
+- name: Yle
+  domain: yle.fi
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: fi
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: FI
+- name: RÚV
+  domain: ruv.is
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: is
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: IS
+- name: Morgunblaðið
+  domain: mbl.is
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: is
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: IS
+- name: Gazeta Wyborcza
+  domain: wyborcza.pl
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: pl
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: PL
+- name: Rzeczpospolita
+  domain: rp.pl
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: pl
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: PL
+- name: Onet
+  domain: onet.pl
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: pl
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PL
+- name: TVP Info
+  domain: tvp.info
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: pl
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: PL
+- name: wPolityce
+  domain: wpolityce.pl
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: pl
+  region: europe
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: PL
+- name: Notes from Poland
+  domain: notesfrompoland.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PL
+- name: iDNES.cz
+  domain: idnes.cz
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: cs
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: CZ
+- name: Deník N
+  domain: denikn.cz
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: cs
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: CZ
+- name: Czech Radio (iROZHLAS)
+  domain: irozhlas.cz
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: cs
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: CZ
+- name: Index.hu
+  domain: index.hu
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: hu
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: HU
+- name: Magyar Nemzet
+  domain: magyarnemzet.hu
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: hu
+  region: europe
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: HU
+- name: '444'
+  domain: 444.hu
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: hu
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: HU
+- name: Adevărul
+  domain: adevarul.ro
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ro
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: RO
+- name: Digi24
+  domain: digi24.ro
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ro
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: RO
+- name: G4Media
+  domain: g4media.ro
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ro
+  region: europe
+  tags:
+  - investigative
+  - lean-center
+  - news
+  country: RO
+- name: Kathimerini
+  domain: kathimerini.gr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: el
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: GR
+- name: To Vima
+  domain: tovima.gr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: el
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: GR
+- name: Efimerida ton Syntakton
+  domain: efsyn.gr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: el
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-left
+  - news
+  country: GR
+- name: ERT
+  domain: ert.gr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: el
+  region: europe
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: GR
+- name: Balkan Insight (BIRN)
+  domain: balkaninsight.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - investigative
+  - balkans
+  - lean-center
+  - news
+  country: RS
+- name: Ukrainska Pravda
+  domain: pravda.com.ua
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: uk
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: UA
+- name: The Kyiv Independent
+  domain: kyivindependent.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: UA
+- name: Kyiv Post
+  domain: kyivpost.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: UA
+- name: Sputnik
+  domain: sputnikglobe.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: RU
+- name: Novaya Gazeta Europe
+  domain: novayagazeta.eu
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: ru
+  region: europe
+  tags:
+  - independent
+  - lean-left
+  - news
+  country: RU
+- name: Hürriyet
+  domain: hurriyet.com.tr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: tr
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: TR
+- name: Sabah
+  domain: sabah.com.tr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: tr
+  region: europe
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: TR
+- name: Daily Sabah
+  domain: dailysabah.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: TR
+- name: Cumhuriyet
+  domain: cumhuriyet.com.tr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: tr
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: TR
+- name: Sözcü
+  domain: sozcu.com.tr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: tr
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: TR
+- name: TRT World
+  domain: trtworld.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: europe
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: TR
+- name: Gazete Duvar
+  domain: gazeteduvar.com.tr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: tr
+  region: europe
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: TR
+- name: Bianet
+  domain: bianet.org
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: tr
+  region: europe
+  tags:
+  - rights
+  - lean-left
+  - news
+  country: TR
+- name: Haaretz
+  domain: haaretz.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: IL
+- name: The Times of Israel
+  domain: timesofisrael.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: IL
+- name: The Jerusalem Post
+  domain: jpost.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: IL
+- name: Ynetnews
+  domain: ynetnews.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: IL
+- name: Israel Hayom
+  domain: israelhayom.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-right
+  - news
+  country: IL
+- name: i24NEWS
+  domain: i24news.tv
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: IL
+- name: Ma'an News Agency
+  domain: maannews.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ar
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PS
+- name: WAFA
+  domain: wafa.ps
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: ar
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: PS
+- name: Al Arabiya
+  domain: alarabiya.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: ar
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: SA
+- name: Asharq Al-Awsat
+  domain: aawsat.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ar
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: SA
+- name: Gulf News
+  domain: gulfnews.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: AE
+- name: Khaleej Times
+  domain: khaleejtimes.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: AE
+- name: Ahram Online
+  domain: english.ahram.org.eg
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: EG
+- name: Mada Masr
+  domain: madamasr.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - investigative
+  - independent
+  - lean-left
+  - news
+  country: EG
+- name: Egypt Independent
+  domain: egyptindependent.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: EG
+- name: Tehran Times
+  domain: tehrantimes.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: IR
+- name: IRNA
+  domain: irna.ir
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - state-media
+  - wire-agency
+  - news
+  country: IR
+- name: L'Orient-Le Jour
+  domain: lorientlejour.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: LB
+- name: Al Akhbar
+  domain: al-akhbar.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: ar
+  region: middle-east
+  tags:
+  - politics
+  - lean-left
+  - news
+  country: LB
+- name: Rudaw
+  domain: rudaw.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - kurdish
+  - lean-center
+  - news
+  country: IQ
+- name: The Jordan Times
+  domain: jordantimes.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: JO
+- name: Enab Baladi
+  domain: enabbaladi.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ar
+  region: middle-east
+  tags:
+  - independent
+  - lean-center
+  - news
+  country: SY
+- name: SANA
+  domain: sana.sy
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: ar
+  region: middle-east
+  tags:
+  - general
+  - politics
+  - state-media
+  - wire-agency
+  - news
+  country: SY
+- name: Republic World
+  domain: republicworld.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: IN
+- name: OpIndia
+  domain: opindia.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: IN
+- name: Swarajya
+  domain: swarajyamag.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - politics
+  - lean-right
+  - news
+  country: IN
+- name: The Print
+  domain: theprint.in
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: IN
+- name: Press Trust of India
+  domain: ptinews.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - wire-agency
+  - news
+  country: IN
+- name: Dawn
+  domain: dawn.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PK
+  rss_url: https://www.dawn.com/feeds/home
+- name: The Express Tribune
+  domain: tribune.com.pk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PK
+- name: The News International
+  domain: thenews.com.pk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PK
+- name: Geo News
+  domain: geo.tv
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ur
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PK
+- name: The Daily Star
+  domain: thedailystar.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: BD
+- name: Prothom Alo
+  domain: prothomalo.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: bn
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: BD
+- name: Dhaka Tribune
+  domain: dhakatribune.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: BD
+- name: Daily Mirror (Sri Lanka)
+  domain: dailymirror.lk
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: LK
+- name: The Kathmandu Post
+  domain: kathmandupost.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: NP
+- name: Hong Kong Free Press
+  domain: hongkongfp.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - independent
+  - lean-center
+  - news
+  country: HK
+- name: Taipei Times
+  domain: taipeitimes.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: TW
+- name: Focus Taiwan (CNA)
+  domain: focustaiwan.tw
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - wire-agency
+  - news
+  country: TW
+- name: United Daily News
+  domain: udn.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: zh
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: TW
+- name: Nikkei
+  domain: nikkei.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ja
+  region: asia
+  tags:
+  - business
+  - lean-center
+  - news
+  country: JP
+- name: The Sankei Shimbun
+  domain: sankei.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: ja
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-right
+  - news
+  country: JP
+- name: The Korea Times
+  domain: koreatimes.co.kr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: KR
+- name: The Chosun Ilbo
+  domain: chosun.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ko
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: KR
+- name: Korea JoongAng Daily
+  domain: koreajoongangdaily.joins.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: KR
+- name: The Hankyoreh
+  domain: hani.co.kr
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: ko
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-left
+  - news
+  country: KR
+- name: NK News
+  domain: nknews.org
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - analysis
+  - lean-center
+  - news
+  country: KR
+- name: Kompas
+  domain: kompas.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: id
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: ID
+- name: Tempo
+  domain: tempo.co
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: id
+  region: asia
+  tags:
+  - investigative
+  - lean-center-left
+  - news
+  country: ID
+- name: The Star (Malaysia)
+  domain: thestar.com.my
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: MY
+- name: Malaysiakini
+  domain: malaysiakini.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - independent
+  - lean-center-left
+  - news
+  country: MY
+- name: New Straits Times
+  domain: nst.com.my
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: MY
+- name: Free Malaysia Today
+  domain: freemalaysiatoday.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: MY
+- name: CNA
+  domain: channelnewsasia.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: SG
+- name: Bangkok Post
+  domain: bangkokpost.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: TH
+- name: The Nation (Thailand)
+  domain: nationthailand.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: TH
+- name: Khaosod English
+  domain: khaosodenglish.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: TH
+- name: Prachatai
+  domain: prachatai.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: th
+  region: asia
+  tags:
+  - rights
+  - lean-left
+  - news
+  country: TH
+- name: VnExpress
+  domain: vnexpress.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: vi
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: VN
+- name: Tuoi Tre
+  domain: tuoitre.vn
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: vi
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: VN
+- name: VietnamNet
+  domain: vietnamnet.vn
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: vi
+  region: asia
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: VN
+- name: Philippine Daily Inquirer
+  domain: inquirer.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PH
+- name: Rappler
+  domain: rappler.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - investigative
+  - lean-center-left
+  - news
+  country: PH
+- name: The Philippine Star
+  domain: philstar.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PH
+- name: GMA News
+  domain: gmanetwork.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PH
+- name: The Irrawaddy
+  domain: irrawaddy.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - independent
+  - lean-center
+  - news
+  country: MM
+- name: Myanmar Now
+  domain: myanmar-now.org
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - independent
+  - lean-center
+  - news
+  country: MM
+- name: The Phnom Penh Post
+  domain: phnompenhpost.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: KH
+- name: Khmer Times
+  domain: khmertimeskh.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: KH
+- name: The Astana Times
+  domain: astanatimes.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: KZ
+- name: Tengrinews
+  domain: tengrinews.kz
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ru
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: KZ
+- name: Gazeta.uz
+  domain: gazeta.uz
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: uz
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: UZ
+- name: 24.kg
+  domain: 24.kg
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ru
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: KG
+- name: AKIpress
+  domain: akipress.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: KG
+- name: Asia-Plus
+  domain: asiaplustj.info
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ru
+  region: asia
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: TJ
+- name: Daily Maverick
+  domain: dailymaverick.co.za
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - investigative
+  - lean-center
+  - news
+  country: ZA
+- name: IOL
+  domain: iol.co.za
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: ZA
+- name: SABC News
+  domain: sabcnews.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: ZA
+- name: The Punch
+  domain: punchng.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: NG
+- name: Vanguard
+  domain: vanguardngr.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: NG
+- name: The Guardian Nigeria
+  domain: guardian.ng
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: NG
+- name: TheCable
+  domain: thecable.ng
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: NG
+- name: Channels Television
+  domain: channelstv.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: NG
+- name: Daily Nation
+  domain: nation.africa
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: KE
+- name: The Standard (Kenya)
+  domain: standardmedia.co.ke
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: KE
+- name: KBC
+  domain: kbc.co.ke
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - public-broadcaster
+  - news
+  country: KE
+- name: Graphic Online
+  domain: graphic.com.gh
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: GH
+- name: MyJoyOnline
+  domain: myjoyonline.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: GH
+- name: Addis Standard
+  domain: addisstandard.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - independent
+  - lean-center
+  - news
+  country: ET
+- name: The Reporter (Ethiopia)
+  domain: thereporterethiopia.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: ET
+- name: Fana Broadcasting
+  domain: fanabc.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: ET
+- name: Hespress
+  domain: hespress.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: ar
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: MA
+- name: Morocco World News
+  domain: moroccoworldnews.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: MA
+- name: Le360
+  domain: le360.ma
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: MA
+- name: El Watan
+  domain: elwatan-dz.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: DZ
+- name: Tout Sur l'Algérie (TSA)
+  domain: tsa-algerie.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: DZ
+- name: Business News (Tunisia)
+  domain: businessnews.com.tn
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: africa
+  tags:
+  - business
+  - lean-center
+  - news
+  country: TN
+- name: Tunisie Numérique
+  domain: tunisienumerique.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: TN
+- name: Seneweb
+  domain: seneweb.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: SN
+- name: Agence de Presse Sénégalaise
+  domain: aps.sn
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 9
+  source_type: news
+  language: fr
+  region: africa
+  tags:
+  - general
+  - politics
+  - state-media
+  - wire-agency
+  - news
+  country: SN
+- name: Abidjan.net
+  domain: abidjan.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: CI
+- name: Actualité.cd
+  domain: actualite.cd
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: CD
+- name: Radio Okapi
+  domain: radiookapi.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: CD
+- name: The Citizen (Tanzania)
+  domain: thecitizen.co.tz
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: TZ
+- name: Daily Monitor
+  domain: monitor.co.ug
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: UG
+- name: New Vision
+  domain: newvision.co.ug
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: UG
+- name: NewsDay (Zimbabwe)
+  domain: newsday.co.zw
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: ZW
+- name: The Herald (Zimbabwe)
+  domain: herald.co.zw
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: ZW
+- name: The New Times (Rwanda)
+  domain: newtimes.co.rw
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: africa
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: RW
+- name: Veja
+  domain: veja.abril.com.br
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: pt
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: BR
+- name: CartaCapital
+  domain: cartacapital.com.br
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: pt
+  region: latin-america
+  tags:
+  - politics
+  - lean-left
+  - news
+  country: BR
+- name: The Brazilian Report
+  domain: brazilian.report
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: latin-america
+  tags:
+  - analysis
+  - lean-center
+  - news
+  country: BR
+- name: Reforma
+  domain: reforma.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: MX
+- name: La Jornada
+  domain: jornada.com.mx
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 7
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-left
+  - news
+  country: MX
+- name: Proceso
+  domain: proceso.com.mx
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - investigative
+  - lean-center-left
+  - news
+  country: MX
+- name: Animal Político
+  domain: animalpolitico.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - investigative
+  - lean-center
+  - news
+  country: MX
+- name: Aristegui Noticias
+  domain: aristeguinoticias.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: MX
+- name: Emol (El Mercurio)
+  domain: emol.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: CL
+- name: BioBioChile
+  domain: biobiochile.cl
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: CL
+- name: El Espectador
+  domain: elespectador.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: CO
+- name: El Nacional
+  domain: elnacional.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - opposition
+  - lean-center
+  - news
+  country: VE
+- name: teleSUR English
+  domain: telesurenglish.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: en
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: VE
+- name: Granma
+  domain: en.granma.cu
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 5
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - state-media
+  - news
+  country: CU
+- name: 14ymedio
+  domain: 14ymedio.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - independent
+  - lean-center
+  - news
+  country: CU
+- name: El País (Uruguay)
+  domain: elpais.com.uy
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center-right
+  - news
+  country: UY
+- name: la diaria
+  domain: ladiaria.com.uy
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center-left
+  - news
+  country: UY
+- name: El Deber
+  domain: eldeber.com.bo
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: BO
+- name: ABC Color
+  domain: abc.com.py
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PY
+- name: El Universo
+  domain: eluniverso.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: EC
+- name: Primicias
+  domain: primicias.ec
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: EC
+- name: Prensa Libre
+  domain: prensalibre.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: GT
+- name: Plaza Pública
+  domain: plazapublica.com.gt
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - investigative
+  - lean-center
+  - news
+  country: GT
+- name: El Faro
+  domain: elfaro.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - investigative
+  - lean-center
+  - news
+  country: SV
+- name: La Prensa (Honduras)
+  domain: laprensa.hn
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: HN
+- name: Confidencial
+  domain: confidencial.digital
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - independent
+  - lean-center
+  - news
+  country: NI
+- name: La Nación (Costa Rica)
+  domain: nacion.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: CR
+- name: The Tico Times
+  domain: ticotimes.net
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: CR
+- name: La Prensa (Panama)
+  domain: prensa.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: PA
+- name: Diario Libre
+  domain: diariolibre.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: es
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: DO
+- name: The Gleaner
+  domain: jamaica-gleaner.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: JM
+- name: Jamaica Observer
+  domain: jamaicaobserver.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: JM
+- name: Trinidad and Tobago Guardian
+  domain: guardian.co.tt
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: TT
+- name: Le Nouvelliste
+  domain: lenouvelliste.com
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: fr
+  region: latin-america
+  tags:
+  - general
+  - politics
+  - lean-center
+  - news
+  country: HT
+- name: Rest of World
+  domain: restofworld.org
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: global
+  tags:
+  - tech
+  - global
+  - lean-center
+  - news
+- name: Project Syndicate
+  domain: project-syndicate.org
+  enabled: true
+  priority: 2
+  rate_limit_ms: 2000
+  reliability_score: 8
+  source_type: news
+  language: en
+  region: global
+  tags:
+  - analysis
+  - lean-center
+  - news

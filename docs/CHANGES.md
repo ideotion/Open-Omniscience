@@ -24,6 +24,20 @@ Reasoned from the personas outward in [`docs/GUI_REDESIGN_0.05.md`](GUI_REDESIGN
   rings, responsive/off-canvas layout — still 100% dependency-free (no CDN, no web
   fonts, no framework), so it runs fully offline.
 
+### Toward 50,000 sources — honestly
+
+- **Political-spectrum catalog (`configs/sources_spectrum.yml`):** ~280 new, real,
+  well-known outlets across ~95 countries / ~30 languages, hand-tagged by **leaning**
+  (lean-left … lean-right) and **ownership** (public-broadcaster / state-media /
+  wire-agency) with topic keywords — the editorial dimension Wikidata can't provide.
+  Merged at seed time (de-duped by domain); leanings are reputational, contestable
+  and easy to override.
+- **Generator tuned for scale:** `configs/catalog_query.yml` now targets ~50k+ —
+  ~249 countries × broader media types at `limit: 5000`. The honest path to tens of
+  thousands of *real, attributable* sources is running the Wikidata generator (and
+  `--merge-csv` for GDELT/Media Cloud), **not** fabricating dead RSS URLs. See
+  `docs/WORLD_NEWS_CATALOG.md`.
+
 ### A contradictory take + a second interface to compare
 
 - **`docs/GUI_DIALECTIC.md`** argues the *opposite* case — that a polished,

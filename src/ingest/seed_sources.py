@@ -5,9 +5,13 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 The catalog (``configs/sources.yml``, ~1900 public-interest outlets with rich
-metadata) is loaded into the database at install time. Seeding is idempotent
-(matched by domain), and only *registers* sources -- nothing is fetched until an
-ingest runs, and even then only through the ethical, robots-respecting fetcher.
+metadata) is loaded into the database at install time, alongside the worldwide
+markets catalog, a curated political-spectrum catalog (``sources_spectrum.yml``),
+and -- once a maintainer generates it -- the Wikidata world catalog
+(``world_news_sources.yml``, the path to tens of thousands of sources). Seeding is
+idempotent (matched by domain), and only *registers* sources -- nothing is fetched
+until an ingest runs, and even then only through the ethical, robots-respecting
+fetcher.
 """
 
 from __future__ import annotations
@@ -32,6 +36,11 @@ MARKETS_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "market
 # institutions by country, from Wikidata). Absent until a maintainer runs
 # scripts/build_world_news_catalog.py; seeded automatically once present.
 WORLD_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "world_news_sources.yml"
+
+# Curated political-spectrum catalog: real, well-known outlets hand-tagged by
+# leaning (lean-left … lean-right) and ownership (public-broadcaster, state-media,
+# wire-agency) with topic keywords -- the editorial dimension Wikidata can't give.
+SPECTRUM_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "sources_spectrum.yml"
 
 # YAML keys that map 1:1 to Source columns (everything except name/domain/tags,
 # which are handled explicitly).
@@ -100,7 +109,7 @@ def seed_default_sources(session: Session, path: Path | None = None) -> dict[str
     """
     sources = load_sources_from_yaml(path)
     if path is None:
-        for extra in (MARKETS_SOURCES_PATH, WORLD_SOURCES_PATH):
+        for extra in (MARKETS_SOURCES_PATH, SPECTRUM_SOURCES_PATH, WORLD_SOURCES_PATH):
             if extra.exists():
                 sources = sources + load_sources_from_yaml(extra)
     return seed_sources(session, sources)
