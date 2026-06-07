@@ -865,14 +865,26 @@
     async function refreshSchedulerLive() {
       try { renderSchedStatus(await api("/api/scheduler/status")); } catch (e) { /* keep last */ }
     }
+    let _wikiStatusBuilt = false;
+    function renderWikiStatus(s) {
+      const el = $("wiki-status");
+      if (!_wikiStatusBuilt) {
+        _wikiStatusBuilt = true;
+        el.innerHTML =
+          `<span class="pill"><span id="wiki-n-watched" data-v="0">0</span>/` +
+          `<span id="wiki-n-pages" data-v="0">0</span> pages watched</span> · ` +
+          `<span id="wiki-n-rev" data-v="0">0</span> tracked edits · ` +
+          `<span class="pill" id="wiki-flag-pill"><span id="wiki-n-flagged" data-v="0">0</span> flagged</span>`;
+      }
+      animateCount($("wiki-n-watched"), s.watched);
+      animateCount($("wiki-n-pages"), s.pages);
+      animateCount($("wiki-n-rev"), s.revisions);
+      animateCount($("wiki-n-flagged"), s.flagged);
+      $("wiki-flag-pill").className = "pill " + (s.flagged ? "warn" : "ok");
+    }
+
     async function refreshWikiLive() {
-      try {
-        const s = await api("/api/wiki/status");
-        $("wiki-status").innerHTML =
-          `<span class="pill">${s.watched}/${s.pages} pages watched</span> · ` +
-          `${s.revisions.toLocaleString()} tracked edits · ` +
-          `<span class="pill ${s.flagged?'warn':'ok'}">${s.flagged} flagged</span>`;
-      } catch (e) { /* keep last */ }
+      try { renderWikiStatus(await api("/api/wiki/status")); } catch (e) { /* keep last */ }
       loadWikiDumps();
     }
 
@@ -1489,14 +1501,28 @@
       }
     }
 
+    let _insStatusBuilt = false;
     async function loadInsights() {
       try {
         const s = await api("/api/insights/status");
-        $("ins-status").innerHTML =
-          `<span class="pill ${s.remaining===0?'ok':'warn'}">${s.indexed_articles}/${s.total_articles} articles indexed</span> ` +
-          `· ${s.keywords.toLocaleString()} keywords (${s.entities.toLocaleString()} entities) · ${s.mentions.toLocaleString()} mentions` +
-          (s.remaining ? ` · <strong>${s.remaining}</strong> to index` : "");
-      } catch (e) { $("ins-status").textContent = "Status unavailable: " + e.message; }
+        if (!_insStatusBuilt) {
+          _insStatusBuilt = true;
+          $("ins-status").innerHTML =
+            `<span class="pill" id="ins-pill"><span id="ins-n-indexed" data-v="0">0</span>/` +
+            `<span id="ins-n-total" data-v="0">0</span> articles indexed</span> · ` +
+            `<span id="ins-n-keywords" data-v="0">0</span> keywords ` +
+            `(<span id="ins-n-entities" data-v="0">0</span> entities) · ` +
+            `<span id="ins-n-mentions" data-v="0">0</span> mentions ` +
+            `<span id="ins-remaining" class="muted"></span>`;
+        }
+        animateCount($("ins-n-indexed"), s.indexed_articles);
+        animateCount($("ins-n-total"), s.total_articles);
+        animateCount($("ins-n-keywords"), s.keywords);
+        animateCount($("ins-n-entities"), s.entities);
+        animateCount($("ins-n-mentions"), s.mentions);
+        $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
+        $("ins-remaining").innerHTML = s.remaining ? `· <strong>${s.remaining.toLocaleString()}</strong> to index` : "";
+      } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = "Status unavailable: " + e.message; }
     }
 
     let _indexing = false;
@@ -1682,13 +1708,8 @@
 
     // -- Wikipedia change-tracking ------------------------------------------ //
     async function loadWiki() {
-      try {
-        const s = await api("/api/wiki/status");
-        $("wiki-status").innerHTML =
-          `<span class="pill">${s.watched}/${s.pages} pages watched</span> · ` +
-          `${s.revisions.toLocaleString()} tracked edits · ` +
-          `<span class="pill ${s.flagged?'warn':'ok'}">${s.flagged} flagged</span>`;
-      } catch (e) { $("wiki-status").textContent = "Status unavailable: " + e.message; }
+      try { renderWikiStatus(await api("/api/wiki/status")); }
+      catch (e) { if (!_wikiStatusBuilt) $("wiki-status").textContent = "Status unavailable: " + e.message; }
       loadWikiPages(); loadWikiChanges(); loadWikiDumps();
     }
 
