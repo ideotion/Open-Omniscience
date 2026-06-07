@@ -48,6 +48,28 @@ def resolve_keyword(session, term: str) -> Keyword | None:
     return rows[0][0] if rows else None
 
 
+def _hidden_predicate():
+    """Build is_hidden(normalized) from the keyword-filter settings.
+
+    Hides built-in stopwords + user exclusions + too-short / numeric terms, so
+    "dumb" keywords never appear in listings (even for already-stored mentions).
+    """
+    from src.analytics.filters import hidden_set, load_settings
+
+    fs = load_settings()
+    hidden = hidden_set()
+    min_len, drop_numeric = fs.min_length, fs.drop_numeric
+
+    def is_hidden(norm: str | None) -> bool:
+        if not norm:
+            return True
+        if norm in hidden or len(norm) < min_len:
+            return True
+        return bool(drop_numeric and norm.replace(" ", "").isdigit())
+
+    return is_hidden
+
+
 def _apply_kind(query, kind: str | None):
     if not kind:
         return query
@@ -108,15 +130,17 @@ def top_terms(session, *, days: int | None = None, country: str | None = None,
     if country:
         q = q.filter(KeywordMention.country == country.lower())
     q = _apply_kind(q, kind)
-    rows = q.group_by(Keyword.id).order_by(func.sum(KeywordMention.count).desc()).limit(limit).all()
-    return {
-        "count": len(rows), "days": days, "country": country, "kind": kind,
-        "terms": [
-            {"term": k.term, "normalized": k.normalized_term, "kind": kind_of(k),
-             "mentions": int(m), "articles": int(a)}
-            for k, m, a in rows
-        ],
-    }
+    rows = q.group_by(Keyword.id).order_by(func.sum(KeywordMention.count).desc()).limit(limit * 4).all()
+    is_hidden = _hidden_predicate()
+    terms = []
+    for k, m, a in rows:
+        if is_hidden(k.normalized_term):
+            continue
+        terms.append({"term": k.term, "normalized": k.normalized_term, "kind": kind_of(k),
+                      "mentions": int(m), "articles": int(a)})
+        if len(terms) >= limit:
+            break
+    return {"count": len(terms), "days": days, "country": country, "kind": kind, "terms": terms}
 
 
 def trending(session, *, window_days: int = 7, baseline_days: int = 30,
@@ -155,10 +179,11 @@ def trending(session, *, window_days: int = 7, baseline_days: int = 30,
         scored.append((kid, rc, pc, round(expected, 2), round(growth, 2)))
     scored.sort(key=lambda x: (-x[4], -x[1]))
 
+    is_hidden = _hidden_predicate()
     out = []
     for kid, rc, pc, expected, growth in scored:
         kw = session.get(Keyword, kid)
-        if kw is None or (kind and kind_of(kw) != kind):
+        if kw is None or (kind and kind_of(kw) != kind) or is_hidden(kw.normalized_term):
             continue
         out.append({
             "term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw),
@@ -194,6 +219,7 @@ def associations(session, term: str, *, limit: int = 20, min_cooccur: int = 2) -
         .group_by(KeywordMention.keyword_id)
         .having(func.count(func.distinct(KeywordMention.article_id)) >= min_cooccur).all()
     )
+    is_hidden = _hidden_predicate()
     pairs = []
     for kid, co in co_rows:
         co = int(co)
@@ -203,7 +229,7 @@ def associations(session, term: str, *, limit: int = 20, min_cooccur: int = 2) -
         )
         pmi = math.log2((co * total) / (n_a * n_b)) if co > 0 else 0.0
         k2 = session.get(Keyword, kid)
-        if k2 is None:
+        if k2 is None or is_hidden(k2.normalized_term):
             continue
         pairs.append({
             "term": k2.term, "normalized": k2.normalized_term, "kind": kind_of(k2),
@@ -251,6 +277,8 @@ def context(session, term: str, *, limit: int = 10, window: int = 180) -> dict:
 def map_data(session, *, days: int | None = 30, kind: str | None = None,
              top_per_area: int = 5, min_mentions: int = 1) -> dict:
     """Top keywords per country and per city (from denormalised mention facets)."""
+    is_hidden = _hidden_predicate()
+
     def _agg(area_col):
         q = (
             session.query(area_col, Keyword, func.sum(KeywordMention.count).label("m"))
@@ -263,6 +291,8 @@ def map_data(session, *, days: int | None = 30, kind: str | None = None,
         rows = q.group_by(area_col, Keyword.id).order_by(func.sum(KeywordMention.count).desc()).all()
         areas: dict[str, list] = {}
         for area, kw, m in rows:
+            if is_hidden(kw.normalized_term):
+                continue
             lst = areas.setdefault(area, [])
             if len(lst) < top_per_area and int(m) >= min_mentions:
                 lst.append({"term": kw.term, "kind": kind_of(kw), "mentions": int(m)})
@@ -282,6 +312,8 @@ def map_data(session, *, days: int | None = 30, kind: str | None = None,
             func.sum(KeywordMention.count).desc()).all()
         out: dict[tuple, dict] = {}
         for city, country, kw, m in rows:
+            if is_hidden(kw.normalized_term):
+                continue
             slot = out.setdefault((city, country), {"name": city, "country": country, "top": []})
             if len(slot["top"]) < top_per_area and int(m) >= min_mentions:
                 slot["top"].append({"term": kw.term, "kind": kind_of(kw), "mentions": int(m)})

@@ -595,6 +595,26 @@
     </section>
 
     <section class="panel">
+      <h2>Keyword filtering</h2>
+      <p class="muted" style="margin-top:0">"Dumb" keywords (function words like <em>the, you, not, one</em>) are removed
+        automatically by a built-in multilingual stoplist. Fine-tune below: exclude extra terms (one per line or
+        comma-separated), set the minimum length, and toggle options. Excluding hides a keyword everywhere
+        (reversibly — stored mentions are kept). You can also click the ✕ next to any keyword in Insights.</p>
+      <div class="row">
+        <div><label for="kf-minlen">Minimum keyword length</label>
+          <input id="kf-minlen" type="number" min="1" max="20" step="1"></div>
+        <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="kf-numeric" style="width:auto"> Drop purely numeric terms</label></div>
+        <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="kf-builtin" style="width:auto"> Use built-in multilingual stoplist</label></div>
+      </div>
+      <label for="kf-excluded">Excluded keywords</label>
+      <textarea id="kf-excluded" rows="5" placeholder="one term per line (or comma-separated)"></textarea>
+      <button onclick="saveKeywordFilter()">Save keyword filter</button>
+      <div id="kf-result" class="hint"></div>
+    </section>
+
+    <section class="panel">
       <h2>Backup &amp; restore</h2>
       <div id="backup-status" class="hint">Checking backend…</div>
       <div class="row" style="margin-top:6px">
@@ -715,6 +735,32 @@
         document.querySelectorAll("#tab-settings .danger, #tab-settings button.secondary")
           .forEach(b => { b.disabled = !st.backup_supported; });
       } catch (e) { $("backup-status").textContent = "Backup status unavailable: " + e.message; }
+      loadKeywordFilter();
+    }
+
+    async function loadKeywordFilter() {
+      try {
+        const f = await api("/api/insights/filter");
+        $("kf-minlen").value = f.min_length;
+        $("kf-numeric").checked = !!f.drop_numeric;
+        $("kf-builtin").checked = !!f.use_builtin_stopwords;
+        $("kf-excluded").value = (f.excluded || []).join("\n");
+      } catch (e) { /* leave defaults */ }
+    }
+
+    async function saveKeywordFilter() {
+      const body = {
+        excluded: $("kf-excluded").value,
+        min_length: Number($("kf-minlen").value),
+        drop_numeric: $("kf-numeric").checked,
+        use_builtin_stopwords: $("kf-builtin").checked,
+      };
+      try {
+        const f = await api("/api/insights/filter", {method: "PUT", body: JSON.stringify(body)});
+        $("kf-excluded").value = (f.excluded || []).join("\n");
+        $("kf-result").innerHTML = `<span class="pill ok">saved</span> ${f.excluded.length} excluded term(s), min length ${f.min_length}.`;
+        toast("Keyword filter saved.");
+      } catch (e) { toast("Save failed: " + e.message, "err"); }
     }
 
     async function saveSettings() {
@@ -1612,9 +1658,19 @@
 
     function termListHtml(terms, extra) {
       if (!terms.length) return '<div class="muted">Nothing yet — index the corpus.</div>';
-      return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border)">
+      return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
+        <button class="tiny danger" title="exclude this keyword" style="margin:0;padding:0 6px"
+          onclick='excludeKeyword(${JSON.stringify(t.term)})'>✕</button>
         <a href="#" onclick='pickTerm(${JSON.stringify(t.term)});return false'>${esc(t.term)}</a>
         <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
+    }
+
+    async function excludeKeyword(term) {
+      try {
+        await api("/api/insights/exclude", {method: "POST", body: JSON.stringify({term})});
+        toast(`Excluded “${term}”. Manage exclusions in Settings.`);
+        loadTrends(); if ($("ins-term").value.trim()) exploreTerm();
+      } catch (e) { toast("Exclude failed: " + e.message, "err"); }
     }
 
     async function loadTrends() {

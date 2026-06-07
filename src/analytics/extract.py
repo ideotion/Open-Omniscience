@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 
 from src.services.stopwords import stopwords_manager
 
@@ -42,6 +43,59 @@ _CONNECTORS = {"of", "the", "and", "for", "de", "la", "le", "du", "des", "van",
 _DEFAULT_MAX_TERMS = 80
 _DEFAULT_MAX_ENTITIES = 80
 _MIN_TERM_LEN = 3
+
+# Curated extra stoplist: very common function words / fillers that the per-language
+# sets miss, plus number-words, across the major Latin-script languages. Combined
+# with the per-language sets into global_stopwords(). The user can add more from
+# the Settings tab (keyword filter).
+_EXTRA_STOPWORD_TEXT = (
+    # English fillers the base set lacks
+    "not no nor one two three four five six seven eight nine ten "
+    "get got gets getting make made makes making take takes took taking "
+    "go goes going gone come comes coming came see sees seen saw "
+    "know knows knew known think thinks thought want wants wanted need needs "
+    "like likes liked use used uses using way ways thing things lot lots "
+    "new old good bad big small great little much many even still back "
+    "people person time times part parts case cases number numbers group "
+    "well around across along yet ever never always often sometimes maybe perhaps "
+    "really quite rather pretty almost enough across upon onto unto whatever whoever "
+    "into within without toward towards among amongst per via "
+    "this that these those here there what which whose "
+    # Spanish
+    "el la los las un una unos unas de del y o pero que como para por con sin "
+    "es son fue era ser estar su sus lo le les nos se mas muy "
+    # German
+    "der die das den dem ein eine einer und oder aber auch ist sind war "
+    "nicht mit von zu im am ich du wir sie es auf für "
+    # Italian
+    "il lo la gli le un uno una di del della che chi non con per tra fra "
+    "sono era essere ho hai abbiamo questo quello "
+    # Portuguese
+    "o a os as um uma uns umas de do da dos das que nao com para por "
+    "sou somos foi ser este esse isso "
+    # Dutch
+    "de het een en of maar ook is zijn was niet met van te ik je wij zij "
+)
+_EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
+
+
+@lru_cache(maxsize=1)
+def global_stopwords() -> frozenset[str]:
+    """Union of all built-in per-language stoplists + the curated extra set.
+
+    Language-agnostic: a word that is a stopword in any supported language (or in
+    the curated extra list) is treated as one. Used both at extraction time and at
+    query time (so leaky terms already in the store are hidden retroactively).
+    """
+    s: set[str] = set(_EXTRA_STOPWORDS)
+    s |= set(stopwords_manager.default_stopwords)
+    for lang in getattr(stopwords_manager, "language_stopwords", {}):
+        s |= set(stopwords_manager.get_stopwords(lang))
+    return frozenset(s)
+
+
+def _stopset(language: str) -> frozenset[str]:
+    return frozenset(stopwords_manager.get_stopwords(language)) | global_stopwords()
 
 
 @dataclass
@@ -125,9 +179,14 @@ class BaselineExtractor:
             if not self._at_sentence_start(text, offset):
                 a["mid"] = True
 
+        gstop = global_stopwords()
         entities: list[ExtractedTerm] = []
         for norm, a in agg.items():
             if not (a["multi"] or a["mid"] or norm in self.gazetteer):
+                continue
+            # Never treat a function word or single character as an entity (e.g.
+            # "I", "A", "The") — unless the gazetteer vouches for it.
+            if norm not in self.gazetteer and (len(norm) < 2 or norm in gstop):
                 continue
             entities.append(ExtractedTerm(
                 term=a["surface"], normalized=norm,
@@ -146,7 +205,7 @@ class BaselineExtractor:
     # -- topical terms ----------------------------------------------------- #
 
     def _terms(self, text: str, language: str) -> list[ExtractedTerm]:
-        stop = stopwords_manager.get_stopwords(language) or set()
+        stop = _stopset(language)
         toks = [(m.group(0).lower(), m.start()) for m in _WORD_RE.finditer(text)]
         counts: Counter[str] = Counter()
         first_at: dict[str, int] = {}
@@ -165,9 +224,9 @@ class BaselineExtractor:
             for k in range(len(toks) - size + 1):
                 window = toks[k:k + size]
                 words = [w for w, _ in window]
-                if words[0] in stop or words[-1] in stop:
-                    continue
-                if any(len(w) < 2 or w.isdigit() for w in words):
+                # Drop a phrase if ANY token is a stopword or too short/numeric, so
+                # fillers don't leak inside n-grams ("not one bit", "economy is not").
+                if any(w in stop or len(w) < _MIN_TERM_LEN or w.isdigit() for w in words):
                     continue
                 phrase = " ".join(words)
                 _record(phrase, window[0][1])

@@ -12,7 +12,8 @@ src/analytics/queries.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.analytics import queries as q
@@ -21,6 +22,51 @@ from src.database.session import get_db
 router = APIRouter(prefix="/api/insights", tags=["insights"])
 
 _VALID_KINDS = ("term", "entity", "person", "org", "location")
+
+
+class KeywordFilterUpdate(BaseModel):
+    excluded: list[str] | str | None = None
+    min_length: int | None = None
+    drop_numeric: bool | None = None
+    use_builtin_stopwords: bool | None = None
+
+
+class TermBody(BaseModel):
+    term: str
+
+
+@router.get("/filter")
+def get_filter() -> dict:
+    """Current keyword-filter settings (excluded terms, min length, options)."""
+    from src.analytics.filters import load_settings
+
+    return load_settings().to_dict()
+
+
+@router.put("/filter")
+def update_filter(update: KeywordFilterUpdate) -> dict:
+    """Update keyword-filter settings (excluded list / min length / options)."""
+    from src.analytics.filters import save_settings
+
+    return save_settings(update.model_dump(exclude_unset=True)).to_dict()
+
+
+@router.post("/exclude")
+def exclude_term(body: TermBody) -> dict:
+    """Hide a keyword from all listings (reversible; stored mentions are kept)."""
+    from src.analytics.filters import add_excluded
+
+    if not body.term.strip():
+        raise HTTPException(status_code=400, detail="term is required")
+    return add_excluded(body.term).to_dict()
+
+
+@router.post("/include")
+def include_term(body: TermBody) -> dict:
+    """Re-include a previously excluded keyword."""
+    from src.analytics.filters import remove_excluded
+
+    return remove_excluded(body.term).to_dict()
 
 
 @router.get("/status")
