@@ -22,11 +22,13 @@ A wave of usability work on top of the feature set below, plus documentation:
 - **Offline article view** + framing surfaced in Insights.
 - **Insights keyword filtering:** stronger multilingual stopword removal plus a
   user-editable exclusion list (Settings → Keyword filtering, and ✕ in Insights).
-- **Wikipedia language picker moved to Settings** and **grouped by continent**
-  (Europe/Asia/Africa/…), largest editions first within each; the picker also
-  accepts any free-text edition code. `src/wiki/languages.py` gained a `region`
-  field + `languages_by_region()`, and `/api/wiki/languages` now returns both a flat
-  list and a continent-grouped `groups` form.
+- **Wikipedia language picker moved to Settings**, **grouped by continent**
+  (Europe/Asia/Africa/…, largest editions first within each), expanded to ~147
+  editions across all continents (plus a "Constructed" bucket), with a
+  **type-to-filter** search box; it also accepts any free-text edition code.
+  `src/wiki/languages.py` gained a `region` field + `languages_by_region()`, and
+  `/api/wiki/languages` now returns both a flat list and a continent-grouped
+  `groups` form.
 - **Docs:** added an extensive end-user manual ([USER_MANUAL.md](USER_MANUAL.md))
   covering every tab, control, setting, workflow, env var and API area, and an
   [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) capturing in-flight design decisions

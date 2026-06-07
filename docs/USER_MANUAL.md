@@ -337,9 +337,11 @@ telemetry.
   keywords** list (one per line or comma-separated). Excluding hides a term
   everywhere but is reversible — stored mentions are kept. (You can also click ✕
   beside any keyword in Insights.)
-- **Wikipedia offline baselines:** pick a **language edition** — the picker is
-  **grouped by continent** (Europe, Asia, Africa, …), largest editions first within
-  each, and you can type any edition code that isn't listed — then **Estimate size**
+- **Wikipedia offline baselines:** pick a **language edition** — the picker lists
+  ~147 editions **grouped by continent** (Europe, Asia, Africa, Americas, Oceania,
+  …), largest first within each, with a **type-to-filter box** (match by name,
+  autonym or code); you can also type any edition code that isn't listed — then
+  **Estimate size**
   (reads the *exact* current dump size from the server; nothing guessed) and
   **Download** (resumable, with pause/resume and a progress table). These offline
   dumps are heavy and optional, and are only for offline reading/search — live

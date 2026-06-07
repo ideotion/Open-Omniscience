@@ -112,14 +112,23 @@ because several touch deliberate prior decisions and a performance/privacy budge
 
 ## 2. Language pickers grouped by continent — done for Wikipedia; note on the rest
 
-**Status: partially done.** The user asked to sort *all* language pickers (article
+**Status: largely done.** The user asked to sort *all* language pickers (article
 languages, Wikipedia languages, etc.) **by continent** to ease scrolling long
-lists.
+lists, then to **add type-to-filter search** and **more editions**.
 
 - **Done:** the **Wikipedia offline-baseline picker** (the only real `<select>` of
   languages) is now grouped into `<optgroup>`s by continent of origin
   (`src/wiki/languages.py` gained a `region` field + `languages_by_region()`;
-  `/api/wiki/languages` returns a `groups` form; the UI renders optgroups).
+  `/api/wiki/languages` returns a `groups` form; the UI renders optgroups). The
+  curated catalogue was expanded to **~147 editions** covering all continents
+  (incl. Americas/Oceania and a "Constructed" bucket for Esperanto et al.), and the
+  picker gained a **type-to-filter box** (matches name, autonym or code) rendered as
+  a list box.
+- **Deferred (needs a decision):** a *fully dynamic* list of **all 300+ Wikimedia
+  editions** pulled live from the dump server / sitematrix. Not done because it adds
+  **runtime network egress**, which conflicts with the offline-first default — the
+  ~147 curated editions plus the always-available free-text code entry already reach
+  any edition. Revisit if comprehensive auto-discovery is wanted despite the egress.
 - **Open:** the other "language" inputs — **Search → Language** (`f-lang`),
   **Sources → Language** filter (`src-language`), and **Ingest/scheduler →
   Languages** (`sch-langs`) — are currently **free-text inputs, not dropdowns**, so
