@@ -107,3 +107,21 @@ feeds:
     currency: USD
     unit: t
     market: world-bank
+
+  # --- Precious metals + FX (daily, via FRED) ------------------------------ #
+  - key: gold
+    name: "Gold (LBMA PM fix, daily)"
+    symbol: GOLD
+    category: commodity
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=GOLDPMGBD228NLBM"
+    currency: USD
+    unit: ozt
+    market: LBMA/FRED
+  - key: eur_usd
+    name: "EUR/USD exchange rate (daily)"
+    symbol: EURUSD
+    category: financial
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXUSEU"
+    currency: USD
+    unit: per-EUR
+    market: FRED

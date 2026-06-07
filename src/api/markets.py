@@ -237,6 +237,57 @@ def import_catalog_feed(key: str, db: Session = Depends(get_db)) -> dict:
     return result.to_dict()
 
 
+@router.post("/feeds/import-all")
+def import_all_feeds(db: Session = Depends(get_db)) -> dict:
+    """Import every curated feed (for one-click out-of-the-box market data).
+
+    Best-effort: each feed is attempted; failures are reported per-key rather than
+    aborting the batch, so a single retired series doesn't block the rest.
+    """
+    from src.markets.csv_feeds import import_feed
+    from src.markets.feed_catalog import load_feeds
+
+    results, imported, failed = [], 0, 0
+    for feed in load_feeds():
+        r = import_feed(
+            db, url=feed.url, symbol=feed.symbol, fetcher=_fetcher,
+            date_column=feed.date_column, value_column=feed.value_column,
+            currency=feed.currency, unit=feed.unit, market=feed.market,
+            source=f"feed:{feed.key}:{feed.url}",
+        )
+        results.append({"key": feed.key, **r.to_dict()})
+        if r.status == "imported":
+            imported += r.imported
+        else:
+            failed += 1
+    return {"feeds": len(results), "points_imported": imported, "failed": failed, "results": results}
+
+
+@router.get("/series")
+def list_series(db: Session = Depends(get_db)) -> dict:
+    """Distinct stored price symbols with their latest point — drives the dashboard."""
+    from sqlalchemy import func
+
+    rows = (
+        db.query(CommodityPrice.symbol, func.count(CommodityPrice.id),
+                 func.max(CommodityPrice.observed_on))
+        .group_by(CommodityPrice.symbol).all()
+    )
+    out = []
+    for symbol, n, _last in rows:
+        latest = (db.query(CommodityPrice).filter_by(symbol=symbol)
+                  .order_by(CommodityPrice.observed_on.desc()).first())
+        out.append({
+            "symbol": symbol, "points": int(n),
+            "latest": {
+                "observed_on": latest.observed_on.isoformat(), "price": latest.price,
+                "currency": latest.currency, "unit": latest.unit, "market": latest.market,
+            } if latest else None,
+        })
+    out.sort(key=lambda s: s["symbol"])
+    return {"count": len(out), "series": out}
+
+
 @router.post("/feeds/import-url")
 def import_custom_feed(payload: CustomFeedImport, db: Session = Depends(get_db)) -> dict:
     """Import a price series from any CSV URL the user supplies (user-customizable).

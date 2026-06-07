@@ -358,24 +358,37 @@
     <!-- ============================ MARKETS ========================== -->
     <div class="tab-page" id="tab-markets">
     <section class="panel">
-      <h2>Markets</h2>
-      <p class="muted" style="margin-top:0">
-        Prices are scraped through the same ethical path as news, but a number is only
-        recorded where you've told us exactly where it lives on the page (a CSS selector).
-        No rule match ⇒ no number — never a guess. Charts and correlation read the real
-        stored series.
-      </p>
-      <nav class="tabs" style="position:static;padding:0;border:0;margin-bottom:8px">
-        <button class="active" data-mkt="financial" onclick="showMarketCat('financial')">Financial</button>
-        <button data-mkt="stock" onclick="showMarketCat('stock')">Stock exchange</button>
-        <button data-mkt="commodity" onclick="showMarketCat('commodity')">Rare earth / commodity</button>
-      </nav>
-      <div style="overflow:auto"><table id="mkt-table"></table></div>
+      <h2>Market trends</h2>
+      <p class="muted" style="margin-top:0">Real series from official feeds (FRED → World Bank / EIA):
+        FX (EUR/USD), energy (WTI, Brent, gas), metals &amp; gold. Every point comes straight from the
+        downloaded file — nothing scraped or guessed.</p>
+      <div class="row">
+        <div style="flex:0 0 auto"><button onclick="loadMarketData(this)">Load / refresh market data</button></div>
+        <div><label for="mkt-scale">Time scale</label>
+          <select id="mkt-scale" onchange="renderDashboard()">
+            <option value="30">1 month</option><option value="182">6 months</option>
+            <option value="365" selected>1 year</option><option value="1825">5 years</option>
+            <option value="0">All</option></select></div>
+        <div id="mkt-dash-status" class="hint" style="align-self:center"></div>
+      </div>
+      <div id="mkt-dashboard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:12px"></div>
       <div id="mkt-chart" style="margin-top:12px"></div>
     </section>
 
     <section class="panel">
-      <h2>Add a price rule</h2>
+      <h2 style="cursor:pointer;user-select:none" onclick="toggleMktConfig()">
+        <span id="mkt-config-caret">▸</span> Configure data sources (feeds &amp; extraction rules)</h2>
+      <div id="mkt-config" style="display:none">
+      <div class="hint" style="margin-bottom:8px">Most users won't need this. Curated feeds give trends out of
+        the box; extraction rules let you add a price from a specific page (a number is recorded only where
+        your CSS selector lands on one — never a guess).</div>
+
+      <h2 style="font-size:13px">Official price feeds</h2>
+      <div style="overflow:auto"><table id="feed-table"></table></div>
+      <div style="overflow:auto;margin-top:12px"><table id="mkt-rules"></table></div>
+
+      <hr>
+      <h2 style="font-size:13px">Add a price-extraction rule</h2>
       <div class="row">
         <div><label for="mkt-source">Source</label><select id="mkt-source"></select></div>
         <div><label for="mkt-symbol">Symbol</label><input id="mkt-symbol" placeholder="Nd / AAPL / XAU"></div>
@@ -400,19 +413,9 @@
       <button onclick="addMarketRule()">Add rule</button>
       <div class="hint">After adding, use <strong>Test</strong> in the table to fetch the page once and see the
         exact value found — or the exact reason it didn't match — before relying on it.</div>
-    </section>
-
-    <section class="panel">
-      <h2>Official price feeds (CSV import)</h2>
-      <p class="muted" style="margin-top:0">
-        The reliable way to load real history: import a machine-readable CSV series from an
-        official source (FRED redistributes the World Bank “Pink Sheet” and EIA energy series).
-        Every point comes straight from the file — nothing scraped or guessed.
-      </p>
-      <div style="overflow:auto"><table id="feed-table"></table></div>
 
       <hr>
-      <h2 style="font-size:13px">Custom feed</h2>
+      <h2 style="font-size:13px">Custom feed (any CSV URL)</h2>
       <div class="row">
         <div style="flex:3"><label for="feed-url">CSV URL</label>
           <input id="feed-url" placeholder="https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO"></div>
@@ -429,6 +432,7 @@
       <div class="hint">Default mapping is column&nbsp;1 = date, column&nbsp;2 = value (the FRED convention).
         Works with any CSV; missing values (<code>.</code>/blank) are skipped, never stored as zero.</div>
       <div id="feed-result" class="hint"></div>
+      </div>
     </section>
     </div>
 
@@ -767,7 +771,9 @@
           st.textContent = "Seeding curated sources…";
           await api("/api/sources/seed-defaults", {method: "POST"});
         }
-        st.textContent = "Running a first ingestion (bounded; may take a moment)…";
+        st.textContent = "Importing market data (official price feeds)…";
+        await api("/api/markets/feeds/import-all", {method: "POST"}).catch(() => null);
+        st.textContent = "Running a first news ingestion (bounded; may take a moment)…";
         await api("/api/scheduler/run-now", {method: "POST"});
         let n = 0;
         const poll = setInterval(async () => {
@@ -1131,32 +1137,123 @@
         toast("Schedule saved."); previewTargets(); } catch (e) { toast("Save failed: " + e.message, "err"); }
     }
 
-    // -- Markets ------------------------------------------------------------ //
-    let MKT_CAT = "financial";
+    // -- Markets (analysis-first dashboard) --------------------------------- //
+    let MKT_SERIES = [];
+    const MKT_PRICES = {};            // symbol -> [{observed_on, price, currency, unit}]
+    let _mktConfigLoaded = false;
 
-    function showMarketCat(cat) {
-      MKT_CAT = cat;
-      document.querySelectorAll("#tab-markets [data-mkt]").forEach(b =>
-        b.classList.toggle("active", b.dataset.mkt === cat));
-      $("mkt-chart").innerHTML = "";
-      loadMarkets();
+    async function loadMarkets() { loadDashboard(); }
+
+    async function fetchPrices(symbol) {
+      if (MKT_PRICES[symbol]) return MKT_PRICES[symbol];
+      try { const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`); MKT_PRICES[symbol] = d.prices || []; }
+      catch { MKT_PRICES[symbol] = []; }
+      return MKT_PRICES[symbol];
     }
 
-    async function loadMarkets() {
-      // Populate the source dropdown (all sources) once per view.
+    async function loadDashboard() {
+      const status = $("mkt-dash-status");
+      try {
+        const d = await api("/api/markets/series");
+        MKT_SERIES = d.series || [];
+        if (!MKT_SERIES.length) {
+          $("mkt-dashboard").innerHTML = `<div class="muted">No market data yet. Click “Load / refresh market data” to import official price feeds (EUR/USD, crude oil, metals, gold).</div>`;
+          status.textContent = ""; return;
+        }
+        status.textContent = `${MKT_SERIES.length} series`;
+        await Promise.all(MKT_SERIES.map(s => fetchPrices(s.symbol)));
+        renderDashboard();
+      } catch (e) { status.textContent = "Could not load series: " + e.message; }
+    }
+
+    function windowPrices(points, days) {
+      if (!days || !points.length) return points;
+      const cutoff = new Date(Date.now() - days*86400000).toISOString().slice(0, 10);
+      return points.filter(p => p.observed_on >= cutoff);
+    }
+
+    function dashChartSvg(points) {
+      if (points.length < 2) return `<div class="muted" style="padding:18px 0;font-size:12px">not enough points in this window</div>`;
+      const w = 300, h = 86, pad = 6;
+      const ys = points.map(p => p.price), minY = Math.min(...ys), maxY = Math.max(...ys), span = (maxY - minY) || 1;
+      const X = i => pad + (w - 2*pad) * (i/(points.length-1));
+      const Y = v => h - pad - (h - 2*pad) * ((v - minY)/span);
+      const line = points.map((p, i) => `${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(" ");
+      const up = points[points.length-1].price >= points[0].price;
+      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block">
+        <polyline fill="none" stroke="${up?'var(--ok)':'var(--err)'}" stroke-width="2" points="${line}"></polyline></svg>`;
+    }
+
+    function renderDashboard() {
+      if (!MKT_SERIES.length) return;
+      const days = Number($("mkt-scale").value);
+      $("mkt-dashboard").innerHTML = MKT_SERIES.map(s => {
+        const all = MKT_PRICES[s.symbol] || [];
+        const pts = windowPrices(all, days);
+        const last = pts.length ? pts[pts.length-1] : (all.length ? all[all.length-1] : null);
+        const first = pts.length ? pts[0] : null;
+        let change = "";
+        if (first && last && first.price) {
+          const pct = (last.price - first.price) / first.price * 100;
+          change = `<span class="pill ${pct>=0?'ok':'err'}">${pct>=0?'+':''}${pct.toFixed(1)}%</span>`;
+        }
+        const lv = last ? `${last.price} <span class="muted">${esc(last.currency)}/${esc(last.unit)}</span>` : '—';
+        return `<div class="stat" style="cursor:pointer" title="open detail + correlation"
+            onclick="chartSymbol(${JSON.stringify(esc(s.symbol))}, ${JSON.stringify(esc(last?last.unit:''))})">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <strong>${esc(s.symbol)}</strong> ${change}</div>
+          <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv} · ${pts.length} pts</div>
+          ${dashChartSvg(pts)}</div>`;
+      }).join("");
+    }
+
+    async function loadMarketData(btn) {
+      btn.disabled = true;
+      const status = $("mkt-dash-status");
+      status.textContent = "Importing official feeds… (downloads CSVs, may take a moment)";
+      try {
+        const r = await api("/api/markets/feeds/import-all", {method: "POST"});
+        status.textContent = `Imported ${r.points_imported} point(s) across ${r.feeds} feeds${r.failed?`, ${r.failed} failed`:""}.`;
+        for (const k in MKT_PRICES) delete MKT_PRICES[k];
+        await loadDashboard();
+        if (_mktConfigLoaded) loadFeeds();
+        toast("Market data loaded.");
+      } catch (e) { status.textContent = ""; toast("Load failed: " + e.message, "err"); }
+      finally { btn.disabled = false; }
+    }
+
+    function toggleMktConfig() {
+      const el = $("mkt-config"), open = el.style.display === "none";
+      el.style.display = open ? "" : "none";
+      $("mkt-config-caret").textContent = open ? "▾" : "▸";
+      if (open && !_mktConfigLoaded) { _mktConfigLoaded = true; loadMarketConfig(); }
+    }
+
+    async function loadMarketConfig() {
       try {
         const sources = await api("/api/sources");
         $("mkt-source").innerHTML = sources.map(s =>
           `<option value="${s.id}">${esc(s.name)} (${esc(s.domain)})</option>`).join("")
           || '<option value="">(no sources — add one first)</option>';
       } catch (e) { /* leave as-is */ }
+      loadFeeds(); loadRules();
+    }
 
+    async function loadRules() {
       try {
-        const d = await api("/api/markets/overview?category=" + encodeURIComponent(MKT_CAT));
-        renderMarketTable(d.items);
-      } catch (e) { toast("Markets: " + e.message, "err"); }
-
-      loadFeeds();
+        const d = await api("/api/markets/rules");
+        const t = $("mkt-rules");
+        t.innerHTML = "<tr><th>Symbol</th><th>Category</th><th>Source</th><th>Last status</th><th></th></tr>" +
+          (d.rules.length ? d.rules.map(r => `<tr>
+            <td><strong>${esc(r.symbol)}</strong></td><td class="muted">${esc(r.category)}</td>
+            <td class="muted">${esc(r.source_name||"")}</td>
+            <td class="muted" style="font-size:12px;max-width:240px">${esc(r.last_status||"never run")}</td>
+            <td style="white-space:nowrap">
+              <button class="tiny secondary" onclick="runMarketRule(${r.id})" title="Fetch once and apply the rule">Test</button>
+              <button class="tiny secondary" onclick="chartSymbol(${JSON.stringify(esc(r.symbol))}, ${JSON.stringify(esc(r.unit||''))})">Chart</button>
+              <button class="tiny danger" onclick="deleteMarketRule(${r.id})">Delete</button></td></tr>`).join("")
+            : `<tr><td colspan="5" class="muted">No extraction rules. Feeds cover most needs; add a rule below to scrape a price off a specific page.</td></tr>`);
+      } catch (e) { /* rules optional */ }
     }
 
     // -- Official CSV feeds ------------------------------------------------- //
@@ -1183,7 +1280,7 @@
       try {
         const r = await api(`/api/markets/feeds/${encodeURIComponent(key)}/import`, {method: "POST"});
         toast(`Imported ${r.imported} new point(s) for ${r.symbol} (${r.skipped_existing} already had).`);
-        loadFeeds();
+        delete MKT_PRICES[r.symbol]; loadFeeds(); loadDashboard();
       } catch (e) { toast("Import failed: " + e.message, "err"); }
     }
 
@@ -1203,34 +1300,8 @@
         const r = await api("/api/markets/feeds/import-url", {method: "POST", body: JSON.stringify(body)});
         $("feed-result").innerHTML = `<span class="pill ok">imported</span> ${r.imported} new point(s) for ` +
           `${esc(r.symbol)} (${r.skipped_existing} already present, ${r.received} in feed).`;
-        toast("Feed imported."); loadFeeds();
+        toast("Feed imported."); delete MKT_PRICES[body.symbol]; loadFeeds(); loadDashboard();
       } catch (e) { $("feed-result").textContent = ""; toast("Import failed: " + e.message, "err"); }
-    }
-
-    function renderMarketTable(items) {
-      const t = $("mkt-table");
-      if (!items.length) {
-        t.innerHTML = `<tr><td class="muted">No rules in this category yet. Add one below.</td></tr>`;
-        return;
-      }
-      t.innerHTML = "<tr><th>Symbol</th><th>Source</th><th>Latest</th><th>Pts</th><th>Last status</th><th></th></tr>" +
-        items.map(r => {
-          const latest = r.latest
-            ? `${r.latest.price} ${esc(r.latest.currency)}/${esc(r.latest.unit)} <span class="muted">(${esc(r.latest.observed_on)})</span>`
-            : '<span class="muted">—</span>';
-          return `<tr>
-            <td><strong>${esc(r.symbol)}</strong>${r.label?`<div class="muted" style="font-size:12px">${esc(r.label)}</div>`:""}</td>
-            <td class="muted">${esc(r.source_name||"")}</td>
-            <td>${latest}</td>
-            <td class="muted">${r.points}</td>
-            <td class="muted" style="font-size:12px;max-width:240px">${esc(r.last_status||"never run")}</td>
-            <td style="white-space:nowrap">
-              <button class="tiny secondary" onclick="runMarketRule(${r.id})" title="Fetch once and apply the rule">Test</button>
-              <button class="tiny secondary" onclick="chartSymbol(${JSON.stringify(esc(r.symbol))}, ${JSON.stringify(esc(r.unit))})">Chart</button>
-              <button class="tiny secondary" onclick="correlateSymbol(${JSON.stringify(esc(r.symbol))})" title="Correlate price change vs news volume">Correlate</button>
-              <button class="tiny danger" onclick="deleteMarketRule(${r.id})">Delete</button>
-            </td></tr>`;
-        }).join("");
     }
 
     async function addMarketRule() {
@@ -1245,7 +1316,7 @@
         currency: $("mkt-currency").value.trim() || "USD",
         unit: $("mkt-unit").value.trim() || "kg",
         market: $("mkt-market").value.trim() || null,
-        category: MKT_CAT,
+        category: "commodity",
       };
       if (!body.source_id || !body.symbol || !body.url || !body.selector) {
         toast("Source, symbol, URL and selector are required.", "err"); return;
@@ -1255,7 +1326,7 @@
         toast("Rule added.");
         ["mkt-symbol","mkt-label","mkt-url","mkt-selector","mkt-attr","mkt-regex","mkt-market"]
           .forEach(id => $(id).value = "");
-        loadMarkets();
+        loadRules();
       } catch (e) { toast("Add failed: " + e.message, "err"); }
     }
 
@@ -1269,13 +1340,13 @@
           toast(`Already had a point for ${o.symbol} today (${o.value}).`, "warn");
         else
           toast(`${o.status}: ${o.reason || ""}`, "err");
-        loadMarkets();
+        delete MKT_PRICES[o.symbol]; loadRules(); loadDashboard();
       } catch (e) { toast("Run failed: " + e.message, "err"); }
     }
 
     async function deleteMarketRule(id) {
       if (!confirm("Delete this rule? Stored price history is kept.")) return;
-      try { await api(`/api/markets/rules/${id}`, {method: "DELETE"}); toast("Rule deleted."); loadMarkets(); }
+      try { await api(`/api/markets/rules/${id}`, {method: "DELETE"}); toast("Rule deleted."); loadRules(); }
       catch (e) { toast("Delete failed: " + e.message, "err"); }
     }
 
@@ -1303,7 +1374,8 @@
       el.innerHTML = `<div class="muted">Loading ${esc(symbol)}…</div>`;
       try {
         const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`);
-        el.innerHTML = `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} — ${d.count} point(s)</h2>` +
+        el.innerHTML = `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} — ${d.count} point(s)
+            <button class="tiny secondary" onclick="correlateSymbol(${JSON.stringify(esc(symbol))})" title="Correlate price change vs news volume">Correlate with news</button></h2>` +
           sparkSvg(d.prices) +
           `<div id="mkt-corr" class="hint" style="margin-top:8px"></div>`;
       } catch (e) {
