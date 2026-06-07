@@ -30,8 +30,8 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   from a **Chain of custody** UI panel, with the effective state always shown
   honestly (see [docs/CHAIN_OF_CUSTODY.md](docs/CHAIN_OF_CUSTODY.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
-- ✅ **Tabbed web UI** (Search · Ingest · Sources & Database · Markets · Insights ·
-  Chain of custody · Settings) with a **Database** panel (real row counts + on-disk
+- ✅ **Tabbed web UI** (Search · Ingest · Sources · Database · Markets · Insights ·
+  Wikipedia · Chain of custody · Settings) with a **Database** panel (real row counts + on-disk
   size), inline **source management** (enable/disable, priority, delete), and a
   **World coverage** view (countries covered vs not, sources + topic keywords per
   country).
@@ -141,6 +141,8 @@ Ollama and export a **signed, verifiable evidence bundle**.
 
 ## 📚 Documentation
 
+- [USER_MANUAL](docs/USER_MANUAL.md) — **the friendly, complete guide**: every tab,
+  control, setting, workflow, env var and API area
 - [QUICKSTART](docs/QUICKSTART.md) — install + the end-to-end loop
 - [PRODUCT_SYNTHESIS](docs/PRODUCT_SYNTHESIS.md) — what the app is and isn't
 - [ACTION_PLAN](docs/ACTION_PLAN.md) — phased build plan + status

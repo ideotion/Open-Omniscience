@@ -79,5 +79,5 @@ def test_languages_endpoint():
     # Grouped form is present and covers the same editions.
     groups = data["groups"]
     assert groups and all(g["region"] and g["languages"] for g in groups)
-    grouped = [l["code"] for g in groups for l in g["languages"]]
+    grouped = [lang["code"] for g in groups for lang in g["languages"]]
     assert sorted(grouped) == sorted(x["code"] for x in langs)

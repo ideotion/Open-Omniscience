@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased — UI polish, live data, and a full user manual
+
+A wave of usability work on top of the feature set below, plus documentation:
+
+- **Live, animated data:** the active tab refreshes itself on an interval while on
+  screen — live article/database counts, scheduler state, Insights indexing
+  progress, and Wikipedia tracking — with smooth count-up tweens for headline
+  numbers.
+- **Sources / Database split:** the old combined tab became two — **Sources**
+  (add + a filterable, sortable, paginated management table with inline
+  enable/priority/delete and CSV import/export) and **Database** (live honest
+  stats + clickable World-coverage view).
+- **Scheduler-first Ingest tab:** automatic ingestion (start/stop/scrape-now, RSS /
+  crawl / markets / Wikipedia modes, language/type/tag targeting with a **Preview
+  targets** action) is the primary surface; manual feed/URL ingest sits below.
+  Empty-DB onboarding banner with a one-click first run.
+- **Markets dashboard:** analysis-first cards with adjustable time scales and
+  out-of-the-box curated data; the feed/rule configuration is tucked into a
+  collapsible "most users won't need this" section.
+- **Offline article view** + framing surfaced in Insights.
+- **Insights keyword filtering:** stronger multilingual stopword removal plus a
+  user-editable exclusion list (Settings → Keyword filtering, and ✕ in Insights).
+- **Wikipedia language picker moved to Settings** and **grouped by continent**
+  (Europe/Asia/Africa/…), largest editions first within each; the picker also
+  accepts any free-text edition code. `src/wiki/languages.py` gained a `region`
+  field + `languages_by_region()`, and `/api/wiki/languages` now returns both a flat
+  list and a continent-grouped `groups` form.
+- **Docs:** added an extensive end-user manual ([USER_MANUAL.md](USER_MANUAL.md))
+  covering every tab, control, setting, workflow, env var and API area, and an
+  [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) capturing in-flight design decisions
+  (notably a planned chain-of-custody "automatic, background, dummy-proof"
+  redesign — not yet built).
+
 ## Unreleased — tabbed UI, markets, worldwide coverage, insights, wiki
 
 A large feature wave (all tested; dependency-free vanilla-JS UI; no fabricated data):
