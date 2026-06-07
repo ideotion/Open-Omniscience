@@ -94,7 +94,8 @@
   <nav class="tabs" id="tabs">
     <button data-tab="search" class="active">Search</button>
     <button data-tab="ingest">Ingest</button>
-    <button data-tab="sources">Sources &amp; Database</button>
+    <button data-tab="sources">Sources</button>
+    <button data-tab="database">Database</button>
     <button data-tab="markets">Markets</button>
     <button data-tab="insights">Insights</button>
     <button data-tab="wiki">Wikipedia</button>
@@ -211,34 +212,8 @@
     </section>
     </div>
 
-    <!-- ===================== SOURCES & DATABASE ====================== -->
+    <!-- ===================== SOURCE MANAGEMENT ====================== -->
     <div class="tab-page" id="tab-sources">
-    <section class="panel">
-      <h2>Database</h2>
-      <div class="hint" style="margin-bottom:10px">Live counts from the unified store. Every figure is a real
-        <code>COUNT(*)</code> or on-disk byte size — nothing is estimated.</div>
-      <div id="db-stats" class="stat-grid"><div class="muted">Loading…</div></div>
-      <div id="db-file" class="hint" style="margin-top:10px"></div>
-      <button class="secondary" onclick="loadDbStats()">Refresh</button>
-    </section>
-
-    <section class="panel">
-      <h2>World coverage</h2>
-      <div class="hint" style="margin-bottom:10px">How many countries the source catalog reaches
-        (by each source's country code, scored against ISO&nbsp;3166). Measured from the data — and
-        it shows exactly which countries still have no source, to drive expansion.</div>
-      <div id="coverage-summary" class="stat-grid"><div class="muted">Loading…</div></div>
-      <div class="row" style="margin-top:10px">
-        <div style="flex:3"><input id="cov-filter" placeholder="filter countries by code or topic…"
-              oninput="renderCoverageTable()"></div>
-        <div style="flex:0 0 auto;align-self:end">
-          <button class="secondary" onclick="loadCoverage()">Refresh</button>
-        </div>
-      </div>
-      <div style="overflow:auto; margin-top:10px; max-height:420px"><table id="coverage-table"></table></div>
-      <div id="coverage-gaps" class="hint" style="margin-top:10px"></div>
-    </section>
-
     <section class="panel">
       <h2>Add a source</h2>
       <div class="row">
@@ -254,13 +229,24 @@
     <section class="panel">
       <h2>Manage sources</h2>
       <div class="row">
-        <div style="flex:3"><label for="src-search">Filter by name, domain or tag</label>
-          <input id="src-search" placeholder="type to search… (blank = first 50)"
-                 onkeydown="if(event.key==='Enter')loadManagedSources()"></div>
-        <div style="flex:0 0 auto; align-self:end;"><button onclick="loadManagedSources()">Search</button></div>
+        <div style="flex:2"><label for="src-search">Search</label>
+          <input id="src-search" placeholder="name or domain" onkeydown="if(event.key==='Enter')applySrcFilters()"></div>
+        <div><label for="src-country">Country</label><input id="src-country" placeholder="fr"></div>
+        <div><label for="src-language">Language</label><input id="src-language" placeholder="en"></div>
+        <div><label for="src-type">Type</label><input id="src-type" placeholder="news"></div>
+        <div><label for="src-tag">Tag</label><input id="src-tag" placeholder="politics"></div>
+        <div><label for="src-enabled">Enabled</label><select id="src-enabled">
+          <option value="">any</option><option value="true">enabled</option><option value="false">disabled</option></select></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="applySrcFilters()">Filter</button>
+          <button class="secondary" onclick="clearSrcFilters()">Clear</button></div>
       </div>
       <div id="src-meta" class="hint"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="src-table"></table></div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary tiny" onclick="srcPage(-1)">‹ Prev</button>
+        <button class="secondary tiny" onclick="srcPage(1)">Next ›</button>
+        <span id="src-page" class="hint" style="align-self:center"></span>
+      </div>
     </section>
 
     <section class="panel">
@@ -282,6 +268,35 @@
       <input type="file" id="imp-file" accept=".csv,text/csv">
       <button onclick="importSources()">Import CSV</button>
       <div id="imp-result" class="hint"></div>
+    </section>
+    </div>
+
+    <!-- =========================== DATABASE ========================== -->
+    <div class="tab-page" id="tab-database">
+    <section class="panel">
+      <h2>Database</h2>
+      <div class="hint" style="margin-bottom:10px">Live counts from the unified store. Every figure is a real
+        <code>COUNT(*)</code> or on-disk byte size — nothing is estimated.</div>
+      <div id="db-stats" class="stat-grid"><div class="muted">Loading…</div></div>
+      <div id="db-file" class="hint" style="margin-top:10px"></div>
+      <button class="secondary" onclick="loadDbStats()">Refresh</button>
+    </section>
+
+    <section class="panel">
+      <h2>World coverage</h2>
+      <div class="hint" style="margin-bottom:10px">How many countries the source catalog reaches
+        (by each source's country code, scored against ISO&nbsp;3166). Measured from the data.
+        <strong>Click a country code or a topic keyword</strong> to see the matching sources.</div>
+      <div id="coverage-summary" class="stat-grid"><div class="muted">Loading…</div></div>
+      <div class="row" style="margin-top:10px">
+        <div style="flex:3"><input id="cov-filter" placeholder="filter countries by code or topic…"
+              oninput="renderCoverageTable()"></div>
+        <div style="flex:0 0 auto;align-self:end">
+          <button class="secondary" onclick="loadCoverage()">Refresh</button>
+        </div>
+      </div>
+      <div style="overflow:auto; margin-top:10px; max-height:420px"><table id="coverage-table"></table></div>
+      <div id="coverage-gaps" class="hint" style="margin-top:10px"></div>
     </section>
     </div>
 
@@ -629,7 +644,8 @@
       markets: loadMarkets,
       insights: loadInsights,
       wiki: loadWiki,
-      sources: () => { loadDbStats(); loadCoverage(); loadManagedSources(); },
+      sources: loadManagedSources,
+      database: () => { loadDbStats(); loadCoverage(); },
       custody: loadCustody,
       settings: loadSettings,
     };
@@ -822,8 +838,12 @@
       t.innerHTML = "<tr><th>Country</th><th>Sources</th><th>Enabled</th><th>Topic keywords (source tags)</th></tr>" +
         (rows.length ? rows.map(c => {
           const tags = (c.top_tags || []).map(([t, n]) =>
-            `<span class="pill">${esc(t)} ${n}</span>`).join(" ") || '<span class="muted">—</span>';
-          return `<tr><td><strong>${esc(c.code)}</strong></td><td>${c.sources}</td>
+            `<span class="pill" style="cursor:pointer" title="show ${esc(t)} sources in ${esc(c.code)}"
+                onclick="openSourcesForKeyword(${JSON.stringify(esc(c.code))}, ${JSON.stringify(esc(t))})">${esc(t)} ${n}</span>`
+          ).join(" ") || '<span class="muted">—</span>';
+          const codeCell = `<strong style="cursor:pointer" title="show sources in ${esc(c.code)}"
+                onclick="openSourcesForKeyword(${JSON.stringify(esc(c.code))}, null)">${esc(c.code)}</strong>`;
+          return `<tr><td>${codeCell}</td><td>${c.sources}</td>
                   <td class="muted">${c.enabled}</td><td>${tags}</td></tr>`;
         }).join("") : `<tr><td colspan="4" class="muted">No matching countries.</td></tr>`);
       // Not-covered list (respect the same filter on the code).
@@ -870,44 +890,84 @@
     }
 
     // -- Sources: management table ------------------------------------------ //
+    // Source-management list state: filters + sort + paging.
+    const SRC = {offset: 0, limit: 50, sort: "name", order: "asc"};
+
+    function srcQuery() {
+      const p = new URLSearchParams();
+      const map = {q: "src-search", country: "src-country", language: "src-language",
+                   source_type: "src-type", tag: "src-tag"};
+      for (const [k, id] of Object.entries(map)) { const v = $(id).value.trim(); if (v) p.set(k, v); }
+      const en = $("src-enabled").value; if (en) p.set("enabled", en);
+      p.set("sort", SRC.sort); p.set("order", SRC.order);
+      p.set("limit", SRC.limit); p.set("offset", SRC.offset);
+      return p;
+    }
+
+    function applySrcFilters() { SRC.offset = 0; loadManagedSources(); }
+    function clearSrcFilters() {
+      ["src-search","src-country","src-language","src-type","src-tag"].forEach(id => $(id).value = "");
+      $("src-enabled").value = ""; SRC.offset = 0; loadManagedSources();
+    }
+    function srcPage(dir) {
+      const next = SRC.offset + dir * SRC.limit;
+      if (next < 0) return;
+      SRC.offset = next; loadManagedSources();
+    }
+    function setSrcSort(col) {
+      if (SRC.sort === col) SRC.order = (SRC.order === "asc" ? "desc" : "asc");
+      else { SRC.sort = col; SRC.order = "asc"; }
+      SRC.offset = 0; loadManagedSources();
+    }
+    function srcTh(label, col) {
+      const arrow = SRC.sort === col ? (SRC.order === "asc" ? " ▲" : " ▼") : "";
+      return `<th style="cursor:pointer" onclick="setSrcSort('${col}')">${label}${arrow}</th>`;
+    }
+
     async function loadManagedSources() {
-      const q = $("src-search").value.trim();
       const t = $("src-table");
       try {
-        let rows, total, shown;
-        if (q) {
-          const d = await api("/api/sources/search?query=" + encodeURIComponent(q) + "&limit=200");
-          rows = d.results; total = d.total; shown = rows.length;
-        } else {
-          rows = await api("/api/sources/?limit=50");
-          total = rows.length; shown = rows.length;
-        }
-        $("src-meta").textContent = q
-          ? `${total} match(es)` + (total > shown ? ` (showing ${shown})` : "")
-          : `Showing first ${shown}. Type above to filter the full catalog.`;
-        t.innerHTML = "<tr><th>Name</th><th>Domain</th><th>Type</th><th>Pri</th><th>Rate</th>" +
-          "<th>Articles</th><th>Enabled</th><th></th></tr>" +
-          (rows.length ? rows.map(s => sourceRow(s)).join("")
-            : `<tr><td colspan="8" class="muted">No sources. Add one or seed the starter set above.</td></tr>`);
+        const d = await api("/api/catalog/sources?" + srcQuery().toString());
+        const shownFrom = d.total ? SRC.offset + 1 : 0;
+        const shownTo = Math.min(SRC.offset + SRC.limit, d.total);
+        $("src-meta").textContent = `${d.total} source(s)` + (d.total ? ` · showing ${shownFrom}–${shownTo}` : "");
+        $("src-page").textContent = `page ${Math.floor(SRC.offset / SRC.limit) + 1} of ${Math.max(1, Math.ceil(d.total / SRC.limit))}`;
+        t.innerHTML = "<tr>" + srcTh("Name","name") + srcTh("Domain","domain") + srcTh("Type","source_type") +
+          srcTh("Country","country") + srcTh("Lang","language") + srcTh("Pri","priority") +
+          srcTh("Articles","articles") + "<th>Enabled</th><th></th></tr>" +
+          (d.sources.length ? d.sources.map(s => sourceRow(s)).join("")
+            : `<tr><td colspan="9" class="muted">No sources match. Adjust filters, add one, or seed the starter set.</td></tr>`);
       } catch (e) { toast("Could not load sources: " + e.message, "err"); }
     }
 
     function sourceRow(s) {
-      const tags = (s.tags || []).map(x => `<span class="pill">${esc(x)}</span>`).join(" ");
+      const tags = (s.tags || []).map(x =>
+        `<span class="pill" style="cursor:pointer" title="filter by this tag" onclick="srcFilterTag(${JSON.stringify(esc(x))})">${esc(x)}</span>`).join(" ");
       const prio = [1,2,3].map(p =>
         `<option value="${p}" ${s.priority===p?"selected":""}>${p}</option>`).join("");
       return `<tr>
         <td>${esc(s.name)}<div class="muted" style="font-size:12px">${tags}</div></td>
         <td>${esc(s.domain)}${s.rss_url?' <span class="pill ok" title="has RSS feed">rss</span>':''}</td>
         <td class="muted">${esc(s.source_type || "—")}</td>
+        <td class="muted">${esc(s.country || "—")}</td>
+        <td class="muted">${esc(s.language || "—")}</td>
         <td><select class="tiny" style="width:auto;padding:3px"
               onchange="updateSource(${s.id},{priority:Number(this.value)})">${prio}</select></td>
-        <td class="muted">${s.rate_limit_ms!=null?esc(s.rate_limit_ms)+'ms':'—'}</td>
         <td class="muted">${s.article_count!=null?s.article_count:'—'}</td>
         <td><input type="checkbox" style="width:auto" ${s.enabled?"checked":""}
               onchange="updateSource(${s.id},{enabled:this.checked})"></td>
         <td><button class="tiny danger" onclick="deleteSource(${s.id}, ${JSON.stringify(esc(s.name))})">Delete</button></td>
       </tr>`;
+    }
+
+    function srcFilterTag(tag) { $("src-tag").value = tag; applySrcFilters(); }
+
+    // Jump from the Database coverage view to the matching sources.
+    function openSourcesForKeyword(code, tag) {
+      clearSrcFilters();
+      if (code && code !== "(none)") $("src-country").value = code;
+      if (tag) $("src-tag").value = tag;
+      showTab("sources"); applySrcFilters();
     }
 
     async function updateSource(id, body) {
