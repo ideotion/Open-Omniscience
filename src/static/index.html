@@ -649,7 +649,7 @@
       insights: loadInsights,
       wiki: loadWiki,
       sources: loadManagedSources,
-      database: () => { loadDbStats(); loadCoverage(); },
+      database: () => { loadCoverage(); },   // stats handled by the live poller (startDbPoll)
       custody: loadCustody,
       settings: loadSettings,
     };
@@ -661,6 +661,8 @@
       document.querySelectorAll(".tab-page").forEach(p =>
         p.classList.toggle("active", p.id === "tab-" + name));
       if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
+      // Live-update the Database counts only while that tab is open.
+      if (name === "database") startDbPoll(); else stopDbPoll();
       if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
     }
 
@@ -792,23 +794,64 @@
     }
 
     // -- Database tab ------------------------------------------------------- //
+    // Tween a stat number from its current value to `to` (ease-in-out) so the
+    // database visibly "grows" on each poll. Cosmetic only — the value is real.
+    function animateCount(el, to) {
+      to = Math.round(to || 0);
+      const from = parseInt(el.dataset.v || "0", 10) || 0;
+      if (from === to) { el.dataset.v = to; el.textContent = to.toLocaleString(); return; }
+      const start = performance.now(), dur = 600;
+      function step(t) {
+        const k = Math.min(1, (t - start) / dur);
+        const eased = 0.5 - 0.5 * Math.cos(k * Math.PI);
+        el.textContent = Math.round(from + (to - from) * eased).toLocaleString();
+        if (k < 1) requestAnimationFrame(step); else el.dataset.v = to;
+      }
+      requestAnimationFrame(step);
+    }
+
+    let DB_KEYS = null;   // current rendered stat keys (rebuild grid only when they change)
+
     async function loadDbStats() {
       const el = $("db-stats");
-      el.innerHTML = '<div class="muted">Loading…</div>';
       try {
         const s = await api("/api/database/stats");
         const entries = Object.entries(s.counts || {});
-        el.innerHTML = entries.length
-          ? entries.map(([k, v]) =>
-              `<div class="stat"><div class="n">${v.toLocaleString()}</div><div class="k">${esc(k)}</div></div>`).join("")
-          : '<div class="muted">No tables yet.</div>';
+        const keys = entries.map(([k]) => k).join(",");
+        if (DB_KEYS !== keys) {                       // (re)build grid with stable number nodes
+          DB_KEYS = keys;
+          el.innerHTML = entries.length
+            ? entries.map(([k]) =>
+                `<div class="stat"><div class="n" id="db-n-${k}" data-v="0">0</div><div class="k">${esc(k)}</div></div>`).join("")
+            : '<div class="muted">No tables yet.</div>';
+        }
+        for (const [k, v] of entries) {
+          const n = document.getElementById("db-n-" + k);
+          if (n) animateCount(n, v);
+        }
         $("db-file").innerHTML = s.file
           ? `Backend <span class="pill">${esc(s.backend)}</span> · on disk ` +
             `<strong>${humanBytes(s.file.bytes)}</strong> ` +
             `<span class="muted">(${esc(s.file.path)})</span>`
           : `Backend <span class="pill">${esc(s.backend)}</span> · ${esc(s.url_summary)}`;
-      } catch (e) { el.innerHTML = `<div class="note err">Could not load stats: ${esc(e.message)}</div>`; }
+      } catch (e) { el.innerHTML = `<div class="note err">Could not load stats: ${esc(e.message)}</div>`; DB_KEYS = null; }
     }
+
+    // Live polling: refresh the Database stats every few seconds while that tab is
+    // open and the window is visible, so the counts update without a manual refresh.
+    let _dbPoll = null;
+    const DB_POLL_MS = 4000;
+    function startDbPoll() {
+      stopDbPoll();
+      loadDbStats();
+      _dbPoll = setInterval(() => { if (!document.hidden) loadDbStats(); }, DB_POLL_MS);
+    }
+    function stopDbPoll() { if (_dbPoll) { clearInterval(_dbPoll); _dbPoll = null; } }
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      const dbActive = document.getElementById("tab-database").classList.contains("active");
+      if (dbActive && !_dbPoll) startDbPoll();
+    });
 
     // -- World coverage ----------------------------------------------------- //
     let COV_COUNTRIES = [];   // cached per-country rows for client-side filtering
