@@ -30,11 +30,15 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   from a **Chain of custody** UI panel, with the effective state always shown
   honestly (see [docs/CHAIN_OF_CUSTODY.md](docs/CHAIN_OF_CUSTODY.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
-- ✅ **Tabbed web UI** (Search · Ingest · Sources · Database · Markets · Insights ·
-  Wikipedia · Chain of custody · Settings) with a **Database** panel (real row counts + on-disk
-  size), inline **source management** (enable/disable, priority, delete), and a
+- ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust ·
+  System*) covering Home, Search, Insights, Wikipedia, Markets, Collect, Sources,
+  Library, Evidence &amp; custody, Settings and an in-app Help/docs reader. Includes a
+  command palette (Ctrl/⌘-K), live appearance customization (themes, accent, density,
+  layout, which tools show), a **Library** panel (real row counts + on-disk size),
+  inline **source management** (enable/disable, priority, delete), and a
   **World coverage** view (countries covered vs not, sources + topic keywords per
-  country).
+  country). *(The redesigned interface ships on branch `0.05`; see
+  [`docs/GUI_REDESIGN_0.05.md`](docs/GUI_REDESIGN_0.05.md).)*
 - ✅ **Settings**: theme (system/dark/light) and a SQLite **backup/restore**
   — consistent online-backup download, and a *validated*, snapshotted restore
   (refuses anything that isn't a genuine Open Omniscience database).

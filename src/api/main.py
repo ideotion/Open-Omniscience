@@ -37,7 +37,12 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
 from slowapi.errors import RateLimitExceeded
@@ -652,6 +657,55 @@ async def list_sources(request: Request, db: Session = Depends(get_db)):
         }
         for s in sources
     ]
+
+
+# In-app documentation. The UI's Help reader fetches these so the user can read
+# the manual without leaving the (offline, loopback-only) app. Strictly a curated
+# allow-list of repo docs — the slug never touches the filesystem path, so there
+# is no traversal surface.
+_DOCS: dict[str, dict[str, str]] = {
+    "user-manual": {"file": "USER_MANUAL.md", "title": "User Manual",
+                    "blurb": "The complete guide: install, every tool, workflows, reference."},
+    "quickstart": {"file": "QUICKSTART.md", "title": "Quickstart",
+                   "blurb": "The fastest path from install to your first results."},
+    "ethics": {"file": "ETHICS.md", "title": "Ethics & the Munich Charter",
+               "blurb": "The principles this tool is built to uphold."},
+    "wikipedia": {"file": "WIKIPEDIA.md", "title": "Wikipedia tracking",
+                  "blurb": "Change-tracking and offline baselines, in depth."},
+    "chain-of-custody": {"file": "CHAIN_OF_CUSTODY.md", "title": "Chain of custody",
+                         "blurb": "Tamper-evident, signed provenance for your evidence."},
+    "insights": {"file": "INSIGHTS.md", "title": "Insights",
+                 "blurb": "How keyword, trend and entity analytics are computed."},
+    "markets": {"file": "MARKETS.md", "title": "Markets",
+                "blurb": "Price feeds, correlation, and extraction rules."},
+    "security": {"file": "SECURITY.md", "title": "Security",
+                 "blurb": "Threat model and the local-first security posture."},
+}
+_DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
+
+
+@app.get("/api/docs")
+async def list_docs() -> dict:
+    """List the in-app documentation available to the Help reader."""
+    return {
+        "docs": [
+            {"slug": slug, "title": meta["title"], "blurb": meta["blurb"],
+             "available": (_DOCS_DIR / meta["file"]).exists()}
+            for slug, meta in _DOCS.items()
+        ]
+    }
+
+
+@app.get("/api/docs/{slug}", response_class=PlainTextResponse)
+async def get_doc(slug: str) -> str:
+    """Return one whitelisted doc as raw Markdown (rendered client-side)."""
+    meta = _DOCS.get(slug)
+    if meta is None:
+        raise HTTPException(status_code=404, detail=f"Unknown doc: {slug}")
+    path = _DOCS_DIR / meta["file"]
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Doc not found on disk: {meta['file']}")
+    return path.read_text(encoding="utf-8")
 
 
 # Root endpoint to serve index.html

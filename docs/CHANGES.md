@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.05 — full interface redesign (branch `0.05`)
+
+A ground-up redesign of everything the user sees, built on top of the existing,
+tested data layer (same endpoints, same element IDs — no functional regression).
+Reasoned from the personas outward in [`docs/GUI_REDESIGN_0.05.md`](GUI_REDESIGN_0.05.md).
+
+- **New shell:** a collapsible **sidebar grouped by intention** (Investigate ·
+  Collect · Trust · System) replaces the flat tab strip; a slim top bar carries
+  live status and the command-palette trigger.
+- **Renamed for humans:** *Ingest → Collect*, *Database → Library*, *Chain of
+  custody → Evidence & custody*; **Markets** is marked advanced and can be hidden.
+- **New Home dashboard:** orientation for non-technical users — at-a-glance counts,
+  scheduler state, and big quick-action cards.
+- **In-app Help/docs reader:** renders the User Manual (and other guides) inside the
+  app, offline, with find-on-page — backed by a new read-only, allow-listed
+  `/api/docs` endpoint.
+- **Command palette (Ctrl/⌘-K):** jump to any tool, run common actions, or open any
+  doc, all by typing.
+- **Live customization drawer:** 8 themes, accent swatches, density, text size,
+  sidebar collapse, and per-tool visibility — stored locally only, never transmitted.
+- **Refined visual system:** token-based theming, depth, motion, accessible focus
+  rings, responsive/off-canvas layout — still 100% dependency-free (no CDN, no web
+  fonts, no framework), so it runs fully offline.
+
 ## Unreleased — UI polish, live data, and a full user manual
 
 A wave of usability work on top of the feature set below, plus documentation:

@@ -14,96 +14,345 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Open Omniscience</title>
   <style>
+    /* ================================================================= *
+     *  Open Omniscience — design system "0.05"                           *
+     *  Dependency-free on purpose: system fonts, hand-drawn SVG, no CDN, *
+     *  no web fonts — runs fully offline with the NetVM detached.        *
+     * ================================================================= */
     :root {
-      --bg: #0f1115; --panel: #181b22; --panel2: #20242e; --fg: #e6e8ec;
-      --muted: #9aa3b2; --accent: #5b9dd9; --ok: #4caf7d; --warn: #d9a441;
-      --err: #d96c6c; --border: #2a2f3a;
+      /* Ink — the default dark theme */
+      --bg:#0c0e13; --bg2:#0f1218;
+      --panel:#14181f; --panel2:#1b212b; --panel3:#232b38;
+      --fg:#e8ebf0; --fg-soft:#c4cad6; --muted:#8c95a6;
+      --accent:#5b9dd9; --accent-fg:#ffffff;
+      --ok:#4caf7d; --warn:#d9a441; --err:#d96c6c;
+      --border:#262d3a; --border-soft:#1d2331;
+      --shadow:0 14px 38px -16px rgba(0,0,0,.62), 0 2px 6px -2px rgba(0,0,0,.4);
+      --radius:12px; --radius-sm:8px;
+      --sidebar-w:250px; --space:20px; --pad:16px;
+      --ff: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
     }
-    /* Light theme: applied when Settings → theme = light (or system + OS is light). */
-    html[data-theme="light"] {
-      --bg: #f5f6f8; --panel: #ffffff; --panel2: #eef1f5; --fg: #1b1f27;
-      --muted: #5c6573; --accent: #2f6fb3; --ok: #2e8b57; --warn: #b07a17;
-      --err: #c0392b; --border: #d7dce3;
-    }
+    html[data-theme="slate"]{ --bg:#0e1116; --bg2:#11151c; --panel:#161b23; --panel2:#1e2531; --panel3:#28323f; --accent:#7aa2f7; --border:#28303d; }
+    html[data-theme="midnight"]{ --bg:#080a1a; --bg2:#0b0e22; --panel:#10142e; --panel2:#171c3c; --panel3:#1f2650; --fg:#e8eaff; --fg-soft:#c3c7ee; --muted:#8a90c0; --accent:#8b7dff; --border:#23284f; }
+    html[data-theme="terminal"]{ --bg:#04070a; --bg2:#06090c; --panel:#0a1013; --panel2:#0e1619; --panel3:#13211d; --fg:#c8f7d4; --fg-soft:#a3e9ba; --muted:#5f8c72; --accent:#36d97a; --accent-fg:#04140b; --border:#16291f; --ff:var(--mono); }
+    html[data-theme="sepia"]{ --bg:#1b150e; --bg2:#201911; --panel:#262019; --panel2:#2f2820; --panel3:#3a3127; --fg:#efe5d6; --fg-soft:#d8cab4; --muted:#a8967c; --accent:#d8a657; --accent-fg:#241a0c; --border:#3a3128; }
+    html[data-theme="contrast"]{ --bg:#000; --bg2:#000; --panel:#0a0a0a; --panel2:#161616; --panel3:#222; --fg:#fff; --fg-soft:#f2f2f2; --muted:#cfcfcf; --accent:#ffd400; --accent-fg:#000; --ok:#5cff9d; --warn:#ffd400; --err:#ff6b6b; --border:#4d4d4d; --border-soft:#333; }
+    html[data-theme="light"]{ --bg:#eef1f5; --bg2:#e6eaf0; --panel:#fff; --panel2:#f3f5f9; --panel3:#e7ecf3; --fg:#1b1f27; --fg-soft:#37404f; --muted:#5c6573; --accent:#2f6fb3; --ok:#2e8b57; --warn:#b07a17; --err:#c0392b; --border:#dce1e9; --border-soft:#e8ebf1;
+      --shadow:0 14px 38px -20px rgba(20,30,50,.28), 0 2px 6px -3px rgba(20,30,50,.14); }
+    html[data-theme="paper"]{ --bg:#f2eee4; --bg2:#ebe5d6; --panel:#fbf8f1; --panel2:#f1ebdc; --panel3:#e6ddc8; --fg:#2b271f; --fg-soft:#4a4436; --muted:#7a715c; --accent:#9a6a2f; --ok:#5b7d4b; --err:#b04a3a; --border:#ded2bc; --border-soft:#e7ddca;
+      --shadow:0 14px 38px -20px rgba(80,60,30,.22), 0 2px 6px -3px rgba(80,60,30,.12); }
+    html[data-density="compact"]{ --space:13px; --pad:12px; --radius:9px; --sidebar-w:228px; }
+
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--fg);
-      font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    header { padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
-      display: flex; align-items: baseline; gap: 12px; }
-    header h1 { font-size: 18px; margin: 0; font-weight: 600; }
-    header .v { color: var(--muted); font-size: 12px; }
-    header .status { margin-left: auto; font-size: 12px; color: var(--muted); }
-    /* Tab navigation */
-    nav.tabs { display: flex; flex-wrap: wrap; gap: 2px; background: var(--panel);
-      padding: 0 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 40; }
-    nav.tabs button { background: transparent; color: var(--muted); border: 0;
-      border-bottom: 2px solid transparent; border-radius: 0; margin: 0; padding: 11px 16px;
-      font: inherit; cursor: pointer; }
-    nav.tabs button:hover { color: var(--fg); }
-    nav.tabs button.active { color: var(--fg); border-bottom-color: var(--accent); }
-    main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 20px; }
-    .tab-page { display: none; }
-    .tab-page.active { display: grid; gap: 20px; }
-    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
-    .panel h2 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase;
-      letter-spacing: .04em; color: var(--muted); }
-    label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
-    input, select, textarea {
-      width: 100%; background: var(--panel2); border: 1px solid var(--border);
-      color: var(--fg); border-radius: 6px; padding: 8px 10px; font: inherit; }
-    .row { display: flex; gap: 10px; flex-wrap: wrap; }
-    .row > div { flex: 1; min-width: 140px; }
-    button {
-      background: var(--accent); color: #fff; border: 0; border-radius: 6px;
-      padding: 9px 14px; font: inherit; cursor: pointer; margin-top: 10px; }
-    button.secondary { background: var(--panel2); border: 1px solid var(--border); color: var(--fg); }
-    button.danger { background: transparent; border: 1px solid var(--err); color: var(--err); }
-    button.tiny { padding: 3px 8px; margin-top: 0; font-size: 12px; }
-    button:active { transform: translateY(1px); }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    th { color: var(--muted); font-weight: 600; }
-    .muted { color: var(--muted); }
-    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
-      background: var(--panel2); border: 1px solid var(--border); }
-    .pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.err { color: var(--err); }
-    .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-    .stat { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
-    .stat .n { font-size: 22px; font-weight: 600; }
-    .stat .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-    #toast { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 50; }
-    .note { padding: 10px 14px; border-radius: 8px; background: var(--panel2);
-      border: 1px solid var(--border); max-width: 360px; font-size: 14px; }
-    .note.ok { border-color: var(--ok); } .note.err { border-color: var(--err); }
-    a { color: var(--accent); }
-    .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
-    code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
-    hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+    html { font-size: 100%; }
+    body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--ff);
+      font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+    a { color:var(--accent); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    code { font-family:var(--mono); background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:.92em; }
+    hr { border:none; border-top:1px solid var(--border); margin:16px 0; }
+    ::selection { background:color-mix(in srgb, var(--accent) 35%, transparent); }
+    :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+    ::-webkit-scrollbar { width:11px; height:11px; }
+    ::-webkit-scrollbar-thumb { background:var(--panel3); border-radius:99px; border:3px solid transparent; background-clip:content-box; }
+    ::-webkit-scrollbar-thumb:hover { background:var(--muted); background-clip:content-box; }
+
+    /* ---- App shell: sidebar + main column --------------------------- */
+    .app { display:flex; align-items:stretch; min-height:100vh; }
+    .sidebar { width:var(--sidebar-w); flex:0 0 var(--sidebar-w); background:var(--bg2);
+      border-right:1px solid var(--border); position:sticky; top:0; height:100vh;
+      display:flex; flex-direction:column; overflow-y:auto; transition:width .18s ease; z-index:60; }
+    .brand { display:flex; align-items:center; gap:11px; padding:16px 16px 14px; }
+    .brand .mark { width:30px; height:30px; flex:0 0 30px; }
+    .brand .txt { line-height:1.1; overflow:hidden; white-space:nowrap; }
+    .brand .txt b { font-size:15px; font-weight:700; letter-spacing:.01em; display:block; }
+    .brand .txt span { font-size:11px; color:var(--muted); }
+    .nav-groups { flex:1; padding:4px 10px 12px; }
+    .nav-group { margin-top:14px; }
+    .nav-group > .gl { font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
+      color:var(--muted); padding:0 10px 6px; white-space:nowrap; }
+    .nav-item { display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+      background:transparent; color:var(--fg-soft); border:0; border-radius:9px; margin:1px 0;
+      padding:9px 10px; font:inherit; cursor:pointer; position:relative; white-space:nowrap; }
+    .nav-item svg { width:18px; height:18px; flex:0 0 18px; opacity:.85; }
+    .nav-item:hover { background:var(--panel); color:var(--fg); }
+    .nav-item.active { background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--fg); }
+    .nav-item.active::before { content:""; position:absolute; left:-10px; top:9px; bottom:9px;
+      width:3px; border-radius:0 3px 3px 0; background:var(--accent); }
+    .nav-item .badge { margin-left:auto; font-size:10px; color:var(--muted); border:1px solid var(--border);
+      border-radius:99px; padding:0 6px; }
+    .nav-item.adv .badge { color:var(--warn); border-color:color-mix(in srgb,var(--warn) 50%,var(--border)); }
+    .sb-foot { padding:10px; border-top:1px solid var(--border); display:flex; gap:6px; }
+    .sb-foot button { flex:1; margin:0; }
+    /* Collapsed sidebar → icon rail */
+    html[data-sidebar="collapsed"] .sidebar { --sidebar-w:66px; }
+    html[data-sidebar="collapsed"] .brand .txt,
+    html[data-sidebar="collapsed"] .nav-group > .gl,
+    html[data-sidebar="collapsed"] .nav-item span,
+    html[data-sidebar="collapsed"] .nav-item .badge,
+    html[data-sidebar="collapsed"] .sb-foot .lbl { display:none; }
+    html[data-sidebar="collapsed"] .nav-item { justify-content:center; padding:10px 0; }
+
+    .main-col { flex:1; min-width:0; display:flex; flex-direction:column; }
+    .topbar { position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:12px;
+      padding:11px 18px; background:color-mix(in srgb, var(--bg) 82%, transparent);
+      backdrop-filter:blur(8px); border-bottom:1px solid var(--border); }
+    .icon-btn { background:transparent; border:1px solid transparent; color:var(--muted);
+      border-radius:9px; padding:7px; margin:0; cursor:pointer; display:inline-flex; }
+    .icon-btn:hover { color:var(--fg); background:var(--panel); border-color:var(--border); }
+    .icon-btn svg { width:18px; height:18px; display:block; }
+    #hamburger { display:none; }
+    .omni { flex:1; max-width:560px; display:flex; align-items:center; gap:9px; cursor:text;
+      background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:8px 12px;
+      color:var(--muted); font-size:13.5px; }
+    .omni:hover { border-color:var(--accent); }
+    .omni svg { width:16px; height:16px; flex:0 0 16px; }
+    .omni .kbd { margin-left:auto; }
+    .kbd { font-family:var(--mono); font-size:11px; color:var(--muted); border:1px solid var(--border);
+      border-bottom-width:2px; border-radius:5px; padding:1px 6px; background:var(--panel2); }
+    .topbar .spacer { flex:1; }
+    .status-cluster { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); }
+
+    main { flex:1; padding:var(--space); }
+    main > * { max-width:1100px; margin-left:auto; margin-right:auto; width:100%; }
+    .tab-page { display:none; }
+    .tab-page.active { display:grid; gap:var(--space); }
+
+    /* ---- Cards / panels --------------------------------------------- */
+    .panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+      padding:var(--pad); box-shadow:var(--shadow); }
+    .panel > h2:first-child, .panel > .phead:first-child { margin-top:0; }
+    .panel h2 { margin:0 0 12px; font-size:12.5px; text-transform:uppercase; letter-spacing:.06em;
+      color:var(--muted); font-weight:700; }
+    .phead { display:flex; align-items:center; gap:10px; margin:0 0 12px; }
+    .phead h2 { margin:0; }
+    .phead .sp { flex:1; }
+    label { display:block; font-size:12px; color:var(--muted); margin:9px 0 3px; }
+    input, select, textarea { width:100%; background:var(--panel2); border:1px solid var(--border);
+      color:var(--fg); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; transition:border-color .12s; }
+    input:focus, select:focus, textarea:focus { border-color:var(--accent); outline:none; }
+    input::placeholder, textarea::placeholder { color:var(--muted); opacity:.7; }
+    .row { display:flex; gap:11px; flex-wrap:wrap; }
+    .row > div { flex:1; min-width:140px; }
+    button { background:var(--accent); color:var(--accent-fg); border:0; border-radius:var(--radius-sm);
+      padding:9px 15px; font:inherit; font-weight:600; cursor:pointer; margin-top:10px;
+      transition:filter .12s, transform .04s; }
+    button:hover { filter:brightness(1.08); }
+    button:active { transform:translateY(1px); }
+    button[disabled] { opacity:.5; cursor:not-allowed; }
+    button.secondary { background:var(--panel2); border:1px solid var(--border); color:var(--fg); font-weight:500; }
+    button.secondary:hover { background:var(--panel3); }
+    button.danger { background:transparent; border:1px solid var(--err); color:var(--err); font-weight:500; }
+    button.danger:hover { background:color-mix(in srgb, var(--err) 14%, transparent); filter:none; }
+    button.tiny { padding:3px 9px; margin-top:0; font-size:12px; font-weight:500; }
+    button.ghost { background:transparent; color:var(--fg-soft); }
+
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--border-soft); vertical-align:top; }
+    th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+    tbody tr:hover { background:color-mix(in srgb, var(--panel2) 60%, transparent); }
+
+    .muted { color:var(--muted); }
+    .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+    .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px;
+      background:var(--panel2); border:1px solid var(--border); }
+    .pill.ok{ color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--border)); }
+    .pill.warn{ color:var(--warn); border-color:color-mix(in srgb,var(--warn) 40%,var(--border)); }
+    .pill.err{ color:var(--err); border-color:color-mix(in srgb,var(--err) 40%,var(--border)); }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:99px; background:var(--muted); }
+    .dot.ok{ background:var(--ok); box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent); }
+    .dot.err{ background:var(--err); box-shadow:0 0 0 3px color-mix(in srgb,var(--err) 22%,transparent); }
+    .dot.warn{ background:var(--warn); }
+
+    .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
+    .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
+    .stat .n { font-size:24px; font-weight:700; letter-spacing:-.01em; }
+    .stat .k { font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
+
+    /* inline sub-tabs (e.g. Insights Explore/Trends/Map) */
+    nav.tabs { display:flex; flex-wrap:wrap; gap:4px; }
+    nav.tabs button { background:transparent; color:var(--muted); border:1px solid transparent;
+      border-radius:8px; margin:0; padding:7px 13px; font:inherit; cursor:pointer; font-weight:500; }
+    nav.tabs button:hover { color:var(--fg); background:var(--panel2); }
+    nav.tabs button.active { color:var(--fg); background:var(--panel2); border-color:var(--border); }
+
+    #toast { position:fixed; right:18px; bottom:18px; display:grid; gap:8px; z-index:200; }
+    .note { padding:11px 15px; border-radius:var(--radius-sm); background:var(--panel);
+      border:1px solid var(--border); box-shadow:var(--shadow); max-width:360px; font-size:14px;
+      animation:slidein .22s ease; }
+    .note.ok { border-left:3px solid var(--ok); } .note.err { border-left:3px solid var(--err); }
+    @keyframes slidein { from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+
+    /* ---- Hero / dashboard ------------------------------------------- */
+    .hero { background:
+        radial-gradient(120% 140% at 100% 0%, color-mix(in srgb,var(--accent) 22%, transparent), transparent 60%),
+        var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+      padding:26px; box-shadow:var(--shadow); }
+    .hero h1 { margin:0 0 6px; font-size:24px; font-weight:700; letter-spacing:-.01em; }
+    .hero p { margin:0; color:var(--fg-soft); max-width:62ch; }
+    .quick { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
+    .qcard { display:flex; gap:13px; align-items:flex-start; text-align:left; background:var(--panel);
+      border:1px solid var(--border); border-radius:var(--radius); padding:16px; cursor:pointer;
+      margin:0; color:var(--fg); box-shadow:var(--shadow); transition:transform .1s, border-color .12s; }
+    .qcard:hover { transform:translateY(-2px); border-color:var(--accent); filter:none; }
+    .qcard .qi { width:34px; height:34px; flex:0 0 34px; border-radius:10px; display:grid; place-items:center;
+      background:color-mix(in srgb,var(--accent) 18%, transparent); color:var(--accent); }
+    .qcard .qi svg { width:19px; height:19px; }
+    .qcard b { display:block; font-size:14.5px; }
+    .qcard small { color:var(--muted); font-weight:400; }
+
+    /* ---- Command palette -------------------------------------------- */
+    .overlay { position:fixed; inset:0; background:rgba(2,4,8,.55); backdrop-filter:blur(3px);
+      z-index:150; display:none; }
+    .overlay.open { display:block; }
+    .palette { position:fixed; left:50%; top:14vh; transform:translateX(-50%); width:min(640px,92vw);
+      background:var(--panel); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow);
+      z-index:151; display:none; overflow:hidden; }
+    .palette.open { display:block; animation:slidein .14s ease; }
+    .palette input { border:0; border-bottom:1px solid var(--border); border-radius:0; padding:15px 16px;
+      font-size:16px; background:transparent; }
+    .palette input:focus { border-color:var(--border); }
+    .pal-list { max-height:52vh; overflow-y:auto; padding:6px; }
+    .pal-item { display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:9px; cursor:pointer; }
+    .pal-item svg { width:17px; height:17px; flex:0 0 17px; color:var(--muted); }
+    .pal-item .pal-sub { margin-left:auto; font-size:11px; color:var(--muted); }
+    .pal-item.sel, .pal-item:hover { background:color-mix(in srgb,var(--accent) 16%, transparent); }
+    .pal-group { font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:10px 12px 4px; }
+
+    /* ---- Customize drawer ------------------------------------------- */
+    .drawer { position:fixed; top:0; right:0; height:100vh; width:min(360px,94vw); background:var(--panel);
+      border-left:1px solid var(--border); box-shadow:var(--shadow); z-index:151; transform:translateX(100%);
+      transition:transform .2s ease; overflow-y:auto; padding:18px; }
+    .drawer.open { transform:none; }
+    .drawer h3 { margin:0; font-size:16px; }
+    .drawer .seg { margin-top:18px; }
+    .drawer .seg > .sl { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px; }
+    .swatches { display:flex; flex-wrap:wrap; gap:8px; }
+    .sw { width:30px; height:30px; border-radius:8px; border:2px solid var(--border); cursor:pointer; margin:0; padding:0; }
+    .sw.sel { border-color:var(--fg); box-shadow:0 0 0 2px var(--accent); }
+    .theme-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+    .theme-card { border:1px solid var(--border); border-radius:9px; padding:9px 11px; cursor:pointer; margin:0;
+      background:var(--panel2); color:var(--fg); text-align:left; font-size:13px; display:flex; align-items:center; gap:8px; }
+    .theme-card.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+    .theme-card .tdot { width:14px; height:14px; border-radius:99px; border:1px solid rgba(255,255,255,.15); }
+    .seg-toggle { display:flex; gap:6px; }
+    .seg-toggle button { flex:1; margin:0; }
+    .seg-toggle button:not(.sel) { background:var(--panel2); color:var(--fg-soft); border:1px solid var(--border); font-weight:500; }
+    .modlist label { display:flex; align-items:center; gap:9px; color:var(--fg-soft); font-size:13.5px;
+      text-transform:none; letter-spacing:0; margin:7px 0; cursor:pointer; }
+    .modlist input { width:auto; }
+
+    /* ---- Docs / Help reader ----------------------------------------- */
+    .doc-layout { display:grid; grid-template-columns:230px 1fr; gap:var(--space); align-items:start; }
+    .doc-nav .doc-link { display:block; width:100%; text-align:left; background:transparent; border:0;
+      color:var(--fg-soft); border-radius:8px; padding:8px 11px; margin:1px 0; cursor:pointer; font:inherit; }
+    .doc-nav .doc-link:hover { background:var(--panel2); color:var(--fg); }
+    .doc-nav .doc-link.active { background:color-mix(in srgb,var(--accent) 16%, transparent); color:var(--fg); }
+    .doc-nav .doc-link small { display:block; color:var(--muted); font-size:11px; }
+    .prose { font-size:15px; line-height:1.7; color:var(--fg-soft); max-width:78ch; }
+    .prose h1,.prose h2,.prose h3,.prose h4 { color:var(--fg); line-height:1.3; margin:1.5em 0 .5em; }
+    .prose h1 { font-size:1.7em; } .prose h2 { font-size:1.35em; border-bottom:1px solid var(--border); padding-bottom:.3em; }
+    .prose h3 { font-size:1.12em; } .prose h1:first-child,.prose h2:first-child { margin-top:0; }
+    .prose p,.prose ul,.prose ol,.prose blockquote,.prose table,.prose pre { margin:.7em 0; }
+    .prose ul,.prose ol { padding-left:1.4em; } .prose li { margin:.25em 0; }
+    .prose code { font-size:.88em; } .prose a { color:var(--accent); }
+    .prose pre { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:13px; overflow-x:auto; }
+    .prose pre code { background:transparent; padding:0; }
+    .prose blockquote { border-left:3px solid var(--accent); padding:.2em 0 .2em 1em; color:var(--muted); }
+    .prose table { border-collapse:collapse; font-size:14px; display:block; overflow-x:auto; }
+    .prose th,.prose td { border:1px solid var(--border); padding:7px 10px; text-transform:none; letter-spacing:0; }
+    .prose hr { margin:1.6em 0; }
+
+    /* ---- Responsive ------------------------------------------------- */
+    @media (max-width:860px) {
+      .sidebar { position:fixed; left:0; top:0; transform:translateX(-100%); transition:transform .2s ease; }
+      body.nav-open .sidebar { transform:none; }
+      body.nav-open .scrim { display:block; }
+      .scrim { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:55; }
+      #hamburger { display:inline-flex; }
+      .doc-layout { grid-template-columns:1fr; }
+      .omni .kbd { display:none; }
+    }
+    @media (max-width:560px) { .omni span.ph { display:none; } }
+    @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Open&nbsp;Omniscience</h1>
-    <span class="v" id="version">v—</span>
-    <span class="status" id="health">checking…
-      <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
-      <a href="/docs" target="_blank" rel="noopener" style="margin-left:10px">API docs</a>
-    </span>
-  </header>
+  <div class="scrim" onclick="document.body.classList.remove('nav-open')"></div>
+  <div class="app">
+    <!-- ============================ SIDEBAR =========================== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="16" cy="16" r="13" style="stroke:var(--accent)" stroke-width="2"/>
+          <circle cx="16" cy="16" r="5.5" style="fill:var(--accent)"/>
+          <circle cx="16" cy="16" r="2" style="fill:var(--bg2)"/>
+          <path d="M16 1.5v6M16 24.5v6M1.5 16h6M24.5 16h6" style="stroke:var(--accent)" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+        </svg>
+        <div class="txt"><b>Open Omniscience</b><span id="version">v—</span></div>
+      </div>
 
-  <nav class="tabs" id="tabs">
-    <button data-tab="search" class="active">Search</button>
-    <button data-tab="ingest">Ingest</button>
-    <button data-tab="sources">Sources</button>
-    <button data-tab="database">Database</button>
-    <button data-tab="markets">Markets</button>
-    <button data-tab="insights">Insights</button>
-    <button data-tab="wiki">Wikipedia</button>
-    <button data-tab="custody">Chain of custody</button>
-    <button data-tab="settings">Settings</button>
-  </nav>
+      <nav class="nav-groups" id="navGroups">
+        <div class="nav-group" data-grp="investigate">
+          <div class="gl">Investigate</div>
+          <button class="nav-item" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg><span>Home</span></button>
+          <button class="nav-item" data-tab="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search</span></button>
+          <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
+          <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
+          <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Markets</span><span class="badge">adv</span></button>
+        </div>
+        <div class="nav-group" data-grp="collect">
+          <div class="gl">Collect</div>
+          <button class="nav-item" data-tab="ingest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg><span>Collect</span></button>
+          <button class="nav-item" data-tab="sources"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5a14 14 0 0 1 14 14"/><path d="M5 12a7 7 0 0 1 7 7"/><circle cx="6" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg><span>Sources</span></button>
+          <button class="nav-item" data-tab="database"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg><span>Library</span></button>
+        </div>
+        <div class="nav-group" data-grp="trust">
+          <div class="gl">Trust</div>
+          <button class="nav-item" data-tab="custody"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Evidence &amp; custody</span></button>
+        </div>
+        <div class="nav-group" data-grp="system">
+          <div class="gl">System</div>
+          <button class="nav-item" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.2A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 14H2.5a2 2 0 0 1 0-4h.2A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 2.6V2.5a2 2 0 0 1 4 0v.2A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H23a2 2 0 0 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg><span>Settings</span></button>
+          <button class="nav-item" data-tab="help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg><span>Help &amp; docs</span></button>
+        </div>
+      </nav>
 
-  <main>
+      <div class="sb-foot">
+        <button class="secondary" onclick="openDrawer()" title="Themes, accent, density, layout"
+                style="display:flex;align-items:center;justify-content:center;gap:8px">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="20" cy="14" r="2"/></svg>
+          <span class="lbl">Customize</span></button>
+        <button class="icon-btn" onclick="toggleSidebar()" title="Collapse sidebar" style="flex:0 0 auto">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+      </div>
+    </aside>
+
+    <div class="main-col">
+      <!-- ============================ TOP BAR ========================== -->
+      <header class="topbar">
+        <button class="icon-btn" id="hamburger" onclick="document.body.classList.toggle('nav-open')" title="Menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <div class="omni" onclick="openPalette()" title="Command palette">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <span class="ph">Search the app, jump anywhere, run an action…</span>
+          <span class="kbd">Ctrl K</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="status-cluster" id="statusCluster">
+          <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
+          <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
+        </div>
+        <button class="icon-btn" onclick="openDrawer()" title="Customize appearance">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="20" cy="14" r="2"/></svg></button>
+        <button class="icon-btn" onclick="showTab('help')" title="Help &amp; documentation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></button>
+        <a class="icon-btn" href="/docs" target="_blank" rel="noopener" title="Raw API reference (Swagger)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></a>
+      </header>
+
+      <main>
     <div id="onboard" class="panel" style="display:none;border-color:var(--accent)">
       <h2 style="color:var(--fg)">Welcome — your corpus is empty</h2>
       <p class="muted" style="margin-top:0">Get started by registering the curated source catalog and running a
@@ -114,8 +363,54 @@
       </div>
       <div id="onboard-status" class="hint" style="margin-top:6px"></div>
     </div>
+
+    <!-- ============================= HOME ============================= -->
+    <div class="tab-page active" id="tab-home">
+      <div class="hero">
+        <h1 id="hero-greet">Understand the world as it really is.</h1>
+        <p>Your private, offline research desk — gather sources, find what matters, see how it
+          connects, and prove what you found. Nothing leaves this machine.</p>
+        <div class="row" style="margin-top:16px">
+          <button onclick="showTab('search')" style="margin-top:0">Search the corpus</button>
+          <button class="secondary" onclick="showTab('ingest')" style="margin-top:0">Collect new material</button>
+          <button class="secondary" onclick="showTab('help')" style="margin-top:0">Read the manual</button>
+        </div>
+      </div>
+
+      <section class="panel">
+        <div class="phead"><h2>At a glance</h2><span class="sp"></span>
+          <button class="secondary tiny" onclick="loadHome()">Refresh</button></div>
+        <div id="home-stats" class="stat-grid"><div class="muted">Loading…</div></div>
+        <div id="home-status" class="hint" style="margin-top:12px"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Quick actions</h2>
+        <div class="quick">
+          <button class="qcard" onclick="showTab('search')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>
+            <span><b>Find something</b><small>Boolean search across everything you've gathered.</small></span></button>
+          <button class="qcard" onclick="showTab('ingest')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></span>
+            <span><b>Collect now</b><small>Pull fresh articles from your sources, ethically.</small></span></button>
+          <button class="qcard" onclick="showTab('insights')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg></span>
+            <span><b>See the patterns</b><small>Trends, who's mentioned with whom, where.</small></span></button>
+          <button class="qcard" onclick="showTab('custody')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
+            <span><b>Prove it</b><small>Tamper-evident, signed provenance for your evidence.</small></span></button>
+          <button class="qcard" onclick="showTab('wiki')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/></svg></span>
+            <span><b>Watch Wikipedia</b><small>Flag large or suspicious edits on pages you track.</small></span></button>
+          <button class="qcard" onclick="showTab('help')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></span>
+            <span><b>Learn the tool</b><small>The full manual, right here — no internet needed.</small></span></button>
+        </div>
+      </section>
+    </div>
+
     <!-- ============================ SEARCH ============================ -->
-    <div class="tab-page active" id="tab-search">
+    <div class="tab-page" id="tab-search">
     <section class="panel">
       <h2>Search the corpus</h2>
       <label for="q">Boolean query <span class="muted">(AND / OR / NOT, "phrases", parentheses)</span></label>
@@ -648,7 +943,57 @@
       <div id="restore-result" class="hint"></div>
     </section>
     </div>
-  </main>
+
+    <!-- ============================ HELP / DOCS ====================== -->
+    <div class="tab-page" id="tab-help">
+      <section class="panel">
+        <div class="phead">
+          <h2>Help &amp; documentation</h2><span class="sp"></span>
+          <input id="doc-find" placeholder="Find on this page…" style="max-width:240px;margin:0"
+                 oninput="filterDoc()" onkeydown="if(event.key==='Escape'){this.value='';filterDoc();}">
+        </div>
+        <p class="muted" style="margin-top:0">Everything you need to operate the tool — rendered here,
+          offline. The <strong>User Manual</strong> is the detailed notice; the other guides go deeper on
+          specific subjects.</p>
+        <div class="doc-layout">
+          <div class="doc-nav" id="doc-nav"><div class="muted">Loading…</div></div>
+          <div id="doc-prose" class="prose"><div class="muted">Pick a document on the left.</div></div>
+        </div>
+      </section>
+    </div>
+
+      </main>
+    </div><!-- /.main-col -->
+  </div><!-- /.app -->
+
+  <!-- ====================== COMMAND PALETTE ========================== -->
+  <div class="overlay" id="palOverlay" onclick="closePalette()"></div>
+  <div class="palette" id="palette" role="dialog" aria-label="Command palette">
+    <input id="pal-input" autocomplete="off" spellcheck="false"
+           placeholder="Jump to a tool, run an action, or open a doc…"
+           oninput="renderPalette()" onkeydown="palKey(event)">
+    <div class="pal-list" id="pal-list"></div>
+  </div>
+
+  <!-- ====================== CUSTOMIZE DRAWER ========================= -->
+  <div class="overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+  <div class="drawer" id="customize" role="dialog" aria-label="Customize appearance">
+    <div class="phead"><h3>Customize</h3><span class="sp"></span>
+      <button class="icon-btn" onclick="closeDrawer()" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="hint" style="margin-top:0">Your look, your machine. These settings stay in this browser —
+      nothing is sent anywhere.</p>
+
+    <div class="seg"><div class="sl">Theme</div><div class="theme-grid" id="dr-themes"></div></div>
+    <div class="seg"><div class="sl">Accent</div><div class="swatches" id="dr-accents"></div></div>
+    <div class="seg"><div class="sl">Density</div><div class="seg-toggle" id="dr-density"></div></div>
+    <div class="seg"><div class="sl">Text size · <span id="dr-font-val">100%</span></div>
+      <input type="range" id="dr-font" min="88" max="124" step="2" oninput="setFont(this.value)"></div>
+    <div class="seg"><div class="sl">Sidebar</div><div class="seg-toggle" id="dr-sidebar"></div></div>
+    <div class="seg"><div class="sl">Tools shown in the sidebar</div>
+      <div class="modlist" id="dr-modules"></div></div>
+    <div class="seg"><button class="secondary" onclick="resetUi()">Reset to defaults</button></div>
+  </div>
 
   <div id="toast"></div>
 
@@ -674,9 +1019,32 @@
       return data;
     }
 
+    // ===================================================================== //
+    //  SHELL "0.05": navigation, customization, command palette, docs, home //
+    //  Built on top of the existing (tested) feature functions below — this  //
+    //  layer only changes what the user sees, not how the data works.        //
+    // ===================================================================== //
+
+    // The menu, as the user thinks of it (id ↔ human label ↔ intention group).
+    const NAV = [
+      {id:"home",     label:"Home",               grp:"Investigate"},
+      {id:"search",   label:"Search",             grp:"Investigate"},
+      {id:"insights", label:"Insights",           grp:"Investigate"},
+      {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
+      {id:"markets",  label:"Markets",            grp:"Investigate"},
+      {id:"ingest",   label:"Collect",            grp:"Collect"},
+      {id:"sources",  label:"Sources",            grp:"Collect"},
+      {id:"database", label:"Library",            grp:"Collect"},
+      {id:"custody",  label:"Evidence & custody", grp:"Trust"},
+      {id:"settings", label:"Settings",           grp:"System"},
+      {id:"help",     label:"Help & docs",        grp:"System"},
+    ];
+    // Always-available tools can't be hidden, so the user can never lock themselves out.
+    const LOCKED = new Set(["home","settings","help"]);
+
     // -- Tab navigation ----------------------------------------------------- //
-    // Tabs that should (re)load their data the first time they are shown.
     const TAB_LOADERS = {
+      home: loadHome,
       ingest: loadScheduler,
       markets: loadMarkets,
       insights: loadInsights,
@@ -685,22 +1053,278 @@
       database: () => { loadCoverage(); },   // stats handled by the live poller (startLive)
       custody: loadCustody,
       settings: loadSettings,
+      help: loadDocs,
     };
     const _loaded = new Set();
 
     function showTab(name) {
-      document.querySelectorAll("nav.tabs button").forEach(b =>
+      if (!document.getElementById("tab-" + name)) name = "home";
+      document.querySelectorAll(".nav-item[data-tab]").forEach(b =>
         b.classList.toggle("active", b.dataset.tab === name));
       document.querySelectorAll(".tab-page").forEach(p =>
         p.classList.toggle("active", p.id === "tab-" + name));
       if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
-      // Live-refresh the active tab's changing status (counts, progress, flags).
-      startLive(name);
+      startLive(name);                                  // live status for the active tab
+      document.body.classList.remove("nav-open");       // close mobile drawer
+      closePalette();
+      const m = document.querySelector("main"); if (m) m.scrollTop = 0;
+      window.scrollTo(0, 0);
       if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
     }
-
-    document.querySelectorAll("nav.tabs button").forEach(b =>
+    document.querySelectorAll(".nav-item[data-tab]").forEach(b =>
       b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+    // -- Appearance / customization (local-only, never transmitted) --------- //
+    const UI_KEY = "oo.ui";
+    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, sidebar:"expanded", hidden:[]};
+    const THEMES = [
+      {id:"ink",name:"Ink",c:"#5b9dd9"}, {id:"slate",name:"Slate",c:"#7aa2f7"},
+      {id:"midnight",name:"Midnight",c:"#8b7dff"}, {id:"sepia",name:"Sepia",c:"#d8a657"},
+      {id:"terminal",name:"Terminal",c:"#36d97a"}, {id:"contrast",name:"Contrast",c:"#ffd400"},
+      {id:"light",name:"Light",c:"#2f6fb3"}, {id:"paper",name:"Paper",c:"#9a6a2f"},
+      {id:"system",name:"System",c:"#8c95a6"},
+    ];
+    const ACCENTS = ["", "#5b9dd9", "#7aa2f7", "#8b7dff", "#36d97a", "#e0698f", "#d9a441", "#e8743b", "#2bb3a3"];
+
+    function getUi() { try { return {...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(UI_KEY) || "{}")}; }
+      catch { return {...UI_DEFAULTS}; } }
+    function saveUi(ui) { localStorage.setItem(UI_KEY, JSON.stringify(ui)); }
+
+    function applyThemeAttr(theme) {
+      const eff = theme === "system" ? (_media && _media.matches ? "light" : "")
+                : theme === "ink" ? "" : theme;
+      const r = document.documentElement;
+      if (eff) r.setAttribute("data-theme", eff); else r.removeAttribute("data-theme");
+    }
+    function applyUi(ui) {
+      const r = document.documentElement;
+      applyThemeAttr(ui.theme);
+      if (ui.accent) r.style.setProperty("--accent", ui.accent); else r.style.removeProperty("--accent");
+      if (ui.density === "compact") r.setAttribute("data-density", "compact"); else r.removeAttribute("data-density");
+      r.style.fontSize = (ui.font || 100) + "%";
+      if (ui.sidebar === "collapsed") r.setAttribute("data-sidebar", "collapsed"); else r.removeAttribute("data-sidebar");
+      // Module visibility: hide chosen tools (and any group left entirely empty).
+      const hidden = new Set(ui.hidden || []);
+      document.querySelectorAll(".nav-item[data-tab]").forEach(b => {
+        b.style.display = hidden.has(b.dataset.tab) ? "none" : "";
+      });
+      document.querySelectorAll(".nav-group").forEach(g => {
+        const any = [...g.querySelectorAll(".nav-item[data-tab]")].some(b => b.style.display !== "none");
+        g.style.display = any ? "" : "none";
+      });
+    }
+    function setTheme(t)   { const u = getUi(); u.theme = t;   saveUi(u); applyUi(u); buildDrawer(); syncThemeSelect(); }
+    function setAccent(a)  { const u = getUi(); u.accent = a;  saveUi(u); applyUi(u); buildDrawer(); }
+    function setDensity(d) { const u = getUi(); u.density = d; saveUi(u); applyUi(u); buildDrawer(); }
+    function setFont(v)    { const u = getUi(); u.font = +v;   saveUi(u); applyUi(u); $("dr-font-val").textContent = v + "%"; }
+    function setSidebar(s) { const u = getUi(); u.sidebar = s; saveUi(u); applyUi(u); buildDrawer(); }
+    function toggleSidebar(){ setSidebar(getUi().sidebar === "collapsed" ? "expanded" : "collapsed"); }
+    function toggleModule(id, show) {
+      const u = getUi(); const set = new Set(u.hidden || []);
+      show ? set.delete(id) : set.add(id);
+      u.hidden = [...set]; saveUi(u); applyUi(u);
+    }
+    function resetUi() { localStorage.removeItem(UI_KEY); applyUi(getUi()); buildDrawer(); syncThemeSelect();
+      toast("Appearance reset to defaults."); }
+    function syncThemeSelect() { const t = getUi().theme; const sel = $("set-theme");
+      if (sel) sel.value = (t === "light" ? "light" : t === "system" ? "system" : "dark"); }
+
+    // Customize drawer
+    function openDrawer()  { buildDrawer(); $("customize").classList.add("open"); $("drawerOverlay").classList.add("open"); }
+    function closeDrawer() { $("customize").classList.remove("open"); $("drawerOverlay").classList.remove("open"); }
+    function buildDrawer() {
+      const ui = getUi();
+      $("dr-themes").innerHTML = THEMES.map(t =>
+        `<button class="theme-card ${t.id === ui.theme ? "sel" : ""}" onclick="setTheme('${t.id}')">
+           <span class="tdot" style="background:${t.c}"></span>${esc(t.name)}</button>`).join("");
+      $("dr-accents").innerHTML = ACCENTS.map(a =>
+        `<button class="sw ${a === ui.accent ? "sel" : ""}" title="${a || "Theme default"}"
+           onclick="setAccent('${a}')" style="background:${a || "linear-gradient(135deg,var(--muted),var(--accent))"}"></button>`).join("");
+      $("dr-density").innerHTML = ["comfortable", "compact"].map(d =>
+        `<button class="${d === ui.density ? "sel" : ""}" onclick="setDensity('${d}')">${d[0].toUpperCase() + d.slice(1)}</button>`).join("");
+      $("dr-sidebar").innerHTML = [["expanded", "Expanded"], ["collapsed", "Collapsed"]].map(([v, l]) =>
+        `<button class="${v === ui.sidebar ? "sel" : ""}" onclick="setSidebar('${v}')">${l}</button>`).join("");
+      $("dr-font").value = ui.font; $("dr-font-val").textContent = ui.font + "%";
+      const hidden = new Set(ui.hidden || []);
+      $("dr-modules").innerHTML = NAV.filter(n => !LOCKED.has(n.id)).map(n =>
+        `<label><input type="checkbox" ${hidden.has(n.id) ? "" : "checked"}
+           onchange="toggleModule('${n.id}', this.checked)"> ${esc(n.label)}</label>`).join("");
+    }
+
+    // -- Command palette (Ctrl/⌘-K) ----------------------------------------- //
+    let _palItems = [], _palFiltered = [], _palSel = 0;
+    function palCommands() {
+      const pages = NAV.map(n => ({grp:"Pages", label:n.label, sub:n.grp, run:() => showTab(n.id)}));
+      const actions = [
+        {grp:"Actions", label:"Run a search", sub:"Search", run:() => { showTab("search"); setTimeout(() => $("q").focus(), 50); }},
+        {grp:"Actions", label:"Collect now (one scraper pass)", sub:"Collect", run:() => { showTab("ingest"); schedulerRunNow(); }},
+        {grp:"Actions", label:"Index corpus for insights", sub:"Insights", run:() => { showTab("insights"); indexCorpus(); }},
+        {grp:"Actions", label:"Track Wikipedia now", sub:"Wikipedia", run:() => { showTab("wiki"); trackWikiNow(); }},
+        {grp:"Actions", label:"Download a backup", sub:"Library", run:() => downloadBackup()},
+        {grp:"Actions", label:"Open the User Manual", sub:"Help", run:() => { showTab("help"); openDoc("user-manual"); }},
+        {grp:"Actions", label:"Customize appearance", sub:"Theme", run:() => openDrawer()},
+        {grp:"Actions", label:"API reference (Swagger)", sub:"System", run:() => window.open("/docs", "_blank")},
+      ];
+      const docs = (_docList || []).map(d => ({grp:"Documentation", label:d.title, sub:"Doc",
+        run:() => { showTab("help"); openDoc(d.slug); }}));
+      return [...pages, ...actions, ...docs];
+    }
+    function openPalette() {
+      _palItems = palCommands();
+      $("palOverlay").classList.add("open"); $("palette").classList.add("open");
+      const i = $("pal-input"); i.value = ""; renderPalette(); setTimeout(() => i.focus(), 30);
+    }
+    function closePalette() { $("palOverlay").classList.remove("open"); $("palette").classList.remove("open"); }
+    function renderPalette() {
+      const q = $("pal-input").value.trim().toLowerCase();
+      _palFiltered = _palItems.filter(it => !q ||
+        it.label.toLowerCase().includes(q) || (it.sub || "").toLowerCase().includes(q));
+      _palSel = 0;
+      let html = "", lastGrp = null;
+      _palFiltered.forEach((it, i) => {
+        if (it.grp !== lastGrp) { html += `<div class="pal-group">${esc(it.grp)}</div>`; lastGrp = it.grp; }
+        html += `<div class="pal-item ${i === 0 ? "sel" : ""}" data-i="${i}" onclick="palRun(${i})">
+          ${esc(it.label)}<span class="pal-sub">${esc(it.sub || "")}</span></div>`;
+      });
+      $("pal-list").innerHTML = html || `<div class="pal-group">No matches</div>`;
+    }
+    function palMove(d) {
+      if (!_palFiltered.length) return;
+      _palSel = (_palSel + d + _palFiltered.length) % _palFiltered.length;
+      document.querySelectorAll(".pal-item").forEach(el =>
+        el.classList.toggle("sel", +el.dataset.i === _palSel));
+      const cur = document.querySelector(".pal-item.sel"); if (cur) cur.scrollIntoView({block:"nearest"});
+    }
+    function palRun(i) { const it = _palFiltered[i]; if (it) { closePalette(); it.run(); } }
+    function palKey(e) {
+      if (e.key === "ArrowDown") { e.preventDefault(); palMove(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); palMove(-1); }
+      else if (e.key === "Enter") { e.preventDefault(); palRun(_palSel); }
+      else if (e.key === "Escape") { closePalette(); }
+    }
+
+    // -- Home dashboard ----------------------------------------------------- //
+    async function loadHome() {
+      const hour = new Date().getHours();
+      const greet = hour < 5 ? "Working late." : hour < 12 ? "Good morning." : hour < 18 ? "Good afternoon." : "Good evening.";
+      const g = $("hero-greet"); if (g) g.textContent = greet + " Understand the world as it really is.";
+      try {
+        const s = await api("/api/database/stats");
+        const entries = Object.entries(s.counts || {});
+        $("home-stats").innerHTML = entries.length
+          ? entries.map(([k, v]) =>
+              `<div class="stat"><div class="n">${(v || 0).toLocaleString()}</div><div class="k">${esc(k)}</div></div>`).join("")
+          : '<div class="muted">Your library is empty — head to Collect to gather your first material.</div>';
+      } catch (e) { $("home-stats").innerHTML = '<div class="muted">Stats unavailable.</div>'; }
+      try {
+        const sc = await api("/api/scheduler/status");
+        const on = sc.running;
+        $("home-status").innerHTML =
+          `Automatic collection: <span class="pill ${on ? "ok" : ""}">${on ? "running" : "stopped"}</span> ` +
+          `<span class="muted">· everything stays on this machine — no cloud, no telemetry.</span>`;
+      } catch (e) { $("home-status").innerHTML = '<span class="muted">Everything stays on this machine — no cloud, no telemetry.</span>'; }
+    }
+
+    // -- In-app documentation reader ---------------------------------------- //
+    let _docList = null, _docSlug = null, _docRaw = "";
+    async function ensureDocList() {   // fetch the list once (also feeds the palette)
+      if (_docList === null) {
+        try { _docList = (await api("/api/docs")).docs || []; } catch (e) { _docList = []; }
+      }
+      return _docList;
+    }
+    async function loadDocs() {
+      await ensureDocList();
+      if (!_docList.length) { $("doc-nav").innerHTML = '<div class="muted">Docs unavailable.</div>'; return; }
+      $("doc-nav").innerHTML = _docList.map(d =>
+        `<button class="doc-link ${d.slug === _docSlug ? "active" : ""}" ${d.available ? "" : "disabled"}
+           onclick="openDoc('${d.slug}')">${esc(d.title)}<small>${esc(d.blurb)}</small></button>`).join("");
+      if (!_docSlug) openDoc((_docList.find(d => d.slug === "user-manual") || _docList[0] || {}).slug);
+    }
+    async function openDoc(slug) {
+      if (!slug) return;
+      _docSlug = slug;
+      document.querySelectorAll(".doc-link").forEach(b =>
+        b.classList.toggle("active", b.getAttribute("onclick").includes("'" + slug + "'")));
+      const prose = $("doc-prose"); prose.innerHTML = '<div class="muted">Loading…</div>';
+      try { _docRaw = await api("/api/docs/" + slug); prose.innerHTML = mdToHtml(_docRaw); prose.scrollIntoView({block:"nearest"}); }
+      catch (e) { prose.innerHTML = '<div class="muted">Could not load this document.</div>'; }
+      const f = $("doc-find"); if (f && f.value) highlightProse(f.value);
+    }
+    function filterDoc() {
+      if (!_docRaw) return;
+      $("doc-prose").innerHTML = mdToHtml(_docRaw);
+      highlightProse($("doc-find").value);
+    }
+    function highlightProse(q) {
+      q = (q || "").trim(); if (q.length < 2) return;
+      const root = $("doc-prose");
+      const rx = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig");
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+      let first = null;
+      for (const n of nodes) {
+        if (!rx.test(n.nodeValue)) continue;
+        const span = document.createElement("span");
+        span.innerHTML = esc(n.nodeValue).replace(rx, '<mark>$1</mark>');
+        if (!first) first = span;
+        n.parentNode.replaceChild(span, n);
+      }
+      if (first) first.scrollIntoView({block:"center", behavior:"smooth"});
+    }
+
+    // Minimal, safe Markdown → HTML (escape first, then format). Handles
+    // headings, lists, tables, code fences, blockquotes, rules and inline marks.
+    function mdToHtml(md) {
+      const fences = [];
+      md = md.replace(/```([\s\S]*?)```/g, (_, code) =>
+        ` F${fences.push(`<pre><code>${esc(code.replace(/^\n/, ""))}</code></pre>`) - 1} `);
+      const inline = (t) => esc(t)
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
+        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, txt, url) =>
+          /^(https?:|\/|#)/.test(url) ? `<a href="${esc(url)}" ${url.startsWith("http") ? 'target="_blank" rel="noopener"' : ""}>${txt}</a>` : m);
+      const lines = md.split("\n"), out = [];
+      let i = 0;
+      const flushPara = (buf) => { if (buf.length) out.push("<p>" + buf.map(inline).join(" ") + "</p>"); };
+      let para = [];
+      while (i < lines.length) {
+        const ln = lines[i];
+        const fence = ln.match(/^ F(\d+) $/);
+        if (fence) { flushPara(para); para = []; out.push(fences[+fence[1]]); i++; continue; }
+        if (/^\s*$/.test(ln)) { flushPara(para); para = []; i++; continue; }
+        let m;
+        if ((m = ln.match(/^(#{1,6})\s+(.*)$/))) { flushPara(para); para = [];
+          const lvl = m[1].length; out.push(`<h${lvl}>${inline(m[2])}</h${lvl}>`); i++; continue; }
+        if (/^\s*([-*_])\1{2,}\s*$/.test(ln)) { flushPara(para); para = []; out.push("<hr>"); i++; continue; }
+        // table: header row + |---| separator
+        if (ln.includes("|") && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes("-")) {
+          flushPara(para); para = [];
+          const cells = (r) => r.replace(/^\s*\|?|\|?\s*$/g, "").split("|").map(c => c.trim());
+          const head = cells(ln); i += 2;
+          let body = "";
+          while (i < lines.length && lines[i].includes("|") && !/^\s*$/.test(lines[i])) {
+            body += "<tr>" + cells(lines[i]).map(c => `<td>${inline(c)}</td>`).join("") + "</tr>"; i++;
+          }
+          out.push(`<table><thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>`);
+          continue;
+        }
+        if (/^\s*>\s?/.test(ln)) { flushPara(para); para = [];
+          let q = []; while (i < lines.length && /^\s*>\s?/.test(lines[i])) { q.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
+          out.push("<blockquote>" + q.map(inline).join("<br>") + "</blockquote>"); continue; }
+        if (/^\s*([-*+]|\d+\.)\s+/.test(ln)) { flushPara(para); para = [];
+          const ordered = /^\s*\d+\.\s+/.test(ln); let items = [];
+          while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
+            items.push("<li>" + inline(lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, "")) + "</li>"); i++;
+          }
+          const tag = ordered ? "ol" : "ul";
+          out.push(`<${tag}>` + items.join("") + `</${tag}>`); continue; }
+        para.push(ln); i++;
+      }
+      flushPara(para);
+      return out.join("\n");
+    }
 
     function humanBytes(n) {
       if (n == null) return "—";
@@ -713,31 +1337,29 @@
       try {
         const h = await api("/api/health");
         $("version").textContent = "v" + h.version;
-        $("health").innerHTML = '<span class="pill ok">healthy</span>';
+        $("health").innerHTML = '<span class="dot ok"></span> healthy';
       } catch (e) {
-        $("health").innerHTML = '<span class="pill err">offline</span>';
+        $("health").innerHTML = '<span class="dot err"></span> offline';
       }
     }
 
     // -- Settings tab ------------------------------------------------------- //
-    // Local UI preferences. DEFAULT_LIMIT feeds the search; theme is applied to <html>.
+    // Local UI preferences. DEFAULT_LIMIT feeds the search; the theme is applied by
+    // the appearance engine above (applyUi / applyThemeAttr).
     let DEFAULT_LIMIT = 50;
     const _media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
-
-    function applyTheme(theme) {
-      const effective = theme === "system"
-        ? (_media && _media.matches ? "light" : "dark")
-        : theme;
-      document.documentElement.setAttribute("data-theme", effective);
-    }
 
     async function loadSettings() {
       try {
         const s = await api("/api/settings");
-        $("set-theme").value = s.theme;
         $("set-limit").value = s.default_result_limit;
         DEFAULT_LIMIT = s.default_result_limit;
-        applyTheme(s.theme);
+        // The local "Customize" theme is authoritative; on first ever run, seed it
+        // from the server preference so existing users keep their dark/light choice.
+        if (!localStorage.getItem(UI_KEY)) {
+          setTheme({dark:"ink", light:"light", system:"system"}[s.theme] || "ink");
+        }
+        syncThemeSelect();
       } catch (e) { toast("Could not load settings: " + e.message, "err"); }
       // Backup support is backend-dependent; reflect reality, never assume.
       try {
@@ -830,7 +1452,7 @@
       try {
         const s = await api("/api/settings", {method: "PUT", body: JSON.stringify(body)});
         DEFAULT_LIMIT = s.default_result_limit;
-        applyTheme(s.theme);
+        setTheme({dark:"ink", light:"light", system:"system"}[$("set-theme").value] || "ink");
         toast("Preferences saved.");
       } catch (e) { toast("Save failed: " + e.message, "err"); }
     }
@@ -2180,19 +2802,28 @@
 
     $("q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
 
+    // Apply the saved look immediately (before any network) so there is no flash.
+    applyUi(getUi()); buildDrawer();
+
+    // Global shortcuts: Ctrl/⌘-K opens the command palette; Escape closes overlays.
+    document.addEventListener("keydown", e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
+      else if (e.key === "Escape") { closePalette(); closeDrawer(); document.body.classList.remove("nav-open"); }
+    });
+
     // Initial load: always-on essentials; per-tab data loads lazily on first view.
-    // Settings is loaded eagerly so the theme + default result limit apply app-wide
-    // (mark it loaded so opening the tab doesn't refetch). Theme follows the OS when
-    // set to "system".
+    // Settings is loaded eagerly so the default result limit + theme seed apply
+    // app-wide (mark it loaded so opening the tab doesn't refetch).
     _loaded.add("settings");
     loadSettings().then(doSearch);
     if (_media) _media.addEventListener("change", () => {
-      if ($("set-theme").value === "system") applyTheme("system");
+      if (getUi().theme === "system") applyThemeAttr("system");
     });
     loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus();
-    // Honour a deep-link like /#sources on first load.
-    const initial = (location.hash || "#search").slice(1);
-    if (document.getElementById("tab-" + initial)) showTab(initial);
+    ensureDocList();   // so the command palette can offer docs before Help is opened
+    // Honour a deep-link like /#sources on first load; otherwise land on Home.
+    const initial = (location.hash || "#home").slice(1);
+    showTab(document.getElementById("tab-" + initial) ? initial : "home");
   </script>
 </body>
 </html>
