@@ -583,6 +583,56 @@ async def export_articles(
     )
 
 
+@app.get("/api/articles/{article_id}/view", response_class=HTMLResponse)
+@limiter.limit("300/hour")
+async def view_article(request: Request, article_id: int, db: Session = Depends(get_db)):
+    """Render the locally-stored copy of an article as a clean, offline reading page.
+
+    Uses the text captured at ingest (no network), so it works fully offline and
+    shows exactly what is in the corpus. A link to the original source is included
+    for reference, clearly secondary.
+    """
+    import html as _html
+
+    a = db.query(Article).filter_by(id=article_id).first()
+    if a is None:
+        raise HTTPException(status_code=404, detail="Article not found.")
+    content = a.get_content() if hasattr(a, "get_content") else (a.content or "")
+    paras = "".join(
+        f"<p>{_html.escape(line)}</p>" for line in content.split("\n") if line.strip()
+    ) or "<p class='muted'>(no stored body)</p>"
+    meta = " &middot; ".join(filter(None, [
+        _html.escape(a.source.name) if a.source else None,
+        _html.escape(a.published_at.date().isoformat()) if a.published_at else None,
+        ("by " + _html.escape(a.author)) if a.author else None,
+        _html.escape(a.language) if a.language else None,
+    ]))
+    title = _html.escape(a.title or "(untitled)")
+    orig = _html.escape(a.url or "")
+    orig_html = (
+        f"Original source (online): <a href=\"{orig}\" target=\"_blank\" rel=\"noopener noreferrer\">{orig}</a>"
+        if orig else "No original URL recorded."
+    )
+    doc = f"""<!DOCTYPE html><html lang="{_html.escape(a.language or 'en')}"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title><style>
+  :root {{ color-scheme: light dark; }}
+  body {{ max-width: 720px; margin: 0 auto; padding: 32px 20px 64px;
+    font: 18px/1.7 Georgia, 'Times New Roman', serif; }}
+  h1 {{ font-size: 28px; line-height: 1.25; }}
+  .meta {{ color: #888; font-size: 14px; font-family: system-ui, sans-serif; margin-bottom: 24px; }}
+  p {{ margin: 0 0 1.1em; }}
+  .muted {{ color: #888; }}
+  footer {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid #8884;
+    font-family: system-ui, sans-serif; font-size: 13px; color: #888; word-break: break-all; }}
+  a {{ color: #3a7bd5; }}
+</style></head><body>
+<article><h1>{title}</h1><div class="meta">{meta}</div>{paras}</article>
+<footer>Offline copy stored by Open Omniscience. {orig_html}</footer>
+</body></html>"""
+    return HTMLResponse(content=doc)
+
+
 @app.get("/api/sources", response_model=list)
 @limiter.limit("100/hour")
 async def list_sources(request: Request, db: Session = Depends(get_db)):

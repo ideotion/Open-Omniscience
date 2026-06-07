@@ -120,9 +120,7 @@
         <button class="secondary" onclick="exportResults('csv')">Export CSV</button>
         <button class="secondary" onclick="exportResults('json')">Export JSON</button>
         <button class="secondary" onclick="exportEvidence()" title="Signed, tamper-evident bundle">Export signed evidence</button>
-        <button class="secondary" onclick="compareFraming()" title="How different outlets cover this">Compare framing</button>
       </div>
-      <div id="framing" style="margin-top:10px"></div>
       <div id="search-meta" class="hint"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="results"></table></div>
     </section>
@@ -426,6 +424,8 @@
       <div id="ins-trend" style="margin-top:12px"></div>
       <h2 style="margin:14px 0 6px;font-size:13px">Associated keywords (mind-map)</h2>
       <div id="ins-mindmap"></div>
+      <h2 style="margin:14px 0 6px;font-size:13px">How outlets frame this <span class="muted">(VADER tone)</span></h2>
+      <div id="ins-framing"></div>
       <h2 style="margin:14px 0 6px;font-size:13px">In context</h2>
       <div id="ins-context"></div>
     </section>
@@ -1281,7 +1281,7 @@
       const term = $("ins-term").value.trim();
       if (!term) { toast("Enter a keyword or entity.", "err"); return; }
       $("ins-trend").innerHTML = '<div class="muted">Loading…</div>';
-      $("ins-mindmap").innerHTML = ""; $("ins-context").innerHTML = "";
+      $("ins-mindmap").innerHTML = ""; $("ins-context").innerHTML = ""; $("ins-framing").innerHTML = "";
       try {
         const [tr, assoc, ctx] = await Promise.all([
           api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term)),
@@ -1296,6 +1296,7 @@
           trendSvg(tr.points);
         $("ins-mindmap").innerHTML = mindmapSvg(r.term, assoc.pairs) +
           (assoc.caveat ? `<div class="hint">${esc(assoc.caveat)}</div>` : "");
+        loadFraming(r.term);
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
                <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(m.country):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
@@ -1571,7 +1572,8 @@
                  <div class="muted" style="font-size:12px">${esc((a.content||"").slice(0,160))}…</div></td>
              <td>${esc(a.source)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
              <td>${esc(a.language||"")}</td>
-             <td><a href="${esc(a.url)}" target="_blank" rel="noopener">open</a>
+             <td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>
+                 ${a.url ? `· <a class="muted" href="${esc(a.url)}" target="_blank" rel="noopener" title="original online source">source&nbsp;↗</a>` : ""}
                  <button class="secondary tiny" style="margin-top:4px"
                    onclick="summarize(${a.id}, this)">Summarize</button>
                  <button class="secondary tiny" style="margin-top:4px"
@@ -1614,22 +1616,26 @@
       } catch (e) { cell.textContent = ""; toast("Translate: " + e.message, "err"); }
     }
 
-    async function compareFraming() {
-      const q = $("q").value.trim();
-      const el = $("framing");
+    // Framing comparison — moved into Insights, scoped to the explored term.
+    async function loadFraming(term) {
+      const el = $("ins-framing");
       el.innerHTML = "<span class='muted'>Comparing how outlets frame this…</span>";
       try {
-        const d = await api("/api/framing" + (q ? "?query=" + encodeURIComponent(q) : ""));
-        if (!d.framing || !d.framing.length) { el.innerHTML = "<span class='muted'>No coverage to compare.</span>"; return; }
+        const d = await api("/api/framing?query=" + encodeURIComponent(term));
+        if (!d.framing || !d.framing.length) {
+          el.innerHTML = "<span class='muted'>Not enough coverage to compare framing for this term.</span>"; return;
+        }
         const rows = d.framing.map(f =>
           `<tr><td>${esc(f.source)}</td>
-               <td><span class="pill ${f.tone_label==='positive'?'ok':f.tone_label==='negative'?'err':''}">${f.tone_label} ${f.avg_tone.toFixed(2)}</span></td>
+               <td><span class="pill ${f.tone_label==='positive'?'ok':f.tone_label==='negative'?'err':''}">${esc(f.tone_label)} ${f.avg_tone.toFixed(2)}</span></td>
                <td class="muted">${f.article_count}</td>
                <td class="muted" style="font-size:12px">${(f.top_terms||[]).slice(0,6).map(esc).join(", ")}</td></tr>`
         ).join("");
         el.innerHTML = `<table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table>
-          <div class="hint">${esc(d.caveat)}</div>`;
-      } catch (e) { el.innerHTML = ""; toast("Framing: " + e.message, "err"); }
+          <div class="hint">${esc(d.caveat||"")}</div>`;
+      } catch (e) {
+        el.innerHTML = "<span class='muted'>Framing unavailable (needs the [analysis] extra installed).</span>";
+      }
     }
 
     async function exportEvidence() {

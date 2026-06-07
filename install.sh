@@ -159,6 +159,18 @@ ensure_python() {
 create_venv() {
     cd "$SRC_DIR"
     if [ ! -d .venv ]; then
+        # Preflight: on Debian/Ubuntu the stdlib venv/ensurepip module ships in a
+        # SEPARATE apt package. Check now and give actionable guidance instead of
+        # leaking the cryptic CPython "ensurepip is not available" error.
+        if ! "$PY" -c 'import ensurepip' >/dev/null 2>&1; then
+            venv_pkg="python3-venv"
+            case "$PY" in *3.13*) venv_pkg="python3.13-venv";; esac
+            die "Python's venv module is missing (no ensurepip).
+    Install it, then re-run ./install.sh:
+        sudo apt update && sudo apt install -y $venv_pkg
+    On Qubes, install it in the TemplateVM (then reboot the AppVM) so DispVMs and
+    AppVMs inherit it -- packages installed in an AppVM/DispVM do not persist."
+        fi
         step "Creating virtual environment (.venv)"
         "$PY" -m venv .venv
     fi
