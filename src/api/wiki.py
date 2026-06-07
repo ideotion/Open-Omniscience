@@ -151,10 +151,23 @@ class StartDump(BaseModel):
 
 @router.get("/languages")
 def wiki_languages() -> dict:
-    """Curated Wikipedia editions for the offline-baseline picker (code/name/size tier)."""
-    from src.wiki.languages import all_languages
+    """Curated Wikipedia editions for the offline-baseline picker.
 
-    return {"languages": [lang.to_dict() for lang in all_languages()]}
+    Returns both a flat ``languages`` list (largest tier first; each entry now
+    carries its continent of origin in ``region``) and a ``groups`` list that
+    splits the editions by continent — regions ordered largest-edition-first —
+    so the UI can render short, scannable ``<optgroup>`` sections instead of one
+    long scroll.
+    """
+    from src.wiki.languages import all_languages, languages_by_region
+
+    return {
+        "languages": [lang.to_dict() for lang in all_languages()],
+        "groups": [
+            {"region": region, "languages": [lang.to_dict() for lang in langs]}
+            for region, langs in languages_by_region()
+        ],
+    }
 
 
 @router.get("/dumps")

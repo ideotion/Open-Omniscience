@@ -606,7 +606,7 @@
       <h2>Wikipedia offline baselines</h2>
       <p class="muted" style="margin-top:0">Optional, heavy, and separate from live change-tracking. Pick a
         language edition below and download the official Wikimedia <em>current-text</em> dump (resumable, with
-        pause/resume). Editions are listed largest-first; the real download size is read from the server when you
+        pause/resume). Editions are grouped by continent (largest-first within each); the real download size is read from the server when you
         click <em>Estimate size</em> — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller.
         Baselines are only for offline reading/search — change-tracking (Wikipedia tab) does not need them.</p>
       <div class="row">
@@ -618,8 +618,9 @@
         <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
         <div id="dump-estimate" class="hint" style="align-self:center"></div>
       </div>
-      <div class="hint">The list covers the major editions, largest first; sizes shown are coarse heaviness
-        hints, while <em>Estimate size</em> reports the exact current dump size from the server.</div>
+      <div class="hint">The list covers the major editions, grouped by continent (largest first within each);
+        sizes shown are coarse heaviness hints, while <em>Estimate size</em> reports the exact current dump size
+        from the server. You can also type any edition code that isn't listed.</div>
       <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>
     </section>
 
@@ -757,10 +758,18 @@
       try {
         const d = await api("/api/wiki/languages");
         const cur = sel.value;
-        sel.innerHTML = d.languages.map(l =>
-          `<option value="${esc(l.code)}">${esc(l.name)} — ${esc(l.autonym)} (${esc(l.code)}, ${esc(_TIER_LABEL[l.tier]||l.tier)})</option>`
-        ).join("");
-        if (cur && d.languages.some(l => l.code === cur)) sel.value = cur;
+        const opt = l =>
+          `<option value="${esc(l.code)}">${esc(l.name)} — ${esc(l.autonym)} (${esc(l.code)}, ${esc(_TIER_LABEL[l.tier]||l.tier)})</option>`;
+        // Group by continent (origin) so a long list stays scannable; fall back
+        // to a flat list if an older API doesn't send groups.
+        if (d.groups && d.groups.length) {
+          sel.innerHTML = d.groups.map(g =>
+            `<optgroup label="${esc(g.region)}">${g.languages.map(opt).join("")}</optgroup>`
+          ).join("");
+        } else {
+          sel.innerHTML = (d.languages || []).map(opt).join("");
+        }
+        if (cur && (d.languages || []).some(l => l.code === cur)) sel.value = cur;
       } catch (e) { /* picker is optional; leave the default option */ }
     }
 

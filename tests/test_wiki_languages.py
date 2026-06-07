@@ -9,7 +9,14 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.wiki.languages import _TIER_RANK, all_languages, get_language, is_known
+from src.wiki.languages import (
+    _REGION_RANK,
+    _TIER_RANK,
+    all_languages,
+    get_language,
+    is_known,
+    languages_by_region,
+)
 
 
 def test_catalogue_is_sane():
@@ -37,6 +44,29 @@ def test_lookup_helpers():
     assert get_language("de").autonym == "Deutsch"
 
 
+def test_every_edition_has_a_known_region():
+    for lang in all_languages():
+        assert lang.region in _REGION_RANK
+
+
+def test_grouping_by_continent_is_complete_and_ordered():
+    groups = languages_by_region()
+    # Every edition appears exactly once across the groups.
+    grouped_codes = [lang.code for _region, langs in groups for lang in langs]
+    assert sorted(grouped_codes) == sorted(x.code for x in all_languages())
+    assert len(grouped_codes) == len(set(grouped_codes))
+    # Regions are ordered largest-edition-first (by the curated rank).
+    region_ranks = [_REGION_RANK[region] for region, _langs in groups]
+    assert region_ranks == sorted(region_ranks)
+    # Europe and Asia both carry editions in the curated list.
+    region_names = {region for region, _ in groups}
+    assert {"Europe", "Asia"} <= region_names
+    # Within a region, editions stay ordered largest tier first.
+    for _region, langs in groups:
+        tier_ranks = [_TIER_RANK[x.tier] for x in langs]
+        assert tier_ranks == sorted(tier_ranks)
+
+
 def test_languages_endpoint():
     from src.api.main import app
 
@@ -45,4 +75,9 @@ def test_languages_endpoint():
     langs = data["languages"]
     assert any(x["code"] == "en" for x in langs)
     first = langs[0]
-    assert {"code", "name", "autonym", "tier"} <= set(first)
+    assert {"code", "name", "autonym", "tier", "region"} <= set(first)
+    # Grouped form is present and covers the same editions.
+    groups = data["groups"]
+    assert groups and all(g["region"] and g["languages"] for g in groups)
+    grouped = [l["code"] for g in groups for l in g["languages"]]
+    assert sorted(grouped) == sorted(x["code"] for x in langs)
