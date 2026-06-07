@@ -719,6 +719,18 @@ async def read_root():
         return HTMLResponse(content="<h1>Welcome to Open Omniscience</h1><p>API is running. See <a href='/docs'>API Documentation</a></p>", status_code=200)
 
 
+# Alternative UI ("Desk") served alongside the default ("Console") so both can be
+# compared on the same backend/data — see docs/GUI_DIALECTIC.md. The installer
+# creates a second desktop icon that opens this route.
+@app.get("/desk", response_class=HTMLResponse)
+async def read_desk():
+    desk_path = Path(__file__).parent.parent / "static" / "desk.html"
+    if desk_path.exists():
+        return HTMLResponse(content=desk_path.read_text(encoding="utf-8"), status_code=200)
+    # Fall back to the default UI if the alternative isn't present.
+    return await read_root()
+
+
 def main() -> None:
     """Console entrypoint (``open-omniscience``).
 

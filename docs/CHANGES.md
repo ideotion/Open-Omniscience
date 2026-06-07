@@ -24,6 +24,22 @@ Reasoned from the personas outward in [`docs/GUI_REDESIGN_0.05.md`](GUI_REDESIGN
   rings, responsive/off-canvas layout — still 100% dependency-free (no CDN, no web
   fonts, no framework), so it runs fully offline.
 
+### A contradictory take + a second interface to compare
+
+- **`docs/GUI_DIALECTIC.md`** argues the *opposite* case — that a polished,
+  customizable "console" may be the wrong fit for a sovereign, offline,
+  trust-first tool — and proposes an antithesis.
+- **"Desk" (`/desk`, `src/static/desk.html`):** a calm, editorial, content-first
+  alternative interface. No persistent sidebar (navigation is on-demand via a
+  job-framed home + a ⌘K jump overlay), two opinionated themes (Ink/Paper), serif
+  typography, a reading-width column, and a persistent "nothing leaves this
+  machine" trust line. It shares the *exact* engine and content panels with the
+  default ("Console") interface, so the comparison isolates the philosophy.
+- **Two installer icons:** `install.sh` now creates **Console** and **Desk**
+  launchers (distinct icons); `scripts/launch.sh` takes a `console|desk` argument
+  and detects an already-running server, so both can run side by side on the same
+  data. New read-only `/desk` route serves the alternative.
+
 ## Unreleased — UI polish, live data, and a full user manual
 
 A wave of usability work on top of the feature set below, plus documentation:
