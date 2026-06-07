@@ -649,7 +649,7 @@
       insights: loadInsights,
       wiki: loadWiki,
       sources: loadManagedSources,
-      database: () => { loadCoverage(); },   // stats handled by the live poller (startDbPoll)
+      database: () => { loadCoverage(); },   // stats handled by the live poller (startLive)
       custody: loadCustody,
       settings: loadSettings,
     };
@@ -661,8 +661,8 @@
       document.querySelectorAll(".tab-page").forEach(p =>
         p.classList.toggle("active", p.id === "tab-" + name));
       if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
-      // Live-update the Database counts only while that tab is open.
-      if (name === "database") startDbPoll(); else stopDbPoll();
+      // Live-refresh the active tab's changing status (counts, progress, flags).
+      startLive(name);
       if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
     }
 
@@ -837,21 +837,44 @@
       } catch (e) { el.innerHTML = `<div class="note err">Could not load stats: ${esc(e.message)}</div>`; DB_KEYS = null; }
     }
 
-    // Live polling: refresh the Database stats every few seconds while that tab is
-    // open and the window is visible, so the counts update without a manual refresh.
-    let _dbPoll = null;
-    const DB_POLL_MS = 4000;
-    function startDbPoll() {
-      stopDbPoll();
-      loadDbStats();
-      _dbPoll = setInterval(() => { if (!document.hidden) loadDbStats(); }, DB_POLL_MS);
+    // Live polling manager: each tab can register a refresh fn + interval; only
+    // the active tab's poller runs, and only while the window is visible.
+    const LIVE = {
+      database: {ms: 4000, fn: () => loadDbStats()},
+      ingest:   {ms: 5000, fn: () => refreshSchedulerLive()},
+      insights: {ms: 6000, fn: () => loadInsights()},
+      wiki:     {ms: 6000, fn: () => refreshWikiLive()},
+    };
+    let _live = null;
+    function startLive(name) {
+      stopLive();
+      const spec = LIVE[name];
+      if (!spec) return;
+      spec.fn();
+      _live = {name, timer: setInterval(() => { if (!document.hidden) spec.fn(); }, spec.ms)};
     }
-    function stopDbPoll() { if (_dbPoll) { clearInterval(_dbPoll); _dbPoll = null; } }
+    function stopLive() { if (_live) { clearInterval(_live.timer); _live = null; } }
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) return;
-      const dbActive = document.getElementById("tab-database").classList.contains("active");
-      if (dbActive && !_dbPoll) startDbPoll();
+      const active = document.querySelector(".tab-page.active");
+      if (active && !_live) startLive(active.id.replace("tab-", ""));
     });
+
+    // Live refreshers that only touch STATUS/PROGRESS displays (never the config
+    // inputs the user may be editing).
+    async function refreshSchedulerLive() {
+      try { renderSchedStatus(await api("/api/scheduler/status")); } catch (e) { /* keep last */ }
+    }
+    async function refreshWikiLive() {
+      try {
+        const s = await api("/api/wiki/status");
+        $("wiki-status").innerHTML =
+          `<span class="pill">${s.watched}/${s.pages} pages watched</span> · ` +
+          `${s.revisions.toLocaleString()} tracked edits · ` +
+          `<span class="pill ${s.flagged?'warn':'ok'}">${s.flagged} flagged</span>`;
+      } catch (e) { /* keep last */ }
+      loadWikiDumps();
+    }
 
     // -- World coverage ----------------------------------------------------- //
     let COV_COUNTRIES = [];   // cached per-country rows for client-side filtering
