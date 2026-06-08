@@ -136,6 +136,40 @@ overtold, association-shift/framing-split → investigate, went-quiet/hum → un
 | Framing-word tracker | volume of chosen loaded/neutral pairs by source/time (counts, never a verdict) | debunk | `trend` per-source + curated term list | thin |
 | Echoed keyword | a term spiking where most articles cite the *same* source | overtold | `trend` × `/api/links` co-citation | new |
 
+### Keyword-conditioned tone & emotion cards
+
+Tone/emotion measured on the words *surrounding* a keyword (its `context()`
+window), not the whole article — then grouped **by source and by source-family**.
+The substrate exists: VADER tone (`awareness/framing.py`), the keyword context
+slicer (`analytics/queries.py:context`), and rich family tags already in
+`configs/sources_spectrum.yml` (`lean-left…lean-right`, `state-media`,
+`public-broadcaster`, `wire-agency`, plus `country`/`region`/`reliability_score`).
+
+> **Bright line — sentiment ≠ stance.** Negative tone around "climate" may be
+> alarm, grief, *or* skepticism: opposite stances, identical valence. So these
+> cards map **how charged** a family's coverage of a topic is and **which words it
+> co-occurs with** — they **never** auto-label a source "climate-skeptic" or
+> "war-optimist." Surface the measured pattern + snippets; the human attributes
+> (per `framing.py`: never a bias score, never "biased"; per the spectrum file:
+> leaning tags are reputational and contestable). Stance is read from *vocabulary*
+> (`associations`) more honestly than from valence.
+>
+> **Limits:** VADER is **English-only** (cross-language tone needs per-language
+> analyzers — locales exist, analyzers don't yet); richer **emotions**
+> (anger/fear/joy/trust) need an emotion lexicon we don't ship — those cards are
+> **new**, not thin. Every cell carries its `n` and the context-window size used.
+
+| Card | Surfaces | Bucket | Powered by | Status |
+|---|---|---|---|---|
+| Keyword tone | mean tone of the words *around* a keyword (not the whole piece) | context | `context` window + VADER | thin |
+| Tone by source | the same, per outlet, with snippet links | debunk | per-source `context` + VADER | thin |
+| Tone by source-family | grouped by spectrum/ownership/country tags ("state-media vs wire-agency on X") | debunk | family tags + tone | thin/new |
+| Tone divergence | spread of tone across sources for a keyword = how *contested* it is | investigate | variance of per-source tone | thin |
+| Tone drift | a keyword's tone trending over weeks | context | `trend` buckets + VADER | thin/new |
+| Stance-vocabulary signal | charged co-occurring terms per source/family + tone (a signal to *read*, never a label) | debunk | `associations` per family + curated charged lexicon | new |
+| Emotion profile | emotion categories (anger/fear/joy/…) around a keyword | context | emotion lexicon (degrades loudly if absent) | new |
+| Family tone-map | keywords × source-families matrix, each cell = mean context tone (+ n, snippets) | overtold/undertold | composition of the above | new |
+
 ### Markets / commodity / rare-earth cards
 
 The commodity vertical already does **honest** stats (`commodity/correlation.py`:
