@@ -6,39 +6,29 @@
  * without tagging every element. English is the canonical source; any string with
  * no translation falls back to English — so a partial (stub) locale never breaks
  * the UI. Only chrome is translated; data (article titles, source names, counts)
- * is left untouched.
+ * is left untouched (a data string only changes if it happens to exactly equal a
+ * known UI key — rare, and harmless).
  *
- * Phase 1 (this file): the engine + locale scaffold. Phase 2 (next, needs a
- * browser check): include this script in index.html / desk.html, add a language
- * picker calling OOI18N.setLang(code), and call OOI18N.apply() after dynamic
- * renders. See docs/I18N.md.
+ * Integration (Phase 2): include this script, and add a language picker
+ *   <select id="oo-lang-select"> … </select>
+ * anywhere — it is auto-wired. Dynamically-rendered chrome (command palette,
+ * customize drawer, home cards) is picked up automatically by a debounced
+ * MutationObserver, so no apply() calls need to be sprinkled through the app.
  */
 (function () {
   "use strict";
   const KEY = "oo.lang";
+  const SELECT_ID = "oo-lang-select";
   const ATTRS = ["placeholder", "title", "aria-label"];
-  let map = {};            // English string -> translation (for the active language)
-  let meta = {};           // _meta of the active locale
-  let captured = false;
-  const nodeOrig = [];     // [{node, text}] — original English text nodes (captured once)
-  const attrOrig = [];     // [{el, attr, text}]
+  const SKIP = /^(SCRIPT|STYLE|TEXTAREA|CODE|PRE)$/;
+  let map = {};                 // English string -> translation (active language)
+  let meta = {};                // _meta of the active locale
+  const origText = new WeakMap(); // textNode  -> original (English) value
+  const origAttr = new WeakMap(); // element   -> { attr: original value }
+  let observer = null, pending = false;
 
-  // Capture the original (English) DOM once, so switching languages always
-  // translates FROM English rather than from an already-translated string.
-  function captureOnce(root) {
-    if (captured) return;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) => (n.nodeValue && n.nodeValue.trim() &&
-        n.parentNode && !/^(SCRIPT|STYLE)$/.test(n.parentNode.nodeName))
-        ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
-    });
-    let n; while ((n = walker.nextNode())) nodeOrig.push({ node: n, text: n.nodeValue });
-    root.querySelectorAll("[" + ATTRS.join("],[") + "]").forEach((el) =>
-      ATTRS.forEach((a) => { if (el.hasAttribute(a)) attrOrig.push({ el, attr: a, text: el.getAttribute(a) }); }));
-    captured = true;
-  }
-
-  // Swap only when the trimmed text exactly matches a known key (preserve whitespace).
+  // Translate only when the trimmed text exactly matches a known key
+  // (preserving surrounding whitespace). Unknown strings pass through (English).
   function tr(s) {
     const k = (s || "").trim();
     if (!k || map[k] == null) return s;
@@ -46,11 +36,37 @@
     return s.slice(0, i) + map[k] + s.slice(i + k.length);
   }
 
-  function apply() {
-    captureOnce(document.body);
-    for (const o of nodeOrig) o.node.nodeValue = tr(o.text);
-    for (const o of attrOrig) o.el.setAttribute(o.attr, tr(o.text));
+  function doText(n) {
+    if (!n.nodeValue || !n.nodeValue.trim()) return;
+    const p = n.parentNode; if (p && SKIP.test(p.nodeName)) return;
+    let o = origText.get(n);
+    if (o === undefined) { o = n.nodeValue; origText.set(n, o); }  // first sight = English
+    const t = tr(o);
+    if (n.nodeValue !== t) n.nodeValue = t;
   }
+  function doAttrs(el) {
+    let store = origAttr.get(el);
+    for (const a of ATTRS) {
+      if (!el.hasAttribute(a)) continue;
+      if (!store) { store = {}; origAttr.set(el, store); }
+      if (store[a] === undefined) store[a] = el.getAttribute(a);
+      const t = tr(store[a]);
+      if (el.getAttribute(a) !== t) el.setAttribute(a, t);
+    }
+  }
+
+  // Idempotent: records each node's original English once, always translates
+  // from that original — so it can run any number of times (incl. switching
+  // languages, or restoring English with an empty map) without corrupting text.
+  function apply(root) {
+    root = root || document.body; if (!root) return;
+    if (observer) observer.disconnect();
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let n; while ((n = w.nextNode())) doText(n);
+    if (root.querySelectorAll) root.querySelectorAll("[" + ATTRS.join("],[") + "]").forEach(doAttrs);
+    if (observer && document.body) observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+  function schedule() { if (pending) return; pending = true; setTimeout(() => { pending = false; apply(); }, 120); }
 
   async function load(code) {
     try {
@@ -60,10 +76,7 @@
       map = {}; for (const k in d) if (k !== "_meta") map[k] = d[k];
     } catch (e) { map = {}; meta = {}; }
   }
-
-  function setDir() {
-    document.documentElement.dir = meta.dir === "rtl" ? "rtl" : "ltr";
-  }
+  function setDir() { document.documentElement.dir = meta.dir === "rtl" ? "rtl" : "ltr"; }
 
   async function setLang(code) {
     localStorage.setItem(KEY, code);
@@ -71,15 +84,19 @@
     if (code === "en") { map = {}; meta = {}; } else { await load(code); }
     setDir();
     apply();
+    const sel = document.getElementById(SELECT_ID);
+    if (sel && sel.value !== code) sel.value = code;
   }
-
   function current() { return localStorage.getItem(KEY) || "en"; }
 
   async function init() {
     const c = current();
     document.documentElement.lang = c;
     if (c && c !== "en") { await load(c); setDir(); }
-    apply();
+    const sel = document.getElementById(SELECT_ID);
+    if (sel) { sel.value = c; sel.addEventListener("change", () => setLang(sel.value)); }
+    if ("MutationObserver" in window) observer = new MutationObserver(schedule);
+    apply();  // also connects the observer
   }
 
   window.OOI18N = { setLang, apply, current, init, get meta() { return meta; } };
