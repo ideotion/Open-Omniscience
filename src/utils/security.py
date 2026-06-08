@@ -220,6 +220,45 @@ def sanitize_url(url: str) -> str:
     return url
 
 
+# Characters that make a spreadsheet treat a cell as a formula / command (CWE-1236).
+_CSV_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r", "\n")
+
+
+def csv_safe_cell(value: object) -> str:
+    """Neutralize spreadsheet formula injection in an exported CSV cell (S-004).
+
+    Ingested article titles/content are attacker-controlled; a cell beginning with
+    ``= + - @`` (or a control char) executes as a formula/DDE when the export is opened
+    in Excel/LibreOffice. Prefixing a single quote forces the spreadsheet to treat it as
+    text. The value is otherwise unchanged (CSV quoting handles commas/quotes/newlines).
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    if text and text[0] in _CSV_FORMULA_LEADERS:
+        return "'" + text
+    return text
+
+
+def safe_href(url: str | None) -> str:
+    """Return ``url`` only if it is a plain ``http(s)`` link, else ``""`` (S-005).
+
+    A strict scheme allowlist for ingested URLs rendered as ``href``: a malicious feed
+    ``<link>javascript:…`` survives HTML-escaping (which doesn't touch the scheme), so a
+    click would run script in the app's origin. Anything that is not http/https — and any
+    URL carrying control characters browsers would strip — is dropped.
+    """
+    if not url:
+        return ""
+    cleaned = re.sub(r"[\x00-\x20\x7f]+", "", url)
+    from urllib.parse import urlparse
+    try:
+        scheme = urlparse(cleaned).scheme.lower()
+    except Exception:
+        return ""
+    return cleaned if scheme in ("http", "https") else ""
+
+
 def validate_email(email: str) -> bool:
     """
     Validate an email address format.

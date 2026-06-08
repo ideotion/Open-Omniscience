@@ -32,3 +32,30 @@ real host (marked by their static confidence); no active CSRF page run against t
 server (the simple-request reachability is read from the route signatures + CORS config);
 no full read of all 236 modules (prioritised the ingest→store→process→present data path,
 the query/render/export sinks, and the fetcher).
+
+---
+
+## Hardening log (operator approved applying fixes, on PR #34)
+
+Gated protocol: one root cause per change, verified by re-running its safe PoC, reversible.
+Full suite green afterwards (**722 passed, 6 skipped**); new helper files ruff-clean.
+
+| # | Action | Finding | Verification |
+|---|---|---|---|
+| H1 | `security.py`: add `csv_safe_cell()`; apply in `main.py export_articles` + `catalog/csv_io.write_csv` | S-004 | PoC + `test_security_hardening` parametrized: `= + - @`/TAB/CR neutralized, benign untouched. |
+| H2 | `security.py`: add `safe_href()` (http/https allowlist); use in `view_article`; add JS `safeUrl()` + apply to 5 ingested-URL hrefs | S-005 | `safe_href('javascript:…')==''`; `safeUrl` keeps relative + http(s), drops other schemes; JS `node --check` OK. |
+| H3 | `main.py`: `csrf_and_security_headers` middleware — refuse cross-origin state-changing requests; add CSP/`X-Frame-Options: DENY`/`nosniff`/`Referrer-Policy` (swagger exempt from strict CSP) | S-003, S-006 | Live: cross-origin POST → **403**; same/no-origin → 200; headers present on `/`; `/docs` CSP-exempt. |
+| H4 | `main.py`: CORS `allow_credentials=False` | S-007 | suite green (no flow used credentials). |
+| H5 | `ingest/__init__.py`: SSRF guard `_guard_target` (literal-IP block + DNS-resolve check for the real session), manual bounded redirects re-validated per hop, streamed size cap (`_read_body`) with Content-Length precheck | S-001, S-002 | PoC: real `EthicalFetcher().fetch('http://127.0.0.1\|169.254.169.254\|10.x\|[::1]')` → **BlockedTarget**; stub-session tests unaffected (guard gated to the real `requests.Session`). |
+| H6 | `paths.py`: `chmod 0700` the data dir (best-effort, POSIX) | S-011 | data dir owner-only; keys already 0600. |
+| H7 | `test_repo_invariants.py`: assert no `eval/exec/os.system/shell=True/pickle/marshal/yaml.load` in live src; `test_security_hardening.py`: CSV/href/SSRF/CSRF/headers + search-injection→non-500 | S-009, S-010 | new tests pass; injection-style `/api/articles?query=…` returns 400/200, never 500. |
+
+**Left open (documented residuals):** S-008 (feedparser entity-safe by default — recommend `defusedxml`
+for any future first-party XML), S-012 (indirect prompt injection — bounded by the no-tools posture;
+recommend explicit data/instruction delimiting + UI labelling of model output).
+
+**Honesty note on confidence:** S-001/S-002 fixes were verified by their safe PoCs against the
+*operator's own* fetcher with benign internal targets and stub bodies; no live external host was
+contacted. The CSP uses `'unsafe-inline'` for script/style because the UI is inline-heavy — a
+nonce-based CSP is a deferred follow-up; the current header still blocks remote script/object/frame
+loads and clickjacking.

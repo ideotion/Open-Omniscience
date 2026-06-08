@@ -52,6 +52,22 @@ def test_quarantine_not_imported_by_live_code():
     assert not offenders, f"live code imports quarantined modules: {offenders}"
 
 
+def test_no_dangerous_eval_or_deserialization_sinks():
+    """S-010: live code must stay free of code-exec / unsafe-deserialization sinks."""
+    banned = re.compile(
+        r"\b(eval|exec)\s*\(|\bos\.system\s*\(|subprocess\.[A-Za-z_]+\([^)]*shell\s*=\s*True"
+        r"|\bpickle\.(load|loads)\b|\bmarshal\.(load|loads)\b|\byaml\.load\s*\(",
+    )
+    offenders = []
+    for p in _live_py_files():
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            if banned.search(line):
+                offenders.append(f"{p.relative_to(_ROOT)}:{i}: {line.strip()[:60]}")
+    assert not offenders, f"dangerous sink(s) introduced: {offenders}"
+
+
 def test_in_app_docs_exist_on_disk():
     main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
     files = re.findall(r'"file":\s*"([^"]+)"', main)

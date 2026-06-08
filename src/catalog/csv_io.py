@@ -40,8 +40,10 @@ def write_csv(rows: list[dict]) -> str:
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=EXPORT_COLUMNS, extrasaction="ignore")
     writer.writeheader()
+    # Neutralize spreadsheet formula injection in every cell (S-004).
+    from src.utils.security import csv_safe_cell
     for r in rows:
-        writer.writerow({c: ("" if r.get(c) is None else r.get(c)) for c in EXPORT_COLUMNS})
+        writer.writerow({c: csv_safe_cell(r.get(c)) for c in EXPORT_COLUMNS})
     return buf.getvalue()
 
 

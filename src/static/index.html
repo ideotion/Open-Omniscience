@@ -1178,6 +1178,14 @@
     const $ = (id) => document.getElementById(id);
     const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g,
       c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])));
+    // Render an ingested URL as a link only if it is plain http(s) — esc() does NOT
+    // neutralize a javascript:/data: scheme, which would execute on click (S-005).
+    const safeUrl = (u) => {
+      const cleaned = String(u == null ? "" : u).replace(/[\x00-\x20\x7f]+/g, "");
+      if (/^https?:\/\//i.test(cleaned)) return cleaned;        // absolute http(s)
+      if (/^[a-z][a-z0-9+.\-]*:/i.test(cleaned)) return "";      // any other scheme -> reject
+      return cleaned;                                            // relative / same-origin
+    };
 
     function toast(msg, kind="ok") {
       const n = document.createElement("div");
@@ -1459,7 +1467,7 @@
       const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).map(e => {
         const label = esc(e.title || e.url);
         const meta = [e.source, (e.published_at || "").slice(0,10)].filter(Boolean).map(esc).join(" · ");
-        const link = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">${label}</a>` : label;
+        const link = e.url ? `<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${label}</a>` : label;
         return `<span>${link}${meta ? ` <span class="muted">— ${meta}</span>` : ""}</span>`;
       }).join("");
       const evidBlock = evid ? `<div class="evid">${evid}</div>` : "";
@@ -1736,7 +1744,7 @@
             <span class="pill ${ch.flagged?'warn':''}">${ch.delta_bytes>0?'+':''}${ch.delta_bytes} bytes</span>
             ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(esc).join(', ')+'</span>':''}
             <div class="hint" style="margin-top:4px">${ch.observed_at?new Date(ch.observed_at).toLocaleString():''} ·
-              <a href="${esc(ch.official_url)}" target="_blank" rel="noopener noreferrer">official source ↗</a></div>
+              <a href="${esc(safeUrl(ch.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div>
             ${ch.diff?`<pre style="white-space:pre-wrap;max-height:160px;overflow:auto;font-size:12px;margin-top:6px">${esc(ch.diff.slice(0,1500))}</pre>`:''}
           </div>`).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load changes.</div>'; }
@@ -1750,7 +1758,7 @@
             `<tr><td>${esc(x.jurisdiction.toUpperCase())}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
               <td>${x.has_baseline?'<span class="pill ok">yes</span>':'<span class="pill">no</span>'}</td>
               <td>${x.revisions}${x.flagged?` (${x.flagged} flagged)`:''}</td>
-              <td><a href="${esc(x.official_url||x.url)}" target="_blank" rel="noopener noreferrer">official ↗</a></td></tr>`).join("") +
+              <td><a href="${esc(safeUrl(x.official_url||x.url))}" target="_blank" rel="noopener noreferrer">official ↗</a></td></tr>`).join("") +
           "</tbody>";
       } catch (e) { /* table optional */ }
     }
@@ -2872,7 +2880,7 @@
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
                <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(m.country):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
-                 ${m.url?`· <a href="${esc(m.url)}" target="_blank" rel="noopener">open</a>`:""}</div>
+                 ${m.url?`· <a href="${esc(safeUrl(m.url))}" target="_blank" rel="noopener">open</a>`:""}</div>
                <div>${esc(m.snippet)}</div></div>`).join("")
           : '<div class="muted">No context snippets.</div>';
       } catch (e) { $("ins-trend").innerHTML = ""; toast("Explore failed: " + e.message, "err"); }
@@ -3150,7 +3158,7 @@
              <td>${esc(a.source)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
              <td>${esc(a.language||"")}</td>
              <td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>
-                 ${a.url ? `· <a class="muted" href="${esc(a.url)}" target="_blank" rel="noopener" title="original online source">source&nbsp;↗</a>` : ""}
+                 ${a.url ? `· <a class="muted" href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener" title="original online source">source&nbsp;↗</a>` : ""}
                  <button class="secondary tiny" style="margin-top:4px"
                    onclick="summarize(${a.id}, this)">Summarize</button>
                  <button class="secondary tiny" style="margin-top:4px"

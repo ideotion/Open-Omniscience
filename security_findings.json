@@ -18,7 +18,7 @@
     "recommendation": "Resolve-then-validate: resolve the host and reject loopback/RFC1918/link-local/multicast/unspecified ranges and non-HTTP schemes; disable auto-redirects (allow_redirects=False) and follow manually with a bounded count, re-validating each hop's resolved IP; pin the connection to the validated IP (mitigate DNS rebinding). Keep the fetcher as the single path so the control is centralised.",
     "effort": "M",
     "change_risk": "Medium",
-    "status": "open"
+    "status": "applied"
   },
   {
     "id": "S-002",
@@ -39,7 +39,7 @@
     "recommendation": "Fetch with stream=True and read in bounded chunks, aborting once the running total exceeds max_bytes; reject by Content-Length when present; cap the decompressed size explicitly (decompress incrementally with a ceiling). Keep the existing timeout.",
     "effort": "M",
     "change_risk": "Low",
-    "status": "open"
+    "status": "applied"
   },
   {
     "id": "S-003",
@@ -60,7 +60,7 @@
     "recommendation": "Require a non-simple precondition on every state-changing request so the browser must preflight: e.g. a custom header (X-OO-CSRF / X-Requested-With) enforced by a small middleware, OR validate the Origin/Referer host is loopback and reject otherwise. Combine with S-001 (so even a forged scrape cannot reach internal targets).",
     "effort": "M",
     "change_risk": "Low",
-    "status": "open"
+    "status": "applied"
   },
   {
     "id": "S-004",
@@ -81,7 +81,7 @@
     "recommendation": "Neutralize risky cells on export: if a cell starts with = + - @ or a control char (TAB/CR/LF), prefix with a single quote (') or wrap so spreadsheets treat it as text; apply in both the article and source-catalog CSV exporters.",
     "effort": "S",
     "change_risk": "Low",
-    "status": "open"
+    "status": "applied"
   },
   {
     "id": "S-005",
@@ -102,7 +102,7 @@
     "recommendation": "Allowlist the scheme before rendering any ingested URL as href (accept only http/https; otherwise drop the link or render as inert text). Apply in both the client render and the server view_article. Optionally also encode ' in esc().",
     "effort": "S",
     "change_risk": "Low",
-    "status": "open"
+    "status": "applied"
   },
   {
     "id": "S-006",
@@ -123,7 +123,7 @@
     "recommendation": "Add a response-header middleware: a strict CSP (default-src 'self'; the UI is dependency-free so 'self' + necessary inline-style nonce is feasible; block remote loads from ingested content), X-Content-Type-Options: nosniff, X-Frame-Options: DENY (or frame-ancestors 'none'), Referrer-Policy: no-referrer. Feasible without breaking the no-CDN UI.",
     "effort": "M",
     "change_risk": "Medium",
-    "status": "open"
+    "status": "applied"
   },
   {
     "id": "S-007",
@@ -144,7 +144,7 @@
     "recommendation": "Set allow_credentials=False (nothing relies on it); keep the localhost-only origin allowlist. Pair with the S-003 Origin check for state-changing requests.",
     "effort": "S",
     "change_risk": "Low",
-    "status": "open"
+    "status": "applied"
   },
   {
     "id": "S-008",
@@ -186,7 +186,7 @@
     "recommendation": "Keep parameterized; add a regression test asserting an injection-style query returns 400 (and never raises a 500). Catch sqlalchemy OperationalError around search_ids and map to 400 for defense in depth.",
     "effort": "S",
     "change_risk": "Low",
-    "status": "open"
+    "status": "applied"
   },
   {
     "id": "S-010",
@@ -207,7 +207,7 @@
     "recommendation": "Preserve as invariants (the test_repo_invariants.py guard already covers secrets/quarantine/docs; consider extending to assert no eval/exec/pickle/yaml.load in src).",
     "effort": "S",
     "change_risk": "Low",
-    "status": "open"
+    "status": "applied"
   },
   {
     "id": "S-011",
@@ -228,7 +228,7 @@
     "recommendation": "chmod the data dir to 0700 and the DB/custody/annotation files to 0600 on creation; keep documenting that full at-rest encryption is the host's (Qubes/LUKS) responsibility.",
     "effort": "S",
     "change_risk": "Low",
-    "status": "open"
+    "status": "applied"
   },
   {
     "id": "S-012",
