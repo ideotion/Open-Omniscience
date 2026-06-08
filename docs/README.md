@@ -1,27 +1,37 @@
 # Documentation index
 
-Start here, then dive into the topic you need.
+The documentation is consolidated into a small set of complete guides. Start with the
+one that matches what you need.
 
-## Using it
-- **[QUICKSTART.md](QUICKSTART.md)** — install (Qubes + local dev) and the end-to-end loop
-- **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)** — endpoint map (live reference at `/docs`)
+## Use it
+- **[QUICKSTART.md](QUICKSTART.md)** — install (Qubes + local dev) and the end-to-end loop.
+- **[USER_MANUAL.md](USER_MANUAL.md)** — the complete guide: every tab, control, setting,
+  workflow, env var and API area, **plus per-feature deep-dives** (Home briefing, source
+  integrity & anti-amplification, shared annotations, insights, Wikipedia tracking,
+  world-law tracking, markets, chain of custody).
+- **[PRESENTATION_PUBLIC.md](PRESENTATION_PUBLIC.md)** — a plain-language public
+  presentation (français).
 
-## Understanding it
-- **[PRODUCT_SYNTHESIS.md](PRODUCT_SYNTHESIS.md)** — what the app is and isn't
-- **[PILLAR_INTENT_MAP.md](PILLAR_INTENT_MAP.md)** — where each original "pillar" lives now
-- **[ACTION_PLAN.md](ACTION_PLAN.md)** — phased build plan + status
+## Understand it
+- **[DESIGN.md](DESIGN.md)** — what the app is and isn't (product synthesis), where each
+  original "pillar" now lives, the GUI redesign reasoning, and the content-analysis strategy.
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — the database & configuration, the HTTP API map
+  (live reference at `/docs`), and internationalisation.
+- **[ROADMAP.md](ROADMAP.md)** — the persistent design memory (north star), the phased
+  build plan + status, the per-vertical designs (email/newsletter, world catalog), the
+  coverage ledger (known gaps), and open questions.
 
-## State / quality (honest record)
-- **[AUDIT_2026-06.md](AUDIT_2026-06.md)** — most recent full re-audit + fixes
-- **[QUALITY_CHECKUP.md](QUALITY_CHECKUP.md)** — scorecard
-- **[SALVAGE_MAP.md](SALVAGE_MAP.md)** — keep / fix / quarantine record
-- **[CHANGES.md](CHANGES.md)** — changelog
+## Trust it
+- **[ETHICS.md](ETHICS.md)** — the principles (Munich Charter), plus GPLv3 compliance and
+  third-party notices/attributions.
+- **[SECURITY.md](SECURITY.md)** — threat model, the local-first security posture, and the
+  application-security audit + hardening.
 
-## Contributing / policy
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** · **[SECURITY.md](SECURITY.md)** ·
-  **[ETHICS.md](ETHICS.md)** · **[COMPLIANCE.md](COMPLIANCE.md)** ·
-  **[DATABASE.md](DATABASE.md)** · **[NOTICES.md](NOTICES.md)**
-
-## Future feature designs (not yet built)
-- **[EMAIL_NEWSLETTER_INTELLIGENCE.md](EMAIL_NEWSLETTER_INTELLIGENCE.md)** — the email
-  spine is built (IMAP → corpus); newsletter-API integrations remain a design.
+## Contribute / track
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — how to contribute, and the versioning policy
+  (why this is `0.0.x`, the maturity ladder, the single source of truth).
+- **[CHANGES.md](CHANGES.md)** — the changelog.
+- **[HISTORY.md](HISTORY.md)** — a consolidated archive of audits, the security proof
+  trail, quality check-ups, the salvage map, and the early phase/optimization reports.
+- **[archive/](archive/)** — the machine-readable audit findings (JSON/CSV) and raw
+  phase-report data.

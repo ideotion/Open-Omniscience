@@ -1,7 +1,7 @@
 """
 Infer a source's country (and, where unambiguous, language) from its domain's
 country-code TLD — so the catalogue's geographic/linguistic skew becomes
-*measurable* (see docs/KNOWN_GAPS.md).
+*measurable* (see docs/ROADMAP.md).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.

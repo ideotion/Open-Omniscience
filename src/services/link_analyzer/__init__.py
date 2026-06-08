@@ -12,7 +12,7 @@ relationship tracker, and temporal analyzer were QUARANTINED
 outputs -- e.g. the credibility scorer returned ~100 for every input, the source
 scraper claimed to respect robots.txt while the robots code was dead and its
 content cleaner destroyed any article mentioning a year. The ``link_analysis``
-router that exposed them was removed too. See docs/AUDIT_2026-06.md.
+router that exposed them was removed too. See docs/HISTORY.md.
 """
 
 from .extractor import LinkExtractor

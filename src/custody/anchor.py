@@ -201,7 +201,7 @@ class UnavailableAnchorProvider(AnchorProvider):
     def anchor(self, merkle_root: str, metadata: dict | None = None) -> AnchorReceipt:
         raise AnchorUnavailable(
             f"The {self.name!r} anchor provider is not implemented in this build. "
-            "See docs/CHAIN_OF_CUSTODY.md for how to add it. " + PRIVACY_WARNING
+            "See docs/USER_MANUAL.md for how to add it. " + PRIVACY_WARNING
         )
 
     def verify(self, receipt: AnchorReceipt) -> tuple[bool, str]:

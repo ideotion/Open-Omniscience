@@ -5,7 +5,7 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.0.6 (pre-alpha — the `0.0.x` series; see [docs/VERSIONING.md](docs/VERSIONING.md))
+**Version:** 0.0.6 (pre-alpha — the `0.0.x` series; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md))
 **License:** [GNU GPLv3](LICENSE)
 
 ---
@@ -15,7 +15,7 @@
 > (honesty over hype). The `0.0.x` series is pre-alpha; only after it consolidates do we
 > move to a `0.1` **alpha**, then **beta**, then a `1.0` release. Development cycles are
 > named after the version they produce: branch `0.04 → 0.05 → 0.06` ⇒ `0.0.4 → 0.0.5 →
-> 0.0.6`. See [docs/VERSIONING.md](docs/VERSIONING.md).
+> 0.0.6`. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ## Status — v0.0.6: the trustworthy core works, the intelligence layer is landing
 
@@ -35,7 +35,7 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   (hybrid Ed25519 + post-quantum ML-DSA), timestamping (self-asserted local, or
   Bitcoin-anchored **OpenTimestamps**), and offline verification — all toggleable
   from a **Chain of custody** UI panel, with the effective state always shown
-  honestly (see [docs/CHAIN_OF_CUSTODY.md](docs/CHAIN_OF_CUSTODY.md)).
+  honestly (see [docs/USER_MANUAL.md](docs/USER_MANUAL.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
 - ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust ·
   System*) covering Home, Search, Insights, Wikipedia, Markets, Collect, Sources,
@@ -45,8 +45,8 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   inline **source management** (enable/disable, priority, delete), and a
   **World coverage** view (countries covered vs not, sources + topic keywords per
   country). *(The interface described here is the current **default** (`0.05`); see
-  [`docs/GUI_REDESIGN_0.05.md`](docs/GUI_REDESIGN_0.05.md) and the Console/Desk
-  comparison in [`docs/GUI_DIALECTIC.md`](docs/GUI_DIALECTIC.md).)*
+  [`docs/DESIGN.md`](docs/DESIGN.md) and the Console/Desk
+  comparison in [`docs/DESIGN.md`](docs/DESIGN.md).)*
 - ✅ **Settings**: theme (system/dark/light) and a SQLite **backup/restore**
   — consistent online-backup download, and a *validated*, snapshotted restore
   (refuses anything that isn't a genuine Open Omniscience database).
@@ -64,7 +64,7 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   (SMM, USGS, World Bank, Fastmarkets, …) and financial publishers — seeded on
   first run so the app is ready to ingest market coverage. (Live *price* numbers
   still come only from a verified extraction rule or a CSV import — see
-  [docs/MARKETS.md](docs/MARKETS.md) — never a guessed selector.)
+  [docs/USER_MANUAL.md](docs/USER_MANUAL.md) — never a guessed selector.)
 - ✅ **Official CSV price feeds**: a one-click catalog (FRED, which carries the
   **World Bank "Pink Sheet"** and **EIA** series) plus a **custom-URL importer**
   to pull any CSV series into the commodity store — idempotent, missing values
@@ -75,14 +75,14 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
 - ✅ **Data-derived worldwide catalog generator** (Wikidata CC0 + optional
   GDELT/Media Cloud merge) for news media **and** official institutions per
   country, with a coverage report driving gaps — see
-  [docs/WORLD_NEWS_CATALOG.md](docs/WORLD_NEWS_CATALOG.md).
+  [docs/ROADMAP.md](docs/ROADMAP.md).
 - ✅ **Keyword & entity analytics** (the **Insights** tab): keywords/entities are
   extracted from ingested article text (people/orgs/places as single units; opt-in
   spaCy `[nlp]` for real NER), stored as mentions with context, and surfaced as
   **trends**, PMI **associations** ("mind-map"), in-context snippets, and an
   **interactive map** (zoomable SVG with city pins by real lat/lon + per-country/
   city tables) — every figure a real aggregate with method + caveat. See
-  [docs/INSIGHTS.md](docs/INSIGHTS.md).
+  [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
 - ✅ **Home briefing** (the **Home** tab, `0.06` Phase A): a **triage feed of honest
   "cards"** — the app gathers and measures in the background, then surfaces candidate
   stories as cards grouped into editorial buckets (*rising · overtold · undertold ·
@@ -95,14 +95,14 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   Pin cards into a **newsletter draft** and **export Markdown** in which every claim
   carries its source links, method and caveat — reproducible journalism. The feed is
   precomputed/cached (instant Home) and refreshed after each scrape. See
-  [docs/BRIEFING.md](docs/BRIEFING.md).
+  [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
 - ✅ **Wikipedia change-tracking** (the **Wikipedia** tab): each language edition is
   a tracked source whose *edits* are the data — one baseline snapshot then
   diffs/deltas (not re-copies), with honest large-edit/revisionism flagging (size
   delta, revert/blank tags, anon/burst, optional **ORES** scores), a flagged-edit
   feed and diff viewer, plus an optional **offline baseline downloader**
   (per-language, resumable, size-probed) kept separate from live tracking. See
-  [docs/WIKIPEDIA.md](docs/WIKIPEDIA.md).
+  [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
 
 - ✅ **Source integrity & anti-amplification** (the **Source integrity** tab, `0.06`
   Phases B–D): the pure `src/signals/` substrate — **concentration** (Gini), **near-dup /
@@ -113,7 +113,7 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   reverting reproduces the raw equal counts exactly (a 40-puppet flood is a passing
   acceptance test). Plus **crowdsourced, signed, portable annotation bundles** with an
   opt-in **web of trust** and transparent (dissent-shown, never averaged) aggregation.
-  See [docs/INTEGRITY.md](docs/INTEGRITY.md) and [docs/ANNOTATIONS.md](docs/ANNOTATIONS.md).
+  See [docs/USER_MANUAL.md](docs/USER_MANUAL.md) and [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
 
 - ✅ **World law — change-tracking** (the **World law** tab, `0.06` §5): a worldwide
   catalog of **real official primary sources** (national legislation databases, gazettes,
@@ -123,7 +123,7 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   normalised-text diff → honest large-change flag, reusing the Wikipedia engine), and the
   shared near-dup engine surfaces **model legislation** copied across jurisdictions. A
   research mirror, never legal advice — every record links to its official gazette. See
-  [docs/LAW.md](docs/LAW.md).
+  [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
 
 **In progress / next:**
 - 🚧 Structured per-edit legal diffs (Akoma Ntoso / ELI) and patent/docket parsing into a
@@ -131,12 +131,12 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
 - 🚧 Local LLM analysis via Ollama; email + monitoring; cross-linking Wikipedia
   diffs into the Insights keyword analytics.
 
-See [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md) for the full phasing.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phasing.
 
 **Honesty note:** several previously-advertised "analysis" components (deepfake,
 propaganda, cognitive-bias, bot detection) were **fabricated** — returning
 hardcoded or heuristic scores while claiming real detection — and have been
-**quarantined** (`quarantine/`, see [docs/SALVAGE_MAP.md](docs/SALVAGE_MAP.md))
+**quarantined** (`quarantine/`, see [docs/HISTORY.md](docs/HISTORY.md))
 rather than shipped as if they worked.
 
 ---
@@ -189,14 +189,21 @@ Ollama and export a **signed, verifiable evidence bundle**.
 
 ## 📚 Documentation
 
-- [USER_MANUAL](docs/USER_MANUAL.md) — **the friendly, complete guide**: every tab,
-  control, setting, workflow, env var and API area
-- [QUICKSTART](docs/QUICKSTART.md) — install + the end-to-end loop
-- [PRODUCT_SYNTHESIS](docs/PRODUCT_SYNTHESIS.md) — what the app is and isn't
-- [ACTION_PLAN](docs/ACTION_PLAN.md) — phased build plan + status
-- [PILLAR_INTENT_MAP](docs/PILLAR_INTENT_MAP.md) — where each original "pillar" lives now
-- [AUDIT_2026-06](docs/AUDIT_2026-06.md) / [QUALITY_CHECKUP](docs/QUALITY_CHECKUP.md) — honest state
-- [SALVAGE_MAP](docs/SALVAGE_MAP.md) — keep/fix/quarantine record
+The docs are consolidated into a small set of complete guides
+([docs/README.md](docs/README.md) is the index):
+
+- **[USER_MANUAL](docs/USER_MANUAL.md)** — the friendly, complete guide: every tab,
+  control, setting, workflow, env var and API area, plus per-feature deep-dives
+  (briefing, source integrity, annotations, insights, Wikipedia, world-law, markets,
+  chain of custody).
+- **[QUICKSTART](docs/QUICKSTART.md)** — install + the end-to-end loop.
+- **[DESIGN](docs/DESIGN.md)** — what the app is and isn't, the pillar map, GUI reasoning.
+- **[ROADMAP](docs/ROADMAP.md)** — design memory (north star), phased plan + status, open questions.
+- **[ARCHITECTURE](docs/ARCHITECTURE.md)** — database/config, the HTTP API map, and i18n.
+- **[ETHICS](docs/ETHICS.md)** — principles, compliance (GPLv3), third-party notices.
+- **[SECURITY](docs/SECURITY.md)** — threat model, local-first posture, the security audit.
+- **[CONTRIBUTING](docs/CONTRIBUTING.md)** — how to contribute + the versioning policy.
+- **[CHANGES](docs/CHANGES.md)** — changelog · **[HISTORY](docs/HISTORY.md)** — audits & quality archive.
 
 ## 🔒 Security model
 

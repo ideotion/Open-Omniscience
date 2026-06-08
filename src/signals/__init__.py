@@ -14,7 +14,7 @@ domains*. The primitives in this package are the engine. They are deliberately:
     limits, and the sample size ``n``. A primitive surfaces a *measurement*; it
     never renders a verdict (no "biased", no "trust score", no "true/fake").
 
-See ``docs/FUTURE_DEVELOPMENTS.md`` (the *what & why*) and ``docs/ACTION_PLAN.md``
+See ``docs/ROADMAP.md`` (the *what & why* and the *how*)
 (the *how*). The first shipped primitive is :mod:`concentration`; ``near_dup`` /
 ``coordination`` and ``novelty`` are intentionally deferred (the riskiest math —
 do it properly or not at all).

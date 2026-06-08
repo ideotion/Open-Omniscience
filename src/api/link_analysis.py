@@ -6,8 +6,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Honest aggregation only — counts of who cites what, nothing scored or judged. This
 answers "which articles cite the same source" and "what links are most-cited"
-(see docs/CONTENT_ANALYSIS_STRATEGY.md). It is NOT the quarantined, fabricated
-"credibility/relationship" link analyzer (see docs/AUDIT_2026-06.md); it surfaces
+(see docs/DESIGN.md). It is NOT the quarantined, fabricated
+"credibility/relationship" link analyzer (see docs/HISTORY.md); it surfaces
 structure for the user, who decides.
 
 Outbound external links are populated on ingest (see
