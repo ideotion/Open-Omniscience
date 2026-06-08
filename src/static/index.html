@@ -869,6 +869,24 @@
           </select>
         </div>
         <div>
+          <label for="oo-lang-select">Language</label>
+          <select id="oo-lang-select">
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+            <option value="es">Español</option>
+            <option value="de">Deutsch</option>
+            <option value="zh">中文</option>
+            <option value="hi">हिन्दी</option>
+            <option value="ar">العربية</option>
+            <option value="bn">বাংলা</option>
+            <option value="ru">Русский</option>
+            <option value="pt">Português</option>
+            <option value="id">Bahasa Indonesia</option>
+            <option value="ja">日本語</option>
+          </select>
+          <div class="hint">UI language. Stored locally; untranslated strings fall back to English.</div>
+        </div>
+        <div>
           <label for="set-limit">Default search results</label>
           <input id="set-limit" type="number" min="1" max="1000" step="1">
         </div>
@@ -997,6 +1015,7 @@
 
   <div id="toast"></div>
 
+  <script src="/static/i18n.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g,

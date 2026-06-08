@@ -79,13 +79,19 @@ all. (Overlaps the images/media exclusion above.)
 Honest measurement, not a bigger number:
 1. **Triangulate registries** — cross-reference Wikidata against GDELT / Media Cloud
    / national press directories / MBFC / AllSides; the *non-overlap* is the gap.
-   Tag each source with the register that found it (provenance).
+   Tag each source with the register that found it (provenance). ✅ *first step done:*
+   the seeder now records provenance as a `via:<curated|spectrum|markets|wikidata>`
+   tag (`src/ingest/seed_sources.py`).
 2. **Capture–recapture estimate** — if register A has Nₐ, B has N_b, overlapping in
    N_ab, estimated total (incl. never-seen) ≈ Nₐ·N_b / N_ab. This estimates the dark
-   matter: "we hold Y; estimated unseen ≈ Z."
+   matter: "we hold Y; estimated unseen ≈ Z." *(planned.)*
 3. **Real denominators** — replace the current "country has ≥1 source = covered"
    measure (`src/catalog/coverage.py`) with coverage *ratios* per country ×
    language × medium × political lean, and surface them in the World-coverage view.
+   ✅ *first step done:* **ccTLD inference** (`src/catalog/cctld.py`) backfills missing
+   `country`/`language` at seed time (conservative — generic/ambiguous ccTLDs stay
+   unknown), lifting country-tagged coverage from ~19% → ~33% so the skew is finally
+   *visible*. The remaining unknowns are honestly unknown (mostly `.com`).
 
 ---
 

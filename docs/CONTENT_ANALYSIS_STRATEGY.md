@@ -21,11 +21,15 @@ Article-link detection is **scaffolded but not wired**:
   `external_source_id`, `source_article_id`, is_working, http_status…),
   `ExternalSource`, and `LinkClassificationRule`. Relationships are in place
   (`Article.links`, `ExternalSource.links`).
-- ❌ **Not invoked** — nothing calls `LinkExtractor` during ingest, so
-  `article_links` is never populated.
-- ❌ **No API, no UI** — there's no endpoint or view to explore links.
+- ✅ **Invoked on ingest** *(done — P0)* — `src/ingest/pipeline.py:_maybe_index_links`
+  populates `article_links` with outbound **external** links (best-effort, fail-open;
+  internal/image/ad/social/tracker excluded per `KNOWN_GAPS.md`; de-duped + capped).
+- ✅ **API** *(done — P1)* — `src/api/link_analysis.py` (`/api/links`): `stats`,
+  `top-cited` (by url|domain, windowed), `articles-by-link` (by url|domain). Counts
+  only; nothing scored or judged.
+- ❌ **No UI yet** — no Insights view over the link graph (P2, below).
 
-So the first task is *wiring*, not greenfield. Good foundation.
+So P0/P1 are wired; the remaining work is the UI and the deeper analyses (P3/P4).
 
 ---
 
