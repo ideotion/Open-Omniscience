@@ -97,14 +97,21 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   (per-language, resumable, size-probed) kept separate from live tracking. See
   [docs/WIKIPEDIA.md](docs/WIKIPEDIA.md).
 
-**In progress / next (`0.06` — the intelligence layer):**
-- 🚧 The shared `src/signals/` substrate beyond `concentration`: **near-dup /
-  coordination** (MinHash/LSH → actor graph) and **novelty / surprisal**.
-- 🚧 **Source-integrity profile** (multi-dimensional, *no composite score*) and
-  **user-guided anti-amplification** (the app *proposes* collapsing coordinated
-  floods into single actors; the user *disposes* — never silent, always reversible).
-- 🚧 Crowdsourced **signed annotation bundles**; world-law & IP/legal verticals on the
-  same change-tracking / correlation engines. See
+- ✅ **Source integrity & anti-amplification** (the **Source integrity** tab, `0.06`
+  Phases B–D): the pure `src/signals/` substrate — **concentration** (Gini), **near-dup /
+  coordination** (MinHash + LSH → actor graph), **novelty / surprisal** — powers a
+  **no-composite-score** source profile and **user-guided anti-amplification**: the app
+  *proposes* collapsing a coordinated near-duplicate flood into one actor (with its
+  evidence); the user *disposes* — never silent, always flagged, one click to expand,
+  reverting reproduces the raw equal counts exactly (a 40-puppet flood is a passing
+  acceptance test). Plus **crowdsourced, signed, portable annotation bundles** with an
+  opt-in **web of trust** and transparent (dissent-shown, never averaged) aggregation.
+  See [docs/INTEGRITY.md](docs/INTEGRITY.md) and [docs/ANNOTATIONS.md](docs/ANNOTATIONS.md).
+
+**In progress / next:**
+- 🚧 **Law / IP primary-source change-tracking verticals** (§5, §4): ingest
+  `legislation.gov.uk` / EUR-Lex / patents-dockets on the existing change-tracking +
+  near-dup + correlation engines (engines in place; needs live ingestion). See
   [docs/FUTURE_DEVELOPMENTS.md](docs/FUTURE_DEVELOPMENTS.md).
 - 🚧 Local LLM analysis via Ollama; email + monitoring; cross-linking Wikipedia
   diffs into the Insights keyword analytics.

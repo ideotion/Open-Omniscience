@@ -43,6 +43,41 @@ its first pure primitive, and turns **Home into a triage briefing**. Guiding doc
 - **Tests:** `test_signals_concentration.py`, `test_briefing.py`, `test_briefing_api.py`
   — full suite green; no regressions.
 
+### Phases B–E — the signal substrate, source integrity, annotations, verticals
+
+- **`src/signals/` complete (Phase B):** the pure, DB-free measurement substrate —
+  `near_dup` (MinHash + LSH near-duplicate clustering), `coordination` (an actor graph
+  from near-dup co-publication + lockstep timing + shared host), and `novelty`
+  (information contributed vs an incremental corpus index). Property-tested on crafted
+  fixtures (a syndicated story collapses; an independent original stays separate; a pure
+  echo scores ~0 novelty).
+- **Source integrity & anti-amplification (Phase C, `src/integrity/`):** the §6 keystone.
+  A per-source **profile of measured dimensions with NO composite score** (enforced by a
+  test); **user-guided actor-collapse** — the app *proposes* collapsing a coordinated
+  flood with its evidence, the user *disposes* (per-cluster or global), every applied
+  collapse stays flagged + expandable, reverting reproduces the raw equal counts exactly,
+  and **no collapse is applied without an explicit action**. The 40-puppet-flood
+  acceptance is a passing test. New cards: **echo-chamber**, **lonely-signal**,
+  **capacity-implausible**. New **Source integrity** GUI tab. See `INTEGRITY.md`.
+- **Crowdsourced signed annotation bundles (Phase D, `src/annotations/`):** publish
+  source annotations (ownership/leaning/coordination/corrections) as a **hybrid-signed,
+  portable bundle** (reusing the custody signer); import the bundles you trust (opt-in
+  **web of trust**); **transparent aggregation** shows *who asserted what* and surfaces
+  dissent, never averaging it into a score. A tampered bundle is refused. See
+  `ANNOTATIONS.md`.
+- **Phase E (composable cards):** **emotion-category** measurement around a keyword
+  (`src/awareness/emotion.py`, lexicon-based, ships a minimal English sample, overridable
+  via `OO_EMOTION_LEXICON`, degrades loudly); **IP/legal news cards** (IP-litigation
+  pulse + ownership-change deal-language). The **law / IP primary-source change-tracking
+  verticals** remain the documented next step (engines in place; need live ingestion).
+- **Honesty guards everywhere in code:** no composite trust score on a Card, a Source
+  profile, or an annotation kind; anti-amplification is never silent; aggregation never
+  averages dissent.
+- **i18n:** new chrome strings added to the maintained locales (en/de/es/fr); the
+  English-fallback design keeps every other locale working.
+- **Tests:** `test_signals_near_dup.py`, `test_integrity.py`, `test_annotations.py`,
+  `test_awareness_emotion.py` (+ A's tests). Full suite green.
+
 ## 0.05 — full interface redesign (now the default branch)
 
 A ground-up redesign of everything the user sees, built on top of the existing,

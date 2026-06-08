@@ -483,16 +483,21 @@ Therefore 0.06 is **GUI-first**, not API-first:
 > do it properly or not at all).
 
 - [x] `concentration.py` (Gini + top-N share, with method/caveat/n).
-- [ ] `near_dup.py` (MinHash/SimHash + LSH) → `coordination.py` (actor graph from
-      near-dup + lockstep timing + shared-template/host fingerprints).
-- [ ] `novelty.py` (information contributed vs an incremental corpus index).
-- [ ] Each primitive: pure, DB-free, property-tested in isolation.
-- [ ] **Acceptance:** unit tests on crafted fixtures (a known cluster collapses; a
+- [x] `near_dup.py` (MinHash + LSH) → `coordination.py` (actor graph from
+      near-dup + lockstep timing + shared host fingerprints).
+- [x] `novelty.py` (information contributed vs an incremental corpus index).
+- [x] Each primitive: pure, DB-free, property-tested in isolation.
+- [x] **Acceptance:** unit tests on crafted fixtures (a known cluster collapses; a
       Gini of a known distribution matches; a pure echo scores ~0 novelty); zero DB
-      imports in `src/signals/`.
+      imports in `src/signals/` (`tests/test_signals_*`).
 
 ## Phase C — Source integrity: profile + anti-amplification (§6 C+D)
 
+> **Status: shipped & tested.** `src/integrity/` (actors, user-guided collapse, the
+> no-composite profile), `/api/integrity/*`, the **Source integrity** GUI tab, and the
+> echo-chamber / lonely-signal / capacity-implausible cards are implemented. The 40-puppet
+> acceptance is a passing test (`tests/test_integrity.py`). See [`INTEGRITY.md`](INTEGRITY.md).
+>
 > **User-guided, user-aware, GUI-mediated (§6 non-negotiable).** Anti-amplification is
 > never a silent transform the user merely *undoes* — it is **propose → user disposes**,
 > expressed through the interface. Default = **"equal but aware"** (raw equal view, with
@@ -500,51 +505,67 @@ Therefore 0.06 is **GUI-first**, not API-first:
 > There is **no headless auto-clean path**: the GUI is a *necessary* interface because the
 > human judgment *is* the mechanism.
 
-- [ ] **Actor graph + collapse (D):** detect coordinated actors and, **when the user
+- [x] **Actor graph + collapse (D):** detect coordinated actors and, **when the user
       applies it**, operate briefing counts (trend/prominence/synchrony) on **actors
       weighted by novelty** rather than raw outlet volume. The app **proposes** a collapse
       with its evidence (shared infra / lockstep timing / near-dup); the user applies it
       **globally or per-cluster**, never auto-applied. Every applied collapse stays
       **visibly flagged**, one click to expand-to-members / treat-as-separate / override.
-- [ ] **Source profile panel (C):** per source, the measured signals as a panel —
+- [x] **Source profile panel (C):** per source, the measured signals as a panel —
       coordination/actor, novelty ratio, output-capacity plausibility, transparency
-      facts, corpus track-record — **no composite**. User-weightable into *their* view,
-      off by default, reversible.
-- [ ] New cards fall out for free: Echo-chamber, Lonely-signal, Capacity-implausible.
-- [ ] **Acceptance:** on a synthetic 40-puppet flood, the **default** briefing shows the
+      facts, corpus track-record — **no composite** (`/api/integrity/profile` + the GUI
+      panel). User-weighting of dimensions is the user's own read; off by default, reversible.
+- [x] New cards fall out for free: Echo-chamber, Lonely-signal, Capacity-implausible.
+- [x] **Acceptance:** on a synthetic 40-puppet flood, the **default** briefing shows the
       cluster *annotated* (not silently collapsed); the app **proposes** a collapse with
       evidence; **only on the user's action** (global or that one cluster) does the flood
       stop dominating while a genuine single original source *rises*; the applied collapse
       stays flagged and expands to its 40 members; toggling it off reproduces the raw
       equal counts exactly. A test asserts no collapse is applied without an explicit
-      user action.
+      user action. *(v1 collapses a coordinated network to **one voice**; weighting the
+      remaining voices by `novelty` is a noted refinement on the same machinery.)*
 
 ## Phase D — Crowdsourced annotation bundles (the C scaling answer)
 
-- [ ] Annotation = a signed, portable bundle (reuse the **custody/evidence** machinery)
+> **Status: shipped & tested.** `src/annotations/` (signed bundle build/verify reusing
+> the hybrid custody signer, local store, web-of-trust, transparent aggregation),
+> `/api/annotations/*`, and the GUI in the Source integrity tab. See
+> [`ANNOTATIONS.md`](ANNOTATIONS.md); acceptance in `tests/test_annotations.py`.
+
+- [x] Annotation = a signed, portable bundle (reuse the **custody/evidence** machinery)
       of source facts/tags/corrections; **export/import**; opt-in **web-of-trust**
       selection of whose bundles to load.
-- [ ] **Transparent aggregation:** show *who asserted what*; surface dissent, never
+- [x] **Transparent aggregation:** show *who asserted what*; surface dissent, never
       average it into a hidden number. No server, no accounts, no global score.
-- [ ] **Acceptance:** export a bundle, verify its signature with the standalone
-      verifier; import two conflicting bundles → the profile shows both attributions;
-      removing a trusted author cleanly removes their annotations.
+- [x] **Acceptance:** export a bundle, verify its signature; import two conflicting
+      bundles → the aggregation shows both attributions (dissent surfaced); removing a
+      trusted author cleanly removes their annotations; a tampered bundle is refused.
 
 ## Phase E — Verticals on the shared engines (lower priority)
 
+> **Status: partial.** The composable **news-corpus** cards ship — IP/legal pulse +
+> ownership-change (`tests` via the briefing) and the **emotion-category** card
+> (`tests/test_awareness_emotion.py`, degrades loudly without a lexicon). The **law /
+> IP primary-source change-tracking verticals** remain the documented next step: they
+> reuse the existing `src/wiki` change-tracking + Phase-B near-dup + correlation engines
+> but require live external ingestion (`legislation.gov.uk`, EUR-Lex, patents/dockets),
+> so they are not faked here.
+
 - [ ] **Law change-tracking (§5):** UK `legislation.gov.uk` + EUR-Lex pilot on the
       existing `src/wiki` change-tracking engine; cross-jurisdiction near-dup (Phase B)
-      surfaces model-legislation; law↔news via the correlation engine.
+      surfaces model-legislation; law↔news via the correlation engine. *(vision — needs
+      live ingestion; the engines it would reuse are all in place.)*
 - [ ] **IP/legal primary-source (§4):** patents/dockets/filings as structured sources
-      (the markets-CSV pattern), correlated with the news narrative.
-- [ ] **IP/legal *news* cards (§4):** ownership-change, deal-lineage, IP-litigation
-      pulse, IP↔deal co-timing — entity + deal-verb producers over the *news* corpus
-      (distinct from the primary-source vertical above; mostly *thin*).
-- [ ] **Emotion-category card (§4):** anger/fear/joy/… around a keyword — needs an
-      **emotion lexicon** (a *new* dependency; degrade loudly if absent), unlike the
-      VADER tone card already in Phase A.
-- [ ] **Acceptance:** one jurisdiction tracked with honest amendment diffs + custody
-      snapshots; a model-legislation near-dup match shown across two jurisdictions.
+      (the markets-CSV pattern), correlated with the news narrative. *(vision — needs
+      live sources.)*
+- [x] **IP/legal *news* cards (§4):** ownership-change + IP-litigation pulse — deal-verb
+      and IP/legal-term producers over the *news* corpus (thin). Deal-lineage / IP↔deal
+      co-timing build on these next.
+- [x] **Emotion-category card (§4):** anger/fear/joy/… around a keyword via an emotion
+      lexicon (`src/awareness/emotion.py`); a minimal English sample ships,
+      `OO_EMOTION_LEXICON` overrides; degrades loudly if absent.
+- [~] **Acceptance:** the news-corpus cards render and are honest; the *law* jurisdiction
+      tracking + model-legislation near-dup acceptance awaits the live ingestion vertical.
 
 ---
 

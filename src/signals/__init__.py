@@ -28,10 +28,36 @@ from src.signals.concentration import (
     gini,
     top_share,
 )
+from src.signals.coordination import (
+    Actor,
+    CoordinationResult,
+    detect_coordination,
+)
+from src.signals.near_dup import (
+    NearDupResult,
+    jaccard_estimate,
+    minhash_signature,
+    near_duplicate_clusters,
+    shingles,
+)
+from src.signals.novelty import NoveltyIndex, NoveltyResult, novelty_scores
 
 __all__ = [
     "ConcentrationResult",
     "concentration",
     "gini",
     "top_share",
+    # near-duplicate / coordination
+    "NearDupResult",
+    "shingles",
+    "minhash_signature",
+    "jaccard_estimate",
+    "near_duplicate_clusters",
+    "Actor",
+    "CoordinationResult",
+    "detect_coordination",
+    # novelty
+    "NoveltyIndex",
+    "NoveltyResult",
+    "novelty_scores",
 ]

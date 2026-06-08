@@ -504,15 +504,16 @@ once, well, and point them at each domain; do **not** re-implement per feature.
 | Tone (VADER + `context` window) | exists | tone/framing cards, §6 not used for stance |
 | Provenance + custody (signed, timestamped) | exists | every record; **§6 crowdsourced annotation bundles** |
 | **Concentration metric** (Gini / top-share) | **built** (`src/signals/concentration.py`) | §1 ownership, people-prominence, §6 actor share |
-| **Near-dup / coordination** (MinHash/SimHash → actor graph) | **new** | echo cards, model-legislation, syndication, **§6 actor-collapse** |
-| **Novelty / surprisal** (info contributed vs corpus) | **new** | §6 anti-amplification weighting |
+| **Near-dup / coordination** (MinHash + LSH → actor graph) | **built** (`src/signals/near_dup.py`, `coordination.py`) | echo cards, model-legislation, syndication, **§6 actor-collapse** |
+| **Novelty / surprisal** (info contributed vs corpus) | **built** (`src/signals/novelty.py`) | §6 anti-amplification weighting |
 | **Card + briefing framework** (signal+evidence+method+caveat → feed → draft) | **built** (`src/briefing/`, Phase A) | the entire §4 surface, the GUI spine |
 
 The four primitives (concentration, near-dup/coordination, novelty, the card
 framework) are the whole of `0.06`'s genuinely new code; everything else is
-composition. **As of Phase A, the card+briefing framework and `concentration` are
-shipped and tested** (see [`BRIEFING.md`](BRIEFING.md)); near-dup/coordination and
-novelty are the remaining new primitives.
+composition. **All four are now shipped and tested.** On top of them: the
+source-integrity layer (`src/integrity/`, §6 C+D — profile + user-guided actor-collapse)
+and crowdsourced **signed annotation bundles** (`src/annotations/`, §6 D). See
+[`BRIEFING.md`](BRIEFING.md), [`INTEGRITY.md`](INTEGRITY.md), [`ANNOTATIONS.md`](ANNOTATIONS.md).
 
 ---
 
@@ -547,13 +548,16 @@ novelty are the remaining new primitives.
 Vision / persistent memory — the **guiding document for `0.06`**; the phased build
 is in [`ACTION_PLAN.md` → "0.06 — The Intelligence Layer"](ACTION_PLAN.md).
 
-> **Implementation progress.** **Phase A (the card + briefing GUI spine) and the first
-> Phase-B primitive (`concentration`) are shipped and tested** — Home is now a triage
-> feed of honest cards with a card→draft→Markdown loop, the §6 *no-composite-score*
-> ban is enforced in code, and the "now"-status producers compose the existing real
-> analytics. See [`BRIEFING.md`](BRIEFING.md). Remaining: near-dup/coordination &
-> novelty primitives, the source-integrity profile + user-guided anti-amplification
-> (§6 C+D), signed annotation bundles (§6), and the verticals (§5, §4 IP/legal).
+> **Implementation progress.** **Phases A–D are shipped and tested.** Home is a triage
+> feed of honest cards (A) with a card→draft→Markdown loop; the full `src/signals/`
+> substrate — concentration, near-dup/coordination, novelty (B) — is built and pure;
+> the source-integrity layer (C) gives every source a **no-composite profile** and
+> **user-guided actor-collapse** (propose → you dispose; the 40-puppet acceptance is a
+> passing test); and **signed annotation bundles** with a web of trust (D) let the
+> weighting be collective. Phase E ships the composable news-corpus cards (emotion,
+> IP/legal). The §6 *no-composite-score* ban is enforced **in code**. Remaining: the
+> **law / IP primary-source change-tracking verticals** (§5, §4) — they reuse the
+> existing engines but need live external ingestion, so they are not faked.
 
 Decided principles on this page: **user-driven selection, no capping** (guiding
 principle); **C + D, B forbidden** for source integrity (§6); **mutualise the shared

@@ -73,3 +73,16 @@ def test_concentration_empty_is_honest():
     res = concentration({})
     assert res.n == 0 and res.total == 0
     assert res.gini is None and res.top_share is None and res.shares == []
+
+
+def test_signals_package_is_pure_no_db_imports():
+    """Phase B acceptance: the signal primitives must stay pure — zero DB imports."""
+    import pathlib
+
+    sig_dir = pathlib.Path(__file__).resolve().parents[1] / "src" / "signals"
+    offenders = []
+    for py in sig_dir.glob("*.py"):
+        text = py.read_text(encoding="utf-8")
+        if "src.database" in text or "from sqlalchemy" in text or "import sqlalchemy" in text:
+            offenders.append(py.name)
+    assert not offenders, f"src/signals must be DB-free, but these import the DB: {offenders}"

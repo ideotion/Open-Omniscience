@@ -76,9 +76,21 @@ why** (loud degradation); it never fabricates a card.
 | **Price ↔ narrative** | context | honest scipy correlation (coef + p + n) | now¹ |
 | **Stale data** | data integrity | market extraction-rule `last_run_at` / `last_status` | now |
 | **Diet self-audit** | context | `signals.concentration` (Gini + top-3 share over your sources) | now |
+| **Echo chamber** | overtold | `signals.coordination` actor graph (near-dup + timing + host) | new |
+| **Lonely signal** | undertold | single-source near-dup cluster that did not echo | new |
+| **Capacity implausible** | investigate | articles/day vs corpus median | new |
+| **Emotion profile** | context | emotion lexicon over a keyword's context windows | new² |
+| **IP / legal pulse** | context | rising IP/legal terms in the news corpus | thin |
+| **Ownership change** | investigate | deal-verb language (acquired/merger/divested) in recent news | thin |
 
 ¹ Needs the `[analysis]` extra (VADER / scipy). Without it those cards simply don't
 appear — the rest of the briefing still works.
+² Uses an emotion lexicon; a minimal English **sample** ships, point
+`OO_EMOTION_LEXICON` at a fuller JSON lexicon for serious use (English-only).
+
+The **echo-chamber**, **lonely-signal** and **capacity-implausible** cards come from the
+source-integrity layer — see [`INTEGRITY.md`](INTEGRITY.md). Echo-chamber cards carry a
+*Collapse to one actor* action (user-guided anti-amplification — propose → you dispose).
 
 The **Diet self-audit** uses the first pure primitive of the shared
 [`src/signals/`](../src/signals/) substrate: **concentration** (Gini coefficient +
@@ -130,11 +142,14 @@ All under `/api/briefing` (loopback only, like the rest of the app):
 
 ---
 
-## Roadmap (next phases)
+## Roadmap (status)
 
-Phase A is the spine so every later capability has a place to appear *the day it
-ships*. Next, from the shared engine: the **near-dup / coordination** and **novelty**
-primitives, the **source-integrity profile** (no composite score) and **user-guided
-anti-amplification** (propose → you dispose), then **crowdsourced signed annotation
-bundles** and the verticals (world-law change-tracking, IP/legal primary sources).
-See [`ACTION_PLAN.md`](ACTION_PLAN.md) Phases B–E.
+Phases A–D are shipped: the card+briefing spine (A), the full `src/signals/` substrate
+— concentration, near-dup/coordination, novelty (B), the source-integrity profile +
+user-guided anti-amplification (C, see [`INTEGRITY.md`](INTEGRITY.md)), and crowdsourced
+signed annotation bundles (D, see [`ANNOTATIONS.md`](ANNOTATIONS.md)). Phase E ships the
+composable verticals as cards (emotion, IP/legal news); the **law / IP primary-source
+change-tracking verticals** (ingesting `legislation.gov.uk`, EUR-Lex, patents/dockets)
+remain the documented next step — they reuse the existing change-tracking and
+near-dup/correlation engines but require live external sources. See
+[`ACTION_PLAN.md`](ACTION_PLAN.md) Phases B–E.

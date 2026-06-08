@@ -345,6 +345,7 @@
         <div class="nav-group" data-grp="trust">
           <div class="gl">Trust</div>
           <button class="nav-item" data-tab="custody"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Evidence &amp; custody</span></button>
+          <button class="nav-item" data-tab="integrity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M10 7h7M7 10v7"/><path d="M14 14l-4-4"/></svg><span>Source integrity</span></button>
         </div>
         <div class="nav-group" data-grp="system">
           <div class="gl">System</div>
@@ -713,6 +714,69 @@
       <div id="cust-result" class="hint" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:8px;"><table id="cust-entries"></table></div>
     </section>
+    </div>
+
+    <!-- ========================== INTEGRITY ========================= -->
+    <div class="tab-page" id="tab-integrity">
+      <section class="panel">
+        <h2>Source integrity &amp; anti-amplification</h2>
+        <p class="hint">The app measures <b>structure</b> — coordination, novelty, output capacity,
+          transparency — and <b>you decide</b>. There is deliberately <b>no trust score</b>: a single
+          number over incommensurable dimensions would bake in bias and silence small, foreign, new or
+          dissident sources. Surface, never suppress.</p>
+      </section>
+
+      <section class="panel">
+        <div class="phead"><h2>Anti-amplification (propose → you dispose)</h2><span class="sp"></span>
+          <button class="secondary tiny" onclick="loadActors()">Scan for coordination</button>
+          <button class="secondary tiny" onclick="revertAllCollapse()">Reset all</button></div>
+        <p class="hint">Coordinated near-duplicate floods are <b>shown by default</b> (equal but aware) —
+          never silently collapsed. Apply a collapse to count a network as <b>one voice</b>; it stays
+          flagged and expandable, and reverting reproduces the raw equal counts exactly.</p>
+        <div id="actors-list"><div class="muted">Click “Scan for coordination”.</div></div>
+      </section>
+
+      <section class="panel">
+        <div class="phead"><h2>Source profile</h2><span class="sp"></span></div>
+        <div class="row">
+          <div style="flex:2"><input id="prof-source" placeholder="Source name or domain (e.g. bbc.com)"
+                onkeydown="if(event.key==='Enter')loadProfile()"></div>
+          <div style="flex:0"><button onclick="loadProfile()" style="margin-top:0">Profile</button></div>
+        </div>
+        <div id="profile-out" style="margin-top:10px"></div>
+      </section>
+
+      <section class="panel">
+        <div class="phead"><h2>Shared annotations (web of trust)</h2><span class="sp"></span>
+          <button class="secondary tiny" onclick="exportAnnotations()">Export signed bundle</button>
+          <label class="switch" style="margin-top:0"><input type="file" id="anno-import" accept="application/json"
+                onchange="importAnnotations(this)" style="display:none"><button class="secondary tiny"
+                onclick="document.getElementById('anno-import').click()">Import bundle…</button></label></div>
+        <p class="hint">Annotations are <b>descriptive, contestable facts</b> (ownership, leaning,
+          coordination, corrections) — never a score. Publish yours as a <b>signed</b> bundle; import the
+          ones you choose to trust. Aggregation shows <b>who asserted what</b>; dissent is shown, not averaged.</p>
+        <div class="row">
+          <div style="flex:2"><input id="anno-target" placeholder="Source this is about (name/domain)"></div>
+          <div style="flex:1"><select id="anno-kind">
+            <option value="ownership">ownership</option>
+            <option value="leaning">leaning</option>
+            <option value="coordination-tag">coordination-tag</option>
+            <option value="transparency-fact">transparency-fact</option>
+            <option value="correction">correction</option>
+            <option value="note">note</option></select></div>
+          <div style="flex:2"><input id="anno-value" placeholder="Value (e.g. owned by Example Corp)"></div>
+          <div style="flex:0"><button onclick="addAnnotation()" style="margin-top:0">Add</button></div>
+        </div>
+        <div id="anno-mine" style="margin-top:10px"></div>
+        <h3 style="margin:14px 0 6px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em">Trusted authors</h3>
+        <div id="anno-authors"><div class="muted">No imported authors yet.</div></div>
+        <div class="row" style="margin-top:10px">
+          <div style="flex:2"><input id="anno-lookup" placeholder="Look up annotations for a source"
+                onkeydown="if(event.key==='Enter')lookupAnnotations()"></div>
+          <div style="flex:0"><button class="secondary" onclick="lookupAnnotations()" style="margin-top:0">Who said what?</button></div>
+        </div>
+        <div id="anno-aggregate" style="margin-top:10px"></div>
+      </section>
     </div>
 
     <!-- ============================ MARKETS ========================== -->
@@ -1120,6 +1184,7 @@
       {id:"sources",  label:"Sources",            grp:"Collect"},
       {id:"database", label:"Library",            grp:"Collect"},
       {id:"custody",  label:"Evidence & custody", grp:"Trust"},
+      {id:"integrity",label:"Source integrity",   grp:"Trust"},
       {id:"settings", label:"Settings",           grp:"System"},
       {id:"help",     label:"Help & docs",        grp:"System"},
     ];
@@ -1136,6 +1201,7 @@
       sources: loadManagedSources,
       database: () => { loadCoverage(); },   // stats handled by the live poller (startLive)
       custody: loadCustody,
+      integrity: loadIntegrity,
       settings: loadSettings,
       help: loadDocs,
     };
@@ -1368,6 +1434,13 @@
       const evidBlock = evid ? `<div class="evid">${evid}</div>` : "";
       const dismiss = c.dismissible === false ? ""
         : `<button class="ghost tiny" onclick="dismissCard('${c.id}')">Dismiss</button>`;
+      // Echo-chamber cards carry an actor signature: offer user-guided collapse (never auto).
+      let collapseBtn = "";
+      if (c.type === "echo_chamber" && sig.signature) {
+        collapseBtn = sig.collapse_applied
+          ? `<button class="secondary tiny" onclick="cardCollapse('${esc(sig.signature)}', false)">Expand (revert)</button>`
+          : `<button class="secondary tiny" onclick="cardCollapse('${esc(sig.signature)}', true)" title="Count this coordinated network as one voice (reversible, stays flagged)">Collapse to one actor</button>`;
+      }
       return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}">
         <span class="chip">${esc(c.type.replace(/_/g,' '))}</span>
         <h4>${esc(c.title)}</h4>
@@ -1377,6 +1450,7 @@
         <div class="mc" hidden><b>Method:</b> ${esc(c.method)}<br><b>Caveat:</b> ${esc(c.caveat)}</div>
         <div class="acts">
           <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
+          ${collapseBtn}
           ${dismiss}
         </div></div>`;
     }
@@ -1467,6 +1541,140 @@
         await navigator.clipboard.writeText(md);
         toast("Draft Markdown copied to clipboard.");
       } catch (e) { toast("Could not copy: " + e.message, "err"); }
+    }
+
+    // ===================================================================== //
+    //  SOURCE INTEGRITY & ANTI-AMPLIFICATION (§6) — propose → you dispose     //
+    // ===================================================================== //
+    async function cardCollapse(signature, apply) {
+      try {
+        await api("/api/integrity/collapse/" + (apply ? "apply" : "revert"),
+          {method:"POST", body: JSON.stringify({signature})});
+        toast(apply ? "Collapsed to one actor (reversible)." : "Expanded — raw equal view restored.");
+        await refreshBriefing();            // counts that measure consensus now reflect the choice
+      } catch (e) { toast("Could not update collapse: " + e.message, "err"); }
+    }
+
+    function loadIntegrity() { loadMineAnnotations(); loadAuthors(); }
+
+    async function loadActors() {
+      const box = $("actors-list");
+      box.innerHTML = '<div class="muted">Scanning recent corpus for coordination…</div>';
+      try {
+        const d = await api("/api/integrity/actors");
+        if (!d.actors || !d.actors.length) {
+          box.innerHTML = '<div class="muted">No coordinated near-duplicate clusters found in the recent window.</div>'; return;
+        }
+        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.actors.map(a => {
+          const members = a.sources.map(esc).join(", ");
+          const btn = a.applied
+            ? `<button class="secondary tiny" onclick="collapseAction('${a.signature}', false)">Expand (revert)</button>`
+            : `<button class="secondary tiny" onclick="collapseAction('${a.signature}', true)">Apply collapse</button>`;
+          const flag = a.applied ? '<span class="pill ok">collapsed</span> ' : '<span class="pill warn">annotated only</span> ';
+          return `<div class="panel" style="background:var(--panel2); margin-top:8px">
+            ${flag}<b>${a.size} sources</b> · ${a.shared_stories} shared story(ies)
+            ${a.shared_hosts && a.shared_hosts.length ? "· host "+esc(a.shared_hosts[0]) : ""}
+            ${a.median_span_hours!=null ? "· ~"+a.median_span_hours+"h span" : ""}
+            <div class="hint" style="margin-top:4px">${members}</div>
+            <div class="acts" style="margin-top:6px">${btn}</div></div>`;
+        }).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">Could not scan: ' + esc(e.message) + '</div>'; }
+    }
+    async function collapseAction(sig, apply) {
+      try { await api("/api/integrity/collapse/" + (apply?"apply":"revert"), {method:"POST", body: JSON.stringify({signature: sig})});
+        loadActors(); } catch (e) { toast(e.message, "err"); }
+    }
+    async function revertAllCollapse() {
+      try { await api("/api/integrity/collapse/revert_all", {method:"POST"}); toast("All collapses reverted."); loadActors(); }
+      catch (e) { toast(e.message, "err"); }
+    }
+
+    async function loadProfile() {
+      const src = $("prof-source").value.trim(); if (!src) return;
+      const out = $("profile-out");
+      out.innerHTML = '<div class="muted">Measuring…</div>';
+      try {
+        const p = await api("/api/integrity/profile?source=" + encodeURIComponent(src));
+        const d = p.dimensions;
+        const dim = (title, body, m, c) => `<div class="panel" style="background:var(--panel2); margin-top:8px">
+          <b>${esc(title)}</b><div style="margin-top:4px">${body}</div>
+          <div class="hint" style="margin-top:4px"><i>Method:</i> ${esc(m)}<br><i>Caveat:</i> ${esc(c)}</div></div>`;
+        const co = d.coordination, nv = d.novelty, oc = d.output_capacity, tr = d.transparency, rec = d.track_record;
+        out.innerHTML =
+          `<p class="hint"><b>No composite score</b> — these are independent measured dimensions you weigh yourself.</p>` +
+          dim("Coordination", co.is_member ? `Member of ${co.actors.length} detected actor(s).` : "No coordination detected.", co.method, co.caveat) +
+          dim("Novelty (originates vs echoes)", nv.mean_ratio==null ? "Not enough data." : `Mean novelty <b>${nv.mean_ratio}</b> over ${nv.n} articles.`, nv.method, nv.caveat) +
+          dim("Output capacity", `${oc.articles} articles · ~${oc.per_day}/day (corpus median ${oc.corpus_median_per_day}/day).`, oc.method, oc.caveat) +
+          dim("Transparency", `${esc(tr.country||"?")} · ${esc(tr.language||"?")} · ownership: ${(tr.ownership_tags||[]).join(", ")||"—"} · leaning: ${(tr.leaning_tags||[]).join(", ")||"—"}`, tr.method, tr.caveat) +
+          dim("Track record", `${rec.total_articles} articles in your corpus.`, rec.method, rec.caveat);
+      } catch (e) { out.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
+    }
+
+    // -- Crowdsourced annotations (web of trust) ---------------------------- //
+    async function addAnnotation() {
+      const target = $("anno-target").value.trim(), kind = $("anno-kind").value, value = $("anno-value").value.trim();
+      if (!target || !value) { toast("Target and value are required.", "err"); return; }
+      try { await api("/api/annotations/mine", {method:"POST", body: JSON.stringify({target, kind, value})});
+        $("anno-value").value = ""; loadMineAnnotations(); toast("Annotation added."); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    async function loadMineAnnotations() {
+      const box = $("anno-mine");
+      try {
+        const d = await api("/api/annotations/mine");
+        if (!d.annotations || !d.annotations.length) { box.innerHTML = '<div class="muted">No annotations yet.</div>'; return; }
+        box.innerHTML = d.annotations.map((a, i) =>
+          `<div class="draft-item"><div class="di-body"><b>${esc(a.target)}</b> · <span class="chip">${esc(a.kind)}</span> ${esc(a.value)}
+            ${a.note ? '<div class="hint">'+esc(a.note)+'</div>' : ''}</div>
+            <button class="ghost tiny" onclick="removeAnnotation(${i})">Remove</button></div>`).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">Could not load.</div>'; }
+    }
+    async function removeAnnotation(i) {
+      try { await api("/api/annotations/mine/" + i, {method:"DELETE"}); loadMineAnnotations(); } catch (e) { toast(e.message, "err"); }
+    }
+    function exportAnnotations() { window.open("/api/annotations/export", "_blank"); }
+    async function importAnnotations(input) {
+      const file = input.files && input.files[0]; if (!file) return;
+      try {
+        const bundle = JSON.parse(await file.text());
+        const r = await api("/api/annotations/import", {method:"POST", body: JSON.stringify({bundle})});
+        toast(`Imported ${r.annotations} annotation(s) from ${r.author_name}.`);
+        loadAuthors();
+      } catch (e) { toast("Import failed: " + e.message, "err"); }
+      finally { input.value = ""; }
+    }
+    async function loadAuthors() {
+      const box = $("anno-authors");
+      try {
+        const d = await api("/api/annotations/authors");
+        if (!d.authors || !d.authors.length) { box.innerHTML = '<div class="muted">No imported authors yet.</div>'; return; }
+        box.innerHTML = d.authors.map(a =>
+          `<div class="draft-item"><div class="di-body"><b>${esc(a.author_name||a.author_id.slice(0,12))}</b>
+            <span class="hint">· ${a.annotations} annotation(s) · ${esc(a.author_id.slice(0,16))}…</span></div>
+            <label class="switch" style="margin-top:0"><input type="checkbox" ${a.trusted?"checked":""}
+              onchange="trustAuthor('${a.author_id}', this.checked)"> trust</label>
+            <button class="ghost tiny" onclick="removeAuthor('${a.author_id}')">Remove</button></div>`).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">Could not load.</div>'; }
+    }
+    async function trustAuthor(id, trusted) {
+      try { await api("/api/annotations/authors/trust", {method:"PUT", body: JSON.stringify({author_id:id, trusted})}); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    async function removeAuthor(id) {
+      try { await api("/api/annotations/authors/" + encodeURIComponent(id), {method:"DELETE"}); loadAuthors(); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    async function lookupAnnotations() {
+      const target = $("anno-lookup").value.trim(); if (!target) return;
+      const box = $("anno-aggregate");
+      try {
+        const d = await api("/api/annotations/for?target=" + encodeURIComponent(target));
+        if (!d.total_assertions) { box.innerHTML = '<div class="muted">No annotations for that source (from you or trusted authors).</div>'; return; }
+        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` +
+          (d.dissent_kinds.length ? `<p class="hint"><b>Dissent on:</b> ${d.dissent_kinds.map(esc).join(", ")}</p>` : "") +
+          d.claims.map(c => `<div class="draft-item"><div class="di-body"><span class="chip">${esc(c.kind)}</span> <b>${esc(c.value)}</b>
+            <div class="hint">asserted by: ${c.asserted_by.map(a=>esc(a.author)).join(", ")}</div></div></div>`).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
     }
 
     // -- In-app documentation reader ---------------------------------------- //

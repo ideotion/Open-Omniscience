@@ -110,6 +110,12 @@ from src.api.insights import router as insights_router
 # Import briefing router (the Home triage feed of honest "cards" + draft accumulator)
 from src.api.briefing import router as briefing_router
 
+# Import source-integrity router (no-composite profile + user-guided actor-collapse)
+from src.api.integrity import router as integrity_router
+
+# Import annotations router (signed, portable, web-of-trust source annotations)
+from src.api.annotations import router as annotations_router
+
 # Import link / co-citation analysis router (honest counts only)
 from src.api.link_analysis import router as link_analysis_router
 
@@ -258,6 +264,12 @@ app.include_router(insights_router)
 
 # Include briefing router (Home triage feed + newsletter draft)
 app.include_router(briefing_router)
+
+# Include source-integrity router (profile + anti-amplification)
+app.include_router(integrity_router)
+
+# Include annotations router (crowdsourced signed source annotations)
+app.include_router(annotations_router)
 
 # Include link / co-citation analysis router
 app.include_router(link_analysis_router)
@@ -690,6 +702,10 @@ _DOCS: dict[str, dict[str, str]] = {
                  "blurb": "How keyword, trend and entity analytics are computed."},
     "briefing": {"file": "BRIEFING.md", "title": "Home briefing",
                  "blurb": "How the triage cards are produced, and the card→draft workflow."},
+    "integrity": {"file": "INTEGRITY.md", "title": "Source integrity",
+                  "blurb": "Anti-amplification, the no-composite-score profile, and actor-collapse."},
+    "annotations": {"file": "ANNOTATIONS.md", "title": "Shared annotations",
+                    "blurb": "Signed, portable source annotations and the web of trust."},
     "markets": {"file": "MARKETS.md", "title": "Markets",
                 "blurb": "Price feeds, correlation, and extraction rules."},
     "security": {"file": "SECURITY.md", "title": "Security",

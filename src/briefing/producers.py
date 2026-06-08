@@ -18,6 +18,7 @@ harder "new" analysis (echo/synchrony, lineage, novelty) is attempted.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func
@@ -345,6 +346,282 @@ def diet_self_audit(session) -> list[Card]:
     )]
 
 
+# --------------------------------------------------------------------------- #
+#  Echo chamber — one story carried across N coordinated sources (§6/§1)
+# --------------------------------------------------------------------------- #
+_MAX_ECHO = 3
+_ECHO_DAYS = 14
+_ECHO_MIN_SOURCES = 3
+
+
+def _articles_by_id(session, ids: list[str]) -> dict[str, dict]:
+    if not ids:
+        return {}
+    int_ids = [int(i) for i in ids if str(i).isdigit()]
+    rows = (
+        session.query(Article, Source.name)
+        .outerjoin(Source, Source.id == Article.source_id)
+        .filter(Article.id.in_(int_ids)).all()
+    )
+    return {str(a.id): {"title": a.title, "url": a.url, "source": name,
+                        "published_at": a.published_at.isoformat() if a.published_at else None}
+            for a, name in rows}
+
+
+def echo_chamber(session) -> list[Card]:
+    """Surface coordinated near-duplicate floods — annotated by default (§6 'equal but
+    aware'); the card invites the user to *apply* a collapse, never auto-applied."""
+    from src.integrity.actors import corpus_actors
+    from src.integrity.collapse import is_applied
+
+    result = corpus_actors(session, days=_ECHO_DAYS)
+    cards: list[Card] = []
+    for actor in result.actors:
+        if len(actor.sources) < _ECHO_MIN_SOURCES:
+            continue
+        if len(cards) >= _MAX_ECHO:
+            break
+        sig = actor.signature
+        applied = bool(sig and is_applied(sig))
+        rep_ids = [ev.representative for ev in actor.events][:4]
+        ev_lookup = _articles_by_id(session, rep_ids)
+        evidence = [ev_lookup[i] for i in rep_ids if i in ev_lookup]
+        n = len(actor.sources)
+        summary = (f"{n} sources published near-identical text on {actor.shared_stories} "
+                   f"story(ies)" + (f", sharing host {actor.shared_hosts[0]}" if actor.shared_hosts else "")
+                   + (". You have collapsed this into one actor." if applied
+                      else ". Apply a collapse to count it as one voice, or expand to inspect."))
+        cards.append(Card(
+            type="echo_chamber",
+            title=(f"{n} sources moving in lockstep" if not applied
+                   else f"Coordinated actor ({n} sources) — collapsed"),
+            summary=summary,
+            bucket="overtold",
+            signal={"metric": "coordinated_sources", "value": n,
+                    "shared_stories": actor.shared_stories, "signature": sig,
+                    "sources": actor.sources, "shared_hosts": actor.shared_hosts,
+                    "median_span_hours": actor.median_span_hours, "collapse_applied": applied},
+            method=result.method,
+            caveat=result.caveat,
+            evidence=evidence,
+            n=n,
+            key=sig or ",".join(actor.sources),
+        ))
+    return cards
+
+
+# --------------------------------------------------------------------------- #
+#  Lonely signal — a substantive single-source story that did not echo (§4)
+# --------------------------------------------------------------------------- #
+_MAX_LONELY = 3
+
+
+def lonely_signal(session) -> list[Card]:
+    """Recent single-source stories that did NOT echo — candidate undertold items.
+
+    This states *only* that one source carried it and nobody near-duplicated it: it may
+    be a genuine exclusive or simply minor. The human decides (strong caveat)."""
+    from src.integrity.collapse import story_prominence
+
+    data = story_prominence(session, days=_ECHO_DAYS)
+    singles = [s for s in data["stories"] if s["voices_raw"] == 1]
+    # Most-recent first: representative id is the article id (higher = newer).
+    singles.sort(key=lambda s: -int(s["representative"]))
+    cards: list[Card] = []
+    for story in singles[:_MAX_LONELY]:
+        ev = _articles_by_id(session, [story["representative"]])
+        evidence = list(ev.values())
+        cards.append(Card(
+            type="lonely_signal",
+            title=f"Single-source: “{story['title'][:80]}”",
+            summary=(f"Only {story['sources'][0] if story['sources'] else 'one source'} carried this; "
+                     "no other source published near-identical text. It could be an exclusive — or minor."),
+            bucket="undertold",
+            signal={"metric": "voices", "value": 1, "source": story["sources"][0] if story["sources"] else None},
+            method="A near-duplicate story cluster of size 1 (one source, no echo) over the recent window.",
+            caveat=("‘Single-source, did not echo’ is the ONLY claim — not that it is important, true, or "
+                    "suppressed. Many minor items are single-source. Read it and judge."),
+            evidence=evidence,
+            n=1,
+            key=f"lonely:{story['representative']}",
+        ))
+    return cards
+
+
+# --------------------------------------------------------------------------- #
+#  Capacity implausible — output rate far above the corpus norm (§6 B)
+# --------------------------------------------------------------------------- #
+_CAPACITY_DAYS = 14
+_CAPACITY_MIN_PER_DAY = 20      # absolute floor before we even ask the question
+_CAPACITY_FACTOR = 8.0          # and well above the corpus median
+
+
+def capacity_implausible(session) -> list[Card]:
+    """Sources whose article rate is implausibly high vs the corpus — a question, never
+    a verdict of automation (a wire agency or big newsroom can be legitimately prolific)."""
+    cutoff = datetime.now(UTC) - timedelta(days=_CAPACITY_DAYS)
+    rows = (
+        session.query(Source.name, func.count(Article.id))
+        .join(Article, Article.source_id == Source.id)
+        .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
+        .group_by(Source.id).all()
+    )
+    if len(rows) < 3:
+        return []
+    rates = {name or "(unknown)": c / _CAPACITY_DAYS for name, c in rows}
+    ordered = sorted(rates.values())
+    median = ordered[len(ordered) // 2]
+    flagged = [
+        {"source": name, "per_day": round(rate, 2)}
+        for name, rate in sorted(rates.items(), key=lambda kv: -kv[1])
+        if rate >= _CAPACITY_MIN_PER_DAY and (median == 0 or rate >= median * _CAPACITY_FACTOR)
+    ]
+    if not flagged:
+        return []
+    top = flagged[0]
+    return [Card(
+        type="capacity_implausible",
+        title=f"{len(flagged)} source(s) publishing unusually fast",
+        summary=(f"{top['source']} averaged ~{top['per_day']}/day over {_CAPACITY_DAYS}d — "
+                 f"≥{_CAPACITY_FACTOR:.0f}× the corpus median ({round(median,2)}/day)."),
+        bucket="investigate",
+        signal={"metric": "max_articles_per_day", "value": top["per_day"],
+                "corpus_median_per_day": round(median, 2), "flagged": flagged[:20]},
+        method=(f"Sources whose articles/day over {_CAPACITY_DAYS}d is ≥ {_CAPACITY_MIN_PER_DAY} and "
+                f"≥ {_CAPACITY_FACTOR:.0f}× the corpus median per-source rate."),
+        caveat=("High output is often legitimate (wire agencies, large newsrooms, aggregators). This "
+                "is a capacity *question* for a human, never a determination that a source is automated."),
+        evidence=[{"title": "Sources — review output", "url": "/#sources", "source": None}],
+        n=len(flagged),
+        key="capacity",
+    )]
+
+
+# --------------------------------------------------------------------------- #
+#  Emotion profile — emotion categories around a trending term (§4; new lexicon)
+# --------------------------------------------------------------------------- #
+def emotion_profile_card(session) -> list[Card]:
+    """Emotion-category word-pattern around the top trending term (degrades loudly if
+    no lexicon). A pattern to read, never a label that an outlet is 'fearmongering'."""
+    from src.analytics import queries as q
+    from src.awareness.emotion import emotion_profile
+
+    trending = q.trending(session, limit=1).get("terms", [])
+    if not trending:
+        return []
+    term = trending[0]
+    ctx = q.context(session, term["term"], limit=20)
+    snippets = [m.get("snippet", "") for m in ctx.get("mentions", []) if m.get("snippet")]
+    if not snippets:
+        return []
+    prof = emotion_profile(snippets)
+    if not prof["total_hits"] or not prof["dominant"]:
+        return []
+    return [Card(
+        type="emotion_profile",
+        title=f"“{term['term']}”: coverage skews {prof['dominant']}",
+        summary=(f"Across {prof['n_snippets']} context windows around “{term['term']}”, "
+                 f"{prof['dominant']}-associated words are the most frequent "
+                 f"({prof['categories'][prof['dominant']]} of {prof['total_hits']} hits)."),
+        bucket="context",
+        signal={"metric": "dominant_emotion", "value": prof["dominant"],
+                "categories": prof["categories"], "lexicon": prof["lexicon_source"]},
+        method=prof["method"],
+        caveat=prof["caveat"],
+        evidence=_evidence_from_articles(
+            _articles_for_term(session, resolve_keyword(session, term["term"]).id, days=21, limit=4)
+            if resolve_keyword(session, term["term"]) else []),
+        n=prof["total_hits"],
+        key=f"emotion:{term['normalized']}",
+    )]
+
+
+# --------------------------------------------------------------------------- #
+#  IP / legal news cards (§4) — thin: trends + deal verbs over the NEWS corpus
+# --------------------------------------------------------------------------- #
+_IP_TERMS = {
+    "patent", "patents", "lawsuit", "lawsuits", "injunction", "infringement",
+    "licensing", "antitrust", "copyright", "trademark", "litigation", "settlement",
+}
+_DEAL_RE = re.compile(
+    r"\b(acquir\w+|merg\w+|takeover|buyout|divest\w+|sold to|sells? to|"
+    r"acquisition|stake in|controlling stake)\b", re.IGNORECASE)
+_MAX_DEAL = 4
+_IP_DAYS = 30
+
+
+def ip_litigation_pulse(session) -> list[Card]:
+    """Surface rising IP/legal terms in the news (a pulse, not a verdict)."""
+    from src.analytics import queries as q
+
+    rising = q.trending(session, limit=50).get("terms", [])
+    hits = [t for t in rising if t["normalized"] in _IP_TERMS]
+    if not hits:
+        return []
+    top = max(hits, key=lambda t: t["growth"])
+    kw = resolve_keyword(session, top["term"])
+    rows = _articles_for_term(session, kw.id, days=_IP_DAYS, limit=6) if kw else []
+    names = ", ".join(sorted({t["term"] for t in hits}))
+    return [Card(
+        type="ip_litigation_pulse",
+        title="IP / legal terms are rising",
+        summary=(f"IP/legal vocabulary is trending in your corpus ({names}); “{top['term']}” "
+                 f"is up ~{top['growth']}× vs the prior period."),
+        bucket="context",
+        signal={"metric": "ip_terms_rising", "value": len(hits),
+                "terms": [t["term"] for t in hits], "top": top["term"]},
+        method="trending IP/legal terms (recent-vs-prior ratio) over the news corpus",
+        caveat=("Measures *coverage* of IP/legal language, not the merits of any case. The tool "
+                "sees reporting about filings, not the filings themselves."),
+        evidence=_evidence_from_articles(rows),
+        n=len(hits),
+        key="ip-pulse",
+    )]
+
+
+def ownership_change(session) -> list[Card]:
+    """Candidate ownership-change stories — articles whose text reports a deal (§4 IP/legal).
+
+    States only that deal language appears; it never asserts the deal happened or that IP
+    was 'stripped' — the tool reads reporting, not filings. The human confirms."""
+    cutoff = datetime.now(UTC) - timedelta(days=_IP_DAYS)
+    rows = (
+        session.query(Article, Source.name)
+        .outerjoin(Source, Source.id == Article.source_id)
+        .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
+        .order_by(Article.id.desc())
+        .limit(400)
+        .all()
+    )
+    matches = []
+    for article, source_name in rows:
+        text = (article.title or "") + " " + (article.get_content() or "")[:1200]
+        if _DEAL_RE.search(text):
+            matches.append((article, source_name))
+        if len(matches) >= _MAX_DEAL:
+            break
+    if not matches:
+        return []
+    evidence = [{"title": a.title, "url": a.url, "source": name,
+                 "published_at": a.published_at.isoformat() if a.published_at else None}
+                for a, name in matches]
+    lead = matches[0][0].title or "(untitled)"
+    return [Card(
+        type="ownership_change",
+        title=f"{len(matches)} possible ownership-change report(s)",
+        summary=(f"Recent articles use deal language (acquired / merger / divested), e.g. "
+                 f"“{lead[:80]}”. Candidate corporate-control stories to verify."),
+        bucket="investigate",
+        signal={"metric": "deal_reports", "value": len(matches)},
+        method="recent articles whose text matches acquisition/merger/divestiture verbs",
+        caveat=("Matches *reporting language*, not confirmed deals — and never asserts IP was "
+                "transferred or stripped. Foreground the primary filing; the human confirms."),
+        evidence=evidence,
+        n=len(matches),
+        key="ownership-change",
+    )]
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -352,6 +629,12 @@ _DEFAULT_PRODUCERS = (
     ("price_narrative", price_narrative),
     ("stale_data", stale_data),
     ("diet_self_audit", diet_self_audit),
+    ("echo_chamber", echo_chamber),
+    ("lonely_signal", lonely_signal),
+    ("capacity_implausible", capacity_implausible),
+    ("emotion_profile", emotion_profile_card),
+    ("ip_litigation_pulse", ip_litigation_pulse),
+    ("ownership_change", ownership_change),
 )
 
 

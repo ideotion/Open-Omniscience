@@ -381,6 +381,29 @@ in [`docs/CHAIN_OF_CUSTODY.md`](CHAIN_OF_CUSTODY.md). *(A planned overhaul to ma
 this tab dummy-proof and largely automatic is captured in
 [`docs/OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md).)*
 
+### 3.8a Source integrity
+
+**What it's for:** seeing the *structure* behind your sources — and deciding, yourself,
+whose signal counts. There is deliberately **no trust score**; a single number would
+bake in bias and silence small, foreign, new or dissident sources. Full guide:
+[`docs/INTEGRITY.md`](INTEGRITY.md).
+
+- **Anti-amplification (propose → you dispose):** *Scan for coordination* finds
+  near-duplicate floods published in lockstep across many sources, with their evidence
+  (shared text, timing, host). By default they are only **annotated** — never silently
+  collapsed. **Apply collapse** to count a network as **one voice** (in any count that
+  measures consensus); it stays flagged, **Expand (revert)** restores the raw equal view
+  exactly. Nothing is ever collapsed without your action. Echo-chamber cards on Home
+  carry the same action.
+- **Source profile:** a panel of measured dimensions — coordination, novelty
+  (originates vs echoes), output capacity, transparency facts, track record — each with
+  its method and caveat, and **no composite score**.
+- **Shared annotations (web of trust):** author descriptive, contestable facts about
+  sources (ownership, leaning, coordination, corrections); **export** them as a
+  **signed** bundle; **import** the bundles you choose to trust. *Who said what?* shows
+  every attribution for a source and surfaces **dissent** — never averaged into a number.
+  See [`docs/ANNOTATIONS.md`](ANNOTATIONS.md).
+
 ### 3.9 Settings
 
 **What it's for:** preferences and maintenance. Everything is stored locally; no
