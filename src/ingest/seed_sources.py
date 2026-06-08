@@ -21,6 +21,7 @@ from pathlib import Path
 import yaml
 from sqlalchemy.orm import Session
 
+from src.catalog.cctld import infer_country, infer_language
 from src.database.models import Source
 
 # The full curated catalog shipped with the project.
@@ -63,16 +64,32 @@ def load_sources_from_yaml(path: Path | None = None) -> list[dict]:
 
 
 def _to_source_kwargs(s: dict) -> dict:
-    """Map a catalog entry to Source constructor kwargs (tags list -> CSV)."""
+    """Map a catalog entry to Source constructor kwargs (tags list -> CSV).
+
+    Also (a) records *provenance* as a ``via:<origin>`` tag when known, and
+    (b) backfills missing ``country``/``language`` from the domain's ccTLD so the
+    catalogue's geographic/linguistic skew is measurable (conservative — see
+    ``src/catalog/cctld.py``; never overrides an explicit value).
+    """
     kwargs = {"name": s["name"], "domain": s["domain"]}
     tags = s.get("tags")
-    if isinstance(tags, list):
-        kwargs["tags"] = ",".join(str(t) for t in tags)
-    elif tags:
-        kwargs["tags"] = str(tags)
+    tag_list = [str(t) for t in tags] if isinstance(tags, list) else ([str(tags)] if tags else [])
+    prov = s.get("_provenance")
+    if prov:
+        tag_list.append(f"via:{prov}")
+    if tag_list:
+        kwargs["tags"] = ",".join(tag_list)
     for field in _PASSTHROUGH_FIELDS:
         if s.get(field) is not None:
             kwargs[field] = s[field]
+    if not kwargs.get("country"):
+        c = infer_country(s["domain"])
+        if c:
+            kwargs["country"] = c
+    if not kwargs.get("language"):
+        lang = infer_language(s["domain"])
+        if lang:
+            kwargs["language"] = lang
     return kwargs
 
 
@@ -109,7 +126,14 @@ def seed_default_sources(session: Session, path: Path | None = None) -> dict[str
     """
     sources = load_sources_from_yaml(path)
     if path is None:
-        for extra in (MARKETS_SOURCES_PATH, SPECTRUM_SOURCES_PATH, WORLD_SOURCES_PATH):
+        for s in sources:
+            s.setdefault("_provenance", "curated")
+        for extra, prov in ((MARKETS_SOURCES_PATH, "markets"),
+                            (SPECTRUM_SOURCES_PATH, "spectrum"),
+                            (WORLD_SOURCES_PATH, "wikidata")):
             if extra.exists():
-                sources = sources + load_sources_from_yaml(extra)
+                extra_sources = load_sources_from_yaml(extra)
+                for s in extra_sources:
+                    s["_provenance"] = prov
+                sources = sources + extra_sources
     return seed_sources(session, sources)

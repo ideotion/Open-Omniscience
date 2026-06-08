@@ -73,6 +73,25 @@ Reasoned from the personas outward in [`docs/GUI_REDESIGN_0.05.md`](GUI_REDESIGN
   interfaces (Console `/` and Desk `/desk`), and the renamed tools (Ingest→Collect,
   Database→Library, Chain of custody→Evidence & custody).
 
+### Multilingual UI, link co-citation, and measurable coverage
+
+- **Multilingual UI wired (i18n Phase 2):** `i18n.js` is now included in both Console
+  and Desk, with a **Language** picker (12 languages) in Settings. Dynamically-
+  rendered chrome is translated automatically via a debounced `MutationObserver`;
+  English fallback for untranslated strings; RTL via `<html dir>`. (Behaviour still
+  wants a browser pass.) Complete reference translations ship for en/fr/es/de; the
+  rest are selectable English-fallback stubs.
+- **Article link detection wired (link analysis P0/P1):** ingest now populates
+  `article_links` with outbound **external** links (best-effort, fail-open;
+  internal/image/ad/social/tracker excluded; `OO_NO_INDEX=1` disables). New
+  read-only `/api/links` endpoints — `stats`, `top-cited` (url|domain, windowed),
+  `articles-by-link` — answer "which articles cite the same source." Counts only,
+  no scoring (the old fabricated link analyzer stays quarantined).
+- **Coverage made measurable:** honest **ccTLD inference** (`src/catalog/cctld.py`)
+  backfills missing `country`/`language` at seed time (generic/ambiguous ccTLDs stay
+  unknown), lifting country-tagged coverage ~19% → ~33%; and **source provenance** is
+  recorded as a `via:<origin>` tag — first steps of the `KNOWN_GAPS.md` measurement plan.
+
 ## Unreleased — UI polish, live data, and a full user manual
 
 A wave of usability work on top of the feature set below, plus documentation:
