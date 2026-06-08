@@ -6,6 +6,24 @@
 > problems, and the honesty constraints that must hold. Nothing here is implemented
 > yet.
 
+> **This is the guiding document for the `0.06` cycle ("the intelligence layer").**
+> It holds the *what & why*; the phased *how* lives in
+> [`ACTION_PLAN.md` → "0.06 — The Intelligence Layer"](ACTION_PLAN.md). Read both
+> together. The unifying idea: **one measurement engine, many domains.** Every
+> section below is a *family axis* or a *vertical* pointed at the same shared
+> internals (entity analytics, change-tracking, signal primitives, the card
+> framework) — so favour **mutualisation** over per-feature code.
+
+**Map of this document**
+- **Guiding principle** — user-driven selection, no capping.
+- **§1–3** — uniformity/concentration · trace-to-primal-source · guided selection.
+- **§4** — the Home **briefing** and the **card** catalog (editorial, keyword
+  dynamics, people, tone, belief axis, markets, IP/legal) → newsletter draft.
+- **§5** — world-law corpus & change-tracking vertical.
+- **§6** — **source integrity & anti-amplification** (the garbage-in problem; C+D;
+  crowdsourced annotations) — *the keystone that arranges all the rest.*
+- **Common substrate · Hooks · Hard problems · Status.**
+
 ---
 
 ## Guiding principle (decided) — selection is **user-driven**
@@ -346,6 +364,121 @@ not-legal-advice discipline — not the tracking machinery, which already exists
 
 ---
 
+## 6. Source integrity & anti-amplification — the "garbage in" problem
+
+**The keystone.** The other sections surface signals; this one decides *whose
+signal counts*, and it does so without becoming an arbiter of truth. It is the
+principle that arranges all the rest.
+
+**The surprise (why "treat every source equally" is not neutral).** Trending,
+prominence, synchrony and "what's covered" all **count outlets and volume**. So
+equal-treatment-of-outlets, applied to a volume metric, has a built-in bias: *whoever
+produces the most wins.* A well-resourced actor who spins up 40 agencies (or troll
+farms, or LLM content mills) converts capital directly into apparent consensus, and
+**dilutes** honest single-source stories into nothing — ghosting the public. Doing
+nothing is therefore *not* neutral; it subsidises the flooder. The resolution is not
+"score sources" — it is to define neutrality over the right **unit**: equal treatment
+of *independent actors weighted by the new information they contribute*, not of
+*outlets*. **Counting sock-puppets as voices is a measurement error, not neutrality.**
+
+**The distinction the whole design pivots on.**
+- **(A) Veracity/quality scoring** — "is this source truthful / good?" Subjective,
+  the arbiter-of-truth move; bakes the scorer's worldview into a false-objective
+  number. **Forbidden to automate.** (This is what the owner's caveat rightly fears:
+  scoring "garbage" down will eventually score a good-but-unusual source down too.)
+- **(B) Authenticity / structure signals** — "is this source what it claims to be?
+  one node of a coordinated network? does it *originate* or only *echo*? is its
+  output within human capacity? is it transparent about who runs it?" These are, to
+  a real degree, **measurable structural facts**, not value judgments. *All viable
+  design lives in (B).*
+
+**Decided direction: C + D, and B is forbidden.** (Scenario labels from the session
+brainstorm; A=do-nothing, B=single trust score, E=external refs, F=disconfirmation
+workflow.)
+- **D — actor-collapse + anti-amplification (the structural backbone).** Don't score
+  sources; change the *unit of influence*. (1) Collapse coordinated / near-duplicate
+  networks into single **actors** (40 puppets = 1 voice in every trend/prominence/
+  synchrony computation); (2) weight influence by **independent information
+  contributed** (novelty / surprisal vs what the corpus already holds), not raw
+  volume. This attacks the *exploit* (volume + coordination), never the content, and
+  is information-theoretically clean: the 1000th repost isn't called *false*, it is
+  *not new* — which is simply true. **It inverts the feared failure mode:** under
+  novelty-weighting the small, original, independent source *rises* relative to the
+  manufactured flood — the lonely-signal/undertold source is the winner, not the
+  casualty.
+- **C — multi-dimensional transparent profile (the interface).** Per source, a panel
+  of measured signals (coordination/actor membership, novelty ratio, output-capacity
+  plausibility, transparency facts, plural external refs §E, corpus track-record) —
+  **no single composite score.** The user weights *which dimensions matter into their
+  own view* — off by default, theirs not ours, reversible, with the raw
+  equal-treatment view always one click away.
+- **Forbidden: B (a single automated 0–100 trust score).** False precision over
+  incommensurable dimensions; bakes in bias as objectivity; Goodhart-gameable; a
+  single point of capture/censorship; *will* misclassify small/foreign/new/dissident
+  sources. Written down here so no future contributor builds it by reflex.
+
+**Crowdsourcing is required (the owner's key correction).** C's "user weighting" is
+impossible for one person — nobody can neutrally assess thousands of sources alone.
+So the weighting must be **collective**, and the honest, local-first, non-centralised
+way to do that is **signed, shareable annotation bundles**: a user publishes their
+source annotations (coordination tags, transparency facts, corrections) as a
+**custody-signed, verifiable, portable bundle** (reusing the evidence-bundle
+machinery — *mutualisation*); other users **import** the bundles they choose to
+trust (opt-in **web-of-trust**, never a central authority), aggregated **transparently**
+(you can always see *who asserted what*, and dissent is shown, not averaged away).
+No server, no accounts, no global score — federation by signed exchange.
+
+**The honest, realistic goal.** Not "detect all garbage" (impossible; it is an
+adversarial arms race and *claiming* detection would be the dishonest move) but
+**strip garbage of its mechanical advantages so it cannot automatically dominate,
+and raise the cost of manipulation.** Success = the 40-agency play *stops paying
+off*, not a verdict on its content.
+
+**Hard problems & residual risks (named).**
+- **Arms race / Goodhart** — every published signal becomes an optimisation target;
+  rely on defence-in-depth, never claim completeness.
+- **False merges hurt the innocent** — collapsing "coordination" could wrongly fuse
+  independent allies that share a stance or a CMS; must be high-precision,
+  evidence-shown, **reversible**, biased toward *under*-merging.
+- **Capture** — any shipped mechanism could itself be biased/captured; mitigate by
+  shipping **mechanisms not verdicts**, defaulting to the transparent equal view, and
+  letting the user override everything.
+- **Asymmetry cuts both ways** — there is more garbage than signal, so filtering is
+  *usually* right, but the cost of the rare false-negative (silencing a real
+  whistleblower outlet) is severe: **annotate and de-amplify, never suppress.**
+- **Targeted-disinfo blind spot** — individualised micro-targeted disinformation
+  lives in private feeds/DMs/ads; a *public-corpus* tool cannot see it. Map the
+  public manipulation infrastructure; do not overpromise the private.
+- **Offline / single machine** — favours hashing, graphs and counting over heavy ML
+  (which is *also* why we lean on structural/behavioural signals rather than
+  unreliable "AI-text detectors").
+
+---
+
+## Common substrate — mutualise these internals
+
+Almost everything above composes from a *small* set of shared engines. Build these
+once, well, and point them at each domain; do **not** re-implement per feature.
+
+| Shared engine | Status | Powers |
+|---|---|---|
+| Entity/keyword analytics (`src/analytics`) | exists | §4 keyword/people/tone cards, IP entities, §6 novelty |
+| Change-tracking (baseline→diff→flag, `src/wiki`) | exists | Wikipedia, §5 law, stealth-correction card |
+| Correlation (Pearson/Spearman + p + n, `commodity/correlation`) | exists | price↔news, law↔news, IP↔deal co-timing |
+| Anomaly (z-score, `monitoring/anomaly`) | exists | volume spikes, price/term spikes |
+| Tone (VADER + `context` window) | exists | tone/framing cards, §6 not used for stance |
+| Provenance + custody (signed, timestamped) | exists | every record; **§6 crowdsourced annotation bundles** |
+| **Concentration metric** (Gini / top-share) | **new** | §1 ownership, people-prominence, §6 actor share |
+| **Near-dup / coordination** (MinHash/SimHash → actor graph) | **new** | echo cards, model-legislation, syndication, **§6 actor-collapse** |
+| **Novelty / surprisal** (info contributed vs corpus) | **new** | §6 anti-amplification weighting |
+| **Card + briefing framework** (signal+evidence+method+caveat → feed → draft) | **new** | the entire §4 surface, the GUI spine |
+
+The four **new** primitives (concentration, near-dup/coordination, novelty, the card
+framework) are the whole of `0.06`'s genuinely new code; everything else is
+composition.
+
+---
+
 ## Hooks already in the codebase (this is not from scratch)
 
 - **Dedup / canonicalization:** `src/ingestor/duplicate_detector.py`,
@@ -374,7 +507,12 @@ not-legal-advice discipline — not the tracking machinery, which already exists
 
 ## Status
 
-Vision / persistent memory only — not implemented. Decided principle on this page:
-**user-driven selection, no capping.** §4 (Home briefing / cards) is the intended
-surface for §1–3 plus the markets vertical; its **now**-status cards are the
-lowest-risk first slice.
+Vision / persistent memory — the **guiding document for `0.06`**; the phased build
+is in [`ACTION_PLAN.md` → "0.06 — The Intelligence Layer"](ACTION_PLAN.md).
+
+Decided principles on this page: **user-driven selection, no capping** (guiding
+principle); **C + D, B forbidden** for source integrity (§6); **mutualise the shared
+substrate** (one engine, many domains). The lowest-risk first slice is the **card +
+briefing framework** (the GUI spine) rendering §4's **now**-status cards; the four
+new primitives (concentration, near-dup/coordination, novelty, card framework) are
+the only genuinely new code the rest composes from.
