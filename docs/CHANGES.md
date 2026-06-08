@@ -7,8 +7,8 @@
 The first slice of the `0.06` "intelligence layer" — the **GUI spine**. The unifying
 idea is *one measurement engine, many domains*; this ships the engine's framework and
 its first pure primitive, and turns **Home into a triage briefing**. Guiding docs:
-[`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) (what & why) and
-[`ACTION_PLAN.md`](ACTION_PLAN.md) (how); user guide: [`BRIEFING.md`](BRIEFING.md).
+[`ROADMAP.md`](ROADMAP.md) (what & why) and
+[`ROADMAP.md`](ROADMAP.md) (how); user guide: [`USER_MANUAL.md`](USER_MANUAL.md).
 
 - **`src/signals/` — pure, DB-free measurement primitives.** First shipped:
   `concentration` (Gini coefficient + top-N share), property-tested with exact
@@ -39,7 +39,7 @@ its first pure primitive, and turns **Home into a triage briefing**. Guiding doc
   test. Numeric values live in `signal` as a single measured quantity with a method,
   never a blended score.
 - **API:** `/api/briefing` (cached feed), `/refresh`, `/dismiss`·`/restore`, and the
-  `/draft` accumulator with `GET /draft/export.md`. New in-app doc `BRIEFING.md`.
+  `/draft` accumulator with `GET /draft/export.md`. New in-app doc `USER_MANUAL.md`.
 - **Tests:** `test_signals_concentration.py`, `test_briefing.py`, `test_briefing_api.py`
   — full suite green; no regressions.
 
@@ -58,13 +58,13 @@ its first pure primitive, and turns **Home into a triage briefing**. Guiding doc
   collapse stays flagged + expandable, reverting reproduces the raw equal counts exactly,
   and **no collapse is applied without an explicit action**. The 40-puppet-flood
   acceptance is a passing test. New cards: **echo-chamber**, **lonely-signal**,
-  **capacity-implausible**. New **Source integrity** GUI tab. See `INTEGRITY.md`.
+  **capacity-implausible**. New **Source integrity** GUI tab. See `USER_MANUAL.md`.
 - **Crowdsourced signed annotation bundles (Phase D, `src/annotations/`):** publish
   source annotations (ownership/leaning/coordination/corrections) as a **hybrid-signed,
   portable bundle** (reusing the custody signer); import the bundles you trust (opt-in
   **web of trust**); **transparent aggregation** shows *who asserted what* and surfaces
   dissent, never averaging it into a score. A tampered bundle is refused. See
-  `ANNOTATIONS.md`.
+  `USER_MANUAL.md`.
 - **World-law change-tracking vertical (§5, `src/law/`):** a **worldwide catalog of real
   official primary sources** (national legislation databases, official gazettes, IP
   offices, open case-law/filing systems — `configs/legal_sources.yml`) seeded **by
@@ -74,7 +74,7 @@ its first pure primitive, and turns **Home into a triage briefing**. Guiding doc
   **World law** GUI tab, and a `law` scheduler mode. New cards: **law-change** (watch) and
   **model-legislation** (cross-jurisdiction near-dup). New `LawDocument`/`LawRevision`
   tables via Alembic migration. A research mirror, never legal advice — every record links
-  to its official gazette. See `LAW.md`.
+  to its official gazette. See `USER_MANUAL.md`.
 - **Phase E (composable cards):** **emotion-category** measurement around a keyword
   (`src/awareness/emotion.py`, lexicon-based, ships a minimal English sample, overridable
   via `OO_EMOTION_LEXICON`, degrades loudly); **IP/legal news cards** (IP-litigation
@@ -96,7 +96,7 @@ its first pure primitive, and turns **Home into a triage briefing**. Guiding doc
 
 A ground-up redesign of everything the user sees, built on top of the existing,
 tested data layer (same endpoints, same element IDs — no functional regression).
-Reasoned from the personas outward in [`docs/GUI_REDESIGN_0.05.md`](GUI_REDESIGN_0.05.md).
+Reasoned from the personas outward in [`docs/DESIGN.md`](DESIGN.md).
 
 - **New shell:** a collapsible **sidebar grouped by intention** (Investigate ·
   Collect · Trust · System) replaces the flat tab strip; a slim top bar carries
@@ -128,11 +128,11 @@ Reasoned from the personas outward in [`docs/GUI_REDESIGN_0.05.md`](GUI_REDESIGN
   ~249 countries × broader media types at `limit: 5000`. The honest path to tens of
   thousands of *real, attributable* sources is running the Wikidata generator (and
   `--merge-csv` for GDELT/Media Cloud), **not** fabricating dead RSS URLs. See
-  `docs/WORLD_NEWS_CATALOG.md`.
+  `docs/ROADMAP.md`.
 
 ### A contradictory take + a second interface to compare
 
-- **`docs/GUI_DIALECTIC.md`** argues the *opposite* case — that a polished,
+- **`docs/DESIGN.md`** argues the *opposite* case — that a polished,
   customizable "console" may be the wrong fit for a sovereign, offline,
   trust-first tool — and proposes an antithesis.
 - **"Desk" (`/desk`, `src/static/desk.html`):** a calm, editorial, content-first
@@ -148,7 +148,7 @@ Reasoned from the personas outward in [`docs/GUI_REDESIGN_0.05.md`](GUI_REDESIGN
 
 ### Coverage honesty, branch hygiene & docs alignment
 
-- **`docs/KNOWN_GAPS.md` — a coverage ledger.** Names every blind spot and labels it
+- **`docs/ROADMAP.md` — a coverage ledger.** Names every blind spot and labels it
   *voluntary* (deliberate) or *involuntary* (to be measured). **Images and all
   visual/binary media are now an explicit, documented exclusion** (owner's choice:
   storage on one affordable machine, and honest image analysis isn't feasible at
@@ -180,7 +180,7 @@ Reasoned from the personas outward in [`docs/GUI_REDESIGN_0.05.md`](GUI_REDESIGN
 - **Coverage made measurable:** honest **ccTLD inference** (`src/catalog/cctld.py`)
   backfills missing `country`/`language` at seed time (generic/ambiguous ccTLDs stay
   unknown), lifting country-tagged coverage ~19% → ~33%; and **source provenance** is
-  recorded as a `via:<origin>` tag — first steps of the `KNOWN_GAPS.md` measurement plan.
+  recorded as a `via:<origin>` tag — first steps of the `ROADMAP.md` measurement plan.
 
 ## Unreleased — UI polish, live data, and a full user manual
 
@@ -213,7 +213,7 @@ A wave of usability work on top of the feature set below, plus documentation:
   `groups` form.
 - **Docs:** added an extensive end-user manual ([USER_MANUAL.md](USER_MANUAL.md))
   covering every tab, control, setting, workflow, env var and API area, and an
-  [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) capturing in-flight design decisions
+  [ROADMAP.md](ROADMAP.md) capturing in-flight design decisions
   (notably a planned chain-of-custody "automatic, background, dummy-proof"
   redesign — not yet built).
 
@@ -228,16 +228,16 @@ A large feature wave (all tested; dependency-free vanilla-JS UI; no fabricated d
 - **Markets:** per-source **price-extraction rules** (numbers only from a verified
   CSS selector — `Test` action), **official CSV price feeds** (FRED→World Bank/EIA)
   + custom-URL import, charts and honest price↔news correlation, and a packaged
-  worldwide markets catalog. See [MARKETS.md](MARKETS.md).
+  worldwide markets catalog. See [USER_MANUAL.md](USER_MANUAL.md).
 - **Worldwide source catalog:** a **data-derived generator** (Wikidata CC0 +
   optional GDELT/Media Cloud) for news + institutions per country, coverage report,
-  and **CSV import/export** of the source list. See [WORLD_NEWS_CATALOG.md](WORLD_NEWS_CATALOG.md).
+  and **CSV import/export** of the source list. See [ROADMAP.md](ROADMAP.md).
 - **Insights — keyword & entity analytics:** extraction at ingest (people/orgs/
   places as single units; opt-in spaCy), a mention store with context, and
-  trends / PMI associations / per-country-city map. See [INSIGHTS.md](INSIGHTS.md).
+  trends / PMI associations / per-country-city map. See [USER_MANUAL.md](USER_MANUAL.md).
 - **Wikipedia change-tracking (foundation):** per-language editions, delta storage
   (diffs not re-copies), and honest large-edit/revisionism flagging (incl. ORES).
-  See [WIKIPEDIA.md](WIKIPEDIA.md).
+  See [USER_MANUAL.md](USER_MANUAL.md).
 
 New migrations: `b7c1d2e3f4a5` (market rules), `c3d4e5f6a7b8` (keyword mentions),
 `d4e5f6a7b8c9` (wiki tracking).
@@ -261,8 +261,8 @@ operator-configurable:
   (preference *and* library availability), so PQC/OpenTimestamps can never appear
   enabled when the supporting extra is absent. Auto-log defaults to the legacy
   `OO_CUSTODY_ON_INGEST` flag until a preference is saved.
-- Documented in [CHAIN_OF_CUSTODY.md](CHAIN_OF_CUSTODY.md); endpoints added to
-  [API_DOCUMENTATION.md](API_DOCUMENTATION.md).
+- Documented in [USER_MANUAL.md](USER_MANUAL.md); endpoints added to
+  [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 0.4 — Trustworthy core + honesty pass
 
@@ -293,7 +293,7 @@ odds-ratio); closed the evidence-verification trust hole (pinned key + full-item
 Merkle + domain separation); fixed email charset corruption, ingest rollback
 isolation, the core-only-install boot, and the whole P2 backlog (DI to
 `Depends(get_db)`, shared rate limiter, bounded uploads, cache/url/regex/compression
-fixes). See [AUDIT_2026-06.md](AUDIT_2026-06.md). 400+ tests, all green.
+fixes). See [HISTORY.md](HISTORY.md). 400+ tests, all green.
 
 ## 0.01–0.03 (historical)
 

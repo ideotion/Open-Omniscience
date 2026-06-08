@@ -72,7 +72,7 @@ except ImportError:
 from src.api.ingestion import router as ingestion_router
 
 # Link-analysis router quarantined in v0.4: its services (credibility scorer,
-# source scraper, network analyzer) produced fabricated outputs (see docs/AUDIT_2026-06.md).
+# source scraper, network analyzer) produced fabricated outputs (see docs/HISTORY.md).
 
 # Import LLM router (clean Ollama HTTP client; replaces the legacy routes.llm)
 from src.api.llm import router as llm_router
@@ -753,31 +753,23 @@ async def list_sources(request: Request, db: Session = Depends(get_db)):
 # is no traversal surface.
 _DOCS: dict[str, dict[str, str]] = {
     "user-manual": {"file": "USER_MANUAL.md", "title": "User Manual",
-                    "blurb": "The complete guide: install, every tool, workflows, reference."},
+                    "blurb": "The complete guide: install, every tool, workflows, reference, and per-feature deep-dives."},
     "quickstart": {"file": "QUICKSTART.md", "title": "Quickstart",
                    "blurb": "The fastest path from install to your first results."},
-    "ethics": {"file": "ETHICS.md", "title": "Ethics & the Munich Charter",
-               "blurb": "The principles this tool is built to uphold."},
-    "wikipedia": {"file": "WIKIPEDIA.md", "title": "Wikipedia tracking",
-                  "blurb": "Change-tracking and offline baselines, in depth."},
-    "law": {"file": "LAW.md", "title": "World law",
-            "blurb": "Tracking statutes, gazettes and IP records worldwide — the data is the diff."},
-    "chain-of-custody": {"file": "CHAIN_OF_CUSTODY.md", "title": "Chain of custody",
-                         "blurb": "Tamper-evident, signed provenance for your evidence."},
-    "insights": {"file": "INSIGHTS.md", "title": "Insights",
-                 "blurb": "How keyword, trend and entity analytics are computed."},
-    "briefing": {"file": "BRIEFING.md", "title": "Home briefing",
-                 "blurb": "How the triage cards are produced, and the card→draft workflow."},
-    "integrity": {"file": "INTEGRITY.md", "title": "Source integrity",
-                  "blurb": "Anti-amplification, the no-composite-score profile, and actor-collapse."},
-    "annotations": {"file": "ANNOTATIONS.md", "title": "Shared annotations",
-                    "blurb": "Signed, portable source annotations and the web of trust."},
-    "markets": {"file": "MARKETS.md", "title": "Markets",
-                "blurb": "Price feeds, correlation, and extraction rules."},
+    "ethics": {"file": "ETHICS.md", "title": "Ethics, compliance & notices",
+               "blurb": "The principles this tool upholds, plus licensing and attributions."},
     "security": {"file": "SECURITY.md", "title": "Security",
-                 "blurb": "Threat model and the local-first security posture."},
-    "versioning": {"file": "VERSIONING.md", "title": "Versioning",
-                   "blurb": "Why this is 0.0.x, the maturity ladder, and the single source of truth."},
+                 "blurb": "Threat model, local-first posture, and the security audit."},
+    "design": {"file": "DESIGN.md", "title": "Design",
+               "blurb": "What the app is and isn't, the pillar map, and the GUI reasoning."},
+    "roadmap": {"file": "ROADMAP.md", "title": "Roadmap",
+                "blurb": "Design memory, the phased plan + status, and open questions."},
+    "architecture": {"file": "ARCHITECTURE.md", "title": "Architecture",
+                     "blurb": "Database/config, the HTTP API map, and internationalisation."},
+    "contributing": {"file": "CONTRIBUTING.md", "title": "Contributing",
+                     "blurb": "How to contribute, and the (deliberately under-stated) versioning policy."},
+    "changes": {"file": "CHANGES.md", "title": "Changelog",
+                "blurb": "What changed, release by release."},
 }
 _DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
 
@@ -818,7 +810,7 @@ async def read_root():
 
 
 # Alternative UI ("Desk") served alongside the default ("Console") so both can be
-# compared on the same backend/data — see docs/GUI_DIALECTIC.md. The installer
+# compared on the same backend/data — see docs/DESIGN.md. The installer
 # creates a second desktop icon that opens this route.
 @app.get("/desk", response_class=HTMLResponse)
 async def read_desk():

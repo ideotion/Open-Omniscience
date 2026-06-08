@@ -162,10 +162,10 @@ def _maybe_index_links(session: Session, article: Article, html: str | None, bas
     """Best-effort extraction of outbound EXTERNAL links into ``article_links``.
 
     Powers co-citation analysis ("which articles cite the same source", "most-cited
-    links") — see docs/CONTENT_ANALYSIS_STRATEGY.md. Fail-open and isolated like
+    links") — see docs/DESIGN.md. Fail-open and isolated like
     keyword indexing: never breaks ingestion. Only genuine *external* links are kept
     — internal navigation, images, ads, social and trackers are excluded, in line
-    with docs/KNOWN_GAPS.md. De-duplicated per article and capped. Disable with
+    with docs/ROADMAP.md. De-duplicated per article and capped. Disable with
     OO_NO_INDEX=1.
     """
     import os

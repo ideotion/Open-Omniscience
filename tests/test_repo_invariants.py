@@ -69,7 +69,7 @@ def test_no_dangerous_eval_or_deserialization_sinks():
 
 
 def test_readme_version_matches_package():
-    """Version coherence guard (docs/VERSIONING.md): the README header must state exactly
+    """Version coherence guard (docs/CONTRIBUTING.md): the README header must state exactly
     the package version, so the two can never silently drift again."""
     from importlib.metadata import version as _pkg_version
 

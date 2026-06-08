@@ -21,7 +21,7 @@ HTTP API) and troubleshooting.
 - **Honest numbers only.** Every figure is a real `COUNT(*)`, a real on-disk byte
   size, or a real statistical aggregate with its sample size and caveat. The app
   would rather show an error than invent a value. (Several earlier "AI detection"
-  features that faked scores were removed — see `docs/SALVAGE_MAP.md`.)
+  features that faked scores were removed — see `docs/HISTORY.md`.)
 - **Ethical ingestion.** One fetch path. `robots.txt` is respected **fail-closed**
   (if in doubt, it does *not* fetch), every host is rate-limited, and nothing is
   stored unless a real article body was extracted.
@@ -121,7 +121,7 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
   discoverable, customizable sidebar app.
 - **Open Omniscience — Desk** → *Desk* at `/desk` — a calmer, content-first,
   editorial alternative (no persistent sidebar; navigation via the Home launchpad
-  and ⌘K). The two are compared in [`GUI_DIALECTIC.md`](GUI_DIALECTIC.md); run both
+  and ⌘K). The two are compared in [`DESIGN.md`](DESIGN.md); run both
   and pick what fits you.
 
 ---
@@ -174,7 +174,7 @@ reaches the same tools from its Home launchpad and ⌘K.
   method & caveat** to see exactly how every figure was computed and what it does not
   mean. **+ Add to draft** pins a card; **Dismiss** hides it (reversible). The feed is
   cached (instant) and refreshes after each scrape — or hit **Refresh**. Full details:
-  [BRIEFING.md](BRIEFING.md).
+  [USER_MANUAL.md](USER_MANUAL.md).
 - **Newsletter draft:** pinned cards + your notes, exported as **Markdown** in which
   every claim already carries its source links, method and caveat — reproducible
   journalism. For a signed copy of the underlying articles, use Evidence & custody.
@@ -288,7 +288,7 @@ relating them to news volume.
     date, column 2 = value, the FRED convention); missing values are skipped, never
     stored as zero.
 
-See [`docs/MARKETS.md`](MARKETS.md) for the full extraction-rule reference.
+See [`docs/USER_MANUAL.md`](USER_MANUAL.md) for the full extraction-rule reference.
 
 ### 3.6 Insights
 
@@ -314,7 +314,7 @@ opt-in via the spaCy `[nlp]` extra.)*
     (real lat/lon from a Wikidata gazetteer), plus per-country and per-city tables.
 
 Every figure is a real aggregate with its sample size and a caveat. See
-[`docs/INSIGHTS.md`](INSIGHTS.md). To tune which keywords appear, use the
+[`docs/USER_MANUAL.md`](USER_MANUAL.md). To tune which keywords appear, use the
 [keyword filter in Settings](#39-settings).
 
 ### 3.7 Wikipedia
@@ -336,7 +336,7 @@ edits** — the *edits* are the data, not a copy of the article.
 
 Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and live
 in **Settings → Wikipedia** — you don't need them for change-tracking. See
-[`docs/WIKIPEDIA.md`](WIKIPEDIA.md).
+[`docs/USER_MANUAL.md`](USER_MANUAL.md).
 
 ### 3.7a World law
 
@@ -344,7 +344,7 @@ in **Settings → Wikipedia** — you don't need them for change-tracking. See
 sources worldwide, and watching how it changes over time. Like Wikipedia tracking, the
 *changes are the data*. A **research mirror**, never the authoritative source and **not
 legal advice** — every record links back to its official gazette. Full guide:
-[`docs/LAW.md`](LAW.md).
+[`docs/USER_MANUAL.md`](USER_MANUAL.md).
 
 - A **worldwide catalog of real official sources** (national legislation databases,
   gazettes, IP offices — `legislation.gov.uk`, EUR-Lex, Légifrance, govinfo, WIPO Lex,
@@ -395,16 +395,16 @@ python scripts/verify_evidence.py bundle.json [signer_pubkey]
 ```
 
 The full design — and exactly what each mechanism does and does **not** prove — is
-in [`docs/CHAIN_OF_CUSTODY.md`](CHAIN_OF_CUSTODY.md). *(A planned overhaul to make
+in [`docs/USER_MANUAL.md`](USER_MANUAL.md). *(A planned overhaul to make
 this tab dummy-proof and largely automatic is captured in
-[`docs/OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md).)*
+[`docs/ROADMAP.md`](ROADMAP.md).)*
 
 ### 3.8a Source integrity
 
 **What it's for:** seeing the *structure* behind your sources — and deciding, yourself,
 whose signal counts. There is deliberately **no trust score**; a single number would
 bake in bias and silence small, foreign, new or dissident sources. Full guide:
-[`docs/INTEGRITY.md`](INTEGRITY.md).
+[`docs/USER_MANUAL.md`](USER_MANUAL.md).
 
 - **Anti-amplification (propose → you dispose):** *Scan for coordination* finds
   near-duplicate floods published in lockstep across many sources, with their evidence
@@ -420,7 +420,7 @@ bake in bias and silence small, foreign, new or dissident sources. Full guide:
   sources (ownership, leaning, coordination, corrections); **export** them as a
   **signed** bundle; **import** the bundles you choose to trust. *Who said what?* shows
   every attribution for a source and surfaces **dissent** — never averaged into a number.
-  See [`docs/ANNOTATIONS.md`](ANNOTATIONS.md).
+  See [`docs/USER_MANUAL.md`](USER_MANUAL.md).
 
 ### 3.9 Settings
 
@@ -552,7 +552,7 @@ Prometheus metrics at `/metrics`. There is **no authentication** by design
 `Retry-After` when exceeded).
 
 A condensed inventory (see `/docs` for the authoritative, always-current schema and
-`docs/API_DOCUMENTATION.md` for prose):
+`docs/ARCHITECTURE.md` for prose):
 
 **Core & search** — `GET /api/health`; `GET /api/articles` (FTS + filters);
 `GET /api/articles/export` (csv|json); `GET /api/articles/{id}/view` (offline HTML);
@@ -647,10 +647,871 @@ catalog at `/api/catalog/sources`, `/export.csv`, `/template.csv`, `POST /import
 
 ---
 
-*See also:* [QUICKSTART](QUICKSTART.md) · [CHAIN_OF_CUSTODY](CHAIN_OF_CUSTODY.md) ·
-[INSIGHTS](INSIGHTS.md) · [MARKETS](MARKETS.md) · [WIKIPEDIA](WIKIPEDIA.md) ·
-[DATABASE](DATABASE.md) · [API_DOCUMENTATION](API_DOCUMENTATION.md) ·
-[SECURITY](SECURITY.md) · [PRODUCT_SYNTHESIS](PRODUCT_SYNTHESIS.md) ·
-[OPEN_QUESTIONS](OPEN_QUESTIONS.md).
+*See also:* [QUICKSTART](QUICKSTART.md) · [CHAIN_OF_CUSTODY](USER_MANUAL.md) ·
+[INSIGHTS](USER_MANUAL.md) · [MARKETS](USER_MANUAL.md) · [WIKIPEDIA](USER_MANUAL.md) ·
+[DATABASE](ARCHITECTURE.md) · [API_DOCUMENTATION](ARCHITECTURE.md) ·
+[SECURITY](SECURITY.md) · [PRODUCT_SYNTHESIS](DESIGN.md) ·
+[OPEN_QUESTIONS](ROADMAP.md).
 
 *© 2026 Ideotion — built for investigative journalism, honestly. GPLv3.*
+
+---
+
+# Feature deep-dives
+
+Reference depth for each tool, consolidated from the former per-feature guides. The tour in Parts 1–6 above stays the quickest orientation; this part is the detail.
+
+**In this part:**
+- [The Home briefing — intelligence as honest "cards"](#the-home-briefing-intelligence-as-honest-cards)
+- [Source integrity & anti-amplification](#source-integrity-anti-amplification)
+- [Shared source annotations — signed, portable, federated by trust](#shared-source-annotations-signed-portable-federated-by-trust)
+- [Insights — keyword & entity analytics](#insights-keyword-entity-analytics)
+- [Wikipedia change-tracking](#wikipedia-change-tracking)
+- [World law — change-tracking for statutes, gazettes & IP](#world-law-change-tracking-for-statutes-gazettes-ip)
+- [Markets: financial, stock-exchange, and commodity/rare-earth intelligence](#markets-financial-stock-exchange-and-commodityrare-earth-intelligence)
+- [Chain of Custody](#chain-of-custody)
+
+
+---
+
+## The Home briefing — intelligence as honest "cards"
+
+> **Status:** `0.06` Phase A (the GUI spine) — shipped and tested. The phased plan
+> lives in [`ROADMAP.md` → "0.06 — The Intelligence Layer"](ROADMAP.md); the
+> *what & why* in [`ROADMAP.md`](ROADMAP.md).
+
+The **Home** tab is no longer just at-a-glance stats. It is a **triage feed**: the
+app gathers and measures in the background, then surfaces *candidate stories* as
+**cards**. The app does the gathering; **you judge**. Each card is **one measurable
+signal + the evidence links + a caveat**, sorted into an editorial bucket.
+
+A card **surfaces a signal; it never renders a verdict.** There is no "biased", no
+"propaganda", no "true/fake", and — by design and *enforced in code* — **no composite
+trust score** (see "Honesty guards" below).
+
+---
+
+### What you see
+
+The briefing groups cards into **buckets** (display order):
+
+| Bucket | Means | Editorial use |
+|---|---|---|
+| **Rising now** | something is moving / new | lead candidates |
+| **Overtold** | sources agree too fast / too uniformly | debunk the chorus |
+| **Undertold** | something moved but little/nobody covered it | surface the gap |
+| **Worth investigating** | sources or data disagree | dig in |
+| **Check the framing** | the same event framed in opposing ways | verify the claim |
+| **Keep watching** | a change worth an eye (e.g. a reshaped record) | monitor |
+| **Context** | background / self-audit / standing facts | contextualise |
+| **Data integrity** | hygiene signals about the corpus itself | fix the pipeline |
+
+The triad behind them is the engine: **convergence → overtold**, **divergence →
+investigate/debunk**, **absence → undertold**.
+
+Every card shows its **title**, a one-line **summary**, the **measured signal**
+(e.g. `growth_ratio = 4.2`, `n=6`), and **evidence links** back into your corpus.
+Toggle **"Show method & caveat"** to reveal, on every card, exactly how the figure
+was computed and what it does *not* mean. That toggle is the point: **transparency is
+the interface.**
+
+> **Equal view.** In this version every source is counted once and **no source is
+> de-amplified**. The source-integrity / anti-amplification layer (collapsing
+> coordinated floods into single actors, novelty-weighting) is the next phase and is
+> **user-guided** — the app will *propose*, you will *dispose*. Until then the
+> briefing is, honestly, the raw equal-treatment view.
+
+---
+
+### The card → draft → newsletter loop
+
+The payoff loop is visible from day one:
+
+1. On any card, click **+ Add to draft**.
+2. Open the **Newsletter draft** panel; add your own note to each pinned card.
+3. **Export Markdown** (or **Copy**). Each claim ships **with its source links,
+   method and caveat** — reproducible journalism by design.
+
+For a *signed, tamper-evident* copy of the underlying articles, export an **evidence
+bundle** from **Evidence & custody** — the receipts can ship with your issue.
+
+---
+
+### How the cards are produced (Briefing v0)
+
+Each card is made by a **producer**: a function `corpus → [Card]`. Producers compose
+analytics that *already return real numbers* — nothing is invented. A producer that
+lacks its inputs or an optional `[analysis]` dependency **returns nothing and logs
+why** (loud degradation); it never fabricates a card.
+
+| Card | Bucket | Powered by | Status |
+|---|---|---|---|
+| **“X” is rising** | rising | `insights.trending` (recent vs prior-period ratio) | now |
+| **Framing split** | check the framing | per-source VADER tone of a trending term | now¹ |
+| **Record reshaped** | keep watching | Wikipedia large/flagged-edit detection | now |
+| **Price ↔ narrative** | context | honest scipy correlation (coef + p + n) | now¹ |
+| **Stale data** | data integrity | market extraction-rule `last_run_at` / `last_status` | now |
+| **Diet self-audit** | context | `signals.concentration` (Gini + top-3 share over your sources) | now |
+| **Echo chamber** | overtold | `signals.coordination` actor graph (near-dup + timing + host) | new |
+| **Lonely signal** | undertold | single-source near-dup cluster that did not echo | new |
+| **Capacity implausible** | investigate | articles/day vs corpus median | new |
+| **Emotion profile** | context | emotion lexicon over a keyword's context windows | new² |
+| **IP / legal pulse** | context | rising IP/legal terms in the news corpus | thin |
+| **Ownership change** | investigate | deal-verb language (acquired/merger/divested) in recent news | thin |
+
+¹ Needs the `[analysis]` extra (VADER / scipy). Without it those cards simply don't
+appear — the rest of the briefing still works.
+² Uses an emotion lexicon; a minimal English **sample** ships, point
+`OO_EMOTION_LEXICON` at a fuller JSON lexicon for serious use (English-only).
+
+The **echo-chamber**, **lonely-signal** and **capacity-implausible** cards come from the
+source-integrity layer — see [`USER_MANUAL.md`](USER_MANUAL.md). Echo-chamber cards carry a
+*Collapse to one actor* action (user-guided anti-amplification — propose → you dispose).
+
+The **Diet self-audit** uses the first pure primitive of the shared
+[`src/signals/`](../src/signals/) substrate: **concentration** (Gini coefficient +
+top-N share). It is the *same maths* intended for media-ownership concentration
+(FUTURE_DEVELOPMENTS §1) and people-prominence (§4) — one engine, many domains.
+
+---
+
+### Performance — precompute, cache, serve cached
+
+The briefing **never computes per request**. The background scheduler refreshes it
+after each scrape and writes a cache (`briefing_cache.json` under your data dir);
+Home reads the cache and loads instantly. **Refresh** recomputes on demand. Dismissals
+(`briefing_dismissed.json`) and the draft (`briefing_draft.json`) are small local JSON
+files — single-user, local-first, never transmitted.
+
+---
+
+### Honesty guards (in code, not just docs)
+
+FUTURE_DEVELOPMENTS §6 forbids a single automated trust/quality score (it bakes the
+scorer's worldview into a false-objective number and *will* misclassify small, foreign,
+new or dissident sources). That ban is enforced **mechanically**:
+
+- `src/briefing/card.py:assert_no_score_fields()` rejects any `Card` field whose name
+  implies a composite score (`score`, `trust_score`, `credibility`, `rating`,
+  `verdict`, …). It runs at import and a test asserts it holds.
+- The numeric a card carries lives in `signal` as **one measured quantity with a
+  stated method** — a growth ratio, a Gini value, a correlation coefficient — never a
+  blended score over incommensurable dimensions.
+- **Surface, don't suppress.** Dismissal is reversible; any future down-weighting will
+  be transparent, tunable, off by default, and reversible.
+
+---
+
+### API
+
+All under `/api/briefing` (loopback only, like the rest of the app):
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/briefing` | the cached feed, grouped by bucket (`?force=true` to recompute) |
+| `POST /api/briefing/refresh` | recompute now |
+| `POST /api/briefing/dismiss` · `/restore` · `/dismissed/clear` | manage dismissals |
+| `GET /api/briefing/draft` | the current draft (pinned cards + notes + title) |
+| `POST /api/briefing/draft/add` · `DELETE /api/briefing/draft/{id}` | pin / unpin a card |
+| `PUT /api/briefing/draft/note` · `/title` · `POST /draft/clear` | edit the draft |
+| `GET /api/briefing/draft/export.md` | the evidence-carrying Markdown |
+
+---
+
+### Roadmap (status)
+
+Phases A–D are shipped: the card+briefing spine (A), the full `src/signals/` substrate
+— concentration, near-dup/coordination, novelty (B), the source-integrity profile +
+user-guided anti-amplification (C, see [`USER_MANUAL.md`](USER_MANUAL.md)), and crowdsourced
+signed annotation bundles (D, see [`USER_MANUAL.md`](USER_MANUAL.md)). Phase E ships the
+composable verticals as cards (emotion, IP/legal news); the **law / IP primary-source
+change-tracking verticals** (ingesting `legislation.gov.uk`, EUR-Lex, patents/dockets)
+remain the documented next step — they reuse the existing change-tracking and
+near-dup/correlation engines but require live external sources. See
+[`ROADMAP.md`](ROADMAP.md) Phases B–E.
+
+
+---
+
+## Source integrity & anti-amplification
+
+> **Status:** `0.06` Phase C — shipped and tested. The keystone of the intelligence
+> layer (FUTURE_DEVELOPMENTS §6). Pairs with [`USER_MANUAL.md`](USER_MANUAL.md) and
+> [`USER_MANUAL.md`](USER_MANUAL.md).
+
+The other tools surface signals; **this one decides whose signal counts** — *without
+becoming an arbiter of truth*. It is the answer to the "garbage in" problem.
+
+### The surprise: treating every source equally is **not** neutral
+
+Trending, prominence, synchrony and "what's covered" all **count outlets and volume**.
+So equal-treatment-of-outlets, applied to a volume metric, has a built-in bias:
+*whoever produces the most wins.* A well-resourced actor who spins up 40 outlets (or
+troll farms, or content mills) converts capital directly into apparent consensus and
+**dilutes** honest single-source stories into nothing. Doing nothing is not neutral —
+it subsidises the flooder.
+
+The resolution is not to *score* sources. It is to define neutrality over the right
+**unit**: equal treatment of *independent actors weighted by the new information they
+contribute*, not of *outlets*. **Counting sock-puppets as voices is a measurement
+error, not neutrality.**
+
+### What is measured (and what is forbidden)
+
+We live strictly in the **allowed** half of the §6 distinction:
+
+- **(A) Veracity / quality scoring** — "is this source truthful / good?" — is
+  **forbidden to automate.** It bakes the scorer's worldview into a false-objective
+  number and *will* eventually score a good-but-unusual source down too.
+- **(B) Authenticity / structure signals** — "is this source what it claims to be? one
+  node of a coordinated network? does it *originate* or only *echo*? is its output
+  within human capacity? is it transparent about who runs it?" — these are, to a real
+  degree, **measurable structural facts.** All design lives here.
+
+#### The shared engine (`src/signals/`)
+
+| Primitive | Measures | Powers |
+|---|---|---|
+| `concentration` | Gini + top-N share | ownership/diet concentration, prominence |
+| `near_dup` | MinHash + LSH near-duplicate clusters | echo / syndication detection |
+| `coordination` | actor graph from near-dup + lockstep timing + shared host | actor-collapse |
+| `novelty` | share of word-shingles new to the corpus | originates-vs-echoes weighting |
+
+All four are **pure** (no DB, no network), property-tested, and carry method + caveat.
+
+### Anti-amplification is **user-guided** (propose → you dispose)
+
+Anti-amplification is **never** a silent transform the app performs and you merely
+*undo* — that would make the app the arbiter §6 forbids.
+
+- **Default = "equal but aware."** The raw equal-treatment view is the baseline; a
+  coordinated flood is **annotated on it** (the *echo-chamber* card), not collapsed.
+- **You apply a collapse**, per-cluster or globally. Only then does a coordinated
+  network fold into **one voice** in any count that measures consensus (how many
+  independent voices carry a story).
+- **Every applied collapse stays flagged and reversible.** One click expands it to its
+  members; reverting reproduces the raw equal counts **exactly**. *No collapse is ever
+  applied without your explicit action* — enforced by a test.
+
+This is the **Source integrity** tab: *Scan for coordination* lists proposed actors
+with their evidence (shared text, lockstep timing, shared host); *Apply collapse* /
+*Expand (revert)* are yours to choose. The echo-chamber cards on Home carry the same
+*Collapse to one actor* action.
+
+### The source profile — measured dimensions, **no composite score**
+
+Per source, a panel of *measured* signals — and **deliberately no single trust
+number** (the forbidden "B"). A 0–100 score is false precision over incommensurable
+dimensions, Goodhart-gameable, a single point of capture, and *will* misclassify
+small / foreign / new / dissident sources. The ban is enforced in code (the profile
+returns `no_composite_score: true` and a test asserts no aggregate `*score*` key).
+
+Dimensions (each with its own method + caveat):
+
+- **Coordination** — actor membership, with whom, how many shared stories.
+- **Novelty** — does this source originate or mostly echo? (relative to *your* corpus).
+- **Output capacity** — articles/day vs the corpus median (a *question*, not a verdict;
+  wire agencies and big newsrooms are legitimately prolific).
+- **Transparency** — country, language, ownership/leaning tags (reputational,
+  contestable, editable), and the operator-set `reliability_score` (not computed here).
+- **Track record** — what this source has contributed to your corpus.
+
+You weight which dimensions matter into *your* view — off by default, reversible, the
+raw equal view always one click away.
+
+### New briefing cards from this layer
+
+- **Echo chamber** (overtold) — one story carried across N coordinated sources.
+- **Lonely signal** (undertold) — a substantive single-source story that did not echo.
+- **Capacity implausible** (investigate) — a source publishing far above the corpus norm.
+
+### API
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/integrity/profile?source=` | the no-composite measured-signal panel |
+| `GET /api/integrity/actors` | proposed coordinated actors, each flagged applied/not |
+| `GET /api/integrity/prominence` | story prominence in independent voices, raw vs collapsed |
+| `POST /api/integrity/collapse/apply` · `/revert` | apply / undo a collapse (per actor) |
+| `POST /api/integrity/collapse/apply_all` · `/revert_all` | collapse / reset globally |
+
+### Honest limits (named)
+
+- **Arms race / Goodhart** — every published signal is an optimisation target; this is
+  defence-in-depth, never a claim of completeness.
+- **False merges hurt the innocent** — detection is high-precision, biased to
+  *under*-merge, always evidence-shown, always reversible.
+- **Capture** — we ship *mechanisms, not verdicts*; the default is the transparent
+  equal view; you override everything.
+- **The goal** is not "detect all garbage" (impossible, and claiming it would be the
+  dishonest move) but to **strip garbage of its mechanical advantage** so the 40-agency
+  play *stops paying off*.
+
+
+---
+
+## Shared source annotations — signed, portable, federated by trust
+
+> **Status:** `0.06` Phase D — shipped and tested. The scaling answer to the source
+> profile (FUTURE_DEVELOPMENTS §6). Pairs with [`USER_MANUAL.md`](USER_MANUAL.md).
+
+The source profile lets *you* weight which dimensions matter. But **nobody can neutrally
+assess thousands of sources alone** — so the weighting must be **collective**. The
+honest, local-first, non-centralised way to do that is **signed, shareable annotation
+bundles**.
+
+- You publish your source annotations — coordination tags, ownership/transparency
+  facts, leaning tags, corrections, notes — as a **custody-signed, verifiable, portable
+  bundle** (reusing the same hybrid Ed25519 + ML-DSA signer as the chain of custody —
+  *mutualisation*, not a second crypto stack).
+- Other users **import** the bundles they choose to trust — an opt-in **web of trust**,
+  **never** a central authority.
+- Aggregation is **transparent**: you always see *who asserted what*, and **dissent is
+  shown, not averaged** into a hidden number.
+
+No server, no accounts, no global score — **federation by signed exchange.**
+
+### What an annotation is (and is not)
+
+An annotation is a **descriptive, contestable fact or tag** about a source. Kinds:
+`ownership`, `leaning`, `coordination-tag`, `transparency-fact`, `correction`, `note`.
+It is **never** a composite trust/quality score — that is forbidden, by design and in
+code (an invalid kind like `trust-score` is rejected).
+
+### Trust model — what a signature does and doesn't prove
+
+Each bundle embeds the author's **public identity** and a signature over the canonical
+manifest. Verification **pins** the embedded key, so a tamper-and-re-sign attack cannot
+*impersonate* the original author — it merely produces a **different** author. A
+verified bundle is therefore always truthfully attributed to whatever key signed it.
+You then decide *which keys to trust*; only trusted authors' annotations are aggregated.
+
+This is **web-of-trust, not proof of correctness**: trusting an author means "I want to
+see their assertions," not "their assertions are true." Dissent between trusted authors
+is surfaced for you to judge, never resolved for you.
+
+### Using it (the Source integrity tab)
+
+1. **Author** annotations (target + kind + value) under *Shared annotations*.
+2. **Export signed bundle** → a JSON file you can publish or share.
+3. **Import bundle…** → the app **verifies the signature** before storing it (an invalid
+   bundle is refused, loudly), then lists the author under *Trusted authors* with a
+   trust toggle.
+4. **Who said what?** → aggregate every assertion about a source from you + trusted
+   authors, with attributions and dissent shown.
+
+Untrusting an author excludes their annotations; removing one deletes them cleanly.
+
+### API
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | your authored annotations |
+| `GET /api/annotations/export` | a signed, portable bundle of your annotations |
+| `POST /api/annotations/import` | verify + store an imported bundle (refused if invalid) |
+| `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | the web of trust |
+| `GET /api/annotations/for?target=` | transparent aggregation — who asserted what |
+
+### Honesty constraints
+
+- **No averaging, no consensus number, no score.** Aggregation returns attributed
+  claims and names *dissent*; it never collapses disagreement into a figure.
+- **Local-first.** Everything is a file under your data dir; nothing is transmitted and
+  there is no server or account.
+- **Contestable by construction.** Every annotation is a tag/fact you and others can
+  disagree about — visibly.
+
+
+---
+
+## Insights — keyword & entity analytics
+
+### Intent
+
+Turn the unified corpus from a search box into an analytical instrument. Keywords
+and entities are extracted from **ingested article text**, stored with their
+occurrences and context, and surfaced so an investigative journalist can ask:
+*what is being talked about, where, when, by whom, and together with what?*
+
+Everything here is a **real aggregate** over stored data with a stated method and
+sample size — never a fabricated score (PRODUCT_SYNTHESIS §3.5).
+
+### How it works
+
+```
+ingest an article ──► extract (baseline / opt-in spaCy) ──► KeywordMention rows
+                          terms + entities, offsets        (count + first offset +
+                                                            denormalised date/country/city)
+                                                                   │
+                          Insights tab / /api/insights  ◄──────────┘
+                          trends · associations (PMI) · context · map
+```
+
+- **Extraction** (`src/analytics/extract.py`): topical n-gram **terms**
+  (stopword-filtered) plus **entities** — people, companies/orgs, places — as
+  single units. The baseline (no dependencies) detects entities as multi-word
+  Title-Case sequences and assigns a `person`/`org`/`location` kind only from a
+  gazetteer (otherwise the honest generic `entity`); an opt-in **spaCy** `[nlp]`
+  extra adds real `PERSON`/`ORG`/`GPE` NER. Every keyword records **which extractor
+  labelled it** — an entity type is a *labelled-by-X assertion*, not ground truth.
+  Best for space-delimited scripts; CJK/Arabic segmentation is a known later step.
+- **Storage** (`src/analytics/store.py`): one `KeywordMention` per (article,
+  keyword) — occurrence count + first char offset (the context sentence is sliced
+  from the stored article on read, so the DB stays lean) + denormalised
+  `observed_on` / `country` / `city` from the source. Indexing runs best-effort at
+  ingest (fast baseline, fail-open) and can be **back-filled** over the existing
+  corpus from the Insights tab ("Index corpus").
+
+### Functions (Insights tab + `/api/insights`)
+
+| View | Endpoint | What it shows |
+|------|----------|---------------|
+| Explore — trend | `GET /trend?term=&bucket=` | Mention volume over time (day/week/month), with the resolved keyword + kind |
+| Explore — mind-map | `GET /associations?term=` | Co-occurring keywords ranked by **PMI** (pointwise mutual information) with sample sizes + a "association ≠ causation" caveat; click a node to recenter |
+| Explore — context | `GET /context?term=` | Recent mention snippets sliced from article text, with article/source links + country/city/date |
+| Trends | `GET /trending`, `GET /top` | Rising terms (recent-vs-prior **ratio**, a labelled measure) and top terms, filterable by window / kind / country |
+| Map | `GET /map?days=&kind=` | Top keywords **per country and per city** (source-based region signal) |
+| Indexing | `GET /status`, `POST /reindex?limit=` | Indexed/remaining counts; chunked corpus backfill |
+
+`kind` filters: `term`, `entity`, `person`, `org`, `location`.
+
+### Honesty guarantees
+
+- Trends/top are real counts; "rising" is a defined recent-vs-prior **ratio**,
+  explicitly *not* a significance test.
+- Associations use **PMI** over article co-occurrence, returned with `n` and the
+  caveat that small samples are noisy.
+- Entity kinds carry extractor provenance; the baseline never claims a precise
+  person/org/place type it cannot justify.
+- Region on the map is the **source's** country/city (the reliable signal). The
+  Map view now includes an **interactive equirectangular SVG** (zoom/pan, city
+  labels on zoom) plotting cities by real lat/lon from a **gazetteer**: a small
+  sample ships (`configs/cities.sample.yml`); the full set is generated from
+  Wikidata (`scripts/build_city_gazetteer.py` → `configs/cities.yml`). A city with
+  no gazetteer match keeps its keyword data but **no plotted position** (never a
+  fabricated location). Country/city tables remain alongside the map.
+
+
+---
+
+## Wikipedia change-tracking
+
+### Intent
+
+Wikipedia is contested ground: articles are continuously edited, and in the LLM
+era removing or rewriting history is easier than ever. This tool treats each
+Wikipedia **language edition** as a tracked source whose *edits* are the data, so
+a journalist can **detect and document** large-scale or revisionist changes —
+e.g. prove that a sentence existed on a given date and was removed by a given
+account.
+
+> Editions are per-**language** (`en`, `fr`, `ar`, `ru`, `zh`, …), not
+> per-country (there is no national Wikipedia); the UI maps languages to countries.
+
+### Why this is not "regular article" ingestion
+
+Articles change over time, so they cannot be stored as one-shot `Article` rows.
+Two design choices follow:
+
+1. **Use the MediaWiki Action API, not page scraping** — `revisions`,
+   `recentchanges` (with byte deltas), and `compare` (server-computed diffs). This
+   is the efficient, ToS-friendly, change-oriented path.
+2. **Store deltas, not re-copies** — keep **one** compressed full-text baseline
+   per page (`wiki_pages.baseline_text`); every edit after is a `wiki_revisions`
+   row holding the **diff + signed byte delta + flags**, never the whole new
+   article. Any historical version is reconstructable by replaying diffs.
+
+**This answers the redundancy/disk question:** a cosmetic edit is a tiny diff
+carrying MediaWiki's `minor` flag and is filtered by a size/minor threshold, so it
+costs almost nothing. Storage scales with **edit activity on watched pages**, not
+with the multi-GB article corpus — you never need the full dump for tracking.
+
+### Detecting large-scale / suspicious edits (honest)
+
+`src/wiki/flagging.py` flags an edit and records **reason codes** — it surfaces
+*candidates*, it does not pronounce "disinformation":
+
+- `large_removal` / `large_addition` — byte delta beyond a threshold
+- `revert` / `blank` — MediaWiki change tags (`mw-reverted`, `mw-undo`, `mw-blank`…)
+- `anon_large` — a medium+ edit from an anonymous IP
+- `burst` — many edits to one page in a short window
+- `ores_damaging` — optional **Wikimedia ORES** "damaging" probability, presented
+  as a *labelled-by-ORES* assertion (like our entity provenance)
+
+Minor cosmetic edits are never flagged. Each flagged edit is documented with its
+diff + provenance (revid, editor, timestamp), which plugs into the existing
+**chain-of-custody** for signed/timestamped evidence.
+
+### Two clearly-separated subsystems (UX)
+
+1. **Watch & track** (lightweight, instant, the default): a watchlist of pages /
+   categories per language edition; poll revisions on the in-app scheduler; store
+   revisions + diffs + flags; a diff viewer + per-page timeline. No bulk download.
+2. **Offline baseline** (heavy, optional): lives in **Settings → Wikipedia
+   offline baselines** (deliberately out of the way of the lightweight tracker). A
+   **selectable list of language editions** (curated, largest-first, with each
+   language's own name and a coarse size tier) replaces free-text code entry; the
+   exact current dump size is read from the server on demand (`Estimate size`),
+   then download / pause / resume / delete. The list comes from
+   `GET /api/wiki/languages`; the downloader still accepts any edition code.
+   (Size reality: current-text enwiki ≈ 22 GB compressed; full history is
+   terabytes — only needed for offline historical diffs.)
+
+### Status
+
+- **Done:** schema (`wiki_pages`, `wiki_revisions`; migration `d4e5f6a7b8c9`);
+  the MediaWiki API parser + live client (`mediawiki.py`, `client.py`); the
+  edit-flagging logic (`flagging.py`); ORES client (`ores.py`); the tracking
+  orchestrator (`track.py`, baseline + delta storage); the scheduler `wiki` mode;
+  the **API** (`/api/wiki/*`) and the **Wikipedia tab** (watchlist, track now,
+  flagged-changes feed, diff viewer); the **offline baseline downloader**
+  (`dumps.py` — per-language, resumable, size probe) now driven by a **language
+  picker** (`languages.py`, `GET /api/wiki/languages`) relocated to **Settings →
+  Wikipedia offline baselines**. All pure logic + orchestration unit-tested with
+  fixtures (no network).
+- **Next:** cross-link wiki diffs into the Insights keyword analytics; optional
+  EventStreams firehose; evidence-export of a flagged diff via chain-of-custody.
+
+### Ethics
+
+All fetching honours the MediaWiki API usage policy (identifying User-Agent,
+`maxlag`, rate limits) — more considerate than scraping. We store only public
+revision data; nothing is fetched until tracking runs.
+
+
+---
+
+## World law — change-tracking for statutes, gazettes & IP
+
+> **Status:** `0.06` Phase E — shipped. The §5 vertical: a "Wikipedia for the law."
+> Reuses the change-tracking engine (`src/wiki`) and the shared `src/signals/` engines.
+
+Aggregate the **law** — statutes, legislation, official gazettes, IP records — from
+official sources worldwide, and **track how it changes over time**. Law is public in
+many countries and changes by amendment, so the data *is the diff*: what changed, when.
+
+### On by default — a worldwide catalog of real official sources
+
+`configs/legal_sources.yml` ships a curated, worldwide set of **real official primary
+sources** — national legislation databases (`legislation.gov.uk`, EUR-Lex, Légifrance,
+`gesetze-im-internet.de`, `congress.gov`/`govinfo.gov`, `legislation.gov.au`,
+`indiacode.nic.in`, `elaws.e-gov.go.jp`, `law.go.kr`, …), official gazettes, IP offices
+(WIPO Lex, USPTO, EPO, EUIPO, JPO, …) and open case-law/filing systems (CourtListener,
+SEC EDGAR). On first run these are seeded as ordinary **ingestible, searchable** sources
+(`source_type` legal/ip), so they flow through the *same* ethical pipeline as news.
+
+A curated subset of stable, well-known **consolidated-law documents** (e.g. the UK Human
+Rights Act, the EU GDPR, the US Constitution) is registered for **change-tracking** out
+of the box.
+
+### How tracking works (reuses the Wikipedia engine)
+
+For each tracked document, the first successful fetch is the immutable **baseline**
+("the law as it stood on date X"). Every later fetch whose *normalised visible text*
+differs records a revision carrying the byte delta, a capped unified **diff** against the
+baseline, and an honest **large-change flag** (reusing the wiki flagging thresholds).
+Run it from the **World law** tab ("Track changes now") or on the background scheduler
+(`law` mode). All fetching is through the **ethical, robots-fail-closed** path.
+
+### Briefing cards from the law corpus
+
+- **Law changed** (watch) — a flagged change to a tracked legal document.
+- **Model legislation** (investigate) — near-identical legal text across two or more
+  jurisdictions (the §1/§2 near-dup engine), a measurable diffusion pattern.
+
+Plus, because legal text is in the unified corpus, **law ↔ news** correlation and
+keyword analytics work over it like any other source.
+
+### API
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/law/status` | coverage: documents per jurisdiction, change/flag totals |
+| `GET /api/law/documents` | tracked documents (optionally `?jurisdiction=`) |
+| `GET /api/law/documents/{id}` | one document with its change history (diffs) |
+| `GET /api/law/changes` | recent (flagged) legal changes, newest first |
+| `POST /api/law/track` | fetch all watched documents now (ethical fetcher) |
+| `POST /api/law/seed` | (re)seed the worldwide catalog + register documents |
+
+### Honesty constraints (law is high-stakes)
+
+- **Not legal advice, not the authoritative source.** The aggregated copy is a
+  *research mirror*; every record links back to the official gazette, and the UI says so.
+  Track and surface; never interpret legality or judge a law.
+- **"Public" ≠ "freely redistributable."** Licences vary even where text is public —
+  each is respected, attributed, with provenance stored, robots fail-closed (as for news).
+- **Scope honestly.** "Every country" is the north star, not v1: the catalog is broad but
+  curated, and change-tracking is by normalised-text diff (consolidated-text portals give
+  the cleanest signal). Structured formats (Akoma Ntoso / ELI) per-edit diffs are the next
+  refinement; the tool says which it has.
+- **Translation** (via the local LLM) is a separate, clearly-labelled aid — never an
+  authoritative legal translation.
+
+
+---
+
+## Markets: financial, stock-exchange, and commodity/rare-earth intelligence
+
+Open Omniscience ships a **curated, worldwide catalog of market sources** so it is
+ready to ingest financial-market coverage out of the box, and a Markets tab that
+turns *configured* pages into a real, chartable price series correlated with news.
+
+This document explains what's pre-packaged, what isn't, and why — because the
+honest boundary here matters more than a long feature list.
+
+### What is pre-packaged (ready to run as-is)
+
+`configs/markets_sources.yml` is seeded automatically alongside the news catalog
+(`configs/sources.yml`) on first launch and via **Sources & Database → Seed
+starter sources**. It contains ~110 curated entries identified by stable primary
+domain:
+
+- **Stock & securities exchanges** worldwide (Americas, Europe, Asia-Pacific,
+  Middle East, Africa) — NYSE, Nasdaq, LSE, Euronext, Deutsche Börse, JPX, HKEX,
+  SSE/SZSE, NSE/BSE India, SGX, ASX, B3, Tadawul, JSE, and many more.
+- **Commodity / metals / energy / derivatives exchanges** — CME Group, ICE, LME,
+  SHFE, DCE, ZCE, INE, **GFEX** (rare-earth & industrial-silicon futures), MCX,
+  Eurex, MGEX.
+- **Commodity & rare-earth price/data sources** — Shanghai Metals Market, Kitco,
+  USGS, World Bank Pink Sheet, EIA, IEA, OPEC, Fastmarkets, Argus, Benchmark
+  Mineral Intelligence, S&P Global Commodity Insights.
+- **Financial news & data publishers** — Bloomberg, Reuters, FT, WSJ, CNBC,
+  MarketWatch, Nikkei Asia, Caixin, and others.
+
+These are ordinary **sources**: they feed the unified corpus through the same
+ethical fetcher (robots.txt fail-closed, rate-limited). Each carries a
+`source_type` (`stock_exchange` / `commodity` / `financial`), region, country and
+tags, so you can filter them in **Sources & Database** and attach price rules in
+**Markets**.
+
+> RSS feeds are intentionally left blank for these entries (a wrong feed URL is
+> just noise). Ingest them with the recursive crawler, or add a verified RSS feed
+> per source from the Sources tab.
+
+### Getting real price numbers
+
+A price series is only produced where you tell the app **exactly where the number
+is** — there is no magic page-reading, by design. Two honest paths:
+
+#### 1. Per-page extraction rules (Markets tab)
+
+Add a rule (source, symbol, page URL, **CSS selector**, optional attribute /
+value-regex, currency, unit), then press **Test**. Test fetches the page once and
+shows the *exact* value found — or the *exact* reason it didn't match — so you can
+tune the selector with real feedback. Matching rules store one `CommodityPrice`
+per day, which the inline charts and price↔news correlation read.
+
+Templates to copy: `configs/market_rules.example.yml`.
+
+**Caveat (read this):** most exchange/quote pages render prices with JavaScript,
+so the number is *not* in the static HTML the fetcher receives and a selector will
+find nothing. This is why working selectors are **not** pre-shipped — guessing
+them would mean fabricated numbers. Server-rendered pages (many official/statistical
+sites, some data tables) work well; heavily client-rendered quote widgets do not.
+
+#### 2. Official CSV feeds (recommended — reliable, ships with a catalog)
+
+For trustworthy numeric history, import a machine-readable CSV series from an
+official source. This is the reliable path and the app ships a starter catalog
+(`configs/commodity_feeds.yml`) you can import in one click from
+**Markets → Official price feeds**, or via the API:
+
+```
+GET  /api/markets/feeds                # list curated feeds + how many points each has
+POST /api/markets/feeds/{key}/import   # import one (e.g. copper, wti_crude, brent_crude)
+POST /api/markets/feeds/import-url      # import ANY CSV URL you supply (user-customizable)
+```
+
+**Primary provider — FRED** (Federal Reserve Bank of St. Louis): a stable,
+no-API-key CSV endpoint, `https://fred.stlouisfed.org/graph/fredgraph.csv?id=<ID>`,
+which **redistributes the World Bank "Pink Sheet" commodity series** (the
+"Global price of …" IDs — copper `PCOPPUSDM`, brent `POILBREUSDM`, etc.) and
+**EIA** energy series (`DCOILWTICO`, `DHHNGSP`, …). First column is the date,
+second the value; missing values (`.`) are skipped, never stored as zero. Import
+is idempotent per `(symbol, market, date)`.
+
+**Comparable sources** you can add as a custom feed (URL + optional column names):
+- **World Bank** Commodity Markets ("Pink Sheet"): the `.xlsx` is at
+  <https://www.worldbank.org/en/research/commodity-markets>; the same series in
+  clean CSV come via the FRED feeds above.
+- **U.S. EIA** energy open data: <https://www.eia.gov/opendata/>
+- **IMF** Primary Commodity Prices: <https://www.imf.org/en/Research/commodity-prices>
+- **USGS** mineral commodity data (rare earths): <https://www.usgs.gov/centers/national-minerals-information-center>
+
+The default column mapping is column 1 = date, column 2 = value (the FRED
+convention); name `date_column` / `value_column` explicitly for other layouts.
+
+There is also a direct file-upload path for a CSV you already have:
+
+```
+POST /api/commodities/{symbol}/prices/import-csv      (multipart file upload)
+```
+
+> If a provider renames or retires a series, the import fails **loudly** (HTTP
+> error / no usable rows) rather than inventing data — fix the URL in
+> `configs/commodity_feeds.yml` or use a custom feed.
+
+### Why no auto-extracted prices on day one?
+
+Because a number with no verifiable origin is worse than no number. Everything in
+this tool is built so that a figure shown to the user came from a real
+measurement: a selector that actually matched, or a CSV that was actually
+imported. The catalog gets you the *sources* instantly; you decide, per page, when
+a price is trustworthy enough to record.
+
+
+---
+
+## Chain of Custody
+
+Open Omniscience makes a deliberately *narrow and honest* evidentiary claim:
+
+> **This corpus contained _this_ item, with _this_ content, recorded at _this_
+> time, and the record has not been altered since — and here is cryptographic
+> proof you can check yourself, offline, without trusting this tool.**
+
+That is genuinely useful for an investigative journalist: it defends against
+"you fabricated this," "you back‑dated this," or "you quietly edited it after the
+fact," and it lets you show you reported something *before* a source page was
+changed or deleted. It is **not** a whistleblower submission system (like
+SecureDrop), and a "source" in this tool is a *news outlet*, not a confidential
+human source. Keep that scope in mind when reasoning about protection.
+
+This document describes the real mechanisms (`src/custody/`, `src/reporting/`) and
+is explicit about what each one does and does **not** prove.
+
+---
+
+### The three properties, and how we get each one honestly
+
+| Property | Mechanism | What it proves | What it does **not** prove |
+|---|---|---|---|
+| **Integrity** | Ed25519 (+ optional ML‑DSA) signatures over a canonical serialization; Merkle root over all provenance fields | The bytes have not changed since signing; everything is covered, not just the content | — |
+| **Provenance** | **Pinning** the signer's known public key | The record was signed by *that* signer | Anything, if you don't pin a key — a valid signature alone only means "signed by the key embedded in the bundle" |
+| **Time** | `local` (self‑asserted) **or** OpenTimestamps (Bitcoin‑anchored) | Local: a time the tool asserts. OTS: the content existed *no later than* a Bitcoin block | Local time proves nothing to a third party; OTS proves a *ceiling* on time, not the exact moment |
+
+We refuse to fake any of these. If a real third‑party timestamp can't be obtained
+(offline, or the library isn't installed) the code raises rather than inventing a
+time — the failure mode the project's charter forbids (PRODUCT_SYNTHESIS §3.7).
+
+---
+
+### Components
+
+#### 1. Signed evidence bundles — `src/reporting/evidence.py`
+A point‑in‑time export of selected articles, each with its provenance and a content
+hash, bound by a **domain‑separated Merkle root** and an **Ed25519 signature**.
+Verify offline with `scripts/verify_evidence.py <bundle.json> [signer_pubkey]`.
+Exposed at `POST /api/reports/evidence` and `/api/reports/evidence/verify`.
+
+#### 2. Hybrid signatures — `src/custody/signing.py`
+Combines **Ed25519** (fast, classical) with **ML‑DSA** (FIPS 204, post‑quantum,
+the standardised successor to CRYSTALS‑Dilithium). Two rules make this honest:
+
+- **Honest labels.** A signature is labelled `hybrid` only when an ML‑DSA key was
+  actually used. Without the `pqc` extra installed, signing produces an `ed25519`
+  signature and says so — it never claims quantum resistance it didn't produce.
+- **Hybrid means AND.** A `hybrid` signature verifies only if **both** components
+  verify. A verifier that lacks the post‑quantum library cannot check the ML‑DSA
+  half and therefore **fails loudly** — it never silently passes on the classical
+  half alone. (A scheme that accepts *either* signature is worthless once the
+  classical one is broken.)
+
+Private keys are encrypted at rest with AES‑256‑GCM under a scrypt‑derived key
+when `OO_KEY_PASSPHRASE` is set; otherwise they are written `0600` in the clear
+and the protection level is reported truthfully as `plaintext-0600`.
+
+#### 3. Custody log — `src/custody/log.py`
+An **append‑only** SQLite ledger. Each action (`ingest`, `access`, `export`,
+`redact`, …) becomes an entry that is **hash‑chained** to its predecessor,
+**signed**, and **timestamped**. `verify()` re‑checks sequence order, chain links,
+per‑entry hashes, signatures, and timestamp digests. Exports verify offline:
+
+```bash
+python scripts/verify_custody.py custody_bundle.json [--pin]
+```
+
+REST: `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`,
+`GET /api/custody/export`, `POST /api/custody/verify`.
+
+Opt‑in auto‑logging on ingest: set `OO_CUSTODY_ON_INGEST=1`
+(`Config.custody_on_ingest`). It is **off by default** — an explicit evidentiary
+choice with a small per‑article signing cost, not silent always‑on behaviour.
+It is fail‑open: a custody error never breaks ingestion.
+
+#### 4. Anchoring — `src/custody/anchor.py`
+Publishes a Merkle root to an external witness so its existence time doesn't rest
+on your own clock or key:
+
+- **`local`** (default, offline): records the root in a local anchor book. Proves
+  only that *this tool* stored it — internal audit, not third‑party proof.
+- **`opentimestamps`** (network): anchors an opaque hash into Bitcoin. No wallet,
+  no fee, independently verifiable. Falls back to an explicit *unavailable* error
+  when offline — never a fake receipt.
+- **`ethereum` / `ipfs` / `arweave`**: declared but **not implemented**. They
+  refuse with a clear error rather than shipping as stubs whose `verify()` always
+  returns false.
+
+REST: `POST /api/custody/anchor`, `GET /api/custody/providers`.
+
+#### 5. Settings — `src/custody/settings.py` (GUI‑configurable)
+Custody behaviour is operator‑controlled at runtime, not just via env/YAML.
+Preferences persist to `custody_settings.json` under the data dir and are edited
+from the **Chain of custody** panel in the web UI (or the REST API):
+
+- **`pqc_enabled`** — request hybrid Ed25519 + ML‑DSA signing.
+- **`anchoring_mode`** — `local` (default) or `opentimestamps`.
+- **`auto_log_on_ingest`** — append a signed entry on every successful ingest
+  (defaults to the legacy `OO_CUSTODY_ON_INGEST` flag until a preference is saved).
+- **`default_actor`** — optional actor label for auto‑logged entries.
+
+**Honesty invariant.** A toggle is a *request*, not a guarantee. The API and GUI
+always surface the **effective** state (preference **AND** library availability):
+if PQC is enabled but `pqcrypto` is not installed, the signer stays Ed25519‑only
+and the UI says so — it never shows a green "hybrid" light it cannot back up. Same
+for OpenTimestamps without the `timestamping` extra.
+
+REST: `GET /api/custody/settings`, `PUT /api/custody/settings`.
+
+A typical "maximum proof" workflow:
+
+```
+export evidence bundle  ->  take its merkle_root  ->  POST /api/custody/anchor
+  (POST /api/reports/evidence)                         {merkle_root, "opentimestamps"}
+```
+
+---
+
+### ⚠️ Privacy: anchoring can deanonymise you
+
+Anchoring to a **public** blockchain is **permanent publication** of a hash and a
+timestamp. The hash itself reveals nothing about the content, but the *act* of
+submitting reveals your IP and timing to the calendar/RPC operators, and a funded
+on‑chain wallet creates a money trail. For anyone who needs anonymity:
+
+- Prefer **local + OpenTimestamps** over public‑chain wallets.
+- Route OpenTimestamps submissions through **Tor** (e.g. `HTTPS_PROXY`).
+- Or skip external anchoring entirely and rely on local timestamps + signing.
+
+Confidentiality and public‑chain anchoring are in tension. The default
+configuration (offline local provider, self‑asserted local time) leaks nothing.
+
+---
+
+### What we deliberately did **not** build
+
+- **No fake RFC‑3161 TSA.** Returning `datetime.now()` and calling it a "trusted
+  timestamp" is theatre. Use OpenTimestamps (real) or local (honestly labelled).
+- **No OR‑semantics hybrid signatures.** See "Hybrid means AND" above.
+- **No always‑on background integrity daemon, no unencrypted key store advertised
+  as "encrypted."** Keys say how they're protected; verification is on demand.
+
+### Threat model in one paragraph
+
+The tool runs as a **single local user, loopback‑only, on Qubes** (see
+`docs/SECURITY.md`). The custody system defends the *integrity and provenance of
+your own evidence trail* against later tampering and against "you made this up"
+challenges. It does not, and cannot, protect a human source's identity by itself,
+and naive public‑chain anchoring can actively *harm* anonymity — so anchoring is
+opt‑in, defaults to offline, and ships with the warning above.
+
