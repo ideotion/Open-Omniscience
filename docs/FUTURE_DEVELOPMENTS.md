@@ -373,9 +373,14 @@ primary-source layer, with patents/dockets/filings as the case half.
   adopted; crude text-diff elsewhere — and say which you have. Distinguish
   *consolidated* vs *point-in-time* text explicitly.
 
-**Status:** vision. New vertical parallel to Wikipedia/Markets; pilot = UK +
-EUR-Lex. The genuine work is heterogeneous formats, licensing, and the
-not-legal-advice discipline — not the tracking machinery, which already exists.
+**Status: shipped (`0.06`).** Implemented as `src/law/` + `/api/law/*` + the **World law**
+GUI tab + a `law` scheduler mode, with a **worldwide catalog of real official sources**
+(`configs/legal_sources.yml`) seeded **by default** and a curated set of trackable
+consolidated-law documents (baseline → normalised-text diff → honest flag, reusing the
+wiki engine). Cross-jurisdiction near-dup surfaces **model legislation**. See
+[`LAW.md`](LAW.md). The remaining refinements are *structured* per-edit diffs
+(Akoma Ntoso / ELI) and patent/docket parsing — not the tracking machinery, which now
+exists; and the not-legal-advice / licence discipline, which is enforced and documented.
 
 ---
 

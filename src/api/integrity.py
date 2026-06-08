@@ -44,10 +44,15 @@ def get_actors(days: int = Query(14, ge=1, le=180), db: Session = Depends(get_db
 
 
 @router.get("/prominence")
-def get_prominence(days: int = Query(14, ge=1, le=180), db: Session = Depends(get_db)) -> dict:
+def get_prominence(
+    days: int = Query(14, ge=1, le=180),
+    weight_by_novelty: bool = False,
+    db: Session = Depends(get_db),
+) -> dict:
     """Story prominence in independent voices — raw vs actor-collapsed (the equal view
-    one toggle away)."""
-    return collapse_mod.story_prominence(db, days=days)
+    one toggle away). ``weight_by_novelty`` (opt-in) additionally weights each story by
+    the new information it contributes vs the corpus."""
+    return collapse_mod.story_prominence(db, days=days, weight_by_novelty=weight_by_novelty)
 
 
 @router.post("/collapse/apply")

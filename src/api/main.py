@@ -116,6 +116,9 @@ from src.api.integrity import router as integrity_router
 # Import annotations router (signed, portable, web-of-trust source annotations)
 from src.api.annotations import router as annotations_router
 
+# Import world-law change-tracking router (statutes/gazettes/IP, baseline→diff→flag)
+from src.api.law import router as law_router
+
 # Import link / co-citation analysis router (honest counts only)
 from src.api.link_analysis import router as link_analysis_router
 
@@ -270,6 +273,9 @@ app.include_router(integrity_router)
 
 # Include annotations router (crowdsourced signed source annotations)
 app.include_router(annotations_router)
+
+# Include world-law change-tracking router
+app.include_router(law_router)
 
 # Include link / co-citation analysis router
 app.include_router(link_analysis_router)
@@ -696,6 +702,8 @@ _DOCS: dict[str, dict[str, str]] = {
                "blurb": "The principles this tool is built to uphold."},
     "wikipedia": {"file": "WIKIPEDIA.md", "title": "Wikipedia tracking",
                   "blurb": "Change-tracking and offline baselines, in depth."},
+    "law": {"file": "LAW.md", "title": "World law",
+            "blurb": "Tracking statutes, gazettes and IP records worldwide — the data is the diff."},
     "chain-of-custody": {"file": "CHAIN_OF_CUSTODY.md", "title": "Chain of custody",
                          "blurb": "Tamper-evident, signed provenance for your evidence."},
     "insights": {"file": "INSIGHTS.md", "title": "Insights",
@@ -799,8 +807,13 @@ def _serve() -> None:
         try:
             init_db()
             from src.ingest.seed_sources import seed_default_sources
+            from src.law.catalog import register_documents, seed_legal_sources
             with session_scope() as session:
                 result = seed_default_sources(session)
+                # Worldwide law & IP catalog (portals as ingestible sources) + the
+                # curated set of trackable consolidated-law documents — on by default.
+                seed_legal_sources(session)
+                register_documents(session)
             if result["created"]:
                 logger.info("Seeded %d starter sources on first run.", result["created"])
         except Exception as exc:  # noqa: BLE001 - never block startup on seeding

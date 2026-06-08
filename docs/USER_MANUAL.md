@@ -337,6 +337,23 @@ Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and l
 in **Settings → Wikipedia** — you don't need them for change-tracking. See
 [`docs/WIKIPEDIA.md`](WIKIPEDIA.md).
 
+### 3.7a World law
+
+**What it's for:** tracking the **law** — statutes, gazettes, IP records — from official
+sources worldwide, and watching how it changes over time. Like Wikipedia tracking, the
+*changes are the data*. A **research mirror**, never the authoritative source and **not
+legal advice** — every record links back to its official gazette. Full guide:
+[`docs/LAW.md`](LAW.md).
+
+- A **worldwide catalog of real official sources** (national legislation databases,
+  gazettes, IP offices — `legislation.gov.uk`, EUR-Lex, Légifrance, govinfo, WIPO Lex,
+  USPTO, EPO, …) is **seeded by default**; they ingest and search like any other source.
+- **Track changes now** fetches the curated tracked documents through the ethical
+  fetcher, storing a baseline then honest **diffs** with a large-change flag.
+- **Flagged legal changes** lists changes (jurisdiction · title · Δ bytes · reasons) with
+  the diff and a link to the official source. The briefing also surfaces a
+  **model-legislation** card when near-identical text appears across jurisdictions.
+
 ### 3.8 Evidence & custody
 
 *(The sidebar calls this **Evidence & custody**; the panel heading still reads

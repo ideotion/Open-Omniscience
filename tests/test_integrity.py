@@ -139,3 +139,18 @@ def test_profile_has_no_composite_score(flood_corpus):
 
 def test_profile_unknown_source(flood_corpus):
     assert source_profile(flood_corpus, "does-not-exist")["found"] is False
+
+
+def test_novelty_weighting_is_opt_in_and_off_by_default(flood_corpus):
+    # Off by default: the result carries no novelty fields (equal view).
+    base = collapse_mod.story_prominence(flood_corpus, days=7)
+    assert base["weighted_by_novelty"] is False
+    assert "novelty" not in base["stories"][0]
+    # Opt-in: each story gains a novelty + novelty_weighted_voices; the flood (echoed
+    # text) scores low novelty, the original scores high.
+    w = collapse_mod.story_prominence(flood_corpus, days=7, weight_by_novelty=True)
+    assert w["weighted_by_novelty"] is True
+    for s in w["stories"]:
+        assert "novelty" in s and "novelty_weighted_voices" in s
+    indie = next(s for s in w["stories"] if s["voices_raw"] == 1)
+    assert indie["novelty"] >= 0.9          # a genuine original is information-rich

@@ -522,8 +522,9 @@ Therefore 0.06 is **GUI-first**, not API-first:
       stop dominating while a genuine single original source *rises*; the applied collapse
       stays flagged and expands to its 40 members; toggling it off reproduces the raw
       equal counts exactly. A test asserts no collapse is applied without an explicit
-      user action. *(v1 collapses a coordinated network to **one voice**; weighting the
-      remaining voices by `novelty` is a noted refinement on the same machinery.)*
+      user action. *(Collapse merges a coordinated network to **one voice**; an opt-in
+      **novelty-weighting** of prominence — off by default, never silent — additionally
+      down-weights low-information echoes, `story_prominence(weight_by_novelty=True)`.)*
 
 ## Phase D — Crowdsourced annotation bundles (the C scaling answer)
 
@@ -543,29 +544,31 @@ Therefore 0.06 is **GUI-first**, not API-first:
 
 ## Phase E — Verticals on the shared engines (lower priority)
 
-> **Status: partial.** The composable **news-corpus** cards ship — IP/legal pulse +
-> ownership-change (`tests` via the briefing) and the **emotion-category** card
-> (`tests/test_awareness_emotion.py`, degrades loudly without a lexicon). The **law /
-> IP primary-source change-tracking verticals** remain the documented next step: they
-> reuse the existing `src/wiki` change-tracking + Phase-B near-dup + correlation engines
-> but require live external ingestion (`legislation.gov.uk`, EUR-Lex, patents/dockets),
-> so they are not faked here.
+> **Status: shipped.** The **world-law change-tracking vertical** is built (`src/law/`,
+> `/api/law/*`, the **World law** GUI tab, the `law` scheduler mode) with a **worldwide
+> catalog of real official sources** (`configs/legal_sources.yml`) seeded **by default**;
+> the composable news-corpus cards (IP/legal pulse, ownership-change) and the
+> **emotion-category** card ship too. See [`LAW.md`](LAW.md);
+> `tests/test_law.py`, `tests/test_awareness_emotion.py`.
 
-- [ ] **Law change-tracking (§5):** UK `legislation.gov.uk` + EUR-Lex pilot on the
-      existing `src/wiki` change-tracking engine; cross-jurisdiction near-dup (Phase B)
-      surfaces model-legislation; law↔news via the correlation engine. *(vision — needs
-      live ingestion; the engines it would reuse are all in place.)*
-- [ ] **IP/legal primary-source (§4):** patents/dockets/filings as structured sources
-      (the markets-CSV pattern), correlated with the news narrative. *(vision — needs
-      live sources.)*
+- [x] **Law change-tracking (§5):** worldwide official sources (UK `legislation.gov.uk`,
+      EUR-Lex, Légifrance, govinfo/congress, IP offices, …) seeded by default; tracking on
+      the wiki change-tracking pattern (baseline → normalised-text diff → flag) through the
+      ethical fetcher; cross-jurisdiction near-dup (Phase B) surfaces **model-legislation**;
+      law↔news rides the existing correlation engine. *(Per-edit Akoma Ntoso/ELI structured
+      diffs are the next refinement; v1 is normalised-text diff — stated honestly.)*
+- [~] **IP/legal primary-source (§4):** IP offices + filing systems (USPTO, EPO, EUIPO,
+      WIPO Lex, SEC EDGAR, CourtListener) are seeded and ingestible; structured
+      patent/docket *parsing* into a price-feed-style series is the remaining refinement.
 - [x] **IP/legal *news* cards (§4):** ownership-change + IP-litigation pulse — deal-verb
       and IP/legal-term producers over the *news* corpus (thin). Deal-lineage / IP↔deal
       co-timing build on these next.
 - [x] **Emotion-category card (§4):** anger/fear/joy/… around a keyword via an emotion
       lexicon (`src/awareness/emotion.py`); a minimal English sample ships,
       `OO_EMOTION_LEXICON` overrides; degrades loudly if absent.
-- [~] **Acceptance:** the news-corpus cards render and are honest; the *law* jurisdiction
-      tracking + model-legislation near-dup acceptance awaits the live ingestion vertical.
+- [x] **Acceptance:** a worldwide legal catalog seeds by default; a tracked document goes
+      baseline → change → honest flag (tested with a stub fetcher); a model-legislation
+      near-dup match is shown across two jurisdictions (tested).
 
 ---
 

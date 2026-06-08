@@ -113,7 +113,8 @@ def collapse_status(session, **kwargs) -> dict:
 
 
 def story_prominence(session, *, days: int = 14, threshold: float = 0.6,
-                     min_chars: int = 200, limit: int = 2000) -> dict:
+                     min_chars: int = 200, limit: int = 2000,
+                     weight_by_novelty: bool = False) -> dict:
     """How many **independent voices** carry each story — raw vs actor-collapsed.
 
     A *story* is a near-duplicate cluster of recent articles (singletons included). Its
@@ -122,6 +123,13 @@ def story_prominence(session, *, days: int = 14, threshold: float = 0.6,
     story — so a 40-puppet flood reads as 1 voice, not 40, and a genuine single-source
     story is no longer drowned. With nothing applied, ``voices_collapsed == voices_raw``
     (the equal view, exactly).
+
+    ``weight_by_novelty`` (opt-in, off by default — anti-amplification is user-guided,
+    never silent) adds, per story, the **novelty** of its earliest article against the
+    corpus in time order: a story that merely re-tells earlier-seen text scores low even
+    if it sits just under the near-dup threshold, and ``novelty_weighted_voices`` scales
+    the collapsed voice count by that novelty. The equal view is reproduced exactly by
+    leaving this off.
     """
     from datetime import UTC, datetime, timedelta
 
@@ -181,20 +189,42 @@ def story_prominence(session, *, days: int = 14, threshold: float = 0.6,
                 remaining -= members
         return voices + len(remaining)
 
+    # Optional novelty per story (opt-in): process stories oldest-first (the earliest
+    # member id approximates the earliest sighting) so an original scores ~1 and a
+    # late near-echo scores low — the §6 "information contributed" weighting.
+    novelty_of: dict[str, float] = {}
+    if weight_by_novelty:
+        from src.signals.novelty import NoveltyIndex
+
+        index = NoveltyIndex()
+        ordered_stories = sorted(stories, key=lambda m: min(int(x) for x in m))
+        for members in ordered_stories:
+            rep = sorted(members, key=int)[0]
+            r = index.measure_and_add(texts[rep])
+            novelty_of[rep] = 1.0 if r.ratio is None else round(r.ratio, 3)
+
     out = []
     for members in stories:
         srcs = {source_of[m] for m in members}
         rep = sorted(members)[0]
-        out.append({
+        item = {
             "representative": rep,
             "title": title_of[rep],
             "articles": len(members),
             "voices_raw": len(srcs),
             "voices_collapsed": _collapsed_voices(srcs),
             "sources": sorted(srcs),
-        })
-    out.sort(key=lambda s: (-s["voices_collapsed"], -s["voices_raw"], -s["articles"]))
-    return {"applied": bool(applied), "stories": out}
+        }
+        if weight_by_novelty:
+            nov = novelty_of.get(rep, 1.0)
+            item["novelty"] = nov
+            item["novelty_weighted_voices"] = round(item["voices_collapsed"] * nov, 3)
+        out.append(item)
+    if weight_by_novelty:
+        out.sort(key=lambda s: (-s["novelty_weighted_voices"], -s["voices_collapsed"], -s["articles"]))
+    else:
+        out.sort(key=lambda s: (-s["voices_collapsed"], -s["voices_raw"], -s["articles"]))
+    return {"applied": bool(applied), "weighted_by_novelty": weight_by_novelty, "stories": out}
 
 
 # Back-compat alias for the package export.

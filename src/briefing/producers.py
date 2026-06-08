@@ -622,6 +622,85 @@ def ownership_change(session) -> list[Card]:
     )]
 
 
+# --------------------------------------------------------------------------- #
+#  World-law (§5) — change watch + cross-jurisdiction model-legislation near-dup
+# --------------------------------------------------------------------------- #
+_MAX_LAW = 4
+
+
+def law_change(session) -> list[Card]:
+    """Recently flagged changes to tracked legal documents (a watch signal, never a verdict)."""
+    from src.database.models import LawDocument, LawRevision
+
+    rows = (
+        session.query(LawRevision, LawDocument)
+        .join(LawDocument, LawDocument.id == LawRevision.document_id)
+        .filter(LawRevision.flagged.is_(True))
+        .order_by(LawRevision.observed_at.desc(), LawRevision.id.desc())
+        .limit(_MAX_LAW).all()
+    )
+    cards: list[Card] = []
+    for rev, doc in rows:
+        reasons = (rev.flag_reasons or "").replace(",", ", ")
+        cards.append(Card(
+            type="law_change",
+            title=f"Law changed ({doc.jurisdiction}): {doc.title[:70]}",
+            summary=(f"A tracked legal document changed by {rev.delta_bytes:+} bytes vs its baseline"
+                     + (f" — {reasons}." if reasons else ".")),
+            bucket="watch",
+            signal={"metric": "delta_bytes", "value": rev.delta_bytes,
+                    "jurisdiction": doc.jurisdiction, "category": doc.category,
+                    "flag_reasons": (rev.flag_reasons or "").split(",") if rev.flag_reasons else []},
+            method="Baseline → normalised-text diff on re-fetch; large-change flag (reused wiki thresholds).",
+            caveat=("A research mirror, NOT the authoritative source and not legal advice. A flag marks "
+                    "a change worth a human look — not a judgement of the law. Open the official source."),
+            evidence=[{"title": f"{doc.title} (official)", "url": doc.official_url or doc.url,
+                       "source": doc.jurisdiction}],
+            n=1,
+            key=f"law:{doc.id}:{rev.content_hash[:12]}",
+        ))
+    return cards
+
+
+def model_legislation(session) -> list[Card]:
+    """Near-identical legal text across jurisdictions — measurable model-legislation/diffusion."""
+    from src.database.models import LawDocument
+    from src.signals.near_dup import near_duplicate_clusters
+
+    docs = session.query(LawDocument).filter(LawDocument.baseline_text.isnot(None)).all()
+    if len(docs) < 2:
+        return []
+    texts = {str(d.id): (d.baseline_text or "") for d in docs if d.baseline_text}
+    by_id = {str(d.id): d for d in docs}
+    result = near_duplicate_clusters(texts, threshold=0.5)
+    cards: list[Card] = []
+    for cluster in result.clusters:
+        jurs = sorted({by_id[m].jurisdiction for m in cluster.members})
+        if len(jurs) < 2:
+            continue  # same-jurisdiction near-dup is not cross-border model legislation
+        if len(cards) >= _MAX_LAW:
+            break
+        titles = [by_id[m] for m in cluster.members]
+        cards.append(Card(
+            type="model_legislation",
+            title=f"Near-identical law across {len(jurs)} jurisdictions",
+            summary=(f"Legal text is near-duplicate across {', '.join(jurs)} "
+                     f"(e.g. “{titles[0].title[:60]}”) — possible model legislation / diffusion."),
+            bucket="investigate",
+            signal={"metric": "jurisdictions", "value": len(jurs), "jurisdictions": jurs,
+                    "avg_similarity": cluster.avg_similarity},
+            method=result.method,
+            caveat=("Shared *text* across jurisdictions — a measurable diffusion pattern, not proof of "
+                    "coordinated lobbying. Common templates and treaties also share text. Read the sources."),
+            evidence=[{"title": f"{by_id[m].title} ({by_id[m].jurisdiction})",
+                       "url": by_id[m].official_url or by_id[m].url, "source": by_id[m].jurisdiction}
+                      for m in cluster.members[:5]],
+            n=len(cluster.members),
+            key=f"model:{','.join(sorted(cluster.members))}",
+        ))
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -635,6 +714,8 @@ _DEFAULT_PRODUCERS = (
     ("emotion_profile", emotion_profile_card),
     ("ip_litigation_pulse", ip_litigation_pulse),
     ("ownership_change", ownership_change),
+    ("law_change", law_change),
+    ("model_legislation", model_legislation),
 )
 
 

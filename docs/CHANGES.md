@@ -65,18 +65,32 @@ its first pure primitive, and turns **Home into a triage briefing**. Guiding doc
   **web of trust**); **transparent aggregation** shows *who asserted what* and surfaces
   dissent, never averaging it into a score. A tampered bundle is refused. See
   `ANNOTATIONS.md`.
+- **World-law change-tracking vertical (§5, `src/law/`):** a **worldwide catalog of real
+  official primary sources** (national legislation databases, official gazettes, IP
+  offices, open case-law/filing systems — `configs/legal_sources.yml`) seeded **by
+  default**, ingestible/searchable through the same ethical pipeline. A curated set of
+  consolidated-law documents is tracked for change (baseline → normalised-text diff →
+  honest large-change flag, reusing the Wikipedia engine), exposed via `/api/law/*`, a new
+  **World law** GUI tab, and a `law` scheduler mode. New cards: **law-change** (watch) and
+  **model-legislation** (cross-jurisdiction near-dup). New `LawDocument`/`LawRevision`
+  tables via Alembic migration. A research mirror, never legal advice — every record links
+  to its official gazette. See `LAW.md`.
 - **Phase E (composable cards):** **emotion-category** measurement around a keyword
   (`src/awareness/emotion.py`, lexicon-based, ships a minimal English sample, overridable
   via `OO_EMOTION_LEXICON`, degrades loudly); **IP/legal news cards** (IP-litigation
-  pulse + ownership-change deal-language). The **law / IP primary-source change-tracking
-  verticals** remain the documented next step (engines in place; need live ingestion).
+  pulse + ownership-change deal-language).
+- **Novelty-weighting (§6 D, opt-in):** `story_prominence(weight_by_novelty=True)` and
+  `/api/integrity/prominence?weight_by_novelty=true` additionally down-weight
+  low-information echoes — off by default (anti-amplification stays user-guided, never
+  silent), the equal view reproduced exactly when off.
 - **Honesty guards everywhere in code:** no composite trust score on a Card, a Source
   profile, or an annotation kind; anti-amplification is never silent; aggregation never
   averages dissent.
 - **i18n:** new chrome strings added to the maintained locales (en/de/es/fr); the
   English-fallback design keeps every other locale working.
-- **Tests:** `test_signals_near_dup.py`, `test_integrity.py`, `test_annotations.py`,
-  `test_awareness_emotion.py` (+ A's tests). Full suite green.
+- **Tests:** `test_signals_near_dup.py`, `test_integrity.py` (incl. novelty-weighting),
+  `test_annotations.py`, `test_awareness_emotion.py`, `test_law.py` (+ A's tests). Full
+  suite green.
 
 ## 0.05 — full interface redesign (now the default branch)
 

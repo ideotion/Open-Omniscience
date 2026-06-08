@@ -108,11 +108,19 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   opt-in **web of trust** and transparent (dissent-shown, never averaged) aggregation.
   See [docs/INTEGRITY.md](docs/INTEGRITY.md) and [docs/ANNOTATIONS.md](docs/ANNOTATIONS.md).
 
+- ✅ **World law — change-tracking** (the **World law** tab, `0.06` §5): a worldwide
+  catalog of **real official primary sources** (national legislation databases, gazettes,
+  IP offices — `legislation.gov.uk`, EUR-Lex, Légifrance, govinfo/congress, WIPO Lex,
+  USPTO, EPO, …) **seeded by default** and ingestible through the same ethical pipeline.
+  A curated set of consolidated-law documents is tracked for change over time (baseline →
+  normalised-text diff → honest large-change flag, reusing the Wikipedia engine), and the
+  shared near-dup engine surfaces **model legislation** copied across jurisdictions. A
+  research mirror, never legal advice — every record links to its official gazette. See
+  [docs/LAW.md](docs/LAW.md).
+
 **In progress / next:**
-- 🚧 **Law / IP primary-source change-tracking verticals** (§5, §4): ingest
-  `legislation.gov.uk` / EUR-Lex / patents-dockets on the existing change-tracking +
-  near-dup + correlation engines (engines in place; needs live ingestion). See
-  [docs/FUTURE_DEVELOPMENTS.md](docs/FUTURE_DEVELOPMENTS.md).
+- 🚧 Structured per-edit legal diffs (Akoma Ntoso / ELI) and patent/docket parsing into a
+  price-feed-style series, on top of the seeded IP/legal primary sources.
 - 🚧 Local LLM analysis via Ollama; email + monitoring; cross-linking Wikipedia
   diffs into the Insights keyword analytics.
 

@@ -334,6 +334,7 @@
           <button class="nav-item" data-tab="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search</span></button>
           <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
           <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
+          <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
           <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Markets</span><span class="badge">adv</span></button>
         </div>
         <div class="nav-group" data-grp="collect">
@@ -714,6 +715,34 @@
       <div id="cust-result" class="hint" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:8px;"><table id="cust-entries"></table></div>
     </section>
+    </div>
+
+    <!-- ============================= LAW ============================ -->
+    <div class="tab-page" id="tab-law">
+      <section class="panel">
+        <h2>World law — change tracking</h2>
+        <p class="hint">Aggregate the <b>law</b> — statutes, gazettes, IP records — from official
+          sources worldwide and track how it changes over time (the data <i>is</i> the diff). A
+          <b>research mirror</b>, never the authoritative source and <b>not legal advice</b>: every
+          record links back to its official gazette. Fetched only through the ethical, robots-respecting
+          path. See <a href="#" onclick="showTab('help');openDoc('law');return false">the Law guide</a>.</p>
+        <div class="row">
+          <button onclick="lawTrack()" style="margin-top:0">Track changes now</button>
+          <button class="secondary" onclick="lawSeed()" style="margin-top:0">Re-seed catalog</button>
+          <button class="secondary" onclick="loadLaw()" style="margin-top:0">Refresh</button>
+        </div>
+        <div id="law-status" class="stat-grid" style="margin-top:12px"><div class="muted">Loading…</div></div>
+      </section>
+      <section class="panel">
+        <div class="phead"><h2>Flagged legal changes</h2><span class="sp"></span>
+          <label class="switch" style="margin-top:0"><input type="checkbox" id="law-flagged-only" checked
+                onchange="loadLawChanges()"> flagged only</label></div>
+        <div id="law-changes"><div class="muted">No tracked changes yet — “Track changes now”.</div></div>
+      </section>
+      <section class="panel">
+        <h2>Tracked documents</h2>
+        <div style="overflow:auto"><table id="law-docs"></table></div>
+      </section>
     </div>
 
     <!-- ========================== INTEGRITY ========================= -->
@@ -1179,6 +1208,7 @@
       {id:"search",   label:"Search",             grp:"Investigate"},
       {id:"insights", label:"Insights",           grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
+      {id:"law",      label:"World law",          grp:"Investigate"},
       {id:"markets",  label:"Markets",            grp:"Investigate"},
       {id:"ingest",   label:"Collect",            grp:"Collect"},
       {id:"sources",  label:"Sources",            grp:"Collect"},
@@ -1198,6 +1228,7 @@
       markets: loadMarkets,
       insights: loadInsights,
       wiki: loadWiki,
+      law: loadLaw,
       sources: loadManagedSources,
       database: () => { loadCoverage(); },   // stats handled by the live poller (startLive)
       custody: loadCustody,
@@ -1675,6 +1706,64 @@
           d.claims.map(c => `<div class="draft-item"><div class="di-body"><span class="chip">${esc(c.kind)}</span> <b>${esc(c.value)}</b>
             <div class="hint">asserted by: ${c.asserted_by.map(a=>esc(a.author)).join(", ")}</div></div></div>`).join("");
       } catch (e) { box.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
+    }
+
+    // ===================================================================== //
+    //  WORLD LAW — change tracking (§5)                                       //
+    // ===================================================================== //
+    async function loadLaw() {
+      try {
+        const s = await api("/api/law/status");
+        const jur = Object.entries(s.jurisdictions || {});
+        $("law-status").innerHTML =
+          `<div class="stat"><div class="n">${s.documents}</div><div class="k">documents</div></div>` +
+          `<div class="stat"><div class="n">${s.tracked}</div><div class="k">with baseline</div></div>` +
+          `<div class="stat"><div class="n">${s.changes}</div><div class="k">changes</div></div>` +
+          `<div class="stat"><div class="n">${s.flagged}</div><div class="k">flagged</div></div>` +
+          `<div class="stat"><div class="n">${jur.length}</div><div class="k">jurisdictions</div></div>`;
+      } catch (e) { $("law-status").innerHTML = '<div class="muted">Status unavailable.</div>'; }
+      loadLawChanges(); loadLawDocs();
+    }
+    async function loadLawChanges() {
+      const box = $("law-changes");
+      const fo = $("law-flagged-only") ? $("law-flagged-only").checked : true;
+      try {
+        const d = await api("/api/law/changes?flagged_only=" + fo);
+        if (!d.changes || !d.changes.length) { box.innerHTML = '<div class="muted">No tracked changes yet.</div>'; return; }
+        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.changes.map(ch =>
+          `<div class="panel" style="background:var(--panel2); margin-top:8px">
+            <b>${esc(ch.jurisdiction.toUpperCase())}</b> · ${esc(ch.title)}
+            <span class="pill ${ch.flagged?'warn':''}">${ch.delta_bytes>0?'+':''}${ch.delta_bytes} bytes</span>
+            ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(esc).join(', ')+'</span>':''}
+            <div class="hint" style="margin-top:4px">${ch.observed_at?new Date(ch.observed_at).toLocaleString():''} ·
+              <a href="${esc(ch.official_url)}" target="_blank" rel="noopener noreferrer">official source ↗</a></div>
+            ${ch.diff?`<pre style="white-space:pre-wrap;max-height:160px;overflow:auto;font-size:12px;margin-top:6px">${esc(ch.diff.slice(0,1500))}</pre>`:''}
+          </div>`).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">Could not load changes.</div>'; }
+    }
+    async function loadLawDocs() {
+      try {
+        const d = await api("/api/law/documents");
+        const t = $("law-docs");
+        t.innerHTML = "<thead><tr><th>Jurisdiction</th><th>Title</th><th>Category</th><th>Tracked</th><th>Changes</th><th></th></tr></thead><tbody>" +
+          d.documents.map(x =>
+            `<tr><td>${esc(x.jurisdiction.toUpperCase())}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
+              <td>${x.has_baseline?'<span class="pill ok">yes</span>':'<span class="pill">no</span>'}</td>
+              <td>${x.revisions}${x.flagged?` (${x.flagged} flagged)`:''}</td>
+              <td><a href="${esc(x.official_url||x.url)}" target="_blank" rel="noopener noreferrer">official ↗</a></td></tr>`).join("") +
+          "</tbody>";
+      } catch (e) { /* table optional */ }
+    }
+    async function lawTrack() {
+      toast("Tracking legal documents (ethical fetch)…");
+      try { const r = await api("/api/law/track", {method:"POST"});
+        toast(`Tracked ${r.documents}: ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.`);
+        loadLaw(); } catch (e) { toast("Tracking failed: " + e.message, "err"); }
+    }
+    async function lawSeed() {
+      try { const r = await api("/api/law/seed", {method:"POST"});
+        toast(`Seeded ${r.sources.created} sources, ${r.documents.created} documents.`); loadLaw(); }
+      catch (e) { toast(e.message, "err"); }
     }
 
     // -- In-app documentation reader ---------------------------------------- //

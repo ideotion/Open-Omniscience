@@ -91,6 +91,25 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
             "duration_s": round((finished - started).total_seconds(), 2),
         }
 
+    # Law mode tracks watched legal documents (baseline/diff/flag), not sources.
+    if settings.mode == "law":
+        from src.law.track import track_watched
+
+        res = track_watched(session, fetcher, limit_documents=settings.max_sources_per_run)
+        finished = datetime.now(UTC)
+        return {
+            "mode": "law",
+            "sources_processed": res["documents"],
+            "articles_stored": 0,
+            "law_changed": res["changed"],
+            "law_flagged": res["flagged"],
+            "pages_fetched": res["documents"],
+            "tally": res,
+            "started_at": started.isoformat(),
+            "finished_at": finished.isoformat(),
+            "duration_s": round((finished - started).total_seconds(), 2),
+        }
+
     # Markets mode iterates configured extraction rules, not sources.
     if settings.mode == "markets":
         from src.markets.pipeline import run_rules
