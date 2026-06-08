@@ -43,6 +43,30 @@ Open Omniscience v0.0.6 targets a **single local user** on a **Qubes OS Debian A
   is fully bound. `bleach` allowlist for any HTML; `bcrypt` required for hashing
   (no silent fallback). `sanitize_url` strips whitespace before scheme checks.
 
+## At-risk-user safety (Settings → Safety)
+
+For journalists working under pressure. Each tool states its honest limit — we never
+imply a protection we cannot deliver.
+
+- **Encrypted backup/restore** (`src/safety/crypto.py`, `backup.py`): a passphrase-derived
+  AES-256-GCM key (scrypt KDF, per-file salt + nonce) over a live SQLite snapshot. The same
+  audited primitives used elsewhere — no bespoke crypto. A wrong passphrase or any tampering
+  fails *loudly* (`EncryptionError`); a correctly-decrypted but non-Open-Omniscience payload
+  is refused before it can overwrite the corpus.
+- **Panic wipe** (`src/safety/panic.py`): best-effort overwrite-then-delete of the whole data
+  dir, requiring an explicit confirmation. **Honest limit:** overwrite-in-place does *not*
+  guarantee unrecoverability on SSD/flash or copy-on-write filesystems — only full-disk
+  encryption (LUKS/Qubes/Tails) plus key destruction does. Also exposed as a `panic` CLI and
+  an `--ephemeral` mode (RAM-only data dir, wiped on process exit).
+- **Protected fetch mode** (`src/safety/settings.py`, `fetcher.py`): routes every fetch
+  through a proxy you run and sends a generic User-Agent that does not name the tool. **Honest
+  limit:** this cannot guarantee anonymity — you must run and trust the proxy (e.g. Tor)
+  yourself. Refuses to enable without a proxy URL. SOCKS proxies need the optional `[safety]`
+  extra.
+
+These are local and loopback-only; the destructive/state-changing routes are protected by the
+same cross-origin refusal middleware as the rest of the API.
+
 ## Reporting a vulnerability
 
 Open a GitHub issue (or email open-omniscience@ideotion.com) with steps to

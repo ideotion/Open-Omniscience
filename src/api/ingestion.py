@@ -12,26 +12,22 @@ across requests.
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.database.models import Source
 from src.database.session import get_db
-from src.ingest import EthicalFetcher
+from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
 from src.ingest.email import fetch_imap, ingest_emails
 from src.ingest.pipeline import ingest_source, ingest_url
 from src.ingest.seed_sources import seed_default_sources
+from src.safety.fetcher import make_fetcher
 
 router = APIRouter(prefix="/api", tags=["ingestion"])
 
 # Shared fetcher: keeps robots cache + per-host rate-limit timers across requests.
-_fetcher = EthicalFetcher(
-    min_interval_s=float(os.getenv("OO_FETCH_MIN_INTERVAL", "1.0")),
-    timeout=float(os.getenv("OO_FETCH_TIMEOUT", "30")),
-)
+_fetcher = make_fetcher()
 
 
 def get_fetcher() -> EthicalFetcher:

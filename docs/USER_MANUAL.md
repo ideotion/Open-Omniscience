@@ -448,6 +448,24 @@ telemetry.
   uploaded file — but only after validating it's a genuine Open Omniscience
   database, and after snapshotting your current corpus to a `pre-restore-*.db`
   beside the database, so the operation is reversible.
+- **Safety & at-risk use:** tools for journalists working under pressure, each
+  labelled with its **honest limit**:
+  - **Encrypted backup** — a passphrase-protected snapshot (AES-256-GCM + scrypt).
+    A lost or wrong passphrase means the file cannot be opened: there is no recovery.
+    **Encrypted restore** decrypts, validates and replaces the corpus (a tampered or
+    wrong-passphrase file is refused before anything is overwritten).
+  - **Network fetch mode** — *Transparent* (default; polite, names the tool in the
+    User-Agent) or *Protected* (generic User-Agent routed through a proxy **you** run,
+    e.g. Tor). Protected mode **cannot guarantee anonymity** — you must run and trust
+    the proxy yourself; it refuses to enable without a proxy URL.
+  - **Panic wipe** — irreversibly deletes the corpus, keys and caches on this machine
+    (double-confirmed). **Limit:** overwrite-in-place does *not* guarantee
+    unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails)
+    and destroy the key. There is also a `panic` CLI and an `--ephemeral` run mode
+    (RAM-only data, wiped on exit).
+
+  Governance and the dual-use red lines that bound all of this are in
+  [`GOVERNANCE.md`](GOVERNANCE.md) (also in **Help & docs**).
 
 ### 3.10 Help & docs
 
@@ -758,6 +776,8 @@ why** (loud degradation); it never fabricates a card.
 | **Emotion profile** | context | emotion lexicon over a keyword's context windows | new² |
 | **IP / legal pulse** | context | rising IP/legal terms in the news corpus | thin |
 | **Ownership change** | investigate | deal-verb language (acquired/merger/divested) in recent news | thin |
+| **Story lineage** | context | `signals.lineage` — a near-dup cluster ordered by publication time + wire attribution | new |
+| **Coverage advisor** | context | `signals.concentration` over your sources' country/language (skew, not a cap) | new |
 
 ¹ Needs the `[analysis]` extra (VADER / scipy). Without it those cards simply don't
 appear — the rest of the briefing still works.
@@ -772,6 +792,15 @@ The **Diet self-audit** uses the first pure primitive of the shared
 [`src/signals/`](../src/signals/) substrate: **concentration** (Gini coefficient +
 top-N share). It is the *same maths* intended for media-ownership concentration
 (FUTURE_DEVELOPMENTS §1) and people-prominence (§4) — one engine, many domains.
+
+**Story lineage** traces an echoed story toward its **primal source**: for a near-duplicate
+cluster across many outlets, it orders the pieces by publication time and detects explicit
+**wire attribution** ("according to Reuters", "(AFP)") so original reporting is foregrounded
+over derivative echoes. The bright line is honest: *"earliest we saw" ≠ "the truth"* — it
+surfaces structure; the human judges. **Coverage advisor** surfaces geographic/linguistic
+**skew in your own collection** (e.g. "~80% of what you collected is from one country") as a
+gentle suggestion to broaden — it never filters or caps anything; a skewed corpus skews every
+downstream signal, so seeing the skew is the point.
 
 ---
 

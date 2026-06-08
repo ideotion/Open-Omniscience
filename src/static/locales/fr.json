@@ -1,5 +1,10 @@
 {
-  "_meta": { "name": "French", "native": "Français", "dir": "ltr", "status": "complete" },
+  "_meta": {
+    "name": "French",
+    "native": "Français",
+    "dir": "ltr",
+    "status": "complete"
+  },
   "World law": "Droit mondial",
   "Source integrity": "Intégrité des sources",
   "Briefing": "Briefing",
@@ -82,5 +87,18 @@
   "Track now": "Suivre maintenant",
   "Download": "Télécharger",
   "Save preferences": "Enregistrer les préférences",
-  "Local · Offline · Nothing leaves this machine": "Local · Hors ligne · Rien ne quitte cette machine"
+  "Local · Offline · Nothing leaves this machine": "Local · Hors ligne · Rien ne quitte cette machine",
+  "Skip to main content": "Aller au contenu principal",
+  "Open navigation menu": "Ouvrir le menu de navigation",
+  "Open command palette": "Ouvrir la palette de commandes",
+  "Collapse sidebar": "Réduire la barre latérale",
+  "Safety & at-risk use": "Sécurité et usage à risque",
+  "Encrypted backup": "Sauvegarde chiffrée",
+  "Network fetch mode": "Mode de collecte réseau",
+  "Panic wipe": "Effacement d’urgence",
+  "Save fetch mode": "Enregistrer le mode de collecte",
+  "Wipe everything now": "Tout effacer maintenant",
+  "Passphrase": "Phrase secrète",
+  "Mode": "Mode",
+  "Restore (destructive)": "Restaurer (destructif)"
 }

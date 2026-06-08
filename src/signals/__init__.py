@@ -33,6 +33,7 @@ from src.signals.coordination import (
     CoordinationResult,
     detect_coordination,
 )
+from src.signals.lineage import LineageResult, detect_wire_attribution, trace_lineage
 from src.signals.near_dup import (
     NearDupResult,
     jaccard_estimate,
@@ -60,4 +61,7 @@ __all__ = [
     "NoveltyIndex",
     "NoveltyResult",
     "novelty_scores",
+    "LineageResult",
+    "trace_lineage",
+    "detect_wire_attribution",
 ]

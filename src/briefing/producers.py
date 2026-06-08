@@ -701,6 +701,124 @@ def model_legislation(session) -> list[Card]:
     return cards
 
 
+# --------------------------------------------------------------------------- #
+#  Story lineage — trace an echoed story toward its primal source (§2, Theme 4)
+# --------------------------------------------------------------------------- #
+_LINEAGE_DAYS = 14
+_LINEAGE_MIN_SOURCES = 3
+
+
+def story_lineage(session) -> list[Card]:
+    """For the most-echoed recent story, show primary → first report → echoes."""
+    from src.signals.lineage import trace_lineage
+    from src.signals.near_dup import near_duplicate_clusters
+
+    cutoff = datetime.now(UTC) - timedelta(days=_LINEAGE_DAYS)
+    rows = (
+        session.query(Article.id, Source.name, Article.title, Article.content, Article.published_at)
+        .outerjoin(Source, Source.id == Article.source_id)
+        .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
+        .order_by(Article.id.desc()).limit(2000).all()
+    )
+    by_id = {}
+    texts = {}
+    for aid, name, title, content, pub in rows:
+        text = content or title or ""
+        if len(text) < 200:
+            continue
+        sid = str(aid)
+        texts[sid] = text
+        by_id[sid] = {"id": sid, "source": name, "text": text, "published_at": pub}
+    if len(texts) < _LINEAGE_MIN_SOURCES:
+        return []
+    nd = near_duplicate_clusters(texts, threshold=0.6)
+    for cluster in nd.clusters:
+        docs = [by_id[m] for m in cluster.members]
+        sources = {d["source"] for d in docs if d["source"]}
+        if len(sources) < _LINEAGE_MIN_SOURCES:
+            continue
+        lin = trace_lineage(docs)
+        if lin.primary is None:
+            continue
+        ev = _articles_by_id(session, [i.doc_id for i in lin.chain[:5]])
+        evidence = [ev[i.doc_id] for i in lin.chain[:5] if i.doc_id in ev]
+        return [Card(
+            type="story_lineage",
+            title=f"One story, {len(sources)} outlets — tracing the source",
+            summary=(f"A story echoed across {len(sources)} sources traces earliest to "
+                     f"{lin.primary.source or 'an unknown source'}"
+                     + (f", attributed to the wire **{lin.wire_origin}**" if lin.wire_origin else "")
+                     + ". Foreground the original; weigh the echoes."),
+            bucket="context",
+            signal={"metric": "echoing_sources", "value": len(sources),
+                    "primary_source": lin.primary.source, "wire_origin": lin.wire_origin,
+                    "chain": [i.to_dict() for i in lin.chain[:20]]},
+            method=lin.method,
+            caveat=lin.caveat,
+            evidence=evidence,
+            n=len(sources),
+            key=f"lineage:{lin.primary.doc_id}",
+        )]
+    return []
+
+
+# --------------------------------------------------------------------------- #
+#  Coverage advisor — gentle, overridable diet guidance (§1/§3, Theme 4)
+# --------------------------------------------------------------------------- #
+_COVERAGE_DAYS = 30
+_COVERAGE_DOMINANCE = 0.6   # one country/language ≥ 60% of recent collection
+
+
+def coverage_advisor(session) -> list[Card]:
+    """Surface geographic/linguistic skew in *your* recent collection — suggestive, never enforced."""
+    from src.signals import concentration
+
+    cutoff = datetime.now(UTC) - timedelta(days=_COVERAGE_DAYS)
+
+    def _share(col):
+        rows = (session.query(col, func.count(Article.id))
+                .join(Article, Article.source_id == Source.id)
+                .filter(Article.created_at >= cutoff, col.isnot(None))
+                .group_by(col).all())
+        counts = {str(k): int(c) for k, c in rows if c}
+        if sum(counts.values()) < 10:
+            return None  # too little collected to say anything honest
+        res = concentration(counts, top_n=1)
+        if res.top_share is None or not res.shares:
+            return None
+        # A single bucket (100% one country/language) is the strongest skew — surface it.
+        return res.shares[0]["label"], res.top_share, res.n
+
+    country = _share(Source.country)
+    lang = _share(Source.language)
+    flagged = []
+    if country and country[1] >= _COVERAGE_DOMINANCE:
+        flagged.append(("country", *country))
+    if lang and lang[1] >= _COVERAGE_DOMINANCE:
+        flagged.append(("language", *lang))
+    if not flagged:
+        return []
+    kind, label, share, n = flagged[0]
+    pct = round(share * 100)
+    return [Card(
+        type="coverage_advisor",
+        title=f"Your recent collection leans on one {kind}",
+        summary=(f"~{pct}% of what you collected in {_COVERAGE_DAYS} days is from {kind} "
+                 f"“{label}” (of {n}). Consider adding under-represented {kind}s — a fuller "
+                 "picture is harder to skew. This is a suggestion you can ignore."),
+        bucket="context",
+        signal={"metric": f"top_{kind}_share", "value": share, "label": label, "n": n,
+                "all": flagged},
+        method=f"concentration (top share) of recent articles by source {kind}",
+        caveat=("Selection is yours: this surfaces a coverage fact, it never filters or caps "
+                "anything. A skewed corpus skews every downstream signal — see your World "
+                "coverage view to balance it."),
+        evidence=[{"title": "Sources — World coverage", "url": "/#sources", "source": None}],
+        n=n,
+        key=f"coverage:{kind}",
+    )]
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -716,6 +834,8 @@ _DEFAULT_PRODUCERS = (
     ("ownership_change", ownership_change),
     ("law_change", law_change),
     ("model_legislation", model_legislation),
+    ("story_lineage", story_lineage),
+    ("coverage_advisor", coverage_advisor),
 )
 
 

@@ -102,6 +102,7 @@ class EthicalFetcher:
         timeout: float = 30.0,
         max_bytes: int = 10 * 1024 * 1024,
         respect_robots: bool = True,
+        proxy: str | None = None,
         session: requests.Session | None = None,
     ):
         self.user_agent = user_agent
@@ -109,8 +110,15 @@ class EthicalFetcher:
         self.timeout = timeout
         self.max_bytes = max_bytes
         self.respect_robots = respect_robots
+        self.proxy = proxy or None
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
+        # Protected fetch (Theme 2): route through the user's proxy (e.g. Tor at
+        # socks5://127.0.0.1:9050). We *use* the proxy and verify it is set; we do NOT
+        # guarantee anonymity — the user must run and trust the proxy. SOCKS proxies need
+        # the optional [safety] extra (PySocks); HTTP/HTTPS proxies work out of the box.
+        if self.proxy:
+            self.session.proxies = {"http": self.proxy, "https": self.proxy}
         self._max_redirects = _MAX_REDIRECTS
         # host -> (decision_parser_or_None, expiry). None == "do not fetch this host".
         self._robots: dict[str, tuple[RobotFileParser | None, float]] = {}
