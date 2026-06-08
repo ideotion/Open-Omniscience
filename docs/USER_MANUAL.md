@@ -32,11 +32,12 @@ HTTP API) and troubleshooting.
 
 1. [Install & first run](#1-install--first-run)
 2. [The 60-second tour](#2-the-60-second-tour)
-3. [The tabs, one by one](#3-the-tabs-one-by-one)
-   - [Search](#31-search) · [Ingest](#32-ingest) · [Sources](#33-sources) ·
-     [Database](#34-database) · [Markets](#35-markets) · [Insights](#36-insights) ·
-     [Wikipedia](#37-wikipedia) · [Chain of custody](#38-chain-of-custody) ·
-     [Settings](#39-settings)
+3. [The tools, one by one](#3-the-tools-one-by-one)
+   - [Home](#30-home) · [Search](#31-search) · [Collect](#32-collect) ·
+     [Sources](#33-sources) · [Library](#34-library) · [Markets](#35-markets) ·
+     [Insights](#36-insights) · [Wikipedia](#37-wikipedia) ·
+     [Evidence & custody](#38-evidence--custody) · [Settings](#39-settings) ·
+     [Help & docs](#310-help--docs)
 4. [Common workflows (how-to)](#4-common-workflows-how-to)
 5. [Technical reference](#5-technical-reference)
    - [Where your data lives](#51-where-your-data-lives) ·
@@ -94,14 +95,33 @@ index, and (if enabled) starts the background scheduler.
 
 ### What you'll see first
 
-If your corpus is empty, a **welcome banner** appears above the tabs with a single
-button: **"Seed sources & run a first ingestion."** Click it and the app registers
-the curated catalog and runs one ingestion pass — after which **Search** has real
-articles in it. You can dismiss the banner at any time.
+The app opens on a **Home** screen that orients you: a short greeting, big quick
+actions (Find something · Collect now · See the patterns · Prove it), and an
+at-a-glance count of what you've gathered. If your corpus is empty, a **welcome
+banner** offers a single button — **"Seed sources & run a first ingestion"** —
+which registers the curated catalog and runs one pass, after which **Search** has
+real articles in it.
 
-The **header bar** (always visible) shows the version, a health pill
-(`healthy`/`offline`), an **LLM** pill (`LLM ✓ (N models)` / `LLM offline`), and an
-**API docs** link to the interactive OpenAPI page at `/docs`.
+**The shell (0.05).** Navigation lives in a **left sidebar**, grouped by what
+you're trying to do — *Investigate · Collect · Trust · System*. A slim **top bar**
+carries live status (a health dot, an **LLM** pill) and three affordances:
+
+- **⌘K / Ctrl-K — the command palette.** Type to jump to any tool, run a common
+  action, or open any document. The fastest way to get anywhere.
+- **Customize** — themes (8 in Console), accent, density, text size, sidebar
+  collapse, and which tools appear. Stored locally only; nothing is transmitted.
+- **Help (?)** — opens the in-app documentation reader (this manual and the other
+  guides), searchable and fully offline. There's also a link to the raw API page at
+  `/docs`.
+
+**Two interfaces, same engine, same data.** The installer creates **two icons**:
+
+- **Open Omniscience** → *Console* at `http://127.0.0.1:8000/` — the default: a
+  discoverable, customizable sidebar app.
+- **Open Omniscience — Desk** → *Desk* at `/desk` — a calmer, content-first,
+  editorial alternative (no persistent sidebar; navigation via the Home launchpad
+  and ⌘K). The two are compared in [`GUI_DIALECTIC.md`](GUI_DIALECTIC.md); run both
+  and pick what fits you.
 
 ---
 
@@ -109,10 +129,10 @@ The **header bar** (always visible) shows the version, a health pill
 
 The core loop is:
 
-> **Pick/add a source → Ingest → Search → (analyse) → Export / sign.**
+> **Pick/add a source → Collect → Search → (analyse) → Export / sign.**
 
 1. **Sources** — a worldwide catalog is already seeded; add your own if you like.
-2. **Ingest** — fetch a source's RSS feed or paste a single article URL. Or let
+2. **Collect** — fetch a source's RSS feed or paste a single article URL. Or let
    the **scheduler** do it automatically on an interval.
 3. **Search** — Boolean full-text search across everything you've gathered.
 4. **Insights / Markets / Wikipedia** — optional analysis layers on top of the
@@ -120,16 +140,34 @@ The core loop is:
 5. **Export** — CSV/JSON, or a **signed evidence bundle** anyone can verify
    offline.
 
-Everything is tab-based, the active tab refreshes itself live (every few seconds)
-while it's on screen, and actions confirm with small toast notifications in the
-corner. Destructive actions always ask first.
+Pick any tool from the sidebar, or just press **⌘K / Ctrl-K** and type where you
+want to go. The active view refreshes itself live (every few seconds) while it's on
+screen, and actions confirm with small toast notifications in the corner.
+Destructive actions always ask first.
 
 ---
 
-## 3. The tabs, one by one
+## 3. The tools, one by one
 
-The nav has nine tabs, in this order: **Search · Ingest · Sources · Database ·
-Markets · Insights · Wikipedia · Chain of custody · Settings.**
+The sidebar groups the tools by intent:
+
+- **Investigate** — Home · Search · Insights · Wikipedia · Markets *(advanced)*
+- **Collect** — Collect · Sources · Library
+- **Trust** — Evidence & custody
+- **System** — Settings · Help & docs
+
+A few names changed in 0.05 to be plainer (the controls are the same): **Ingest →
+Collect**, **Database → Library**, **Chain of custody → Evidence & custody**. In
+*Console* you can hide tools you don't use (Customize → "Tools shown"); *Desk*
+reaches the same tools from its Home launchpad and ⌘K.
+
+### 3.0 Home
+
+**What it's for:** orientation. A greeting, **quick-action cards** (Find something,
+Collect now, See the patterns, Prove it, Watch Wikipedia, Learn the tool), an
+**at-a-glance** panel (live counts + whether automatic collection is running), and
+the first-run seeding banner when the corpus is empty. Nothing here you can't reach
+elsewhere — it's the calm starting point.
 
 ### 3.1 Search
 
@@ -148,9 +186,9 @@ Markets · Insights · Wikipedia · Chain of custody · Settings.**
   Ollama is available).
 - **Exports:** **Export CSV**, **Export JSON**, and **Export signed evidence** — a
   tamper-evident, signed bundle of exactly the articles matching your query (see
-  [Chain of custody](#38-chain-of-custody)).
+  [Evidence & custody](#38-evidence--custody)).
 
-### 3.2 Ingest
+### 3.2 Collect
 
 **What it's for:** getting articles into the corpus — automatically or manually.
 
@@ -196,7 +234,9 @@ robots, etc. Fetching is always ethical (robots fail-closed, rate-limited).
   `reliability_score` (1–10). Import **upserts by domain** — new rows created,
   existing updated — and **bad rows are reported, not silently dropped**.
 
-### 3.4 Database
+### 3.4 Library
+
+*(Called **Database** before 0.05.)*
 
 **What it's for:** an honest look at what you actually hold, and how widely your
 sources reach.
@@ -284,7 +324,10 @@ Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and l
 in **Settings → Wikipedia** — you don't need them for change-tracking. See
 [`docs/WIKIPEDIA.md`](WIKIPEDIA.md).
 
-### 3.8 Chain of custody
+### 3.8 Evidence & custody
+
+*(The sidebar calls this **Evidence & custody**; the panel heading still reads
+**Chain of custody** — same feature.)*
 
 **What it's for:** proving — to a sceptical third party, offline — that your corpus
 held *this* item, with *this* content, at *this* time, and that the record hasn't
@@ -351,6 +394,15 @@ telemetry.
   uploaded file — but only after validating it's a genuine Open Omniscience
   database, and after snapshotting your current corpus to a `pre-restore-*.db`
   beside the database, so the operation is reversible.
+
+### 3.10 Help & docs
+
+**What it's for:** reading the documentation **inside the app**, offline. A
+left-hand list selects a document (this **User Manual** is the default; the others
+go deeper on specific subjects), rendered on the right with **find-on-page**. Open
+it from the sidebar (**Help & docs**), the **?** in the top bar, or the command
+palette ("Open the User Manual"). The raw, interactive API reference stays at
+`/docs`.
 
 ---
 

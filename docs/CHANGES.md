@@ -54,6 +54,23 @@ Reasoned from the personas outward in [`docs/GUI_REDESIGN_0.05.md`](GUI_REDESIGN
   and detects an already-running server, so both can run side by side on the same
   data. New read-only `/desk` route serves the alternative.
 
+### Coverage honesty, branch hygiene & docs alignment
+
+- **`docs/KNOWN_GAPS.md` — a coverage ledger.** Names every blind spot and labels it
+  *voluntary* (deliberate) or *involuntary* (to be measured). **Images and all
+  visual/binary media are now an explicit, documented exclusion** (owner's choice:
+  storage on one affordable machine, and honest image analysis isn't feasible at
+  scale) — already enforced by the crawler's `_SKIP_SUFFIXES`. Also records the
+  social-media exclusion, paywall/robots policy, and the planned register-
+  triangulation + capture–recapture method for *sizing* the unknown.
+- **No work lost across branches.** `0.05` (branched from `claude/kind-lovelace-ulpTc`)
+  already contained the chain-of-custody feature; the only artifact unique to `0.04`
+  was `docs/PRESENTATION_PUBLIC.md`, now cherry-picked onto `0.05`.
+- **User Manual aligned to the 0.05 interface:** sidebar groups, the command palette
+  (⌘K), Customize, the Home dashboard, the in-app Help/docs reader, the two
+  interfaces (Console `/` and Desk `/desk`), and the renamed tools (Ingest→Collect,
+  Database→Library, Chain of custody→Evidence & custody).
+
 ## Unreleased — UI polish, live data, and a full user manual
 
 A wave of usability work on top of the feature set below, plus documentation:
