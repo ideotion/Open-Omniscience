@@ -136,6 +136,33 @@ overtold, association-shift/framing-split → investigate, went-quiet/hum → un
 | Framing-word tracker | volume of chosen loaded/neutral pairs by source/time (counts, never a verdict) | debunk | `trend` per-source + curated term list | thin |
 | Echoed keyword | a term spiking where most articles cite the *same* source | overtold | `trend` × `/api/links` co-citation | new |
 
+### People / prominence dynamics cards
+
+"People" are just entities of `kind=person` (the NER already tags `PERSON→person`),
+so most of this is the keyword-dynamics cards above **pointed at persons** — nearly
+free. It adds **one** genuinely new metric: *prominence concentration over time*
+(Gini / top-N share over person-mention volume) — the measurable form of "the list
+of prominent people keeps concentrating," and the **same concentration math as the
+§1 media-ownership analysis**, applied to people.
+
+| Card | Surfaces | Bucket | Powered by | Status |
+|---|---|---|---|---|
+| Rising star | a person with the steepest mention growth | rising | Spike/Acceleration, `kind=person` | now/thin |
+| Fading / forgotten | a person decaying toward zero mentions | undertold | Went-quiet/Half-life, `kind=person` | thin |
+| First sighting (person) | a name appearing for the first time | rising | earliest `KeywordMention`, `kind=person` | thin |
+| Staying power | a person's mention half-life (flash vs durable figure) | context | `trend` decay, `kind=person` | thin/new |
+| Prominence concentration | Gini / top-N share of person-mentions, tracked over time | context | new inequality metric (reuses §1 concentration) | new |
+| Co-prominence | who rises *alongside* whom (proximity to power) | investigate | person co-occurrence / association-shift | new |
+| Prominence by family/geography | who's prominent in state-media vs independent, or one bloc vs another | debunk | `kind=person` × family tags / `map_data` | thin |
+
+> **Bright line (sharpest here).** This measures **coverage prominence of public
+> figures already written about** — *attention, not importance or merit* (scandal
+> inflates mentions). It is **never** a "most important person", a "power score", or
+> a profiling/watchlist tool on private individuals (`src/compliance/gdpr.py` is the
+> guardrail). Prominence reflects *your* source set — a skewed corpus skews who
+> looks important (the diet-self-audit caveat). Namesakes/variants are the hard part
+> (see Variant convergence).
+
 ### Keyword-conditioned tone & emotion cards
 
 Tone/emotion measured on the words *surrounding* a keyword (its `context()`
