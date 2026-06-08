@@ -270,6 +270,55 @@ by default, and reversible**; the tool is never an arbiter of truth.
 
 ---
 
+## 5. World-law corpus & change-tracking (a "Wikipedia for the law")
+
+**Intent.** Aggregate the **law** — statutes/legislation/official gazettes — from
+every jurisdiction that publishes it, and **track its changes over time** for
+offline analysis. Law is public in many countries and changes by amendment, so the
+data *is the diff*: what changed, when, via which instrument.
+
+**This reuses the Wikipedia vertical almost wholesale.** `src/wiki/track.py` +
+`dumps.py` + `flagging.py` already do baseline-snapshot → diffs/deltas →
+large/burst-change flagging → offline resumable downloader, all provenance-tagged.
+A legal source is just another tracked source whose *edits are the data*. Also
+reused unchanged: the ethical fetcher (robots fail-closed, rate-limited), FTS5
+Boolean search, the offline baseline downloader, and — valuably — **chain of
+custody**: signed, timestamped legal snapshots ("the law as it stood on date X,
+cryptographically attestable").
+
+**Feeds the §4 cards.** Cross-jurisdiction **near-duplicate** detection (the §1/§2
+MinHash machinery) surfaces **model legislation** — near-identical bills copy-pasted
+across countries/states (measurable lobbying/diffusion); plus **law ↔ news
+correlation** (a statute changes as coverage spikes) and **quiet amendment**
+(changed with little coverage = undertold).
+
+**Where the data genuinely is (pilot jurisdictions first):** UK
+`legislation.gov.uk` (API, Open Government Licence, *native point-in-time
+amendments* — the ideal pilot); EU **EUR-Lex** with **ELI** + **Akoma Ntoso** XML
+(the international legal-document standard); France **Légifrance** / LEGI open data
+(DILA); US **govinfo**. **WIPO Lex** (IP laws of ~200 countries) ties this directly
+to §4's IP/legal vertical — the law corpus is the *statutory* half of that
+primary-source layer, with patents/dockets/filings as the case half.
+
+**Honesty constraints (law is high-stakes):**
+- **Not legal advice, not the authoritative source.** The aggregated copy is a
+  *research mirror*; every record links back to the official gazette, and the UI
+  says so. Track and surface; never interpret legality or judge a law.
+- **"Public" ≠ "freely redistributable."** Licenses vary even where text is public
+  — respect each, attribute, store provenance, robots fail-closed (as for news).
+- **Translation is a separate, clearly-labelled layer** (local LLM as an aid) —
+  never presented as an authoritative legal translation.
+- **Scope honestly.** "Every country" is the north star, not v1: start with the few
+  open, structured jurisdictions above. Akoma Ntoso/ELI give structure where
+  adopted; crude text-diff elsewhere — and say which you have. Distinguish
+  *consolidated* vs *point-in-time* text explicitly.
+
+**Status:** vision. New vertical parallel to Wikipedia/Markets; pilot = UK +
+EUR-Lex. The genuine work is heterogeneous formats, licensing, and the
+not-legal-advice discipline — not the tracking machinery, which already exists.
+
+---
+
 ## Hooks already in the codebase (this is not from scratch)
 
 - **Dedup / canonicalization:** `src/ingestor/duplicate_detector.py`,
