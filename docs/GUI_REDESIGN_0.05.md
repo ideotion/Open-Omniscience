@@ -175,6 +175,8 @@ modules. Sensible defaults mean a first-run user touches none of it.
 
 ## 7. Status
 
-Shipped on branch `0.05`, which may become the new default. The legacy interface
-remains in git history. Functional parity is preserved (same element IDs, same
-wiring); the change is everything *around* that engine.
+`0.05` is now the repository's **default branch** (mainline); earlier lines (0.04
+and before) remain in git history. Functional parity is preserved (same element
+IDs, same wiring); the change is everything *around* that engine. The default ships
+**two** interfaces — Console (`/`) and Desk (`/desk`) — compared in
+[`GUI_DIALECTIC.md`](GUI_DIALECTIC.md).

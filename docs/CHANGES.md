@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.05 — full interface redesign (branch `0.05`)
+> `0.05` is the repository's **default branch** — the mainline everything builds on.
+
+## 0.05 — full interface redesign (now the default branch)
 
 A ground-up redesign of everything the user sees, built on top of the existing,
 tested data layer (same endpoints, same element IDs — no functional regression).
