@@ -447,37 +447,57 @@ Therefore 0.06 is **GUI-first**, not API-first:
 
 ## Phase A — The card + briefing framework (the GUI spine)  ⟵ start here
 
-- [ ] `src/briefing/`: the `Card` dataclass + a producer registry; `/api/briefing`
+> **Status: shipped & tested.** `src/briefing/` (Card + registry + producers +
+> service/cache + draft), `/api/briefing*`, the scheduler precompute hook, and the
+> redesigned **Home** card feed are implemented; the full suite is green incl. the
+> `no-score-field` honesty guard (`tests/test_briefing*.py`,
+> `tests/test_signals_concentration.py`). See [`BRIEFING.md`](BRIEFING.md).
+
+- [x] `src/briefing/`: the `Card` dataclass + a producer registry; `/api/briefing`
       assembling cards from producers; scheduler precompute + cache.
-- [ ] Redesign **Home** as the card feed (triage: keep/dismiss/→draft), grouped by
+- [x] Redesign **Home** as the card feed (triage: keep/dismiss/→draft), grouped by
       bucket (rising/overtold/undertold/investigate/context/trust).
-- [ ] **Draft accumulator** (pin cards + notes) → **Markdown export** carrying every
-      card's evidence links; optional signed/timestamped custody receipts.
-- [ ] Seed with **now-status** producers only (no new math): Rising (trending),
-      Framing split, Record-reshaped (wiki), Price↔narrative, Stale-data.
+- [x] **Draft accumulator** (pin cards + notes) → **Markdown export** carrying every
+      card's evidence links; custody receipts referenced (export a signed evidence
+      bundle from Evidence & custody to ship with the issue).
+- [x] Seed with **now-status** producers only (no new math): Rising (trending),
+      Framing split, Record-reshaped (wiki), Price↔narrative, Stale-data — plus the
+      **Diet self-audit** (which exercises the new `concentration` primitive).
 - [ ] **Belief/ideology + faith-media source-tag axis** (neutral, contestable,
       editable): extend source tags so family-grouped cards (tone-by-family,
       prominence-by-family, coordination grouping) work. (Generator spec already
-      added in 0.05; this tags existing sources.) → §4 belief axis.
-- [ ] **Tone-by-source / tone-by-family** card producer (VADER + `context` window
-      already exist — *now/thin*). → §4 tone & emotion.
-- [ ] **Acceptance:** fresh corpus → Home shows real cards from cached precompute;
+      added in 0.05; this tags existing sources.) → §4 belief axis. *(deferred to a
+      follow-up; framing_split already groups by source.)*
+- [~] **Tone-by-source / tone-by-family** card producer (VADER + `context` window
+      already exist — *now/thin*). → §4 tone & emotion. *(per-source tone shipped via
+      the Framing-split card; the family-grouped matrix is the follow-up.)*
+- [x] **Acceptance:** fresh corpus → Home shows real cards from cached precompute;
       pinning three → exported Markdown with working source links; equal-view toggle
       present; a test asserts no `score` field exists on `Card`.
 
 ## Phase B — Signal primitives (`src/signals/`, pure & mutualised)
 
-- [ ] `concentration.py` (Gini + top-N share, with method/caveat/n).
-- [ ] `near_dup.py` (MinHash/SimHash + LSH) → `coordination.py` (actor graph from
-      near-dup + lockstep timing + shared-template/host fingerprints).
-- [ ] `novelty.py` (information contributed vs an incremental corpus index).
-- [ ] Each primitive: pure, DB-free, property-tested in isolation.
-- [ ] **Acceptance:** unit tests on crafted fixtures (a known cluster collapses; a
+> **Status: started.** `concentration.py` is implemented, pure, and property-tested
+> (`tests/test_signals_concentration.py`); it already powers the Diet self-audit card.
+> `near_dup`/`coordination` and `novelty` are intentionally next (the riskiest math —
+> do it properly or not at all).
+
+- [x] `concentration.py` (Gini + top-N share, with method/caveat/n).
+- [x] `near_dup.py` (MinHash + LSH) → `coordination.py` (actor graph from
+      near-dup + lockstep timing + shared host fingerprints).
+- [x] `novelty.py` (information contributed vs an incremental corpus index).
+- [x] Each primitive: pure, DB-free, property-tested in isolation.
+- [x] **Acceptance:** unit tests on crafted fixtures (a known cluster collapses; a
       Gini of a known distribution matches; a pure echo scores ~0 novelty); zero DB
-      imports in `src/signals/`.
+      imports in `src/signals/` (`tests/test_signals_*`).
 
 ## Phase C — Source integrity: profile + anti-amplification (§6 C+D)
 
+> **Status: shipped & tested.** `src/integrity/` (actors, user-guided collapse, the
+> no-composite profile), `/api/integrity/*`, the **Source integrity** GUI tab, and the
+> echo-chamber / lonely-signal / capacity-implausible cards are implemented. The 40-puppet
+> acceptance is a passing test (`tests/test_integrity.py`). See [`INTEGRITY.md`](INTEGRITY.md).
+>
 > **User-guided, user-aware, GUI-mediated (§6 non-negotiable).** Anti-amplification is
 > never a silent transform the user merely *undoes* — it is **propose → user disposes**,
 > expressed through the interface. Default = **"equal but aware"** (raw equal view, with
@@ -485,51 +505,70 @@ Therefore 0.06 is **GUI-first**, not API-first:
 > There is **no headless auto-clean path**: the GUI is a *necessary* interface because the
 > human judgment *is* the mechanism.
 
-- [ ] **Actor graph + collapse (D):** detect coordinated actors and, **when the user
+- [x] **Actor graph + collapse (D):** detect coordinated actors and, **when the user
       applies it**, operate briefing counts (trend/prominence/synchrony) on **actors
       weighted by novelty** rather than raw outlet volume. The app **proposes** a collapse
       with its evidence (shared infra / lockstep timing / near-dup); the user applies it
       **globally or per-cluster**, never auto-applied. Every applied collapse stays
       **visibly flagged**, one click to expand-to-members / treat-as-separate / override.
-- [ ] **Source profile panel (C):** per source, the measured signals as a panel —
+- [x] **Source profile panel (C):** per source, the measured signals as a panel —
       coordination/actor, novelty ratio, output-capacity plausibility, transparency
-      facts, corpus track-record — **no composite**. User-weightable into *their* view,
-      off by default, reversible.
-- [ ] New cards fall out for free: Echo-chamber, Lonely-signal, Capacity-implausible.
-- [ ] **Acceptance:** on a synthetic 40-puppet flood, the **default** briefing shows the
+      facts, corpus track-record — **no composite** (`/api/integrity/profile` + the GUI
+      panel). User-weighting of dimensions is the user's own read; off by default, reversible.
+- [x] New cards fall out for free: Echo-chamber, Lonely-signal, Capacity-implausible.
+- [x] **Acceptance:** on a synthetic 40-puppet flood, the **default** briefing shows the
       cluster *annotated* (not silently collapsed); the app **proposes** a collapse with
       evidence; **only on the user's action** (global or that one cluster) does the flood
       stop dominating while a genuine single original source *rises*; the applied collapse
       stays flagged and expands to its 40 members; toggling it off reproduces the raw
       equal counts exactly. A test asserts no collapse is applied without an explicit
-      user action.
+      user action. *(Collapse merges a coordinated network to **one voice**; an opt-in
+      **novelty-weighting** of prominence — off by default, never silent — additionally
+      down-weights low-information echoes, `story_prominence(weight_by_novelty=True)`.)*
 
 ## Phase D — Crowdsourced annotation bundles (the C scaling answer)
 
-- [ ] Annotation = a signed, portable bundle (reuse the **custody/evidence** machinery)
+> **Status: shipped & tested.** `src/annotations/` (signed bundle build/verify reusing
+> the hybrid custody signer, local store, web-of-trust, transparent aggregation),
+> `/api/annotations/*`, and the GUI in the Source integrity tab. See
+> [`ANNOTATIONS.md`](ANNOTATIONS.md); acceptance in `tests/test_annotations.py`.
+
+- [x] Annotation = a signed, portable bundle (reuse the **custody/evidence** machinery)
       of source facts/tags/corrections; **export/import**; opt-in **web-of-trust**
       selection of whose bundles to load.
-- [ ] **Transparent aggregation:** show *who asserted what*; surface dissent, never
+- [x] **Transparent aggregation:** show *who asserted what*; surface dissent, never
       average it into a hidden number. No server, no accounts, no global score.
-- [ ] **Acceptance:** export a bundle, verify its signature with the standalone
-      verifier; import two conflicting bundles → the profile shows both attributions;
-      removing a trusted author cleanly removes their annotations.
+- [x] **Acceptance:** export a bundle, verify its signature; import two conflicting
+      bundles → the aggregation shows both attributions (dissent surfaced); removing a
+      trusted author cleanly removes their annotations; a tampered bundle is refused.
 
 ## Phase E — Verticals on the shared engines (lower priority)
 
-- [ ] **Law change-tracking (§5):** UK `legislation.gov.uk` + EUR-Lex pilot on the
-      existing `src/wiki` change-tracking engine; cross-jurisdiction near-dup (Phase B)
-      surfaces model-legislation; law↔news via the correlation engine.
-- [ ] **IP/legal primary-source (§4):** patents/dockets/filings as structured sources
-      (the markets-CSV pattern), correlated with the news narrative.
-- [ ] **IP/legal *news* cards (§4):** ownership-change, deal-lineage, IP-litigation
-      pulse, IP↔deal co-timing — entity + deal-verb producers over the *news* corpus
-      (distinct from the primary-source vertical above; mostly *thin*).
-- [ ] **Emotion-category card (§4):** anger/fear/joy/… around a keyword — needs an
-      **emotion lexicon** (a *new* dependency; degrade loudly if absent), unlike the
-      VADER tone card already in Phase A.
-- [ ] **Acceptance:** one jurisdiction tracked with honest amendment diffs + custody
-      snapshots; a model-legislation near-dup match shown across two jurisdictions.
+> **Status: shipped.** The **world-law change-tracking vertical** is built (`src/law/`,
+> `/api/law/*`, the **World law** GUI tab, the `law` scheduler mode) with a **worldwide
+> catalog of real official sources** (`configs/legal_sources.yml`) seeded **by default**;
+> the composable news-corpus cards (IP/legal pulse, ownership-change) and the
+> **emotion-category** card ship too. See [`LAW.md`](LAW.md);
+> `tests/test_law.py`, `tests/test_awareness_emotion.py`.
+
+- [x] **Law change-tracking (§5):** worldwide official sources (UK `legislation.gov.uk`,
+      EUR-Lex, Légifrance, govinfo/congress, IP offices, …) seeded by default; tracking on
+      the wiki change-tracking pattern (baseline → normalised-text diff → flag) through the
+      ethical fetcher; cross-jurisdiction near-dup (Phase B) surfaces **model-legislation**;
+      law↔news rides the existing correlation engine. *(Per-edit Akoma Ntoso/ELI structured
+      diffs are the next refinement; v1 is normalised-text diff — stated honestly.)*
+- [~] **IP/legal primary-source (§4):** IP offices + filing systems (USPTO, EPO, EUIPO,
+      WIPO Lex, SEC EDGAR, CourtListener) are seeded and ingestible; structured
+      patent/docket *parsing* into a price-feed-style series is the remaining refinement.
+- [x] **IP/legal *news* cards (§4):** ownership-change + IP-litigation pulse — deal-verb
+      and IP/legal-term producers over the *news* corpus (thin). Deal-lineage / IP↔deal
+      co-timing build on these next.
+- [x] **Emotion-category card (§4):** anger/fear/joy/… around a keyword via an emotion
+      lexicon (`src/awareness/emotion.py`); a minimal English sample ships,
+      `OO_EMOTION_LEXICON` overrides; degrades loudly if absent.
+- [x] **Acceptance:** a worldwide legal catalog seeds by default; a tracked document goes
+      baseline → change → honest flag (tested with a stub fetcher); a model-legislation
+      near-dup match is shown across two jurisdictions (tested).
 
 ---
 

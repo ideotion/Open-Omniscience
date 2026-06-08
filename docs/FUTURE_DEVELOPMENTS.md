@@ -373,9 +373,14 @@ primary-source layer, with patents/dockets/filings as the case half.
   adopted; crude text-diff elsewhere — and say which you have. Distinguish
   *consolidated* vs *point-in-time* text explicitly.
 
-**Status:** vision. New vertical parallel to Wikipedia/Markets; pilot = UK +
-EUR-Lex. The genuine work is heterogeneous formats, licensing, and the
-not-legal-advice discipline — not the tracking machinery, which already exists.
+**Status: shipped (`0.06`).** Implemented as `src/law/` + `/api/law/*` + the **World law**
+GUI tab + a `law` scheduler mode, with a **worldwide catalog of real official sources**
+(`configs/legal_sources.yml`) seeded **by default** and a curated set of trackable
+consolidated-law documents (baseline → normalised-text diff → honest flag, reusing the
+wiki engine). Cross-jurisdiction near-dup surfaces **model legislation**. See
+[`LAW.md`](LAW.md). The remaining refinements are *structured* per-edit diffs
+(Akoma Ntoso / ELI) and patent/docket parsing — not the tracking machinery, which now
+exists; and the not-legal-advice / licence discipline, which is enforced and documented.
 
 ---
 
@@ -503,14 +508,17 @@ once, well, and point them at each domain; do **not** re-implement per feature.
 | Anomaly (z-score, `monitoring/anomaly`) | exists | volume spikes, price/term spikes |
 | Tone (VADER + `context` window) | exists | tone/framing cards, §6 not used for stance |
 | Provenance + custody (signed, timestamped) | exists | every record; **§6 crowdsourced annotation bundles** |
-| **Concentration metric** (Gini / top-share) | **new** | §1 ownership, people-prominence, §6 actor share |
-| **Near-dup / coordination** (MinHash/SimHash → actor graph) | **new** | echo cards, model-legislation, syndication, **§6 actor-collapse** |
-| **Novelty / surprisal** (info contributed vs corpus) | **new** | §6 anti-amplification weighting |
-| **Card + briefing framework** (signal+evidence+method+caveat → feed → draft) | **new** | the entire §4 surface, the GUI spine |
+| **Concentration metric** (Gini / top-share) | **built** (`src/signals/concentration.py`) | §1 ownership, people-prominence, §6 actor share |
+| **Near-dup / coordination** (MinHash + LSH → actor graph) | **built** (`src/signals/near_dup.py`, `coordination.py`) | echo cards, model-legislation, syndication, **§6 actor-collapse** |
+| **Novelty / surprisal** (info contributed vs corpus) | **built** (`src/signals/novelty.py`) | §6 anti-amplification weighting |
+| **Card + briefing framework** (signal+evidence+method+caveat → feed → draft) | **built** (`src/briefing/`, Phase A) | the entire §4 surface, the GUI spine |
 
-The four **new** primitives (concentration, near-dup/coordination, novelty, the card
+The four primitives (concentration, near-dup/coordination, novelty, the card
 framework) are the whole of `0.06`'s genuinely new code; everything else is
-composition.
+composition. **All four are now shipped and tested.** On top of them: the
+source-integrity layer (`src/integrity/`, §6 C+D — profile + user-guided actor-collapse)
+and crowdsourced **signed annotation bundles** (`src/annotations/`, §6 D). See
+[`BRIEFING.md`](BRIEFING.md), [`INTEGRITY.md`](INTEGRITY.md), [`ANNOTATIONS.md`](ANNOTATIONS.md).
 
 ---
 
@@ -544,6 +552,17 @@ composition.
 
 Vision / persistent memory — the **guiding document for `0.06`**; the phased build
 is in [`ACTION_PLAN.md` → "0.06 — The Intelligence Layer"](ACTION_PLAN.md).
+
+> **Implementation progress.** **Phases A–D are shipped and tested.** Home is a triage
+> feed of honest cards (A) with a card→draft→Markdown loop; the full `src/signals/`
+> substrate — concentration, near-dup/coordination, novelty (B) — is built and pure;
+> the source-integrity layer (C) gives every source a **no-composite profile** and
+> **user-guided actor-collapse** (propose → you dispose; the 40-puppet acceptance is a
+> passing test); and **signed annotation bundles** with a web of trust (D) let the
+> weighting be collective. Phase E ships the composable news-corpus cards (emotion,
+> IP/legal). The §6 *no-composite-score* ban is enforced **in code**. Remaining: the
+> **law / IP primary-source change-tracking verticals** (§5, §4) — they reuse the
+> existing engines but need live external ingestion, so they are not faked.
 
 Decided principles on this page: **user-driven selection, no capping** (guiding
 principle); **C + D, B forbidden** for source integrity (§6); **mutualise the shared

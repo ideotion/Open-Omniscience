@@ -76,6 +76,19 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   **interactive map** (zoomable SVG with city pins by real lat/lon + per-country/
   city tables) — every figure a real aggregate with method + caveat. See
   [docs/INSIGHTS.md](docs/INSIGHTS.md).
+- ✅ **Home briefing** (the **Home** tab, `0.06` Phase A): a **triage feed of honest
+  "cards"** — the app gathers and measures in the background, then surfaces candidate
+  stories as cards grouped into editorial buckets (*rising · overtold · undertold ·
+  investigate · check-the-framing · watch · context · data-integrity*). Each card is
+  **one measured signal + evidence links + a caveat**, never a verdict — and there is
+  **no composite trust score** (forbidden *in code*, not just docs). Cards compose the
+  existing real analytics (trending, per-source VADER framing, Wikipedia flagging,
+  honest commodity correlation, market-rule freshness) plus a new pure
+  **concentration** primitive (Gini + top-share) powering a *reading-diet self-audit*.
+  Pin cards into a **newsletter draft** and **export Markdown** in which every claim
+  carries its source links, method and caveat — reproducible journalism. The feed is
+  precomputed/cached (instant Home) and refreshed after each scrape. See
+  [docs/BRIEFING.md](docs/BRIEFING.md).
 - ✅ **Wikipedia change-tracking** (the **Wikipedia** tab): each language edition is
   a tracked source whose *edits* are the data — one baseline snapshot then
   diffs/deltas (not re-copies), with honest large-edit/revisionism flagging (size
@@ -84,7 +97,30 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   (per-language, resumable, size-probed) kept separate from live tracking. See
   [docs/WIKIPEDIA.md](docs/WIKIPEDIA.md).
 
+- ✅ **Source integrity & anti-amplification** (the **Source integrity** tab, `0.06`
+  Phases B–D): the pure `src/signals/` substrate — **concentration** (Gini), **near-dup /
+  coordination** (MinHash + LSH → actor graph), **novelty / surprisal** — powers a
+  **no-composite-score** source profile and **user-guided anti-amplification**: the app
+  *proposes* collapsing a coordinated near-duplicate flood into one actor (with its
+  evidence); the user *disposes* — never silent, always flagged, one click to expand,
+  reverting reproduces the raw equal counts exactly (a 40-puppet flood is a passing
+  acceptance test). Plus **crowdsourced, signed, portable annotation bundles** with an
+  opt-in **web of trust** and transparent (dissent-shown, never averaged) aggregation.
+  See [docs/INTEGRITY.md](docs/INTEGRITY.md) and [docs/ANNOTATIONS.md](docs/ANNOTATIONS.md).
+
+- ✅ **World law — change-tracking** (the **World law** tab, `0.06` §5): a worldwide
+  catalog of **real official primary sources** (national legislation databases, gazettes,
+  IP offices — `legislation.gov.uk`, EUR-Lex, Légifrance, govinfo/congress, WIPO Lex,
+  USPTO, EPO, …) **seeded by default** and ingestible through the same ethical pipeline.
+  A curated set of consolidated-law documents is tracked for change over time (baseline →
+  normalised-text diff → honest large-change flag, reusing the Wikipedia engine), and the
+  shared near-dup engine surfaces **model legislation** copied across jurisdictions. A
+  research mirror, never legal advice — every record links to its official gazette. See
+  [docs/LAW.md](docs/LAW.md).
+
 **In progress / next:**
+- 🚧 Structured per-edit legal diffs (Akoma Ntoso / ELI) and patent/docket parsing into a
+  price-feed-style series, on top of the seeded IP/legal primary sources.
 - 🚧 Local LLM analysis via Ollama; email + monitoring; cross-linking Wikipedia
   diffs into the Insights keyword analytics.
 

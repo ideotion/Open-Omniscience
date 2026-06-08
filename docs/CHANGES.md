@@ -2,6 +2,96 @@
 
 > `0.05` is the repository's **default branch** — the mainline everything builds on.
 
+## 0.06 — the intelligence layer (Phase A: the Home briefing)
+
+The first slice of the `0.06` "intelligence layer" — the **GUI spine**. The unifying
+idea is *one measurement engine, many domains*; this ships the engine's framework and
+its first pure primitive, and turns **Home into a triage briefing**. Guiding docs:
+[`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) (what & why) and
+[`ACTION_PLAN.md`](ACTION_PLAN.md) (how); user guide: [`BRIEFING.md`](BRIEFING.md).
+
+- **`src/signals/` — pure, DB-free measurement primitives.** First shipped:
+  `concentration` (Gini coefficient + top-N share), property-tested with exact
+  hand-computed values and honest *undefined → None* behaviour (no fabricated zeros).
+  The *same maths* intended for media-ownership and people-prominence concentration.
+- **`src/briefing/` — the card + briefing framework.** A `Card` is one measured signal
+  + evidence + method + caveat, sorted into an editorial bucket. A **producer registry**
+  makes every feature `corpus → [Card]`, so new capabilities appear in the *same* feed.
+  Producers **degrade loudly** (return nothing + log) when inputs/optional deps are
+  absent — never a fabricated card.
+- **Home is now the briefing:** cards grouped by bucket (*rising · overtold · undertold
+  · investigate · check-the-framing · watch · context · data-integrity*), with triage
+  (dismiss/restore, reversible) and a **method & caveat** transparency toggle. Built on
+  the existing tested shell — same element IDs, no functional regression.
+- **"Now"-status producers (no new math, real numbers):** Rising (trending),
+  Framing-split (per-source VADER tone of a trending term), Record-reshaped (Wikipedia
+  flagging), Price↔narrative (honest scipy correlation), Stale-data (market-rule
+  freshness), and **Diet self-audit** (the new `concentration` primitive over *your*
+  sources).
+- **Card → draft → newsletter:** pin cards into a draft accumulator (+ your notes) and
+  **export Markdown** in which every claim carries its source links, method and caveat —
+  reproducible journalism. Custody receipts referenced via Evidence & custody.
+- **Performance:** precompute → cache → serve cached. The briefing never computes per
+  request; the scheduler refreshes it after each scrape (`briefing_cache.json`).
+  Dismissals/draft are small local JSON files — single-user, local-first, never sent.
+- **Honesty guard *in code*:** `assert_no_score_fields()` rejects any `Card` field that
+  implies a composite trust/quality score (the §6 ban) — enforced at import and by a
+  test. Numeric values live in `signal` as a single measured quantity with a method,
+  never a blended score.
+- **API:** `/api/briefing` (cached feed), `/refresh`, `/dismiss`·`/restore`, and the
+  `/draft` accumulator with `GET /draft/export.md`. New in-app doc `BRIEFING.md`.
+- **Tests:** `test_signals_concentration.py`, `test_briefing.py`, `test_briefing_api.py`
+  — full suite green; no regressions.
+
+### Phases B–E — the signal substrate, source integrity, annotations, verticals
+
+- **`src/signals/` complete (Phase B):** the pure, DB-free measurement substrate —
+  `near_dup` (MinHash + LSH near-duplicate clustering), `coordination` (an actor graph
+  from near-dup co-publication + lockstep timing + shared host), and `novelty`
+  (information contributed vs an incremental corpus index). Property-tested on crafted
+  fixtures (a syndicated story collapses; an independent original stays separate; a pure
+  echo scores ~0 novelty).
+- **Source integrity & anti-amplification (Phase C, `src/integrity/`):** the §6 keystone.
+  A per-source **profile of measured dimensions with NO composite score** (enforced by a
+  test); **user-guided actor-collapse** — the app *proposes* collapsing a coordinated
+  flood with its evidence, the user *disposes* (per-cluster or global), every applied
+  collapse stays flagged + expandable, reverting reproduces the raw equal counts exactly,
+  and **no collapse is applied without an explicit action**. The 40-puppet-flood
+  acceptance is a passing test. New cards: **echo-chamber**, **lonely-signal**,
+  **capacity-implausible**. New **Source integrity** GUI tab. See `INTEGRITY.md`.
+- **Crowdsourced signed annotation bundles (Phase D, `src/annotations/`):** publish
+  source annotations (ownership/leaning/coordination/corrections) as a **hybrid-signed,
+  portable bundle** (reusing the custody signer); import the bundles you trust (opt-in
+  **web of trust**); **transparent aggregation** shows *who asserted what* and surfaces
+  dissent, never averaging it into a score. A tampered bundle is refused. See
+  `ANNOTATIONS.md`.
+- **World-law change-tracking vertical (§5, `src/law/`):** a **worldwide catalog of real
+  official primary sources** (national legislation databases, official gazettes, IP
+  offices, open case-law/filing systems — `configs/legal_sources.yml`) seeded **by
+  default**, ingestible/searchable through the same ethical pipeline. A curated set of
+  consolidated-law documents is tracked for change (baseline → normalised-text diff →
+  honest large-change flag, reusing the Wikipedia engine), exposed via `/api/law/*`, a new
+  **World law** GUI tab, and a `law` scheduler mode. New cards: **law-change** (watch) and
+  **model-legislation** (cross-jurisdiction near-dup). New `LawDocument`/`LawRevision`
+  tables via Alembic migration. A research mirror, never legal advice — every record links
+  to its official gazette. See `LAW.md`.
+- **Phase E (composable cards):** **emotion-category** measurement around a keyword
+  (`src/awareness/emotion.py`, lexicon-based, ships a minimal English sample, overridable
+  via `OO_EMOTION_LEXICON`, degrades loudly); **IP/legal news cards** (IP-litigation
+  pulse + ownership-change deal-language).
+- **Novelty-weighting (§6 D, opt-in):** `story_prominence(weight_by_novelty=True)` and
+  `/api/integrity/prominence?weight_by_novelty=true` additionally down-weight
+  low-information echoes — off by default (anti-amplification stays user-guided, never
+  silent), the equal view reproduced exactly when off.
+- **Honesty guards everywhere in code:** no composite trust score on a Card, a Source
+  profile, or an annotation kind; anti-amplification is never silent; aggregation never
+  averages dissent.
+- **i18n:** new chrome strings added to the maintained locales (en/de/es/fr); the
+  English-fallback design keeps every other locale working.
+- **Tests:** `test_signals_near_dup.py`, `test_integrity.py` (incl. novelty-weighting),
+  `test_annotations.py`, `test_awareness_emotion.py`, `test_law.py` (+ A's tests). Full
+  suite green.
+
 ## 0.05 — full interface redesign (now the default branch)
 
 A ground-up redesign of everything the user sees, built on top of the existing,

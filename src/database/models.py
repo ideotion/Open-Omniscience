@@ -1267,6 +1267,83 @@ class WikiRevision(Base):
         return f"<WikiRevision(page={self.page_id} rev={self.revid} d={self.delta_bytes})>"
 
 
+class LawDocument(Base):
+    """A tracked legal document (statute / gazette / IP record) from any jurisdiction.
+
+    The world-law vertical (FUTURE_DEVELOPMENTS §5) reuses the Wikipedia change-tracking
+    pattern almost wholesale: a legal document is a tracked source whose *edits are the
+    data*. We keep ONE compressed baseline snapshot taken when tracking starts; every
+    later change is stored as a per-revision diff on :class:`LawRevision`, so the store
+    scales with amendment activity, not document size.
+
+    A research *mirror*, never the authoritative source: ``official_url`` always links
+    back to the official gazette, and ``consolidated`` records whether the text is a
+    point-in-time consolidation or a raw fetch (honest about what we have).
+    """
+
+    __tablename__ = "law_documents"
+
+    id = Column(Integer, primary_key=True)
+    jurisdiction = Column(String(8), nullable=False)   # ISO-ish code: uk, eu, fr, us, int…
+    title = Column(String(512), nullable=False)
+    url = Column(String(1000), nullable=False)         # the page we fetch (consolidated text)
+    official_url = Column(String(1000))                # canonical official link (may equal url)
+    category = Column(String(40), default="legislation")  # legislation|gazette|ip|case-law
+    consolidated = Column(Boolean, default=False)      # point-in-time consolidation vs raw fetch
+    watched = Column(Boolean, default=True)
+    baseline_text = Column(CompressedText)             # one full snapshot; later = baseline + diffs
+    baseline_hash = Column(String(64))
+    last_hash = Column(String(64))                     # content hash at last successful fetch
+    last_size = Column(Integer)
+    last_checked_at = Column(DateTime)
+    last_status = Column(String(255))                  # honest last outcome (ok / fetch error / …)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    revisions = relationship("LawRevision", back_populates="document", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_lawdoc_jurisdiction_url", "jurisdiction", "url", unique=True),
+        Index("ix_lawdoc_watched", "watched"),
+        Index("ix_lawdoc_category", "category"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<LawDocument({self.jurisdiction}:{self.title[:40]})>"
+
+
+class LawRevision(Base):
+    """One observed change of a tracked legal document: a delta, not a re-copy.
+
+    Holds the change's metadata (observed time, content hash, byte delta), the **diff**
+    (added/removed text, compressed) rather than the whole new document, and the honest
+    large-change flag + reasons computed at ingest (reusing the wiki flagging thresholds).
+    """
+
+    __tablename__ = "law_revisions"
+
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("law_documents.id", ondelete="CASCADE"), nullable=False)
+    observed_at = Column(DateTime, index=True)
+    content_hash = Column(String(64), nullable=False)
+    size = Column(Integer)
+    delta_bytes = Column(Integer)                      # size - previous size (signed)
+    diff = Column(CompressedText)                      # added/removed text for this change
+    flagged = Column(Boolean, default=False)
+    flag_reasons = Column(String(500))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    document = relationship("LawDocument", back_populates="revisions")
+
+    __table_args__ = (
+        Index("ix_lawrev_doc_hash", "document_id", "content_hash", unique=True),
+        Index("ix_lawrev_doc_time", "document_id", "observed_at"),
+        Index("ix_lawrev_flagged", "flagged"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<LawRevision(doc={self.document_id} d={self.delta_bytes})>"
+
+
 
 # Example usage
 if __name__ == "__main__":

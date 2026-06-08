@@ -43,6 +43,11 @@ WORLD_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "world_ne
 # wire-agency) with topic keywords -- the editorial dimension Wikidata can't give.
 SPECTRUM_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "sources_spectrum.yml"
 
+# Curated worldwide LAW & IP catalog: official legislation portals, gazettes and IP
+# offices across every region (source_type legal/ip). The trackable consolidated-law
+# *documents* in the same file are registered separately (src/law/catalog.py).
+LEGAL_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "legal_sources.yml"
+
 # YAML keys that map 1:1 to Source columns (everything except name/domain/tags,
 # which are handled explicitly).
 _PASSTHROUGH_FIELDS = (
@@ -136,4 +141,11 @@ def seed_default_sources(session: Session, path: Path | None = None) -> dict[str
                 for s in extra_sources:
                     s["_provenance"] = prov
                 sources = sources + extra_sources
+        # Worldwide law & IP official portals (the §5 vertical), seeded by default so a
+        # fresh install can ingest and search legal primary sources globally.
+        if LEGAL_SOURCES_PATH.exists():
+            legal = load_sources_from_yaml(LEGAL_SOURCES_PATH)
+            for s in legal:
+                s["_provenance"] = "legal"
+            sources = sources + legal
     return seed_sources(session, sources)

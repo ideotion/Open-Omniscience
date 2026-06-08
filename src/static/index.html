@@ -170,6 +170,40 @@
     .stat .n { font-size:24px; font-weight:700; letter-spacing:-.01em; }
     .stat .k { font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
 
+    /* ---- Briefing cards (the Home triage feed) ---------------------- */
+    .brief-bucket { margin-top:18px; }
+    .brief-bucket:first-of-type { margin-top:6px; }
+    .brief-bucket > h3 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+      color:var(--muted); font-weight:700; display:flex; align-items:center; gap:8px; }
+    .brief-bucket > h3 .ct { color:var(--fg-soft); font-weight:500; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:12px; }
+    .card { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm);
+      padding:14px; display:flex; flex-direction:column; gap:8px; }
+    .card.bk-rising { border-left:3px solid var(--accent); }
+    .card.bk-overtold, .card.bk-debunk { border-left:3px solid var(--warn); }
+    .card.bk-undertold { border-left:3px solid #6ea8fe; }
+    .card.bk-trust, .card.bk-watch { border-left:3px solid var(--ok); }
+    .card .chip { align-self:flex-start; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+      color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:1px 8px; }
+    .card h4 { margin:0; font-size:15px; line-height:1.3; }
+    .card .sum { font-size:13.5px; color:var(--fg-soft); margin:0; }
+    .card .sig { font-family:var(--mono); font-size:12px; color:var(--muted); }
+    .card .evid { display:flex; flex-direction:column; gap:3px; font-size:12.5px; }
+    .card .evid a { color:var(--accent); text-decoration:none; }
+    .card .evid a:hover { text-decoration:underline; }
+    .card .mc { font-size:11.5px; color:var(--muted); border-top:1px dashed var(--border); padding-top:7px; }
+    .card .mc[hidden] { display:none; }
+    .card .acts { display:flex; gap:7px; flex-wrap:wrap; margin-top:auto; padding-top:4px; }
+    .card .acts button { margin-top:0; }
+    .brief-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .brief-toolbar .sp { flex:1; }
+    .switch { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer; }
+    .switch input { width:auto; }
+    .draft-item { display:flex; gap:8px; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--border-soft); }
+    .draft-item .di-body { flex:1; min-width:0; }
+    .draft-item .di-title { font-size:13.5px; font-weight:600; }
+    .draft-item textarea { min-height:38px; margin-top:5px; font-size:12.5px; }
+
     /* inline sub-tabs (e.g. Insights Explore/Trends/Map) */
     nav.tabs { display:flex; flex-wrap:wrap; gap:4px; }
     nav.tabs button { background:transparent; color:var(--muted); border:1px solid transparent;
@@ -300,6 +334,7 @@
           <button class="nav-item" data-tab="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search</span></button>
           <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
           <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
+          <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
           <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Markets</span><span class="badge">adv</span></button>
         </div>
         <div class="nav-group" data-grp="collect">
@@ -311,6 +346,7 @@
         <div class="nav-group" data-grp="trust">
           <div class="gl">Trust</div>
           <button class="nav-item" data-tab="custody"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Evidence &amp; custody</span></button>
+          <button class="nav-item" data-tab="integrity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M10 7h7M7 10v7"/><path d="M14 14l-4-4"/></svg><span>Source integrity</span></button>
         </div>
         <div class="nav-group" data-grp="system">
           <div class="gl">System</div>
@@ -376,6 +412,37 @@
           <button class="secondary" onclick="showTab('help')" style="margin-top:0">Read the manual</button>
         </div>
       </div>
+
+      <section class="panel">
+        <div class="phead"><h2>Briefing</h2><span class="sp"></span>
+          <span id="brief-generated" class="hint" style="margin:0"></span>
+          <button class="secondary tiny" onclick="refreshBriefing()" id="brief-refresh-btn">Refresh</button></div>
+        <div class="brief-toolbar">
+          <label class="switch" title="Transparency: show how every figure was computed and what it does not mean.">
+            <input type="checkbox" id="brief-methods" onchange="toggleMethods()"> Show method &amp; caveat</label>
+          <span class="sp"></span>
+          <button class="secondary tiny" onclick="openDraft()">Draft (<span id="draft-count">0</span>) →</button>
+        </div>
+        <p class="hint" style="margin-top:8px">Equal view — every source is counted once; no source is
+          de-amplified in this version. The app gathers and measures; <b>you judge</b>. Each card is one
+          measured signal with its evidence and caveat, never a verdict.</p>
+        <div id="briefing-feed" style="margin-top:6px"><div class="muted">Loading the briefing…</div></div>
+      </section>
+
+      <section class="panel" id="draft-panel" hidden>
+        <div class="phead"><h2>Newsletter draft</h2><span class="sp"></span>
+          <button class="secondary tiny" onclick="exportDraft()">Export Markdown</button>
+          <button class="secondary tiny" onclick="copyDraft()">Copy</button>
+          <button class="secondary tiny" onclick="closeDraft()">Hide</button></div>
+        <label for="draft-title">Issue title</label>
+        <input id="draft-title" onchange="saveDraftTitle()" placeholder="Open Omniscience briefing">
+        <div id="draft-items" style="margin-top:10px"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="danger tiny" onclick="clearDraft()" style="flex:0">Clear draft</button>
+        </div>
+        <p class="hint">Each pinned card exports with its source links, method and caveat — reproducible by
+          design. For a signed, tamper-evident copy of the underlying articles, use Evidence &amp; custody.</p>
+      </section>
 
       <section class="panel">
         <div class="phead"><h2>At a glance</h2><span class="sp"></span>
@@ -648,6 +715,97 @@
       <div id="cust-result" class="hint" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:8px;"><table id="cust-entries"></table></div>
     </section>
+    </div>
+
+    <!-- ============================= LAW ============================ -->
+    <div class="tab-page" id="tab-law">
+      <section class="panel">
+        <h2>World law — change tracking</h2>
+        <p class="hint">Aggregate the <b>law</b> — statutes, gazettes, IP records — from official
+          sources worldwide and track how it changes over time (the data <i>is</i> the diff). A
+          <b>research mirror</b>, never the authoritative source and <b>not legal advice</b>: every
+          record links back to its official gazette. Fetched only through the ethical, robots-respecting
+          path. See <a href="#" onclick="showTab('help');openDoc('law');return false">the Law guide</a>.</p>
+        <div class="row">
+          <button onclick="lawTrack()" style="margin-top:0">Track changes now</button>
+          <button class="secondary" onclick="lawSeed()" style="margin-top:0">Re-seed catalog</button>
+          <button class="secondary" onclick="loadLaw()" style="margin-top:0">Refresh</button>
+        </div>
+        <div id="law-status" class="stat-grid" style="margin-top:12px"><div class="muted">Loading…</div></div>
+      </section>
+      <section class="panel">
+        <div class="phead"><h2>Flagged legal changes</h2><span class="sp"></span>
+          <label class="switch" style="margin-top:0"><input type="checkbox" id="law-flagged-only" checked
+                onchange="loadLawChanges()"> flagged only</label></div>
+        <div id="law-changes"><div class="muted">No tracked changes yet — “Track changes now”.</div></div>
+      </section>
+      <section class="panel">
+        <h2>Tracked documents</h2>
+        <div style="overflow:auto"><table id="law-docs"></table></div>
+      </section>
+    </div>
+
+    <!-- ========================== INTEGRITY ========================= -->
+    <div class="tab-page" id="tab-integrity">
+      <section class="panel">
+        <h2>Source integrity &amp; anti-amplification</h2>
+        <p class="hint">The app measures <b>structure</b> — coordination, novelty, output capacity,
+          transparency — and <b>you decide</b>. There is deliberately <b>no trust score</b>: a single
+          number over incommensurable dimensions would bake in bias and silence small, foreign, new or
+          dissident sources. Surface, never suppress.</p>
+      </section>
+
+      <section class="panel">
+        <div class="phead"><h2>Anti-amplification (propose → you dispose)</h2><span class="sp"></span>
+          <button class="secondary tiny" onclick="loadActors()">Scan for coordination</button>
+          <button class="secondary tiny" onclick="revertAllCollapse()">Reset all</button></div>
+        <p class="hint">Coordinated near-duplicate floods are <b>shown by default</b> (equal but aware) —
+          never silently collapsed. Apply a collapse to count a network as <b>one voice</b>; it stays
+          flagged and expandable, and reverting reproduces the raw equal counts exactly.</p>
+        <div id="actors-list"><div class="muted">Click “Scan for coordination”.</div></div>
+      </section>
+
+      <section class="panel">
+        <div class="phead"><h2>Source profile</h2><span class="sp"></span></div>
+        <div class="row">
+          <div style="flex:2"><input id="prof-source" placeholder="Source name or domain (e.g. bbc.com)"
+                onkeydown="if(event.key==='Enter')loadProfile()"></div>
+          <div style="flex:0"><button onclick="loadProfile()" style="margin-top:0">Profile</button></div>
+        </div>
+        <div id="profile-out" style="margin-top:10px"></div>
+      </section>
+
+      <section class="panel">
+        <div class="phead"><h2>Shared annotations (web of trust)</h2><span class="sp"></span>
+          <button class="secondary tiny" onclick="exportAnnotations()">Export signed bundle</button>
+          <label class="switch" style="margin-top:0"><input type="file" id="anno-import" accept="application/json"
+                onchange="importAnnotations(this)" style="display:none"><button class="secondary tiny"
+                onclick="document.getElementById('anno-import').click()">Import bundle…</button></label></div>
+        <p class="hint">Annotations are <b>descriptive, contestable facts</b> (ownership, leaning,
+          coordination, corrections) — never a score. Publish yours as a <b>signed</b> bundle; import the
+          ones you choose to trust. Aggregation shows <b>who asserted what</b>; dissent is shown, not averaged.</p>
+        <div class="row">
+          <div style="flex:2"><input id="anno-target" placeholder="Source this is about (name/domain)"></div>
+          <div style="flex:1"><select id="anno-kind">
+            <option value="ownership">ownership</option>
+            <option value="leaning">leaning</option>
+            <option value="coordination-tag">coordination-tag</option>
+            <option value="transparency-fact">transparency-fact</option>
+            <option value="correction">correction</option>
+            <option value="note">note</option></select></div>
+          <div style="flex:2"><input id="anno-value" placeholder="Value (e.g. owned by Example Corp)"></div>
+          <div style="flex:0"><button onclick="addAnnotation()" style="margin-top:0">Add</button></div>
+        </div>
+        <div id="anno-mine" style="margin-top:10px"></div>
+        <h3 style="margin:14px 0 6px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em">Trusted authors</h3>
+        <div id="anno-authors"><div class="muted">No imported authors yet.</div></div>
+        <div class="row" style="margin-top:10px">
+          <div style="flex:2"><input id="anno-lookup" placeholder="Look up annotations for a source"
+                onkeydown="if(event.key==='Enter')lookupAnnotations()"></div>
+          <div style="flex:0"><button class="secondary" onclick="lookupAnnotations()" style="margin-top:0">Who said what?</button></div>
+        </div>
+        <div id="anno-aggregate" style="margin-top:10px"></div>
+      </section>
     </div>
 
     <!-- ============================ MARKETS ========================== -->
@@ -1050,11 +1208,13 @@
       {id:"search",   label:"Search",             grp:"Investigate"},
       {id:"insights", label:"Insights",           grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
+      {id:"law",      label:"World law",          grp:"Investigate"},
       {id:"markets",  label:"Markets",            grp:"Investigate"},
       {id:"ingest",   label:"Collect",            grp:"Collect"},
       {id:"sources",  label:"Sources",            grp:"Collect"},
       {id:"database", label:"Library",            grp:"Collect"},
       {id:"custody",  label:"Evidence & custody", grp:"Trust"},
+      {id:"integrity",label:"Source integrity",   grp:"Trust"},
       {id:"settings", label:"Settings",           grp:"System"},
       {id:"help",     label:"Help & docs",        grp:"System"},
     ];
@@ -1068,9 +1228,11 @@
       markets: loadMarkets,
       insights: loadInsights,
       wiki: loadWiki,
+      law: loadLaw,
       sources: loadManagedSources,
       database: () => { loadCoverage(); },   // stats handled by the live poller (startLive)
       custody: loadCustody,
+      integrity: loadIntegrity,
       settings: loadSettings,
       help: loadDocs,
     };
@@ -1242,6 +1404,366 @@
           `Automatic collection: <span class="pill ${on ? "ok" : ""}">${on ? "running" : "stopped"}</span> ` +
           `<span class="muted">· everything stays on this machine — no cloud, no telemetry.</span>`;
       } catch (e) { $("home-status").innerHTML = '<span class="muted">Everything stays on this machine — no cloud, no telemetry.</span>'; }
+      loadBriefing();
+      refreshDraftCount();
+    }
+
+    // -- The Home briefing (triage cards) ----------------------------------- //
+    // Cards are produced server-side from real analytics; this layer only renders
+    // them and lets the user triage (dismiss / add to draft). It never computes a
+    // verdict. The full method + caveat for every figure is one toggle away.
+    let _briefCards = {};   // id -> card (so "Add to draft" has the full card)
+
+    async function loadBriefing(force) {
+      const feed = $("briefing-feed");
+      try {
+        const data = await api("/api/briefing" + (force ? "?force=true" : ""));
+        renderBriefing(data);
+      } catch (e) {
+        feed.innerHTML = '<div class="muted">Briefing unavailable right now.</div>';
+      }
+    }
+
+    async function refreshBriefing() {
+      const btn = $("brief-refresh-btn");
+      if (btn) { btn.disabled = true; btn.textContent = "Refreshing…"; }
+      try { const data = await api("/api/briefing/refresh", {method:"POST"}); renderBriefing(data); toast("Briefing refreshed."); }
+      catch (e) { toast("Could not refresh briefing: " + e.message, "err"); }
+      finally { if (btn) { btn.disabled = false; btn.textContent = "Refresh"; } }
+    }
+
+    function renderBriefing(data) {
+      _briefCards = {};
+      const feed = $("briefing-feed");
+      const gen = $("brief-generated");
+      if (gen) gen.textContent = data.generated_at ? ("updated " + new Date(data.generated_at).toLocaleString()) : "";
+      if (!data.buckets || !data.buckets.length) {
+        feed.innerHTML = '<div class="muted">No cards yet — collect some material (and let the scheduler run), '
+          + 'then refresh. The briefing surfaces what\'s rising, echoed, undertold or worth a second look.</div>';
+        return;
+      }
+      const html = data.buckets.map(b => {
+        b.cards.forEach(c => { _briefCards[c.id] = c; });
+        const cards = b.cards.map(cardHtml).join("");
+        return `<div class="brief-bucket"><h3>${esc(b.label)} <span class="ct">· ${b.cards.length}</span></h3>`
+          + `<div class="cards">${cards}</div></div>`;
+      }).join("");
+      feed.innerHTML = html;
+      applyMethodsToggle();
+    }
+
+    function cardHtml(c) {
+      const sig = c.signal || {};
+      const sigLine = (sig.metric != null && sig.value != null)
+        ? `<div class="sig">${esc(sig.metric)} = ${esc(sig.value)}${c.n != null ? " · n=" + c.n : ""}</div>` : "";
+      const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).map(e => {
+        const label = esc(e.title || e.url);
+        const meta = [e.source, (e.published_at || "").slice(0,10)].filter(Boolean).map(esc).join(" · ");
+        const link = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">${label}</a>` : label;
+        return `<span>${link}${meta ? ` <span class="muted">— ${meta}</span>` : ""}</span>`;
+      }).join("");
+      const evidBlock = evid ? `<div class="evid">${evid}</div>` : "";
+      const dismiss = c.dismissible === false ? ""
+        : `<button class="ghost tiny" onclick="dismissCard('${c.id}')">Dismiss</button>`;
+      // Echo-chamber cards carry an actor signature: offer user-guided collapse (never auto).
+      let collapseBtn = "";
+      if (c.type === "echo_chamber" && sig.signature) {
+        collapseBtn = sig.collapse_applied
+          ? `<button class="secondary tiny" onclick="cardCollapse('${esc(sig.signature)}', false)">Expand (revert)</button>`
+          : `<button class="secondary tiny" onclick="cardCollapse('${esc(sig.signature)}', true)" title="Count this coordinated network as one voice (reversible, stays flagged)">Collapse to one actor</button>`;
+      }
+      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}">
+        <span class="chip">${esc(c.type.replace(/_/g,' '))}</span>
+        <h4>${esc(c.title)}</h4>
+        <p class="sum">${esc(c.summary)}</p>
+        ${sigLine}
+        ${evidBlock}
+        <div class="mc" hidden><b>Method:</b> ${esc(c.method)}<br><b>Caveat:</b> ${esc(c.caveat)}</div>
+        <div class="acts">
+          <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
+          ${collapseBtn}
+          ${dismiss}
+        </div></div>`;
+    }
+
+    function toggleMethods() {
+      localStorage.setItem("oo.brief.methods", $("brief-methods").checked ? "1" : "0");
+      applyMethodsToggle();
+    }
+    function applyMethodsToggle() {
+      const on = localStorage.getItem("oo.brief.methods") === "1";
+      const box = $("brief-methods"); if (box) box.checked = on;
+      document.querySelectorAll("#briefing-feed .mc").forEach(el => el.hidden = !on);
+    }
+
+    async function dismissCard(id) {
+      try {
+        await api("/api/briefing/dismiss", {method:"POST", body: JSON.stringify({id})});
+        const el = document.querySelector(`.card[data-card="${id}"]`);
+        if (el) el.remove();
+      } catch (e) { toast("Could not dismiss: " + e.message, "err"); }
+    }
+
+    // -- The newsletter draft (card → reproducible Markdown) ---------------- //
+    async function addToDraft(id) {
+      const card = _briefCards[id];
+      if (!card) return;
+      try {
+        const d = await api("/api/briefing/draft/add", {method:"POST", body: JSON.stringify({card})});
+        updateDraftCount(d.items.length);
+        toast("Added to draft.");
+      } catch (e) { toast("Could not add to draft: " + e.message, "err"); }
+    }
+    async function refreshDraftCount() {
+      try { const d = await api("/api/briefing/draft"); updateDraftCount((d.items||[]).length);
+        const t = $("draft-title"); if (t && d.title) t.value = d.title; }
+      catch (e) { /* draft is optional */ }
+    }
+    function updateDraftCount(n) { const el = $("draft-count"); if (el) el.textContent = n; }
+
+    async function openDraft() {
+      $("draft-panel").hidden = false;
+      await renderDraft();
+      $("draft-panel").scrollIntoView({behavior:"smooth", block:"start"});
+    }
+    function closeDraft() { $("draft-panel").hidden = true; }
+
+    async function renderDraft() {
+      const box = $("draft-items");
+      try {
+        const d = await api("/api/briefing/draft");
+        updateDraftCount((d.items||[]).length);
+        const t = $("draft-title"); if (t) t.value = d.title || "";
+        if (!d.items || !d.items.length) { box.innerHTML = '<div class="muted">No cards pinned yet. Use “+ Add to draft” on a briefing card.</div>'; return; }
+        box.innerHTML = d.items.map(it => {
+          const c = it.card;
+          return `<div class="draft-item" data-id="${c.id}">
+            <div class="di-body">
+              <div class="di-title">${esc(c.title)}</div>
+              <div class="hint" style="margin-top:2px">${esc(c.summary || "")}</div>
+              <textarea placeholder="Your note (ships in the export)…" onchange="saveDraftItemNote('${c.id}', this.value)">${esc(it.note||"")}</textarea>
+            </div>
+            <button class="ghost tiny" onclick="removeDraftItem('${c.id}')">Remove</button>
+          </div>`;
+        }).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">Could not load the draft.</div>'; }
+    }
+    async function removeDraftItem(id) {
+      try { const d = await api("/api/briefing/draft/" + encodeURIComponent(id), {method:"DELETE"});
+        updateDraftCount((d.items||[]).length); renderDraft(); } catch (e) { toast(e.message, "err"); }
+    }
+    async function saveDraftItemNote(id, note) {
+      try { await api("/api/briefing/draft/note", {method:"PUT", body: JSON.stringify({id, note})}); }
+      catch (e) { toast("Could not save note: " + e.message, "err"); }
+    }
+    async function saveDraftTitle() {
+      try { await api("/api/briefing/draft/title", {method:"PUT", body: JSON.stringify({title: $("draft-title").value})}); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    async function clearDraft() {
+      if (!confirm("Clear all pinned cards from the draft?")) return;
+      try { await api("/api/briefing/draft/clear", {method:"POST"}); updateDraftCount(0); renderDraft(); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    function exportDraft() { window.open("/api/briefing/draft/export.md", "_blank"); }
+    async function copyDraft() {
+      try {
+        const md = await (await fetch("/api/briefing/draft/export.md")).text();
+        await navigator.clipboard.writeText(md);
+        toast("Draft Markdown copied to clipboard.");
+      } catch (e) { toast("Could not copy: " + e.message, "err"); }
+    }
+
+    // ===================================================================== //
+    //  SOURCE INTEGRITY & ANTI-AMPLIFICATION (§6) — propose → you dispose     //
+    // ===================================================================== //
+    async function cardCollapse(signature, apply) {
+      try {
+        await api("/api/integrity/collapse/" + (apply ? "apply" : "revert"),
+          {method:"POST", body: JSON.stringify({signature})});
+        toast(apply ? "Collapsed to one actor (reversible)." : "Expanded — raw equal view restored.");
+        await refreshBriefing();            // counts that measure consensus now reflect the choice
+      } catch (e) { toast("Could not update collapse: " + e.message, "err"); }
+    }
+
+    function loadIntegrity() { loadMineAnnotations(); loadAuthors(); }
+
+    async function loadActors() {
+      const box = $("actors-list");
+      box.innerHTML = '<div class="muted">Scanning recent corpus for coordination…</div>';
+      try {
+        const d = await api("/api/integrity/actors");
+        if (!d.actors || !d.actors.length) {
+          box.innerHTML = '<div class="muted">No coordinated near-duplicate clusters found in the recent window.</div>'; return;
+        }
+        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.actors.map(a => {
+          const members = a.sources.map(esc).join(", ");
+          const btn = a.applied
+            ? `<button class="secondary tiny" onclick="collapseAction('${a.signature}', false)">Expand (revert)</button>`
+            : `<button class="secondary tiny" onclick="collapseAction('${a.signature}', true)">Apply collapse</button>`;
+          const flag = a.applied ? '<span class="pill ok">collapsed</span> ' : '<span class="pill warn">annotated only</span> ';
+          return `<div class="panel" style="background:var(--panel2); margin-top:8px">
+            ${flag}<b>${a.size} sources</b> · ${a.shared_stories} shared story(ies)
+            ${a.shared_hosts && a.shared_hosts.length ? "· host "+esc(a.shared_hosts[0]) : ""}
+            ${a.median_span_hours!=null ? "· ~"+a.median_span_hours+"h span" : ""}
+            <div class="hint" style="margin-top:4px">${members}</div>
+            <div class="acts" style="margin-top:6px">${btn}</div></div>`;
+        }).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">Could not scan: ' + esc(e.message) + '</div>'; }
+    }
+    async function collapseAction(sig, apply) {
+      try { await api("/api/integrity/collapse/" + (apply?"apply":"revert"), {method:"POST", body: JSON.stringify({signature: sig})});
+        loadActors(); } catch (e) { toast(e.message, "err"); }
+    }
+    async function revertAllCollapse() {
+      try { await api("/api/integrity/collapse/revert_all", {method:"POST"}); toast("All collapses reverted."); loadActors(); }
+      catch (e) { toast(e.message, "err"); }
+    }
+
+    async function loadProfile() {
+      const src = $("prof-source").value.trim(); if (!src) return;
+      const out = $("profile-out");
+      out.innerHTML = '<div class="muted">Measuring…</div>';
+      try {
+        const p = await api("/api/integrity/profile?source=" + encodeURIComponent(src));
+        const d = p.dimensions;
+        const dim = (title, body, m, c) => `<div class="panel" style="background:var(--panel2); margin-top:8px">
+          <b>${esc(title)}</b><div style="margin-top:4px">${body}</div>
+          <div class="hint" style="margin-top:4px"><i>Method:</i> ${esc(m)}<br><i>Caveat:</i> ${esc(c)}</div></div>`;
+        const co = d.coordination, nv = d.novelty, oc = d.output_capacity, tr = d.transparency, rec = d.track_record;
+        out.innerHTML =
+          `<p class="hint"><b>No composite score</b> — these are independent measured dimensions you weigh yourself.</p>` +
+          dim("Coordination", co.is_member ? `Member of ${co.actors.length} detected actor(s).` : "No coordination detected.", co.method, co.caveat) +
+          dim("Novelty (originates vs echoes)", nv.mean_ratio==null ? "Not enough data." : `Mean novelty <b>${nv.mean_ratio}</b> over ${nv.n} articles.`, nv.method, nv.caveat) +
+          dim("Output capacity", `${oc.articles} articles · ~${oc.per_day}/day (corpus median ${oc.corpus_median_per_day}/day).`, oc.method, oc.caveat) +
+          dim("Transparency", `${esc(tr.country||"?")} · ${esc(tr.language||"?")} · ownership: ${(tr.ownership_tags||[]).join(", ")||"—"} · leaning: ${(tr.leaning_tags||[]).join(", ")||"—"}`, tr.method, tr.caveat) +
+          dim("Track record", `${rec.total_articles} articles in your corpus.`, rec.method, rec.caveat);
+      } catch (e) { out.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
+    }
+
+    // -- Crowdsourced annotations (web of trust) ---------------------------- //
+    async function addAnnotation() {
+      const target = $("anno-target").value.trim(), kind = $("anno-kind").value, value = $("anno-value").value.trim();
+      if (!target || !value) { toast("Target and value are required.", "err"); return; }
+      try { await api("/api/annotations/mine", {method:"POST", body: JSON.stringify({target, kind, value})});
+        $("anno-value").value = ""; loadMineAnnotations(); toast("Annotation added."); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    async function loadMineAnnotations() {
+      const box = $("anno-mine");
+      try {
+        const d = await api("/api/annotations/mine");
+        if (!d.annotations || !d.annotations.length) { box.innerHTML = '<div class="muted">No annotations yet.</div>'; return; }
+        box.innerHTML = d.annotations.map((a, i) =>
+          `<div class="draft-item"><div class="di-body"><b>${esc(a.target)}</b> · <span class="chip">${esc(a.kind)}</span> ${esc(a.value)}
+            ${a.note ? '<div class="hint">'+esc(a.note)+'</div>' : ''}</div>
+            <button class="ghost tiny" onclick="removeAnnotation(${i})">Remove</button></div>`).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">Could not load.</div>'; }
+    }
+    async function removeAnnotation(i) {
+      try { await api("/api/annotations/mine/" + i, {method:"DELETE"}); loadMineAnnotations(); } catch (e) { toast(e.message, "err"); }
+    }
+    function exportAnnotations() { window.open("/api/annotations/export", "_blank"); }
+    async function importAnnotations(input) {
+      const file = input.files && input.files[0]; if (!file) return;
+      try {
+        const bundle = JSON.parse(await file.text());
+        const r = await api("/api/annotations/import", {method:"POST", body: JSON.stringify({bundle})});
+        toast(`Imported ${r.annotations} annotation(s) from ${r.author_name}.`);
+        loadAuthors();
+      } catch (e) { toast("Import failed: " + e.message, "err"); }
+      finally { input.value = ""; }
+    }
+    async function loadAuthors() {
+      const box = $("anno-authors");
+      try {
+        const d = await api("/api/annotations/authors");
+        if (!d.authors || !d.authors.length) { box.innerHTML = '<div class="muted">No imported authors yet.</div>'; return; }
+        box.innerHTML = d.authors.map(a =>
+          `<div class="draft-item"><div class="di-body"><b>${esc(a.author_name||a.author_id.slice(0,12))}</b>
+            <span class="hint">· ${a.annotations} annotation(s) · ${esc(a.author_id.slice(0,16))}…</span></div>
+            <label class="switch" style="margin-top:0"><input type="checkbox" ${a.trusted?"checked":""}
+              onchange="trustAuthor('${a.author_id}', this.checked)"> trust</label>
+            <button class="ghost tiny" onclick="removeAuthor('${a.author_id}')">Remove</button></div>`).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">Could not load.</div>'; }
+    }
+    async function trustAuthor(id, trusted) {
+      try { await api("/api/annotations/authors/trust", {method:"PUT", body: JSON.stringify({author_id:id, trusted})}); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    async function removeAuthor(id) {
+      try { await api("/api/annotations/authors/" + encodeURIComponent(id), {method:"DELETE"}); loadAuthors(); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    async function lookupAnnotations() {
+      const target = $("anno-lookup").value.trim(); if (!target) return;
+      const box = $("anno-aggregate");
+      try {
+        const d = await api("/api/annotations/for?target=" + encodeURIComponent(target));
+        if (!d.total_assertions) { box.innerHTML = '<div class="muted">No annotations for that source (from you or trusted authors).</div>'; return; }
+        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` +
+          (d.dissent_kinds.length ? `<p class="hint"><b>Dissent on:</b> ${d.dissent_kinds.map(esc).join(", ")}</p>` : "") +
+          d.claims.map(c => `<div class="draft-item"><div class="di-body"><span class="chip">${esc(c.kind)}</span> <b>${esc(c.value)}</b>
+            <div class="hint">asserted by: ${c.asserted_by.map(a=>esc(a.author)).join(", ")}</div></div></div>`).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
+    }
+
+    // ===================================================================== //
+    //  WORLD LAW — change tracking (§5)                                       //
+    // ===================================================================== //
+    async function loadLaw() {
+      try {
+        const s = await api("/api/law/status");
+        const jur = Object.entries(s.jurisdictions || {});
+        $("law-status").innerHTML =
+          `<div class="stat"><div class="n">${s.documents}</div><div class="k">documents</div></div>` +
+          `<div class="stat"><div class="n">${s.tracked}</div><div class="k">with baseline</div></div>` +
+          `<div class="stat"><div class="n">${s.changes}</div><div class="k">changes</div></div>` +
+          `<div class="stat"><div class="n">${s.flagged}</div><div class="k">flagged</div></div>` +
+          `<div class="stat"><div class="n">${jur.length}</div><div class="k">jurisdictions</div></div>`;
+      } catch (e) { $("law-status").innerHTML = '<div class="muted">Status unavailable.</div>'; }
+      loadLawChanges(); loadLawDocs();
+    }
+    async function loadLawChanges() {
+      const box = $("law-changes");
+      const fo = $("law-flagged-only") ? $("law-flagged-only").checked : true;
+      try {
+        const d = await api("/api/law/changes?flagged_only=" + fo);
+        if (!d.changes || !d.changes.length) { box.innerHTML = '<div class="muted">No tracked changes yet.</div>'; return; }
+        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.changes.map(ch =>
+          `<div class="panel" style="background:var(--panel2); margin-top:8px">
+            <b>${esc(ch.jurisdiction.toUpperCase())}</b> · ${esc(ch.title)}
+            <span class="pill ${ch.flagged?'warn':''}">${ch.delta_bytes>0?'+':''}${ch.delta_bytes} bytes</span>
+            ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(esc).join(', ')+'</span>':''}
+            <div class="hint" style="margin-top:4px">${ch.observed_at?new Date(ch.observed_at).toLocaleString():''} ·
+              <a href="${esc(ch.official_url)}" target="_blank" rel="noopener noreferrer">official source ↗</a></div>
+            ${ch.diff?`<pre style="white-space:pre-wrap;max-height:160px;overflow:auto;font-size:12px;margin-top:6px">${esc(ch.diff.slice(0,1500))}</pre>`:''}
+          </div>`).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">Could not load changes.</div>'; }
+    }
+    async function loadLawDocs() {
+      try {
+        const d = await api("/api/law/documents");
+        const t = $("law-docs");
+        t.innerHTML = "<thead><tr><th>Jurisdiction</th><th>Title</th><th>Category</th><th>Tracked</th><th>Changes</th><th></th></tr></thead><tbody>" +
+          d.documents.map(x =>
+            `<tr><td>${esc(x.jurisdiction.toUpperCase())}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
+              <td>${x.has_baseline?'<span class="pill ok">yes</span>':'<span class="pill">no</span>'}</td>
+              <td>${x.revisions}${x.flagged?` (${x.flagged} flagged)`:''}</td>
+              <td><a href="${esc(x.official_url||x.url)}" target="_blank" rel="noopener noreferrer">official ↗</a></td></tr>`).join("") +
+          "</tbody>";
+      } catch (e) { /* table optional */ }
+    }
+    async function lawTrack() {
+      toast("Tracking legal documents (ethical fetch)…");
+      try { const r = await api("/api/law/track", {method:"POST"});
+        toast(`Tracked ${r.documents}: ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.`);
+        loadLaw(); } catch (e) { toast("Tracking failed: " + e.message, "err"); }
+    }
+    async function lawSeed() {
+      try { const r = await api("/api/law/seed", {method:"POST"});
+        toast(`Seeded ${r.sources.created} sources, ${r.documents.created} documents.`); loadLaw(); }
+      catch (e) { toast(e.message, "err"); }
     }
 
     // -- In-app documentation reader ---------------------------------------- //

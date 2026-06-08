@@ -107,6 +107,18 @@ from src.api.source_io import router as source_io_router
 # Import insights router (keyword & entity analytics)
 from src.api.insights import router as insights_router
 
+# Import briefing router (the Home triage feed of honest "cards" + draft accumulator)
+from src.api.briefing import router as briefing_router
+
+# Import source-integrity router (no-composite profile + user-guided actor-collapse)
+from src.api.integrity import router as integrity_router
+
+# Import annotations router (signed, portable, web-of-trust source annotations)
+from src.api.annotations import router as annotations_router
+
+# Import world-law change-tracking router (statutes/gazettes/IP, baseline→diff→flag)
+from src.api.law import router as law_router
+
 # Import link / co-citation analysis router (honest counts only)
 from src.api.link_analysis import router as link_analysis_router
 
@@ -252,6 +264,18 @@ app.include_router(source_io_router)
 
 # Include insights router
 app.include_router(insights_router)
+
+# Include briefing router (Home triage feed + newsletter draft)
+app.include_router(briefing_router)
+
+# Include source-integrity router (profile + anti-amplification)
+app.include_router(integrity_router)
+
+# Include annotations router (crowdsourced signed source annotations)
+app.include_router(annotations_router)
+
+# Include world-law change-tracking router
+app.include_router(law_router)
 
 # Include link / co-citation analysis router
 app.include_router(link_analysis_router)
@@ -678,10 +702,18 @@ _DOCS: dict[str, dict[str, str]] = {
                "blurb": "The principles this tool is built to uphold."},
     "wikipedia": {"file": "WIKIPEDIA.md", "title": "Wikipedia tracking",
                   "blurb": "Change-tracking and offline baselines, in depth."},
+    "law": {"file": "LAW.md", "title": "World law",
+            "blurb": "Tracking statutes, gazettes and IP records worldwide — the data is the diff."},
     "chain-of-custody": {"file": "CHAIN_OF_CUSTODY.md", "title": "Chain of custody",
                          "blurb": "Tamper-evident, signed provenance for your evidence."},
     "insights": {"file": "INSIGHTS.md", "title": "Insights",
                  "blurb": "How keyword, trend and entity analytics are computed."},
+    "briefing": {"file": "BRIEFING.md", "title": "Home briefing",
+                 "blurb": "How the triage cards are produced, and the card→draft workflow."},
+    "integrity": {"file": "INTEGRITY.md", "title": "Source integrity",
+                  "blurb": "Anti-amplification, the no-composite-score profile, and actor-collapse."},
+    "annotations": {"file": "ANNOTATIONS.md", "title": "Shared annotations",
+                    "blurb": "Signed, portable source annotations and the web of trust."},
     "markets": {"file": "MARKETS.md", "title": "Markets",
                 "blurb": "Price feeds, correlation, and extraction rules."},
     "security": {"file": "SECURITY.md", "title": "Security",
@@ -775,8 +807,13 @@ def _serve() -> None:
         try:
             init_db()
             from src.ingest.seed_sources import seed_default_sources
+            from src.law.catalog import register_documents, seed_legal_sources
             with session_scope() as session:
                 result = seed_default_sources(session)
+                # Worldwide law & IP catalog (portals as ingestible sources) + the
+                # curated set of trackable consolidated-law documents — on by default.
+                seed_legal_sources(session)
+                register_documents(session)
             if result["created"]:
                 logger.info("Seeded %d starter sources on first run.", result["created"])
         except Exception as exc:  # noqa: BLE001 - never block startup on seeding

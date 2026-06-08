@@ -163,11 +163,24 @@ reaches the same tools from its Home launchpad and ⌘K.
 
 ### 3.0 Home
 
-**What it's for:** orientation. A greeting, **quick-action cards** (Find something,
-Collect now, See the patterns, Prove it, Watch Wikipedia, Learn the tool), an
-**at-a-glance** panel (live counts + whether automatic collection is running), and
-the first-run seeding banner when the corpus is empty. Nothing here you can't reach
-elsewhere — it's the calm starting point.
+**What it's for:** your **briefing** — a triage feed plus orientation.
+
+- **Briefing (the feed):** the app gathers and measures in the background, then
+  surfaces candidate stories as **cards** grouped into editorial buckets (*rising,
+  overtold, undertold, investigate, check-the-framing, watch, context, data
+  integrity*). Each card is **one measured signal + evidence links + a caveat** — never
+  a verdict, and there is **no "trust score"** (forbidden in code). Toggle **Show
+  method & caveat** to see exactly how every figure was computed and what it does not
+  mean. **+ Add to draft** pins a card; **Dismiss** hides it (reversible). The feed is
+  cached (instant) and refreshes after each scrape — or hit **Refresh**. Full details:
+  [BRIEFING.md](BRIEFING.md).
+- **Newsletter draft:** pinned cards + your notes, exported as **Markdown** in which
+  every claim already carries its source links, method and caveat — reproducible
+  journalism. For a signed copy of the underlying articles, use Evidence & custody.
+- **Quick-action cards** (Find something, Collect now, See the patterns, Prove it,
+  Watch Wikipedia, Learn the tool) and an **at-a-glance** panel (live counts + whether
+  automatic collection is running), plus the first-run seeding banner when the corpus
+  is empty.
 
 ### 3.1 Search
 
@@ -324,6 +337,23 @@ Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and l
 in **Settings → Wikipedia** — you don't need them for change-tracking. See
 [`docs/WIKIPEDIA.md`](WIKIPEDIA.md).
 
+### 3.7a World law
+
+**What it's for:** tracking the **law** — statutes, gazettes, IP records — from official
+sources worldwide, and watching how it changes over time. Like Wikipedia tracking, the
+*changes are the data*. A **research mirror**, never the authoritative source and **not
+legal advice** — every record links back to its official gazette. Full guide:
+[`docs/LAW.md`](LAW.md).
+
+- A **worldwide catalog of real official sources** (national legislation databases,
+  gazettes, IP offices — `legislation.gov.uk`, EUR-Lex, Légifrance, govinfo, WIPO Lex,
+  USPTO, EPO, …) is **seeded by default**; they ingest and search like any other source.
+- **Track changes now** fetches the curated tracked documents through the ethical
+  fetcher, storing a baseline then honest **diffs** with a large-change flag.
+- **Flagged legal changes** lists changes (jurisdiction · title · Δ bytes · reasons) with
+  the diff and a link to the official source. The briefing also surfaces a
+  **model-legislation** card when near-identical text appears across jurisdictions.
+
 ### 3.8 Evidence & custody
 
 *(The sidebar calls this **Evidence & custody**; the panel heading still reads
@@ -367,6 +397,29 @@ The full design — and exactly what each mechanism does and does **not** prove 
 in [`docs/CHAIN_OF_CUSTODY.md`](CHAIN_OF_CUSTODY.md). *(A planned overhaul to make
 this tab dummy-proof and largely automatic is captured in
 [`docs/OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md).)*
+
+### 3.8a Source integrity
+
+**What it's for:** seeing the *structure* behind your sources — and deciding, yourself,
+whose signal counts. There is deliberately **no trust score**; a single number would
+bake in bias and silence small, foreign, new or dissident sources. Full guide:
+[`docs/INTEGRITY.md`](INTEGRITY.md).
+
+- **Anti-amplification (propose → you dispose):** *Scan for coordination* finds
+  near-duplicate floods published in lockstep across many sources, with their evidence
+  (shared text, timing, host). By default they are only **annotated** — never silently
+  collapsed. **Apply collapse** to count a network as **one voice** (in any count that
+  measures consensus); it stays flagged, **Expand (revert)** restores the raw equal view
+  exactly. Nothing is ever collapsed without your action. Echo-chamber cards on Home
+  carry the same action.
+- **Source profile:** a panel of measured dimensions — coordination, novelty
+  (originates vs echoes), output capacity, transparency facts, track record — each with
+  its method and caveat, and **no composite score**.
+- **Shared annotations (web of trust):** author descriptive, contestable facts about
+  sources (ownership, leaning, coordination, corrections); **export** them as a
+  **signed** bundle; **import** the bundles you choose to trust. *Who said what?* shows
+  every attribution for a source and surfaces **dissent** — never averaged into a number.
+  See [`docs/ANNOTATIONS.md`](ANNOTATIONS.md).
 
 ### 3.9 Settings
 
