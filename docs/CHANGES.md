@@ -2,6 +2,47 @@
 
 > `0.05` is the repository's **default branch** — the mainline everything builds on.
 
+## 0.06 — the intelligence layer (Phase A: the Home briefing)
+
+The first slice of the `0.06` "intelligence layer" — the **GUI spine**. The unifying
+idea is *one measurement engine, many domains*; this ships the engine's framework and
+its first pure primitive, and turns **Home into a triage briefing**. Guiding docs:
+[`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) (what & why) and
+[`ACTION_PLAN.md`](ACTION_PLAN.md) (how); user guide: [`BRIEFING.md`](BRIEFING.md).
+
+- **`src/signals/` — pure, DB-free measurement primitives.** First shipped:
+  `concentration` (Gini coefficient + top-N share), property-tested with exact
+  hand-computed values and honest *undefined → None* behaviour (no fabricated zeros).
+  The *same maths* intended for media-ownership and people-prominence concentration.
+- **`src/briefing/` — the card + briefing framework.** A `Card` is one measured signal
+  + evidence + method + caveat, sorted into an editorial bucket. A **producer registry**
+  makes every feature `corpus → [Card]`, so new capabilities appear in the *same* feed.
+  Producers **degrade loudly** (return nothing + log) when inputs/optional deps are
+  absent — never a fabricated card.
+- **Home is now the briefing:** cards grouped by bucket (*rising · overtold · undertold
+  · investigate · check-the-framing · watch · context · data-integrity*), with triage
+  (dismiss/restore, reversible) and a **method & caveat** transparency toggle. Built on
+  the existing tested shell — same element IDs, no functional regression.
+- **"Now"-status producers (no new math, real numbers):** Rising (trending),
+  Framing-split (per-source VADER tone of a trending term), Record-reshaped (Wikipedia
+  flagging), Price↔narrative (honest scipy correlation), Stale-data (market-rule
+  freshness), and **Diet self-audit** (the new `concentration` primitive over *your*
+  sources).
+- **Card → draft → newsletter:** pin cards into a draft accumulator (+ your notes) and
+  **export Markdown** in which every claim carries its source links, method and caveat —
+  reproducible journalism. Custody receipts referenced via Evidence & custody.
+- **Performance:** precompute → cache → serve cached. The briefing never computes per
+  request; the scheduler refreshes it after each scrape (`briefing_cache.json`).
+  Dismissals/draft are small local JSON files — single-user, local-first, never sent.
+- **Honesty guard *in code*:** `assert_no_score_fields()` rejects any `Card` field that
+  implies a composite trust/quality score (the §6 ban) — enforced at import and by a
+  test. Numeric values live in `signal` as a single measured quantity with a method,
+  never a blended score.
+- **API:** `/api/briefing` (cached feed), `/refresh`, `/dismiss`·`/restore`, and the
+  `/draft` accumulator with `GET /draft/export.md`. New in-app doc `BRIEFING.md`.
+- **Tests:** `test_signals_concentration.py`, `test_briefing.py`, `test_briefing_api.py`
+  — full suite green; no regressions.
+
 ## 0.05 — full interface redesign (now the default branch)
 
 A ground-up redesign of everything the user sees, built on top of the existing,

@@ -170,6 +170,40 @@
     .stat .n { font-size:24px; font-weight:700; letter-spacing:-.01em; }
     .stat .k { font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
 
+    /* ---- Briefing cards (the Home triage feed) ---------------------- */
+    .brief-bucket { margin-top:18px; }
+    .brief-bucket:first-of-type { margin-top:6px; }
+    .brief-bucket > h3 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+      color:var(--muted); font-weight:700; display:flex; align-items:center; gap:8px; }
+    .brief-bucket > h3 .ct { color:var(--fg-soft); font-weight:500; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:12px; }
+    .card { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm);
+      padding:14px; display:flex; flex-direction:column; gap:8px; }
+    .card.bk-rising { border-left:3px solid var(--accent); }
+    .card.bk-overtold, .card.bk-debunk { border-left:3px solid var(--warn); }
+    .card.bk-undertold { border-left:3px solid #6ea8fe; }
+    .card.bk-trust, .card.bk-watch { border-left:3px solid var(--ok); }
+    .card .chip { align-self:flex-start; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+      color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:1px 8px; }
+    .card h4 { margin:0; font-size:15px; line-height:1.3; }
+    .card .sum { font-size:13.5px; color:var(--fg-soft); margin:0; }
+    .card .sig { font-family:var(--mono); font-size:12px; color:var(--muted); }
+    .card .evid { display:flex; flex-direction:column; gap:3px; font-size:12.5px; }
+    .card .evid a { color:var(--accent); text-decoration:none; }
+    .card .evid a:hover { text-decoration:underline; }
+    .card .mc { font-size:11.5px; color:var(--muted); border-top:1px dashed var(--border); padding-top:7px; }
+    .card .mc[hidden] { display:none; }
+    .card .acts { display:flex; gap:7px; flex-wrap:wrap; margin-top:auto; padding-top:4px; }
+    .card .acts button { margin-top:0; }
+    .brief-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .brief-toolbar .sp { flex:1; }
+    .switch { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer; }
+    .switch input { width:auto; }
+    .draft-item { display:flex; gap:8px; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--border-soft); }
+    .draft-item .di-body { flex:1; min-width:0; }
+    .draft-item .di-title { font-size:13.5px; font-weight:600; }
+    .draft-item textarea { min-height:38px; margin-top:5px; font-size:12.5px; }
+
     /* inline sub-tabs (e.g. Insights Explore/Trends/Map) */
     nav.tabs { display:flex; flex-wrap:wrap; gap:4px; }
     nav.tabs button { background:transparent; color:var(--muted); border:1px solid transparent;
@@ -376,6 +410,37 @@
           <button class="secondary" onclick="showTab('help')" style="margin-top:0">Read the manual</button>
         </div>
       </div>
+
+      <section class="panel">
+        <div class="phead"><h2>Briefing</h2><span class="sp"></span>
+          <span id="brief-generated" class="hint" style="margin:0"></span>
+          <button class="secondary tiny" onclick="refreshBriefing()" id="brief-refresh-btn">Refresh</button></div>
+        <div class="brief-toolbar">
+          <label class="switch" title="Transparency: show how every figure was computed and what it does not mean.">
+            <input type="checkbox" id="brief-methods" onchange="toggleMethods()"> Show method &amp; caveat</label>
+          <span class="sp"></span>
+          <button class="secondary tiny" onclick="openDraft()">Draft (<span id="draft-count">0</span>) →</button>
+        </div>
+        <p class="hint" style="margin-top:8px">Equal view — every source is counted once; no source is
+          de-amplified in this version. The app gathers and measures; <b>you judge</b>. Each card is one
+          measured signal with its evidence and caveat, never a verdict.</p>
+        <div id="briefing-feed" style="margin-top:6px"><div class="muted">Loading the briefing…</div></div>
+      </section>
+
+      <section class="panel" id="draft-panel" hidden>
+        <div class="phead"><h2>Newsletter draft</h2><span class="sp"></span>
+          <button class="secondary tiny" onclick="exportDraft()">Export Markdown</button>
+          <button class="secondary tiny" onclick="copyDraft()">Copy</button>
+          <button class="secondary tiny" onclick="closeDraft()">Hide</button></div>
+        <label for="draft-title">Issue title</label>
+        <input id="draft-title" onchange="saveDraftTitle()" placeholder="Open Omniscience briefing">
+        <div id="draft-items" style="margin-top:10px"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="danger tiny" onclick="clearDraft()" style="flex:0">Clear draft</button>
+        </div>
+        <p class="hint">Each pinned card exports with its source links, method and caveat — reproducible by
+          design. For a signed, tamper-evident copy of the underlying articles, use Evidence &amp; custody.</p>
+      </section>
 
       <section class="panel">
         <div class="phead"><h2>At a glance</h2><span class="sp"></span>
@@ -1242,6 +1307,166 @@
           `Automatic collection: <span class="pill ${on ? "ok" : ""}">${on ? "running" : "stopped"}</span> ` +
           `<span class="muted">· everything stays on this machine — no cloud, no telemetry.</span>`;
       } catch (e) { $("home-status").innerHTML = '<span class="muted">Everything stays on this machine — no cloud, no telemetry.</span>'; }
+      loadBriefing();
+      refreshDraftCount();
+    }
+
+    // -- The Home briefing (triage cards) ----------------------------------- //
+    // Cards are produced server-side from real analytics; this layer only renders
+    // them and lets the user triage (dismiss / add to draft). It never computes a
+    // verdict. The full method + caveat for every figure is one toggle away.
+    let _briefCards = {};   // id -> card (so "Add to draft" has the full card)
+
+    async function loadBriefing(force) {
+      const feed = $("briefing-feed");
+      try {
+        const data = await api("/api/briefing" + (force ? "?force=true" : ""));
+        renderBriefing(data);
+      } catch (e) {
+        feed.innerHTML = '<div class="muted">Briefing unavailable right now.</div>';
+      }
+    }
+
+    async function refreshBriefing() {
+      const btn = $("brief-refresh-btn");
+      if (btn) { btn.disabled = true; btn.textContent = "Refreshing…"; }
+      try { const data = await api("/api/briefing/refresh", {method:"POST"}); renderBriefing(data); toast("Briefing refreshed."); }
+      catch (e) { toast("Could not refresh briefing: " + e.message, "err"); }
+      finally { if (btn) { btn.disabled = false; btn.textContent = "Refresh"; } }
+    }
+
+    function renderBriefing(data) {
+      _briefCards = {};
+      const feed = $("briefing-feed");
+      const gen = $("brief-generated");
+      if (gen) gen.textContent = data.generated_at ? ("updated " + new Date(data.generated_at).toLocaleString()) : "";
+      if (!data.buckets || !data.buckets.length) {
+        feed.innerHTML = '<div class="muted">No cards yet — collect some material (and let the scheduler run), '
+          + 'then refresh. The briefing surfaces what\'s rising, echoed, undertold or worth a second look.</div>';
+        return;
+      }
+      const html = data.buckets.map(b => {
+        b.cards.forEach(c => { _briefCards[c.id] = c; });
+        const cards = b.cards.map(cardHtml).join("");
+        return `<div class="brief-bucket"><h3>${esc(b.label)} <span class="ct">· ${b.cards.length}</span></h3>`
+          + `<div class="cards">${cards}</div></div>`;
+      }).join("");
+      feed.innerHTML = html;
+      applyMethodsToggle();
+    }
+
+    function cardHtml(c) {
+      const sig = c.signal || {};
+      const sigLine = (sig.metric != null && sig.value != null)
+        ? `<div class="sig">${esc(sig.metric)} = ${esc(sig.value)}${c.n != null ? " · n=" + c.n : ""}</div>` : "";
+      const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).map(e => {
+        const label = esc(e.title || e.url);
+        const meta = [e.source, (e.published_at || "").slice(0,10)].filter(Boolean).map(esc).join(" · ");
+        const link = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">${label}</a>` : label;
+        return `<span>${link}${meta ? ` <span class="muted">— ${meta}</span>` : ""}</span>`;
+      }).join("");
+      const evidBlock = evid ? `<div class="evid">${evid}</div>` : "";
+      const dismiss = c.dismissible === false ? ""
+        : `<button class="ghost tiny" onclick="dismissCard('${c.id}')">Dismiss</button>`;
+      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}">
+        <span class="chip">${esc(c.type.replace(/_/g,' '))}</span>
+        <h4>${esc(c.title)}</h4>
+        <p class="sum">${esc(c.summary)}</p>
+        ${sigLine}
+        ${evidBlock}
+        <div class="mc" hidden><b>Method:</b> ${esc(c.method)}<br><b>Caveat:</b> ${esc(c.caveat)}</div>
+        <div class="acts">
+          <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
+          ${dismiss}
+        </div></div>`;
+    }
+
+    function toggleMethods() {
+      localStorage.setItem("oo.brief.methods", $("brief-methods").checked ? "1" : "0");
+      applyMethodsToggle();
+    }
+    function applyMethodsToggle() {
+      const on = localStorage.getItem("oo.brief.methods") === "1";
+      const box = $("brief-methods"); if (box) box.checked = on;
+      document.querySelectorAll("#briefing-feed .mc").forEach(el => el.hidden = !on);
+    }
+
+    async function dismissCard(id) {
+      try {
+        await api("/api/briefing/dismiss", {method:"POST", body: JSON.stringify({id})});
+        const el = document.querySelector(`.card[data-card="${id}"]`);
+        if (el) el.remove();
+      } catch (e) { toast("Could not dismiss: " + e.message, "err"); }
+    }
+
+    // -- The newsletter draft (card → reproducible Markdown) ---------------- //
+    async function addToDraft(id) {
+      const card = _briefCards[id];
+      if (!card) return;
+      try {
+        const d = await api("/api/briefing/draft/add", {method:"POST", body: JSON.stringify({card})});
+        updateDraftCount(d.items.length);
+        toast("Added to draft.");
+      } catch (e) { toast("Could not add to draft: " + e.message, "err"); }
+    }
+    async function refreshDraftCount() {
+      try { const d = await api("/api/briefing/draft"); updateDraftCount((d.items||[]).length);
+        const t = $("draft-title"); if (t && d.title) t.value = d.title; }
+      catch (e) { /* draft is optional */ }
+    }
+    function updateDraftCount(n) { const el = $("draft-count"); if (el) el.textContent = n; }
+
+    async function openDraft() {
+      $("draft-panel").hidden = false;
+      await renderDraft();
+      $("draft-panel").scrollIntoView({behavior:"smooth", block:"start"});
+    }
+    function closeDraft() { $("draft-panel").hidden = true; }
+
+    async function renderDraft() {
+      const box = $("draft-items");
+      try {
+        const d = await api("/api/briefing/draft");
+        updateDraftCount((d.items||[]).length);
+        const t = $("draft-title"); if (t) t.value = d.title || "";
+        if (!d.items || !d.items.length) { box.innerHTML = '<div class="muted">No cards pinned yet. Use “+ Add to draft” on a briefing card.</div>'; return; }
+        box.innerHTML = d.items.map(it => {
+          const c = it.card;
+          return `<div class="draft-item" data-id="${c.id}">
+            <div class="di-body">
+              <div class="di-title">${esc(c.title)}</div>
+              <div class="hint" style="margin-top:2px">${esc(c.summary || "")}</div>
+              <textarea placeholder="Your note (ships in the export)…" onchange="saveDraftItemNote('${c.id}', this.value)">${esc(it.note||"")}</textarea>
+            </div>
+            <button class="ghost tiny" onclick="removeDraftItem('${c.id}')">Remove</button>
+          </div>`;
+        }).join("");
+      } catch (e) { box.innerHTML = '<div class="muted">Could not load the draft.</div>'; }
+    }
+    async function removeDraftItem(id) {
+      try { const d = await api("/api/briefing/draft/" + encodeURIComponent(id), {method:"DELETE"});
+        updateDraftCount((d.items||[]).length); renderDraft(); } catch (e) { toast(e.message, "err"); }
+    }
+    async function saveDraftItemNote(id, note) {
+      try { await api("/api/briefing/draft/note", {method:"PUT", body: JSON.stringify({id, note})}); }
+      catch (e) { toast("Could not save note: " + e.message, "err"); }
+    }
+    async function saveDraftTitle() {
+      try { await api("/api/briefing/draft/title", {method:"PUT", body: JSON.stringify({title: $("draft-title").value})}); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    async function clearDraft() {
+      if (!confirm("Clear all pinned cards from the draft?")) return;
+      try { await api("/api/briefing/draft/clear", {method:"POST"}); updateDraftCount(0); renderDraft(); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    function exportDraft() { window.open("/api/briefing/draft/export.md", "_blank"); }
+    async function copyDraft() {
+      try {
+        const md = await (await fetch("/api/briefing/draft/export.md")).text();
+        await navigator.clipboard.writeText(md);
+        toast("Draft Markdown copied to clipboard.");
+      } catch (e) { toast("Could not copy: " + e.message, "err"); }
     }
 
     // -- In-app documentation reader ---------------------------------------- //

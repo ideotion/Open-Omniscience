@@ -447,27 +447,42 @@ Therefore 0.06 is **GUI-first**, not API-first:
 
 ## Phase A — The card + briefing framework (the GUI spine)  ⟵ start here
 
-- [ ] `src/briefing/`: the `Card` dataclass + a producer registry; `/api/briefing`
+> **Status: shipped & tested.** `src/briefing/` (Card + registry + producers +
+> service/cache + draft), `/api/briefing*`, the scheduler precompute hook, and the
+> redesigned **Home** card feed are implemented; the full suite is green incl. the
+> `no-score-field` honesty guard (`tests/test_briefing*.py`,
+> `tests/test_signals_concentration.py`). See [`BRIEFING.md`](BRIEFING.md).
+
+- [x] `src/briefing/`: the `Card` dataclass + a producer registry; `/api/briefing`
       assembling cards from producers; scheduler precompute + cache.
-- [ ] Redesign **Home** as the card feed (triage: keep/dismiss/→draft), grouped by
+- [x] Redesign **Home** as the card feed (triage: keep/dismiss/→draft), grouped by
       bucket (rising/overtold/undertold/investigate/context/trust).
-- [ ] **Draft accumulator** (pin cards + notes) → **Markdown export** carrying every
-      card's evidence links; optional signed/timestamped custody receipts.
-- [ ] Seed with **now-status** producers only (no new math): Rising (trending),
-      Framing split, Record-reshaped (wiki), Price↔narrative, Stale-data.
+- [x] **Draft accumulator** (pin cards + notes) → **Markdown export** carrying every
+      card's evidence links; custody receipts referenced (export a signed evidence
+      bundle from Evidence & custody to ship with the issue).
+- [x] Seed with **now-status** producers only (no new math): Rising (trending),
+      Framing split, Record-reshaped (wiki), Price↔narrative, Stale-data — plus the
+      **Diet self-audit** (which exercises the new `concentration` primitive).
 - [ ] **Belief/ideology + faith-media source-tag axis** (neutral, contestable,
       editable): extend source tags so family-grouped cards (tone-by-family,
       prominence-by-family, coordination grouping) work. (Generator spec already
-      added in 0.05; this tags existing sources.) → §4 belief axis.
-- [ ] **Tone-by-source / tone-by-family** card producer (VADER + `context` window
-      already exist — *now/thin*). → §4 tone & emotion.
-- [ ] **Acceptance:** fresh corpus → Home shows real cards from cached precompute;
+      added in 0.05; this tags existing sources.) → §4 belief axis. *(deferred to a
+      follow-up; framing_split already groups by source.)*
+- [~] **Tone-by-source / tone-by-family** card producer (VADER + `context` window
+      already exist — *now/thin*). → §4 tone & emotion. *(per-source tone shipped via
+      the Framing-split card; the family-grouped matrix is the follow-up.)*
+- [x] **Acceptance:** fresh corpus → Home shows real cards from cached precompute;
       pinning three → exported Markdown with working source links; equal-view toggle
       present; a test asserts no `score` field exists on `Card`.
 
 ## Phase B — Signal primitives (`src/signals/`, pure & mutualised)
 
-- [ ] `concentration.py` (Gini + top-N share, with method/caveat/n).
+> **Status: started.** `concentration.py` is implemented, pure, and property-tested
+> (`tests/test_signals_concentration.py`); it already powers the Diet self-audit card.
+> `near_dup`/`coordination` and `novelty` are intentionally next (the riskiest math —
+> do it properly or not at all).
+
+- [x] `concentration.py` (Gini + top-N share, with method/caveat/n).
 - [ ] `near_dup.py` (MinHash/SimHash + LSH) → `coordination.py` (actor graph from
       near-dup + lockstep timing + shared-template/host fingerprints).
 - [ ] `novelty.py` (information contributed vs an incremental corpus index).

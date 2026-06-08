@@ -503,14 +503,16 @@ once, well, and point them at each domain; do **not** re-implement per feature.
 | Anomaly (z-score, `monitoring/anomaly`) | exists | volume spikes, price/term spikes |
 | Tone (VADER + `context` window) | exists | tone/framing cards, §6 not used for stance |
 | Provenance + custody (signed, timestamped) | exists | every record; **§6 crowdsourced annotation bundles** |
-| **Concentration metric** (Gini / top-share) | **new** | §1 ownership, people-prominence, §6 actor share |
+| **Concentration metric** (Gini / top-share) | **built** (`src/signals/concentration.py`) | §1 ownership, people-prominence, §6 actor share |
 | **Near-dup / coordination** (MinHash/SimHash → actor graph) | **new** | echo cards, model-legislation, syndication, **§6 actor-collapse** |
 | **Novelty / surprisal** (info contributed vs corpus) | **new** | §6 anti-amplification weighting |
-| **Card + briefing framework** (signal+evidence+method+caveat → feed → draft) | **new** | the entire §4 surface, the GUI spine |
+| **Card + briefing framework** (signal+evidence+method+caveat → feed → draft) | **built** (`src/briefing/`, Phase A) | the entire §4 surface, the GUI spine |
 
-The four **new** primitives (concentration, near-dup/coordination, novelty, the card
+The four primitives (concentration, near-dup/coordination, novelty, the card
 framework) are the whole of `0.06`'s genuinely new code; everything else is
-composition.
+composition. **As of Phase A, the card+briefing framework and `concentration` are
+shipped and tested** (see [`BRIEFING.md`](BRIEFING.md)); near-dup/coordination and
+novelty are the remaining new primitives.
 
 ---
 
@@ -544,6 +546,14 @@ composition.
 
 Vision / persistent memory — the **guiding document for `0.06`**; the phased build
 is in [`ACTION_PLAN.md` → "0.06 — The Intelligence Layer"](ACTION_PLAN.md).
+
+> **Implementation progress.** **Phase A (the card + briefing GUI spine) and the first
+> Phase-B primitive (`concentration`) are shipped and tested** — Home is now a triage
+> feed of honest cards with a card→draft→Markdown loop, the §6 *no-composite-score*
+> ban is enforced in code, and the "now"-status producers compose the existing real
+> analytics. See [`BRIEFING.md`](BRIEFING.md). Remaining: near-dup/coordination &
+> novelty primitives, the source-integrity profile + user-guided anti-amplification
+> (§6 C+D), signed annotation bundles (§6), and the verticals (§5, §4 IP/legal).
 
 Decided principles on this page: **user-driven selection, no capping** (guiding
 principle); **C + D, B forbidden** for source integrity (§6); **mutualise the shared

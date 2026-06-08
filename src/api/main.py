@@ -107,6 +107,9 @@ from src.api.source_io import router as source_io_router
 # Import insights router (keyword & entity analytics)
 from src.api.insights import router as insights_router
 
+# Import briefing router (the Home triage feed of honest "cards" + draft accumulator)
+from src.api.briefing import router as briefing_router
+
 # Import link / co-citation analysis router (honest counts only)
 from src.api.link_analysis import router as link_analysis_router
 
@@ -252,6 +255,9 @@ app.include_router(source_io_router)
 
 # Include insights router
 app.include_router(insights_router)
+
+# Include briefing router (Home triage feed + newsletter draft)
+app.include_router(briefing_router)
 
 # Include link / co-citation analysis router
 app.include_router(link_analysis_router)
@@ -682,6 +688,8 @@ _DOCS: dict[str, dict[str, str]] = {
                          "blurb": "Tamper-evident, signed provenance for your evidence."},
     "insights": {"file": "INSIGHTS.md", "title": "Insights",
                  "blurb": "How keyword, trend and entity analytics are computed."},
+    "briefing": {"file": "BRIEFING.md", "title": "Home briefing",
+                 "blurb": "How the triage cards are produced, and the card→draft workflow."},
     "markets": {"file": "MARKETS.md", "title": "Markets",
                 "blurb": "Price feeds, correlation, and extraction rules."},
     "security": {"file": "SECURITY.md", "title": "Security",

@@ -76,6 +76,19 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   **interactive map** (zoomable SVG with city pins by real lat/lon + per-country/
   city tables) — every figure a real aggregate with method + caveat. See
   [docs/INSIGHTS.md](docs/INSIGHTS.md).
+- ✅ **Home briefing** (the **Home** tab, `0.06` Phase A): a **triage feed of honest
+  "cards"** — the app gathers and measures in the background, then surfaces candidate
+  stories as cards grouped into editorial buckets (*rising · overtold · undertold ·
+  investigate · check-the-framing · watch · context · data-integrity*). Each card is
+  **one measured signal + evidence links + a caveat**, never a verdict — and there is
+  **no composite trust score** (forbidden *in code*, not just docs). Cards compose the
+  existing real analytics (trending, per-source VADER framing, Wikipedia flagging,
+  honest commodity correlation, market-rule freshness) plus a new pure
+  **concentration** primitive (Gini + top-share) powering a *reading-diet self-audit*.
+  Pin cards into a **newsletter draft** and **export Markdown** in which every claim
+  carries its source links, method and caveat — reproducible journalism. The feed is
+  precomputed/cached (instant Home) and refreshed after each scrape. See
+  [docs/BRIEFING.md](docs/BRIEFING.md).
 - ✅ **Wikipedia change-tracking** (the **Wikipedia** tab): each language edition is
   a tracked source whose *edits* are the data — one baseline snapshot then
   diffs/deltas (not re-copies), with honest large-edit/revisionism flagging (size
@@ -84,7 +97,15 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   (per-language, resumable, size-probed) kept separate from live tracking. See
   [docs/WIKIPEDIA.md](docs/WIKIPEDIA.md).
 
-**In progress / next:**
+**In progress / next (`0.06` — the intelligence layer):**
+- 🚧 The shared `src/signals/` substrate beyond `concentration`: **near-dup /
+  coordination** (MinHash/LSH → actor graph) and **novelty / surprisal**.
+- 🚧 **Source-integrity profile** (multi-dimensional, *no composite score*) and
+  **user-guided anti-amplification** (the app *proposes* collapsing coordinated
+  floods into single actors; the user *disposes* — never silent, always reversible).
+- 🚧 Crowdsourced **signed annotation bundles**; world-law & IP/legal verticals on the
+  same change-tracking / correlation engines. See
+  [docs/FUTURE_DEVELOPMENTS.md](docs/FUTURE_DEVELOPMENTS.md).
 - 🚧 Local LLM analysis via Ollama; email + monitoring; cross-linking Wikipedia
   diffs into the Insights keyword analytics.
 

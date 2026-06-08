@@ -163,11 +163,24 @@ reaches the same tools from its Home launchpad and ⌘K.
 
 ### 3.0 Home
 
-**What it's for:** orientation. A greeting, **quick-action cards** (Find something,
-Collect now, See the patterns, Prove it, Watch Wikipedia, Learn the tool), an
-**at-a-glance** panel (live counts + whether automatic collection is running), and
-the first-run seeding banner when the corpus is empty. Nothing here you can't reach
-elsewhere — it's the calm starting point.
+**What it's for:** your **briefing** — a triage feed plus orientation.
+
+- **Briefing (the feed):** the app gathers and measures in the background, then
+  surfaces candidate stories as **cards** grouped into editorial buckets (*rising,
+  overtold, undertold, investigate, check-the-framing, watch, context, data
+  integrity*). Each card is **one measured signal + evidence links + a caveat** — never
+  a verdict, and there is **no "trust score"** (forbidden in code). Toggle **Show
+  method & caveat** to see exactly how every figure was computed and what it does not
+  mean. **+ Add to draft** pins a card; **Dismiss** hides it (reversible). The feed is
+  cached (instant) and refreshes after each scrape — or hit **Refresh**. Full details:
+  [BRIEFING.md](BRIEFING.md).
+- **Newsletter draft:** pinned cards + your notes, exported as **Markdown** in which
+  every claim already carries its source links, method and caveat — reproducible
+  journalism. For a signed copy of the underlying articles, use Evidence & custody.
+- **Quick-action cards** (Find something, Collect now, See the patterns, Prove it,
+  Watch Wikipedia, Learn the tool) and an **at-a-glance** panel (live counts + whether
+  automatic collection is running), plus the first-run seeding banner when the corpus
+  is empty.
 
 ### 3.1 Search
 

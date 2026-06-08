@@ -258,7 +258,16 @@ class BackgroundScheduler:
             timeout=float(os.getenv("OO_FETCH_TIMEOUT", "30")),
         )
         with session_scope() as session:
-            return run_scrape_once(session, fetcher, settings)
+            result = run_scrape_once(session, fetcher, settings)
+            # Precompute + cache the Home briefing so it loads instantly. Best-effort:
+            # a briefing failure must never fail the scrape that just succeeded.
+            try:
+                from src.briefing.service import refresh_briefing
+
+                refresh_briefing(session)
+            except Exception:  # noqa: BLE001 - never let the briefing break a scrape
+                _LOG.warning("could not refresh briefing after scrape", exc_info=True)
+            return result
 
     # -- introspection ----------------------------------------------------- #
 
