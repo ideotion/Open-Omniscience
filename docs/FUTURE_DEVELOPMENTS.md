@@ -219,6 +219,36 @@ stays explicitly un-converted until a dated rate exists).
 | Stale-data / integrity | "feed N days cold" / "rule selector stopped matching" | trust | `RuleOutcome.status` + `last_run_at` | now |
 | Unit/currency hygiene | unit/currency mismatch when comparing prices | trust | `units.py` (within-currency only; FX is future work) | now |
 
+### IP / legal & corporate-control cards
+
+The pattern "a firm is acquired by a foreign player, then divested — stripped of its
+IP" is, measurably, a **sequence of reported corporate events over time**. The
+entity store + deal-verb keywords + the new country provenance already make most of
+this reachable; it reuses the **New pairing**, **Association shift** and **Variant
+convergence** cards (entity resolution across name variants/subsidiaries is the hard
+part those name).
+
+| Card | Surfaces | Bucket | Powered by | Status |
+|---|---|---|---|---|
+| Ownership-change event | a company reported acquired/divested/sold (parties + countries) | context | entity mentions + deal-verb keywords + provenance country | thin |
+| Cross-border control shift | acquirer and target in different countries | investigate | entity co-occurrence + `ccTLD`/country | thin/new |
+| Deal lineage | one firm's timeline: acquisition → restructuring → divestiture | investigate | §2 story-lineage applied to corporate events | new |
+| IP-litigation pulse | patent/injunction/licensing/lawsuit volume around an entity or sector | context | `trend` over IP/legal terms + entity | thin |
+| IP ↔ deal co-timing | IP-transfer/litigation mentions clustering around an ownership change | investigate | event co-timing (reported events, not a verdict) | new |
+
+> **Bright line.** The tool sees *reporting about* deals — it does **not** read
+> filings, so it never asserts "the IP was stripped." It shows the **sequence +
+> links** and foregrounds the primary document; the human confirms.
+>
+> **The high-value extension (→ §2).** The sources that *would* confirm it —
+> patent grants (USPTO/EPO/WIPO), court dockets, SEC/EDGAR filings, merger
+> notifications — are **structured, official, ingestible** primary sources. An
+> **IP/legal primary-source vertical** would ingest them as first-class,
+> provenance-tagged records (structurally identical to the markets CSV-feed
+> vertical: a record stored only from a real source, never guessed), then correlate
+> the *primary record* against the *news narrative* — the honest realisation of §2's
+> "trace to the primal source" for corporate-control stories.
+
 ### From card to draft (the newsletter workflow)
 
 A card carries a **"→ Add to draft"** action into a simple accumulator (pinned
