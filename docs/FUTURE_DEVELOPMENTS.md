@@ -405,7 +405,8 @@ workflow.)
   *not new* — which is simply true. **It inverts the feared failure mode:** under
   novelty-weighting the small, original, independent source *rises* relative to the
   manufactured flood — the lonely-signal/undertold source is the winner, not the
-  casualty.
+  casualty. **The app only ever *proposes* a collapse (with its evidence); the user
+  disposes** — see the user-guided principle below.
 - **C — multi-dimensional transparent profile (the interface).** Per source, a panel
   of measured signals (coordination/actor membership, novelty ratio, output-capacity
   plausibility, transparency facts, plural external refs §E, corpus track-record) —
@@ -416,6 +417,25 @@ workflow.)
   incommensurable dimensions; bakes in bias as objectivity; Goodhart-gameable; a
   single point of capture/censorship; *will* misclassify small/foreign/new/dissident
   sources. Written down here so no future contributor builds it by reflex.
+
+**Anti-amplification is user-guided, user-aware, and GUI-mediated (non-negotiable).**
+D must never be a silent transform the app performs and the user merely *undoes* —
+that would make the app the arbiter §6 forbids. The model is **propose → the user
+disposes**, expressed *through the interface*:
+- **Default = "equal but aware", not silent collapse and not naive equality.** The
+  raw equal-treatment view is the baseline, but manipulation structure is **always
+  annotated on it** ("this trend is carried by a 40-source coordinated cluster —
+  why?"). Awareness is the default; de-amplification is an *action the user takes*.
+- **The app proposes with evidence; the user disposes.** A suggested collapse shows
+  *why* (shared infrastructure, lockstep timing, near-dup text) and is applied only
+  by the user's choice — globally *or per-cluster* — never auto-applied behind their
+  back. Every applied collapse stays visibly flagged and one click to expand/override.
+- **The GUI is a *necessary* interface, by design.** Because the human judgment *is*
+  the mechanism, there is no headless "auto-clean" path: anti-amplification exists as
+  interactive briefing affordances (expand actor · treat as separate · why? · weight),
+  and a user's tuning persists as *their* editorial choice, always re-inspectable and
+  reversible. This is §3 ("guided, user-driven selection") applied to amplification:
+  suggestive, explained, overridable — surface, never enforce.
 
 **Crowdsourcing is required (the owner's key correction).** C's "user weighting" is
 impossible for one person — nobody can neutrally assess thousands of sources alone.

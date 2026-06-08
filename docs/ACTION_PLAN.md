@@ -472,18 +472,31 @@ Therefore 0.06 is **GUI-first**, not API-first:
 
 ## Phase C — Source integrity: profile + anti-amplification (§6 C+D)
 
-- [ ] **Actor graph + collapse (D):** group coordinated sources into actors; every
-      briefing count (trend/prominence/synchrony) operates on **actors weighted by
-      novelty**, not raw outlet volume. **Reversible + inspectable**: expand any actor
-      to its members; one toggle restores raw equal view.
+> **User-guided, user-aware, GUI-mediated (§6 non-negotiable).** Anti-amplification is
+> never a silent transform the user merely *undoes* — it is **propose → user disposes**,
+> expressed through the interface. Default = **"equal but aware"** (raw equal view, with
+> manipulation structure *annotated on it*), not silent collapse and not naive equality.
+> There is **no headless auto-clean path**: the GUI is a *necessary* interface because the
+> human judgment *is* the mechanism.
+
+- [ ] **Actor graph + collapse (D):** detect coordinated actors and, **when the user
+      applies it**, operate briefing counts (trend/prominence/synchrony) on **actors
+      weighted by novelty** rather than raw outlet volume. The app **proposes** a collapse
+      with its evidence (shared infra / lockstep timing / near-dup); the user applies it
+      **globally or per-cluster**, never auto-applied. Every applied collapse stays
+      **visibly flagged**, one click to expand-to-members / treat-as-separate / override.
 - [ ] **Source profile panel (C):** per source, the measured signals as a panel —
       coordination/actor, novelty ratio, output-capacity plausibility, transparency
       facts, corpus track-record — **no composite**. User-weightable into *their* view,
       off by default, reversible.
 - [ ] New cards fall out for free: Echo-chamber, Lonely-signal, Capacity-implausible.
-- [ ] **Acceptance:** a synthetic 40-puppet flood collapses to ~1 low-novelty actor
-      and *stops dominating* the briefing; a genuine single original source *rises*;
-      both shown with evidence; equal view reproduces the un-collapsed counts exactly.
+- [ ] **Acceptance:** on a synthetic 40-puppet flood, the **default** briefing shows the
+      cluster *annotated* (not silently collapsed); the app **proposes** a collapse with
+      evidence; **only on the user's action** (global or that one cluster) does the flood
+      stop dominating while a genuine single original source *rises*; the applied collapse
+      stays flagged and expands to its 40 members; toggling it off reproduces the raw
+      equal counts exactly. A test asserts no collapse is applied without an explicit
+      user action.
 
 ## Phase D — Crowdsourced annotation bundles (the C scaling answer)
 
@@ -511,9 +524,9 @@ Therefore 0.06 is **GUI-first**, not API-first:
 ## Implications & risks (think before building)
 
 - **The honesty guards must be *in code*, not just docs:** the banned composite score,
-  the always-available equal view, the reversible/inspectable actor-collapse, and
-  method+caveat+evidence on every card are **acceptance criteria and tests**, not
-  conventions.
+  the always-available equal view, **user-applied (never auto) actor-collapse that stays
+  flagged and expandable**, and method+caveat+evidence on every card are **acceptance
+  criteria and tests**, not conventions.
 - **False merges are the worst failure** — Phase C biases toward *under*-merging and
   always shows the evidence for a merge; a wrong collapse must be one click to undo.
 - **Migration:** new tables (cards cache, actor graph, annotations) via Alembic
@@ -523,9 +536,11 @@ Therefore 0.06 is **GUI-first**, not API-first:
 
 ## Definition of "0.06 done"
 Home greets the user with a real, cached **briefing** of honest cards drawn from the
-shared `src/signals/` engine; coordinated floods **collapse to single low-novelty
-actors** (reversibly, with the equal view one toggle away) while small original
-sources **rise**; each source has a **no-composite profile** the user can weight;
+shared `src/signals/` engine; coordinated floods are **surfaced and annotated by
+default**, and — **when the user applies the proposed collapse** — fold into single
+low-novelty actors (visibly flagged, expandable, the equal view one toggle away) while
+small original sources **rise**; each source has a **no-composite profile** the user
+can weight;
 annotations are **shared as signed bundles**; and any card the user pins exports to a
 **provenance- and custody-carrying draft** — with the whole surface covered by tests,
 including a guard that **no trust-score field exists anywhere**.
