@@ -109,6 +109,33 @@ Status legend: **now** = composes endpoints that already return real numbers;
 | Cross-language divergence | domestic vs foreign framing of one event | debunk | i18n locales × framing | thin |
 | Diet self-audit | "70% of your week traces to one wire / one owner" | context | corpus concentration over provenance tags | thin |
 
+### Keyword & entity dynamics cards
+
+Cards driven by the *behaviour of the keywords/entities themselves* — when a term
+**appears**, how its **volume** moves, and how its relations shift. All ride the
+Insights analytics substrate (`src/analytics/queries.py`: `trend`, `trending`,
+`associations`, `top_terms`, `map_data`) plus the z-score `volume_anomalies`
+(`monitoring/anomaly.py`). Each `KeywordMention` records a first-occurrence offset
+and its article (with `published_at`), so *appearance* and *volume-over-time* are
+real aggregates, never invented. The three shapes still apply: spike/echo →
+overtold, association-shift/framing-split → investigate, went-quiet/hum → undertold.
+
+| Card | Surfaces | Bucket | Powered by | Status |
+|---|---|---|---|---|
+| First sighting | an entity/term seen for the first time ("first in *your corpus*", not the world) | rising | earliest `KeywordMention` per keyword | thin |
+| New pairing | two entities co-occurring for the first time | investigate | `associations` + first-co-occurrence date | new |
+| Geographic debut | a term appearing only from one country/language | undertold | `map_data` + provenance country | now/thin |
+| Spike | a term's daily mentions ≥ Nσ of *its own* history (vs the trending ratio) | rising | `trend` + `volume_anomalies` | thin |
+| Acceleration | volume's 2nd derivative — "going parabolic", not just up | rising | `trend` series | thin |
+| Went quiet | a steady term drops to ~zero (dropped story at term level — a *question*) | undertold | `trend` | thin |
+| Persistent hum | low but steady over a long window — the quiet ongoing story | undertold | `trend` mean/variance | thin |
+| Half-life | how fast a term decays after a spike (flash vs enduring) | context | `trend` decay | thin/new |
+| Association shift | an entity whose co-occurring set changed between windows | investigate | windowed `associations` diff | new |
+| Entity-mix imbalance | a topic dominated by orgs vs named people (who it's *about*) | context | `top_terms` by kind | thin |
+| Variant convergence | one entity under several surface forms spiking together (user merges) | trust | mention store + string similarity | new |
+| Framing-word tracker | volume of chosen loaded/neutral pairs by source/time (counts, never a verdict) | debunk | `trend` per-source + curated term list | thin |
+| Echoed keyword | a term spiking where most articles cite the *same* source | overtold | `trend` × `/api/links` co-citation | new |
+
 ### Markets / commodity / rare-earth cards
 
 The commodity vertical already does **honest** stats (`commodity/correlation.py`:
