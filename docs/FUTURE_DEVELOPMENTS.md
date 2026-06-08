@@ -110,6 +110,21 @@ too fast / too uniformly → *overtold*), **divergence** (sources or data disagr
 *undertold*). That triad is the editorial engine — and it maps directly to a
 newsletter: debunk the overtold, surface the undertold, contextualise the rest.
 
+### Domains covered (one engine, many family axes)
+
+Every "war"/domain raised is addressed by the **same** measurement engine pointed at a
+different *family axis* — not a separate detector each. Nothing was dropped:
+
+| Domain | Where it is addressed |
+|---|---|
+| Political | spectrum `lean-*` tags · framing · synchrony/echo (§1, §4 tone) |
+| Information / disinfo | §6 source integrity & anti-amplification · echo/synchrony cards |
+| Technological / AI-trust | §6 (capacity-implausible, synthetic-volume) · markets (tech) |
+| Industrial / economic | §4 markets/commodity/rare-earth cards |
+| IP / legal | §4 IP/legal & corporate-control cards + primary-source vertical |
+| Religious / belief | §4 belief/ideology family axis |
+| (people, law) | §4 people-prominence · §5 world-law vertical |
+
 ### Card catalog
 
 Status legend: **now** = composes endpoints that already return real numbers;

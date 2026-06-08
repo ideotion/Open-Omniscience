@@ -455,6 +455,12 @@ Therefore 0.06 is **GUI-first**, not API-first:
       card's evidence links; optional signed/timestamped custody receipts.
 - [ ] Seed with **now-status** producers only (no new math): Rising (trending),
       Framing split, Record-reshaped (wiki), Price↔narrative, Stale-data.
+- [ ] **Belief/ideology + faith-media source-tag axis** (neutral, contestable,
+      editable): extend source tags so family-grouped cards (tone-by-family,
+      prominence-by-family, coordination grouping) work. (Generator spec already
+      added in 0.05; this tags existing sources.) → §4 belief axis.
+- [ ] **Tone-by-source / tone-by-family** card producer (VADER + `context` window
+      already exist — *now/thin*). → §4 tone & emotion.
 - [ ] **Acceptance:** fresh corpus → Home shows real cards from cached precompute;
       pinning three → exported Markdown with working source links; equal-view toggle
       present; a test asserts no `score` field exists on `Card`.
@@ -516,6 +522,12 @@ Therefore 0.06 is **GUI-first**, not API-first:
       surfaces model-legislation; law↔news via the correlation engine.
 - [ ] **IP/legal primary-source (§4):** patents/dockets/filings as structured sources
       (the markets-CSV pattern), correlated with the news narrative.
+- [ ] **IP/legal *news* cards (§4):** ownership-change, deal-lineage, IP-litigation
+      pulse, IP↔deal co-timing — entity + deal-verb producers over the *news* corpus
+      (distinct from the primary-source vertical above; mostly *thin*).
+- [ ] **Emotion-category card (§4):** anger/fear/joy/… around a keyword — needs an
+      **emotion lexicon** (a *new* dependency; degrade loudly if absent), unlike the
+      VADER tone card already in Phase A.
 - [ ] **Acceptance:** one jurisdiction tracked with honest amendment diffs + custody
       snapshots; a model-legislation near-dup match shown across two jurisdictions.
 
