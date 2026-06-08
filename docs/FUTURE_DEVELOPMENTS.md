@@ -170,6 +170,34 @@ slicer (`analytics/queries.py:context`), and rich family tags already in
 | Emotion profile | emotion categories (anger/fear/joy/…) around a keyword | context | emotion lexicon (degrades loudly if absent) | new |
 | Family tone-map | keywords × source-families matrix, each cell = mean context tone (+ n, snippets) | overtold/undertold | composition of the above | new |
 
+### Belief / ideology as one more source-family axis
+
+The coordination cards above are **domain-agnostic**: a message coordinated across
+many outlets — in many languages, in a tight window — produces the *same*
+measurable signature (echo, cross-language synchrony, co-citation, ownership/funding
+concentration, tone-by-family) whether it is political, commercial, **or belief-
+aligned**. So religious/ideological influence needs **no new card type** — only the
+same treatment political leaning already gets: one more **family axis** to group by.
+
+Today the spectrum file tags political leaning and ownership richly but belief
+alignment barely at all, and the worldwide generator samples no faith-based
+channels — so this dimension is *under-sampled*, not unsupported. The fix is data,
+not new analysis: a neutral, contestable belief/ideology tag axis (like the existing
+`lean-*` tags) + faith-based organisation types in the generator
+(`configs/catalog_query.yml`).
+
+> **Bright line (the whole point).** The tool surfaces **coordination** — synchrony,
+> diffusion, concentration — and the **human** decides what it means. It must
+> **never** label a faith (or any belief group) as malign, or emit a "stance score".
+> "Religious war" is an *interpretation*, not a measurement; the tool stops at the
+> measurable pattern. Tags are descriptive, contestable, editable — never a verdict.
+>
+> **Scope limits (honest):** the tool ingests **web text only** — it cannot see
+> physical-world messaging (e.g. street posters/graffiti), only web/news sources
+> *writing about* them. And it has **no funding-flows dataset** — it sees reporting
+> *about* money, not financial records; "concentration" is only as good as the
+> sourced reporting behind it.
+
 ### Markets / commodity / rare-earth cards
 
 The commodity vertical already does **honest** stats (`commodity/correlation.py`:
