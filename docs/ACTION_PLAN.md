@@ -358,3 +358,201 @@ A fresh Qubes AppVM install seeds real sources, ingests and searches live news,
 summarizes locally via Ollama, exports a verifiable evidence bundle — and the
 repository a maintainer opens contains *only code that runs*, is lint-clean on the
 live tree, migrates cleanly, and has a test for every exposed endpoint.
+
+---
+
+# 0.06 — The Intelligence Layer: implementation strategy & action plan
+
+**Pairs with** [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) (the *what & why*;
+this is the *how*). **Working branch:** `0.06`. Operating rules unchanged: every item
+ends green and tested; delete-before-build; no silent failure; honest provenance;
+**no card without a method + caveat + evidence link**.
+
+The thesis of 0.06 is **one measurement engine, many domains**. We are *not* building
+a dozen features; we are building a *small centralised substrate* and pointing it at
+each domain. The whole of §4–§6 composes from four new primitives plus a card
+framework — everything else already exists.
+
+## North-star architecture (structural, centralised, mutualised)
+
+```
+            ┌──────────────────────────────────────────────────────┐
+  corpus →  │  src/signals/  (pure, DB-free, unit-tested primitives)│
+            │   concentration · near_dup/coordination · novelty ·   │
+            │   (reuse) correlation · anomaly · tone · change-diff   │
+            └───────────────┬──────────────────────────────────────┘
+                            │  measured facts (+ method + caveat)
+            ┌───────────────▼──────────────────────────────────────┐
+  src/briefing/  card producers: corpus → [Card]  (one per feature) │
+            │   Card = {type,title,signal,method,caveat,bucket,     │
+            │           evidence[], n, created_at, dismissible}      │
+            └───────────────┬──────────────────────────────────────┘
+        scheduler precompute│ (incremental, cached — Home loads instantly)
+            ┌───────────────▼───────────┐     ┌──────────────────────┐
+            │  /api/briefing (feed)      │ ──▶ │  Home = the briefing  │
+            │  /api/sources/{id}/profile │     │  cards → "add to draft"│
+            └────────────────────────────┘     │  draft → MD + custody  │
+                                               └──────────────────────┘
+```
+
+**Design rules that make it mutualised and centralised:**
+1. **`src/signals/` primitives are pure** — they take plain inputs (sequences,
+   counts, vectors) and return a result object carrying `method`, `caveat`, `n`. No
+   primitive touches the DB, the API, or the UI. → trivially unit-testable, reused by
+   every domain, never duplicated.
+2. **Every feature is a *card producer*** — a function `corpus → [Card]`. Adding a
+   capability = registering one producer; it lights up in the *same* Home feed. There
+   are **no orphan endpoints**.
+3. **One Card schema, one feed, one draft.** The briefing is the single surface; the
+   source-profile panel (§6 C) is the only other. This is the GUI-adoption guarantee.
+4. **No composite score, ever** — a CI/test guard forbids a `trust_score`/`score`
+   field on Card and Source (§6 B is banned in code, not just prose).
+
+## GUI is the product (adoption discipline)
+
+> "If one tool is not used, despite being useful, it is useless."
+
+Therefore 0.06 is **GUI-first**, not API-first:
+- **Build the Home briefing FIRST** (Phase A), even with three cards — so every later
+  capability has a place to appear and is *seen the day it ships*.
+- **A feature is not "done" until it is a card or a panel the user actually sees** —
+  acceptance for every later phase includes "renders in the briefing / profile".
+- **The payoff loop is visible**: card → *Add to draft* → Markdown + custody receipts.
+  The user feels value on day one, not after a backend epic.
+- **Always-available escape hatch**: the raw equal-treatment view (no collapse, no
+  weighting) is one toggle away on every screen — transparency *is* the UI.
+
+## App efficiency (offline, single machine)
+
+- **Precompute on the existing scheduler, cache, serve cached.** The briefing never
+  computes per request; Home reads a cached card set → instant load.
+- **Incremental, not full-rescan**: signals update from the ingest delta (new
+  articles), reusing the keyword/link indexing hooks that already run on ingest.
+- **Hashing & graphs over ML**: near-dup via MinHash + LSH (sublinear), coordination
+  as a graph, concentration as counting, novelty as an incremental index lookup. No
+  heavy models; no "AI-text detector".
+- **Bounded everywhere**: caps on cards per bucket, candidates per query, graph size —
+  the same discipline as the bounded crawler.
+
+## Mutualisation map (one engine → many domains)
+
+| New primitive (`src/signals/`) | Reused by |
+|---|---|
+| `concentration` (Gini / top-share) | §1 ownership · people-prominence · §6 actor share |
+| `near_dup` + `coordination` (MinHash/LSH → actor graph) | echo cards · model-legislation (§5) · syndication (§2) · **§6 actor-collapse** |
+| `novelty` (surprisal vs corpus) | §6 anti-amplification weighting · "lonely signal" |
+| (reuse) `correlation`,`anomaly`,`tone`,`change-diff` | markets · law↔news · spikes · tone cards · stealth-correction |
+
+---
+
+## Phase A — The card + briefing framework (the GUI spine)  ⟵ start here
+
+- [ ] `src/briefing/`: the `Card` dataclass + a producer registry; `/api/briefing`
+      assembling cards from producers; scheduler precompute + cache.
+- [ ] Redesign **Home** as the card feed (triage: keep/dismiss/→draft), grouped by
+      bucket (rising/overtold/undertold/investigate/context/trust).
+- [ ] **Draft accumulator** (pin cards + notes) → **Markdown export** carrying every
+      card's evidence links; optional signed/timestamped custody receipts.
+- [ ] Seed with **now-status** producers only (no new math): Rising (trending),
+      Framing split, Record-reshaped (wiki), Price↔narrative, Stale-data.
+- [ ] **Belief/ideology + faith-media source-tag axis** (neutral, contestable,
+      editable): extend source tags so family-grouped cards (tone-by-family,
+      prominence-by-family, coordination grouping) work. (Generator spec already
+      added in 0.05; this tags existing sources.) → §4 belief axis.
+- [ ] **Tone-by-source / tone-by-family** card producer (VADER + `context` window
+      already exist — *now/thin*). → §4 tone & emotion.
+- [ ] **Acceptance:** fresh corpus → Home shows real cards from cached precompute;
+      pinning three → exported Markdown with working source links; equal-view toggle
+      present; a test asserts no `score` field exists on `Card`.
+
+## Phase B — Signal primitives (`src/signals/`, pure & mutualised)
+
+- [ ] `concentration.py` (Gini + top-N share, with method/caveat/n).
+- [ ] `near_dup.py` (MinHash/SimHash + LSH) → `coordination.py` (actor graph from
+      near-dup + lockstep timing + shared-template/host fingerprints).
+- [ ] `novelty.py` (information contributed vs an incremental corpus index).
+- [ ] Each primitive: pure, DB-free, property-tested in isolation.
+- [ ] **Acceptance:** unit tests on crafted fixtures (a known cluster collapses; a
+      Gini of a known distribution matches; a pure echo scores ~0 novelty); zero DB
+      imports in `src/signals/`.
+
+## Phase C — Source integrity: profile + anti-amplification (§6 C+D)
+
+> **User-guided, user-aware, GUI-mediated (§6 non-negotiable).** Anti-amplification is
+> never a silent transform the user merely *undoes* — it is **propose → user disposes**,
+> expressed through the interface. Default = **"equal but aware"** (raw equal view, with
+> manipulation structure *annotated on it*), not silent collapse and not naive equality.
+> There is **no headless auto-clean path**: the GUI is a *necessary* interface because the
+> human judgment *is* the mechanism.
+
+- [ ] **Actor graph + collapse (D):** detect coordinated actors and, **when the user
+      applies it**, operate briefing counts (trend/prominence/synchrony) on **actors
+      weighted by novelty** rather than raw outlet volume. The app **proposes** a collapse
+      with its evidence (shared infra / lockstep timing / near-dup); the user applies it
+      **globally or per-cluster**, never auto-applied. Every applied collapse stays
+      **visibly flagged**, one click to expand-to-members / treat-as-separate / override.
+- [ ] **Source profile panel (C):** per source, the measured signals as a panel —
+      coordination/actor, novelty ratio, output-capacity plausibility, transparency
+      facts, corpus track-record — **no composite**. User-weightable into *their* view,
+      off by default, reversible.
+- [ ] New cards fall out for free: Echo-chamber, Lonely-signal, Capacity-implausible.
+- [ ] **Acceptance:** on a synthetic 40-puppet flood, the **default** briefing shows the
+      cluster *annotated* (not silently collapsed); the app **proposes** a collapse with
+      evidence; **only on the user's action** (global or that one cluster) does the flood
+      stop dominating while a genuine single original source *rises*; the applied collapse
+      stays flagged and expands to its 40 members; toggling it off reproduces the raw
+      equal counts exactly. A test asserts no collapse is applied without an explicit
+      user action.
+
+## Phase D — Crowdsourced annotation bundles (the C scaling answer)
+
+- [ ] Annotation = a signed, portable bundle (reuse the **custody/evidence** machinery)
+      of source facts/tags/corrections; **export/import**; opt-in **web-of-trust**
+      selection of whose bundles to load.
+- [ ] **Transparent aggregation:** show *who asserted what*; surface dissent, never
+      average it into a hidden number. No server, no accounts, no global score.
+- [ ] **Acceptance:** export a bundle, verify its signature with the standalone
+      verifier; import two conflicting bundles → the profile shows both attributions;
+      removing a trusted author cleanly removes their annotations.
+
+## Phase E — Verticals on the shared engines (lower priority)
+
+- [ ] **Law change-tracking (§5):** UK `legislation.gov.uk` + EUR-Lex pilot on the
+      existing `src/wiki` change-tracking engine; cross-jurisdiction near-dup (Phase B)
+      surfaces model-legislation; law↔news via the correlation engine.
+- [ ] **IP/legal primary-source (§4):** patents/dockets/filings as structured sources
+      (the markets-CSV pattern), correlated with the news narrative.
+- [ ] **IP/legal *news* cards (§4):** ownership-change, deal-lineage, IP-litigation
+      pulse, IP↔deal co-timing — entity + deal-verb producers over the *news* corpus
+      (distinct from the primary-source vertical above; mostly *thin*).
+- [ ] **Emotion-category card (§4):** anger/fear/joy/… around a keyword — needs an
+      **emotion lexicon** (a *new* dependency; degrade loudly if absent), unlike the
+      VADER tone card already in Phase A.
+- [ ] **Acceptance:** one jurisdiction tracked with honest amendment diffs + custody
+      snapshots; a model-legislation near-dup match shown across two jurisdictions.
+
+---
+
+## Implications & risks (think before building)
+
+- **The honesty guards must be *in code*, not just docs:** the banned composite score,
+  the always-available equal view, **user-applied (never auto) actor-collapse that stays
+  flagged and expandable**, and method+caveat+evidence on every card are **acceptance
+  criteria and tests**, not conventions.
+- **False merges are the worst failure** — Phase C biases toward *under*-merging and
+  always shows the evidence for a merge; a wrong collapse must be one click to undo.
+- **Migration:** new tables (cards cache, actor graph, annotations) via Alembic
+  (§6.3 discipline); `init_db()` for fresh installs, `upgrade head` for existing.
+- **Scope honesty:** Phases A–C are the core of 0.06; D and E can slip without
+  blocking value. Ship A first — value on day one — then deepen.
+
+## Definition of "0.06 done"
+Home greets the user with a real, cached **briefing** of honest cards drawn from the
+shared `src/signals/` engine; coordinated floods are **surfaced and annotated by
+default**, and — **when the user applies the proposed collapse** — fold into single
+low-novelty actors (visibly flagged, expandable, the equal view one toggle away) while
+small original sources **rise**; each source has a **no-composite profile** the user
+can weight;
+annotations are **shared as signed bundles**; and any card the user pins exports to a
+**provenance- and custody-carrying draft** — with the whole surface covered by tests,
+including a guard that **no trust-score field exists anywhere**.

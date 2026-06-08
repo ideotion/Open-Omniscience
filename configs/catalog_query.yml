@@ -49,3 +49,17 @@ specs:
       - Q189445     # legislature        (verify)
       - Q192350     # ministry           (verify)
       - Q327333     # government agency   (verify)
+
+  # ---- Faith-based / belief-aligned organisations ------------------------- #
+  # Samples religious organisations as one more source-FAMILY, exactly like the
+  # political/ownership families — so the coordination/synchrony/tone-by-family
+  # cards can include this dimension. NEUTRAL by construction: this only widens
+  # which REAL, attributable outlets are catalogued; it never labels a faith.
+  # Religious periodicals/magazines are already covered by the periodical/magazine
+  # types above. VERIFY ids on wikidata.org before a full run (wrong ids just
+  # return fewer rows, never fabricated data).
+  - source_type: religious
+    tags: [religion, belief, world-catalog]
+    type_qids:
+      - Q1530022    # religious organization   (verify)
+      - Q13414953   # religious denomination   (verify)

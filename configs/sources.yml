@@ -15323,33 +15323,6 @@ sources:
   - history
   - en
   priority: 2
-- name: African Traditional Religions
-  domain: africantraditionalreligions.com
-  rss_url: ''
-  rate_limit_ms: 2000
-  enabled: true
-  tags:
-  - history
-  - en
-  priority: 2
-- name: Islam in Africa
-  domain: islaminafrica.com
-  rss_url: ''
-  rate_limit_ms: 2000
-  enabled: true
-  tags:
-  - history
-  - en
-  priority: 2
-- name: Christianity in Africa
-  domain: christianityinafrica.com
-  rss_url: ''
-  rate_limit_ms: 2000
-  enabled: true
-  tags:
-  - history
-  - en
-  priority: 2
 - name: Project MUSE - African History
   domain: muse.jhu.edu
   rss_url: ''
@@ -15865,33 +15838,6 @@ sources:
   priority: 2
 - name: Encyclopedia Mythica
   domain: pantheon.org
-  rss_url: ''
-  rate_limit_ms: 2000
-  enabled: true
-  tags:
-  - ancient_history
-  - en
-  priority: 2
-- name: Ancient Egyptian Religion
-  domain: ancientegyptianreligion.com
-  rss_url: ''
-  rate_limit_ms: 2000
-  enabled: true
-  tags:
-  - ancient_history
-  - en
-  priority: 2
-- name: Greek Religion
-  domain: greekreligion.com
-  rss_url: ''
-  rate_limit_ms: 2000
-  enabled: true
-  tags:
-  - ancient_history
-  - en
-  priority: 2
-- name: Roman Religion
-  domain: romanreligion.com
   rss_url: ''
   rate_limit_ms: 2000
   enabled: true
