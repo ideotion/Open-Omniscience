@@ -124,6 +124,7 @@ def store_fetched(session: Session, source: Source, fetched) -> IngestOutcome:
                              detail="content hash already stored (race)")
     _maybe_record_custody(article)
     _maybe_index_keywords(session, article, source)
+    _maybe_index_links(session, article, fetched.content, fetched.final_url)
     return IngestOutcome(fetched.requested_url, IngestResult.STORED, article_id=article.id)
 
 
@@ -155,6 +156,54 @@ def _maybe_index_keywords(session: Session, article: Article, source: Source) ->
         session.rollback()
         import logging
         logging.getLogger(__name__).warning("keyword indexing on ingest failed", exc_info=True)
+
+
+def _maybe_index_links(session: Session, article: Article, html: str | None, base_url: str) -> None:
+    """Best-effort extraction of outbound EXTERNAL links into ``article_links``.
+
+    Powers co-citation analysis ("which articles cite the same source", "most-cited
+    links") — see docs/CONTENT_ANALYSIS_STRATEGY.md. Fail-open and isolated like
+    keyword indexing: never breaks ingestion. Only genuine *external* links are kept
+    — internal navigation, images, ads, social and trackers are excluded, in line
+    with docs/KNOWN_GAPS.md. De-duplicated per article and capped. Disable with
+    OO_NO_INDEX=1.
+    """
+    import os
+
+    if os.getenv("OO_NO_INDEX") == "1" or not html:
+        return
+    try:
+        from src.database.models import ArticleLink
+        from src.services.link_analyzer import LinkExtractor
+
+        links = LinkExtractor().extract_links(html, base_url=base_url, article_id=article.id)
+        seen: set[str] = set()
+        rows: list[ArticleLink] = []
+        for ln in links:
+            if ln.get("link_type") != "external":
+                continue
+            nu = ln.get("normalized_url") or ln.get("url")
+            if not nu or nu in seen:
+                continue
+            seen.add(nu)
+            text = ln.get("link_text") or None
+            rows.append(ArticleLink(
+                article_id=article.id,
+                url=(ln.get("url") or nu)[:1000],
+                normalized_url=nu[:1000],
+                link_text=text[:500] if text else None,
+                position=ln.get("position"),
+                link_type="external",
+            ))
+            if len(rows) >= 300:  # guard against pathological link-farm pages
+                break
+        if rows:
+            session.add_all(rows)
+            session.commit()
+    except Exception:  # noqa: BLE001 - link analysis is auxiliary; never fail ingestion
+        session.rollback()
+        import logging
+        logging.getLogger(__name__).warning("link indexing on ingest failed", exc_info=True)
 
 
 def _maybe_record_custody(article: Article) -> None:

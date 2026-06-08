@@ -107,6 +107,9 @@ from src.api.source_io import router as source_io_router
 # Import insights router (keyword & entity analytics)
 from src.api.insights import router as insights_router
 
+# Import link / co-citation analysis router (honest counts only)
+from src.api.link_analysis import router as link_analysis_router
+
 # Import Wikipedia change-tracking router
 from src.api.wiki import router as wiki_router
 
@@ -249,6 +252,9 @@ app.include_router(source_io_router)
 
 # Include insights router
 app.include_router(insights_router)
+
+# Include link / co-citation analysis router
+app.include_router(link_analysis_router)
 
 # Include Wikipedia change-tracking router
 app.include_router(wiki_router)
