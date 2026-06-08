@@ -154,3 +154,31 @@ def test_novelty_weighting_is_opt_in_and_off_by_default(flood_corpus):
         assert "novelty" in s and "novelty_weighted_voices" in s
     indie = next(s for s in w["stories"] if s["voices_raw"] == 1)
     assert indie["novelty"] >= 0.9          # a genuine original is information-rich
+
+
+def test_novelty_weighting_uses_consistent_representative(monkeypatch, tmp_path):
+    """F-002 regression: an echo cluster whose member ids expose the string-vs-int
+    sort mismatch (e.g. {2,11}) must get its REAL (low) novelty, not a default 1.0."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    engine = create_engine("sqlite:///:memory:", future=True,
+                           connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    s.add(Source(name="src", domain="src.test"))
+    s.flush()
+    now = datetime.now(UTC)
+    base_words = [f"alpha{i}" for i in range(90)]
+    A = " ".join(base_words)                       # id1 (oldest): the original
+    E = " ".join(base_words[:38])                  # echo: a subset of A (>=200 chars, Jaccard<0.6)
+    fillers = [" ".join(f"beta{g}_{i}" for i in range(90)) for g in range(8)]  # ids 3..10
+    texts = [A] + [E] + fillers + [E]              # ids 1, 2, 3..10, 11
+    for i, txt in enumerate(texts, start=1):
+        s.add(Article(url=f"https://src.test/{i}", canonical_url=f"https://src.test/{i}",
+                      source_id=1, title=f"t{i}", content=txt, hash=f"h{i}", language="en",
+                      published_at=now + timedelta(minutes=i), created_at=now))
+    s.commit()
+
+    data = collapse_mod.story_prominence(s, days=7, weight_by_novelty=True)
+    echo = next(st for st in data["stories"] if st["articles"] == 2)   # the {2,11} cluster
+    # The echo re-tells text already in the corpus -> its novelty must be low, not 1.0.
+    assert echo["novelty"] < 0.5, f"echo novelty should be low; got {echo['novelty']}"

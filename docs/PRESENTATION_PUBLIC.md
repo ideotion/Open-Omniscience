@@ -67,7 +67,7 @@ Et tout cela vit **sur votre machine** : rien ne part vers un serveur extérieur
 ## 3. Ce que le logiciel sait faire aujourd'hui
 
 > 🟢 Les fonctions ci-dessous **existent réellement et sont testées**. Open Omniscience
-> en est à une version **0.4 (alpha)** : un cœur solide, sur lequel d'autres
+> en est à une version **0.0.6 (pré-alpha)** : un cœur solide, sur lequel d'autres
 > fonctionnalités viendront s'ajouter.
 
 ### a) Collecter, mais avec des bonnes manières
@@ -116,7 +116,7 @@ tourne uniquement sur votre ordinateur (à l'adresse `127.0.0.1`, qui veut dire
 
 ## 4. Les fonctions avancées (déjà présentes, à éprouver sur le terrain)
 
-Au-delà de ce cœur, la version 0.4 intègre des briques plus avancées, conçues selon le
+Au-delà de ce cœur, la version 0.0.6 intègre des briques plus avancées, conçues selon le
 même principe : **honnêteté et confidentialité d'abord**.
 
 - **Une intelligence artificielle… locale.** Le logiciel peut résumer des textes grâce
@@ -201,7 +201,7 @@ Pour éviter tout malentendu, disons-le clairement. Open Omniscience **n'est pas
 
 ## 9. Où en est le projet ?
 
-- **Version actuelle : 0.4 (alpha).** Le cœur — collecter, ranger, chercher, exporter —
+- **Version actuelle : 0.0.6 (pré-alpha).** Le cœur — collecter, ranger, chercher, exporter —
   **fonctionne et est testé de bout en bout**.
 - Les briques avancées (IA locale, données économiques, surveillance, e-mails, dossiers
   signés) **sont en place** et seront éprouvées sur des cas réels.

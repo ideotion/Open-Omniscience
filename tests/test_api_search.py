@@ -74,9 +74,13 @@ def client(tmp_path):
 
 
 def test_health_reports_real_version(client):
+    # Assert against the package metadata (the single source of truth) rather than a
+    # hardcoded literal, so the version can never silently drift between pyproject and
+    # the running app (see docs/VERSIONING.md).
+    from importlib.metadata import version as _pkg_version
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json()["version"] == "0.4.0"
+    assert r.json()["version"] == _pkg_version("open-omniscience")
 
 
 def test_boolean_search_and(client):

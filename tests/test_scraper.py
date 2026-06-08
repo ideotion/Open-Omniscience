@@ -87,8 +87,18 @@ def temp_config():
 
 @pytest.fixture
 def scraper(temp_config):
-    """Create a scraper instance with test config."""
-    return Scraper(config_path=temp_config)
+    """Create a scraper instance with test config.
+
+    F-003: stub the network-touching methods so the suite stays OFFLINE and
+    deterministic. The scraper's own logic (audit logging, rate-limit sleeps) still
+    runs — only the real HTTP/DNS is removed — so the behaviours these tests assert
+    (log rows, elapsed time) are preserved without reaching the wire.
+    """
+    s = Scraper(config_path=temp_config)
+    s._can_scrape = lambda url: True            # no robots.txt fetch
+    s._parse_html = lambda url, name: []        # no HTML request
+    s._parse_rss = lambda url, name: []         # no feed request
+    return s
 
 def test_scraper_initialization(scraper):
     """Test that the scraper initializes correctly."""
@@ -205,12 +215,16 @@ def test_duplicate_detection():
             session.commit()
         session.close()
 
-def test_rate_limiting(scraper):
-    """Test that rate limiting is applied."""
-    import time
-    start_time = time.time()
-    scraper.scrape_all_sources()
-    elapsed_time = time.time() - start_time
+def test_rate_limiting(scraper, monkeypatch):
+    """Rate limiting applies a per-source delay.
 
-    # With 2 enabled sources and 1000ms rate limit, should take at least 2 seconds
-    assert elapsed_time >= 2.0
+    The scraper runs sources in parallel (ThreadPoolExecutor), so wall-clock time is
+    NOT the sum of the delays — asserting >=2s only ever passed incidentally via real
+    network latency. Instead, assert the control deterministically: count the
+    rate-limit sleeps (one per enabled source) without sleeping or touching the network.
+    """
+    sleeps: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+    scraper.scrape_all_sources()
+    # 2 enabled sources, 1000ms each -> two 1.0s rate-limit delays were requested.
+    assert sleeps.count(1.0) >= 2

@@ -21,16 +21,18 @@ There is exactly one network path and no raw-requests bypass.
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import requests
 
 DEFAULT_USER_AGENT = (
-    "OpenOmniscienceBot/0.4 (+https://github.com/ideotion/Open-Omniscience; "
+    "OpenOmniscienceBot/0.0.6 (+https://github.com/ideotion/Open-Omniscience; "
     "ethical research crawler)"
 )
 
@@ -63,8 +65,26 @@ class FetchFailed(FetchError):
     """The page itself could not be fetched, or was not usable HTML."""
 
 
+class BlockedTarget(FetchFailed):
+    """The URL (or a redirect of it) resolves to a non-public address (SSRF guard)."""
+
+
 # How long a robots.txt decision is cached, in seconds.
 _ROBOTS_TTL = 3600.0
+# Bound on redirects followed (each hop is re-validated against the SSRF guard).
+_MAX_REDIRECTS = 5
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True for any address an external fetch should never reach (SSRF, CWE-918).
+
+    Blocks loopback, RFC1918/ULA private, link-local (incl. 169.254.169.254 cloud
+    metadata), reserved, multicast and the unspecified address.
+    """
+    return (
+        ip.is_private or ip.is_loopback or ip.is_link_local
+        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+    )
 
 
 class EthicalFetcher:
@@ -91,12 +111,21 @@ class EthicalFetcher:
         self.respect_robots = respect_robots
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
+        self._max_redirects = _MAX_REDIRECTS
         # host -> (decision_parser_or_None, expiry). None == "do not fetch this host".
         self._robots: dict[str, tuple[RobotFileParser | None, float]] = {}
         self._last_request: dict[str, float] = {}
         # sleep is indirected so tests can run without real delays.
         self._sleep = time.sleep
         self._now = time.monotonic
+
+    @property
+    def _real_session(self) -> bool:
+        """Network-level guards (DNS-resolution SSRF check, streamed size cap) apply only
+        to the real requests session; an injected stub/double controls its own returns, so
+        only the cheap literal-IP block runs for it. Computed at call time because tests may
+        swap ``.session`` after construction."""
+        return isinstance(self.session, requests.Session)
 
     # -- public API -------------------------------------------------------- #
 
@@ -110,6 +139,8 @@ class EthicalFetcher:
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise FetchFailed(f"unsupported or malformed URL: {url!r}")
 
+        self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
+
         host_key = f"{parsed.scheme}://{parsed.netloc}"
 
         if self.respect_robots:
@@ -118,7 +149,7 @@ class EthicalFetcher:
         self._respect_rate_limit(parsed.netloc, host_key)
 
         try:
-            response = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+            response, final_url = self._http_get(url)
         except requests.RequestException as exc:
             raise FetchFailed(f"request error for {url}: {exc}") from exc
         finally:
@@ -131,17 +162,103 @@ class EthicalFetcher:
         if require_html and "html" not in content_type.lower():
             raise FetchFailed(f"non-HTML content ({content_type!r}) for {url}")
 
-        if response.content and len(response.content) > self.max_bytes:
-            raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
+        content = self._read_body(response, url)
 
         return FetchResult(
             requested_url=url,
-            final_url=str(response.url),
+            final_url=final_url,
             status_code=response.status_code,
-            content=response.text,
+            content=content,
             content_type=content_type,
             fetched_at=datetime.now(UTC),
         )
+
+    # -- SSRF guard + bounded redirects + size-capped body ----------------- #
+
+    def _guard_target(self, host: str | None) -> None:
+        """Refuse to fetch internal/non-public targets (SSRF, CWE-918).
+
+        Applies only to the real requests session — an injected stub/double performs no
+        real network I/O, so there is nothing to guard (and tests may legitimately use
+        loopback stand-in hosts). For a real fetch, literal IPs are checked and hostnames
+        are resolved + checked (rejecting a name that resolves to a private/loopback/
+        link-local address — defeating DNS-rebinding-to-internal).
+        """
+        if not self._real_session:
+            return
+        if not host:
+            raise FetchFailed("missing host")
+        host = host.strip("[]")  # IPv6 literal brackets
+        try:
+            if _is_blocked_ip(ipaddress.ip_address(host)):
+                raise BlockedTarget(f"refusing to fetch a non-public address: {host}")
+            return  # a public IP literal
+        except ValueError:
+            pass  # not an IP literal -> a hostname
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except OSError as exc:
+            raise FetchFailed(f"cannot resolve host {host!r}: {exc}") from exc
+        for info in infos:
+            ip = ipaddress.ip_address(info[4][0])
+            if _is_blocked_ip(ip):
+                raise BlockedTarget(f"{host} resolves to a non-public address ({ip})")
+
+    def _http_get(self, url: str):
+        """GET with manual, bounded redirects, re-validating every hop (SSRF)."""
+        current = url
+        for _ in range(self._max_redirects + 1):
+            kwargs = {"timeout": self.timeout, "allow_redirects": False}
+            if self._real_session:
+                kwargs["stream"] = True
+            resp = self.session.get(current, **kwargs)
+            status = resp.status_code
+            location = resp.headers.get("Location") if hasattr(resp, "headers") else None
+            if 300 <= status < 400 and location:
+                nxt = urljoin(current, location)
+                p = urlparse(nxt)
+                if p.scheme not in ("http", "https") or not p.netloc:
+                    raise FetchFailed(f"redirect to unsupported URL: {nxt!r}")
+                self._guard_target(p.hostname)  # re-validate the redirect target
+                if hasattr(resp, "close"):
+                    resp.close()
+                current = nxt
+                continue
+            return resp, str(getattr(resp, "url", current) or current)
+        raise FetchFailed(f"too many redirects for {url}")
+
+    def _read_body(self, response, url: str) -> str:
+        """Decode the body, enforcing ``max_bytes`` *before* materialising it (DoS).
+
+        A declared Content-Length over the cap is rejected up front; for the real
+        (streamed) session the body is read incrementally and aborted once the
+        decompressed size exceeds the cap (defeats gzip/decompression bombs).
+        """
+        cl = response.headers.get("Content-Length") if hasattr(response, "headers") else None
+        if cl and str(cl).isdigit() and int(cl) > self.max_bytes:
+            raise FetchFailed(f"declared length {cl} exceeds {self.max_bytes} bytes for {url}")
+        if self._real_session and hasattr(response, "iter_content"):
+            total = 0
+            chunks: list[bytes] = []
+            for chunk in response.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > self.max_bytes:
+                    if hasattr(response, "close"):
+                        response.close()
+                    raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
+                chunks.append(chunk)
+            raw = b"".join(chunks)
+            encoding = getattr(response, "encoding", None) or getattr(response, "apparent_encoding", None) or "utf-8"
+            try:
+                return raw.decode(encoding, errors="replace")
+            except (LookupError, TypeError):
+                return raw.decode("utf-8", errors="replace")
+        # Injected (test) session: not streamed; check the already-materialised body.
+        if response.content and len(response.content) > self.max_bytes:
+            raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
+        return response.text
 
     # -- robots ------------------------------------------------------------ #
 

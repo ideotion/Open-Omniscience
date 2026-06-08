@@ -36,3 +36,25 @@ jobs:
 
       - name: Test (pytest)
         run: python -m pytest -q
+
+  crypto:
+    runs-on: ubuntu-latest
+    name: PQC signing path (hybrid Ed25519 + ML-DSA)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Installs the optional [pqc] extra so the post-quantum half of the hybrid
+      # signature (custody + signed annotation bundles) is actually exercised, instead
+      # of being skipped as it is in the default lane (audit finding F-006).
+      - name: Install (core + analysis + dev + pqc)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,dev,pqc]"
+
+      - name: Test the hybrid signing + signed annotation bundles
+        run: python -m pytest -q tests/test_custody_signing.py tests/test_annotations.py

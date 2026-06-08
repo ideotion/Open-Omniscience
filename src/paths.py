@@ -40,6 +40,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def _ensure(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
+    # Lock the data dir to the owner (S-011): the corpus, signing keys, custody log and
+    # caches live here; on a shared host this stops other local users reading them.
+    # Best-effort — POSIX only; full at-rest encryption remains the host's (Qubes/LUKS) job.
+    try:
+        path.chmod(0o700)
+    except (OSError, NotImplementedError):  # pragma: no cover - non-POSIX / odd FS
+        pass
     return path
 
 

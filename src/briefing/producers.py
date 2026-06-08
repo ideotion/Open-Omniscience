@@ -517,6 +517,8 @@ def emotion_profile_card(session) -> list[Card]:
     prof = emotion_profile(snippets)
     if not prof["total_hits"] or not prof["dominant"]:
         return []
+    kw = resolve_keyword(session, term["term"])   # resolve once (F-009)
+    rows = _articles_for_term(session, kw.id, days=21, limit=4) if kw else []
     return [Card(
         type="emotion_profile",
         title=f"“{term['term']}”: coverage skews {prof['dominant']}",
@@ -528,9 +530,7 @@ def emotion_profile_card(session) -> list[Card]:
                 "categories": prof["categories"], "lexicon": prof["lexicon_source"]},
         method=prof["method"],
         caveat=prof["caveat"],
-        evidence=_evidence_from_articles(
-            _articles_for_term(session, resolve_keyword(session, term["term"]).id, days=21, limit=4)
-            if resolve_keyword(session, term["term"]) else []),
+        evidence=_evidence_from_articles(rows),
         n=prof["total_hits"],
         key=f"emotion:{term['normalized']}",
     )]

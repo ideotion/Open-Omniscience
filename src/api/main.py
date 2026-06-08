@@ -237,12 +237,63 @@ allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True,
+    # The app has no cookies/sessions/auth, so credentials are never needed; allowing
+    # them is a latent misconfiguration if origins are ever widened (S-007).
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "User-Agent"],
     expose_headers=["Content-Length", "Content-Type"],
     max_age=86400,  # 24 hours
 )
+
+# --- CSRF (S-003) + security headers (S-006) -------------------------------- #
+# No auth + a loopback API means a web page the user merely visits could POST to
+# 127.0.0.1:8000 (a "simple request" needs no CORS preflight). We reject any
+# state-changing request whose Origin/Referer is cross-origin (not loopback), and we
+# attach defensive headers (a CSP backstop, anti-clickjacking, nosniff) to every
+# response. The swagger docs (/docs, /redoc) load assets from a CDN, so they are
+# exempt from the strict CSP (they render no ingested content).
+_STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "   # UI is inline-heavy; nonce-based CSP is future work
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
+    "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+)
+_CSP_EXEMPT_PREFIXES = ("/docs", "/redoc", "/openapi.json")
+
+
+def _origin_host(value: str | None) -> str | None:
+    if not value:
+        return None
+    from urllib.parse import urlparse
+    try:
+        return urlparse(value).hostname
+    except Exception:
+        return None
+
+
+@app.middleware("http")
+async def csrf_and_security_headers(request: Request, call_next):
+    # CSRF: a cross-origin browser request to a state-changing endpoint carries an
+    # Origin (or at least a Referer); if present and not loopback, refuse. Requests
+    # with no Origin/Referer (CLI, same-origin server-side) are allowed.
+    if request.method in _STATE_CHANGING:
+        host = _origin_host(request.headers.get("origin")) or _origin_host(request.headers.get("referer"))
+        if host is not None and host not in _LOOPBACK_HOSTS:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Cross-origin state-changing request refused (loopback only)."},
+            )
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    if not request.url.path.startswith(_CSP_EXEMPT_PREFIXES):
+        response.headers.setdefault("Content-Security-Policy", _CSP)
+    return response
 
 # Include source management router
 app.include_router(source_management_router)
@@ -580,18 +631,21 @@ async def export_articles(
     if format == "csv":
         stream = io.StringIO()
         writer = csv.writer(stream)
+        # Neutralize spreadsheet formula injection: ingested title/url/content are
+        # attacker-controlled, so every cell is passed through csv_safe_cell (S-004).
+        from src.utils.security import csv_safe_cell as _c
         writer.writerow(["ID", "Title", "URL", "Canonical URL", "Source", "Published At", "Language", "Content", "Hash"])
         for a in articles:
             writer.writerow([
                 a.id,
-                a.title or "",
-                a.url or "",
-                a.canonical_url or "",
-                a.source.name if a.source else "",
+                _c(a.title or ""),
+                _c(a.url or ""),
+                _c(a.canonical_url or ""),
+                _c(a.source.name if a.source else ""),
                 a.published_at.isoformat() if a.published_at else "",
-                a.language or "",
-                a.content or "",
-                a.hash or "",
+                _c(a.language or ""),
+                _c(a.content or ""),
+                _c(a.hash or ""),
             ])
         return StreamingResponse(
             iter([stream.getvalue()]),
@@ -643,10 +697,14 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
         _html.escape(a.language) if a.language else None,
     ]))
     title = _html.escape(a.title or "(untitled)")
-    orig = _html.escape(a.url or "")
+    # Only render the original URL as a link if it is a plain http(s) URL — a malicious
+    # feed link (javascript:/data:) would otherwise execute on click in this origin (S-005).
+    from src.utils.security import safe_href
+    safe = safe_href(a.url)
+    orig = _html.escape(safe)
     orig_html = (
         f"Original source (online): <a href=\"{orig}\" target=\"_blank\" rel=\"noopener noreferrer\">{orig}</a>"
-        if orig else "No original URL recorded."
+        if orig else "No original (http/https) URL recorded."
     )
     doc = f"""<!DOCTYPE html><html lang="{_html.escape(a.language or 'en')}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -718,6 +776,8 @@ _DOCS: dict[str, dict[str, str]] = {
                 "blurb": "Price feeds, correlation, and extraction rules."},
     "security": {"file": "SECURITY.md", "title": "Security",
                  "blurb": "Threat model and the local-first security posture."},
+    "versioning": {"file": "VERSIONING.md", "title": "Versioning",
+                   "blurb": "Why this is 0.0.x, the maturity ladder, and the single source of truth."},
 }
 _DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
 
