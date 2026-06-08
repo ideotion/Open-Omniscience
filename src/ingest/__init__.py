@@ -32,7 +32,7 @@ from urllib.robotparser import RobotFileParser
 import requests
 
 DEFAULT_USER_AGENT = (
-    "OpenOmniscienceBot/0.4 (+https://github.com/ideotion/Open-Omniscience; "
+    "OpenOmniscienceBot/0.0.6 (+https://github.com/ideotion/Open-Omniscience; "
     "ethical research crawler)"
 )
 

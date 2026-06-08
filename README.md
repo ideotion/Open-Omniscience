@@ -5,12 +5,19 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.4 (working core — alpha)
+**Version:** 0.0.6 (pre-alpha — the `0.0.x` series; see [docs/VERSIONING.md](docs/VERSIONING.md))
 **License:** [GNU GPLv3](LICENSE)
 
 ---
 
-## Status — v0.4: the trustworthy core works
+> **On the version number.** This is deliberately versioned **`0.0.6`**, not `0.4`. The
+> software is young and still being proven; we **under-state** maturity on purpose
+> (honesty over hype). The `0.0.x` series is pre-alpha; only after it consolidates do we
+> move to a `0.1` **alpha**, then **beta**, then a `1.0` release. Development cycles are
+> named after the version they produce: branch `0.04 → 0.05 → 0.06` ⇒ `0.0.4 → 0.0.5 →
+> 0.0.6`. See [docs/VERSIONING.md](docs/VERSIONING.md).
+
+## Status — v0.0.6: the trustworthy core works, the intelligence layer is landing
 
 This release rebuilds the project around a small, **genuinely working and tested**
 spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.

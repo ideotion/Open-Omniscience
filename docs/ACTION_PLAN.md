@@ -4,7 +4,7 @@
 **Working branch:** `0.05` (direct, per owner's instruction).
 **Companion doc:** [`PRODUCT_SYNTHESIS.md`](PRODUCT_SYNTHESIS.md) (what we're building & why).
 
-> ## Implementation status (v0.4)
+> ## Implementation status (v0.0.6)
 > **Phases 0–5 implemented and tested** on the `claude/kind-lovelace-ulpTc` branch
 > (full suite green; see [`QUICKSTART.md`](QUICKSTART.md)):
 > - **Phase 0/1 — Trustworthy core ✅:** single 3.13 manifest; clean DB session

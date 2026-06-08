@@ -68,6 +68,21 @@ def test_no_dangerous_eval_or_deserialization_sinks():
     assert not offenders, f"dangerous sink(s) introduced: {offenders}"
 
 
+def test_readme_version_matches_package():
+    """Version coherence guard (docs/VERSIONING.md): the README header must state exactly
+    the package version, so the two can never silently drift again."""
+    from importlib.metadata import version as _pkg_version
+
+    pkg = _pkg_version("open-omniscience")
+    readme = (_ROOT / "README.md").read_text(encoding="utf-8")
+    m = re.search(r"\*\*Version:\*\*\s*([0-9][0-9A-Za-z.\-+]*)", readme)
+    assert m, "README has no '**Version:** X' header line"
+    assert m.group(1) == pkg, (
+        f"README version {m.group(1)!r} != package version {pkg!r}; "
+        f"update README.md to match pyproject.toml (single source of truth)."
+    )
+
+
 def test_in_app_docs_exist_on_disk():
     main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
     files = re.findall(r'"file":\s*"([^"]+)"', main)

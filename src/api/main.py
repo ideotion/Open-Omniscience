@@ -776,6 +776,8 @@ _DOCS: dict[str, dict[str, str]] = {
                 "blurb": "Price feeds, correlation, and extraction rules."},
     "security": {"file": "SECURITY.md", "title": "Security",
                  "blurb": "Threat model and the local-first security posture."},
+    "versioning": {"file": "VERSIONING.md", "title": "Versioning",
+                   "blurb": "Why this is 0.0.x, the maturity ladder, and the single source of truth."},
 }
 _DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
 
