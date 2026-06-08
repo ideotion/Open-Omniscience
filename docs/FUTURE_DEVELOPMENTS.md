@@ -76,6 +76,81 @@ explained, and overridable**; the user can dismiss it. No silent filtering, ever
 
 ---
 
+## 4. The Home briefing — surfaced intelligence as "cards"
+
+**The reframe.** Today Home shows at-a-glance stats. The intended Home is a
+**triage feed**: the app gathers and analyses in the background, then surfaces
+*candidate stories* as **cards** — the most-used tab, where intelligence is
+concentrated. The app does the gathering; **the human judges**. Each card is one
+measurable signal + the evidence links + a caveat, pre-sorted into an editorial
+bucket. A card **surfaces a signal; it never renders a verdict** (no "biased",
+no "propaganda", no "true/fake").
+
+**The three shapes.** Almost every card is one of: **convergence** (sources agree
+too fast / too uniformly → *overtold*), **divergence** (sources or data disagree →
+*investigate / debunk*), or **absence** (something moved but nobody covered it →
+*undertold*). That triad is the editorial engine — and it maps directly to a
+newsletter: debunk the overtold, surface the undertold, contextualise the rest.
+
+### Card catalog
+
+Status legend: **now** = composes endpoints that already return real numbers;
+**thin** = a small generalisation of existing code; **new** = real new analysis
+(do it properly or not at all — see §1–2).
+
+| Card | Surfaces | Bucket | Powered by | Status |
+|---|---|---|---|---|
+| Rising now | trending keywords/entities | rising | `/api/insights/trending` | now |
+| Echo chamber | one story across N outlets, weighted by owner concentration | overtold | dedup/canonical hash + `sources_spectrum.yml` owner tags | new |
+| Lonely signal | single-source story that did *not* echo | undertold | inverse echo + `KNOWN_GAPS` coverage ledger | new |
+| Framing split | same event, opposite tone/emphasis per source | debunk | `awareness/framing.py` (VADER + terms) | now |
+| Record reshaped | large/burst/anon Wikipedia edits on a topic | watch | wiki flagging | now |
+| Stealth correction | an outlet quietly rewrote a published piece | watch | content-hash change on re-fetch | new (hooks exist) |
+| Cross-language divergence | domestic vs foreign framing of one event | debunk | i18n locales × framing | thin |
+| Diet self-audit | "70% of your week traces to one wire / one owner" | context | corpus concentration over provenance tags | thin |
+
+### Markets / commodity / rare-earth cards
+
+The commodity vertical already does **honest** stats (`commodity/correlation.py`:
+scipy Pearson/Spearman with coefficient + real two-sided p-value + n + insufficient-
+data handling), exact mass-unit conversion (`commodity/units.py`), z-score anomalies
+(`monitoring/anomaly.py`), and rule outcomes that store a number **only** when a
+selector lands on one (`markets/pipeline.py`). These cards reuse that machinery —
+every figure sourced, with method + caveat, and **no invented FX** (cross-currency
+stays explicitly un-converted until a dated rate exists).
+
+| Card | Surfaces | Bucket | Powered by | Status |
+|---|---|---|---|---|
+| Price ↔ narrative | price move vs news volume on shared dates | context | `correlate_price_with_news` (coef + p + n) | now |
+| Anomalous move | a daily move ≥ Nσ of its own volatility, with nearby articles | context | z-score anomaly, volume→price | thin |
+| Silent move | a price anomaly with near-zero coverage | undertold | anomaly × low article volume | thin |
+| Narrative-without-data | heavy "shortage" coverage while the series is flat | debunk | coverage volume vs measured series divergence | thin |
+| Venue divergence | same instrument, two venues/publishers, different numbers | investigate | two extraction rules compared (discrepancy flagged, not adjudicated) | new |
+| Cross-series co-movement | two related series moving together | context | same Pearson engine, price↔price | thin |
+| Stale-data / integrity | "feed N days cold" / "rule selector stopped matching" | trust | `RuleOutcome.status` + `last_run_at` | now |
+| Unit/currency hygiene | unit/currency mismatch when comparing prices | trust | `units.py` (within-currency only; FX is future work) | now |
+
+### From card to draft (the newsletter workflow)
+
+A card carries a **"→ Add to draft"** action into a simple accumulator (pinned
+cards + the user's notes) that exports **Markdown** — each claim already carrying
+its source links and, optionally, the signed/timestamped chain-of-custody receipts.
+The differentiator is *reproducible* journalism: the receipts ship with the issue.
+
+**Build order (de-risk first).** Ship a *Briefing v0* of only the **now** cards
+(Rising, Framing split, Record reshaped, Price↔narrative, Stale-data) + the draft
+accumulator + Markdown export — proving the idea→draft loop before investing in the
+harder **new** analysis (echo/synchrony, lineage). A `/api/briefing` endpoint
+assembles cards from the existing queries on the scheduler; the redesigned Home
+renders them.
+
+**Honesty constraints (same as §1–2, restated for cards):** surface, don't
+suppress; every card links to its evidence and states its method + caveat; any
+down-weighting (e.g. derivative-source de-emphasis) is transparent, tunable, **off
+by default, and reversible**; the tool is never an arbiter of truth.
+
+---
+
 ## Hooks already in the codebase (this is not from scratch)
 
 - **Dedup / canonicalization:** `src/ingestor/duplicate_detector.py`,
@@ -105,4 +180,6 @@ explained, and overridable**; the user can dismiss it. No silent filtering, ever
 ## Status
 
 Vision / persistent memory only — not implemented. Decided principle on this page:
-**user-driven selection, no capping.**
+**user-driven selection, no capping.** §4 (Home briefing / cards) is the intended
+surface for §1–3 plus the markets vertical; its **now**-status cards are the
+lowest-risk first slice.
