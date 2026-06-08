@@ -1,7 +1,7 @@
 # Open-Omniscience — Action Plan
 
 **Target environment:** Qubes OS · Debian AppVM · Python 3.13 · single primary user · loopback-only.
-**Working branch:** `0.04` (direct, per owner's instruction).
+**Working branch:** `0.05` (direct, per owner's instruction).
 **Companion doc:** [`PRODUCT_SYNTHESIS.md`](PRODUCT_SYNTHESIS.md) (what we're building & why).
 
 > ## Implementation status (v0.4)
@@ -33,7 +33,7 @@
   can't be mistaken for working functionality.
 - **Every task has an acceptance check.** "Done" means the check passes, demonstrably, in the AppVM.
 - **No silent failure.** Missing dep/model/source → explicit, visible status. Ever.
-- **Commit in small, honest increments** on `0.04`. Commit messages describe *what changed and why*, not
+- **Commit in small, honest increments** on `0.05`. Commit messages describe *what changed and why*, not
   "fixed everything." Run tests before each commit.
 - **Provenance everywhere.** If data enters the store, it carries source + timestamp + hash.
 
@@ -70,7 +70,7 @@ fabricated code quarantined so the core can be built on solid ground.
 - [ ] **Acceptance:** venv activates; `python -V` shows 3.13; venv path is under `/home`.
 
 ### 0.3 Repo inventory & branch
-- [ ] Confirm on branch `0.04`. Snapshot current state (`git status`, `git log -1`).
+- [ ] Confirm on branch `0.05`. Snapshot current state (`git status`, `git log -1`).
 - [ ] Produce a one-page module map: what's real vs fabricated (use the audit's P1-8 table).
 - [ ] **Acceptance:** a checked-in `docs/SALVAGE_MAP.md` listing keep / fix / delete per module.
 
@@ -283,7 +283,7 @@ or commodity (Pillar 6) first.**
 4. [ ] Phase 1.1 — DB session DI + no import-time side effects.
 5. [ ] Phase 1.5 — search rewrite with Boolean tests (the highest-value correctness fix).
 
-> After each numbered item: run tests, commit on `0.04` with a precise message, move on.
+> After each numbered item: run tests, commit on `0.05` with a precise message, move on.
 
 ---
 
