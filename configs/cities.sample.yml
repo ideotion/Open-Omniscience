@@ -1,0 +1,30 @@
+# Open Omniscience — small shipped city gazetteer (fallback for the Insights map).
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# Coordinates are public geographic facts (lat, lon in degrees). For full
+# worldwide coverage, generate configs/cities.yml from Wikidata (CC0):
+#   python scripts/build_city_gazetteer.py
+# When that file exists it is preferred over this sample.
+
+cities:
+  - {name: Paris,          country: fr, lat: 48.8566, lon: 2.3522,    population: 2100000}
+  - {name: London,         country: gb, lat: 51.5074, lon: -0.1278,   population: 8900000}
+  - {name: Berlin,         country: de, lat: 52.5200, lon: 13.4050,   population: 3700000}
+  - {name: Madrid,         country: es, lat: 40.4168, lon: -3.7038,   population: 3200000}
+  - {name: Rome,           country: it, lat: 41.9028, lon: 12.4964,   population: 2800000}
+  - {name: Moscow,         country: ru, lat: 55.7558, lon: 37.6173,   population: 12500000}
+  - {name: Istanbul,       country: tr, lat: 41.0082, lon: 28.9784,   population: 15500000}
+  - {name: Cairo,          country: eg, lat: 30.0444, lon: 31.2357,   population: 9500000}
+  - {name: Lagos,          country: ng, lat: 6.5244,  lon: 3.3792,    population: 9000000}
+  - {name: Nairobi,        country: ke, lat: -1.2921, lon: 36.8219,   population: 4400000}
+  - {name: Johannesburg,   country: za, lat: -26.2041, lon: 28.0473,  population: 5600000}
+  - {name: New York,       country: us, lat: 40.7128, lon: -74.0060,  population: 8400000}
+  - {name: Washington,     country: us, lat: 38.9072, lon: -77.0369,  population: 700000}
+  - {name: Toronto,        country: ca, lat: 43.6532, lon: -79.3832,  population: 2900000}
+  - {name: "Mexico City",  country: mx, lat: 19.4326, lon: -99.1332,  population: 9200000}
+  - {name: "São Paulo",    country: br, lat: -23.5505, lon: -46.6333, population: 12300000}
+  - {name: Delhi,          country: in, lat: 28.6139, lon: 77.2090,   population: 16800000}
+  - {name: Beijing,        country: cn, lat: 39.9042, lon: 116.4074,  population: 21500000}
+  - {name: Tokyo,          country: jp, lat: 35.6762, lon: 139.6503,  population: 13900000}
+  - {name: Jakarta,        country: id, lat: -6.2088, lon: 106.8456,  population: 10500000}
+  - {name: Sydney,         country: au, lat: -33.8688, lon: 151.2093, population: 5300000}

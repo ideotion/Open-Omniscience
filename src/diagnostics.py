@@ -57,6 +57,18 @@ def _check_python(r: _Report) -> None:
         r.line(OK, "Python", detail)
     else:
         r.line(WARN, "Python", f"{detail} -- this project targets 3.13+")
+    # The stdlib venv/ensurepip module is a separate apt package on Debian/Ubuntu;
+    # flag it so a broken base interpreter (can't create venvs / reinstall) is
+    # visible rather than only surfacing as a cryptic installer failure.
+    import importlib.util
+
+    if importlib.util.find_spec("ensurepip") is not None:
+        r.line(OK, "venv module", "ensurepip available")
+    else:
+        r.line(
+            WARN, "venv module",
+            "missing -- install python3-venv (Qubes: in the TemplateVM) to (re)create the virtualenv",
+        )
 
 
 def _check_data_dir(r: _Report) -> Path | None:

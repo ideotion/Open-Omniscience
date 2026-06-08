@@ -5,8 +5,8 @@
 
   Deliberately dependency-free: no CDN, no React, no web fonts. Everything is
   inline and local so it works offline inside a Qubes AppVM with the NetVM
-  detached. It only exposes capabilities that actually work: manage sources,
-  ethically ingest (RSS feed or single URL), Boolean full-text search, export.
+  detached. It only exposes capabilities that actually work; tabs that depend on
+  an optional extra say so rather than pretending.
 -->
 <html lang="en">
 <head>
@@ -14,62 +14,403 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Open Omniscience</title>
   <style>
+    /* ================================================================= *
+     *  Open Omniscience — design system "0.05"                           *
+     *  Dependency-free on purpose: system fonts, hand-drawn SVG, no CDN, *
+     *  no web fonts — runs fully offline with the NetVM detached.        *
+     * ================================================================= */
     :root {
-      --bg: #0f1115; --panel: #181b22; --panel2: #20242e; --fg: #e6e8ec;
-      --muted: #9aa3b2; --accent: #5b9dd9; --ok: #4caf7d; --warn: #d9a441;
-      --err: #d96c6c; --border: #2a2f3a;
+      /* Ink — the default dark theme */
+      --bg:#0c0e13; --bg2:#0f1218;
+      --panel:#14181f; --panel2:#1b212b; --panel3:#232b38;
+      --fg:#e8ebf0; --fg-soft:#c4cad6; --muted:#8c95a6;
+      --accent:#5b9dd9; --accent-fg:#ffffff;
+      --ok:#4caf7d; --warn:#d9a441; --err:#d96c6c;
+      --border:#262d3a; --border-soft:#1d2331;
+      --shadow:0 14px 38px -16px rgba(0,0,0,.62), 0 2px 6px -2px rgba(0,0,0,.4);
+      --radius:12px; --radius-sm:8px;
+      --sidebar-w:250px; --space:20px; --pad:16px;
+      --ff: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
     }
+    html[data-theme="slate"]{ --bg:#0e1116; --bg2:#11151c; --panel:#161b23; --panel2:#1e2531; --panel3:#28323f; --accent:#7aa2f7; --border:#28303d; }
+    html[data-theme="midnight"]{ --bg:#080a1a; --bg2:#0b0e22; --panel:#10142e; --panel2:#171c3c; --panel3:#1f2650; --fg:#e8eaff; --fg-soft:#c3c7ee; --muted:#8a90c0; --accent:#8b7dff; --border:#23284f; }
+    html[data-theme="terminal"]{ --bg:#04070a; --bg2:#06090c; --panel:#0a1013; --panel2:#0e1619; --panel3:#13211d; --fg:#c8f7d4; --fg-soft:#a3e9ba; --muted:#5f8c72; --accent:#36d97a; --accent-fg:#04140b; --border:#16291f; --ff:var(--mono); }
+    html[data-theme="sepia"]{ --bg:#1b150e; --bg2:#201911; --panel:#262019; --panel2:#2f2820; --panel3:#3a3127; --fg:#efe5d6; --fg-soft:#d8cab4; --muted:#a8967c; --accent:#d8a657; --accent-fg:#241a0c; --border:#3a3128; }
+    html[data-theme="contrast"]{ --bg:#000; --bg2:#000; --panel:#0a0a0a; --panel2:#161616; --panel3:#222; --fg:#fff; --fg-soft:#f2f2f2; --muted:#cfcfcf; --accent:#ffd400; --accent-fg:#000; --ok:#5cff9d; --warn:#ffd400; --err:#ff6b6b; --border:#4d4d4d; --border-soft:#333; }
+    html[data-theme="light"]{ --bg:#eef1f5; --bg2:#e6eaf0; --panel:#fff; --panel2:#f3f5f9; --panel3:#e7ecf3; --fg:#1b1f27; --fg-soft:#37404f; --muted:#5c6573; --accent:#2f6fb3; --ok:#2e8b57; --warn:#b07a17; --err:#c0392b; --border:#dce1e9; --border-soft:#e8ebf1;
+      --shadow:0 14px 38px -20px rgba(20,30,50,.28), 0 2px 6px -3px rgba(20,30,50,.14); }
+    html[data-theme="paper"]{ --bg:#f2eee4; --bg2:#ebe5d6; --panel:#fbf8f1; --panel2:#f1ebdc; --panel3:#e6ddc8; --fg:#2b271f; --fg-soft:#4a4436; --muted:#7a715c; --accent:#9a6a2f; --ok:#5b7d4b; --err:#b04a3a; --border:#ded2bc; --border-soft:#e7ddca;
+      --shadow:0 14px 38px -20px rgba(80,60,30,.22), 0 2px 6px -3px rgba(80,60,30,.12); }
+    html[data-density="compact"]{ --space:13px; --pad:12px; --radius:9px; --sidebar-w:228px; }
+
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--fg);
-      font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    header { padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
-      display: flex; align-items: baseline; gap: 12px; }
-    header h1 { font-size: 18px; margin: 0; font-weight: 600; }
-    header .v { color: var(--muted); font-size: 12px; }
-    header .status { margin-left: auto; font-size: 12px; color: var(--muted); }
-    main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 20px; }
-    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
-    .panel h2 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase;
-      letter-spacing: .04em; color: var(--muted); }
-    label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
-    input, select, textarea {
-      width: 100%; background: var(--panel2); border: 1px solid var(--border);
-      color: var(--fg); border-radius: 6px; padding: 8px 10px; font: inherit; }
-    .row { display: flex; gap: 10px; flex-wrap: wrap; }
-    .row > div { flex: 1; min-width: 140px; }
-    button {
-      background: var(--accent); color: #fff; border: 0; border-radius: 6px;
-      padding: 9px 14px; font: inherit; cursor: pointer; margin-top: 10px; }
-    button.secondary { background: var(--panel2); border: 1px solid var(--border); color: var(--fg); }
-    button:active { transform: translateY(1px); }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    th { color: var(--muted); font-weight: 600; }
-    .muted { color: var(--muted); }
-    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
-      background: var(--panel2); border: 1px solid var(--border); }
-    .pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.err { color: var(--err); }
-    #toast { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 50; }
-    .note { padding: 10px 14px; border-radius: 8px; background: var(--panel2);
-      border: 1px solid var(--border); max-width: 360px; font-size: 14px; }
-    .note.ok { border-color: var(--ok); } .note.err { border-color: var(--err); }
-    a { color: var(--accent); }
-    .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
-    code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
+    html { font-size: 100%; }
+    body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--ff);
+      font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+    a { color:var(--accent); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    code { font-family:var(--mono); background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:.92em; }
+    hr { border:none; border-top:1px solid var(--border); margin:16px 0; }
+    ::selection { background:color-mix(in srgb, var(--accent) 35%, transparent); }
+    :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+    ::-webkit-scrollbar { width:11px; height:11px; }
+    ::-webkit-scrollbar-thumb { background:var(--panel3); border-radius:99px; border:3px solid transparent; background-clip:content-box; }
+    ::-webkit-scrollbar-thumb:hover { background:var(--muted); background-clip:content-box; }
+
+    /* ---- App shell: sidebar + main column --------------------------- */
+    .app { display:flex; align-items:stretch; min-height:100vh; }
+    .sidebar { width:var(--sidebar-w); flex:0 0 var(--sidebar-w); background:var(--bg2);
+      border-right:1px solid var(--border); position:sticky; top:0; height:100vh;
+      display:flex; flex-direction:column; overflow-y:auto; transition:width .18s ease; z-index:60; }
+    .brand { display:flex; align-items:center; gap:11px; padding:16px 16px 14px; }
+    .brand .mark { width:30px; height:30px; flex:0 0 30px; }
+    .brand .txt { line-height:1.1; overflow:hidden; white-space:nowrap; }
+    .brand .txt b { font-size:15px; font-weight:700; letter-spacing:.01em; display:block; }
+    .brand .txt span { font-size:11px; color:var(--muted); }
+    .nav-groups { flex:1; padding:4px 10px 12px; }
+    .nav-group { margin-top:14px; }
+    .nav-group > .gl { font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
+      color:var(--muted); padding:0 10px 6px; white-space:nowrap; }
+    .nav-item { display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+      background:transparent; color:var(--fg-soft); border:0; border-radius:9px; margin:1px 0;
+      padding:9px 10px; font:inherit; cursor:pointer; position:relative; white-space:nowrap; }
+    .nav-item svg { width:18px; height:18px; flex:0 0 18px; opacity:.85; }
+    .nav-item:hover { background:var(--panel); color:var(--fg); }
+    .nav-item.active { background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--fg); }
+    .nav-item.active::before { content:""; position:absolute; left:-10px; top:9px; bottom:9px;
+      width:3px; border-radius:0 3px 3px 0; background:var(--accent); }
+    .nav-item .badge { margin-left:auto; font-size:10px; color:var(--muted); border:1px solid var(--border);
+      border-radius:99px; padding:0 6px; }
+    .nav-item.adv .badge { color:var(--warn); border-color:color-mix(in srgb,var(--warn) 50%,var(--border)); }
+    .sb-foot { padding:10px; border-top:1px solid var(--border); display:flex; gap:6px; }
+    .sb-foot button { flex:1; margin:0; }
+    /* Collapsed sidebar → icon rail */
+    html[data-sidebar="collapsed"] .sidebar { --sidebar-w:66px; }
+    html[data-sidebar="collapsed"] .brand .txt,
+    html[data-sidebar="collapsed"] .nav-group > .gl,
+    html[data-sidebar="collapsed"] .nav-item span,
+    html[data-sidebar="collapsed"] .nav-item .badge,
+    html[data-sidebar="collapsed"] .sb-foot .lbl { display:none; }
+    html[data-sidebar="collapsed"] .nav-item { justify-content:center; padding:10px 0; }
+
+    .main-col { flex:1; min-width:0; display:flex; flex-direction:column; }
+    .topbar { position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:12px;
+      padding:11px 18px; background:color-mix(in srgb, var(--bg) 82%, transparent);
+      backdrop-filter:blur(8px); border-bottom:1px solid var(--border); }
+    .icon-btn { background:transparent; border:1px solid transparent; color:var(--muted);
+      border-radius:9px; padding:7px; margin:0; cursor:pointer; display:inline-flex; }
+    .icon-btn:hover { color:var(--fg); background:var(--panel); border-color:var(--border); }
+    .icon-btn svg { width:18px; height:18px; display:block; }
+    #hamburger { display:none; }
+    .omni { flex:1; max-width:560px; display:flex; align-items:center; gap:9px; cursor:text;
+      background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:8px 12px;
+      color:var(--muted); font-size:13.5px; }
+    .omni:hover { border-color:var(--accent); }
+    .omni svg { width:16px; height:16px; flex:0 0 16px; }
+    .omni .kbd { margin-left:auto; }
+    .kbd { font-family:var(--mono); font-size:11px; color:var(--muted); border:1px solid var(--border);
+      border-bottom-width:2px; border-radius:5px; padding:1px 6px; background:var(--panel2); }
+    .topbar .spacer { flex:1; }
+    .status-cluster { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); }
+
+    main { flex:1; padding:var(--space); }
+    main > * { max-width:1100px; margin-left:auto; margin-right:auto; width:100%; }
+    .tab-page { display:none; }
+    .tab-page.active { display:grid; gap:var(--space); }
+
+    /* ---- Cards / panels --------------------------------------------- */
+    .panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+      padding:var(--pad); box-shadow:var(--shadow); }
+    .panel > h2:first-child, .panel > .phead:first-child { margin-top:0; }
+    .panel h2 { margin:0 0 12px; font-size:12.5px; text-transform:uppercase; letter-spacing:.06em;
+      color:var(--muted); font-weight:700; }
+    .phead { display:flex; align-items:center; gap:10px; margin:0 0 12px; }
+    .phead h2 { margin:0; }
+    .phead .sp { flex:1; }
+    label { display:block; font-size:12px; color:var(--muted); margin:9px 0 3px; }
+    input, select, textarea { width:100%; background:var(--panel2); border:1px solid var(--border);
+      color:var(--fg); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; transition:border-color .12s; }
+    input:focus, select:focus, textarea:focus { border-color:var(--accent); outline:none; }
+    input::placeholder, textarea::placeholder { color:var(--muted); opacity:.7; }
+    .row { display:flex; gap:11px; flex-wrap:wrap; }
+    .row > div { flex:1; min-width:140px; }
+    button { background:var(--accent); color:var(--accent-fg); border:0; border-radius:var(--radius-sm);
+      padding:9px 15px; font:inherit; font-weight:600; cursor:pointer; margin-top:10px;
+      transition:filter .12s, transform .04s; }
+    button:hover { filter:brightness(1.08); }
+    button:active { transform:translateY(1px); }
+    button[disabled] { opacity:.5; cursor:not-allowed; }
+    button.secondary { background:var(--panel2); border:1px solid var(--border); color:var(--fg); font-weight:500; }
+    button.secondary:hover { background:var(--panel3); }
+    button.danger { background:transparent; border:1px solid var(--err); color:var(--err); font-weight:500; }
+    button.danger:hover { background:color-mix(in srgb, var(--err) 14%, transparent); filter:none; }
+    button.tiny { padding:3px 9px; margin-top:0; font-size:12px; font-weight:500; }
+    button.ghost { background:transparent; color:var(--fg-soft); }
+
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--border-soft); vertical-align:top; }
+    th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+    tbody tr:hover { background:color-mix(in srgb, var(--panel2) 60%, transparent); }
+
+    .muted { color:var(--muted); }
+    .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+    .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px;
+      background:var(--panel2); border:1px solid var(--border); }
+    .pill.ok{ color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--border)); }
+    .pill.warn{ color:var(--warn); border-color:color-mix(in srgb,var(--warn) 40%,var(--border)); }
+    .pill.err{ color:var(--err); border-color:color-mix(in srgb,var(--err) 40%,var(--border)); }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:99px; background:var(--muted); }
+    .dot.ok{ background:var(--ok); box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent); }
+    .dot.err{ background:var(--err); box-shadow:0 0 0 3px color-mix(in srgb,var(--err) 22%,transparent); }
+    .dot.warn{ background:var(--warn); }
+
+    .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
+    .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
+    .stat .n { font-size:24px; font-weight:700; letter-spacing:-.01em; }
+    .stat .k { font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
+
+    /* inline sub-tabs (e.g. Insights Explore/Trends/Map) */
+    nav.tabs { display:flex; flex-wrap:wrap; gap:4px; }
+    nav.tabs button { background:transparent; color:var(--muted); border:1px solid transparent;
+      border-radius:8px; margin:0; padding:7px 13px; font:inherit; cursor:pointer; font-weight:500; }
+    nav.tabs button:hover { color:var(--fg); background:var(--panel2); }
+    nav.tabs button.active { color:var(--fg); background:var(--panel2); border-color:var(--border); }
+
+    #toast { position:fixed; right:18px; bottom:18px; display:grid; gap:8px; z-index:200; }
+    .note { padding:11px 15px; border-radius:var(--radius-sm); background:var(--panel);
+      border:1px solid var(--border); box-shadow:var(--shadow); max-width:360px; font-size:14px;
+      animation:slidein .22s ease; }
+    .note.ok { border-left:3px solid var(--ok); } .note.err { border-left:3px solid var(--err); }
+    @keyframes slidein { from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+
+    /* ---- Hero / dashboard ------------------------------------------- */
+    .hero { background:
+        radial-gradient(120% 140% at 100% 0%, color-mix(in srgb,var(--accent) 22%, transparent), transparent 60%),
+        var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+      padding:26px; box-shadow:var(--shadow); }
+    .hero h1 { margin:0 0 6px; font-size:24px; font-weight:700; letter-spacing:-.01em; }
+    .hero p { margin:0; color:var(--fg-soft); max-width:62ch; }
+    .quick { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
+    .qcard { display:flex; gap:13px; align-items:flex-start; text-align:left; background:var(--panel);
+      border:1px solid var(--border); border-radius:var(--radius); padding:16px; cursor:pointer;
+      margin:0; color:var(--fg); box-shadow:var(--shadow); transition:transform .1s, border-color .12s; }
+    .qcard:hover { transform:translateY(-2px); border-color:var(--accent); filter:none; }
+    .qcard .qi { width:34px; height:34px; flex:0 0 34px; border-radius:10px; display:grid; place-items:center;
+      background:color-mix(in srgb,var(--accent) 18%, transparent); color:var(--accent); }
+    .qcard .qi svg { width:19px; height:19px; }
+    .qcard b { display:block; font-size:14.5px; }
+    .qcard small { color:var(--muted); font-weight:400; }
+
+    /* ---- Command palette -------------------------------------------- */
+    .overlay { position:fixed; inset:0; background:rgba(2,4,8,.55); backdrop-filter:blur(3px);
+      z-index:150; display:none; }
+    .overlay.open { display:block; }
+    .palette { position:fixed; left:50%; top:14vh; transform:translateX(-50%); width:min(640px,92vw);
+      background:var(--panel); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow);
+      z-index:151; display:none; overflow:hidden; }
+    .palette.open { display:block; animation:slidein .14s ease; }
+    .palette input { border:0; border-bottom:1px solid var(--border); border-radius:0; padding:15px 16px;
+      font-size:16px; background:transparent; }
+    .palette input:focus { border-color:var(--border); }
+    .pal-list { max-height:52vh; overflow-y:auto; padding:6px; }
+    .pal-item { display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:9px; cursor:pointer; }
+    .pal-item svg { width:17px; height:17px; flex:0 0 17px; color:var(--muted); }
+    .pal-item .pal-sub { margin-left:auto; font-size:11px; color:var(--muted); }
+    .pal-item.sel, .pal-item:hover { background:color-mix(in srgb,var(--accent) 16%, transparent); }
+    .pal-group { font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:10px 12px 4px; }
+
+    /* ---- Customize drawer ------------------------------------------- */
+    .drawer { position:fixed; top:0; right:0; height:100vh; width:min(360px,94vw); background:var(--panel);
+      border-left:1px solid var(--border); box-shadow:var(--shadow); z-index:151; transform:translateX(100%);
+      transition:transform .2s ease; overflow-y:auto; padding:18px; }
+    .drawer.open { transform:none; }
+    .drawer h3 { margin:0; font-size:16px; }
+    .drawer .seg { margin-top:18px; }
+    .drawer .seg > .sl { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px; }
+    .swatches { display:flex; flex-wrap:wrap; gap:8px; }
+    .sw { width:30px; height:30px; border-radius:8px; border:2px solid var(--border); cursor:pointer; margin:0; padding:0; }
+    .sw.sel { border-color:var(--fg); box-shadow:0 0 0 2px var(--accent); }
+    .theme-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+    .theme-card { border:1px solid var(--border); border-radius:9px; padding:9px 11px; cursor:pointer; margin:0;
+      background:var(--panel2); color:var(--fg); text-align:left; font-size:13px; display:flex; align-items:center; gap:8px; }
+    .theme-card.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+    .theme-card .tdot { width:14px; height:14px; border-radius:99px; border:1px solid rgba(255,255,255,.15); }
+    .seg-toggle { display:flex; gap:6px; }
+    .seg-toggle button { flex:1; margin:0; }
+    .seg-toggle button:not(.sel) { background:var(--panel2); color:var(--fg-soft); border:1px solid var(--border); font-weight:500; }
+    .modlist label { display:flex; align-items:center; gap:9px; color:var(--fg-soft); font-size:13.5px;
+      text-transform:none; letter-spacing:0; margin:7px 0; cursor:pointer; }
+    .modlist input { width:auto; }
+
+    /* ---- Docs / Help reader ----------------------------------------- */
+    .doc-layout { display:grid; grid-template-columns:230px 1fr; gap:var(--space); align-items:start; }
+    .doc-nav .doc-link { display:block; width:100%; text-align:left; background:transparent; border:0;
+      color:var(--fg-soft); border-radius:8px; padding:8px 11px; margin:1px 0; cursor:pointer; font:inherit; }
+    .doc-nav .doc-link:hover { background:var(--panel2); color:var(--fg); }
+    .doc-nav .doc-link.active { background:color-mix(in srgb,var(--accent) 16%, transparent); color:var(--fg); }
+    .doc-nav .doc-link small { display:block; color:var(--muted); font-size:11px; }
+    .prose { font-size:15px; line-height:1.7; color:var(--fg-soft); max-width:78ch; }
+    .prose h1,.prose h2,.prose h3,.prose h4 { color:var(--fg); line-height:1.3; margin:1.5em 0 .5em; }
+    .prose h1 { font-size:1.7em; } .prose h2 { font-size:1.35em; border-bottom:1px solid var(--border); padding-bottom:.3em; }
+    .prose h3 { font-size:1.12em; } .prose h1:first-child,.prose h2:first-child { margin-top:0; }
+    .prose p,.prose ul,.prose ol,.prose blockquote,.prose table,.prose pre { margin:.7em 0; }
+    .prose ul,.prose ol { padding-left:1.4em; } .prose li { margin:.25em 0; }
+    .prose code { font-size:.88em; } .prose a { color:var(--accent); }
+    .prose pre { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:13px; overflow-x:auto; }
+    .prose pre code { background:transparent; padding:0; }
+    .prose blockquote { border-left:3px solid var(--accent); padding:.2em 0 .2em 1em; color:var(--muted); }
+    .prose table { border-collapse:collapse; font-size:14px; display:block; overflow-x:auto; }
+    .prose th,.prose td { border:1px solid var(--border); padding:7px 10px; text-transform:none; letter-spacing:0; }
+    .prose hr { margin:1.6em 0; }
+
+    /* ---- Responsive ------------------------------------------------- */
+    @media (max-width:860px) {
+      .sidebar { position:fixed; left:0; top:0; transform:translateX(-100%); transition:transform .2s ease; }
+      body.nav-open .sidebar { transform:none; }
+      body.nav-open .scrim { display:block; }
+      .scrim { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:55; }
+      #hamburger { display:inline-flex; }
+      .doc-layout { grid-template-columns:1fr; }
+      .omni .kbd { display:none; }
+    }
+    @media (max-width:560px) { .omni span.ph { display:none; } }
+    @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Open&nbsp;Omniscience</h1>
-    <span class="v" id="version">v—</span>
-    <span class="status" id="health">checking…
-      <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
-      <a href="/docs" target="_blank" rel="noopener" style="margin-left:10px">API docs</a>
-    </span>
-  </header>
+  <div class="scrim" onclick="document.body.classList.remove('nav-open')"></div>
+  <div class="app">
+    <!-- ============================ SIDEBAR =========================== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="16" cy="16" r="13" style="stroke:var(--accent)" stroke-width="2"/>
+          <circle cx="16" cy="16" r="5.5" style="fill:var(--accent)"/>
+          <circle cx="16" cy="16" r="2" style="fill:var(--bg2)"/>
+          <path d="M16 1.5v6M16 24.5v6M1.5 16h6M24.5 16h6" style="stroke:var(--accent)" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+        </svg>
+        <div class="txt"><b>Open Omniscience</b><span id="version">v—</span></div>
+      </div>
 
-  <main>
-    <!-- Search -->
+      <nav class="nav-groups" id="navGroups">
+        <div class="nav-group" data-grp="investigate">
+          <div class="gl">Investigate</div>
+          <button class="nav-item" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg><span>Home</span></button>
+          <button class="nav-item" data-tab="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search</span></button>
+          <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
+          <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
+          <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Markets</span><span class="badge">adv</span></button>
+        </div>
+        <div class="nav-group" data-grp="collect">
+          <div class="gl">Collect</div>
+          <button class="nav-item" data-tab="ingest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg><span>Collect</span></button>
+          <button class="nav-item" data-tab="sources"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5a14 14 0 0 1 14 14"/><path d="M5 12a7 7 0 0 1 7 7"/><circle cx="6" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg><span>Sources</span></button>
+          <button class="nav-item" data-tab="database"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg><span>Library</span></button>
+        </div>
+        <div class="nav-group" data-grp="trust">
+          <div class="gl">Trust</div>
+          <button class="nav-item" data-tab="custody"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Evidence &amp; custody</span></button>
+        </div>
+        <div class="nav-group" data-grp="system">
+          <div class="gl">System</div>
+          <button class="nav-item" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.2A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 14H2.5a2 2 0 0 1 0-4h.2A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 2.6V2.5a2 2 0 0 1 4 0v.2A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H23a2 2 0 0 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg><span>Settings</span></button>
+          <button class="nav-item" data-tab="help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg><span>Help &amp; docs</span></button>
+        </div>
+      </nav>
+
+      <div class="sb-foot">
+        <button class="secondary" onclick="openDrawer()" title="Themes, accent, density, layout"
+                style="display:flex;align-items:center;justify-content:center;gap:8px">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="20" cy="14" r="2"/></svg>
+          <span class="lbl">Customize</span></button>
+        <button class="icon-btn" onclick="toggleSidebar()" title="Collapse sidebar" style="flex:0 0 auto">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+      </div>
+    </aside>
+
+    <div class="main-col">
+      <!-- ============================ TOP BAR ========================== -->
+      <header class="topbar">
+        <button class="icon-btn" id="hamburger" onclick="document.body.classList.toggle('nav-open')" title="Menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <div class="omni" onclick="openPalette()" title="Command palette">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <span class="ph">Search the app, jump anywhere, run an action…</span>
+          <span class="kbd">Ctrl K</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="status-cluster" id="statusCluster">
+          <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
+          <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
+        </div>
+        <button class="icon-btn" onclick="openDrawer()" title="Customize appearance">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="20" cy="14" r="2"/></svg></button>
+        <button class="icon-btn" onclick="showTab('help')" title="Help &amp; documentation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></button>
+        <a class="icon-btn" href="/docs" target="_blank" rel="noopener" title="Raw API reference (Swagger)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></a>
+      </header>
+
+      <main>
+    <div id="onboard" class="panel" style="display:none;border-color:var(--accent)">
+      <h2 style="color:var(--fg)">Welcome — your corpus is empty</h2>
+      <p class="muted" style="margin-top:0">Get started by registering the curated source catalog and running a
+        first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.</p>
+      <div class="row">
+        <button onclick="firstRun(this)">Seed sources &amp; run a first ingestion</button>
+        <button class="secondary" onclick="$('onboard').style.display='none'">Dismiss</button>
+      </div>
+      <div id="onboard-status" class="hint" style="margin-top:6px"></div>
+    </div>
+
+    <!-- ============================= HOME ============================= -->
+    <div class="tab-page active" id="tab-home">
+      <div class="hero">
+        <h1 id="hero-greet">Understand the world as it really is.</h1>
+        <p>Your private, offline research desk — gather sources, find what matters, see how it
+          connects, and prove what you found. Nothing leaves this machine.</p>
+        <div class="row" style="margin-top:16px">
+          <button onclick="showTab('search')" style="margin-top:0">Search the corpus</button>
+          <button class="secondary" onclick="showTab('ingest')" style="margin-top:0">Collect new material</button>
+          <button class="secondary" onclick="showTab('help')" style="margin-top:0">Read the manual</button>
+        </div>
+      </div>
+
+      <section class="panel">
+        <div class="phead"><h2>At a glance</h2><span class="sp"></span>
+          <button class="secondary tiny" onclick="loadHome()">Refresh</button></div>
+        <div id="home-stats" class="stat-grid"><div class="muted">Loading…</div></div>
+        <div id="home-status" class="hint" style="margin-top:12px"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Quick actions</h2>
+        <div class="quick">
+          <button class="qcard" onclick="showTab('search')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>
+            <span><b>Find something</b><small>Boolean search across everything you've gathered.</small></span></button>
+          <button class="qcard" onclick="showTab('ingest')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></span>
+            <span><b>Collect now</b><small>Pull fresh articles from your sources, ethically.</small></span></button>
+          <button class="qcard" onclick="showTab('insights')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg></span>
+            <span><b>See the patterns</b><small>Trends, who's mentioned with whom, where.</small></span></button>
+          <button class="qcard" onclick="showTab('custody')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
+            <span><b>Prove it</b><small>Tamper-evident, signed provenance for your evidence.</small></span></button>
+          <button class="qcard" onclick="showTab('wiki')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/></svg></span>
+            <span><b>Watch Wikipedia</b><small>Flag large or suspicious edits on pages you track.</small></span></button>
+          <button class="qcard" onclick="showTab('help')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></span>
+            <span><b>Learn the tool</b><small>The full manual, right here — no internet needed.</small></span></button>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============================ SEARCH ============================ -->
+    <div class="tab-page" id="tab-search">
     <section class="panel">
       <h2>Search the corpus</h2>
       <label for="q">Boolean query <span class="muted">(AND / OR / NOT, "phrases", parentheses)</span></label>
@@ -85,16 +426,68 @@
         <button class="secondary" onclick="exportResults('csv')">Export CSV</button>
         <button class="secondary" onclick="exportResults('json')">Export JSON</button>
         <button class="secondary" onclick="exportEvidence()" title="Signed, tamper-evident bundle">Export signed evidence</button>
-        <button class="secondary" onclick="compareFraming()" title="How different outlets cover this">Compare framing</button>
       </div>
-      <div id="framing" style="margin-top:10px"></div>
       <div id="search-meta" class="hint"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="results"></table></div>
     </section>
+    </div>
 
-    <!-- Ingest -->
+    <!-- ============================ INGEST ============================ -->
+    <div class="tab-page" id="tab-ingest">
     <section class="panel">
-      <h2>Ingest</h2>
+      <h2>Automatic ingestion (scheduler)</h2>
+      <div id="sched-status" class="hint">Loading scheduler status…</div>
+      <div class="row" style="margin-top:8px">
+        <button onclick="schedulerStart()">Start</button>
+        <button class="secondary" onclick="schedulerStop()">Stop</button>
+        <button class="secondary" onclick="schedulerRunNow()" title="Run one pass immediately">Scrape now</button>
+      </div>
+
+      <hr>
+
+      <div class="row">
+        <div><label for="sch-interval">Interval (minutes)</label>
+          <input id="sch-interval" type="number" min="1" max="10080" step="1"></div>
+        <div><label for="sch-mode">Mode</label>
+          <select id="sch-mode" onchange="toggleCrawlFields()">
+            <option value="rss">RSS feeds</option>
+            <option value="crawl">Recursive crawl</option>
+            <option value="markets">Markets (price rules)</option>
+            <option value="wiki">Wikipedia (watched pages)</option>
+          </select></div>
+        <div><label for="sch-maxsrc">Max sources / run</label>
+          <input id="sch-maxsrc" type="number" min="1" max="1000" step="1"></div>
+      </div>
+      <div class="row" id="crawl-fields" style="display:none">
+        <div><label for="sch-depth">Crawl depth</label>
+          <input id="sch-depth" type="number" min="0" max="6" step="1"></div>
+        <div><label for="sch-pages">Max pages / source</label>
+          <input id="sch-pages" type="number" min="1" max="500" step="1"></div>
+      </div>
+
+      <h2 style="font-size:13px;margin:14px 0 4px">Which sources (rss / crawl modes)</h2>
+      <div class="row">
+        <div><label for="sch-langs">Languages</label><input id="sch-langs" placeholder="en, fr (blank = all)"></div>
+        <div><label for="sch-types">Source types</label><input id="sch-types" placeholder="news, financial …"></div>
+        <div style="flex:2"><label for="sch-tags">Tags / keywords (match any)</label><input id="sch-tags" placeholder="politics, markets, climate"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="previewTargets()">Preview targets</button></div>
+      </div>
+      <div id="sched-targets" class="hint" style="margin-top:6px"></div>
+
+      <div class="row" style="margin-top:8px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="sch-autostart" style="width:auto"> Start automatically on launch
+        </label>
+      </div>
+      <button onclick="saveScheduler()">Save schedule</button>
+      <div class="hint">Recursive crawl stays inside each source's own domain, honours robots.txt
+        (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers
+        articles, it does not mirror sites.</div>
+      <div id="sched-last" class="hint" style="margin-top:8px"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Manual ingest</h2>
       <div class="row">
         <div>
           <label for="ing-source">Ingest a source's RSS feed</label>
@@ -112,10 +505,12 @@
       <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
       <div id="ingest-result" class="hint"></div>
     </section>
+    </div>
 
-    <!-- Sources -->
+    <!-- ===================== SOURCE MANAGEMENT ====================== -->
+    <div class="tab-page" id="tab-sources">
     <section class="panel">
-      <h2>Sources</h2>
+      <h2>Add a source</h2>
       <div class="row">
         <div><label for="s-name">Name</label><input id="s-name" placeholder="Example News"></div>
         <div><label for="s-domain">Domain</label><input id="s-domain" placeholder="example.com"></div>
@@ -124,10 +519,84 @@
       </div>
       <button onclick="addSource()">Add source</button>
       <button class="secondary" onclick="seedDefaults()" title="Register a curated starter set of public-interest RSS sources">Seed starter sources</button>
-      <div style="overflow:auto; margin-top:12px;"><table id="sources"></table></div>
     </section>
 
-    <!-- Chain of custody -->
+    <section class="panel">
+      <h2>Manage sources</h2>
+      <div class="row">
+        <div style="flex:2"><label for="src-search">Search</label>
+          <input id="src-search" placeholder="name or domain" onkeydown="if(event.key==='Enter')applySrcFilters()"></div>
+        <div><label for="src-country">Country</label><input id="src-country" placeholder="fr"></div>
+        <div><label for="src-language">Language</label><input id="src-language" placeholder="en"></div>
+        <div><label for="src-type">Type</label><input id="src-type" placeholder="news"></div>
+        <div><label for="src-tag">Tag</label><input id="src-tag" placeholder="politics"></div>
+        <div><label for="src-enabled">Enabled</label><select id="src-enabled">
+          <option value="">any</option><option value="true">enabled</option><option value="false">disabled</option></select></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="applySrcFilters()">Filter</button>
+          <button class="secondary" onclick="clearSrcFilters()">Clear</button></div>
+      </div>
+      <div id="src-meta" class="hint"></div>
+      <div style="overflow:auto; margin-top:10px;"><table id="src-table"></table></div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary tiny" onclick="srcPage(-1)">‹ Prev</button>
+        <button class="secondary tiny" onclick="srcPage(1)">Next ›</button>
+        <span id="src-page" class="hint" style="align-self:center"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Import / export source list (CSV)</h2>
+      <div class="hint" style="margin-bottom:8px">
+        Columns: <code>name</code>, <code>domain</code> (required) · <code>rss_url</code>,
+        <code>source_type</code>, <code>country</code> (2-letter), <code>language</code>,
+        <code>region</code>, <code>tags</code> (comma-separated, quote the cell),
+        <code>priority</code> (1–3), <code>rate_limit_ms</code>, <code>enabled</code>,
+        <code>reliability_score</code> (1–10). Import upserts by domain (new ones created,
+        existing updated); bad rows are reported, not dropped.
+      </div>
+      <div class="row">
+        <button class="secondary" onclick="window.open('/api/catalog/export.csv','_blank')">Export all (CSV)</button>
+        <button class="secondary" onclick="window.open('/api/catalog/template.csv','_blank')">Download template</button>
+      </div>
+      <hr>
+      <label for="imp-file">Import sources from a CSV file</label>
+      <input type="file" id="imp-file" accept=".csv,text/csv">
+      <button onclick="importSources()">Import CSV</button>
+      <div id="imp-result" class="hint"></div>
+    </section>
+    </div>
+
+    <!-- =========================== DATABASE ========================== -->
+    <div class="tab-page" id="tab-database">
+    <section class="panel">
+      <h2>Database</h2>
+      <div class="hint" style="margin-bottom:10px">Live counts from the unified store. Every figure is a real
+        <code>COUNT(*)</code> or on-disk byte size — nothing is estimated.</div>
+      <div id="db-stats" class="stat-grid"><div class="muted">Loading…</div></div>
+      <div id="db-file" class="hint" style="margin-top:10px"></div>
+      <button class="secondary" onclick="loadDbStats()">Refresh</button>
+    </section>
+
+    <section class="panel">
+      <h2>World coverage</h2>
+      <div class="hint" style="margin-bottom:10px">How many countries the source catalog reaches
+        (by each source's country code, scored against ISO&nbsp;3166). Measured from the data.
+        <strong>Click a country code or a topic keyword</strong> to see the matching sources.</div>
+      <div id="coverage-summary" class="stat-grid"><div class="muted">Loading…</div></div>
+      <div class="row" style="margin-top:10px">
+        <div style="flex:3"><input id="cov-filter" placeholder="filter countries by code or topic…"
+              oninput="renderCoverageTable()"></div>
+        <div style="flex:0 0 auto;align-self:end">
+          <button class="secondary" onclick="loadCoverage()">Refresh</button>
+        </div>
+      </div>
+      <div style="overflow:auto; margin-top:10px; max-height:420px"><table id="coverage-table"></table></div>
+      <div id="coverage-gaps" class="hint" style="margin-top:10px"></div>
+    </section>
+    </div>
+
+    <!-- ========================= CHAIN OF CUSTODY ==================== -->
+    <div class="tab-page" id="tab-custody">
     <section class="panel">
       <h2>Chain of custody</h2>
       <p class="muted" style="margin-top:0">
@@ -160,7 +629,7 @@
       </div>
       <button onclick="saveCustody()">Save custody settings</button>
 
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0">
+      <hr>
 
       <div class="row">
         <div style="flex:2"><label for="cust-item">Item id</label>
@@ -179,7 +648,352 @@
       <div id="cust-result" class="hint" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:8px;"><table id="cust-entries"></table></div>
     </section>
-  </main>
+    </div>
+
+    <!-- ============================ MARKETS ========================== -->
+    <div class="tab-page" id="tab-markets">
+    <section class="panel">
+      <h2>Market trends</h2>
+      <p class="muted" style="margin-top:0">Real series from official feeds (FRED → World Bank / EIA):
+        FX (EUR/USD), energy (WTI, Brent, gas), metals &amp; gold. Every point comes straight from the
+        downloaded file — nothing scraped or guessed.</p>
+      <div class="row">
+        <div style="flex:0 0 auto"><button onclick="loadMarketData(this)">Load / refresh market data</button></div>
+        <div><label for="mkt-scale">Time scale</label>
+          <select id="mkt-scale" onchange="renderDashboard()">
+            <option value="30">1 month</option><option value="182">6 months</option>
+            <option value="365" selected>1 year</option><option value="1825">5 years</option>
+            <option value="0">All</option></select></div>
+        <div id="mkt-dash-status" class="hint" style="align-self:center"></div>
+      </div>
+      <div id="mkt-dashboard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:12px"></div>
+      <div id="mkt-chart" style="margin-top:12px"></div>
+    </section>
+
+    <section class="panel">
+      <h2 style="cursor:pointer;user-select:none" onclick="toggleMktConfig()">
+        <span id="mkt-config-caret">▸</span> Configure data sources (feeds &amp; extraction rules)</h2>
+      <div id="mkt-config" style="display:none">
+      <div class="hint" style="margin-bottom:8px">Most users won't need this. Curated feeds give trends out of
+        the box; extraction rules let you add a price from a specific page (a number is recorded only where
+        your CSS selector lands on one — never a guess).</div>
+
+      <h2 style="font-size:13px">Official price feeds</h2>
+      <div style="overflow:auto"><table id="feed-table"></table></div>
+      <div style="overflow:auto;margin-top:12px"><table id="mkt-rules"></table></div>
+
+      <hr>
+      <h2 style="font-size:13px">Add a price-extraction rule</h2>
+      <div class="row">
+        <div><label for="mkt-source">Source</label><select id="mkt-source"></select></div>
+        <div><label for="mkt-symbol">Symbol</label><input id="mkt-symbol" placeholder="Nd / AAPL / XAU"></div>
+        <div><label for="mkt-label">Label</label><input id="mkt-label" placeholder="Neodymium spot"></div>
+      </div>
+      <div class="row">
+        <div style="flex:3"><label for="mkt-url">Page URL</label><input id="mkt-url" placeholder="https://exchange.example/quote/nd"></div>
+      </div>
+      <div class="row">
+        <div style="flex:2"><label for="mkt-selector">CSS selector <span class="muted">(where the number is)</span></label>
+          <input id="mkt-selector" placeholder="#last-price  /  .quote .value"></div>
+        <div><label for="mkt-attr">Attribute <span class="muted">(optional)</span></label>
+          <input id="mkt-attr" placeholder="data-value"></div>
+      </div>
+      <div class="row">
+        <div style="flex:2"><label for="mkt-regex">Value regex <span class="muted">(optional capture group)</span></label>
+          <input id="mkt-regex" placeholder="at\\s+([\\d.,]+)\\s*USD"></div>
+        <div><label for="mkt-currency">Currency</label><input id="mkt-currency" value="USD"></div>
+        <div><label for="mkt-unit">Unit</label><input id="mkt-unit" value="kg"></div>
+        <div><label for="mkt-market">Market label</label><input id="mkt-market" placeholder="china_spot"></div>
+      </div>
+      <button onclick="addMarketRule()">Add rule</button>
+      <div class="hint">After adding, use <strong>Test</strong> in the table to fetch the page once and see the
+        exact value found — or the exact reason it didn't match — before relying on it.</div>
+
+      <hr>
+      <h2 style="font-size:13px">Custom feed (any CSV URL)</h2>
+      <div class="row">
+        <div style="flex:3"><label for="feed-url">CSV URL</label>
+          <input id="feed-url" placeholder="https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO"></div>
+        <div><label for="feed-symbol">Symbol</label><input id="feed-symbol" placeholder="WTI"></div>
+      </div>
+      <div class="row">
+        <div><label for="feed-unit">Unit</label><input id="feed-unit" value="t"></div>
+        <div><label for="feed-currency">Currency</label><input id="feed-currency" value="USD"></div>
+        <div><label for="feed-market">Market label</label><input id="feed-market" placeholder="world-bank"></div>
+        <div><label for="feed-datecol">Date column <span class="muted">(opt)</span></label><input id="feed-datecol" placeholder="auto (col 1)"></div>
+        <div><label for="feed-valcol">Value column <span class="muted">(opt)</span></label><input id="feed-valcol" placeholder="auto (col 2)"></div>
+      </div>
+      <button onclick="importCustomFeed()">Import custom feed</button>
+      <div class="hint">Default mapping is column&nbsp;1 = date, column&nbsp;2 = value (the FRED convention).
+        Works with any CSV; missing values (<code>.</code>/blank) are skipped, never stored as zero.</div>
+      <div id="feed-result" class="hint"></div>
+      </div>
+    </section>
+    </div>
+
+    <!-- ============================ INSIGHTS ========================= -->
+    <div class="tab-page" id="tab-insights">
+    <section class="panel">
+      <h2>Keyword &amp; entity insights</h2>
+      <p class="muted" style="margin-top:0">Analytics over keywords and entities extracted from
+        <em>ingested article text</em> (people, companies and places are single units). Trends,
+        associations (PMI) and context are real aggregates with sample sizes — nothing is invented.</p>
+      <div id="ins-status" class="hint">Loading…</div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="indexCorpus()">Index corpus</button>
+        <span id="ins-progress" class="hint" style="align-self:center"></span>
+      </div>
+      <nav class="tabs" style="position:static;padding:0;border:0;margin-top:10px">
+        <button class="active" data-ins="explore" onclick="showInsightCat('explore')">Explore</button>
+        <button data-ins="trends" onclick="showInsightCat('trends')">Trends</button>
+        <button data-ins="map" onclick="showInsightCat('map')">Map</button>
+      </nav>
+    </section>
+
+    <section class="panel ins-view" id="ins-explore">
+      <div class="row">
+        <div style="flex:3"><label for="ins-term">Keyword or entity</label>
+          <input id="ins-term" placeholder="e.g. inflation, Emmanuel Macron, Rio Tinto"
+                 onkeydown="if(event.key==='Enter')exploreTerm()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="exploreTerm()">Explore</button></div>
+      </div>
+      <div id="ins-trend" style="margin-top:12px"></div>
+      <h2 style="margin:14px 0 6px;font-size:13px">Associated keywords (mind-map)</h2>
+      <div id="ins-mindmap"></div>
+      <h2 style="margin:14px 0 6px;font-size:13px">How outlets frame this <span class="muted">(VADER tone)</span></h2>
+      <div id="ins-framing"></div>
+      <h2 style="margin:14px 0 6px;font-size:13px">In context</h2>
+      <div id="ins-context"></div>
+    </section>
+
+    <section class="panel ins-view" id="ins-trends" style="display:none">
+      <div class="row">
+        <div><label for="trd-window">Window (days)</label><input id="trd-window" type="number" value="7" min="1" max="365"></div>
+        <div><label for="trd-base">Baseline (days)</label><input id="trd-base" type="number" value="30" min="1" max="3650"></div>
+        <div><label for="trd-kind">Kind</label><select id="trd-kind">
+          <option value="">all</option><option value="term">terms</option><option value="entity">entities</option>
+          <option value="person">people</option><option value="org">orgs</option><option value="location">places</option></select></div>
+        <div><label for="trd-country">Country</label><input id="trd-country" placeholder="fr (optional)"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="loadTrends()">Refresh</button></div>
+      </div>
+      <div class="row" style="gap:20px;margin-top:8px">
+        <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Rising</h2><div id="trd-rising"></div></div>
+        <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Top</h2><div id="trd-top"></div></div>
+      </div>
+      <div id="trd-method" class="hint" style="margin-top:8px"></div>
+    </section>
+
+    <section class="panel ins-view" id="ins-map" style="display:none">
+      <div class="row">
+        <div><label for="map-days">Window (days)</label><input id="map-days" type="number" value="30" min="1" max="3650"></div>
+        <div><label for="map-kind">Kind</label><select id="map-kind">
+          <option value="">all</option><option value="term">terms</option><option value="entity">entities</option>
+          <option value="person">people</option><option value="org">orgs</option><option value="location">places</option></select></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="loadMap()">Refresh</button></div>
+      </div>
+      <div class="hint" style="margin-top:6px">Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).</div>
+      <h2 style="margin:12px 0 6px;font-size:13px">Map (cities)</h2>
+      <div class="row" style="margin-bottom:6px">
+        <button class="tiny secondary" onclick="zoomMap(0.7)">＋ zoom</button>
+        <button class="tiny secondary" onclick="zoomMap(1.4)">－ zoom</button>
+        <button class="tiny secondary" onclick="resetMap()">reset</button>
+        <span class="hint" style="align-self:center">drag to pan · hover a dot for details · zoom in to read city names</span>
+      </div>
+      <div id="map-svg"></div>
+      <h2 style="margin:12px 0 6px;font-size:13px">By country</h2>
+      <div style="overflow:auto"><table id="map-countries"></table></div>
+      <h2 style="margin:12px 0 6px;font-size:13px">By city</h2>
+      <div style="overflow:auto"><table id="map-cities"></table></div>
+    </section>
+    </div>
+
+    <!-- ============================ WIKIPEDIA ======================== -->
+    <div class="tab-page" id="tab-wiki">
+    <section class="panel">
+      <h2>Wikipedia change-tracking</h2>
+      <p class="muted" style="margin-top:0">Track watched pages per <strong>language edition</strong>
+        (editions are per-language, not per-country). We store one baseline snapshot per page, then only
+        <em>diffs/deltas</em> of new edits — so cosmetic changes cost almost nothing — and flag large /
+        suspicious edits (size delta, revert/blank tags, anonymous, bursts, optional ORES). Candidates
+        are surfaced for you to judge; nothing is labelled "disinformation".</p>
+      <div id="wiki-status" class="hint">Loading…</div>
+      <div class="row" style="margin-top:6px">
+        <button onclick="trackWikiNow()">Track now</button>
+        <label style="display:flex;align-items:center;gap:6px;align-self:center;cursor:pointer">
+          <input type="checkbox" id="wiki-ores" style="width:auto" checked> use ORES scores
+        </label>
+        <span id="wiki-progress" class="hint" style="align-self:center"></span>
+      </div>
+      <div class="hint" style="margin-top:6px">Optional, heavy <strong>offline full-text baselines</strong>
+        (per-language dumps) live in <a href="#settings" onclick="showTab('settings')">Settings → Wikipedia</a>,
+        where you can pick an edition from the list and download it. Not needed for change-tracking above.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Watch a page</h2>
+      <div class="row">
+        <div><label for="wiki-lang">Edition</label><input id="wiki-lang" value="en" placeholder="en / fr / ar …"></div>
+        <div style="flex:3"><label for="wiki-title">Article title</label><input id="wiki-title" placeholder="e.g. Climate change"></div>
+        <div><label for="wiki-cat">Watchlist</label><input id="wiki-cat" placeholder="optional"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="addWikiPage()">Add</button></div>
+      </div>
+      <div style="overflow:auto;margin-top:10px"><table id="wiki-pages"></table></div>
+    </section>
+
+    <section class="panel">
+      <h2>Flagged changes</h2>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;align-self:end;cursor:pointer">
+          <input type="checkbox" id="wiki-flagged-only" style="width:auto" checked onchange="loadWikiChanges()"> flagged only
+        </label>
+        <div><label for="wiki-filter-lang">Edition filter</label><input id="wiki-filter-lang" placeholder="(any)" oninput="loadWikiChanges()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadWikiChanges()">Refresh</button></div>
+      </div>
+      <div style="overflow:auto;margin-top:10px"><table id="wiki-changes"></table></div>
+      <div id="wiki-diff" style="margin-top:10px"></div>
+    </section>
+
+    </div>
+
+    <!-- ============================ SETTINGS ========================= -->
+    <div class="tab-page" id="tab-settings">
+    <section class="panel">
+      <h2>Preferences</h2>
+      <div class="row">
+        <div>
+          <label for="set-theme">Theme</label>
+          <select id="set-theme">
+            <option value="system">System</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </div>
+        <div>
+          <label for="set-limit">Default search results</label>
+          <input id="set-limit" type="number" min="1" max="1000" step="1">
+        </div>
+      </div>
+      <button onclick="saveSettings()">Save preferences</button>
+      <div class="hint">Stored locally in <code>app_settings.json</code> under the data directory — no telemetry, nothing leaves the machine.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Keyword filtering</h2>
+      <p class="muted" style="margin-top:0">"Dumb" keywords (function words like <em>the, you, not, one</em>) are removed
+        automatically by a built-in multilingual stoplist. Fine-tune below: exclude extra terms (one per line or
+        comma-separated), set the minimum length, and toggle options. Excluding hides a keyword everywhere
+        (reversibly — stored mentions are kept). You can also click the ✕ next to any keyword in Insights.</p>
+      <div class="row">
+        <div><label for="kf-minlen">Minimum keyword length</label>
+          <input id="kf-minlen" type="number" min="1" max="20" step="1"></div>
+        <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="kf-numeric" style="width:auto"> Drop purely numeric terms</label></div>
+        <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="kf-builtin" style="width:auto"> Use built-in multilingual stoplist</label></div>
+      </div>
+      <label for="kf-excluded">Excluded keywords</label>
+      <textarea id="kf-excluded" rows="5" placeholder="one term per line (or comma-separated)"></textarea>
+      <button onclick="saveKeywordFilter()">Save keyword filter</button>
+      <div id="kf-result" class="hint"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Wikipedia offline baselines</h2>
+      <p class="muted" style="margin-top:0">Optional, heavy, and separate from live change-tracking. Pick a
+        language edition below and download the official Wikimedia <em>current-text</em> dump (resumable, with
+        pause/resume). Editions are grouped by continent (largest-first within each); the real download size is read from the server when you
+        click <em>Estimate size</em> — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller.
+        Baselines are only for offline reading/search — change-tracking (Wikipedia tab) does not need them.</p>
+      <div class="row">
+        <div style="flex:2">
+          <label for="dump-lang">Language edition</label>
+          <input id="dump-lang-filter" placeholder="Type to filter (name, autonym or code)…"
+                 oninput="renderWikiLanguages()" style="margin-bottom:6px">
+          <select id="dump-lang" size="8"><option value="en">Loading editions…</option></select>
+        </div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="probeDump()">Estimate size</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
+        <div id="dump-estimate" class="hint" style="align-self:center"></div>
+      </div>
+      <div class="hint">The list covers 100+ editions, grouped by continent (largest first within each) —
+        <strong>type in the box to filter</strong> by name, autonym or code. Sizes shown are coarse heaviness
+        hints, while <em>Estimate size</em> reports the exact current dump size from the server. You can also
+        type any edition code that isn't listed.</div>
+      <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>
+    </section>
+
+    <section class="panel">
+      <h2>Backup &amp; restore</h2>
+      <div id="backup-status" class="hint">Checking backend…</div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="downloadBackup()">Download backup (.db)</button>
+      </div>
+      <div class="hint">A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.</div>
+
+      <hr>
+
+      <label for="restore-file">Restore from a backup file <span class="muted">(replaces the current corpus)</span></label>
+      <input type="file" id="restore-file" accept=".db,.sqlite,.sqlite3,application/x-sqlite3">
+      <button class="danger" onclick="restoreBackup()">Restore (destructive)</button>
+      <div class="hint" style="color:var(--warn)">
+        Restore <strong>replaces</strong> your current corpus with the uploaded file. The file is validated first
+        (must be a genuine Open Omniscience SQLite database), and your current corpus is snapshotted to a
+        <code>pre-restore-*.db</code> beside the database so the operation is reversible.
+      </div>
+      <div id="restore-result" class="hint"></div>
+    </section>
+    </div>
+
+    <!-- ============================ HELP / DOCS ====================== -->
+    <div class="tab-page" id="tab-help">
+      <section class="panel">
+        <div class="phead">
+          <h2>Help &amp; documentation</h2><span class="sp"></span>
+          <input id="doc-find" placeholder="Find on this page…" style="max-width:240px;margin:0"
+                 oninput="filterDoc()" onkeydown="if(event.key==='Escape'){this.value='';filterDoc();}">
+        </div>
+        <p class="muted" style="margin-top:0">Everything you need to operate the tool — rendered here,
+          offline. The <strong>User Manual</strong> is the detailed notice; the other guides go deeper on
+          specific subjects.</p>
+        <div class="doc-layout">
+          <div class="doc-nav" id="doc-nav"><div class="muted">Loading…</div></div>
+          <div id="doc-prose" class="prose"><div class="muted">Pick a document on the left.</div></div>
+        </div>
+      </section>
+    </div>
+
+      </main>
+    </div><!-- /.main-col -->
+  </div><!-- /.app -->
+
+  <!-- ====================== COMMAND PALETTE ========================== -->
+  <div class="overlay" id="palOverlay" onclick="closePalette()"></div>
+  <div class="palette" id="palette" role="dialog" aria-label="Command palette">
+    <input id="pal-input" autocomplete="off" spellcheck="false"
+           placeholder="Jump to a tool, run an action, or open a doc…"
+           oninput="renderPalette()" onkeydown="palKey(event)">
+    <div class="pal-list" id="pal-list"></div>
+  </div>
+
+  <!-- ====================== CUSTOMIZE DRAWER ========================= -->
+  <div class="overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+  <div class="drawer" id="customize" role="dialog" aria-label="Customize appearance">
+    <div class="phead"><h3>Customize</h3><span class="sp"></span>
+      <button class="icon-btn" onclick="closeDrawer()" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="hint" style="margin-top:0">Your look, your machine. These settings stay in this browser —
+      nothing is sent anywhere.</p>
+
+    <div class="seg"><div class="sl">Theme</div><div class="theme-grid" id="dr-themes"></div></div>
+    <div class="seg"><div class="sl">Accent</div><div class="swatches" id="dr-accents"></div></div>
+    <div class="seg"><div class="sl">Density</div><div class="seg-toggle" id="dr-density"></div></div>
+    <div class="seg"><div class="sl">Text size · <span id="dr-font-val">100%</span></div>
+      <input type="range" id="dr-font" min="88" max="124" step="2" oninput="setFont(this.value)"></div>
+    <div class="seg"><div class="sl">Sidebar</div><div class="seg-toggle" id="dr-sidebar"></div></div>
+    <div class="seg"><div class="sl">Tools shown in the sidebar</div>
+      <div class="modlist" id="dr-modules"></div></div>
+    <div class="seg"><button class="secondary" onclick="resetUi()">Reset to defaults</button></div>
+  </div>
 
   <div id="toast"></div>
 
@@ -205,26 +1019,657 @@
       return data;
     }
 
+    // ===================================================================== //
+    //  SHELL "0.05": navigation, customization, command palette, docs, home //
+    //  Built on top of the existing (tested) feature functions below — this  //
+    //  layer only changes what the user sees, not how the data works.        //
+    // ===================================================================== //
+
+    // The menu, as the user thinks of it (id ↔ human label ↔ intention group).
+    const NAV = [
+      {id:"home",     label:"Home",               grp:"Investigate"},
+      {id:"search",   label:"Search",             grp:"Investigate"},
+      {id:"insights", label:"Insights",           grp:"Investigate"},
+      {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
+      {id:"markets",  label:"Markets",            grp:"Investigate"},
+      {id:"ingest",   label:"Collect",            grp:"Collect"},
+      {id:"sources",  label:"Sources",            grp:"Collect"},
+      {id:"database", label:"Library",            grp:"Collect"},
+      {id:"custody",  label:"Evidence & custody", grp:"Trust"},
+      {id:"settings", label:"Settings",           grp:"System"},
+      {id:"help",     label:"Help & docs",        grp:"System"},
+    ];
+    // Always-available tools can't be hidden, so the user can never lock themselves out.
+    const LOCKED = new Set(["home","settings","help"]);
+
+    // -- Tab navigation ----------------------------------------------------- //
+    const TAB_LOADERS = {
+      home: loadHome,
+      ingest: loadScheduler,
+      markets: loadMarkets,
+      insights: loadInsights,
+      wiki: loadWiki,
+      sources: loadManagedSources,
+      database: () => { loadCoverage(); },   // stats handled by the live poller (startLive)
+      custody: loadCustody,
+      settings: loadSettings,
+      help: loadDocs,
+    };
+    const _loaded = new Set();
+
+    function showTab(name) {
+      if (!document.getElementById("tab-" + name)) name = "home";
+      document.querySelectorAll(".nav-item[data-tab]").forEach(b =>
+        b.classList.toggle("active", b.dataset.tab === name));
+      document.querySelectorAll(".tab-page").forEach(p =>
+        p.classList.toggle("active", p.id === "tab-" + name));
+      if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
+      startLive(name);                                  // live status for the active tab
+      document.body.classList.remove("nav-open");       // close mobile drawer
+      closePalette();
+      const m = document.querySelector("main"); if (m) m.scrollTop = 0;
+      window.scrollTo(0, 0);
+      if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+    }
+    document.querySelectorAll(".nav-item[data-tab]").forEach(b =>
+      b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+    // -- Appearance / customization (local-only, never transmitted) --------- //
+    const UI_KEY = "oo.ui";
+    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, sidebar:"expanded", hidden:[]};
+    const THEMES = [
+      {id:"ink",name:"Ink",c:"#5b9dd9"}, {id:"slate",name:"Slate",c:"#7aa2f7"},
+      {id:"midnight",name:"Midnight",c:"#8b7dff"}, {id:"sepia",name:"Sepia",c:"#d8a657"},
+      {id:"terminal",name:"Terminal",c:"#36d97a"}, {id:"contrast",name:"Contrast",c:"#ffd400"},
+      {id:"light",name:"Light",c:"#2f6fb3"}, {id:"paper",name:"Paper",c:"#9a6a2f"},
+      {id:"system",name:"System",c:"#8c95a6"},
+    ];
+    const ACCENTS = ["", "#5b9dd9", "#7aa2f7", "#8b7dff", "#36d97a", "#e0698f", "#d9a441", "#e8743b", "#2bb3a3"];
+
+    function getUi() { try { return {...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(UI_KEY) || "{}")}; }
+      catch { return {...UI_DEFAULTS}; } }
+    function saveUi(ui) { localStorage.setItem(UI_KEY, JSON.stringify(ui)); }
+
+    function applyThemeAttr(theme) {
+      const eff = theme === "system" ? (_media && _media.matches ? "light" : "")
+                : theme === "ink" ? "" : theme;
+      const r = document.documentElement;
+      if (eff) r.setAttribute("data-theme", eff); else r.removeAttribute("data-theme");
+    }
+    function applyUi(ui) {
+      const r = document.documentElement;
+      applyThemeAttr(ui.theme);
+      if (ui.accent) r.style.setProperty("--accent", ui.accent); else r.style.removeProperty("--accent");
+      if (ui.density === "compact") r.setAttribute("data-density", "compact"); else r.removeAttribute("data-density");
+      r.style.fontSize = (ui.font || 100) + "%";
+      if (ui.sidebar === "collapsed") r.setAttribute("data-sidebar", "collapsed"); else r.removeAttribute("data-sidebar");
+      // Module visibility: hide chosen tools (and any group left entirely empty).
+      const hidden = new Set(ui.hidden || []);
+      document.querySelectorAll(".nav-item[data-tab]").forEach(b => {
+        b.style.display = hidden.has(b.dataset.tab) ? "none" : "";
+      });
+      document.querySelectorAll(".nav-group").forEach(g => {
+        const any = [...g.querySelectorAll(".nav-item[data-tab]")].some(b => b.style.display !== "none");
+        g.style.display = any ? "" : "none";
+      });
+    }
+    function setTheme(t)   { const u = getUi(); u.theme = t;   saveUi(u); applyUi(u); buildDrawer(); syncThemeSelect(); }
+    function setAccent(a)  { const u = getUi(); u.accent = a;  saveUi(u); applyUi(u); buildDrawer(); }
+    function setDensity(d) { const u = getUi(); u.density = d; saveUi(u); applyUi(u); buildDrawer(); }
+    function setFont(v)    { const u = getUi(); u.font = +v;   saveUi(u); applyUi(u); $("dr-font-val").textContent = v + "%"; }
+    function setSidebar(s) { const u = getUi(); u.sidebar = s; saveUi(u); applyUi(u); buildDrawer(); }
+    function toggleSidebar(){ setSidebar(getUi().sidebar === "collapsed" ? "expanded" : "collapsed"); }
+    function toggleModule(id, show) {
+      const u = getUi(); const set = new Set(u.hidden || []);
+      show ? set.delete(id) : set.add(id);
+      u.hidden = [...set]; saveUi(u); applyUi(u);
+    }
+    function resetUi() { localStorage.removeItem(UI_KEY); applyUi(getUi()); buildDrawer(); syncThemeSelect();
+      toast("Appearance reset to defaults."); }
+    function syncThemeSelect() { const t = getUi().theme; const sel = $("set-theme");
+      if (sel) sel.value = (t === "light" ? "light" : t === "system" ? "system" : "dark"); }
+
+    // Customize drawer
+    function openDrawer()  { buildDrawer(); $("customize").classList.add("open"); $("drawerOverlay").classList.add("open"); }
+    function closeDrawer() { $("customize").classList.remove("open"); $("drawerOverlay").classList.remove("open"); }
+    function buildDrawer() {
+      const ui = getUi();
+      $("dr-themes").innerHTML = THEMES.map(t =>
+        `<button class="theme-card ${t.id === ui.theme ? "sel" : ""}" onclick="setTheme('${t.id}')">
+           <span class="tdot" style="background:${t.c}"></span>${esc(t.name)}</button>`).join("");
+      $("dr-accents").innerHTML = ACCENTS.map(a =>
+        `<button class="sw ${a === ui.accent ? "sel" : ""}" title="${a || "Theme default"}"
+           onclick="setAccent('${a}')" style="background:${a || "linear-gradient(135deg,var(--muted),var(--accent))"}"></button>`).join("");
+      $("dr-density").innerHTML = ["comfortable", "compact"].map(d =>
+        `<button class="${d === ui.density ? "sel" : ""}" onclick="setDensity('${d}')">${d[0].toUpperCase() + d.slice(1)}</button>`).join("");
+      $("dr-sidebar").innerHTML = [["expanded", "Expanded"], ["collapsed", "Collapsed"]].map(([v, l]) =>
+        `<button class="${v === ui.sidebar ? "sel" : ""}" onclick="setSidebar('${v}')">${l}</button>`).join("");
+      $("dr-font").value = ui.font; $("dr-font-val").textContent = ui.font + "%";
+      const hidden = new Set(ui.hidden || []);
+      $("dr-modules").innerHTML = NAV.filter(n => !LOCKED.has(n.id)).map(n =>
+        `<label><input type="checkbox" ${hidden.has(n.id) ? "" : "checked"}
+           onchange="toggleModule('${n.id}', this.checked)"> ${esc(n.label)}</label>`).join("");
+    }
+
+    // -- Command palette (Ctrl/⌘-K) ----------------------------------------- //
+    let _palItems = [], _palFiltered = [], _palSel = 0;
+    function palCommands() {
+      const pages = NAV.map(n => ({grp:"Pages", label:n.label, sub:n.grp, run:() => showTab(n.id)}));
+      const actions = [
+        {grp:"Actions", label:"Run a search", sub:"Search", run:() => { showTab("search"); setTimeout(() => $("q").focus(), 50); }},
+        {grp:"Actions", label:"Collect now (one scraper pass)", sub:"Collect", run:() => { showTab("ingest"); schedulerRunNow(); }},
+        {grp:"Actions", label:"Index corpus for insights", sub:"Insights", run:() => { showTab("insights"); indexCorpus(); }},
+        {grp:"Actions", label:"Track Wikipedia now", sub:"Wikipedia", run:() => { showTab("wiki"); trackWikiNow(); }},
+        {grp:"Actions", label:"Download a backup", sub:"Library", run:() => downloadBackup()},
+        {grp:"Actions", label:"Open the User Manual", sub:"Help", run:() => { showTab("help"); openDoc("user-manual"); }},
+        {grp:"Actions", label:"Customize appearance", sub:"Theme", run:() => openDrawer()},
+        {grp:"Actions", label:"API reference (Swagger)", sub:"System", run:() => window.open("/docs", "_blank")},
+      ];
+      const docs = (_docList || []).map(d => ({grp:"Documentation", label:d.title, sub:"Doc",
+        run:() => { showTab("help"); openDoc(d.slug); }}));
+      return [...pages, ...actions, ...docs];
+    }
+    function openPalette() {
+      _palItems = palCommands();
+      $("palOverlay").classList.add("open"); $("palette").classList.add("open");
+      const i = $("pal-input"); i.value = ""; renderPalette(); setTimeout(() => i.focus(), 30);
+    }
+    function closePalette() { $("palOverlay").classList.remove("open"); $("palette").classList.remove("open"); }
+    function renderPalette() {
+      const q = $("pal-input").value.trim().toLowerCase();
+      _palFiltered = _palItems.filter(it => !q ||
+        it.label.toLowerCase().includes(q) || (it.sub || "").toLowerCase().includes(q));
+      _palSel = 0;
+      let html = "", lastGrp = null;
+      _palFiltered.forEach((it, i) => {
+        if (it.grp !== lastGrp) { html += `<div class="pal-group">${esc(it.grp)}</div>`; lastGrp = it.grp; }
+        html += `<div class="pal-item ${i === 0 ? "sel" : ""}" data-i="${i}" onclick="palRun(${i})">
+          ${esc(it.label)}<span class="pal-sub">${esc(it.sub || "")}</span></div>`;
+      });
+      $("pal-list").innerHTML = html || `<div class="pal-group">No matches</div>`;
+    }
+    function palMove(d) {
+      if (!_palFiltered.length) return;
+      _palSel = (_palSel + d + _palFiltered.length) % _palFiltered.length;
+      document.querySelectorAll(".pal-item").forEach(el =>
+        el.classList.toggle("sel", +el.dataset.i === _palSel));
+      const cur = document.querySelector(".pal-item.sel"); if (cur) cur.scrollIntoView({block:"nearest"});
+    }
+    function palRun(i) { const it = _palFiltered[i]; if (it) { closePalette(); it.run(); } }
+    function palKey(e) {
+      if (e.key === "ArrowDown") { e.preventDefault(); palMove(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); palMove(-1); }
+      else if (e.key === "Enter") { e.preventDefault(); palRun(_palSel); }
+      else if (e.key === "Escape") { closePalette(); }
+    }
+
+    // -- Home dashboard ----------------------------------------------------- //
+    async function loadHome() {
+      const hour = new Date().getHours();
+      const greet = hour < 5 ? "Working late." : hour < 12 ? "Good morning." : hour < 18 ? "Good afternoon." : "Good evening.";
+      const g = $("hero-greet"); if (g) g.textContent = greet + " Understand the world as it really is.";
+      try {
+        const s = await api("/api/database/stats");
+        const entries = Object.entries(s.counts || {});
+        $("home-stats").innerHTML = entries.length
+          ? entries.map(([k, v]) =>
+              `<div class="stat"><div class="n">${(v || 0).toLocaleString()}</div><div class="k">${esc(k)}</div></div>`).join("")
+          : '<div class="muted">Your library is empty — head to Collect to gather your first material.</div>';
+      } catch (e) { $("home-stats").innerHTML = '<div class="muted">Stats unavailable.</div>'; }
+      try {
+        const sc = await api("/api/scheduler/status");
+        const on = sc.running;
+        $("home-status").innerHTML =
+          `Automatic collection: <span class="pill ${on ? "ok" : ""}">${on ? "running" : "stopped"}</span> ` +
+          `<span class="muted">· everything stays on this machine — no cloud, no telemetry.</span>`;
+      } catch (e) { $("home-status").innerHTML = '<span class="muted">Everything stays on this machine — no cloud, no telemetry.</span>'; }
+    }
+
+    // -- In-app documentation reader ---------------------------------------- //
+    let _docList = null, _docSlug = null, _docRaw = "";
+    async function ensureDocList() {   // fetch the list once (also feeds the palette)
+      if (_docList === null) {
+        try { _docList = (await api("/api/docs")).docs || []; } catch (e) { _docList = []; }
+      }
+      return _docList;
+    }
+    async function loadDocs() {
+      await ensureDocList();
+      if (!_docList.length) { $("doc-nav").innerHTML = '<div class="muted">Docs unavailable.</div>'; return; }
+      $("doc-nav").innerHTML = _docList.map(d =>
+        `<button class="doc-link ${d.slug === _docSlug ? "active" : ""}" ${d.available ? "" : "disabled"}
+           onclick="openDoc('${d.slug}')">${esc(d.title)}<small>${esc(d.blurb)}</small></button>`).join("");
+      if (!_docSlug) openDoc((_docList.find(d => d.slug === "user-manual") || _docList[0] || {}).slug);
+    }
+    async function openDoc(slug) {
+      if (!slug) return;
+      _docSlug = slug;
+      document.querySelectorAll(".doc-link").forEach(b =>
+        b.classList.toggle("active", b.getAttribute("onclick").includes("'" + slug + "'")));
+      const prose = $("doc-prose"); prose.innerHTML = '<div class="muted">Loading…</div>';
+      try { _docRaw = await api("/api/docs/" + slug); prose.innerHTML = mdToHtml(_docRaw); prose.scrollIntoView({block:"nearest"}); }
+      catch (e) { prose.innerHTML = '<div class="muted">Could not load this document.</div>'; }
+      const f = $("doc-find"); if (f && f.value) highlightProse(f.value);
+    }
+    function filterDoc() {
+      if (!_docRaw) return;
+      $("doc-prose").innerHTML = mdToHtml(_docRaw);
+      highlightProse($("doc-find").value);
+    }
+    function highlightProse(q) {
+      q = (q || "").trim(); if (q.length < 2) return;
+      const root = $("doc-prose");
+      const rx = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig");
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+      let first = null;
+      for (const n of nodes) {
+        if (!rx.test(n.nodeValue)) continue;
+        const span = document.createElement("span");
+        span.innerHTML = esc(n.nodeValue).replace(rx, '<mark>$1</mark>');
+        if (!first) first = span;
+        n.parentNode.replaceChild(span, n);
+      }
+      if (first) first.scrollIntoView({block:"center", behavior:"smooth"});
+    }
+
+    // Minimal, safe Markdown → HTML (escape first, then format). Handles
+    // headings, lists, tables, code fences, blockquotes, rules and inline marks.
+    function mdToHtml(md) {
+      const fences = [];
+      md = md.replace(/```([\s\S]*?)```/g, (_, code) =>
+        ` F${fences.push(`<pre><code>${esc(code.replace(/^\n/, ""))}</code></pre>`) - 1} `);
+      const inline = (t) => esc(t)
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
+        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, txt, url) =>
+          /^(https?:|\/|#)/.test(url) ? `<a href="${esc(url)}" ${url.startsWith("http") ? 'target="_blank" rel="noopener"' : ""}>${txt}</a>` : m);
+      const lines = md.split("\n"), out = [];
+      let i = 0;
+      const flushPara = (buf) => { if (buf.length) out.push("<p>" + buf.map(inline).join(" ") + "</p>"); };
+      let para = [];
+      while (i < lines.length) {
+        const ln = lines[i];
+        const fence = ln.match(/^ F(\d+) $/);
+        if (fence) { flushPara(para); para = []; out.push(fences[+fence[1]]); i++; continue; }
+        if (/^\s*$/.test(ln)) { flushPara(para); para = []; i++; continue; }
+        let m;
+        if ((m = ln.match(/^(#{1,6})\s+(.*)$/))) { flushPara(para); para = [];
+          const lvl = m[1].length; out.push(`<h${lvl}>${inline(m[2])}</h${lvl}>`); i++; continue; }
+        if (/^\s*([-*_])\1{2,}\s*$/.test(ln)) { flushPara(para); para = []; out.push("<hr>"); i++; continue; }
+        // table: header row + |---| separator
+        if (ln.includes("|") && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes("-")) {
+          flushPara(para); para = [];
+          const cells = (r) => r.replace(/^\s*\|?|\|?\s*$/g, "").split("|").map(c => c.trim());
+          const head = cells(ln); i += 2;
+          let body = "";
+          while (i < lines.length && lines[i].includes("|") && !/^\s*$/.test(lines[i])) {
+            body += "<tr>" + cells(lines[i]).map(c => `<td>${inline(c)}</td>`).join("") + "</tr>"; i++;
+          }
+          out.push(`<table><thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>`);
+          continue;
+        }
+        if (/^\s*>\s?/.test(ln)) { flushPara(para); para = [];
+          let q = []; while (i < lines.length && /^\s*>\s?/.test(lines[i])) { q.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
+          out.push("<blockquote>" + q.map(inline).join("<br>") + "</blockquote>"); continue; }
+        if (/^\s*([-*+]|\d+\.)\s+/.test(ln)) { flushPara(para); para = [];
+          const ordered = /^\s*\d+\.\s+/.test(ln); let items = [];
+          while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
+            items.push("<li>" + inline(lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, "")) + "</li>"); i++;
+          }
+          const tag = ordered ? "ol" : "ul";
+          out.push(`<${tag}>` + items.join("") + `</${tag}>`); continue; }
+        para.push(ln); i++;
+      }
+      flushPara(para);
+      return out.join("\n");
+    }
+
+    function humanBytes(n) {
+      if (n == null) return "—";
+      const u = ["B","KB","MB","GB","TB"]; let i = 0;
+      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+      return n.toFixed(i ? 1 : 0) + " " + u[i];
+    }
+
     async function loadHealth() {
       try {
         const h = await api("/api/health");
         $("version").textContent = "v" + h.version;
-        $("health").innerHTML = '<span class="pill ok">healthy</span>';
+        $("health").innerHTML = '<span class="dot ok"></span> healthy';
       } catch (e) {
-        $("health").innerHTML = '<span class="pill err">offline</span>';
+        $("health").innerHTML = '<span class="dot err"></span> offline';
       }
     }
 
+    // -- Settings tab ------------------------------------------------------- //
+    // Local UI preferences. DEFAULT_LIMIT feeds the search; the theme is applied by
+    // the appearance engine above (applyUi / applyThemeAttr).
+    let DEFAULT_LIMIT = 50;
+    const _media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+
+    async function loadSettings() {
+      try {
+        const s = await api("/api/settings");
+        $("set-limit").value = s.default_result_limit;
+        DEFAULT_LIMIT = s.default_result_limit;
+        // The local "Customize" theme is authoritative; on first ever run, seed it
+        // from the server preference so existing users keep their dark/light choice.
+        if (!localStorage.getItem(UI_KEY)) {
+          setTheme({dark:"ink", light:"light", system:"system"}[s.theme] || "ink");
+        }
+        syncThemeSelect();
+      } catch (e) { toast("Could not load settings: " + e.message, "err"); }
+      // Backup support is backend-dependent; reflect reality, never assume.
+      try {
+        const st = await api("/api/database/stats");
+        $("backup-status").innerHTML = st.backup_supported
+          ? `Backend <span class="pill ok">${esc(st.backend)}</span> — backup &amp; restore available.`
+          : `Backend <span class="pill warn">${esc(st.backend)}</span> — file backup/restore is SQLite-only; use the backend's native dump tool.`;
+        document.querySelectorAll("#tab-settings .danger, #tab-settings button.secondary")
+          .forEach(b => { b.disabled = !st.backup_supported; });
+      } catch (e) { $("backup-status").textContent = "Backup status unavailable: " + e.message; }
+      loadKeywordFilter();
+      loadWikiLanguages();
+      loadWikiDumps();
+    }
+
+    // -- Wikipedia offline baselines (lives in Settings) -------------------- //
+    const _TIER_LABEL = {huge: "very large", large: "large", medium: "medium", small: "smaller"};
+    let _wikiLangGroups = [];   // [{region, languages:[...]}], cached after fetch
+    async function loadWikiLanguages() {
+      const sel = $("dump-lang");
+      if (!sel) return;
+      try {
+        const d = await api("/api/wiki/languages");
+        // Normalise to a grouped form so rendering is uniform (older API → one group).
+        _wikiLangGroups = (d.groups && d.groups.length)
+          ? d.groups
+          : [{region: "", languages: d.languages || []}];
+        renderWikiLanguages();
+      } catch (e) { /* picker is optional; leave the default option */ }
+    }
+
+    // Render the editions <select> as continent <optgroup>s, filtered by the
+    // type-to-filter box (matches name, autonym or code). Keeps the selection if
+    // it survives the filter; otherwise selects the first visible edition.
+    function renderWikiLanguages() {
+      const sel = $("dump-lang");
+      if (!sel || !_wikiLangGroups.length) return;
+      const q = ($("dump-lang-filter")?.value || "").trim().toLowerCase();
+      const cur = sel.value;
+      const match = l => !q
+        || l.code.toLowerCase().includes(q)
+        || (l.name || "").toLowerCase().includes(q)
+        || (l.autonym || "").toLowerCase().includes(q);
+      const opt = l =>
+        `<option value="${esc(l.code)}">${esc(l.name)} — ${esc(l.autonym)} (${esc(l.code)}, ${esc(_TIER_LABEL[l.tier]||l.tier)})</option>`;
+      let any = false;
+      const html = _wikiLangGroups.map(g => {
+        const langs = g.languages.filter(match);
+        if (!langs.length) return "";
+        any = true;
+        const inner = langs.map(opt).join("");
+        return g.region ? `<optgroup label="${esc(g.region)}">${inner}</optgroup>` : inner;
+      }).join("");
+      sel.innerHTML = any ? html : `<option value="" disabled>No edition matches “${esc(q)}”</option>`;
+      // Restore prior selection if still visible; else fall back to the first option.
+      const stillThere = _wikiLangGroups.some(g => g.languages.some(l => l.code === cur && match(l)));
+      if (cur && stillThere) sel.value = cur;
+    }
+
+    async function loadKeywordFilter() {
+      try {
+        const f = await api("/api/insights/filter");
+        $("kf-minlen").value = f.min_length;
+        $("kf-numeric").checked = !!f.drop_numeric;
+        $("kf-builtin").checked = !!f.use_builtin_stopwords;
+        $("kf-excluded").value = (f.excluded || []).join("\n");
+      } catch (e) { /* leave defaults */ }
+    }
+
+    async function saveKeywordFilter() {
+      const body = {
+        excluded: $("kf-excluded").value,
+        min_length: Number($("kf-minlen").value),
+        drop_numeric: $("kf-numeric").checked,
+        use_builtin_stopwords: $("kf-builtin").checked,
+      };
+      try {
+        const f = await api("/api/insights/filter", {method: "PUT", body: JSON.stringify(body)});
+        $("kf-excluded").value = (f.excluded || []).join("\n");
+        $("kf-result").innerHTML = `<span class="pill ok">saved</span> ${f.excluded.length} excluded term(s), min length ${f.min_length}.`;
+        toast("Keyword filter saved.");
+      } catch (e) { toast("Save failed: " + e.message, "err"); }
+    }
+
+    async function saveSettings() {
+      const body = {
+        theme: $("set-theme").value,
+        default_result_limit: Number($("set-limit").value),
+      };
+      try {
+        const s = await api("/api/settings", {method: "PUT", body: JSON.stringify(body)});
+        DEFAULT_LIMIT = s.default_result_limit;
+        setTheme({dark:"ink", light:"light", system:"system"}[$("set-theme").value] || "ink");
+        toast("Preferences saved.");
+      } catch (e) { toast("Save failed: " + e.message, "err"); }
+    }
+
+    function downloadBackup() {
+      // Stream the snapshot straight to disk via a normal navigation download.
+      window.open("/api/database/backup", "_blank");
+      toast("Preparing backup download…");
+    }
+
+    async function restoreBackup() {
+      const f = $("restore-file").files[0];
+      if (!f) { toast("Choose a backup file first.", "err"); return; }
+      if (!confirm(`Restore from "${f.name}"? This REPLACES your current corpus. ` +
+                   `A pre-restore snapshot will be saved beside the database.`)) return;
+      $("restore-result").textContent = "Validating and restoring…";
+      try {
+        const fd = new FormData(); fd.append("file", f);
+        // Let the browser set the multipart Content-Type/boundary (don't force JSON).
+        const res = await fetch("/api/database/restore", {method: "POST", body: fd});
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        $("restore-result").innerHTML =
+          `<span class="pill ok">restored</span> ${data.tables_seen} tables, ${humanBytes(data.bytes)}. ` +
+          `Pre-restore snapshot: <code>${esc(data.pre_restore_snapshot)}</code>`;
+        toast("Corpus restored.");
+        loadDbStats(); loadSources(); doSearch();
+      } catch (e) { $("restore-result").textContent = ""; toast("Restore failed: " + e.message, "err"); }
+    }
+
+    // -- First-run onboarding (empty corpus) -------------------------------- //
+    async function checkEmptyCorpus() {
+      try {
+        const s = await api("/api/database/stats");
+        if ((s.counts && s.counts.articles === 0)) $("onboard").style.display = "";
+      } catch (e) { /* stats unavailable -> no banner */ }
+    }
+
+    async function firstRun(btn) {
+      btn.disabled = true;
+      const st = $("onboard-status");
+      try {
+        const stats = await api("/api/database/stats");
+        if (!stats.counts || stats.counts.sources === 0) {
+          st.textContent = "Seeding curated sources…";
+          await api("/api/sources/seed-defaults", {method: "POST"});
+        }
+        st.textContent = "Importing market data (official price feeds)…";
+        await api("/api/markets/feeds/import-all", {method: "POST"}).catch(() => null);
+        st.textContent = "Running a first news ingestion (bounded; may take a moment)…";
+        await api("/api/scheduler/run-now", {method: "POST"});
+        let n = 0;
+        const poll = setInterval(async () => {
+          const s = await api("/api/database/stats").catch(() => null);
+          const arts = s && s.counts ? s.counts.articles : 0;
+          st.textContent = `Ingesting… ${arts} article(s) so far.`;
+          if (arts > 0 || ++n > 40) {
+            clearInterval(poll);
+            if (arts > 0) { st.innerHTML = `<span class="pill ok">done</span> ${arts} article(s) ingested.`;
+              setTimeout(() => { $("onboard").style.display = "none"; }, 2500); doSearch(); loadDbStats && loadDbStats(); }
+            else st.textContent = "No articles yet — check the Sources tab and the scheduler's last run.";
+            btn.disabled = false;
+          }
+        }, 2000);
+      } catch (e) { st.textContent = "First run failed: " + e.message; btn.disabled = false; }
+    }
+
+    // -- Database tab ------------------------------------------------------- //
+    // Tween a stat number from its current value to `to` (ease-in-out) so the
+    // database visibly "grows" on each poll. Cosmetic only — the value is real.
+    function animateCount(el, to) {
+      to = Math.round(to || 0);
+      const from = parseInt(el.dataset.v || "0", 10) || 0;
+      if (from === to) { el.dataset.v = to; el.textContent = to.toLocaleString(); return; }
+      const start = performance.now(), dur = 600;
+      function step(t) {
+        const k = Math.min(1, (t - start) / dur);
+        const eased = 0.5 - 0.5 * Math.cos(k * Math.PI);
+        el.textContent = Math.round(from + (to - from) * eased).toLocaleString();
+        if (k < 1) requestAnimationFrame(step); else el.dataset.v = to;
+      }
+      requestAnimationFrame(step);
+    }
+
+    let DB_KEYS = null;   // current rendered stat keys (rebuild grid only when they change)
+
+    async function loadDbStats() {
+      const el = $("db-stats");
+      try {
+        const s = await api("/api/database/stats");
+        const entries = Object.entries(s.counts || {});
+        const keys = entries.map(([k]) => k).join(",");
+        if (DB_KEYS !== keys) {                       // (re)build grid with stable number nodes
+          DB_KEYS = keys;
+          el.innerHTML = entries.length
+            ? entries.map(([k]) =>
+                `<div class="stat"><div class="n" id="db-n-${k}" data-v="0">0</div><div class="k">${esc(k)}</div></div>`).join("")
+            : '<div class="muted">No tables yet.</div>';
+        }
+        for (const [k, v] of entries) {
+          const n = document.getElementById("db-n-" + k);
+          if (n) animateCount(n, v);
+        }
+        $("db-file").innerHTML = s.file
+          ? `Backend <span class="pill">${esc(s.backend)}</span> · on disk ` +
+            `<strong>${humanBytes(s.file.bytes)}</strong> ` +
+            `<span class="muted">(${esc(s.file.path)})</span>`
+          : `Backend <span class="pill">${esc(s.backend)}</span> · ${esc(s.url_summary)}`;
+      } catch (e) { el.innerHTML = `<div class="note err">Could not load stats: ${esc(e.message)}</div>`; DB_KEYS = null; }
+    }
+
+    // Live polling manager: each tab can register a refresh fn + interval; only
+    // the active tab's poller runs, and only while the window is visible.
+    const LIVE = {
+      database: {ms: 4000, fn: () => loadDbStats()},
+      ingest:   {ms: 5000, fn: () => refreshSchedulerLive()},
+      insights: {ms: 6000, fn: () => loadInsights()},
+      wiki:     {ms: 6000, fn: () => refreshWikiLive()},
+    };
+    let _live = null;
+    function startLive(name) {
+      stopLive();
+      const spec = LIVE[name];
+      if (!spec) return;
+      spec.fn();
+      _live = {name, timer: setInterval(() => { if (!document.hidden) spec.fn(); }, spec.ms)};
+    }
+    function stopLive() { if (_live) { clearInterval(_live.timer); _live = null; } }
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      const active = document.querySelector(".tab-page.active");
+      if (active && !_live) startLive(active.id.replace("tab-", ""));
+    });
+
+    // Live refreshers that only touch STATUS/PROGRESS displays (never the config
+    // inputs the user may be editing).
+    async function refreshSchedulerLive() {
+      try { renderSchedStatus(await api("/api/scheduler/status")); } catch (e) { /* keep last */ }
+    }
+    let _wikiStatusBuilt = false;
+    function renderWikiStatus(s) {
+      const el = $("wiki-status");
+      if (!_wikiStatusBuilt) {
+        _wikiStatusBuilt = true;
+        el.innerHTML =
+          `<span class="pill"><span id="wiki-n-watched" data-v="0">0</span>/` +
+          `<span id="wiki-n-pages" data-v="0">0</span> pages watched</span> · ` +
+          `<span id="wiki-n-rev" data-v="0">0</span> tracked edits · ` +
+          `<span class="pill" id="wiki-flag-pill"><span id="wiki-n-flagged" data-v="0">0</span> flagged</span>`;
+      }
+      animateCount($("wiki-n-watched"), s.watched);
+      animateCount($("wiki-n-pages"), s.pages);
+      animateCount($("wiki-n-rev"), s.revisions);
+      animateCount($("wiki-n-flagged"), s.flagged);
+      $("wiki-flag-pill").className = "pill " + (s.flagged ? "warn" : "ok");
+    }
+
+    async function refreshWikiLive() {
+      try { renderWikiStatus(await api("/api/wiki/status")); } catch (e) { /* keep last */ }
+      loadWikiDumps();
+    }
+
+    // -- World coverage ----------------------------------------------------- //
+    let COV_COUNTRIES = [];   // cached per-country rows for client-side filtering
+    let COV_MISSING = [];
+
+    async function loadCoverage() {
+      const el = $("coverage-summary");
+      el.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const [c, d] = await Promise.all([
+          api("/api/database/coverage"),
+          api("/api/database/countries"),
+        ]);
+        el.innerHTML =
+          `<div class="stat"><div class="n">${c.covered}/${c.total_countries}</div><div class="k">countries</div></div>` +
+          `<div class="stat"><div class="n">${c.coverage_pct}%</div><div class="k">coverage</div></div>` +
+          `<div class="stat"><div class="n">${c.missing_count}</div><div class="k">not covered</div></div>` +
+          `<div class="stat"><div class="n">${(c.thin||[]).length}</div><div class="k">thin (&lt;${c.thin_threshold})</div></div>`;
+        COV_COUNTRIES = d.countries || [];
+        COV_MISSING = d.missing || [];
+        renderCoverageTable();
+      } catch (e) { el.innerHTML = `<div class="note err">Coverage unavailable: ${esc(e.message)}</div>`; }
+    }
+
+    function renderCoverageTable() {
+      const q = ($("cov-filter").value || "").trim().toLowerCase();
+      const rows = COV_COUNTRIES.filter(c => {
+        if (!q) return true;
+        if (c.code.includes(q)) return true;
+        return (c.top_tags || []).some(([t]) => t.toLowerCase().includes(q));
+      });
+      const t = $("coverage-table");
+      t.innerHTML = "<tr><th>Country</th><th>Sources</th><th>Enabled</th><th>Topic keywords (source tags)</th></tr>" +
+        (rows.length ? rows.map(c => {
+          const tags = (c.top_tags || []).map(([t, n]) =>
+            `<span class="pill" style="cursor:pointer" title="show ${esc(t)} sources in ${esc(c.code)}"
+                onclick="openSourcesForKeyword(${JSON.stringify(esc(c.code))}, ${JSON.stringify(esc(t))})">${esc(t)} ${n}</span>`
+          ).join(" ") || '<span class="muted">—</span>';
+          const codeCell = `<strong style="cursor:pointer" title="show sources in ${esc(c.code)}"
+                onclick="openSourcesForKeyword(${JSON.stringify(esc(c.code))}, null)">${esc(c.code)}</strong>`;
+          return `<tr><td>${codeCell}</td><td>${c.sources}</td>
+                  <td class="muted">${c.enabled}</td><td>${tags}</td></tr>`;
+        }).join("") : `<tr><td colspan="4" class="muted">No matching countries.</td></tr>`);
+      // Not-covered list (respect the same filter on the code).
+      const miss = COV_MISSING.filter(x => !q || x.includes(q));
+      $("coverage-gaps").innerHTML = miss.length
+        ? `<strong>Not covered (${miss.length})</strong>: ` +
+          miss.slice(0, 120).map(x => `<span class="pill">${esc(x)}</span>`).join(" ") +
+          (miss.length > 120 ? ` <span class="muted">…and ${miss.length - 120} more</span>` : "")
+        : `<span class="pill ok">every listed country has at least one source</span>`;
+    }
+
+    // -- Sources: ingest dropdown + add + seed ------------------------------ //
     async function loadSources() {
       let sources = [];
       try { sources = await api("/api/sources"); } catch (e) { toast("Could not load sources: " + e.message, "err"); }
-      const t = $("sources");
-      t.innerHTML = "<tr><th>Name</th><th>Domain</th><th>RSS</th><th>Tags</th></tr>" +
-        (sources.length ? sources.map(s =>
-          `<tr><td>${esc(s.name)}</td><td>${esc(s.domain)}</td>
-           <td>${s.rss_url ? esc(s.rss_url) : '<span class="muted">—</span>'}</td>
-           <td>${(s.tags||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join(" ")}</td></tr>`
-        ).join("") : `<tr><td colspan="4" class="muted">No sources yet. Add one below.</td></tr>`);
       const sel = $("ing-source");
       sel.innerHTML = sources.filter(s => s.rss_url).map(s =>
         `<option value="${s.id}">${esc(s.name)}</option>`).join("")
@@ -235,7 +1680,7 @@
       try {
         const r = await api("/api/sources/seed-defaults", {method: "POST"});
         toast(`Seeded ${r.seeded.created} new source(s) (${r.seeded.skipped} already present).`);
-        loadSources();
+        loadSources(); loadManagedSources(); loadDbStats(); loadCoverage();
       } catch (e) { toast("Seed failed: " + e.message, "err"); }
     }
 
@@ -251,8 +1696,121 @@
         await api("/api/sources/", {method: "POST", body: JSON.stringify(body)});
         toast("Source added.");
         ["s-name","s-domain","s-rss","s-tags"].forEach(id => $(id).value = "");
-        loadSources();
+        loadSources(); loadManagedSources(); loadDbStats();
       } catch (e) { toast("Add failed: " + e.message, "err"); }
+    }
+
+    // -- Sources: management table ------------------------------------------ //
+    // Source-management list state: filters + sort + paging.
+    const SRC = {offset: 0, limit: 50, sort: "name", order: "asc"};
+
+    function srcQuery() {
+      const p = new URLSearchParams();
+      const map = {q: "src-search", country: "src-country", language: "src-language",
+                   source_type: "src-type", tag: "src-tag"};
+      for (const [k, id] of Object.entries(map)) { const v = $(id).value.trim(); if (v) p.set(k, v); }
+      const en = $("src-enabled").value; if (en) p.set("enabled", en);
+      p.set("sort", SRC.sort); p.set("order", SRC.order);
+      p.set("limit", SRC.limit); p.set("offset", SRC.offset);
+      return p;
+    }
+
+    function applySrcFilters() { SRC.offset = 0; loadManagedSources(); }
+    function clearSrcFilters() {
+      ["src-search","src-country","src-language","src-type","src-tag"].forEach(id => $(id).value = "");
+      $("src-enabled").value = ""; SRC.offset = 0; loadManagedSources();
+    }
+    function srcPage(dir) {
+      const next = SRC.offset + dir * SRC.limit;
+      if (next < 0) return;
+      SRC.offset = next; loadManagedSources();
+    }
+    function setSrcSort(col) {
+      if (SRC.sort === col) SRC.order = (SRC.order === "asc" ? "desc" : "asc");
+      else { SRC.sort = col; SRC.order = "asc"; }
+      SRC.offset = 0; loadManagedSources();
+    }
+    function srcTh(label, col) {
+      const arrow = SRC.sort === col ? (SRC.order === "asc" ? " ▲" : " ▼") : "";
+      return `<th style="cursor:pointer" onclick="setSrcSort('${col}')">${label}${arrow}</th>`;
+    }
+
+    async function loadManagedSources() {
+      const t = $("src-table");
+      try {
+        const d = await api("/api/catalog/sources?" + srcQuery().toString());
+        const shownFrom = d.total ? SRC.offset + 1 : 0;
+        const shownTo = Math.min(SRC.offset + SRC.limit, d.total);
+        $("src-meta").textContent = `${d.total} source(s)` + (d.total ? ` · showing ${shownFrom}–${shownTo}` : "");
+        $("src-page").textContent = `page ${Math.floor(SRC.offset / SRC.limit) + 1} of ${Math.max(1, Math.ceil(d.total / SRC.limit))}`;
+        t.innerHTML = "<tr>" + srcTh("Name","name") + srcTh("Domain","domain") + srcTh("Type","source_type") +
+          srcTh("Country","country") + srcTh("Lang","language") + srcTh("Pri","priority") +
+          srcTh("Articles","articles") + "<th>Enabled</th><th></th></tr>" +
+          (d.sources.length ? d.sources.map(s => sourceRow(s)).join("")
+            : `<tr><td colspan="9" class="muted">No sources match. Adjust filters, add one, or seed the starter set.</td></tr>`);
+      } catch (e) { toast("Could not load sources: " + e.message, "err"); }
+    }
+
+    function sourceRow(s) {
+      const tags = (s.tags || []).map(x =>
+        `<span class="pill" style="cursor:pointer" title="filter by this tag" onclick="srcFilterTag(${JSON.stringify(esc(x))})">${esc(x)}</span>`).join(" ");
+      const prio = [1,2,3].map(p =>
+        `<option value="${p}" ${s.priority===p?"selected":""}>${p}</option>`).join("");
+      return `<tr>
+        <td>${esc(s.name)}<div class="muted" style="font-size:12px">${tags}</div></td>
+        <td>${esc(s.domain)}${s.rss_url?' <span class="pill ok" title="has RSS feed">rss</span>':''}</td>
+        <td class="muted">${esc(s.source_type || "—")}</td>
+        <td class="muted">${esc(s.country || "—")}</td>
+        <td class="muted">${esc(s.language || "—")}</td>
+        <td><select class="tiny" style="width:auto;padding:3px"
+              onchange="updateSource(${s.id},{priority:Number(this.value)})">${prio}</select></td>
+        <td class="muted">${s.article_count!=null?s.article_count:'—'}</td>
+        <td><input type="checkbox" style="width:auto" ${s.enabled?"checked":""}
+              onchange="updateSource(${s.id},{enabled:this.checked})"></td>
+        <td><button class="tiny danger" onclick="deleteSource(${s.id}, ${JSON.stringify(esc(s.name))})">Delete</button></td>
+      </tr>`;
+    }
+
+    function srcFilterTag(tag) { $("src-tag").value = tag; applySrcFilters(); }
+
+    // Jump from the Database coverage view to the matching sources.
+    function openSourcesForKeyword(code, tag) {
+      clearSrcFilters();
+      if (code && code !== "(none)") $("src-country").value = code;
+      if (tag) $("src-tag").value = tag;
+      showTab("sources"); applySrcFilters();
+    }
+
+    async function updateSource(id, body) {
+      try { await api("/api/sources/" + id, {method: "PUT", body: JSON.stringify(body)});
+        toast("Source updated."); }
+      catch (e) { toast("Update failed: " + e.message, "err"); loadManagedSources(); }
+    }
+
+    async function deleteSource(id, name) {
+      if (!confirm(`Delete source "${name}"? This also removes its stored articles.`)) return;
+      try { await api("/api/sources/" + id, {method: "DELETE"});
+        toast("Source deleted."); loadManagedSources(); loadSources(); loadDbStats(); }
+      catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    async function importSources() {
+      const f = $("imp-file").files[0];
+      if (!f) { toast("Choose a CSV file first.", "err"); return; }
+      $("imp-result").textContent = "Importing…";
+      try {
+        const fd = new FormData(); fd.append("file", f);
+        const res = await fetch("/api/catalog/import", {method: "POST", body: fd});
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.detail || res.statusText);
+        const errs = (d.parse_errors || []).concat(d.errors || []);
+        $("imp-result").innerHTML =
+          `<span class="pill ok">imported</span> created ${d.created}, updated ${d.updated}, ` +
+          `skipped ${d.skipped}.` +
+          (errs.length ? ` <span class="muted">First issues: ${errs.slice(0,5).map(esc).join("; ")}</span>` : "");
+        toast(`Import: +${d.created} new, ${d.updated} updated.`);
+        loadManagedSources(); loadSources(); loadDbStats(); loadCoverage();
+      } catch (e) { $("imp-result").textContent = ""; toast("Import failed: " + e.message, "err"); }
     }
 
     function tally(t) {
@@ -286,6 +1844,747 @@
       } catch (e) { $("ingest-result").textContent = ""; toast("Ingest failed: " + e.message, "err"); }
     }
 
+    // -- Scheduler ---------------------------------------------------------- //
+    function toggleCrawlFields() {
+      $("crawl-fields").style.display = $("sch-mode").value === "crawl" ? "flex" : "none";
+    }
+
+    function renderSchedStatus(st) {
+      const pill = st.running
+        ? (st.active ? '<span class="pill ok">running — scrape in progress</span>'
+                     : '<span class="pill ok">running</span>')
+        : '<span class="pill">stopped</span>';
+      const next = st.next_run ? ` · next ~${esc(st.next_run.slice(0,16).replace("T"," "))}` : "";
+      $("sched-status").innerHTML = pill + next;
+      const r = st.last_result;
+      $("sched-last").innerHTML = st.last_error
+        ? `<span class="pill err">last run failed</span> ${esc(st.last_error)}`
+        : (r ? `Last run (${esc(r.mode)}): <strong>${r.articles_stored}</strong> stored` +
+               (r.pages_fetched ? `, ${r.pages_fetched} pages fetched` : "") +
+               `, ${r.sources_processed} source(s), ${esc(String(r.duration_s))}s ` +
+               `<span class="muted">at ${esc((r.finished_at||"").slice(0,19).replace("T"," "))}</span>`
+             : '<span class="muted">No run yet.</span>');
+    }
+
+    function applySchedConfig(c) {
+      $("sch-interval").value = c.interval_minutes;
+      $("sch-mode").value = c.mode;
+      $("sch-maxsrc").value = c.max_sources_per_run;
+      $("sch-depth").value = c.crawl_max_depth;
+      $("sch-pages").value = c.crawl_max_pages;
+      $("sch-autostart").checked = !!c.autostart;
+      $("sch-langs").value = (c.select_languages || []).join(", ");
+      $("sch-types").value = (c.select_source_types || []).join(", ");
+      $("sch-tags").value = (c.select_tags || []).join(", ");
+      toggleCrawlFields();
+    }
+
+    const _csv = id => $(id).value.split(",").map(x => x.trim()).filter(Boolean);
+
+    async function loadScheduler() {
+      try { renderSchedStatus(await api("/api/scheduler/status")); }
+      catch (e) { $("sched-status").textContent = "Scheduler status unavailable: " + e.message; }
+      try { applySchedConfig(await api("/api/scheduler/config")); }
+      catch (e) { /* config panel stays at defaults */ }
+      previewTargets();
+    }
+
+    async function previewTargets() {
+      const el = $("sched-targets");
+      try {
+        const t = await api("/api/scheduler/targets");
+        if (!t.applies) { el.innerHTML = `<span class="muted">Selection applies to RSS / crawl modes; current mode is <strong>${esc(t.mode)}</strong>.</span>`; return; }
+        const langs = Object.entries(t.by_language).map(([k,v])=>`${esc(k)}:${v}`).join("  ");
+        const types = Object.entries(t.by_source_type).map(([k,v])=>`${esc(k)}:${v}`).join("  ");
+        el.innerHTML = `<span class="pill ${t.matched?'ok':'warn'}">${t.matched} sources targeted</span> ` +
+          `of ${t.total_enabled} enabled · this run will process up to <strong>${t.will_process_this_run}</strong>` +
+          `<div class="muted" style="font-size:12px;margin-top:4px">by language: ${langs||'—'}</div>` +
+          `<div class="muted" style="font-size:12px">by type: ${types||'—'}</div>`;
+      } catch (e) { el.textContent = "Could not preview targets: " + e.message; }
+    }
+
+    async function schedulerStart() {
+      try { renderSchedStatus(await api("/api/scheduler/start", {method: "POST"}));
+        toast("Scheduler started."); } catch (e) { toast("Start failed: " + e.message, "err"); }
+    }
+    async function schedulerStop() {
+      try { renderSchedStatus(await api("/api/scheduler/stop", {method: "POST"}));
+        toast("Scheduler stopped."); } catch (e) { toast("Stop failed: " + e.message, "err"); }
+    }
+    async function schedulerRunNow() {
+      try {
+        const st = await api("/api/scheduler/run-now", {method: "POST"});
+        renderSchedStatus(st);
+        toast(st.started ? "Scrape started — results will appear shortly." : "A run is already in progress.");
+        // Poll the status a few times so the last-run summary updates without a manual refresh.
+        let tries = 0;
+        const poll = setInterval(async () => {
+          try { const s = await api("/api/scheduler/status"); renderSchedStatus(s);
+            if ((!s.active && s.last_run) || ++tries > 20) { clearInterval(poll); doSearch(); loadDbStats(); } }
+          catch { clearInterval(poll); }
+        }, 1500);
+      } catch (e) { toast("Run now failed: " + e.message, "err"); }
+    }
+
+    async function saveScheduler() {
+      const body = {
+        interval_minutes: Number($("sch-interval").value),
+        mode: $("sch-mode").value,
+        max_sources_per_run: Number($("sch-maxsrc").value),
+        crawl_max_depth: Number($("sch-depth").value),
+        crawl_max_pages: Number($("sch-pages").value),
+        autostart: $("sch-autostart").checked,
+        select_languages: _csv("sch-langs"),
+        select_source_types: _csv("sch-types"),
+        select_tags: _csv("sch-tags"),
+      };
+      try { applySchedConfig(await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify(body)}));
+        toast("Schedule saved."); previewTargets(); } catch (e) { toast("Save failed: " + e.message, "err"); }
+    }
+
+    // -- Markets (analysis-first dashboard) --------------------------------- //
+    let MKT_SERIES = [];
+    const MKT_PRICES = {};            // symbol -> [{observed_on, price, currency, unit}]
+    let _mktConfigLoaded = false;
+
+    async function loadMarkets() { loadDashboard(); }
+
+    async function fetchPrices(symbol) {
+      if (MKT_PRICES[symbol]) return MKT_PRICES[symbol];
+      try { const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`); MKT_PRICES[symbol] = d.prices || []; }
+      catch { MKT_PRICES[symbol] = []; }
+      return MKT_PRICES[symbol];
+    }
+
+    async function loadDashboard() {
+      const status = $("mkt-dash-status");
+      try {
+        const d = await api("/api/markets/series");
+        MKT_SERIES = d.series || [];
+        if (!MKT_SERIES.length) {
+          $("mkt-dashboard").innerHTML = `<div class="muted">No market data yet. Click “Load / refresh market data” to import official price feeds (EUR/USD, crude oil, metals, gold).</div>`;
+          status.textContent = ""; return;
+        }
+        status.textContent = `${MKT_SERIES.length} series`;
+        await Promise.all(MKT_SERIES.map(s => fetchPrices(s.symbol)));
+        renderDashboard();
+      } catch (e) { status.textContent = "Could not load series: " + e.message; }
+    }
+
+    function windowPrices(points, days) {
+      if (!days || !points.length) return points;
+      const cutoff = new Date(Date.now() - days*86400000).toISOString().slice(0, 10);
+      return points.filter(p => p.observed_on >= cutoff);
+    }
+
+    function dashChartSvg(points) {
+      if (points.length < 2) return `<div class="muted" style="padding:18px 0;font-size:12px">not enough points in this window</div>`;
+      const w = 300, h = 86, pad = 6;
+      const ys = points.map(p => p.price), minY = Math.min(...ys), maxY = Math.max(...ys), span = (maxY - minY) || 1;
+      const X = i => pad + (w - 2*pad) * (i/(points.length-1));
+      const Y = v => h - pad - (h - 2*pad) * ((v - minY)/span);
+      const line = points.map((p, i) => `${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(" ");
+      const up = points[points.length-1].price >= points[0].price;
+      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block">
+        <polyline fill="none" stroke="${up?'var(--ok)':'var(--err)'}" stroke-width="2" points="${line}"></polyline></svg>`;
+    }
+
+    function renderDashboard() {
+      if (!MKT_SERIES.length) return;
+      const days = Number($("mkt-scale").value);
+      $("mkt-dashboard").innerHTML = MKT_SERIES.map(s => {
+        const all = MKT_PRICES[s.symbol] || [];
+        const pts = windowPrices(all, days);
+        const last = pts.length ? pts[pts.length-1] : (all.length ? all[all.length-1] : null);
+        const first = pts.length ? pts[0] : null;
+        let change = "";
+        if (first && last && first.price) {
+          const pct = (last.price - first.price) / first.price * 100;
+          change = `<span class="pill ${pct>=0?'ok':'err'}">${pct>=0?'+':''}${pct.toFixed(1)}%</span>`;
+        }
+        const lv = last ? `${last.price} <span class="muted">${esc(last.currency)}/${esc(last.unit)}</span>` : '—';
+        return `<div class="stat" style="cursor:pointer" title="open detail + correlation"
+            onclick="chartSymbol(${JSON.stringify(esc(s.symbol))}, ${JSON.stringify(esc(last?last.unit:''))})">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <strong>${esc(s.symbol)}</strong> ${change}</div>
+          <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv} · ${pts.length} pts</div>
+          ${dashChartSvg(pts)}</div>`;
+      }).join("");
+    }
+
+    async function loadMarketData(btn) {
+      btn.disabled = true;
+      const status = $("mkt-dash-status");
+      status.textContent = "Importing official feeds… (downloads CSVs, may take a moment)";
+      try {
+        const r = await api("/api/markets/feeds/import-all", {method: "POST"});
+        status.textContent = `Imported ${r.points_imported} point(s) across ${r.feeds} feeds${r.failed?`, ${r.failed} failed`:""}.`;
+        for (const k in MKT_PRICES) delete MKT_PRICES[k];
+        await loadDashboard();
+        if (_mktConfigLoaded) loadFeeds();
+        toast("Market data loaded.");
+      } catch (e) { status.textContent = ""; toast("Load failed: " + e.message, "err"); }
+      finally { btn.disabled = false; }
+    }
+
+    function toggleMktConfig() {
+      const el = $("mkt-config"), open = el.style.display === "none";
+      el.style.display = open ? "" : "none";
+      $("mkt-config-caret").textContent = open ? "▾" : "▸";
+      if (open && !_mktConfigLoaded) { _mktConfigLoaded = true; loadMarketConfig(); }
+    }
+
+    async function loadMarketConfig() {
+      try {
+        const sources = await api("/api/sources");
+        $("mkt-source").innerHTML = sources.map(s =>
+          `<option value="${s.id}">${esc(s.name)} (${esc(s.domain)})</option>`).join("")
+          || '<option value="">(no sources — add one first)</option>';
+      } catch (e) { /* leave as-is */ }
+      loadFeeds(); loadRules();
+    }
+
+    async function loadRules() {
+      try {
+        const d = await api("/api/markets/rules");
+        const t = $("mkt-rules");
+        t.innerHTML = "<tr><th>Symbol</th><th>Category</th><th>Source</th><th>Last status</th><th></th></tr>" +
+          (d.rules.length ? d.rules.map(r => `<tr>
+            <td><strong>${esc(r.symbol)}</strong></td><td class="muted">${esc(r.category)}</td>
+            <td class="muted">${esc(r.source_name||"")}</td>
+            <td class="muted" style="font-size:12px;max-width:240px">${esc(r.last_status||"never run")}</td>
+            <td style="white-space:nowrap">
+              <button class="tiny secondary" onclick="runMarketRule(${r.id})" title="Fetch once and apply the rule">Test</button>
+              <button class="tiny secondary" onclick="chartSymbol(${JSON.stringify(esc(r.symbol))}, ${JSON.stringify(esc(r.unit||''))})">Chart</button>
+              <button class="tiny danger" onclick="deleteMarketRule(${r.id})">Delete</button></td></tr>`).join("")
+            : `<tr><td colspan="5" class="muted">No extraction rules. Feeds cover most needs; add a rule below to scrape a price off a specific page.</td></tr>`);
+      } catch (e) { /* rules optional */ }
+    }
+
+    // -- Official CSV feeds ------------------------------------------------- //
+    async function loadFeeds() {
+      try {
+        const d = await api("/api/markets/feeds");
+        const t = $("feed-table");
+        if (!d.feeds.length) { t.innerHTML = `<tr><td class="muted">No feeds configured.</td></tr>`; return; }
+        t.innerHTML = "<tr><th>Series</th><th>Symbol</th><th>Unit</th><th>Stored</th><th></th></tr>" +
+          d.feeds.map(f => `<tr>
+            <td>${esc(f.name)}<div class="muted" style="font-size:12px">${esc(f.market||"")}</div></td>
+            <td><strong>${esc(f.symbol)}</strong></td>
+            <td class="muted">${esc(f.currency)}/${esc(f.unit)}</td>
+            <td class="muted">${f.points}</td>
+            <td style="white-space:nowrap">
+              <button class="tiny secondary" onclick="importFeed(${JSON.stringify(esc(f.key))})">Import</button>
+              <button class="tiny secondary" onclick="chartSymbol(${JSON.stringify(esc(f.symbol))}, ${JSON.stringify(esc(f.unit))})">Chart</button>
+            </td></tr>`).join("");
+      } catch (e) { /* feeds optional */ }
+    }
+
+    async function importFeed(key) {
+      toast("Importing feed… (downloads a CSV, may take a moment)");
+      try {
+        const r = await api(`/api/markets/feeds/${encodeURIComponent(key)}/import`, {method: "POST"});
+        toast(`Imported ${r.imported} new point(s) for ${r.symbol} (${r.skipped_existing} already had).`);
+        delete MKT_PRICES[r.symbol]; loadFeeds(); loadDashboard();
+      } catch (e) { toast("Import failed: " + e.message, "err"); }
+    }
+
+    async function importCustomFeed() {
+      const body = {
+        url: $("feed-url").value.trim(),
+        symbol: $("feed-symbol").value.trim(),
+        unit: $("feed-unit").value.trim() || "t",
+        currency: $("feed-currency").value.trim() || "USD",
+        market: $("feed-market").value.trim() || null,
+        date_column: $("feed-datecol").value.trim() || null,
+        value_column: $("feed-valcol").value.trim() || null,
+      };
+      if (!body.url || !body.symbol) { toast("URL and symbol are required.", "err"); return; }
+      $("feed-result").textContent = "Downloading and importing…";
+      try {
+        const r = await api("/api/markets/feeds/import-url", {method: "POST", body: JSON.stringify(body)});
+        $("feed-result").innerHTML = `<span class="pill ok">imported</span> ${r.imported} new point(s) for ` +
+          `${esc(r.symbol)} (${r.skipped_existing} already present, ${r.received} in feed).`;
+        toast("Feed imported."); delete MKT_PRICES[body.symbol]; loadFeeds(); loadDashboard();
+      } catch (e) { $("feed-result").textContent = ""; toast("Import failed: " + e.message, "err"); }
+    }
+
+    async function addMarketRule() {
+      const body = {
+        source_id: Number($("mkt-source").value),
+        symbol: $("mkt-symbol").value.trim(),
+        label: $("mkt-label").value.trim() || null,
+        url: $("mkt-url").value.trim(),
+        selector: $("mkt-selector").value.trim(),
+        attribute: $("mkt-attr").value.trim() || null,
+        value_regex: $("mkt-regex").value.trim() || null,
+        currency: $("mkt-currency").value.trim() || "USD",
+        unit: $("mkt-unit").value.trim() || "kg",
+        market: $("mkt-market").value.trim() || null,
+        category: "commodity",
+      };
+      if (!body.source_id || !body.symbol || !body.url || !body.selector) {
+        toast("Source, symbol, URL and selector are required.", "err"); return;
+      }
+      try {
+        await api("/api/markets/rules", {method: "POST", body: JSON.stringify(body)});
+        toast("Rule added.");
+        ["mkt-symbol","mkt-label","mkt-url","mkt-selector","mkt-attr","mkt-regex","mkt-market"]
+          .forEach(id => $(id).value = "");
+        loadRules();
+      } catch (e) { toast("Add failed: " + e.message, "err"); }
+    }
+
+    async function runMarketRule(id) {
+      toast("Fetching and applying rule…");
+      try {
+        const o = await api(`/api/markets/rules/${id}/run`, {method: "POST"});
+        if (o.status === "stored_price")
+          toast(`Stored ${o.value} for ${o.symbol} (${o.observed_on}).`);
+        else if (o.status === "duplicate_price")
+          toast(`Already had a point for ${o.symbol} today (${o.value}).`, "warn");
+        else
+          toast(`${o.status}: ${o.reason || ""}`, "err");
+        delete MKT_PRICES[o.symbol]; loadRules(); loadDashboard();
+      } catch (e) { toast("Run failed: " + e.message, "err"); }
+    }
+
+    async function deleteMarketRule(id) {
+      if (!confirm("Delete this rule? Stored price history is kept.")) return;
+      try { await api(`/api/markets/rules/${id}`, {method: "DELETE"}); toast("Rule deleted."); loadRules(); }
+      catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    function sparkSvg(points) {
+      if (!points.length) return '<div class="muted">No price points stored yet — use “Test” to fetch one.</div>';
+      const w = 680, h = 180, pad = 34;
+      const ys = points.map(p => p.price);
+      const minY = Math.min(...ys), maxY = Math.max(...ys), spanY = (maxY - minY) || 1;
+      const X = i => pad + (w - 2*pad) * (points.length < 2 ? 0.5 : i/(points.length-1));
+      const Y = v => h - pad - (h - 2*pad) * ((v - minY)/spanY);
+      const line = points.map((p,i) => `${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(" ");
+      const dots = points.map((p,i) =>
+        `<circle cx="${X(i).toFixed(1)}" cy="${Y(p.price).toFixed(1)}" r="2.5" fill="var(--accent)"></circle>`).join("");
+      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
+        <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${line}"></polyline>${dots}
+        <text x="${pad}" y="16" fill="var(--muted)" font-size="11">${maxY}</text>
+        <text x="${pad}" y="${h-8}" fill="var(--muted)" font-size="11">${minY}</text>
+        <text x="${w-pad}" y="${h-8}" fill="var(--muted)" font-size="11" text-anchor="end">${esc(points[points.length-1].observed_on)}</text>
+        <text x="${pad}" y="${h-8}" fill="var(--muted)" font-size="11" dx="40">${esc(points[0].observed_on)}</text>
+      </svg>`;
+    }
+
+    async function chartSymbol(symbol, unit) {
+      const el = $("mkt-chart");
+      el.innerHTML = `<div class="muted">Loading ${esc(symbol)}…</div>`;
+      try {
+        const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`);
+        el.innerHTML = `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} — ${d.count} point(s)
+            <button class="tiny secondary" onclick="correlateSymbol(${JSON.stringify(esc(symbol))})" title="Correlate price change vs news volume">Correlate with news</button></h2>` +
+          sparkSvg(d.prices) +
+          `<div id="mkt-corr" class="hint" style="margin-top:8px"></div>`;
+      } catch (e) {
+        el.innerHTML = `<div class="note err">Chart unavailable: ${esc(e.message)} ` +
+          `<span class="muted">(commodity analysis endpoints require the [analysis] extra)</span></div>`;
+      }
+    }
+
+    async function correlateSymbol(symbol) {
+      // Correlate the symbol's daily price change against article volume for the
+      // current search query (if any). Honest output: real coefficient/p-value/n.
+      const q = $("q").value.trim();
+      $("mkt-chart").innerHTML = `<div class="muted">Correlating ${esc(symbol)} with news…</div>`;
+      try {
+        const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/correlation` +
+          (q ? "?query=" + encodeURIComponent(q) : ""));
+        let body;
+        if (d.insufficient_data) {
+          body = `<span class="pill warn">insufficient data</span> only ${d.n} overlapping day(s) — need more price + article history.`;
+        } else {
+          const sig = d.significant ? '<span class="pill ok">significant</span>' : '<span class="pill">not significant</span>';
+          body = `<div>method <strong>${esc(d.method)}</strong>, n=${d.n}, ` +
+            `coefficient <strong>${d.coefficient.toFixed(3)}</strong>, p=${d.p_value.toExponential(2)} ${sig}</div>`;
+        }
+        $("mkt-chart").innerHTML =
+          `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} vs news${q?` — “${esc(q)}”`:""}</h2>` +
+          body + `<div class="hint" style="margin-top:6px">${esc(d.caveat || "")}</div>`;
+      } catch (e) {
+        $("mkt-chart").innerHTML = `<div class="note err">Correlation unavailable: ${esc(e.message)}</div>`;
+      }
+    }
+
+    // -- Insights (keyword & entity analytics) ------------------------------ //
+    const _insLoaded = new Set();
+
+    function showInsightCat(cat) {
+      document.querySelectorAll("#tab-insights [data-ins]").forEach(b =>
+        b.classList.toggle("active", b.dataset.ins === cat));
+      document.querySelectorAll("#tab-insights .ins-view").forEach(v =>
+        v.style.display = (v.id === "ins-" + cat) ? "" : "none");
+      if (!_insLoaded.has(cat)) {
+        _insLoaded.add(cat);
+        if (cat === "trends") loadTrends();
+        if (cat === "map") loadMap();
+      }
+    }
+
+    let _insStatusBuilt = false;
+    async function loadInsights() {
+      try {
+        const s = await api("/api/insights/status");
+        if (!_insStatusBuilt) {
+          _insStatusBuilt = true;
+          $("ins-status").innerHTML =
+            `<span class="pill" id="ins-pill"><span id="ins-n-indexed" data-v="0">0</span>/` +
+            `<span id="ins-n-total" data-v="0">0</span> articles indexed</span> · ` +
+            `<span id="ins-n-keywords" data-v="0">0</span> keywords ` +
+            `(<span id="ins-n-entities" data-v="0">0</span> entities) · ` +
+            `<span id="ins-n-mentions" data-v="0">0</span> mentions ` +
+            `<span id="ins-remaining" class="muted"></span>`;
+        }
+        animateCount($("ins-n-indexed"), s.indexed_articles);
+        animateCount($("ins-n-total"), s.total_articles);
+        animateCount($("ins-n-keywords"), s.keywords);
+        animateCount($("ins-n-entities"), s.entities);
+        animateCount($("ins-n-mentions"), s.mentions);
+        $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
+        $("ins-remaining").innerHTML = s.remaining ? `· <strong>${s.remaining.toLocaleString()}</strong> to index` : "";
+      } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = "Status unavailable: " + e.message; }
+    }
+
+    let _indexing = false;
+    async function indexCorpus() {
+      if (_indexing) return;
+      _indexing = true;
+      try {
+        let guard = 0;
+        for (;;) {
+          const r = await api("/api/insights/reindex?limit=300", {method: "POST"});
+          $("ins-progress").textContent = `indexed ${r.indexed}, ${r.remaining} remaining…`;
+          await loadInsights();
+          if (r.remaining === 0 || r.indexed === 0 || ++guard > 500) break;
+        }
+        $("ins-progress").textContent = "Indexing complete.";
+        toast("Corpus indexed.");
+      } catch (e) { toast("Indexing failed: " + e.message, "err"); }
+      finally { _indexing = false; }
+    }
+
+    function pickTerm(t) { $("ins-term").value = t; showInsightCat("explore"); exploreTerm(); }
+
+    function trendSvg(points) {
+      if (!points.length) return '<div class="muted">No mentions over time yet — index the corpus first.</div>';
+      const w = 680, h = 140, pad = 30, ys = points.map(p => p.count), maxY = Math.max(...ys, 1);
+      const X = i => pad + (w - 2*pad) * (points.length < 2 ? 0.5 : i/(points.length-1));
+      const Y = v => h - pad - (h - 2*pad) * (v / maxY);
+      const line = points.map((p, i) => `${X(i).toFixed(1)},${Y(p.count).toFixed(1)}`).join(" ");
+      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
+        <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${line}"></polyline>
+        <text x="${pad}" y="14" fill="var(--muted)" font-size="11">${maxY}</text>
+        <text x="${pad}" y="${h-8}" fill="var(--muted)" font-size="11">${esc(points[0].date)}</text>
+        <text x="${w-pad}" y="${h-8}" fill="var(--muted)" font-size="11" text-anchor="end">${esc(points[points.length-1].date)}</text>
+      </svg>`;
+    }
+
+    function mindmapSvg(center, pairs) {
+      if (!pairs.length) return '<div class="muted">No strong associations yet.</div>';
+      const w = 680, h = 440, cx = w/2, cy = h/2, top = pairs.slice(0, 14);
+      const maxP = Math.max(...top.map(p => p.pmi), 0.1);
+      let edges = "", nodes = "";
+      top.forEach((p, i) => {
+        const ang = (i / top.length) * 2 * Math.PI - Math.PI/2;
+        const r = 110 + 110 * (1 - Math.max(0, p.pmi) / maxP);   // stronger PMI -> closer
+        const x = cx + r * Math.cos(ang), y = cy + r * Math.sin(ang);
+        edges += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="${Math.max(1, Math.min(4, p.cooccur/2)).toFixed(1)}"></line>`;
+        const col = p.kind === "term" ? "var(--muted)" : "var(--accent)";
+        nodes += `<g style="cursor:pointer" onclick='pickTerm(${JSON.stringify(p.term)})'>
+          <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" fill="${col}"></circle>
+          <text x="${x.toFixed(1)}" y="${(y-9).toFixed(1)}" fill="var(--fg)" font-size="11" text-anchor="middle">${esc(p.term)} <tspan fill="var(--muted)">${p.pmi}</tspan></text></g>`;
+      });
+      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
+        ${edges}${nodes}
+        <circle cx="${cx}" cy="${cy}" r="9" fill="var(--ok)"></circle>
+        <text x="${cx}" y="${(cy-13)}" fill="var(--fg)" font-size="13" text-anchor="middle" font-weight="600">${esc(center)}</text>
+      </svg><div class="hint">Edge width = co-occurrence; distance = PMI (closer is stronger). Click a node to recenter.</div>`;
+    }
+
+    async function exploreTerm() {
+      const term = $("ins-term").value.trim();
+      if (!term) { toast("Enter a keyword or entity.", "err"); return; }
+      $("ins-trend").innerHTML = '<div class="muted">Loading…</div>';
+      $("ins-mindmap").innerHTML = ""; $("ins-context").innerHTML = ""; $("ins-framing").innerHTML = "";
+      try {
+        const [tr, assoc, ctx] = await Promise.all([
+          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term)),
+          api("/api/insights/associations?term=" + encodeURIComponent(term)),
+          api("/api/insights/context?term=" + encodeURIComponent(term)),
+        ]);
+        if (!tr.resolved) { $("ins-trend").innerHTML = `<div class="note err">No indexed mentions of “${esc(term)}”. Index the corpus, or try another term.</div>`; return; }
+        const r = tr.resolved;
+        $("ins-trend").innerHTML =
+          `<div style="margin-bottom:6px">Resolved to <strong>${esc(r.term)}</strong> ` +
+          `<span class="pill">${esc(r.kind)}</span> · ${tr.total} mentions in ${tr.articles} articles</div>` +
+          trendSvg(tr.points);
+        $("ins-mindmap").innerHTML = mindmapSvg(r.term, assoc.pairs) +
+          (assoc.caveat ? `<div class="hint">${esc(assoc.caveat)}</div>` : "");
+        loadFraming(r.term);
+        $("ins-context").innerHTML = (ctx.mentions || []).length
+          ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
+               <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(m.country):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
+                 ${m.url?`· <a href="${esc(m.url)}" target="_blank" rel="noopener">open</a>`:""}</div>
+               <div>${esc(m.snippet)}</div></div>`).join("")
+          : '<div class="muted">No context snippets.</div>';
+      } catch (e) { $("ins-trend").innerHTML = ""; toast("Explore failed: " + e.message, "err"); }
+    }
+
+    function termListHtml(terms, extra) {
+      if (!terms.length) return '<div class="muted">Nothing yet — index the corpus.</div>';
+      return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
+        <button class="tiny danger" title="exclude this keyword" style="margin:0;padding:0 6px"
+          onclick='excludeKeyword(${JSON.stringify(t.term)})'>✕</button>
+        <a href="#" onclick='pickTerm(${JSON.stringify(t.term)});return false'>${esc(t.term)}</a>
+        <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
+    }
+
+    async function excludeKeyword(term) {
+      try {
+        await api("/api/insights/exclude", {method: "POST", body: JSON.stringify({term})});
+        toast(`Excluded “${term}”. Manage exclusions in Settings.`);
+        loadTrends(); if ($("ins-term").value.trim()) exploreTerm();
+      } catch (e) { toast("Exclude failed: " + e.message, "err"); }
+    }
+
+    async function loadTrends() {
+      const wd = $("trd-window").value, bd = $("trd-base").value, kind = $("trd-kind").value, cc = $("trd-country").value.trim();
+      const qp = (extra) => `kind=${encodeURIComponent(kind)}${cc?"&country="+encodeURIComponent(cc):""}${extra||""}`;
+      try {
+        const [rising, top] = await Promise.all([
+          api(`/api/insights/trending?window_days=${wd}&baseline_days=${bd}&${qp()}`),
+          api(`/api/insights/top?days=${wd}&${qp()}`),
+        ]);
+        $("trd-rising").innerHTML = termListHtml(rising.terms, t => `↑${t.growth}× (recent ${t.recent}, prior ${t.prior})`);
+        $("trd-top").innerHTML = termListHtml(top.terms, t => `${t.mentions} mentions · ${t.articles} articles`);
+        $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
+      } catch (e) { toast("Trends failed: " + e.message, "err"); }
+    }
+
+    // World map: equirectangular projection, viewBox-based zoom/pan (no deps).
+    const MAP_W = 720, MAP_H = 360;
+    let MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H};
+    const lon2x = lon => (Number(lon) + 180) / 360 * MAP_W;
+    const lat2y = lat => (90 - Number(lat)) / 180 * MAP_H;
+
+    function applyVB() {
+      const svg = document.getElementById("oo-map");
+      if (svg) svg.setAttribute("viewBox", `${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`);
+    }
+    function zoomMap(f) {
+      const cx = MAP_VB.x + MAP_VB.w/2, cy = MAP_VB.y + MAP_VB.h/2;
+      MAP_VB.w = Math.min(MAP_W, Math.max(40, MAP_VB.w * f));
+      MAP_VB.h = Math.min(MAP_H, Math.max(20, MAP_VB.h * f));
+      MAP_VB.x = cx - MAP_VB.w/2; MAP_VB.y = cy - MAP_VB.h/2;
+      applyVB();
+    }
+    function resetMap() { MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; applyVB(); }
+
+    function buildMapSvg(cities) {
+      const placed = cities.filter(c => c.lat != null && c.lon != null);
+      // graticule every 30 degrees
+      let grid = "";
+      for (let lon = -180; lon <= 180; lon += 30)
+        grid += `<line x1="${lon2x(lon)}" y1="0" x2="${lon2x(lon)}" y2="${MAP_H}" stroke="var(--border)" stroke-width="0.3"/>`;
+      for (let lat = -90; lat <= 90; lat += 30)
+        grid += `<line x1="0" y1="${lat2y(lat)}" x2="${MAP_W}" y2="${lat2y(lat)}" stroke="var(--border)" stroke-width="0.3"/>`;
+      const maxM = Math.max(1, ...placed.map(c => (c.top||[]).reduce((s,t)=>s+t.mentions,0)));
+      const dots = placed.map(c => {
+        const x = lon2x(c.lon).toFixed(1), y = lat2y(c.lat).toFixed(1);
+        const m = (c.top||[]).reduce((s,t)=>s+t.mentions,0);
+        const r = (1.5 + 4*Math.sqrt(m/maxM)).toFixed(1);
+        const terms = (c.top||[]).map(t=>t.term+" "+t.mentions).join(", ");
+        return `<g><circle cx="${x}" cy="${y}" r="${r}" fill="var(--accent)" fill-opacity="0.75">
+            <title>${esc(c.name)}${c.country?" ("+esc(c.country)+")":""}: ${esc(terms)}</title></circle>
+          <text x="${x}" y="${(y-Number(r)-1).toFixed(1)}" fill="var(--fg)" font-size="4" text-anchor="middle">${esc(c.name)}</text></g>`;
+      }).join("");
+      if (!placed.length)
+        return `<div class="muted">No placed cities yet. Index the corpus (sources need a city), or generate the full gazetteer (scripts/build_city_gazetteer.py).</div>`;
+      return `<svg id="oo-map" viewBox="0 0 ${MAP_W} ${MAP_H}" width="100%" style="max-width:${MAP_W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab">
+        ${grid}${dots}</svg>`;
+    }
+
+    function wireMapDrag() {
+      const svg = document.getElementById("oo-map");
+      if (!svg) return;
+      let dragging = false, sx = 0, sy = 0;
+      svg.addEventListener("mousedown", e => { dragging = true; sx = e.clientX; sy = e.clientY; svg.style.cursor = "grabbing"; });
+      window.addEventListener("mouseup", () => { dragging = false; if (svg) svg.style.cursor = "grab"; });
+      svg.addEventListener("mousemove", e => {
+        if (!dragging) return;
+        const rect = svg.getBoundingClientRect();
+        MAP_VB.x -= (e.clientX - sx) * MAP_VB.w / rect.width;
+        MAP_VB.y -= (e.clientY - sy) * MAP_VB.h / rect.height;
+        sx = e.clientX; sy = e.clientY; applyVB();
+      });
+    }
+
+    async function loadMap() {
+      const days = $("map-days").value, kind = $("map-kind").value;
+      try {
+        const d = await api(`/api/insights/map?days=${days}&kind=${encodeURIComponent(kind)}`);
+        const rowsFor = (areas, label) => areas.length
+          ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
+              `<tr><td><strong>${esc(a.code||a.name)}</strong>${a.country&&a.name?` <span class="muted">${esc(a.country)}</span>`:""}</td><td>` +
+              a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${JSON.stringify(t.term)})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
+              `</td></tr>`).join("")
+          : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
+        $("map-svg").innerHTML = buildMapSvg(d.cities || []);
+        MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; wireMapDrag();
+        $("map-countries").innerHTML = rowsFor(d.countries, "Country");
+        $("map-cities").innerHTML = rowsFor(d.cities, "City");
+      } catch (e) { toast("Map failed: " + e.message, "err"); }
+    }
+
+    // -- Wikipedia change-tracking ------------------------------------------ //
+    async function loadWiki() {
+      try { renderWikiStatus(await api("/api/wiki/status")); }
+      catch (e) { if (!_wikiStatusBuilt) $("wiki-status").textContent = "Status unavailable: " + e.message; }
+      loadWikiPages(); loadWikiChanges();
+    }
+
+    async function loadWikiDumps() {
+      try {
+        const d = await api("/api/wiki/dumps");
+        const t = $("dump-table");
+        if (!d.downloads.length) { t.innerHTML = `<tr><td class="muted">No offline downloads.</td></tr>`; return; }
+        t.innerHTML = "<tr><th>Edition</th><th>Progress</th><th>Status</th><th></th></tr>" +
+          d.downloads.map(e => `<tr>
+            <td><strong>${esc(e.wiki)}</strong> <span class="muted">${esc(e.kind)}</span></td>
+            <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:""}</td>
+            <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
+            <td style="white-space:nowrap">
+              ${e.status==='downloading'?`<button class="tiny secondary" onclick="pauseDump(${JSON.stringify(esc(e.key))})">Pause</button>`:
+                (e.status!=='done'?`<button class="tiny secondary" onclick="startDump(${JSON.stringify(esc(e.wiki))})">Resume</button>`:"")}
+              <button class="tiny danger" onclick="deleteDump(${JSON.stringify(esc(e.key))})">Delete</button>
+            </td></tr>`).join("");
+      } catch (e) { /* dumps optional */ }
+    }
+
+    async function probeDump() {
+      const w = $("dump-lang").value.trim() || "en";
+      $("dump-estimate").textContent = "Checking size…";
+      try {
+        const d = await api(`/api/wiki/dumps/probe?wiki=${encodeURIComponent(w)}`);
+        $("dump-estimate").textContent = d.size_bytes ? `≈ ${humanBytes(d.size_bytes)} for ${d.wiki}` : "size unknown";
+      } catch (e) { $("dump-estimate").textContent = "size check failed"; }
+    }
+
+    async function startDump(wiki) {
+      const w = wiki || $("dump-lang").value.trim() || "en";
+      if (!wiki && !confirm(`Download the ${w} current-text dump? This can be very large (tens of GB for big editions).`)) return;
+      try { await api("/api/wiki/dumps/start", {method:"POST", body: JSON.stringify({wiki: w})});
+        toast("Download started."); loadWikiDumps();
+        // refresh progress a few times
+        let n=0; const poll=setInterval(()=>{ loadWikiDumps(); if(++n>40) clearInterval(poll); }, 3000);
+      } catch (e) { toast("Start failed: " + e.message, "err"); }
+    }
+    async function pauseDump(key) {
+      try { await api("/api/wiki/dumps/pause?key="+encodeURIComponent(key), {method:"POST"}); loadWikiDumps(); }
+      catch (e) { toast("Pause failed: " + e.message, "err"); }
+    }
+    async function deleteDump(key) {
+      if (!confirm("Delete this download and its file?")) return;
+      try { await api("/api/wiki/dumps?key="+encodeURIComponent(key), {method:"DELETE"}); loadWikiDumps(); }
+      catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    async function loadWikiPages() {
+      try {
+        const d = await api("/api/wiki/pages");
+        const t = $("wiki-pages");
+        t.innerHTML = "<tr><th>Edition</th><th>Title</th><th>Watchlist</th><th>Checked</th><th>Edits</th><th>Flagged</th><th></th></tr>" +
+          (d.pages.length ? d.pages.map(p => `<tr>
+            <td><strong>${esc(p.wiki)}</strong></td><td>${esc(p.title)}</td>
+            <td class="muted">${esc(p.category||"")}</td>
+            <td class="muted" style="font-size:12px">${p.last_checked_at?esc(p.last_checked_at.slice(0,16).replace("T"," ")):"never"}</td>
+            <td>${p.revisions}</td><td class="muted">${p.flagged}</td>
+            <td style="white-space:nowrap">
+              <button class="tiny secondary" onclick="trackWikiPage(${p.id})">Track</button>
+              <button class="tiny danger" onclick="deleteWikiPage(${p.id}, ${JSON.stringify(esc(p.title))})">Delete</button>
+            </td></tr>`).join("")
+            : `<tr><td colspan="7" class="muted">No watched pages yet. Add one above.</td></tr>`);
+      } catch (e) { toast("Wiki pages: " + e.message, "err"); }
+    }
+
+    async function addWikiPage() {
+      const body = { wiki: $("wiki-lang").value.trim() || "en", title: $("wiki-title").value.trim(),
+                     category: $("wiki-cat").value.trim() || null };
+      if (!body.title) { toast("Enter an article title.", "err"); return; }
+      try { await api("/api/wiki/pages", {method:"POST", body: JSON.stringify(body)});
+        toast("Page added to watchlist."); $("wiki-title").value=""; loadWikiPages(); loadWiki(); }
+      catch (e) { toast("Add failed: " + e.message, "err"); }
+    }
+
+    async function deleteWikiPage(id, title) {
+      if (!confirm(`Stop watching "${title}"? Its stored revisions are removed.`)) return;
+      try { await api("/api/wiki/pages/"+id, {method:"DELETE"}); toast("Removed."); loadWiki(); }
+      catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    const _ores = () => $("wiki-ores").checked ? "true" : "false";
+
+    async function trackWikiPage(id) {
+      toast("Fetching revisions… (ethical: UA + maxlag + rate-limited)");
+      try {
+        const r = await api(`/api/wiki/pages/${id}/track?ores=${_ores()}`, {method:"POST"});
+        toast(r.baseline ? "Baseline captured." : `Stored ${r.new} new edit(s), ${r.flagged} flagged.`);
+        loadWiki();
+      } catch (e) { toast("Track failed: " + e.message, "err"); }
+    }
+
+    async function trackWikiNow() {
+      $("wiki-progress").textContent = "Tracking watched pages…";
+      try {
+        const r = await api(`/api/wiki/track-now?ores=${_ores()}`, {method:"POST"});
+        $("wiki-progress").textContent = `${r.pages} page(s): ${r.new_revisions} new edit(s), ${r.flagged} flagged.`;
+        toast("Tracking complete."); loadWiki();
+      } catch (e) { $("wiki-progress").textContent=""; toast("Track now failed: " + e.message, "err"); }
+    }
+
+    async function loadWikiChanges() {
+      const flagged = $("wiki-flagged-only").checked ? "true" : "false";
+      const w = $("wiki-filter-lang").value.trim();
+      try {
+        const d = await api(`/api/wiki/changes?flagged_only=${flagged}&limit=80` + (w?"&wiki="+encodeURIComponent(w):""));
+        const t = $("wiki-changes");
+        t.innerHTML = "<tr><th>When</th><th>Edition · Page</th><th>Editor</th><th>Δ bytes</th><th>Reasons</th><th>ORES</th><th></th></tr>" +
+          (d.changes.length ? d.changes.map(c => `<tr>
+            <td class="muted" style="font-size:12px">${c.timestamp?esc(c.timestamp.slice(0,16).replace("T"," ")):"—"}</td>
+            <td><strong>${esc(c.wiki)}</strong> · ${esc(c.title)}</td>
+            <td class="muted">${esc(c.editor||"—")}${c.editor_anon?' <span class="pill warn">anon</span>':''}</td>
+            <td class="${(c.delta_bytes||0)<0?'':''}" style="color:${(c.delta_bytes||0)<0?'var(--err)':'var(--ok)'}">${c.delta_bytes==null?'—':(c.delta_bytes>0?'+':'')+c.delta_bytes}</td>
+            <td>${(c.flag_reasons||[]).map(r=>`<span class="pill warn">${esc(r)}</span>`).join(" ")}</td>
+            <td class="muted">${c.ores_damaging!=null?'dmg '+c.ores_damaging.toFixed(2):'—'}</td>
+            <td style="white-space:nowrap">
+              <button class="tiny secondary" onclick="viewWikiDiff(${c.id})">Diff</button>
+              <a class="tiny" href="${esc(c.diff_url)}" target="_blank" rel="noopener">live</a></td></tr>`).join("")
+            : `<tr><td colspan="7" class="muted">No changes yet. Add pages and press “Track now”.</td></tr>`);
+      } catch (e) { toast("Wiki changes: " + e.message, "err"); }
+    }
+
+    async function viewWikiDiff(id) {
+      const el = $("wiki-diff");
+      el.innerHTML = '<div class="muted">Loading diff…</div>';
+      try {
+        const d = await api("/api/wiki/revisions/"+id);
+        const lines = (d.diff||"(no stored diff)").split("\n").map(l => {
+          const cls = l.startsWith("+") ? "ok" : l.startsWith("-") ? "err" : "muted";
+          return `<div style="color:var(--${cls});white-space:pre-wrap;font-size:13px">${esc(l)}</div>`;
+        }).join("");
+        el.innerHTML = `<div class="note" style="max-width:none">
+          <div class="muted" style="font-size:12px;margin-bottom:6px">${esc(d.wiki)} · ${esc(d.title)} · rev ${d.revid}
+            · <a href="${esc(d.diff_url)}" target="_blank" rel="noopener">view on Wikipedia</a></div>${lines}</div>`;
+      } catch (e) { el.innerHTML=""; toast("Diff: " + e.message, "err"); }
+    }
+
     function searchParams() {
       const p = new URLSearchParams();
       const q = $("q").value.trim(); if (q) p.set("query", q);
@@ -297,7 +2596,7 @@
     }
 
     async function doSearch() {
-      const p = searchParams(); p.set("limit", "50");
+      const p = searchParams(); p.set("limit", String(DEFAULT_LIMIT));
       try {
         const data = await api("/api/articles?" + p.toString());
         $("search-meta").textContent = `${data.total} result(s)` + (data.total > data.results.length ?
@@ -309,10 +2608,11 @@
                  <div class="muted" style="font-size:12px">${esc((a.content||"").slice(0,160))}…</div></td>
              <td>${esc(a.source)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
              <td>${esc(a.language||"")}</td>
-             <td><a href="${esc(a.url)}" target="_blank" rel="noopener">open</a>
-                 <button class="secondary" style="margin-top:4px;padding:3px 8px"
+             <td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>
+                 ${a.url ? `· <a class="muted" href="${esc(a.url)}" target="_blank" rel="noopener" title="original online source">source&nbsp;↗</a>` : ""}
+                 <button class="secondary tiny" style="margin-top:4px"
                    onclick="summarize(${a.id}, this)">Summarize</button>
-                 <button class="secondary" style="margin-top:4px;padding:3px 8px"
+                 <button class="secondary tiny" style="margin-top:4px"
                    onclick="translateArticle(${a.id}, this)">Translate</button>
                  <div class="summary muted" style="font-size:12px;margin-top:4px"></div></td></tr>`
           ).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`);
@@ -352,22 +2652,26 @@
       } catch (e) { cell.textContent = ""; toast("Translate: " + e.message, "err"); }
     }
 
-    async function compareFraming() {
-      const q = $("q").value.trim();
-      const el = $("framing");
+    // Framing comparison — moved into Insights, scoped to the explored term.
+    async function loadFraming(term) {
+      const el = $("ins-framing");
       el.innerHTML = "<span class='muted'>Comparing how outlets frame this…</span>";
       try {
-        const d = await api("/api/framing" + (q ? "?query=" + encodeURIComponent(q) : ""));
-        if (!d.framing || !d.framing.length) { el.innerHTML = "<span class='muted'>No coverage to compare.</span>"; return; }
+        const d = await api("/api/framing?query=" + encodeURIComponent(term));
+        if (!d.framing || !d.framing.length) {
+          el.innerHTML = "<span class='muted'>Not enough coverage to compare framing for this term.</span>"; return;
+        }
         const rows = d.framing.map(f =>
           `<tr><td>${esc(f.source)}</td>
-               <td><span class="pill ${f.tone_label==='positive'?'ok':f.tone_label==='negative'?'err':''}">${f.tone_label} ${f.avg_tone.toFixed(2)}</span></td>
+               <td><span class="pill ${f.tone_label==='positive'?'ok':f.tone_label==='negative'?'err':''}">${esc(f.tone_label)} ${f.avg_tone.toFixed(2)}</span></td>
                <td class="muted">${f.article_count}</td>
                <td class="muted" style="font-size:12px">${(f.top_terms||[]).slice(0,6).map(esc).join(", ")}</td></tr>`
         ).join("");
         el.innerHTML = `<table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table>
-          <div class="hint">${esc(d.caveat)}</div>`;
-      } catch (e) { el.innerHTML = ""; toast("Framing: " + e.message, "err"); }
+          <div class="hint">${esc(d.caveat||"")}</div>`;
+      } catch (e) {
+        el.innerHTML = "<span class='muted'>Framing unavailable (needs the [analysis] extra installed).</span>";
+      }
     }
 
     async function exportEvidence() {
@@ -497,7 +2801,29 @@
       $("cust-ots-warn").style.display = $("cust-ots").checked ? "block" : "none");
 
     $("q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
-    loadHealth(); loadLlmHealth(); loadSources(); doSearch(); loadCustody();
+
+    // Apply the saved look immediately (before any network) so there is no flash.
+    applyUi(getUi()); buildDrawer();
+
+    // Global shortcuts: Ctrl/⌘-K opens the command palette; Escape closes overlays.
+    document.addEventListener("keydown", e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
+      else if (e.key === "Escape") { closePalette(); closeDrawer(); document.body.classList.remove("nav-open"); }
+    });
+
+    // Initial load: always-on essentials; per-tab data loads lazily on first view.
+    // Settings is loaded eagerly so the default result limit + theme seed apply
+    // app-wide (mark it loaded so opening the tab doesn't refetch).
+    _loaded.add("settings");
+    loadSettings().then(doSearch);
+    if (_media) _media.addEventListener("change", () => {
+      if (getUi().theme === "system") applyThemeAttr("system");
+    });
+    loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus();
+    ensureDocList();   // so the command palette can offer docs before Help is opened
+    // Honour a deep-link like /#sources on first load; otherwise land on Home.
+    const initial = (location.hash || "#home").slice(1);
+    showTab(document.getElementById("tab-" + initial) ? initial : "home");
   </script>
 </body>
 </html>

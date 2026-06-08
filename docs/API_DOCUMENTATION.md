@@ -15,13 +15,24 @@ The app binds to loopback only and (for a single local user) requires no auth.
 | `GET /api/articles`, `/api/articles/export` | Boolean full-text search (FTS5) + CSV/JSON export |
 | `POST /api/ingest`, `/api/sources/{id}/ingest`, `/api/sources/{id}/ingest-email` | Ethical ingestion: single URL, RSS feed, IMAP mailbox |
 | `… /api/sources`, `/api/sources/...` | Source + group + metadata management |
-| `POST /api/sources/seed-defaults` | Seed the curated source catalog |
+| `POST /api/sources/seed-defaults` | Seed the curated source catalogs (news + markets + generated world catalog) |
+| `GET /api/database/stats`, `/coverage`, `/countries` | Corpus row counts + on-disk size; country coverage; per-country source counts + topic keywords |
+| `GET /api/database/backup`, `POST /api/database/restore` | Consistent SQLite snapshot download; validated, snapshotted restore (SQLite only) |
+| `GET/PUT /api/settings` | GUI preferences (theme, default result limit) |
+| `… /api/scheduler/...` | Background ingester: status, start, stop, run-now, config (modes: rss / crawl / markets) |
+| `… /api/markets/rules`, `/rules/{id}/run`, `/overview` | Per-source price-extraction rules + a "test" run + Markets overview |
+| `GET /api/markets/feeds`, `POST /feeds/{key}/import`, `/feeds/import-url` | Official CSV price-feed catalog + import (FRED/World Bank/EIA) + custom-URL import |
+| `GET /api/catalog/export.csv`, `/template.csv`, `/columns`, `POST /api/catalog/import` | Source-list CSV export / template / columns / upsert-by-domain import |
+| `… /api/insights/...` | Keyword & entity analytics: status, reindex, top, trending, trend, associations (PMI), context, map |
 | `GET/POST /api/llm/...` | Local LLM (Ollama): health, models, generate, summarize an article |
 | `… /api/commodities/...` | Commodity prices (import / CSV / list) + honest price↔news correlation |
 | `POST /api/analysis/...` | Scientific-rigor stats: t-test, correlation, ANOVA, Mann-Whitney, CI |
 | `GET /api/monitoring/...` | Real source-uptime health + corpus-volume anomalies |
 | `POST /api/verify/image-metadata` | Honest image EXIF/metadata extraction |
 | `POST /api/reports/evidence`, `/evidence/verify` | Signed, tamper-evident evidence bundles |
+| `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`, `GET /api/custody/export`, `POST /api/custody/verify` | Append-only, hash-chained signed chain-of-custody log + offline verification |
+| `GET/PUT /api/custody/settings` | Runtime custody preferences (post-quantum signing, anchoring mode, auto-log) — reports *effective*, availability-aware state |
+| `POST /api/custody/anchor`, `GET /api/custody/providers` | Anchor a Merkle root (local / OpenTimestamps) + provider availability |
 | `… /api/keywords/...`, `/api/analysis/articles/similarity` | Keyword extraction + article similarity |
 
 Routers marked **[analysis]** (commodities, statistics, keywords) require the
@@ -33,3 +44,9 @@ Behaviour notes:
   limited); LLM endpoints return **503** if Ollama is unavailable (never a fake answer).
 - Evidence verification: pass the signer's public key to prove provenance, not just
   integrity (see [QUICKSTART](QUICKSTART.md) and `scripts/verify_evidence.py`).
+- Custody settings are *preferences*, not guarantees: `GET/PUT /api/custody/settings`
+  always report the **effective** state (preference **and** library availability), so
+  post-quantum / OpenTimestamps never appear enabled when the supporting extra is
+  absent. Anchoring defaults to the offline `local` provider; OpenTimestamps and
+  public-chain anchoring carry a privacy warning (see
+  [CHAIN_OF_CUSTODY](CHAIN_OF_CUSTODY.md)).

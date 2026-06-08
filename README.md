@@ -24,12 +24,70 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
 - ✅ **Boolean full-text search** (SQLite FTS5): real `AND`/`OR`/`NOT`, `"phrases"`,
   parentheses with correct precedence — fully parameterized.
 - ✅ CSV/JSON export; a dependency-free, offline web UI at `127.0.0.1:8000`.
+- ✅ **Honest chain of custody**: append-only, hash-chained, **signed** custody log
+  (hybrid Ed25519 + post-quantum ML-DSA), timestamping (self-asserted local, or
+  Bitcoin-anchored **OpenTimestamps**), and offline verification — all toggleable
+  from a **Chain of custody** UI panel, with the effective state always shown
+  honestly (see [docs/CHAIN_OF_CUSTODY.md](docs/CHAIN_OF_CUSTODY.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
+- ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust ·
+  System*) covering Home, Search, Insights, Wikipedia, Markets, Collect, Sources,
+  Library, Evidence &amp; custody, Settings and an in-app Help/docs reader. Includes a
+  command palette (Ctrl/⌘-K), live appearance customization (themes, accent, density,
+  layout, which tools show), a **Library** panel (real row counts + on-disk size),
+  inline **source management** (enable/disable, priority, delete), and a
+  **World coverage** view (countries covered vs not, sources + topic keywords per
+  country). *(The redesigned interface ships on branch `0.05`; see
+  [`docs/GUI_REDESIGN_0.05.md`](docs/GUI_REDESIGN_0.05.md).)*
+- ✅ **Settings**: theme (system/dark/light) and a SQLite **backup/restore**
+  — consistent online-backup download, and a *validated*, snapshotted restore
+  (refuses anything that isn't a genuine Open Omniscience database).
+- ✅ **Background scheduler**: start/stop + "scrape now", on an interval, in
+  `rss`, `crawl`, or `markets` mode — all through the same ethical fetch path.
+- ✅ **Bounded recursive crawler**: same-domain article *discovery* (not
+  mirroring) with robots fail-closed, rate limiting, and hard depth/page caps.
+- ✅ **Markets** (financial / stock / rare-earth): per-source **price-extraction
+  rules** turn structured pages into a real `CommodityPrice` series (a number is
+  stored only where a CSS selector lands on one — never guessed), with inline
+  charts and honest price↔news **correlation** (real coefficient + p-value + n).
+- ✅ **Packaged worldwide markets catalog** (~110 sources): stock & securities
+  exchanges across every region, commodity/metals/energy/derivatives exchanges
+  (incl. GFEX rare-earth futures), commodity & rare-earth price/data sources
+  (SMM, USGS, World Bank, Fastmarkets, …) and financial publishers — seeded on
+  first run so the app is ready to ingest market coverage. (Live *price* numbers
+  still come only from a verified extraction rule or a CSV import — see
+  [docs/MARKETS.md](docs/MARKETS.md) — never a guessed selector.)
+- ✅ **Official CSV price feeds**: a one-click catalog (FRED, which carries the
+  **World Bank "Pink Sheet"** and **EIA** series) plus a **custom-URL importer**
+  to pull any CSV series into the commodity store — idempotent, missing values
+  skipped, failures reported (never fabricated).
+- ✅ **CSV import/export of the source list** (`/api/catalog`) with a documented
+  column format + downloadable template; import upserts by domain, bad rows are
+  reported, not dropped.
+- ✅ **Data-derived worldwide catalog generator** (Wikidata CC0 + optional
+  GDELT/Media Cloud merge) for news media **and** official institutions per
+  country, with a coverage report driving gaps — see
+  [docs/WORLD_NEWS_CATALOG.md](docs/WORLD_NEWS_CATALOG.md).
+- ✅ **Keyword & entity analytics** (the **Insights** tab): keywords/entities are
+  extracted from ingested article text (people/orgs/places as single units; opt-in
+  spaCy `[nlp]` for real NER), stored as mentions with context, and surfaced as
+  **trends**, PMI **associations** ("mind-map"), in-context snippets, and an
+  **interactive map** (zoomable SVG with city pins by real lat/lon + per-country/
+  city tables) — every figure a real aggregate with method + caveat. See
+  [docs/INSIGHTS.md](docs/INSIGHTS.md).
+- ✅ **Wikipedia change-tracking** (the **Wikipedia** tab): each language edition is
+  a tracked source whose *edits* are the data — one baseline snapshot then
+  diffs/deltas (not re-copies), with honest large-edit/revisionism flagging (size
+  delta, revert/blank tags, anon/burst, optional **ORES** scores), a flagged-edit
+  feed and diff viewer, plus an optional **offline baseline downloader**
+  (per-language, resumable, size-probed) kept separate from live tracking. See
+  [docs/WIKIPEDIA.md](docs/WIKIPEDIA.md).
 
-**Deferred to later phases (see [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md)):**
-local LLM analysis via Ollama (Phase 2); one financial/commodity vertical with
-correlation (Phase 3); email + monitoring (Phase 4); signed chain-of-custody
-reporting (Phase 5).
+**In progress / next:**
+- 🚧 Local LLM analysis via Ollama; email + monitoring; cross-linking Wikipedia
+  diffs into the Insights keyword analytics.
+
+See [docs/ACTION_PLAN.md](docs/ACTION_PLAN.md) for the full phasing.
 
 **Honesty note:** several previously-advertised "analysis" components (deepfake,
 propaganda, cognitive-bias, bot detection) were **fabricated** — returning
@@ -87,6 +145,8 @@ Ollama and export a **signed, verifiable evidence bundle**.
 
 ## 📚 Documentation
 
+- [USER_MANUAL](docs/USER_MANUAL.md) — **the friendly, complete guide**: every tab,
+  control, setting, workflow, env var and API area
 - [QUICKSTART](docs/QUICKSTART.md) — install + the end-to-end loop
 - [PRODUCT_SYNTHESIS](docs/PRODUCT_SYNTHESIS.md) — what the app is and isn't
 - [ACTION_PLAN](docs/ACTION_PLAN.md) — phased build plan + status

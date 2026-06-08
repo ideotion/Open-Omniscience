@@ -647,6 +647,11 @@ class Keyword(Base):
     relevance_score = Column(Float, default=0.0)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+    # Provenance: which extractor labelled this term (e.g. "baseline", "spacy",
+    # "llm:<model>"). An entity type is a *labelled-by-X assertion*, never ground
+    # truth -- this records the X (PRODUCT_SYNTHESIS §8).
+    extractor = Column(String(40))
     
     # Relationships
     category = relationship("KeywordCategory", back_populates="keywords")
@@ -1086,6 +1091,180 @@ class CommodityPrice(Base):
 
     def __repr__(self) -> str:
         return f"<CommodityPrice({self.symbol} {self.observed_on} {self.price} {self.currency}/{self.unit})>"
+
+
+class MarketExtractionRule(Base):
+    """Per-source rule for pulling ONE structured price point off a market page.
+
+    Market/financial pages are structured data, not prose: running the article
+    extractor on them yields text, not a clean ``symbol/price`` series. So a price
+    series is only produced where the operator has told us *exactly where the
+    number lives* on a specific page (a CSS selector, optionally narrowed by an
+    attribute and/or a capture-group regex). This is the honest source of truth the
+    Markets tabs chart from -- when a rule matches nothing, ingestion records an
+    explicit failure and stores NO number (PRODUCT_SYNTHESIS §3.5). Pages without a
+    rule are still captured as raw articles via the normal ethical path.
+    """
+
+    __tablename__ = "market_extraction_rules"
+
+    id = Column(Integer, primary_key=True)
+    source_id = Column(Integer, ForeignKey("sources.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    # Which Markets sub-view this instrument belongs to.
+    category = Column(String(20), nullable=False, default="commodity")  # financial|stock|commodity
+    symbol = Column(String(32), nullable=False, index=True)  # e.g. "Nd", "AAPL", "XAU"
+    label = Column(String(120))                              # human name, e.g. "Neodymium spot"
+    url = Column(String(1000), nullable=False)               # the exact page to fetch
+    selector = Column(String(500), nullable=False)           # CSS selector locating the price
+    attribute = Column(String(100))                          # optional: read this attr, not text
+    value_regex = Column(String(300))                        # optional: capture-group regex for the number
+    currency = Column(String(8), nullable=False, default="USD")
+    unit = Column(String(16), nullable=False, default="kg")  # mass unit for commodities
+    market = Column(String(100))                             # market label / provenance
+    enabled = Column(Boolean, default=True)
+    last_run_at = Column(DateTime)
+    last_status = Column(String(255))                        # honest last outcome string
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+    source = relationship("Source")
+
+    __table_args__ = (
+        Index("ix_market_rule_source", "source_id"),
+        Index("ix_market_rule_category", "category"),
+        Index("ix_market_rule_symbol", "symbol"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<MarketExtractionRule({self.symbol} <- {self.selector!r} @ {self.url})>"
+
+
+class KeywordMention(Base):
+    """One article's mention of a keyword/entity, with context + denormalised facets.
+
+    The foundation of keyword analytics. One row per (article, keyword): ``count``
+    is how many times the term occurs in that article and ``first_offset`` points
+    at the first occurrence so the surrounding sentence can be reconstructed from
+    ``Article.content`` on read (we store offsets, not snippets, to stay lean).
+
+    ``observed_on`` (the article's publish/ingest date), ``country`` and ``city``
+    are denormalised from the article's source so trend, map and per-region
+    queries are a single indexed scan instead of a multi-join. ``extractor``
+    records how the keyword was found (provenance).
+    """
+
+    __tablename__ = "keyword_mentions"
+
+    id = Column(Integer, primary_key=True)
+    keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
+    article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
+    count = Column(Integer, nullable=False, default=1)
+    first_offset = Column(Integer)                 # char offset in Article.content
+    observed_on = Column(Date, index=True)         # denormalised article date (for trends)
+    country = Column(String(2))                    # denormalised source country (for the map)
+    city = Column(String(120))                     # denormalised source city, when known
+    extractor = Column(String(40))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    keyword = relationship("Keyword")
+    article = relationship("Article")
+
+    __table_args__ = (
+        # One mention row per article+keyword; re-indexing updates it in place.
+        Index("ix_mention_keyword_article", "keyword_id", "article_id", unique=True),
+        Index("ix_mention_keyword_date", "keyword_id", "observed_on"),
+        Index("ix_mention_country", "country"),
+        Index("ix_mention_article", "article_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<KeywordMention(kw={self.keyword_id} art={self.article_id} x{self.count})>"
+
+
+class WikiPage(Base):
+    """A tracked Wikipedia page in one language edition (e.g. en, fr, ar).
+
+    Editions are per-*language*, not per-country (mapped to countries only in the
+    UI). We keep ONE full-text baseline snapshot per page (``baseline_text``,
+    compressed) taken when tracking starts; everything after is stored as per-edit
+    diffs on :class:`WikiRevision`, so cosmetic edits cost almost nothing and the
+    store scales with edit activity, not article size.
+    """
+
+    __tablename__ = "wiki_pages"
+
+    id = Column(Integer, primary_key=True)
+    wiki = Column(String(16), nullable=False)          # language edition code, e.g. "en"
+    title = Column(String(512), nullable=False)
+    pageid = Column(Integer)                            # MediaWiki page id
+    watched = Column(Boolean, default=True)
+    category = Column(String(255))                     # optional grouping (e.g. a watchlist name)
+    baseline_revid = Column(Integer)                   # revid the baseline_text corresponds to
+    baseline_text = Column(CompressedText)             # one full snapshot; later versions = baseline + diffs
+    last_revid = Column(Integer)                       # newest revid we have stored
+    last_checked_at = Column(DateTime)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    revisions = relationship("WikiRevision", back_populates="page", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_wikipage_wiki_title", "wiki", "title", unique=True),
+        Index("ix_wikipage_watched", "watched"),
+        Index("ix_wikipage_category", "category"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<WikiPage({self.wiki}:{self.title})>"
+
+
+class WikiRevision(Base):
+    """One stored edit (revision) of a tracked page: a delta, not a re-copy.
+
+    Holds the edit's metadata (editor, comment, flags, byte delta), the **diff**
+    (added/removed text, compressed) rather than the whole new article, optional
+    ORES model scores (a labelled-by-ORES assertion, with provenance), and the
+    honest large-edit flag + reasons computed at ingest. Any historical full text
+    is reconstructable by replaying diffs from the page baseline.
+    """
+
+    __tablename__ = "wiki_revisions"
+
+    id = Column(Integer, primary_key=True)
+    page_id = Column(Integer, ForeignKey("wiki_pages.id", ondelete="CASCADE"), nullable=False)
+    revid = Column(Integer, nullable=False)
+    parent_revid = Column(Integer)
+    timestamp = Column(DateTime, index=True)
+    editor = Column(String(255))
+    editor_anon = Column(Boolean, default=False)
+    comment = Column(Text)
+    size = Column(Integer)                  # new article size in bytes
+    delta_bytes = Column(Integer)           # size - parent size (signed)
+    tags = Column(String(500))              # MediaWiki change tags, comma-separated
+    minor = Column(Boolean, default=False)
+    bot = Column(Boolean, default=False)
+    diff = Column(CompressedText)           # added/removed text for this edit
+
+    # ORES (Wikimedia) model scores -- attributed, optional enrichment.
+    ores_damaging = Column(Float)
+    ores_goodfaith = Column(Float)
+    ores_provenance = Column(String(80))
+
+    # Honest large-edit detection computed at ingest.
+    flagged = Column(Boolean, default=False)
+    flag_reasons = Column(String(500))      # comma-separated reason codes
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    page = relationship("WikiPage", back_populates="revisions")
+
+    __table_args__ = (
+        Index("ix_wikirev_page_revid", "page_id", "revid", unique=True),
+        Index("ix_wikirev_page_time", "page_id", "timestamp"),
+        Index("ix_wikirev_flagged", "flagged"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<WikiRevision(page={self.page_id} rev={self.revid} d={self.delta_bytes})>"
 
 
 

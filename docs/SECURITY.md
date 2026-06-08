@@ -26,10 +26,16 @@ Open Omniscience v0.4 targets a **single local user** on a **Qubes OS Debian App
   *both* components — never a silent downgrade). Independent time comes from
   **OpenTimestamps** (Bitcoin-anchored); a self-asserted local time is the offline
   default. See `docs/CHAIN_OF_CUSTODY.md` for the full model and its limits.
+- **Configurable from the UI:** post-quantum signing, anchoring mode
+  (local vs OpenTimestamps), and auto-logging on ingest are operator-controlled at
+  runtime from the **Chain of custody** panel (or `GET/PUT /api/custody/settings`),
+  persisted to `custody_settings.json`. A toggle is a *request*: the UI and API always
+  surface the **effective** state, so post-quantum / OpenTimestamps can never appear
+  "on" when the supporting extra is not installed.
 - **Privacy caveat:** anchoring to a public blockchain is permanent publication and
   can deanonymise; it is opt-in, defaults to the offline local provider, and is
-  documented with a warning. Custody auto-logging on ingest is opt-in
-  (`OO_CUSTODY_ON_INGEST=1`), off by default.
+  documented with a warning. Custody auto-logging on ingest is off by default
+  (defaulting to the legacy `OO_CUSTODY_ON_INGEST=1` flag until a UI preference is saved).
 
 ## Hardening already in place
 

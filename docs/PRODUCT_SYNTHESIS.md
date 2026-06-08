@@ -339,5 +339,39 @@ Pillars are *enrichers* that read from and write back to the shared store.
 
 ---
 
+## 11. Implementation status (current)
+
+What is built and tested today, mapped to the scope above (intent unchanged; these
+note where reality now stands). See the linked feature docs for detail.
+
+- **Trustworthy core (5.1–5.3, 5.13):** ✅ ethical ingest, unified provenance store,
+  Boolean FTS5 search, CSV/JSON export, signed chain-of-custody.
+- **Ingestion at scale (5.1):** ✅ in-app **scheduler** (start/stop, interval, modes
+  rss/crawl/markets) and a **bounded recursive crawler** (same-domain *discovery*,
+  robots fail-closed, depth/page caps) — not a general-purpose mirror (§7 honoured).
+- **GUI (5.12):** ✅ tabbed web UI — Search · Ingest · **Sources & Database** (stats,
+  source management, **world coverage**) · **Markets** · **Insights** · Chain of
+  custody · **Settings** (theme + SQLite backup/restore). Dependency-free, offline.
+- **Financial & commodity (5.9, 5.10):** ✅ thin real vertical — per-source price
+  **extraction rules**, **official CSV feeds** (FRED→World Bank/EIA), charts, and
+  honest price↔news correlation. Unit math fixed; numbers only from a verified rule
+  or imported CSV. See [MARKETS.md](MARKETS.md).
+- **Worldwide source coverage:** ✅ packaged markets catalog + a **data-derived
+  generator** (Wikidata CC0) for news media **and** institutions per country, with a
+  coverage report. CSV import/export of the source list. See
+  [WORLD_NEWS_CATALOG.md](WORLD_NEWS_CATALOG.md).
+- **Cross-referencing & correlation (5.4):** ✅ **keyword & entity analytics** —
+  extraction at ingest, mention store with context, trends, PMI associations
+  ("mind-map"), and a per-country/city map. See [INSIGHTS.md](INSIGHTS.md).
+- **Wikipedia as a tracked source (new):** 🚧 change-tracking foundation (per-language
+  editions, delta storage, large-edit/revisionism flagging incl. ORES) — schema +
+  parser + flagging done; live polling, tab and offline downloader next. See
+  [WIKIPEDIA.md](WIKIPEDIA.md).
+- **Verification (5.6):** ✅ honest image EXIF/metadata only (fabricated forensics
+  remain quarantined). **LLM (5.5)**, **monitoring/alerts (5.8)**, **email (5.11)**:
+  partial/queued.
+
+---
+
 *This synthesis is intended to be edited. Strike, reprioritize, or expand any section — especially the
 `⚠️ DECIDE` points — and I'll fold your changes into a finalized product spec and a matching build plan.*

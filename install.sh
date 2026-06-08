@@ -159,6 +159,18 @@ ensure_python() {
 create_venv() {
     cd "$SRC_DIR"
     if [ ! -d .venv ]; then
+        # Preflight: on Debian/Ubuntu the stdlib venv/ensurepip module ships in a
+        # SEPARATE apt package. Check now and give actionable guidance instead of
+        # leaking the cryptic CPython "ensurepip is not available" error.
+        if ! "$PY" -c 'import ensurepip' >/dev/null 2>&1; then
+            venv_pkg="python3-venv"
+            case "$PY" in *3.13*) venv_pkg="python3.13-venv";; esac
+            die "Python's venv module is missing (no ensurepip).
+    Install it, then re-run ./install.sh:
+        sudo apt update && sudo apt install -y $venv_pkg
+    On Qubes, install it in the TemplateVM (then reboot the AppVM) so DispVMs and
+    AppVMs inherit it -- packages installed in an AppVM/DispVM do not persist."
+        fi
         step "Creating virtual environment (.venv)"
         "$PY" -m venv .venv
     fi
@@ -259,61 +271,73 @@ make_launcher() {
 
     chmod +x "$SRC_DIR/scripts/launch.sh" 2>/dev/null || true
 
+    # Two interfaces ship side by side -- "Console" (default) and "Desk" -- so we
+    # create TWO launchers. They share one server and the same data, so you can run
+    # both and compare them (see docs/GUI_DIALECTIC.md).
     local os; os="$(uname -s)"
     if [ "$os" = "Darwin" ]; then
-        # macOS: a double-clickable .command on the Desktop.
-        local cmd="$HOME/Desktop/Open Omniscience.command"
+        # macOS: two double-clickable .command files on the Desktop.
         mkdir -p "$HOME/Desktop"
-        cat > "$cmd" <<EOF
+        local cmd_console="$HOME/Desktop/Open Omniscience.command"
+        local cmd_desk="$HOME/Desktop/Open Omniscience — Desk.command"
+        cat > "$cmd_console" <<EOF
 #!/usr/bin/env bash
-exec "$SRC_DIR/scripts/launch.sh"
+exec "$SRC_DIR/scripts/launch.sh" console
 EOF
-        chmod +x "$cmd"
-        ok "Created launcher: $cmd"
-        say "  ${BOLD}To start:${RST} double-click 'Open Omniscience' on your Desktop."
+        cat > "$cmd_desk" <<EOF
+#!/usr/bin/env bash
+exec "$SRC_DIR/scripts/launch.sh" desk
+EOF
+        chmod +x "$cmd_console" "$cmd_desk"
+        ok "Created launchers: 'Open Omniscience' and 'Open Omniscience — Desk' on your Desktop."
+        say "  ${BOLD}To start:${RST} double-click either icon (run both to compare)."
         return 0
     fi
 
-    # Linux: a .desktop entry in the applications menu (+ a copy on the Desktop).
+    # Linux: two .desktop entries in the applications menu (+ copies on the Desktop).
     local apps="$HOME/.local/share/applications"
-    local desktop_file="$apps/$APP_NAME.desktop"
     mkdir -p "$apps"
-    # PNG is rendered far more reliably than SVG by file managers / minimal desktops
-    # (notably some Qubes AppVMs); fall back to the SVG source if the PNG is missing.
-    local icon="$SRC_DIR/assets/icon.png"
-    [ -f "$icon" ] || icon="$SRC_DIR/assets/icon.svg"
-    cat > "$desktop_file" <<EOF
+    local desk; desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
+    # PNG renders more reliably than SVG on minimal desktops (notably some Qubes
+    # AppVMs); fall back to the SVG source if no PNG is present.
+    local icon_console="$SRC_DIR/assets/icon.png";   [ -f "$icon_console" ] || icon_console="$SRC_DIR/assets/icon.svg"
+    local icon_desk="$SRC_DIR/assets/icon-desk.png"; [ -f "$icon_desk" ]    || icon_desk="$SRC_DIR/assets/icon-desk.svg"
+
+    # $1=basename  $2=Name  $3=Comment  $4=launch variant  $5=icon
+    _mk_desktop() {
+        local f="$apps/$1.desktop"
+        cat > "$f" <<EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Open Omniscience
+Name=$2
 GenericName=Intelligence Platform
-Comment=Local-first intelligence platform for investigative journalism
-Exec=$SRC_DIR/scripts/launch.sh
-Icon=$icon
+Comment=$3
+Exec=$SRC_DIR/scripts/launch.sh $4
+Icon=$5
 Terminal=true
 Categories=Utility;News;Office;
 Keywords=news;intelligence;journalism;research;osint;
 StartupNotify=false
 EOF
-    chmod +x "$desktop_file"
+        chmod +x "$f"
+        if [ -d "$desk" ]; then
+            cp "$f" "$desk/$1.desktop"; chmod +x "$desk/$1.desktop"
+            gio set "$desk/$1.desktop" metadata::trusted true 2>/dev/null || true
+        fi
+    }
+    _mk_desktop "$APP_NAME"      "Open Omniscience"        "Local-first intelligence platform for investigative journalism" "console" "$icon_console"
+    _mk_desktop "$APP_NAME-desk" "Open Omniscience — Desk" "Open Omniscience — the calm, content-first 'Desk' interface"     "desk"    "$icon_desk"
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" 2>/dev/null || true
 
-    # Also drop a copy on the Desktop and mark it trusted where supported.
-    local desk; desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
-    if [ -d "$desk" ]; then
-        cp "$desktop_file" "$desk/$APP_NAME.desktop"
-        chmod +x "$desk/$APP_NAME.desktop"
-        gio set "$desk/$APP_NAME.desktop" metadata::trusted true 2>/dev/null || true
-    fi
-
-    ok "Created launcher in your applications menu${desk:+ and on the Desktop}"
+    ok "Created two launchers (Console + Desk) in your applications menu${desk:+ and on the Desktop}"
     say ""
     say "  ${BOLD}How to start the app:${RST}"
-    say "    • Open your applications menu and search for ${BOLD}Open Omniscience${RST}, or"
-    say "    • Double-click the ${BOLD}Open Omniscience${RST} icon on your Desktop."
+    say "    • ${BOLD}Open Omniscience${RST} — the default (Console) interface, or"
+    say "    • ${BOLD}Open Omniscience — Desk${RST} — the alternative (Desk) interface."
     say "    A terminal window opens, the app starts, and your browser opens to"
-    say "    ${BLU}http://127.0.0.1:8000${RST}. Close that window to stop the app."
+    say "    ${BLU}http://127.0.0.1:8000${RST}. They share one server and the same data,"
+    say "    so you can open both and compare. Close that window to stop the app."
 }
 
 # --------------------------------------------------------------------------- #
@@ -387,18 +411,24 @@ do_uninstall() {
         data_dir="$("$SRC_DIR/.venv/bin/python" -c 'from src.paths import data_dir; print(data_dir())' 2>/dev/null || true)"
     fi
 
-    # Collect launcher files that exist.
-    local apps="$HOME/.local/share/applications/$APP_NAME.desktop"
+    # Collect launcher files that exist (Console + Desk, apps menu + Desktop + macOS).
     local desk; desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
+    local apps="$HOME/.local/share/applications/$APP_NAME.desktop"
+    local apps_desk="$HOME/.local/share/applications/$APP_NAME-desk.desktop"
     local desk_file="$desk/$APP_NAME.desktop"
+    local desk_file_desk="$desk/$APP_NAME-desk.desktop"
     local mac_file="$HOME/Desktop/Open Omniscience.command"
+    local mac_file_desk="$HOME/Desktop/Open Omniscience — Desk.command"
 
     say ""
     say "  The following will be ${BOLD}removed${RST}:"
-    [ -d "$SRC_DIR/.venv" ] && say "    • virtualenv:  $SRC_DIR/.venv"
-    [ -f "$apps" ]          && say "    • launcher:    $apps"
-    [ -f "$desk_file" ]     && say "    • launcher:    $desk_file"
-    [ -f "$mac_file" ]      && say "    • launcher:    $mac_file"
+    [ -d "$SRC_DIR/.venv" ]    && say "    • virtualenv:  $SRC_DIR/.venv"
+    [ -f "$apps" ]             && say "    • launcher:    $apps"
+    [ -f "$apps_desk" ]        && say "    • launcher:    $apps_desk"
+    [ -f "$desk_file" ]        && say "    • launcher:    $desk_file"
+    [ -f "$desk_file_desk" ]   && say "    • launcher:    $desk_file_desk"
+    [ -f "$mac_file" ]         && say "    • launcher:    $mac_file"
+    [ -f "$mac_file_desk" ]    && say "    • launcher:    $mac_file_desk"
     say "  Your repository ($SRC_DIR) and your data will be ${BOLD}kept${RST} unless you choose otherwise."
     say ""
 
@@ -410,7 +440,7 @@ do_uninstall() {
         return 0
     fi
 
-    rm -f "$apps" "$desk_file" "$mac_file"
+    rm -f "$apps" "$apps_desk" "$desk_file" "$desk_file_desk" "$mac_file" "$mac_file_desk"
     command -v update-desktop-database >/dev/null 2>&1 && \
         update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
     [ -d "$SRC_DIR/.venv" ] && rm -rf "$SRC_DIR/.venv"

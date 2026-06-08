@@ -187,6 +187,23 @@ Ed25519-signed bundle. Anyone can verify it offline, without this app:
 python scripts/verify_evidence.py evidence-bundle.json   # exit 0 = verified
 ```
 
+**Chain of custody — Phase 5.** The **Chain of custody** UI panel tracks signed,
+tamper-evident provenance and lets you toggle its behaviour at runtime:
+post-quantum signatures, anchoring mode (offline `local` vs Bitcoin-anchored
+**OpenTimestamps**), and auto-logging on ingest. Toggles are *preferences* — the
+panel shows the **effective** state, so nothing claims to be on when its extra
+isn't installed. API:
+```bash
+curl http://127.0.0.1:8000/api/custody/settings                       # effective state
+curl -X PUT http://127.0.0.1:8000/api/custody/settings \
+  -H 'Content-Type: application/json' -d '{"pqc_enabled": true}'
+curl -X POST http://127.0.0.1:8000/api/custody/log -H 'Content-Type: application/json' \
+  -d '{"item_id":"article:1","item_hash":"<sha256>","action":"ingest"}'
+curl 'http://127.0.0.1:8000/api/custody/export' > custody-bundle.json  # offline-verifiable
+python scripts/verify_custody.py custody-bundle.json                   # exit 0 = verified
+```
+Full model, threat model, and privacy caveats: [CHAIN_OF_CUSTODY.md](CHAIN_OF_CUSTODY.md).
+
 ---
 
 ## What "ethical ingest" guarantees

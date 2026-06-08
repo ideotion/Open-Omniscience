@@ -37,7 +37,12 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
 from slowapi.errors import RateLimitExceeded
@@ -84,6 +89,27 @@ from src.api.custody import router as custody_router
 # Import source management router
 from src.api.source_management import router as source_management_router
 
+# Import database overview router (honest read-only corpus statistics + backup/restore)
+from src.api.database import router as database_router
+
+# Import application settings router (GUI-editable preferences)
+from src.api.settings import router as settings_router
+
+# Import scheduler router (in-app background ingester control surface)
+from src.api.scheduler import router as scheduler_router
+
+# Import markets router (per-source price-extraction rules + structured ingest)
+from src.api.markets import router as markets_router
+
+# Import source-catalog CSV import/export router
+from src.api.source_io import router as source_io_router
+
+# Import insights router (keyword & entity analytics)
+from src.api.insights import router as insights_router
+
+# Import Wikipedia change-tracking router
+from src.api.wiki import router as wiki_router
+
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
 from src.database.fts import SearchQueryError, search_ids
@@ -119,8 +145,33 @@ async def lifespan(app: FastAPI):
             SOURCES_COUNT.set(session.query(Source).count())
     except Exception as exc:  # noqa: BLE001 - never block startup on metrics
         logger.warning(f"Could not initialise metrics at startup: {exc}")
+
+    # Optionally start the background ingester. Off by default and gated on a
+    # saved preference, so importing the app (e.g. in tests) never starts a thread
+    # or any network activity; OO_NO_SCHEDULER=1 hard-disables it regardless.
+    if os.getenv("OO_NO_SCHEDULER", "0") != "1":
+        try:
+            from src.scheduler.settings import load_settings as _sched_settings
+
+            if _sched_settings().autostart:
+                from src.scheduler.runner import get_scheduler
+
+                get_scheduler().start()
+                logger.info("Background scheduler autostarted (autostart=true).")
+        except Exception as exc:  # noqa: BLE001 - never block startup on the scheduler
+            logger.warning(f"Could not autostart scheduler: {exc}")
+
     logger.info(f"Open Omniscience API {APP_VERSION} started")
     yield
+
+    # Stop the scheduler thread cleanly if it is running (no-op otherwise).
+    try:
+        from src.scheduler.runner import get_scheduler
+
+        get_scheduler().stop()
+    except Exception:  # noqa: BLE001 - best-effort shutdown
+        logger.warning("Error stopping scheduler on shutdown", exc_info=True)
+
     dispose_engine()
     logger.info("Open Omniscience API shut down cleanly")
 
@@ -180,6 +231,27 @@ app.add_middleware(
 
 # Include source management router
 app.include_router(source_management_router)
+
+# Include database overview router
+app.include_router(database_router)
+
+# Include application settings router
+app.include_router(settings_router)
+
+# Include scheduler router
+app.include_router(scheduler_router)
+
+# Include markets router
+app.include_router(markets_router)
+
+# Include source-catalog CSV import/export router
+app.include_router(source_io_router)
+
+# Include insights router
+app.include_router(insights_router)
+
+# Include Wikipedia change-tracking router
+app.include_router(wiki_router)
 
 # Include LLM router
 app.include_router(llm_router)
@@ -516,6 +588,56 @@ async def export_articles(
     )
 
 
+@app.get("/api/articles/{article_id}/view", response_class=HTMLResponse)
+@limiter.limit("300/hour")
+async def view_article(request: Request, article_id: int, db: Session = Depends(get_db)):
+    """Render the locally-stored copy of an article as a clean, offline reading page.
+
+    Uses the text captured at ingest (no network), so it works fully offline and
+    shows exactly what is in the corpus. A link to the original source is included
+    for reference, clearly secondary.
+    """
+    import html as _html
+
+    a = db.query(Article).filter_by(id=article_id).first()
+    if a is None:
+        raise HTTPException(status_code=404, detail="Article not found.")
+    content = a.get_content() if hasattr(a, "get_content") else (a.content or "")
+    paras = "".join(
+        f"<p>{_html.escape(line)}</p>" for line in content.split("\n") if line.strip()
+    ) or "<p class='muted'>(no stored body)</p>"
+    meta = " &middot; ".join(filter(None, [
+        _html.escape(a.source.name) if a.source else None,
+        _html.escape(a.published_at.date().isoformat()) if a.published_at else None,
+        ("by " + _html.escape(a.author)) if a.author else None,
+        _html.escape(a.language) if a.language else None,
+    ]))
+    title = _html.escape(a.title or "(untitled)")
+    orig = _html.escape(a.url or "")
+    orig_html = (
+        f"Original source (online): <a href=\"{orig}\" target=\"_blank\" rel=\"noopener noreferrer\">{orig}</a>"
+        if orig else "No original URL recorded."
+    )
+    doc = f"""<!DOCTYPE html><html lang="{_html.escape(a.language or 'en')}"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title><style>
+  :root {{ color-scheme: light dark; }}
+  body {{ max-width: 720px; margin: 0 auto; padding: 32px 20px 64px;
+    font: 18px/1.7 Georgia, 'Times New Roman', serif; }}
+  h1 {{ font-size: 28px; line-height: 1.25; }}
+  .meta {{ color: #888; font-size: 14px; font-family: system-ui, sans-serif; margin-bottom: 24px; }}
+  p {{ margin: 0 0 1.1em; }}
+  .muted {{ color: #888; }}
+  footer {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid #8884;
+    font-family: system-ui, sans-serif; font-size: 13px; color: #888; word-break: break-all; }}
+  a {{ color: #3a7bd5; }}
+</style></head><body>
+<article><h1>{title}</h1><div class="meta">{meta}</div>{paras}</article>
+<footer>Offline copy stored by Open Omniscience. {orig_html}</footer>
+</body></html>"""
+    return HTMLResponse(content=doc)
+
+
 @app.get("/api/sources", response_model=list)
 @limiter.limit("100/hour")
 async def list_sources(request: Request, db: Session = Depends(get_db)):
@@ -537,6 +659,55 @@ async def list_sources(request: Request, db: Session = Depends(get_db)):
     ]
 
 
+# In-app documentation. The UI's Help reader fetches these so the user can read
+# the manual without leaving the (offline, loopback-only) app. Strictly a curated
+# allow-list of repo docs — the slug never touches the filesystem path, so there
+# is no traversal surface.
+_DOCS: dict[str, dict[str, str]] = {
+    "user-manual": {"file": "USER_MANUAL.md", "title": "User Manual",
+                    "blurb": "The complete guide: install, every tool, workflows, reference."},
+    "quickstart": {"file": "QUICKSTART.md", "title": "Quickstart",
+                   "blurb": "The fastest path from install to your first results."},
+    "ethics": {"file": "ETHICS.md", "title": "Ethics & the Munich Charter",
+               "blurb": "The principles this tool is built to uphold."},
+    "wikipedia": {"file": "WIKIPEDIA.md", "title": "Wikipedia tracking",
+                  "blurb": "Change-tracking and offline baselines, in depth."},
+    "chain-of-custody": {"file": "CHAIN_OF_CUSTODY.md", "title": "Chain of custody",
+                         "blurb": "Tamper-evident, signed provenance for your evidence."},
+    "insights": {"file": "INSIGHTS.md", "title": "Insights",
+                 "blurb": "How keyword, trend and entity analytics are computed."},
+    "markets": {"file": "MARKETS.md", "title": "Markets",
+                "blurb": "Price feeds, correlation, and extraction rules."},
+    "security": {"file": "SECURITY.md", "title": "Security",
+                 "blurb": "Threat model and the local-first security posture."},
+}
+_DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
+
+
+@app.get("/api/docs")
+async def list_docs() -> dict:
+    """List the in-app documentation available to the Help reader."""
+    return {
+        "docs": [
+            {"slug": slug, "title": meta["title"], "blurb": meta["blurb"],
+             "available": (_DOCS_DIR / meta["file"]).exists()}
+            for slug, meta in _DOCS.items()
+        ]
+    }
+
+
+@app.get("/api/docs/{slug}", response_class=PlainTextResponse)
+async def get_doc(slug: str) -> str:
+    """Return one whitelisted doc as raw Markdown (rendered client-side)."""
+    meta = _DOCS.get(slug)
+    if meta is None:
+        raise HTTPException(status_code=404, detail=f"Unknown doc: {slug}")
+    path = _DOCS_DIR / meta["file"]
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Doc not found on disk: {meta['file']}")
+    return path.read_text(encoding="utf-8")
+
+
 # Root endpoint to serve index.html
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -546,6 +717,18 @@ async def read_root():
             return HTMLResponse(content=f.read(), status_code=200)
     else:
         return HTMLResponse(content="<h1>Welcome to Open Omniscience</h1><p>API is running. See <a href='/docs'>API Documentation</a></p>", status_code=200)
+
+
+# Alternative UI ("Desk") served alongside the default ("Console") so both can be
+# compared on the same backend/data — see docs/GUI_DIALECTIC.md. The installer
+# creates a second desktop icon that opens this route.
+@app.get("/desk", response_class=HTMLResponse)
+async def read_desk():
+    desk_path = Path(__file__).parent.parent / "static" / "desk.html"
+    if desk_path.exists():
+        return HTMLResponse(content=desk_path.read_text(encoding="utf-8"), status_code=200)
+    # Fall back to the default UI if the alternative isn't present.
+    return await read_root()
 
 
 def main() -> None:

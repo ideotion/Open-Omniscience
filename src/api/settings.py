@@ -1,0 +1,50 @@
+"""
+Application preferences API (theme, default result limit).
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+Backs the Settings tab. Preferences persist to a small JSON file under the data
+dir (see ``src.config.app_settings``); validation happens there so an invalid
+value is rejected with an explicit 400 rather than silently coerced.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from src.config.app_settings import (
+    VALID_THEMES,
+    AppSettingsError,
+    load_settings,
+    save_settings,
+)
+
+router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+class SettingsUpdate(BaseModel):
+    theme: str | None = None
+    default_result_limit: int | None = None
+
+
+def _payload() -> dict:
+    s = load_settings()
+    return {**s.to_dict(), "valid_themes": list(VALID_THEMES)}
+
+
+@router.get("")
+def get_settings() -> dict:
+    """Return current UI preferences plus the set of valid theme values."""
+    return _payload()
+
+
+@router.put("")
+def update_settings(update: SettingsUpdate) -> dict:
+    """Apply a partial preferences update (only provided fields change)."""
+    try:
+        save_settings(update.model_dump(exclude_unset=True))
+    except AppSettingsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _payload()
