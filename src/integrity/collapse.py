@@ -199,14 +199,17 @@ def story_prominence(session, *, days: int = 14, threshold: float = 0.6,
         index = NoveltyIndex()
         ordered_stories = sorted(stories, key=lambda m: min(int(x) for x in m))
         for members in ordered_stories:
-            rep = sorted(members, key=int)[0]
+            rep = min(members, key=int)
             r = index.measure_and_add(texts[rep])
             novelty_of[rep] = 1.0 if r.ratio is None else round(r.ratio, 3)
 
     out = []
     for members in stories:
         srcs = {source_of[m] for m in members}
-        rep = sorted(members)[0]
+        # The representative is the earliest (lowest-id) member — and it MUST be computed
+        # with the same key used to populate novelty_of above (F-002: a string sort here
+        # vs an int sort there mis-keyed the lookup, defaulting novelty to 1.0).
+        rep = min(members, key=int)
         item = {
             "representative": rep,
             "title": title_of[rep],

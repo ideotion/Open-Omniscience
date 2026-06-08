@@ -40,3 +40,30 @@ and the salient observation. This is the proof trail behind every finding in
 ML-DSA hybrid-signature path (pqcrypto not installed → **F-006**); any UI accessibility
 audit of the HTML beyond static reading; a full read of all 236 modules (prioritised the
 0.06 surface, entry points, security/ethics-sensitive paths, and doc-fidelity).
+
+---
+
+## Remediation log (operator asked to "act on the findings")
+
+Gated remediation protocol: each fix on branch `claude/eager-goodall-NuiEB-fixes`, verified,
+reversible, traceable to a finding. **First, a recovery action** — the local checkout had
+regressed two commits behind the remote (container re-clone): `git pull --ff-only` restored
+HEAD `5780172` (world-law + novelty + audit), a safe fast-forward (clean tree, local HEAD a
+strict ancestor). This *confirmed F-002 is real in the actual code*, not a phantom.
+
+| # | Action | Finding | Result |
+|---|---|---|---|
+| R1 | Added `test_novelty_weighting_uses_consistent_representative`; ran it on unfixed code | F-002 | **FAILS** — `echo novelty got 1.0` (demonstrate-before). |
+| R2 | `collapse.py`: both story reps → `min(members, key=int)` (single consistent key) | F-002 | Test passes; existing novelty test still green (verify-after). |
+| R3 | `producers.py emotion_profile_card`: bind `resolve_keyword` once | F-009 | resolved 3×→1×; suite green. |
+| R4 | README:172 + USER_MANUAL:92 seed count → "~2,100+" | F-007 | matches actual default seed. |
+| R5 | `test_scraper.py` fixture stubs `_can_scrape`/`_parse_html`/`_parse_rss` | F-003 | 7/7 pass **offline**, 0 network attempts, 1.85 s (was ~4 s + DNS). |
+| R6 | Rewrote `test_rate_limiting` to count rate-limit sleeps (scraper is parallel; wall-clock ≥2 s only passed via incidental network latency) | F-003 | deterministic, offline, tests the real control. |
+| R7 | New `tests/test_repo_invariants.py` (no-secrets, quarantine-not-imported, in-app-docs-exist) | F-008 | 3/3 pass — positive controls now guarded. |
+| R8 | `tests/conftest.py`: bind `OO_DATA_DIR` to an ephemeral dir at import | F-004 | full suite green; working-tree `data/` stays clean (no DB written). |
+| R9 | `ci.yml`: new `crypto` job installs `[pqc]` and runs custody+annotation signing | F-006 | hybrid ML-DSA path now exercised in CI (additive job). |
+| R10 | Full suite after all changes | — | **695 passed, 6 skipped**; changed src files ruff-clean. |
+
+**Deferred (status: open):** F-001 (legacy lint debt — acknowledged, large, separate burn-down),
+F-005 (briefing near-dup memoisation — Low value, riskier refactor), F-010 (legal-URL liveness —
+needs network, out of the network-off scope). All other findings: **status `applied`**.

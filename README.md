@@ -169,7 +169,7 @@ run `./install.sh` yourself.)*
 python3.13 -m venv .venv && . .venv/bin/activate
 pip install -e ".[analysis,dev]"
 pytest -q
-open-omniscience          # serves http://127.0.0.1:8000 (auto-seeds ~1,780 sources)
+open-omniscience          # serves http://127.0.0.1:8000 (auto-seeds ~2,100+ sources)
 ```
 
 On Qubes: `sudo ./install.sh --template` (in the TemplateVM, then reboot the AppVM)
