@@ -883,7 +883,7 @@
         <div id="law-changes"><div class="muted">No tracked changes yet — “Track changes now”.</div></div>
       </section>
       <section class="panel">
-        <h2>Tracked documents</h2>
+        <h2>Tracked laws</h2>
         <div style="overflow:auto"><table id="law-docs"></table></div>
       </section>
     </div>
@@ -2099,7 +2099,7 @@
         const s = await api("/api/law/status");
         const jur = Object.entries(s.jurisdictions || {});
         $("law-status").innerHTML =
-          `<div class="stat"><div class="n">${s.documents}</div><div class="k">documents</div></div>` +
+          `<div class="stat"><div class="n">${s.documents}</div><div class="k">laws</div></div>` +
           `<div class="stat"><div class="n">${s.tracked}</div><div class="k">with baseline</div></div>` +
           `<div class="stat"><div class="n">${s.changes}</div><div class="k">changes</div></div>` +
           `<div class="stat"><div class="n">${s.flagged}</div><div class="k">flagged</div></div>` +
@@ -2156,16 +2156,16 @@
       const label = btn ? btn.textContent : null;
       if (btn) { btn.disabled = true; btn.textContent = "Tracking…"; }
       const st = $("law-status");
-      if (st) st.innerHTML = '<div class="muted">Tracking watched documents — ethical, rate-limited fetch; this can take a moment…</div>';
+      if (st) st.innerHTML = '<div class="muted">Tracking watched laws — ethical, rate-limited fetch; this can take a moment…</div>';
       try { const r = await api("/api/law/track", {method:"POST"});
-        toast(`Tracked ${r.documents}: ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.`);
+        toast(`Tracked ${r.documents} law(s): ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.`);
         loadLaw(); loadLawChanges && loadLawChanges();
       } catch (e) { toast("Tracking failed: " + e.message, "err"); if (st) loadLaw(); }
       finally { if (btn) { btn.disabled = false; btn.textContent = label || "Track changes now"; } }
     }
     async function lawSeed() {
       try { const r = await api("/api/law/seed", {method:"POST"});
-        toast(`Seeded ${r.sources.created} sources, ${r.documents.created} documents.`); loadLaw(); }
+        toast(`Seeded ${r.sources.created} sources, ${r.documents.created} laws.`); loadLaw(); }
       catch (e) { toast(e.message, "err"); }
     }
 
