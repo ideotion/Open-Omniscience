@@ -48,6 +48,26 @@ dead weight that obscured the real code. Removed from `src/` (history preserved)
 Postgres async session) and `src/database/migrations/*` (Alembic) were
 deliberately **kept**.
 
+### Added in the v0.0.7 audit (finding MAINT-01)
+
+Six whole packages confirmed dead by an AST import graph (imported by no live
+code; their only runtime tie was a side-effect `from . import ...` in
+`src/__init__.py`, now trimmed):
+
+| Package | LOC | Why |
+|---------|-----|-----|
+| `ingestor/` | 2,505 | legacy ingestion pipeline; superseded by `src/ingest` (`url_utils.py` here is just a re-export shim of `src/utils/url_utils`) |
+| `scraper/` | 1,081 | legacy Scraper + SourceMonitor; only consumer was the dead `ingestor/pipeline.py` |
+| `custom_types/` | 407 | unused type definitions |
+| `compliance/` | 162 | GDPR/copyright stubs; superseded by `configs/legal.yml` + custody |
+| `audit/` | 114 | legacy chain-of-custody; superseded by `src/custody` |
+| `reports/` | 91 | legacy legal report; superseded by `src/reporting` |
+
+`test_scraper.py` (their end-to-end test) moved here with them; its real
+coverage (canonicalize/dedup) lives on in `tests/test_url_utils.py` and
+`tests/test_ingest.py`. `src/crypto` was **kept** — `src/reporting/evidence.py`
+uses its Merkle proofs.
+
 ## `pillars/` — the original six-pillar trees (intent preserved in src/)
 
 ~50k lines that the running app never imported. Each pillar's genuine *intent* now
