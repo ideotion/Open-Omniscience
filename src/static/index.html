@@ -213,6 +213,11 @@
     .idx-spark-empty { height:42px; display:flex; align-items:center; font-size:11px; }
     .idx-foot { font-size:11px; }
     .idx-foot a { color:var(--muted); text-decoration:underline; }
+    /* Agenda (world events) */
+    .ag-row { display:flex; gap:12px; align-items:flex-start; padding:9px 11px; border:1px solid var(--border);
+      border-radius:8px; margin-bottom:7px; background:var(--panel2); }
+    .ag-when { flex:0 0 86px; }
+    .ag-body { flex:1; min-width:0; }
     /* Batch-ingest source picker */
     .bi-list { margin-top:10px; max-height:300px; overflow:auto; border:1px solid var(--border);
       border-radius:8px; background:var(--panel2); }
@@ -438,6 +443,7 @@
           <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
           <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
           <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
+          <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
           <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
           <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span><span class="badge">adv</span></button>
         </div>
@@ -949,6 +955,25 @@
         </div>
         <div id="anno-aggregate" style="margin-top:10px"></div>
       </section>
+    </div>
+
+    <!-- ============================ INDICES ========================== -->
+    <!-- ============================ AGENDA ========================== -->
+    <div class="tab-page" id="tab-agenda">
+    <section class="panel">
+      <h2>Agenda — major world events</h2>
+      <p class="muted" style="margin-top:0">A forward-looking calendar of major recurring events.
+        <b>Fixed civic dates are confirmed</b>; summit/meeting dates move each year — follow the official
+        source for the exact date. Nothing here is fabricated. <span class="muted">(Importing exact dates from
+        official iCal feeds is the next step.)</span></p>
+      <div class="row">
+        <div><label for="agenda-cat">Category</label><select id="agenda-cat" onchange="loadAgenda()">
+          <option value="">all</option><option value="civic">civic</option><option value="political">political</option>
+          <option value="economic">economic</option><option value="technology">technology</option></select></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadAgenda()">Refresh</button></div>
+      </div>
+      <div id="agenda-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
+    </section>
     </div>
 
     <!-- ============================ INDICES ========================== -->
@@ -1585,6 +1610,7 @@
       {id:"insights", label:"Insights",           grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
       {id:"law",      label:"World law",          grp:"Investigate"},
+      {id:"agenda",   label:"Agenda",             grp:"Investigate"},
       {id:"indices",  label:"Indices",            grp:"Investigate"},
       {id:"markets",  label:"Commodities",        grp:"Investigate"},
       {id:"ingest",   label:"Collect",            grp:"Collect"},
@@ -1607,6 +1633,7 @@
       insights: loadInsights,
       wiki: loadWiki,
       law: loadLaw,
+      agenda: loadAgenda,
       sources: loadManagedSources,
       database: () => { loadCoverage(); },   // stats handled by the live poller (startLive)
       custody: loadCustody,
@@ -2094,6 +2121,30 @@
     // ===================================================================== //
     //  WORLD LAW — change tracking (§5)                                       //
     // ===================================================================== //
+    // -- Agenda (world events) ---------------------------------------------- //
+    const _MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    async function loadAgenda() {
+      const box = $("agenda-list");
+      box.innerHTML = '<div class="muted">Loading…</div>';
+      const cat = $("agenda-cat").value;
+      try {
+        const d = await api("/api/events" + (cat ? "?category=" + encodeURIComponent(cat) : ""));
+        if (!d.events.length) { box.innerHTML = '<div class="muted">No events.</div>'; return; }
+        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.events.map(e => {
+          const when = e.next_occurrence
+            ? `<span class="pill ok">${esc(e.next_occurrence)}</span>`
+            : `<span class="pill" title="exact date moves each year">${e.month ? esc(_MONTHS[e.month-1]) : esc(e.cadence||"")}</span>`;
+          const conf = e.confirmed ? '<span class="pill ok" title="fixed annual date">confirmed</span>'
+                                   : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
+          return `<div class="ag-row">
+            <div class="ag-when">${when}</div>
+            <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${conf}</div>
+              <div class="hint">${e.note?esc(e.note)+" · ":""}${e.region?esc(e.region)+" · ":""}<a href="${esc(safeUrl(e.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div></div>
+          </div>`;
+        }).join("");
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load agenda: ${esc(e.message)}</div>`; }
+    }
+
     async function loadLaw() {
       try {
         const s = await api("/api/law/status");
