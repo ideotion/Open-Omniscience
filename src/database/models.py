@@ -49,6 +49,7 @@ from sqlalchemy import (
     Table,
     Text,
     TypeDecorator,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -932,6 +933,43 @@ class ArticleLink(Base):
         return f"<ArticleLink(url='{self.url[:50]}...', classification='{self.classification}', article_id={self.article_id})>"
 
 
+class ArticleMentionedDate(Base):
+    """A calendar date *mentioned in* an article's text — an extracted, human-confirmable tag.
+
+    Provenance-first and honest about status: each row is a ``candidate`` produced by the
+    high-precision extractor (with the matched ``snippet`` and a ``confidence``), which the
+    user can ``confirm`` or ``reject``. The date is *when the story refers to*, not when the
+    article was published — so a 2024 piece on the 1945 bombing carries a 1945 tag.
+    """
+
+    __tablename__ = "article_mentioned_dates"
+
+    id = Column(Integer, primary_key=True)
+    # ondelete=CASCADE is defense-in-depth: the ORM relationship already cascades on
+    # session.delete(), this also covers any future bulk/raw delete of an article.
+    article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
+    mentioned_on = Column(Date, nullable=False)        # normalized; month precision -> day 1
+    precision = Column(String(10), nullable=False, default="day")   # 'day' | 'month'
+    snippet = Column(String(300))                       # provenance: the matched text
+    confidence = Column(Float)                          # extractor confidence in [0, 1]
+    extractor = Column(String(40), default="dateextract")
+    status = Column(String(12), nullable=False, default="candidate")  # candidate|confirmed|rejected
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    article = relationship("Article", back_populates="mentioned_dates")
+
+    __table_args__ = (
+        Index("ix_amd_article_id", "article_id"),
+        Index("ix_amd_mentioned_on", "mentioned_on"),
+        Index("ix_amd_status", "status"),
+        UniqueConstraint("article_id", "mentioned_on", "precision", name="uq_amd_article_date"),
+    )
+
+    def __repr__(self):
+        return (f"<ArticleMentionedDate(article_id={self.article_id}, "
+                f"on={self.mentioned_on}, precision='{self.precision}', status='{self.status}')>")
+
+
 class ArticleSourceRelationship(Base):
     """
     Represents the relationship between an article and its external sources.
@@ -1035,6 +1073,8 @@ class SourceCredibilityRule(Base):
 
 # Add relationships to existing Article model
 Article.links = relationship("ArticleLink", back_populates="article", cascade="all, delete-orphan")
+Article.mentioned_dates = relationship(
+    "ArticleMentionedDate", back_populates="article", cascade="all, delete-orphan")
 
 
 class ArticleAnalysis(Base):

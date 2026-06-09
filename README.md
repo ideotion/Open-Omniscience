@@ -43,10 +43,10 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   honestly (see [docs/USER_MANUAL.md](docs/USER_MANUAL.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
 - ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust ·
-  System*) covering Home, Search, Insights, Wikipedia, Markets, Collect, Sources,
-  Library, Evidence &amp; custody, Settings and an in-app Help/docs reader. Includes a
-  command palette (Ctrl/⌘-K), live appearance customization (themes, accent, density,
-  layout, which tools show), a **Library** panel (real row counts + on-disk size),
+  System*) covering Home, Search, Insights, Temporal map, Wikipedia, Markets, Collect,
+  Sources, Library, Evidence &amp; custody, Settings and an in-app Help/docs reader. Includes a
+  command palette (Ctrl/⌘-K), appearance customization in **Settings → Appearance** (themes,
+  accent, density, text size, layout, which tools show), a **Library** panel (real row counts + on-disk size),
   inline **source management** (enable/disable, priority, delete), and a
   **World coverage** view (countries covered vs not, sources + topic keywords per
   country). *(The interface described here is the current **default** (`0.05`); see
@@ -88,6 +88,13 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   **interactive map** (zoomable SVG with city pins by real lat/lon + per-country/
   city tables) — every figure a real aggregate with method + caveat. See
   [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
+- ✅ **Temporal map** (the **Temporal map** tab): every locatable, datable signal on one
+  zoomable world map under a **time slider** from antiquity to the near future — curated
+  historical/scheduled anchors, your **geocoded corpus** (publication date), **dates
+  mentioned in article text** (extracted, human-confirmable per-article **date tags**), and
+  opt-in live **hazards**. Pins need *both* a coordinate and a date (no coordinate → no pin);
+  country-level pins are flagged approximate; "near in space & time" is co-occurrence, never
+  cause. Offline coastlines via `scripts/build_world_outline.py` (graticule fallback).
 - ✅ **Home briefing** (the **Home** tab, `0.06` Phase A): a **triage feed of honest
   "cards"** — the app gathers and measures in the background, then surfaces candidate
   stories as cards grouped into editorial buckets (*rising · overtold · undertold ·

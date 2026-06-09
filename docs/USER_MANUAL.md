@@ -35,7 +35,8 @@ HTTP API) and troubleshooting.
 3. [The tools, one by one](#3-the-tools-one-by-one)
    - [Home](#30-home) · [Search](#31-search) · [Collect](#32-collect) ·
      [Sources](#33-sources) · [Library](#34-library) · [Markets](#35-markets) ·
-     [Insights](#36-insights) · [Wikipedia](#37-wikipedia) ·
+     [Insights](#36-insights) · [Temporal map](#36a-temporal-map) ·
+     [Wikipedia](#37-wikipedia) ·
      [Evidence & custody](#38-evidence--custody) · [Settings](#39-settings) ·
      [Help & docs](#310-help--docs)
 4. [Common workflows (how-to)](#4-common-workflows-how-to)
@@ -109,8 +110,9 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
 
 - **⌘K / Ctrl-K — the command palette.** Type to jump to any tool, run a common
   action, or open any document. The fastest way to get anywhere.
-- **Customize** — themes (8 in Console), accent, density, text size, sidebar
-  collapse, and which tools appear. Stored locally only; nothing is transmitted.
+- **Appearance** (**Settings → Appearance**) — themes (8 in Console), accent, density,
+  text size, sidebar collapse, and which tools appear. Stored locally only; nothing is
+  transmitted.
 - **Help (?)** — opens the in-app documentation reader (this manual and the other
   guides), searchable and fully offline. There's also a link to the raw API page at
   `/docs`.
@@ -136,8 +138,8 @@ The core loop is:
 2. **Collect** — fetch a source's RSS feed or paste a single article URL. Or let
    the **scheduler** do it automatically on an interval.
 3. **Search** — Boolean full-text search across everything you've gathered.
-4. **Insights / Markets / Wikipedia** — optional analysis layers on top of the
-   corpus.
+4. **Insights / Temporal map / Markets / Wikipedia** — optional analysis layers on top
+   of the corpus (patterns, space-time, prices, edit-tracking).
 5. **Export** — CSV/JSON, or a **signed evidence bundle** anyone can verify
    offline.
 
@@ -152,14 +154,14 @@ Destructive actions always ask first.
 
 The sidebar groups the tools by intent:
 
-- **Investigate** — Home · Search · Insights · Wikipedia · Markets *(advanced)*
+- **Investigate** — Home · Search · Insights · Temporal map · Wikipedia · Markets *(advanced)*
 - **Collect** — Collect · Sources · Library
 - **Trust** — Evidence & custody
 - **System** — Settings · Help & docs
 
 A few names changed in 0.05 to be plainer (the controls are the same): **Ingest →
 Collect**, **Database → Library**, **Chain of custody → Evidence & custody**. In
-*Console* you can hide tools you don't use (Customize → "Tools shown"); *Desk*
+*Console* you can hide tools you don't use (Settings → Appearance → "Tools shown"); *Desk*
 reaches the same tools from its Home launchpad and ⌘K.
 
 ### 3.0 Home
@@ -317,6 +319,46 @@ Every figure is a real aggregate with its sample size and a caveat. See
 [`docs/USER_MANUAL.md`](USER_MANUAL.md). To tune which keywords appear, use the
 [keyword filter in Settings](#39-settings).
 
+### 3.6a Temporal map
+
+**What it's for:** seeing *where* and *when* together. A journalist's two oldest
+questions are location and time; the Temporal map puts every locatable, datable
+signal on one zoomable world map under a **time slider** that sweeps from antiquity
+to the near future — so you can watch what clustered, where, and when.
+
+- **What it plots:** a curated set of well-documented historical & scheduled
+  **anchors** (e.g. Vesuvius 79 CE → upcoming eclipses and Olympics) ships by
+  default. Toggle **my corpus** to add your own articles (placed at the source's
+  location on its publication date) and **live hazards** to relay open earthquake/
+  disaster feeds (USGS/GDACS). Each kind has a colour in the legend; click a legend
+  chip to show/hide it.
+- **Moving through time:** drag the slider (or click the density strip beneath it)
+  to set the moment in focus; **▶ play** sweeps it forward. Events fade with
+  distance in time; **future / unconfirmed** ones are drawn as dashed rings. The
+  **window** control (± a year up to all of time) decides how much past/future is
+  visible at once.
+- **Reading the map:** drag to pan, zoom in to reveal labels (semantic zoom). Click
+  any pin for its date, place, source, official link, and a **"Find coverage in your
+  corpus"** button that runs a search for that place — closing the loop from a point
+  in space-time back to what you've gathered.
+- **Coastlines (optional):** the map shows an accurate lat/lon graticule out of the
+  box; run `python scripts/build_world_outline.py` once (needs network) to add real
+  Natural Earth coastlines. Until then, no coastlines are *invented*.
+
+**Dates a story is *about*:** toggle **dates in text** to extract explicit dates
+mentioned in your articles (e.g. a 2024 piece on the *1945* bombing) and plot them at
+the source location — drawn as dashed "extracted" pins. These also become **per-article
+date tags**: open an article's offline reader to see them listed, **confirm or reject**
+each candidate, or **extract** on demand; the corpus can then be filtered by a mentioned
+date (`GET /api/article-dates/by-date`). High-precision only — bare years and relative
+phrases ("last week") are deliberately not extracted.
+
+**Honesty by construction:** a pin needs **both** a coordinate and a date — anything
+missing one is simply absent, never dropped onto (0, 0), and the caveat says so.
+Country-level pins are flagged **approximate** (a stand-in point, not the exact
+spot); corpus pins mark **coverage origin on the publication date**, not the event
+site; scholarly date doubt (e.g. Pompeii's exact day) rides along in the pin's note.
+
 ### 3.7 Wikipedia
 
 **What it's for:** watching specific Wikipedia pages and **flagging suspicious
@@ -424,10 +466,17 @@ bake in bias and silence small, foreign, new or dissident sources. Full guide:
 
 ### 3.9 Settings
 
-**What it's for:** preferences and maintenance. Everything is stored locally; no
-telemetry.
+**What it's for:** preferences and maintenance, organized into sections via a sub-nav —
+**Appearance · General · Wikipedia · Data & backup · Safety**. Everything is stored
+locally; no telemetry.
 
-- **Preferences:** **Theme** (System/Dark/Light) and **Default search results**.
+- **Appearance:** themes, accent colour, density, **text size**, sidebar expanded/
+  collapsed, and **which tools show** in the sidebar. (This is the former floating
+  "Customize" drawer, now a first-class Settings section — the standalone Customize
+  buttons were removed to free up the chrome; the sidebar footer has a **Settings**
+  shortcut and the command palette still jumps straight here.)
+- **Preferences (General):** **Theme** (System/Dark/Light), **language**, and **Default
+  search results**.
 - **Keyword filtering:** "dumb" function words (the, you, not, …) are removed by a
   built-in multilingual stoplist. Tune it: set **minimum keyword length**, **drop
   purely numeric terms**, toggle the built-in stoplist, and maintain an **excluded
@@ -589,6 +638,13 @@ catalog at `/api/catalog/sources`, `/export.csv`, `/template.csv`, `POST /import
 
 **Database** — `GET /api/database/stats|coverage|countries`;
 `GET /api/database/backup`; `POST /api/database/restore`.
+
+**Temporal map** — `GET /api/timemap` (space-time signals; `?kinds`, `?start`/`?end`
+fractional-year window, `?hazards`, `?articles`, `?mentions`, `?days`); `GET /api/timemap/range`.
+
+**Article date tags** — `GET/POST /api/article-dates/article/{id}` (list / extract);
+`POST /api/article-dates/{tag_id}/confirm|reject`; `POST /api/article-dates/index`;
+`GET /api/article-dates/by-date`.
 
 **Insights** — `GET/PUT /api/insights/filter`; `POST /api/insights/exclude|include`;
 `GET /api/insights/status`; `POST /api/insights/reindex`;

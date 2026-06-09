@@ -7,8 +7,8 @@ one that matches what you need.
 - **[QUICKSTART.md](QUICKSTART.md)** — install (Qubes + local dev) and the end-to-end loop.
 - **[USER_MANUAL.md](USER_MANUAL.md)** — the complete guide: every tab, control, setting,
   workflow, env var and API area, **plus per-feature deep-dives** (Home briefing, source
-  integrity & anti-amplification, shared annotations, insights, Wikipedia tracking,
-  world-law tracking, markets, chain of custody).
+  integrity & anti-amplification, shared annotations, insights, the temporal map &
+  article date-tags, Wikipedia tracking, world-law tracking, markets, chain of custody).
 - **[PRESENTATION_PUBLIC.md](PRESENTATION_PUBLIC.md)** — a plain-language public
   presentation (français).
 
