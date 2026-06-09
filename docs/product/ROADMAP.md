@@ -59,6 +59,7 @@ Impact 1–3, Confidence 0.5–1.0, Effort in person-weeks (S=1, M=3, L=6, XL=12
 ## 3. Horizons
 
 ### Now — next release (0.0.8): "trustworthy MVP, hardened"
+*(Executable work-package plan: [RELEASE_0.0.8_PLAN.md](RELEASE_0.0.8_PLAN.md).)*
 Ship the honestly-scoped functional MVP (ingest → dedup → store → search → export, reliably)
 with the trust surface tightened. **RM-03** (gate the DuckDuckGo call), **RM-10** (standing
 audit cadence — builds on the bandit/pip-audit CI gates this audit added), **RM-02** (close the
