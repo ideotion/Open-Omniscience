@@ -771,7 +771,7 @@
           record links back to its official gazette. Fetched only through the ethical, robots-respecting
           path. See <a href="#" onclick="showTab('help');openDoc('law');return false">the Law guide</a>.</p>
         <div class="row">
-          <button onclick="lawTrack()" style="margin-top:0">Track changes now</button>
+          <button onclick="lawTrack(this)" style="margin-top:0">Track changes now</button>
           <button class="secondary" onclick="lawSeed()" style="margin-top:0">Re-seed catalog</button>
           <button class="secondary" onclick="loadLaw()" style="margin-top:0">Refresh</button>
         </div>
@@ -1975,11 +1975,18 @@
           "</tbody>";
       } catch (e) { /* table optional */ }
     }
-    async function lawTrack() {
-      toast("Tracking legal documents (ethical fetch)…");
+    async function lawTrack(btn) {
+      // Long synchronous op (ethical, rate-limited fetch of each watched document):
+      // give a persistent busy state so it never reads as "nothing happened".
+      const label = btn ? btn.textContent : null;
+      if (btn) { btn.disabled = true; btn.textContent = "Tracking…"; }
+      const st = $("law-status");
+      if (st) st.innerHTML = '<div class="muted">Tracking watched documents — ethical, rate-limited fetch; this can take a moment…</div>';
       try { const r = await api("/api/law/track", {method:"POST"});
         toast(`Tracked ${r.documents}: ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.`);
-        loadLaw(); } catch (e) { toast("Tracking failed: " + e.message, "err"); }
+        loadLaw(); loadLawChanges && loadLawChanges();
+      } catch (e) { toast("Tracking failed: " + e.message, "err"); if (st) loadLaw(); }
+      finally { if (btn) { btn.disabled = false; btn.textContent = label || "Track changes now"; } }
     }
     async function lawSeed() {
       try { const r = await api("/api/law/seed", {method:"POST"});
