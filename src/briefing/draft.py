@@ -62,8 +62,7 @@ def add_card(card: dict, *, note: str = "") -> dict:
             if note:
                 item["note"] = note
             return _save(draft)
-    draft["items"].append({"card": card, "note": note,
-                           "added_at": datetime.now(UTC).isoformat()})
+    draft["items"].append({"card": card, "note": note, "added_at": datetime.now(UTC).isoformat()})
     return _save(draft)
 
 
@@ -136,8 +135,10 @@ def export_markdown(draft: dict | None = None) -> str:
             metric = signal.get("metric")
             value = signal.get("value")
             if metric is not None and value is not None:
-                lines.append(f"**Signal:** `{metric}` = {value}"
-                             + (f" (n={card['n']})" if card.get("n") is not None else ""))
+                lines.append(
+                    f"**Signal:** `{metric}` = {value}"
+                    + (f" (n={card['n']})" if card.get("n") is not None else "")
+                )
                 lines.append("")
         evidence = _evidence_md(card.get("evidence"))
         if evidence:

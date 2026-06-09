@@ -26,10 +26,14 @@ from src.reporting.evidence import verify_bundle  # noqa: E402
 
 def main(argv: list[str]) -> int:
     if len(argv) not in (2, 3):
-        print("usage: python scripts/verify_evidence.py <bundle.json> [trusted_public_key_hex]",
-              file=sys.stderr)
-        print("  Pass the signer's known public key to prove provenance (not just integrity).",
-              file=sys.stderr)
+        print(
+            "usage: python scripts/verify_evidence.py <bundle.json> [trusted_public_key_hex]",
+            file=sys.stderr,
+        )
+        print(
+            "  Pass the signer's known public key to prove provenance (not just integrity).",
+            file=sys.stderr,
+        )
         return 2
     bundle = json.loads(Path(argv[1]).read_text())
     trusted = argv[2] if len(argv) == 3 else None

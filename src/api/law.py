@@ -21,18 +21,27 @@ from src.database.session import get_db
 
 router = APIRouter(prefix="/api/law", tags=["law"])
 
-_CAVEAT = ("A research mirror, not the authoritative source and not legal advice. Every "
-           "document links back to its official gazette; changes are surfaced, never judged.")
+_CAVEAT = (
+    "A research mirror, not the authoritative source and not legal advice. Every "
+    "document links back to its official gazette; changes are surfaced, never judged."
+)
 
 
 def _doc_dict(doc: LawDocument, *, revisions: int = 0, flagged: int = 0) -> dict:
     return {
-        "id": doc.id, "jurisdiction": doc.jurisdiction, "title": doc.title,
-        "url": doc.url, "official_url": doc.official_url, "category": doc.category,
-        "consolidated": bool(doc.consolidated), "watched": bool(doc.watched),
+        "id": doc.id,
+        "jurisdiction": doc.jurisdiction,
+        "title": doc.title,
+        "url": doc.url,
+        "official_url": doc.official_url,
+        "category": doc.category,
+        "consolidated": bool(doc.consolidated),
+        "watched": bool(doc.watched),
         "has_baseline": doc.baseline_text is not None,
         "last_checked_at": doc.last_checked_at.isoformat() if doc.last_checked_at else None,
-        "last_status": doc.last_status, "revisions": revisions, "flagged": flagged,
+        "last_status": doc.last_status,
+        "revisions": revisions,
+        "flagged": flagged,
     }
 
 
@@ -41,13 +50,20 @@ def law_status(db: Session = Depends(get_db)) -> dict:
     """Coverage overview: documents per jurisdiction + change/flag totals."""
     by_jur = dict(
         db.query(LawDocument.jurisdiction, func.count(LawDocument.id))
-        .group_by(LawDocument.jurisdiction).all()
+        .group_by(LawDocument.jurisdiction)
+        .all()
     )
     return {
         "documents": db.query(func.count(LawDocument.id)).scalar() or 0,
         "jurisdictions": {k: int(v) for k, v in sorted(by_jur.items())},
-        "tracked": db.query(func.count(LawDocument.id)).filter(LawDocument.baseline_text.isnot(None)).scalar() or 0,
-        "changes": db.query(func.count(LawRevision.id)).filter(LawRevision.delta_bytes != 0).scalar() or 0,
+        "tracked": db.query(func.count(LawDocument.id))
+        .filter(LawDocument.baseline_text.isnot(None))
+        .scalar()
+        or 0,
+        "changes": db.query(func.count(LawRevision.id))
+        .filter(LawRevision.delta_bytes != 0)
+        .scalar()
+        or 0,
         "flagged": db.query(func.count(LawRevision.id)).filter_by(flagged=True).scalar() or 0,
         "caveat": _CAVEAT,
     }
@@ -65,15 +81,22 @@ def law_documents(
     docs = q.order_by(LawDocument.jurisdiction, LawDocument.id).all()
     rev_counts = dict(
         db.query(LawRevision.document_id, func.count(LawRevision.id))
-        .group_by(LawRevision.document_id).all()
+        .group_by(LawRevision.document_id)
+        .all()
     )
     flag_counts = dict(
         db.query(LawRevision.document_id, func.count(LawRevision.id))
-        .filter_by(flagged=True).group_by(LawRevision.document_id).all()
+        .filter_by(flagged=True)
+        .group_by(LawRevision.document_id)
+        .all()
     )
-    return {"caveat": _CAVEAT, "documents": [
-        _doc_dict(d, revisions=rev_counts.get(d.id, 0), flagged=flag_counts.get(d.id, 0)) for d in docs
-    ]}
+    return {
+        "caveat": _CAVEAT,
+        "documents": [
+            _doc_dict(d, revisions=rev_counts.get(d.id, 0), flagged=flag_counts.get(d.id, 0))
+            for d in docs
+        ],
+    }
 
 
 @router.get("/changes")
@@ -83,22 +106,31 @@ def law_changes(
     db: Session = Depends(get_db),
 ) -> dict:
     """Recent tracked legal changes (flagged by default), newest first."""
-    q = db.query(LawRevision, LawDocument).join(LawDocument, LawDocument.id == LawRevision.document_id)
+    q = db.query(LawRevision, LawDocument).join(
+        LawDocument, LawDocument.id == LawRevision.document_id
+    )
     q = q.filter(LawRevision.delta_bytes != 0)
     if flagged_only:
         q = q.filter(LawRevision.flagged.is_(True))
     rows = q.order_by(LawRevision.observed_at.desc(), LawRevision.id.desc()).limit(limit).all()
-    return {"caveat": _CAVEAT, "changes": [
-        {
-            "document_id": doc.id, "jurisdiction": doc.jurisdiction, "title": doc.title,
-            "official_url": doc.official_url or doc.url, "category": doc.category,
-            "observed_at": rev.observed_at.isoformat() if rev.observed_at else None,
-            "delta_bytes": rev.delta_bytes, "flagged": bool(rev.flagged),
-            "flag_reasons": (rev.flag_reasons or "").split(",") if rev.flag_reasons else [],
-            "diff": rev.diff or "",
-        }
-        for rev, doc in rows
-    ]}
+    return {
+        "caveat": _CAVEAT,
+        "changes": [
+            {
+                "document_id": doc.id,
+                "jurisdiction": doc.jurisdiction,
+                "title": doc.title,
+                "official_url": doc.official_url or doc.url,
+                "category": doc.category,
+                "observed_at": rev.observed_at.isoformat() if rev.observed_at else None,
+                "delta_bytes": rev.delta_bytes,
+                "flagged": bool(rev.flagged),
+                "flag_reasons": (rev.flag_reasons or "").split(",") if rev.flag_reasons else [],
+                "diff": rev.diff or "",
+            }
+            for rev, doc in rows
+        ],
+    }
 
 
 @router.post("/track")
@@ -130,16 +162,23 @@ def law_document(document_id: int, db: Session = Depends(get_db)) -> dict:
     doc = db.query(LawDocument).filter_by(id=document_id).first()
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found.")
-    revs = (db.query(LawRevision).filter_by(document_id=doc.id)
-            .order_by(LawRevision.observed_at.desc()).all())
+    revs = (
+        db.query(LawRevision)
+        .filter_by(document_id=doc.id)
+        .order_by(LawRevision.observed_at.desc())
+        .all()
+    )
     return {
         **_doc_dict(doc, revisions=len(revs)),
         "caveat": _CAVEAT,
         "revisions": [
-            {"observed_at": r.observed_at.isoformat() if r.observed_at else None,
-             "delta_bytes": r.delta_bytes, "flagged": bool(r.flagged),
-             "flag_reasons": (r.flag_reasons or "").split(",") if r.flag_reasons else [],
-             "diff": r.diff or ""}
+            {
+                "observed_at": r.observed_at.isoformat() if r.observed_at else None,
+                "delta_bytes": r.delta_bytes,
+                "flagged": bool(r.flagged),
+                "flag_reasons": (r.flag_reasons or "").split(",") if r.flag_reasons else [],
+                "diff": r.diff or "",
+            }
             for r in revs
         ],
     }
@@ -173,42 +212,62 @@ def view_law_document(document_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Document not found.")
 
     text = doc.baseline_text or ""
-    paras = "".join(
-        f"<p>{_html.escape(line)}</p>" for line in text.split("\n") if line.strip()
-    ) or "<p class='muted'>No baseline text captured yet — track this document to store a snapshot.</p>"
+    paras = (
+        "".join(f"<p>{_html.escape(line)}</p>" for line in text.split("\n") if line.strip())
+        or "<p class='muted'>No baseline text captured yet — track this document to store a snapshot.</p>"
+    )
 
-    revs = (db.query(LawRevision).filter_by(document_id=doc.id)
-            .order_by(LawRevision.observed_at.desc()).all())
+    revs = (
+        db.query(LawRevision)
+        .filter_by(document_id=doc.id)
+        .order_by(LawRevision.observed_at.desc())
+        .all()
+    )
     rev_items = []
     for r in revs:
         when = r.observed_at.strftime("%Y-%m-%d %H:%M") if r.observed_at else "—"
         delta = f"{'+' if (r.delta_bytes or 0) > 0 else ''}{r.delta_bytes or 0} bytes"
-        flags = (f" · <span class='flag'>{_html.escape(r.flag_reasons or 'flagged')}</span>"
-                 if r.flagged else "")
+        flags = (
+            f" · <span class='flag'>{_html.escape(r.flag_reasons or 'flagged')}</span>"
+            if r.flagged
+            else ""
+        )
         rev_items.append(
             f"<details class='rev'><summary>{when} · {delta}{flags}</summary>"
             f"<div class='diff'>{_diff_to_html(r.diff, _html.escape)}</div></details>"
         )
-    revs_html = ("<section class='history'><h2>Amendment history</h2>" + "".join(rev_items)
-                 + "</section>") if rev_items else ""
+    revs_html = (
+        ("<section class='history'><h2>Amendment history</h2>" + "".join(rev_items) + "</section>")
+        if rev_items
+        else ""
+    )
 
     def _row(label: str, value: str | None) -> str:
         return f"<div class='mrow'><span>{label}</span><b>{value}</b></div>" if value else ""
 
     official = safe_href(doc.official_url or doc.url)
-    meta_rows = "".join([
-        _row("Jurisdiction", _html.escape((doc.jurisdiction or "").upper())),
-        _row("Category", _html.escape(doc.category or "")),
-        _row("Text", "point-in-time consolidation" if doc.consolidated else "raw captured fetch"),
-        _row("Last checked", _html.escape(doc.last_checked_at.strftime("%Y-%m-%d %H:%M"))
-             if doc.last_checked_at else None),
-        _row("Last status", _html.escape(doc.last_status) if doc.last_status else None),
-        _row("Changes recorded", str(len(revs)) if revs else None),
-    ])
+    meta_rows = "".join(
+        [
+            _row("Jurisdiction", _html.escape((doc.jurisdiction or "").upper())),
+            _row("Category", _html.escape(doc.category or "")),
+            _row(
+                "Text", "point-in-time consolidation" if doc.consolidated else "raw captured fetch"
+            ),
+            _row(
+                "Last checked",
+                _html.escape(doc.last_checked_at.strftime("%Y-%m-%d %H:%M"))
+                if doc.last_checked_at
+                else None,
+            ),
+            _row("Last status", _html.escape(doc.last_status) if doc.last_status else None),
+            _row("Changes recorded", str(len(revs)) if revs else None),
+        ]
+    )
     title = _html.escape(doc.title or "(untitled)")
     official_html = (
         f"<a class='ext src-link' href='{_html.escape(official)}' rel='noopener noreferrer'>Open the official gazette ↗</a>"
-        if official else "<span class='muted'>No official (http/https) URL recorded.</span>"
+        if official
+        else "<span class='muted'>No official (http/https) URL recorded.</span>"
     )
 
     doc_html = f"""<!DOCTYPE html><html lang="en"><head>

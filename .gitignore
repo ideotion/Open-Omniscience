@@ -53,6 +53,9 @@ coverage.xml
 # Environments
 .env
 .venv
+.venv-audit/
+.venv-core/
+.venv-fresh/
 env/
 venv/
 ENV/
@@ -74,8 +77,8 @@ venv.bak/
 # Logs
 *.log
 logs/
-audit/
-data/
+/audit/
+/data/
 
 # OS files
 .DS_Store
@@ -120,6 +123,6 @@ tmp/
 *.cer
 
 # Data files that shouldn't be committed
-data/
-audit/
+/data/
+/audit/
 logs/

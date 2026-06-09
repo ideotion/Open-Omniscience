@@ -9,7 +9,7 @@ one that matches what you need.
   workflow, env var and API area, **plus per-feature deep-dives** (Home briefing, source
   integrity & anti-amplification, shared annotations, insights, the temporal map &
   article date-tags, Wikipedia tracking, world-law tracking, markets, chain of custody).
-- **[PRESENTATION_PUBLIC.md](PRESENTATION_PUBLIC.md)** — a plain-language public
+- **[PRESENTATION_PUBLIC.md](archive/PRESENTATION_PUBLIC.md) *(archived)*** — a plain-language public
   presentation (français).
 
 ## Understand it

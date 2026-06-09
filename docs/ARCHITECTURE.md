@@ -12,174 +12,65 @@ The technical companion to the User Manual: the database/configuration, the HTTP
 
 ## Database Configuration for Open Omniscience
 
-**⚠️ EARLY CONCEPT RELEASE - NOT FUNCTIONAL ⚠️**
+> **Status (verified in the v0.0.7 audit, `docs/audit/00_BASELINE.md`):** the database layer
+> **works and is tested** — the server boots, creates/uses the SQLite store, applies Alembic
+> migrations, and the full test suite (800+) passes against it. The old "early concept —
+> not functional" banner that used to sit here described a pre-rebuild state and was long
+> out of date.
 
-**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
+### 🗃️ SQLite — the supported store
 
-> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The database configuration described below is **part of a conceptual framework only** and **does not work** in the current state. **Do not attempt to set up or use these database configurations** - they are not functional.
+SQLite is the **default and the only supported, tested backend**. It fits the product's
+local-first, single-operator design.
 
-Open Omniscience is intended to support both **SQLite** (default) and **PostgreSQL** for data storage **when it becomes functional**. This guide covers the intended setup, configuration, and optimization for both.
+- **Zero configuration:** the database is created automatically at first run, at
+  `<data dir>/open_omniscience.db`. The data dir is `OO_DATA_DIR` if set, else the repo's
+  `data/` in a source checkout, else `$XDG_DATA_HOME/open-omniscience` (see `src/paths.py`).
+- **Tuned automatically:** the engine applies `WAL` journal mode, `foreign_keys=ON`,
+  `busy_timeout=30000` and `synchronous=NORMAL` on every connection
+  (`src/database/session.py`) — you do not need to set these yourself.
+- **Full-text search** is SQLite **FTS5** (`article_fts`, external-content, kept in sync by
+  triggers — `src/database/fts.py`).
+- **Override the location** with the `DATABASE_URL` environment variable (do **not** edit
+  source files): `DATABASE_URL=sqlite:////absolute/path/to/your.db`
+- **Maintenance:** an occasional `sqlite3 <db> "VACUUM;"` reclaims space (the v0.0.7 audit
+  also removed a redundant index that was ~63% of the file on large corpora; run `make
+  migrate` once after upgrading to drop it from existing databases).
 
----
+### 🐘 PostgreSQL — experimental scaffolding, NOT supported
 
-### 🗃️ SQLite (Default - Conceptual)
+Honesty over aspiration (audit finding ARCH-06): the engine layer *recognises* a
+PostgreSQL `DATABASE_URL` (connection pooling via `DB_POOL_SIZE`/`DB_MAX_OVERFLOW`), **but**
 
-#### Pros (Intended):
-- **Zero configuration**: Would work out of the box *if implemented*
-- **Portable**: Single file (`data/open_omniscience.db`) *if implemented*
-- **No server required**: Ideal for local development and small-scale use *if implemented*
+- **full-text search does not exist on PostgreSQL** — the FTS5 setup deliberately no-ops on
+  non-SQLite engines, so the Search tab would be dead;
+- the test suite never runs against PostgreSQL, and no CI covers it;
+- no published deployment has used it.
 
-#### Cons (Intended):
-- **Limited scalability**: Not ideal for >10GB of data *if implemented*
-- **No concurrent writes**: SQLite locks the entire database during writes *if implemented*
-
-#### Setup (Conceptual):
-**⚠️ DO NOT ATTEMPT - This is conceptual only**
-
-1. Ensure the `data/` directory exists:
-   ```bash
-   # DO NOT RUN - This is conceptual only
-   mkdir -p data/
-   ```
-2. The database would be automatically created when you run the scraper or API for the first time *if the software was functional*.
-
-#### Configuration (Conceptual):
-- Database file location: `data/open_omniscience.db` *if implemented*
-- To change the location, modify `DATABASE_URL` in `src/database/models.py` *if implemented*:
-  ```python
-  # DO NOT USE - This is conceptual only
-  DATABASE_URL = "sqlite:///path/to/your/database.db"
-  ```
-
-#### Performance Tips:
-- **Vacuum regularly**: Run `VACUUM` to reclaim space:
-  ```bash
-  sqlite3 data/open_omniscience.db "VACUUM;"
-  ```
-- **Enable WAL mode**: Improves read/write concurrency:
-  ```python
-  engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-  ```
-- **Limit database size**: SQLite works best with databases <10GB. For larger datasets, use PostgreSQL.
-
----
-
-### 🐘 PostgreSQL
-
-#### Pros:
-- **Scalable**: Handles terabytes of data efficiently.
-- **Concurrent access**: Supports multiple readers/writers.
-- **Advanced features**: Full-text search, JSON support, etc.
-
-#### Cons:
-- **Requires setup**: Needs a PostgreSQL server.
-- **More complex**: Requires separate installation and configuration.
-
-#### Setup:
-
-##### 1. Install PostgreSQL
-- **Debian-based Linux (Ubuntu, Debian, etc.)**:
-  ```bash
-  sudo apt update
-  sudo apt install postgresql postgresql-contrib
-  ```
-
-##### 2. Create a Database and User
-```bash
-sudo -u postgres psql
-```
-In the PostgreSQL shell:
-```sql
-CREATE DATABASE open_omniscience;
-CREATE USER open_omniscience WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE open_omniscience TO open_omniscience;
-\q
-```
-
-##### 3. Configure Open Omniscience
-Set the `DATABASE_URL` environment variable before running the application:
-```bash
-export DATABASE_URL="postgres://open_omniscience:your_password@localhost:5432/open_omniscience"
-```
-Or modify `src/database/models.py`:
-```python
-DATABASE_URL = "postgres://open_omniscience:your_password@localhost:5432/open_omniscience"
-```
-
-##### 4. Initialize the Database
-Run the Alembic migrations:
-```bash
-cd src/database
-alembic upgrade head
-```
-
-#### Configuration Options:
-| Option | Description | Example |
-|--------|-------------|---------|
-| `host` | PostgreSQL server host | `localhost` or `192.168.1.100` |
-| `port` | PostgreSQL server port | `5432` |
-| `user` | Database username | `open_omniscience` |
-| `password` | Database password | `your_password` |
-| `dbname` | Database name | `open_omniscience` |
-
-Full connection string:
-```
-postgres://user:password@host:port/dbname
-```
-
-#### Performance Tips:
-- **Indexes**: Open Omniscience automatically creates indexes for `hash`, `canonical_url`, and `source_id`. For large datasets, consider adding more indexes (e.g., for `published_at`).
-- **Connection Pooling**: Use `SQLAlchemy`'s connection pooling:
-  ```python
-  engine = create_engine(DATABASE_URL, pool_size=10, max_overflow=20)
-  ```
-- **Vacuum and Analyze**: Regularly run `VACUUM ANALYZE` to optimize performance:
-  ```bash
-  psql -U open_omniscience -d open_omniscience -c "VACUUM ANALYZE;"
-  ```
-- **Partitioning**: For very large datasets (>100GB), consider partitioning the `articles` table by `published_at` or `source_id`.
-
----
+Treat PostgreSQL as **untested scaffolding for a possible future**, not a choice you can
+make today. If multi-writer scale ever becomes a real requirement, the roadmap item is a
+`tsvector` search path plus a PostgreSQL CI matrix — until that lands, this page will not
+pretend.
 
 ### 🔄 Migrations
 
-Open Omniscience uses **Alembic** for database migrations. This allows you to update the schema without losing data.
+Alembic is configured at the **repository root** (`alembic.ini`, `migrations/`). Alembic is
+installed with the app (it is a core dependency — no separate install).
 
-#### Setup:
-1. Install Alembic:
-   ```bash
-   pip install alembic
-   ```
-2. Initialize Alembic (if not already done):
-   ```bash
-   cd src/database
-   alembic init migrations
-   ```
-3. Update `alembic.ini` to point to your database:
-   ```ini
-   sqlalchemy.url = sqlite:///../../data/open_omniscience.db
-   ```
-   Or for PostgreSQL:
-   ```ini
-   sqlalchemy.url = postgres://open_omniscience:your_password@localhost:5432/open_omniscience
-   ```
-
-#### Creating a Migration:
-1. Modify the models in `src/database/models.py`.
-2. Generate a migration:
-   ```bash
-   alembic revision --autogenerate -m "Your migration message"
-   ```
-3. Apply the migration:
-   ```bash
-   alembic upgrade head
-   ```
-
-#### Rolling Back:
-To revert a migration:
-```bash
-alembic downgrade -1
-```
+- **Fresh databases** are created complete (`create_all` + FTS) and stamped with the current
+  migration head automatically at startup.
+- **Upgrading an existing database:**
+  ```bash
+  make migrate          # = alembic upgrade head, from the repo root
+  ```
+- **Creating a migration** (contributors): edit `src/database/models.py`, then
+  ```bash
+  alembic revision --autogenerate -m "your message"
+  alembic upgrade head
+  ```
+  and check the generated file — autogenerate misses FTS virtual tables (those live in
+  `src/database/fts.py`, applied at startup).
+- **Rolling back:** `alembic downgrade -1`.
 
 ---
 

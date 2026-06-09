@@ -10,7 +10,7 @@ local-first privacy with **application-level** protections — for data at rest,
 and the act of researching itself — each labelled with exactly what it does and does **not**
 guarantee (the honest-crypto rule: a feature that *claims* a protection it cannot deliver is
 worse than its absence). Full-disk encryption remains the host's job (Qubes / LUKS / Tails);
-these add protection on top, not instead. See ``docs/NEXT_VERSION.md`` (Theme 2).
+these add protection on top, not instead. See the "Next version — action plans" section of ``docs/ROADMAP.md`` (Theme 2).
 """
 
 from __future__ import annotations

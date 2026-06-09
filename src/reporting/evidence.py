@@ -38,8 +38,10 @@ BUNDLE_VERSION = "oo-evidence-1"
 # Signing keys (persistent under the data dir)
 # --------------------------------------------------------------------------- #
 
+
 def _default_key_path() -> Path:
     from src.paths import data_dir
+
     return data_dir() / "keys" / "evidence_ed25519.pem"
 
 
@@ -50,11 +52,13 @@ def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:
         return serialization.load_pem_private_key(path.read_bytes(), password=None)
     key = Ed25519PrivateKey.generate()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    ))
+    path.write_bytes(
+        key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
     path.chmod(0o600)
     return key
 
@@ -69,6 +73,7 @@ def public_key_hex(key: Ed25519PrivateKey) -> str:
 # --------------------------------------------------------------------------- #
 # Bundle construction
 # --------------------------------------------------------------------------- #
+
 
 def _article_item(article) -> dict:
     """One evidence item: provenance + a content hash recomputed from the stored text."""
@@ -87,7 +92,9 @@ def _article_item(article) -> dict:
 
 def canonical_bytes(payload: dict) -> bytes:
     """Deterministic serialization used for hashing/signing (sorted keys, no spaces)."""
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
 
 
 def _leaf(item: dict) -> str:
@@ -131,6 +138,7 @@ def build_signed_bundle(articles, key: Ed25519PrivateKey, *, case_name: str | No
 # Independent verification (no app/DB needed -- just the bundle + crypto)
 # --------------------------------------------------------------------------- #
 
+
 def verify_bundle(bundle: dict, *, trusted_public_key: str | None = None) -> tuple[bool, str]:
     """Verify a bundle's Merkle root and Ed25519 signature.
 
@@ -168,5 +176,8 @@ def verify_bundle(bundle: dict, *, trusted_public_key: str | None = None) -> tup
         return False, "signature does not match (manifest altered or wrong key)"
 
     if trusted_public_key is None:
-        return True, f"ok (signed by unpinned key {bundle_key[:16]}...; pin the key to prove provenance)"
+        return (
+            True,
+            f"ok (signed by unpinned key {bundle_key[:16]}...; pin the key to prove provenance)",
+        )
     return True, "ok (signature valid and key matches the pinned trusted key)"

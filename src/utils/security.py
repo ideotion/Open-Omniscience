@@ -37,7 +37,6 @@ import html
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -50,35 +49,62 @@ import bleach
 
 class SecurityError(Exception):
     """Custom exception for security-related errors."""
+
     pass
 
 
 def sanitize_html(content: str) -> str:
     """
     Sanitize HTML content to prevent XSS attacks.
-    
+
     Args:
         content: The HTML content to sanitize.
-        
+
     Returns:
         Sanitized HTML with dangerous tags and attributes removed.
     """
     if not content:
         return content
-    
+
     # List of allowed HTML tags
     ALLOWED_TAGS = [
-        'p', 'br', 'b', 'i', 'u', 'em', 'strong', 'a', 'ul', 'ol', 'li',
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'code', 'pre',
-        'hr', 'img', 'table', 'tr', 'td', 'th', 'thead', 'tbody', 'tfoot'
+        "p",
+        "br",
+        "b",
+        "i",
+        "u",
+        "em",
+        "strong",
+        "a",
+        "ul",
+        "ol",
+        "li",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "blockquote",
+        "code",
+        "pre",
+        "hr",
+        "img",
+        "table",
+        "tr",
+        "td",
+        "th",
+        "thead",
+        "tbody",
+        "tfoot",
     ]
-    
+
     # Allowed attributes per tag. 'style' is intentionally NOT allowed (inline
     # CSS is an XSS vector and would require a separate CSS sanitizer).
     ALLOWED_ATTRIBUTES = {
-        'a': ['href', 'title', 'rel'],
-        'img': ['src', 'alt', 'width', 'height'],
-        '*': ['class', 'id'],
+        "a": ["href", "title", "rel"],
+        "img": ["src", "alt", "width", "height"],
+        "*": ["class", "id"],
     }
 
     return bleach.clean(
@@ -93,10 +119,10 @@ def sanitize_html(content: str) -> str:
 def escape_html(content: str) -> str:
     """
     Escape HTML special characters to prevent XSS.
-    
+
     Args:
         content: The content to escape.
-        
+
     Returns:
         HTML-escaped content.
     """
@@ -117,81 +143,81 @@ def escape_html(content: str) -> str:
 def validate_and_sanitize_filename(filename: str) -> str:
     """
     Validate and sanitize a filename to prevent path traversal.
-    
+
     Args:
         filename: The filename to validate and sanitize.
-        
+
     Returns:
         Sanitized filename.
-        
+
     Raises:
         SecurityError: If the filename contains dangerous characters or patterns.
     """
     if not filename:
         raise SecurityError("Filename cannot be empty")
-    
+
     # Check for path traversal attempts
-    if '..' in filename or filename.startswith('/') or filename.startswith('\\'):
+    if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
         raise SecurityError(f"Invalid filename: potential path traversal detected: {filename}")
-    
+
     # Remove dangerous characters
-    dangerous_chars = ['<', '>', ':', '"', '|', '?', '*', '\x00', '\x1f']
+    dangerous_chars = ["<", ">", ":", '"', "|", "?", "*", "\x00", "\x1f"]
     for char in dangerous_chars:
         if char in filename:
             raise SecurityError(f"Invalid filename: contains dangerous character '{char}'")
-    
+
     # Only allow alphanumeric, underscores, hyphens, dots, and spaces
-    if not re.match(r'^[a-zA-Z0-9_\-\.\s]+$', filename):
+    if not re.match(r"^[a-zA-Z0-9_\-\.\s]+$", filename):
         raise SecurityError(f"Invalid filename: contains invalid characters: {filename}")
-    
+
     # Normalize the filename
-    filename = filename.strip().replace(' ', '_')
-    
+    filename = filename.strip().replace(" ", "_")
+
     return filename
 
 
 def safe_path_join(base_path: str | Path, *parts: str) -> Path:
     """
     Safely join path components to prevent path traversal.
-    
+
     Args:
         base_path: The base directory path.
         *parts: Additional path components to join.
-        
+
     Returns:
         A safe Path object.
-        
+
     Raises:
         SecurityError: If any path component attempts to traverse outside the base path.
     """
     base_path = Path(base_path).resolve()
-    
+
     # Validate each part
     for part in parts:
         if not part:
             continue
-        if '..' in part or part.startswith('/') or part.startswith('\\'):
+        if ".." in part or part.startswith("/") or part.startswith("\\"):
             raise SecurityError(f"Path traversal attempt detected in: {part}")
-    
+
     # Join and resolve the path
     result_path = base_path.joinpath(*parts).resolve()
-    
+
     # Ensure the result is within the base path
     try:
         result_path.relative_to(base_path)
     except ValueError:
         raise SecurityError(f"Path {result_path} is outside base directory {base_path}")
-    
+
     return result_path
 
 
 def sanitize_url(url: str) -> str:
     """
     Sanitize a URL to prevent injection attacks.
-    
+
     Args:
         url: The URL to sanitize.
-        
+
     Returns:
         Sanitized URL.
     """
@@ -201,14 +227,15 @@ def sanitize_url(url: str) -> str:
     # Strip leading/trailing whitespace and control chars BEFORE the scheme check:
     # browsers ignore leading whitespace, so " javascript:alert(1)" would otherwise
     # bypass the check and still execute.
-    url = re.sub(r'[\x00-\x20\x7f]+', '', url)
+    url = re.sub(r"[\x00-\x20\x7f]+", "", url)
 
     # Remove dangerous schemes
-    if url.lower().startswith(('javascript:', 'data:', 'vbscript:', 'file:')):
+    if url.lower().startswith(("javascript:", "data:", "vbscript:", "file:")):
         return ""
-    
+
     # Validate URL structure
     from urllib.parse import urlparse
+
     try:
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
@@ -216,7 +243,7 @@ def sanitize_url(url: str) -> str:
             return url
     except Exception:
         return ""
-    
+
     return url
 
 
@@ -252,6 +279,7 @@ def safe_href(url: str | None) -> str:
         return ""
     cleaned = re.sub(r"[\x00-\x20\x7f]+", "", url)
     from urllib.parse import urlparse
+
     try:
         scheme = urlparse(cleaned).scheme.lower()
     except Exception:
@@ -262,20 +290,20 @@ def safe_href(url: str | None) -> str:
 def validate_email(email: str) -> bool:
     """
     Validate an email address format.
-    
+
     Args:
         email: The email address to validate.
-        
+
     Returns:
         True if the email is valid, False otherwise.
     """
     if not email:
         return False
-    
+
     # Simple email validation regex - more strict
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     # Additional check for consecutive dots
-    if '..' in email:
+    if ".." in email:
         return False
     return bool(re.match(pattern, email))
 
@@ -283,14 +311,14 @@ def validate_email(email: str) -> bool:
 def validate_and_sanitize_search_query(query: str, max_length: int = 500) -> str:
     """
     Validate and sanitize a search query.
-    
+
     Args:
         query: The search query to validate and sanitize.
         max_length: Maximum allowed length of the query.
-        
+
     Returns:
         Sanitized search query.
-        
+
     Raises:
         SecurityError: If the query contains dangerous content.
     """
@@ -305,7 +333,7 @@ def validate_and_sanitize_search_query(query: str, max_length: int = 500) -> str
     # legitimate searches (e.g. "AT&T", "oil prices DROP"). Safety against SQL
     # injection comes from parameterized queries / FTS5 MATCH binding, and the
     # Boolean parser in src/database/fts.py validates structure.
-    query = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', query)
+    query = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", query)
 
     return query.strip()
 
@@ -313,24 +341,25 @@ def validate_and_sanitize_search_query(query: str, max_length: int = 500) -> str
 def generate_secure_token(length: int = 32) -> str:
     """
     Generate a secure random token.
-    
+
     Args:
         length: Length of the token in bytes.
-        
+
     Returns:
         Secure random token as a hexadecimal string.
     """
     import secrets
+
     return secrets.token_hex(length)
 
 
 def hash_password(password: str) -> str:
     """
     Hash a password using bcrypt.
-    
+
     Args:
         password: The password to hash.
-        
+
     Returns:
         Bcrypt hash of the password.
     """
@@ -347,11 +376,11 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     """
     Verify a password against its hash.
-    
+
     Args:
         password: The password to verify.
         hashed: The hashed password to verify against.
-        
+
     Returns:
         True if the password matches, False otherwise.
     """
@@ -372,14 +401,14 @@ SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
-    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()"
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
 }
 
 
 def get_security_headers() -> dict[str, str]:
     """
     Get security headers for HTTP responses.
-    
+
     Returns:
         Dictionary of security headers.
     """

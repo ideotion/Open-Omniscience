@@ -17,15 +17,16 @@ import sys
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import sessionmaker
 
-from src.database.models import Article, Base, Source
 from src.database import session as session_module
+from src.database.models import Article, Base, Source
 
 
 def _fresh_engine(tmp_path):
     """An isolated engine on a temp SQLite file, with the same PRAGMAs as prod."""
     db = tmp_path / "test.db"
-    engine = create_engine(f"sqlite:///{db}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{db}", future=True, connect_args={"check_same_thread": False}
+    )
 
     @event.listens_for(engine, "connect")
     def _pragmas(dbapi_conn, _rec):  # noqa: ANN001
@@ -62,6 +63,7 @@ def test_init_db_enables_wal_and_foreign_keys():
     insp = inspect(session_module.engine)
     assert "articles" in insp.get_table_names()
     from sqlalchemy import text
+
     with session_module.engine.connect() as conn:
         assert conn.execute(text("PRAGMA journal_mode")).scalar().lower() == "wal"
         assert conn.execute(text("PRAGMA foreign_keys")).scalar() == 1

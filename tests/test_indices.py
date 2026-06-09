@@ -37,8 +37,9 @@ def _client(tmp_path):
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'idx.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'idx.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
 
@@ -59,8 +60,8 @@ def test_board_lists_curated_indices_even_before_import(tmp_path):
         with TestClient(app) as c:
             body = c.get("/api/markets/board?category=index").json()
         assert body["category"] == "index"
-        assert body["count"] >= 6          # whole curated catalog is shown
-        assert body["with_data"] == 0      # nothing imported yet -> all latest=null
+        assert body["count"] >= 6  # whole curated catalog is shown
+        assert body["with_data"] == 0  # nothing imported yet -> all latest=null
         sp = next(card for card in body["cards"] if card["symbol"] == "SP500")
         assert sp["latest"] is None and sp["change_pct"] is None and sp["points"] == 0
         assert "real-time" in body["note"].lower()  # honest EOD caveat present
@@ -72,19 +73,33 @@ def test_board_reports_real_change_from_stored_points(tmp_path):
     app, Sess = _client(tmp_path)
     try:
         with Sess() as s:
-            s.add_all([
-                CommodityPrice(symbol="SP500", observed_on=date(2026, 6, 5), price=5000.0,
-                               currency="USD", unit="pts", source="test"),
-                CommodityPrice(symbol="SP500", observed_on=date(2026, 6, 6), price=5100.0,
-                               currency="USD", unit="pts", source="test"),
-            ])
+            s.add_all(
+                [
+                    CommodityPrice(
+                        symbol="SP500",
+                        observed_on=date(2026, 6, 5),
+                        price=5000.0,
+                        currency="USD",
+                        unit="pts",
+                        source="test",
+                    ),
+                    CommodityPrice(
+                        symbol="SP500",
+                        observed_on=date(2026, 6, 6),
+                        price=5100.0,
+                        currency="USD",
+                        unit="pts",
+                        source="test",
+                    ),
+                ]
+            )
             s.commit()
         with TestClient(app) as c:
             body = c.get("/api/markets/board?category=index").json()
         sp = next(card for card in body["cards"] if card["symbol"] == "SP500")
         assert sp["latest"]["price"] == 5100.0
         assert sp["change"] == 100.0
-        assert sp["change_pct"] == 2.0      # (5100-5000)/5000 * 100
+        assert sp["change_pct"] == 2.0  # (5100-5000)/5000 * 100
         assert sp["spark"][-1] == ["2026-06-06", 5100.0]
         assert body["with_data"] >= 1
     finally:

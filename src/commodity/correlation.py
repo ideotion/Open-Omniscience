@@ -42,7 +42,7 @@ class CorrelationResult:
     n: int
     coefficient: float | None = None
     p_value: float | None = None
-    significant: bool | None = None      # p < alpha, only when computed
+    significant: bool | None = None  # p < alpha, only when computed
     alpha: float = 0.05
     insufficient_data: bool = False
     caveat: str = _CAVEAT
@@ -92,16 +92,26 @@ def correlate_price_with_news(
     shared = sorted(set(changes) & set(counts))
     n = len(shared)
     if n < _MIN_N:
-        return CorrelationResult(method=method, n=n, insufficient_data=True,
-                                 alpha=alpha, overlapping_dates=[d.isoformat() for d in shared])
+        return CorrelationResult(
+            method=method,
+            n=n,
+            insufficient_data=True,
+            alpha=alpha,
+            overlapping_dates=[d.isoformat() for d in shared],
+        )
 
     xs = [changes[d] for d in shared]
     ys = [float(counts[d]) for d in shared]
 
     # Constant input -> correlation undefined; report as insufficient rather than NaN.
     if len(set(xs)) < 2 or len(set(ys)) < 2:
-        return CorrelationResult(method=method, n=n, insufficient_data=True,
-                                 alpha=alpha, overlapping_dates=[d.isoformat() for d in shared])
+        return CorrelationResult(
+            method=method,
+            n=n,
+            insufficient_data=True,
+            alpha=alpha,
+            overlapping_dates=[d.isoformat() for d in shared],
+        )
 
     if method == "pearson":
         coef, p = stats.pearsonr(xs, ys)

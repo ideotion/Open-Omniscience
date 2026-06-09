@@ -21,10 +21,17 @@ from src.ingest import FetchResult
 from src.law.catalog import load_legal_catalog, register_documents, seed_legal_sources
 from src.law.track import page_text, track_document, track_watched
 
-_BODY = (" ".join(f"Section {i}: every person shall have the right to liberty and security."
-                  for i in range(40)))
-_BIGGER = _BODY + " " + " ".join(f"Amendment {i}: this provision is hereby substituted and "
-                                 "extended across the realm." for i in range(60))
+_BODY = " ".join(
+    f"Section {i}: every person shall have the right to liberty and security." for i in range(40)
+)
+_BIGGER = (
+    _BODY
+    + " "
+    + " ".join(
+        f"Amendment {i}: this provision is hereby substituted and extended across the realm."
+        for i in range(60)
+    )
+)
 
 
 def _html(body: str) -> str:
@@ -38,14 +45,21 @@ class StubFetcher:
         self.page = ""
 
     def fetch(self, url: str, *, require_html: bool = True) -> FetchResult:
-        return FetchResult(requested_url=url, final_url=url, status_code=200,
-                           content=self.page, content_type="text/html", fetched_at=datetime.now(UTC))
+        return FetchResult(
+            requested_url=url,
+            final_url=url,
+            status_code=200,
+            content=self.page,
+            content_type="text/html",
+            fetched_at=datetime.now(UTC),
+        )
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
@@ -55,7 +69,7 @@ def db():
 # --------------------------------------------------------------------------- #
 def test_catalog_loads_real_sources_and_documents():
     cat = load_legal_catalog()
-    assert len(cat["sources"]) >= 30          # a worldwide set of official portals
+    assert len(cat["sources"]) >= 30  # a worldwide set of official portals
     assert len(cat["documents"]) >= 5
     # Spot-check real official domains are present.
     domains = {s["domain"] for s in cat["sources"]}
@@ -78,7 +92,9 @@ def test_seed_sources_and_register_documents(db):
 #  Tracking: baseline → unchanged → change (flagged) → revert
 # --------------------------------------------------------------------------- #
 def test_page_text_strips_chrome():
-    txt = page_text("<html><body><script>x=1</script><nav>menu</nav><p>The law text.</p></body></html>")
+    txt = page_text(
+        "<html><body><script>x=1</script><nav>menu</nav><p>The law text.</p></body></html>"
+    )
     assert "The law text." in txt
     assert "menu" not in txt and "x=1" not in txt
 
@@ -116,6 +132,7 @@ def test_track_watched_tally_and_fetch_error(db):
     class BadFetcher:
         def fetch(self, url, *, require_html=True):
             from src.ingest import FetchFailed
+
             raise FetchFailed("boom")
 
     tally = track_watched(db, BadFetcher())
@@ -127,10 +144,20 @@ def test_track_watched_tally_and_fetch_error(db):
 # --------------------------------------------------------------------------- #
 def test_model_legislation_producer(db):
     text = _BODY
-    db.add(LawDocument(jurisdiction="uk", title="UK Bill", url="https://uk.test/x", baseline_text=text))
-    db.add(LawDocument(jurisdiction="us", title="US Bill", url="https://us.test/x", baseline_text=text))
-    db.add(LawDocument(jurisdiction="uk", title="Other", url="https://uk.test/y",
-                       baseline_text="A wholly different statute about fishing quotas and coastal waters." * 5))
+    db.add(
+        LawDocument(jurisdiction="uk", title="UK Bill", url="https://uk.test/x", baseline_text=text)
+    )
+    db.add(
+        LawDocument(jurisdiction="us", title="US Bill", url="https://us.test/x", baseline_text=text)
+    )
+    db.add(
+        LawDocument(
+            jurisdiction="uk",
+            title="Other",
+            url="https://uk.test/y",
+            baseline_text="A wholly different statute about fishing quotas and coastal waters." * 5,
+        )
+    )
     db.commit()
     from src.briefing.producers import model_legislation
 
@@ -142,12 +169,25 @@ def test_model_legislation_producer(db):
 
 
 def test_law_change_card(db):
-    doc = LawDocument(jurisdiction="eu", title="GDPR", url="https://eu.test/gdpr",
-                      official_url="https://eur-lex.europa.eu/x")
+    doc = LawDocument(
+        jurisdiction="eu",
+        title="GDPR",
+        url="https://eu.test/gdpr",
+        official_url="https://eur-lex.europa.eu/x",
+    )
     db.add(doc)
     db.commit()
-    db.add(LawRevision(document_id=doc.id, observed_at=datetime.now(UTC), content_hash="h1",
-                       size=5000, delta_bytes=1500, flagged=True, flag_reasons="large_addition"))
+    db.add(
+        LawRevision(
+            document_id=doc.id,
+            observed_at=datetime.now(UTC),
+            content_hash="h1",
+            size=5000,
+            delta_bytes=1500,
+            flagged=True,
+            flag_reasons="large_addition",
+        )
+    )
     db.commit()
     from src.briefing.producers import law_change
 
@@ -166,6 +206,7 @@ def test_law_api(monkeypatch, tmp_path):
     from fastapi.testclient import TestClient
 
     from src.api.main import app
+
     with TestClient(app) as c:
         seeded = c.post("/api/law/seed").json()
         # Assert the idempotent TOTAL (created-or-already-present), so the test is robust

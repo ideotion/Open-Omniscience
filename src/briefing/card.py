@@ -31,14 +31,14 @@ from datetime import UTC, datetime
 # (convergence → overtold, divergence → investigate/debunk, absence → undertold)
 # is the engine; these are its surfaced labels. Order = display order on Home.
 BUCKETS: tuple[str, ...] = (
-    "rising",       # something is moving / new
-    "overtold",     # sources agree too fast / too uniformly (echo, synchrony)
-    "undertold",    # something moved but little/nobody covered it
+    "rising",  # something is moving / new
+    "overtold",  # sources agree too fast / too uniformly (echo, synchrony)
+    "undertold",  # something moved but little/nobody covered it
     "investigate",  # sources or data disagree — a question to dig into
-    "debunk",       # same event framed in opposing ways — a claim to check
-    "watch",        # a change worth keeping an eye on (e.g. a reshaped record)
-    "context",      # background / self-audit / standing facts
-    "trust",        # data-integrity / hygiene signals about the corpus itself
+    "debunk",  # same event framed in opposing ways — a claim to check
+    "watch",  # a change worth keeping an eye on (e.g. a reshaped record)
+    "context",  # background / self-audit / standing facts
+    "trust",  # data-integrity / hygiene signals about the corpus itself
 )
 
 BUCKET_LABELS: dict[str, str] = {

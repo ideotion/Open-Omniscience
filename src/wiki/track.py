@@ -25,7 +25,9 @@ _LOG = logging.getLogger(__name__)
 _BURST_WINDOW = timedelta(hours=24)
 
 
-def ensure_page(session: Session, wiki: str, title: str, *, category: str | None = None) -> WikiPage:
+def ensure_page(
+    session: Session, wiki: str, title: str, *, category: str | None = None
+) -> WikiPage:
     """Get or create a watched page row for (wiki, title)."""
     wiki = (wiki or "en").strip().lower()
     title = title.strip()
@@ -42,13 +44,21 @@ def _burst_count(new_revs: list[dict], rev: dict) -> int:
     if not isinstance(ts, datetime):
         return 0
     return sum(
-        1 for r in new_revs
+        1
+        for r in new_revs
         if isinstance(r.get("timestamp"), datetime) and abs(r["timestamp"] - ts) <= _BURST_WINDOW
     )
 
 
-def update_page(session: Session, client, page: WikiPage, *, ores_client=None,
-                max_new: int = 50, fetch_diffs: bool = True) -> dict:
+def update_page(
+    session: Session,
+    client,
+    page: WikiPage,
+    *,
+    ores_client=None,
+    max_new: int = 50,
+    fetch_diffs: bool = True,
+) -> dict:
     """Fetch and store new revisions for one page. Returns a small tally."""
     now = datetime.now(UTC)
 
@@ -73,7 +83,11 @@ def update_page(session: Session, client, page: WikiPage, *, ores_client=None,
     for r in new:
         parent = r.get("parent_revid")
         parent_size = size_by_revid.get(parent)
-        delta = (r["size"] - parent_size) if (r.get("size") is not None and parent_size is not None) else None
+        delta = (
+            (r["size"] - parent_size)
+            if (r.get("size") is not None and parent_size is not None)
+            else None
+        )
 
         diff_text = None
         if fetch_diffs and parent:
@@ -90,23 +104,47 @@ def update_page(session: Session, client, page: WikiPage, *, ores_client=None,
             try:
                 sc = ores_client.score(page.wiki, [r["revid"]]).get(r["revid"])
             except Exception:  # noqa: BLE001 - ORES is optional and MUST fail-open (it's often down/deprecated)
-                _LOG.warning("ORES scoring failed for %s rev %s", page.title, r["revid"], exc_info=True)
+                _LOG.warning(
+                    "ORES scoring failed for %s rev %s", page.title, r["revid"], exc_info=True
+                )
                 sc = None
             if sc:
-                ores_d, ores_g, ores_prov = sc.get("damaging"), sc.get("goodfaith"), sc.get("provenance")
+                ores_d, ores_g, ores_prov = (
+                    sc.get("damaging"),
+                    sc.get("goodfaith"),
+                    sc.get("provenance"),
+                )
 
         fr = flag_revision(
-            delta_bytes=delta, tags=r.get("tags"), editor_anon=r.get("editor_anon", False),
-            minor=r.get("minor", False), ores_damaging=ores_d, burst_count=_burst_count(new, r),
+            delta_bytes=delta,
+            tags=r.get("tags"),
+            editor_anon=r.get("editor_anon", False),
+            minor=r.get("minor", False),
+            ores_damaging=ores_d,
+            burst_count=_burst_count(new, r),
         )
-        session.add(WikiRevision(
-            page_id=page.id, revid=r["revid"], parent_revid=parent, timestamp=r.get("timestamp"),
-            editor=r.get("editor"), editor_anon=r.get("editor_anon", False), comment=r.get("comment"),
-            size=r.get("size"), delta_bytes=delta, tags=",".join(r.get("tags") or []),
-            minor=r.get("minor", False), bot=r.get("bot", False), diff=diff_text,
-            ores_damaging=ores_d, ores_goodfaith=ores_g, ores_provenance=ores_prov,
-            flagged=fr.flagged, flag_reasons=fr.reasons_csv(),
-        ))
+        session.add(
+            WikiRevision(
+                page_id=page.id,
+                revid=r["revid"],
+                parent_revid=parent,
+                timestamp=r.get("timestamp"),
+                editor=r.get("editor"),
+                editor_anon=r.get("editor_anon", False),
+                comment=r.get("comment"),
+                size=r.get("size"),
+                delta_bytes=delta,
+                tags=",".join(r.get("tags") or []),
+                minor=r.get("minor", False),
+                bot=r.get("bot", False),
+                diff=diff_text,
+                ores_damaging=ores_d,
+                ores_goodfaith=ores_g,
+                ores_provenance=ores_prov,
+                flagged=fr.flagged,
+                flag_reasons=fr.reasons_csv(),
+            )
+        )
         stored += 1
         flagged += 1 if fr.flagged else 0
         page.last_revid = max(page.last_revid or 0, r["revid"])
@@ -116,13 +154,16 @@ def update_page(session: Session, client, page: WikiPage, *, ores_client=None,
     return {"page": page.title, "new": stored, "flagged": flagged, "baseline": False}
 
 
-def track_watched(session: Session, client, *, ores_client=None, limit_pages: int = 50,
-                  max_new: int = 50) -> dict:
+def track_watched(
+    session: Session, client, *, ores_client=None, limit_pages: int = 50, max_new: int = 50
+) -> dict:
     """Update all watched pages. Returns an aggregated tally."""
     pages = (
-        session.query(WikiPage).filter_by(watched=True)
+        session.query(WikiPage)
+        .filter_by(watched=True)
         .order_by(WikiPage.last_checked_at.is_(None).desc(), WikiPage.last_checked_at.asc())
-        .limit(limit_pages).all()
+        .limit(limit_pages)
+        .all()
     )
     total_new = total_flagged = pages_done = 0
     for page in pages:

@@ -118,14 +118,18 @@ def ingest_batch_endpoint(
             continue
         try:
             tally = ingest_source(db, source, fetcher=fetcher)
-            results.append({"source_id": sid, "source": source.name, "status": "ok", "tally": tally})
+            results.append(
+                {"source_id": sid, "source": source.name, "status": "ok", "tally": tally}
+            )
             ingested += 1
             for k, v in tally.items():
                 if isinstance(v, int):
                     aggregate[k] = aggregate.get(k, 0) + v
         except Exception as exc:  # noqa: BLE001 - one bad feed must not abort the batch
             db.rollback()
-            results.append({"source_id": sid, "source": source.name, "status": "error", "detail": str(exc)})
+            results.append(
+                {"source_id": sid, "source": source.name, "status": "error", "detail": str(exc)}
+            )
     return {"requested": len(ids), "ingested": ingested, "aggregate": aggregate, "results": results}
 
 
@@ -142,8 +146,12 @@ def ingest_email_endpoint(
     """
     source = _get_source(db, source_id)
     raws = fetch_imap(
-        req.host, req.user, req.password,
-        folder=req.folder, limit=req.limit, use_ssl=req.use_ssl,
+        req.host,
+        req.user,
+        req.password,
+        folder=req.folder,
+        limit=req.limit,
+        use_ssl=req.use_ssl,
     )
     tally = ingest_emails(db, source, raws)
     return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}

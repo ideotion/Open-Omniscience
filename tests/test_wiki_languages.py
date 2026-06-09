@@ -23,7 +23,7 @@ def test_catalogue_is_sane():
     langs = all_languages()
     assert len(langs) >= 40
     codes = [x.code for x in langs]
-    assert len(codes) == len(set(codes))          # unique edition codes
+    assert len(codes) == len(set(codes))  # unique edition codes
     for x in langs:
         assert x.code and x.name and x.autonym
         assert x.tier in _TIER_RANK
@@ -32,7 +32,7 @@ def test_catalogue_is_sane():
 def test_sorted_largest_tier_first():
     langs = all_languages()
     ranks = [_TIER_RANK[x.tier] for x in langs]
-    assert ranks == sorted(ranks)                 # non-decreasing tier rank
+    assert ranks == sorted(ranks)  # non-decreasing tier rank
     assert langs[0].tier == "huge"
     assert get_language("EN") is langs[0] or get_language("en").code == "en"
 

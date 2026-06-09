@@ -31,8 +31,16 @@ def load_legal_catalog(path: Path | None = None) -> dict:
         return {"sources": [], "documents": []}
     data = yaml.safe_load(path.read_text()) or {}
     return {
-        "sources": [s for s in data.get("sources", []) if isinstance(s, dict) and s.get("name") and s.get("domain")],
-        "documents": [d for d in data.get("documents", []) if isinstance(d, dict) and d.get("url") and d.get("jurisdiction")],
+        "sources": [
+            s
+            for s in data.get("sources", [])
+            if isinstance(s, dict) and s.get("name") and s.get("domain")
+        ],
+        "documents": [
+            d
+            for d in data.get("documents", [])
+            if isinstance(d, dict) and d.get("url") and d.get("jurisdiction")
+        ],
     }
 
 
@@ -56,15 +64,17 @@ def register_documents(session: Session, path: Path | None = None) -> dict[str, 
         if key in existing:
             continue
         existing.add(key)
-        session.add(LawDocument(
-            jurisdiction=d["jurisdiction"],
-            title=d.get("title", d["url"]),
-            url=d["url"],
-            official_url=d.get("official_url"),
-            category=d.get("category", "legislation"),
-            consolidated=bool(d.get("consolidated", False)),
-            watched=True,
-        ))
+        session.add(
+            LawDocument(
+                jurisdiction=d["jurisdiction"],
+                title=d.get("title", d["url"]),
+                url=d["url"],
+                official_url=d.get("official_url"),
+                category=d.get("category", "legislation"),
+                consolidated=bool(d.get("consolidated", False)),
+                watched=True,
+            )
+        )
         created += 1
     if created:
         session.commit()

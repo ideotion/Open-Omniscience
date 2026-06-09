@@ -63,19 +63,28 @@ def _hazard_signals() -> tuple[list[dict], list[str]]:
             d = datetime.fromisoformat(str(h["time"]).replace("Z", "+00:00")).date()
         except (TypeError, ValueError):
             continue
-        sigs.append({
-            "id": "hazard:" + str(h.get("id") or h.get("url") or h.get("place")),
-            "title": h.get("place") or h.get("type") or "Hazard",
-            "kind": "hazard",
-            "lat": float(h["lat"]), "lon": float(h["lon"]),
-            "t": round(year_float(d), 3),
-            "date": d.isoformat(), "year": d.year,
-            "date_precision": "day", "confirmed": True,
-            "place": h.get("place"), "country": None,
-            "url": h.get("url"), "note": h.get("severity"),
-            "source": "hazards", "geocode": "exact",
-            "severity": h.get("severity"), "magnitude": h.get("magnitude"),
-        })
+        sigs.append(
+            {
+                "id": "hazard:" + str(h.get("id") or h.get("url") or h.get("place")),
+                "title": h.get("place") or h.get("type") or "Hazard",
+                "kind": "hazard",
+                "lat": float(h["lat"]),
+                "lon": float(h["lon"]),
+                "t": round(year_float(d), 3),
+                "date": d.isoformat(),
+                "year": d.year,
+                "date_precision": "day",
+                "confirmed": True,
+                "place": h.get("place"),
+                "country": None,
+                "url": h.get("url"),
+                "note": h.get("severity"),
+                "source": "hazards",
+                "geocode": "exact",
+                "severity": h.get("severity"),
+                "magnitude": h.get("magnitude"),
+            }
+        )
     return sigs, failures
 
 
@@ -92,13 +101,15 @@ def _article_signals(db: Session, days: int | None, limit: int) -> list[dict]:
     for a in q.order_by(Article.published_at.desc()).limit(limit).all():
         src = getattr(a, "source", None)
         meta = getattr(src, "source_metadata", None) if src else None
-        rows.append({
-            "title": a.title,
-            "url": a.url,
-            "published": a.published_at,
-            "country": a.country or (getattr(src, "country", None) if src else None),
-            "city": getattr(meta, "city", None) if meta else None,
-        })
+        rows.append(
+            {
+                "title": a.title,
+                "url": a.url,
+                "published": a.published_at,
+                "country": a.country or (getattr(src, "country", None) if src else None),
+                "city": getattr(meta, "city", None) if meta else None,
+            }
+        )
     return articles_to_signals(rows)
 
 
@@ -117,13 +128,15 @@ def _mention_signals(db: Session, days: int | None, limit: int) -> list[dict]:
     for a in q.order_by(Article.published_at.desc()).limit(scan).all():
         src = getattr(a, "source", None)
         meta = getattr(src, "source_metadata", None) if src else None
-        rows.append({
-            "title": a.title,
-            "url": a.url,
-            "content": a.content,
-            "country": a.country or (getattr(src, "country", None) if src else None),
-            "city": getattr(meta, "city", None) if meta else None,
-        })
+        rows.append(
+            {
+                "title": a.title,
+                "url": a.url,
+                "content": a.content,
+                "country": a.country or (getattr(src, "country", None) if src else None),
+                "city": getattr(meta, "city", None) if meta else None,
+            }
+        )
     return article_mentions_to_signals(rows)
 
 
@@ -133,9 +146,15 @@ def list_signals(
     start: float | None = Query(None, description="earliest fractional year, e.g. 1900"),
     end: float | None = Query(None, description="latest fractional year, e.g. 2030"),
     hazards: bool = Query(False, description="layer in live geophysical hazards (network)"),
-    articles: bool = Query(False, description="layer in geocoded corpus articles (publication date)"),
-    mentions: bool = Query(False, description="layer in dates mentioned in article text (extracted)"),
-    days: int | None = Query(None, ge=1, le=36500, description="only articles from the last N days"),
+    articles: bool = Query(
+        False, description="layer in geocoded corpus articles (publication date)"
+    ),
+    mentions: bool = Query(
+        False, description="layer in dates mentioned in article text (extracted)"
+    ),
+    days: int | None = Query(
+        None, ge=1, le=36500, description="only articles from the last N days"
+    ),
     limit: int = Query(2000, ge=1, le=10000),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -161,7 +180,7 @@ def list_signals(
         # so naive sig[:limit] would have dropped the recent corpus the caller asked for).
         anchors = [s for s in sig if s.get("source") == "anchor"]
         rest = [s for s in sig if s.get("source") != "anchor"]
-        rest = sorted(rest, key=lambda s: s["t"], reverse=True)[:max(0, limit - len(anchors))]
+        rest = sorted(rest, key=lambda s: s["t"], reverse=True)[: max(0, limit - len(anchors))]
         sig = sorted(anchors + rest, key=lambda s: s["t"])
     return {
         "signals": sig,

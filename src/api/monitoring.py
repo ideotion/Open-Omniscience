@@ -34,10 +34,13 @@ def sources_health(
     (``limit``) prevents an accidental very-long hang when the catalog is large
     (the seeded catalog has ~1,800 sources).
     """
-    sources = (db.query(Source)
-               .filter((Source.enabled.is_(True)) | (Source.enabled.is_(None)))
-               .order_by(Source.priority, Source.id)
-               .limit(limit).all())
+    sources = (
+        db.query(Source)
+        .filter((Source.enabled.is_(True)) | (Source.enabled.is_(None)))
+        .order_by(Source.priority, Source.id)
+        .limit(limit)
+        .all()
+    )
     results = [check_source(s, fetcher=fetcher).to_dict() for s in sources]
     summary = Counter(r["status"] for r in results)
     return {"checked": len(results), "limit": limit, "summary": dict(summary), "sources": results}

@@ -14,9 +14,11 @@ from fastapi import APIRouter, Query
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
-_CAVEAT = ("A forward-looking agenda of major recurring events. Fixed civic dates are "
-           "confirmed; summit/meeting dates move each year — follow the official source "
-           "for the exact date. Nothing here is fabricated.")
+_CAVEAT = (
+    "A forward-looking agenda of major recurring events. Fixed civic dates are "
+    "confirmed; summit/meeting dates move each year — follow the official source "
+    "for the exact date. Nothing here is fabricated."
+)
 
 
 @router.get("/calendars")

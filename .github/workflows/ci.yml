@@ -4,8 +4,12 @@
 name: CI
 
 on:
+  # Run on every pushed branch so the active release branch (0.05, 0.06, 0.07,
+  # ...) is always covered. Pinning to one old branch let direct pushes to the
+  # default branch ship unchecked (finding ARCH-01); branches-ignore: [] keeps
+  # the trigger from rotting on each release-cycle rename.
   push:
-    branches: ["0.04", "claude/**"]
+    branches-ignore: []
   pull_request:
   workflow_dispatch:
 
@@ -35,6 +39,43 @@ jobs:
           alembic check
 
       - name: Test (pytest)
+        run: python -m pytest -q
+
+      # Blocking security gates (v0.0.7 audit): both are clean today, so any
+      # failure is a real regression or a freshly published CVE worth seeing.
+      - name: SAST (bandit, medium+ severity)
+        run: |
+          python -m pip install bandit
+          bandit -r src/ -ll -q
+
+      - name: Dependency audit (pip-audit)
+        run: |
+          python -m pip install pip-audit
+          pip-audit --skip-editable
+
+  # The "extras are optional" contract (audit finding TEST-06): a core-only
+  # install must boot and its suite must be green, with analysis-dependent tests
+  # skipping cleanly rather than failing.
+  core-only:
+    runs-on: ubuntu-latest
+    name: Core-only install (no [analysis] extra)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install (core + dev only)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Boot check
+        run: python -c "from src.api.main import app; print(sum(1 for _ in app.routes), 'routes')"
+
+      - name: Test (pytest, analysis modules must skip)
         run: python -m pytest -q
 
   crypto:

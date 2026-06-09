@@ -35,14 +35,87 @@ _WORD_RE = re.compile(r"[a-z]+")
 # A minimal, ORIGINAL demonstration lexicon (clearly not authoritative). Each list is a
 # handful of unambiguous emotion-associated words. Replace via OO_EMOTION_LEXICON.
 _SAMPLE_LEXICON: dict[str, list[str]] = {
-    "anger": ["anger", "angry", "outrage", "outraged", "fury", "furious", "rage", "hostile", "betrayal"],
-    "fear": ["fear", "afraid", "terror", "terrified", "panic", "dread", "threat", "alarming", "danger"],
-    "joy": ["joy", "joyful", "delight", "delighted", "celebrate", "triumph", "elated", "cheerful", "hopeful"],
-    "sadness": ["sad", "sadness", "grief", "mourning", "sorrow", "despair", "tragic", "loss", "heartbroken"],
-    "trust": ["trust", "trusted", "reliable", "credible", "honest", "assurance", "confidence", "dependable"],
-    "disgust": ["disgust", "disgusting", "revulsion", "repulsive", "appalling", "sickening", "vile"],
-    "surprise": ["surprise", "surprised", "shock", "shocking", "astonishing", "unexpected", "sudden"],
-    "anticipation": ["anticipation", "await", "expectation", "upcoming", "imminent", "forthcoming", "soon"],
+    "anger": [
+        "anger",
+        "angry",
+        "outrage",
+        "outraged",
+        "fury",
+        "furious",
+        "rage",
+        "hostile",
+        "betrayal",
+    ],
+    "fear": [
+        "fear",
+        "afraid",
+        "terror",
+        "terrified",
+        "panic",
+        "dread",
+        "threat",
+        "alarming",
+        "danger",
+    ],
+    "joy": [
+        "joy",
+        "joyful",
+        "delight",
+        "delighted",
+        "celebrate",
+        "triumph",
+        "elated",
+        "cheerful",
+        "hopeful",
+    ],
+    "sadness": [
+        "sad",
+        "sadness",
+        "grief",
+        "mourning",
+        "sorrow",
+        "despair",
+        "tragic",
+        "loss",
+        "heartbroken",
+    ],
+    "trust": [
+        "trust",
+        "trusted",
+        "reliable",
+        "credible",
+        "honest",
+        "assurance",
+        "confidence",
+        "dependable",
+    ],
+    "disgust": [
+        "disgust",
+        "disgusting",
+        "revulsion",
+        "repulsive",
+        "appalling",
+        "sickening",
+        "vile",
+    ],
+    "surprise": [
+        "surprise",
+        "surprised",
+        "shock",
+        "shocking",
+        "astonishing",
+        "unexpected",
+        "sudden",
+    ],
+    "anticipation": [
+        "anticipation",
+        "await",
+        "expectation",
+        "upcoming",
+        "imminent",
+        "forthcoming",
+        "soon",
+    ],
 }
 
 LEXICON_CAVEAT = (
@@ -69,7 +142,9 @@ def load_lexicon() -> tuple[dict[str, frozenset[str]], str]:
                 return lex, f"custom:{path}"
             _LOG.warning("OO_EMOTION_LEXICON at %s is empty; using the sample lexicon", path)
         except Exception:  # noqa: BLE001 - a bad lexicon must not crash; fall back loudly
-            _LOG.warning("OO_EMOTION_LEXICON at %s unreadable; using the sample lexicon", path, exc_info=True)
+            _LOG.warning(
+                "OO_EMOTION_LEXICON at %s unreadable; using the sample lexicon", path, exc_info=True
+            )
     return {k: frozenset(v) for k, v in _SAMPLE_LEXICON.items()}, "sample"
 
 

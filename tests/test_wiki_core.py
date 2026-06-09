@@ -29,15 +29,39 @@ def test_build_revisions_params():
 
 
 def test_parse_revisions_v2():
-    payload = {"query": {"pages": [{
-        "pageid": 5, "title": "Berlin", "revisions": [
-            {"revid": 200, "parentid": 199, "timestamp": "2024-03-02T10:00:00Z",
-             "user": "Alice", "comment": "expand", "size": 5200, "minor": False,
-             "tags": ["mobile edit"]},
-            {"revid": 199, "parentid": 198, "timestamp": "2024-03-01T10:00:00Z",
-             "user": "1.2.3.4", "anon": True, "comment": "", "size": 4000,
-             "minor": True, "tags": []},
-        ]}]}}
+    payload = {
+        "query": {
+            "pages": [
+                {
+                    "pageid": 5,
+                    "title": "Berlin",
+                    "revisions": [
+                        {
+                            "revid": 200,
+                            "parentid": 199,
+                            "timestamp": "2024-03-02T10:00:00Z",
+                            "user": "Alice",
+                            "comment": "expand",
+                            "size": 5200,
+                            "minor": False,
+                            "tags": ["mobile edit"],
+                        },
+                        {
+                            "revid": 199,
+                            "parentid": 198,
+                            "timestamp": "2024-03-01T10:00:00Z",
+                            "user": "1.2.3.4",
+                            "anon": True,
+                            "comment": "",
+                            "size": 4000,
+                            "minor": True,
+                            "tags": [],
+                        },
+                    ],
+                }
+            ]
+        }
+    }
     revs = parse_revisions(payload)
     assert revs[0]["revid"] == 200 and revs[0]["size"] == 5200
     assert revs[0]["timestamp"].year == 2024
@@ -45,18 +69,32 @@ def test_parse_revisions_v2():
 
 
 def test_parse_recentchanges_computes_delta():
-    payload = {"query": {"recentchanges": [
-        {"revid": 10, "old_revid": 9, "title": "Climate change", "type": "edit",
-         "user": "Bob", "timestamp": "2024-03-03T00:00:00Z",
-         "oldlen": 5000, "newlen": 3000, "tags": ["mw-reverted"]},
-    ]}}
+    payload = {
+        "query": {
+            "recentchanges": [
+                {
+                    "revid": 10,
+                    "old_revid": 9,
+                    "title": "Climate change",
+                    "type": "edit",
+                    "user": "Bob",
+                    "timestamp": "2024-03-03T00:00:00Z",
+                    "oldlen": 5000,
+                    "newlen": 3000,
+                    "tags": ["mw-reverted"],
+                },
+            ]
+        }
+    }
     rc = parse_recentchanges(payload)
     assert rc[0]["delta_bytes"] == -2000 and rc[0]["tags"] == ["mw-reverted"]
 
 
 def test_parse_compare_extracts_added_removed():
-    body = ("<tr><td class='diff-deletedline'>old sentence here</td>"
-            "<td class='diff-addedline'>new replacement sentence</td></tr>")
+    body = (
+        "<tr><td class='diff-deletedline'>old sentence here</td>"
+        "<td class='diff-addedline'>new replacement sentence</td></tr>"
+    )
     payload = {"compare": {"body": body}}
     d = parse_compare(payload)
     assert "old sentence" in d["removed"] and "new replacement" in d["added"]
@@ -66,6 +104,7 @@ def test_parse_compare_extracts_added_removed():
 # --------------------------------------------------------------------------- #
 # flagging
 # --------------------------------------------------------------------------- #
+
 
 def test_large_removal_flagged():
     r = flag_revision(delta_bytes=-1500, tags=[])

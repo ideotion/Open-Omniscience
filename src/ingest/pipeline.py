@@ -87,13 +87,15 @@ def store_fetched(session: Session, source: Source, fetched) -> IngestOutcome:
     """
     doc = extract_article(fetched.content, url=fetched.final_url)
     if doc is None:
-        return IngestOutcome(fetched.requested_url, IngestResult.EXTRACT_FAILED,
-                             detail="no article body extracted")
+        return IngestOutcome(
+            fetched.requested_url, IngestResult.EXTRACT_FAILED, detail="no article body extracted"
+        )
 
     content_hash = generate_content_hash(doc.text)
     if _exists(session, hash=content_hash):
-        return IngestOutcome(fetched.requested_url, IngestResult.DUPLICATE,
-                             detail="content hash already stored")
+        return IngestOutcome(
+            fetched.requested_url, IngestResult.DUPLICATE, detail="content hash already stored"
+        )
 
     # Prefer the page's declared canonical link; fall back to the final fetched URL.
     canonical_final = canonicalize_url(doc.canonical_url or fetched.final_url)
@@ -120,8 +122,11 @@ def store_fetched(session: Session, source: Source, fetched) -> IngestOutcome:
         # content hash between the _exists check and here. Roll back so the loop
         # continues, and report the duplicate rather than aborting the batch.
         session.rollback()
-        return IngestOutcome(fetched.requested_url, IngestResult.DUPLICATE,
-                             detail="content hash already stored (race)")
+        return IngestOutcome(
+            fetched.requested_url,
+            IngestResult.DUPLICATE,
+            detail="content hash already stored (race)",
+        )
     _maybe_record_custody(article)
     _maybe_index_keywords(session, article, source)
     _maybe_index_links(session, article, fetched.content, fetched.final_url)
@@ -150,11 +155,13 @@ def _maybe_index_keywords(session: Session, article: Article, source: Source) ->
             city = meta.city if meta else None
         except Exception:  # noqa: BLE001 - metadata is optional
             city = None
-        index_article(session, article, extractor=get_extractor("baseline"),
-                      country=source.country, city=city)
+        index_article(
+            session, article, extractor=get_extractor("baseline"), country=source.country, city=city
+        )
     except Exception:  # noqa: BLE001 - analytics is auxiliary; never fail ingestion
         session.rollback()
         import logging
+
         logging.getLogger(__name__).warning("keyword indexing on ingest failed", exc_info=True)
 
 
@@ -187,14 +194,16 @@ def _maybe_index_links(session: Session, article: Article, html: str | None, bas
                 continue
             seen.add(nu)
             text = ln.get("link_text") or None
-            rows.append(ArticleLink(
-                article_id=article.id,
-                url=(ln.get("url") or nu)[:1000],
-                normalized_url=nu[:1000],
-                link_text=text[:500] if text else None,
-                position=ln.get("position"),
-                link_type="external",
-            ))
+            rows.append(
+                ArticleLink(
+                    article_id=article.id,
+                    url=(ln.get("url") or nu)[:1000],
+                    normalized_url=nu[:1000],
+                    link_text=text[:500] if text else None,
+                    position=ln.get("position"),
+                    link_type="external",
+                )
+            )
             if len(rows) >= 300:  # guard against pathological link-farm pages
                 break
         if rows:
@@ -203,6 +212,7 @@ def _maybe_index_links(session: Session, article: Article, html: str | None, bas
     except Exception:  # noqa: BLE001 - link analysis is auxiliary; never fail ingestion
         session.rollback()
         import logging
+
         logging.getLogger(__name__).warning("link indexing on ingest failed", exc_info=True)
 
 
@@ -230,8 +240,11 @@ def _maybe_record_custody(article: Article) -> None:
                 article.hash,
                 CustodyAction.INGEST,
                 actor=prefs.default_actor or "ingest-pipeline",
-                metadata={"url": article.url, "canonical_url": article.canonical_url,
-                          "source_id": article.source_id},
+                metadata={
+                    "url": article.url,
+                    "canonical_url": article.canonical_url,
+                    "source_id": article.source_id,
+                },
             )
     except Exception:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
         import logging

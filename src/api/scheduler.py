@@ -103,15 +103,21 @@ def scheduler_targets(db: Session = Depends(get_db)) -> dict:
         "will_process_this_run": min(matched, s.max_sources_per_run),
         "max_sources_per_run": s.max_sources_per_run,
         "selection": {
-            "languages": s.select_languages, "tags": s.select_tags,
+            "languages": s.select_languages,
+            "tags": s.select_tags,
             "source_types": s.select_source_types,
         },
         "by_language": dict(by_lang.most_common(20)),
         "by_source_type": dict(by_type.most_common(20)),
         "sample": [
-            {"name": x.name, "domain": x.domain, "language": x.language,
-             "source_type": x.source_type, "has_rss": bool(x.rss_url),
-             "tags": [t.strip() for t in (x.tags or "").split(",") if t.strip()]}
+            {
+                "name": x.name,
+                "domain": x.domain,
+                "language": x.language,
+                "source_type": x.source_type,
+                "has_rss": bool(x.rss_url),
+                "tags": [t.strip() for t in (x.tags or "").split(",") if t.strip()],
+            }
             for x in sample_rows
         ],
     }

@@ -19,8 +19,11 @@ def test_emotion_counts_detect_category_words():
 
 
 def test_emotion_profile_dominant_and_caveat():
-    snippets = ["panic and dread spread as the threat grew",
-                "fear and terror gripped the region", "a small note of hope remained"]
+    snippets = [
+        "panic and dread spread as the threat grew",
+        "fear and terror gripped the region",
+        "a small note of hope remained",
+    ]
     prof = emotion_profile(snippets)
     assert prof["dominant"] == "fear"
     assert prof["n_snippets"] == 3
@@ -54,6 +57,6 @@ def test_bad_lexicon_degrades_to_sample(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_EMOTION_LEXICON", str(bad))
     try:
         _, source = load_lexicon()
-        assert source == "sample"            # loud fallback, never silent nothing
+        assert source == "sample"  # loud fallback, never silent nothing
     finally:
         load_lexicon.cache_clear()

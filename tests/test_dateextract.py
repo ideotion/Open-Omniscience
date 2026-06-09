@@ -52,8 +52,8 @@ def test_invalid_dates_rejected():
 
 
 def test_out_of_range_year_rejected():
-    assert _dates("A prophecy for January 3000.") == []      # too far ahead
-    assert _dates("Filed 2099-01-01 in the system.") == []   # >today+5
+    assert _dates("A prophecy for January 3000.") == []  # too far ahead
+    assert _dates("Filed 2099-01-01 in the system.") == []  # >today+5
 
 
 def test_dedup_and_order_and_provenance():
@@ -63,7 +63,7 @@ def test_dedup_and_order_and_provenance():
     # 2003-03-01 appears via both 'March 2003' (month) and ISO (day) -> distinct precisions kept,
     # but ordered by first appearance; April 2004 comes last.
     assert iso[-1] == "2004-04-01"
-    assert all("text" in c and c["text"] for c in cands)       # provenance snippet present
+    assert all("text" in c and c["text"] for c in cands)  # provenance snippet present
 
 
 def test_empty_and_limit():

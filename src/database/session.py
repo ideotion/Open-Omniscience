@@ -21,6 +21,7 @@ SQLite-specific PRAGMAs are simply skipped for non-SQLite engines.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -120,12 +121,20 @@ def get_session() -> SASession:
     return SessionLocal()
 
 
+_LOG = logging.getLogger("database.session")
+
+
 def close_session(session: SASession) -> None:
-    """Close a session, swallowing errors (best-effort cleanup)."""
+    """Close a session, swallowing errors (best-effort cleanup).
+
+    The swallow is deliberate (cleanup must never raise), but we log at debug
+    so a recurring close failure -- a symptom of a connection leak -- is visible
+    when debugging rather than silent (finding BUG-04).
+    """
     try:
         session.close()
     except Exception:
-        pass
+        _LOG.debug("close_session: error during session.close()", exc_info=True)
 
 
 @contextmanager

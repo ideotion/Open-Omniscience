@@ -19,23 +19,40 @@ TODAY = date(2026, 6, 9)
 
 
 def _session(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'd.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'd.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
         s.add(Source(name="Wire", domain="wire.test"))
         s.commit()
-        s.add(Article(
-            url="https://wire.test/a", canonical_url="https://wire.test/a", source_id=1,
-            title="Retrospective", hash="h1", language="en",
-            content="The attacks of 11 September 2001 echoed for years; by March 2003 war had begun.",
-            published_at=datetime(2024, 6, 1, tzinfo=UTC), created_at=datetime.now(UTC)))
-        s.add(Article(
-            url="https://wire.test/b", canonical_url="https://wire.test/b", source_id=1,
-            title="No dates here", hash="h2", language="en",
-            content="A story with no explicit calendar dates at all.",
-            published_at=datetime(2024, 6, 2, tzinfo=UTC), created_at=datetime.now(UTC)))
+        s.add(
+            Article(
+                url="https://wire.test/a",
+                canonical_url="https://wire.test/a",
+                source_id=1,
+                title="Retrospective",
+                hash="h1",
+                language="en",
+                content="The attacks of 11 September 2001 echoed for years; by March 2003 war had begun.",
+                published_at=datetime(2024, 6, 1, tzinfo=UTC),
+                created_at=datetime.now(UTC),
+            )
+        )
+        s.add(
+            Article(
+                url="https://wire.test/b",
+                canonical_url="https://wire.test/b",
+                source_id=1,
+                title="No dates here",
+                hash="h2",
+                language="en",
+                content="A story with no explicit calendar dates at all.",
+                published_at=datetime(2024, 6, 2, tzinfo=UTC),
+                created_at=datetime.now(UTC),
+            )
+        )
         s.commit()
     return Sess
 
@@ -45,7 +62,7 @@ def test_store_extract_and_idempotent(tmp_path):
     with Sess() as db:
         art = db.get(Article, 1)
         added = datestore.store_for_article(db, art, today=TODAY)
-        assert added == 2                              # 2001-09-11 (day) + 2003-03 (month)
+        assert added == 2  # 2001-09-11 (day) + 2003-03 (month)
         # re-running must not duplicate
         assert datestore.store_for_article(db, art, today=TODAY) == 0
         tags = datestore.for_article(db, 1)
@@ -86,7 +103,7 @@ def test_index_recent_counts(tmp_path):
     with Sess() as db:
         res = datestore.index_recent(db, limit=50, today=TODAY)
         assert res["scanned"] == 2
-        assert res["articles_with_dates"] == 1        # only article 1 has dates
+        assert res["articles_with_dates"] == 1  # only article 1 has dates
         assert res["new_tags"] == 2
 
 
@@ -99,7 +116,7 @@ def test_deleting_source_cascades_to_date_tags(tmp_path):
     with Sess() as db:
         datestore.store_for_article(db, db.get(Article, 1), today=TODAY)
         assert db.query(ArticleMentionedDate).count() == 2
-        db.delete(db.get(Source, 1))          # cascades to its articles, then their date tags
+        db.delete(db.get(Source, 1))  # cascades to its articles, then their date tags
         db.commit()
         assert db.query(Article).count() == 0
         assert db.query(ArticleMentionedDate).count() == 0

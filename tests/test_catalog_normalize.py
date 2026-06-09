@@ -36,25 +36,35 @@ def test_is_social_matches_subdomains():
 
 
 def test_to_entry_drops_social_and_empty():
-    assert to_entry(name="X", url="https://x.com/feed") is None      # social
-    assert to_entry(name="", url="https://example.com") is None       # no name
-    assert to_entry(name="Paper", url="not a url at all") is None or \
-        to_entry(name="Paper", url="not a url at all")["domain"]      # garbage host tolerated/None
+    assert to_entry(name="X", url="https://x.com/feed") is None  # social
+    assert to_entry(name="", url="https://example.com") is None  # no name
+    assert (
+        to_entry(name="Paper", url="not a url at all") is None
+        or to_entry(name="Paper", url="not a url at all")["domain"]
+    )  # garbage host tolerated/None
 
 
 def test_to_entry_shape_and_tags():
-    e = to_entry(name="Le Example", url="https://www.le-example.fr/",
-                 country="FR", language="FR", source_type="news", tags=["world"])
+    e = to_entry(
+        name="Le Example",
+        url="https://www.le-example.fr/",
+        country="FR",
+        language="FR",
+        source_type="news",
+        tags=["world"],
+    )
     assert e["domain"] == "le-example.fr"
-    assert e["country"] == "fr"       # lowercased 2-letter
+    assert e["country"] == "fr"  # lowercased 2-letter
     assert e["language"] == "fr"
     assert "news" in e["tags"] and "world" in e["tags"]
 
 
 def test_dedup_within_batch_and_against_existing():
     entries = [
-        {"domain": "a.test"}, {"domain": "a.test"},   # in-batch dup
-        {"domain": "b.test"}, {"domain": "c.test"},
+        {"domain": "a.test"},
+        {"domain": "a.test"},  # in-batch dup
+        {"domain": "b.test"},
+        {"domain": "c.test"},
     ]
     res = dedup_entries(entries, existing_domains={"c.test"})
     kept = {e["domain"] for e in res["kept"]}
@@ -65,21 +75,29 @@ def test_dedup_within_batch_and_against_existing():
 
 def test_build_query_contains_country_and_types():
     q = build_query("fr", ["Q11032", "Q192283"], label_lang="fr")
-    assert '"FR"' in q                     # ISO code uppercased
+    assert '"FR"' in q  # ISO code uppercased
     assert "wd:Q11032" in q and "wd:Q192283" in q
-    assert "P856" in q                     # requires an official website
+    assert "P856" in q  # requires an official website
     assert 'wikibase:language "fr,en"' in q
 
 
 def test_parse_results_from_fixture():
-    payload = {"results": {"bindings": [
-        {"itemLabel": {"value": "Example Times"},
-         "website": {"value": "https://www.exampletimes.fr/"},
-         "lang": {"value": "fr"}},
-        {"itemLabel": {"value": "Social Feed"},          # social -> dropped
-         "website": {"value": "https://twitter.com/x"}},
-        {"itemLabel": {"value": "No Site"}},             # no website -> dropped
-    ]}}
+    payload = {
+        "results": {
+            "bindings": [
+                {
+                    "itemLabel": {"value": "Example Times"},
+                    "website": {"value": "https://www.exampletimes.fr/"},
+                    "lang": {"value": "fr"},
+                },
+                {
+                    "itemLabel": {"value": "Social Feed"},  # social -> dropped
+                    "website": {"value": "https://twitter.com/x"},
+                },
+                {"itemLabel": {"value": "No Site"}},  # no website -> dropped
+            ]
+        }
+    }
     entries = parse_results(payload, country_code="fr", source_type="news")
     assert len(entries) == 1
     e = entries[0]

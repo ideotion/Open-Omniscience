@@ -20,8 +20,8 @@ from pathlib import Path
 import yaml
 
 _CONF = Path(__file__).resolve().parents[2] / "configs"
-GAZETTEER_PATH = _CONF / "cities.yml"            # generated (full)
-SAMPLE_PATH = _CONF / "cities.sample.yml"        # shipped (small fallback)
+GAZETTEER_PATH = _CONF / "cities.yml"  # generated (full)
+SAMPLE_PATH = _CONF / "cities.sample.yml"  # shipped (small fallback)
 
 # Wikidata P625 coordinate literal, e.g. "Point(2.3522 48.8566)" (lon lat).
 _POINT_RE = re.compile(r"Point\(\s*([-\d.]+)\s+([-\d.]+)\s*\)")
@@ -36,8 +36,13 @@ class City:
     population: int | None = None
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "lat": self.lat, "lon": self.lon,
-                "country": self.country, "population": self.population}
+        return {
+            "name": self.name,
+            "lat": self.lat,
+            "lon": self.lon,
+            "country": self.country,
+            "population": self.population,
+        }
 
 
 def load_cities(path: Path | None = None) -> list[City]:
@@ -54,11 +59,15 @@ def load_cities(path: Path | None = None) -> list[City]:
             lat, lon = float(c["lat"]), float(c["lon"])
         except (KeyError, TypeError, ValueError):
             continue
-        out.append(City(
-            name=str(c["name"]), lat=lat, lon=lon,
-            country=(str(c.get("country", "")).lower() or None),
-            population=c.get("population"),
-        ))
+        out.append(
+            City(
+                name=str(c["name"]),
+                lat=lat,
+                lon=lon,
+                country=(str(c.get("country", "")).lower() or None),
+                population=c.get("population"),
+            )
+        )
     return out
 
 
@@ -106,6 +115,7 @@ def parse_cities_sparql(payload: dict) -> list[City]:
             pop = int(float(pop_raw)) if pop_raw else None
         except (TypeError, ValueError):
             pop = None
-        out.append(City(name=name, lat=lat, lon=lon,
-                        country=(cc.lower() if cc else None), population=pop))
+        out.append(
+            City(name=name, lat=lat, lon=lon, country=(cc.lower() if cc else None), population=pop)
+        )
     return out

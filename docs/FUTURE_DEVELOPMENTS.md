@@ -450,3 +450,51 @@ area), watch collects quietly, info is logged.
 local, tiered, explainable); (4) relay **official short-horizon forecasts** (Open-Meteo /
 NWS) with full provenance. Builds directly on the space-time substrate above.
 
+
+## Automated background source identification & aggregation
+
+**Idea.** The app should shoulder the work of *finding and maintaining sources* so the
+operator can focus on **content**, not plumbing. Today, growing the source list is manual
+(add a domain, discover its feed, tune it). The proposal: a **background source-discovery
+agent** that continuously identifies candidate outlets — expanding coverage toward "as many
+sources as manageable" — and aggregates them into the one UI, so multi-source breadth stops
+costing operator effort.
+
+**Discovery channels** (all building on machinery that already exists):
+- **DuckDuckGo search** for topic/region queries — the natural engine for "find outlets
+  covering X". This *is* an external call, so it sits strictly behind the off-by-default
+  external-lookup gate (roadmap RM-03 / audit finding ETH-02) and is clearly labelled
+  "this query leaves your machine".
+- **The corpus itself** (no network): promote frequently-cited external domains
+  (`article_links` / `external_sources` already track them) to source candidates.
+- **The Wikidata world-catalog generator** (`scripts/build_world_news_catalog.py`) run as a
+  scheduled refresh instead of a manual script.
+- **Feed discovery** on candidates via the existing ethical-fetcher-routed RSS discovery.
+
+**Full transparency is non-negotiable.** Background must never mean hidden:
+- a visible **Discovery activity panel** (what was queried, when, via which channel, what
+  was found — same spirit as the live scraping readout), persisted as an auditable log;
+- discovered sources land in a **"candidates" staging state** — visibly machine-suggested
+  with their evidence (query, citation counts, feed check result) — and are clearly
+  distinguished from operator-curated sources. Auto-enable is a setting the operator turns
+  on knowingly, never the silent default. (Lesson learned the hard way: see
+  `quarantine/fabricated_sources.md` — every entry must be a real, verifiable outlet, so
+  candidates get the same liveness/feed checks before they can be promoted.)
+- every external query type is individually toggleable; the offline channels work with
+  external lookups fully disabled.
+
+**Resource budget — user-controlled (Settings).** A *discovery budget* alongside the
+scheduler settings: max queries/fetches per day, time window ("only while idle"), CPU/IO
+politeness, and a hard kill switch. Defaults conservative; the activity panel shows budget
+consumption so the control is honest, not decorative.
+
+**Why it fits.** It turns the existing pieces (scheduler, discovery service, catalogs,
+link-graph) into a coverage engine while keeping the §0.5 invariants intact: ethical
+fetching for every probe, provenance on every candidate, locality except the explicitly
+gated search channel, and the operator always disposes.
+
+**Build sequence.** (1) candidate staging state + evidence fields on sources, with the
+activity log; (2) offline channels (citation-promotion + catalog refresh) in the scheduler;
+(3) the gated DuckDuckGo channel with per-query logging; (4) the budget controls in
+Settings; (5) optional auto-enable for high-confidence candidates (explicit opt-in).
+*(Roadmap slot: RM-19 in `docs/product/ROADMAP.md`; depends on RM-03.)*

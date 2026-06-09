@@ -63,13 +63,15 @@ def corpus_actors(
         text = article.get_content() or article.title or ""
         if len(text) < min_chars:
             continue
-        documents.append({
-            "id": str(article.id),
-            "source": source_name or domain or f"source-{article.source_id}",
-            "text": text,
-            "published_at": article.published_at or article.created_at,
-            "host": domain,
-        })
+        documents.append(
+            {
+                "id": str(article.id),
+                "source": source_name or domain or f"source-{article.source_id}",
+                "text": text,
+                "published_at": article.published_at or article.created_at,
+                "host": domain,
+            }
+        )
 
     result = detect_coordination(documents, threshold=threshold, window_hours=window_hours)
     # Attach a stable signature to each proposed actor.
@@ -83,6 +85,6 @@ def actor_view(result) -> list[dict]:
     out = []
     for actor in result.actors:
         d = actor.to_dict()
-        d["signature"] = (actor.signature or actor_signature(actor.sources))
+        d["signature"] = actor.signature or actor_signature(actor.sources)
         out.append(d)
     return out

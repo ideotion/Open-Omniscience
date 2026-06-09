@@ -50,7 +50,9 @@ def test_public_chain_providers_refuse_honestly():
         with pytest.raises(AnchorUnavailable) as ei:
             prov.anchor(ROOT)
         # The refusal carries a privacy warning, not a fake success.
-        assert "privacy" in str(ei.value).lower() or "permanent publication" in str(ei.value).lower()
+        assert (
+            "privacy" in str(ei.value).lower() or "permanent publication" in str(ei.value).lower()
+        )
         ok, _ = prov.verify(type("R", (), {"merkle_root": ROOT})())
         assert ok is False
 

@@ -27,8 +27,8 @@ from src.wiki.flagging import flag_revision
 
 _LOG = logging.getLogger(__name__)
 
-_MIN_TEXT = 200          # below this we treat extraction as failed, not a real document
-_MAX_DIFF_LINES = 4000   # cap stored diff size (bounded, like the crawler)
+_MIN_TEXT = 200  # below this we treat extraction as failed, not a real document
+_MAX_DIFF_LINES = 4000  # cap stored diff size (bounded, like the crawler)
 _WS_RE = re.compile(r"[ \t]+")
 
 
@@ -51,8 +51,9 @@ def page_text(html: str) -> str:
 
 def _diff(baseline: str, new: str) -> str:
     """A capped unified diff of baseline → new (added/removed lines only)."""
-    diff_lines = list(difflib.unified_diff(
-        baseline.splitlines(), new.splitlines(), lineterm="", n=1))
+    diff_lines = list(
+        difflib.unified_diff(baseline.splitlines(), new.splitlines(), lineterm="", n=1)
+    )
     changed = [ln for ln in diff_lines if ln[:1] in "+-" and ln[:3] not in ("+++", "---")]
     return "\n".join(changed[:_MAX_DIFF_LINES])
 
@@ -89,8 +90,16 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
         doc.last_hash = h
         doc.last_size = len(text)
         doc.last_status = "baseline captured"
-        session.add(LawRevision(document_id=doc.id, observed_at=now, content_hash=h,
-                                size=len(text), delta_bytes=0, flagged=False))
+        session.add(
+            LawRevision(
+                document_id=doc.id,
+                observed_at=now,
+                content_hash=h,
+                size=len(text),
+                delta_bytes=0,
+                flagged=False,
+            )
+        )
         session.commit()
         return {"document_id": doc.id, "status": "baseline", "size": len(text)}
 
@@ -100,8 +109,7 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
         return {"document_id": doc.id, "status": "unchanged"}
 
     # A revision with this exact text was seen before → a revert to a known version.
-    seen = (session.query(LawRevision)
-            .filter_by(document_id=doc.id, content_hash=h).first())
+    seen = session.query(LawRevision).filter_by(document_id=doc.id, content_hash=h).first()
     if seen is not None:
         doc.last_hash = h
         doc.last_size = len(text)
@@ -113,26 +121,46 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
     delta = len(text) - (len(doc.baseline_text or "") or doc.last_size or 0)
     flag = flag_revision(delta_bytes=delta)
     rev = LawRevision(
-        document_id=doc.id, observed_at=now, content_hash=h, size=len(text),
-        delta_bytes=delta, diff=_diff(doc.baseline_text or "", text),
-        flagged=flag.flagged, flag_reasons=flag.reasons_csv() if flag.flagged else None,
+        document_id=doc.id,
+        observed_at=now,
+        content_hash=h,
+        size=len(text),
+        delta_bytes=delta,
+        diff=_diff(doc.baseline_text or "", text),
+        flagged=flag.flagged,
+        flag_reasons=flag.reasons_csv() if flag.flagged else None,
     )
     session.add(rev)
     doc.last_hash = h
     doc.last_size = len(text)
     doc.last_status = f"changed ({delta:+d} bytes vs baseline)"
     session.commit()
-    return {"document_id": doc.id, "status": "changed", "delta_bytes": delta,
-            "flagged": flag.flagged, "flag_reasons": flag.reasons}
+    return {
+        "document_id": doc.id,
+        "status": "changed",
+        "delta_bytes": delta,
+        "flagged": flag.flagged,
+        "flag_reasons": flag.reasons,
+    }
 
 
 def track_watched(session, fetcher, *, limit_documents: int = 50) -> dict:
     """Track all watched legal documents, returning an aggregate tally."""
-    docs = (session.query(LawDocument)
-            .filter_by(watched=True)
-            .order_by(LawDocument.id.asc())
-            .limit(limit_documents).all())
-    tally = {"documents": 0, "baselines": 0, "changed": 0, "flagged": 0, "errors": 0, "unchanged": 0}
+    docs = (
+        session.query(LawDocument)
+        .filter_by(watched=True)
+        .order_by(LawDocument.id.asc())
+        .limit(limit_documents)
+        .all()
+    )
+    tally = {
+        "documents": 0,
+        "baselines": 0,
+        "changed": 0,
+        "flagged": 0,
+        "errors": 0,
+        "unchanged": 0,
+    }
     for doc in docs:
         try:
             res = track_document(session, fetcher, doc)

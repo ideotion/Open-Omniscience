@@ -35,9 +35,15 @@ class Feed:
 
     def to_dict(self) -> dict:
         return {
-            "key": self.key, "name": self.name, "symbol": self.symbol, "url": self.url,
-            "category": self.category, "currency": self.currency, "unit": self.unit,
-            "market": self.market, "date_column": self.date_column,
+            "key": self.key,
+            "name": self.name,
+            "symbol": self.symbol,
+            "url": self.url,
+            "category": self.category,
+            "currency": self.currency,
+            "unit": self.unit,
+            "market": self.market,
+            "date_column": self.date_column,
             "value_column": self.value_column,
         }
 
@@ -52,13 +58,20 @@ def load_feeds(path: Path | None = None) -> list[Feed]:
     for f in data.get("feeds", []):
         if not (isinstance(f, dict) and f.get("key") and f.get("symbol") and f.get("url")):
             continue
-        feeds.append(Feed(
-            key=str(f["key"]), name=str(f.get("name", f["key"])), symbol=str(f["symbol"]),
-            url=str(f["url"]), category=str(f.get("category", "commodity")),
-            currency=str(f.get("currency", "USD")), unit=str(f.get("unit", "t")),
-            market=f.get("market"), date_column=f.get("date_column"),
-            value_column=f.get("value_column"),
-        ))
+        feeds.append(
+            Feed(
+                key=str(f["key"]),
+                name=str(f.get("name", f["key"])),
+                symbol=str(f["symbol"]),
+                url=str(f["url"]),
+                category=str(f.get("category", "commodity")),
+                currency=str(f.get("currency", "USD")),
+                unit=str(f.get("unit", "t")),
+                market=f.get("market"),
+                date_column=f.get("date_column"),
+                value_column=f.get("value_column"),
+            )
+        )
     return feeds
 
 
@@ -77,13 +90,20 @@ def load_index_feeds(path: Path | None = None) -> list[Feed]:
     for f in data.get("feeds", []):
         if not (isinstance(f, dict) and f.get("key") and f.get("symbol") and f.get("url")):
             continue
-        feeds.append(Feed(
-            key=str(f["key"]), name=str(f.get("name", f["key"])), symbol=str(f["symbol"]),
-            url=str(f["url"]), category=str(f.get("category", "index")),
-            currency=str(f.get("currency", "USD")), unit=str(f.get("unit", "pts")),
-            market=f.get("market"), date_column=f.get("date_column"),
-            value_column=f.get("value_column"),
-        ))
+        feeds.append(
+            Feed(
+                key=str(f["key"]),
+                name=str(f.get("name", f["key"])),
+                symbol=str(f["symbol"]),
+                url=str(f["url"]),
+                category=str(f.get("category", "index")),
+                currency=str(f.get("currency", "USD")),
+                unit=str(f.get("unit", "pts")),
+                market=f.get("market"),
+                date_column=f.get("date_column"),
+                value_column=f.get("value_column"),
+            )
+        )
     return feeds
 
 

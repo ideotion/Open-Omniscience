@@ -1,0 +1,26 @@
+%% LLM path — verified against src/api/llm.py and src/llm/ollama.py (Phase 1 audit)
+flowchart LR
+    subgraph API ["FastAPI (src/api/llm.py)"]
+        H["GET /api/llm/health"]
+        M["GET /api/llm/models"]
+        G["POST /api/llm/generate"]
+        S["POST /api/llm/articles/{id}/summarize"]
+        T["POST /api/llm/articles/{id}/translate"]
+    end
+    subgraph CLIENT ["OllamaClient (src/llm/ollama.py)"]
+        C["httpx.Client(base_url, timeout=120s)"]
+    end
+    DB[("articles table<br/>content truncated to 6000 chars")]
+    AN[("article_analyses table<br/>kind/result/model/prompt_version")]
+    O["Ollama daemon<br/>OO_OLLAMA_URL (default http://127.0.0.1:11434)<br/>external native binary, HTTP only"]
+
+    S -->|"load article"| DB
+    T -->|"load article"| DB
+    H & M & G & S & T --> C
+    C -->|"GET /api/tags · POST /api/generate"| O
+    S -->|"store result + provenance"| AN
+    T -->|"store result + provenance"| AN
+
+    O -.->|"connection refused"| E1["503 LLMUnavailable<br/>honest error, no fabricated output"]
+    O -.->|"404 model missing"| E2["503 'run: ollama pull …'<br/>(no auto-download)"]
+    O -.->|"other HTTP error"| E3["502 LLMError"]

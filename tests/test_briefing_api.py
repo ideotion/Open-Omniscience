@@ -51,9 +51,13 @@ def test_dismiss_and_restore_roundtrip(client):
 
 def test_draft_add_export_remove(client):
     card = {
-        "id": "abc123", "type": "rising", "title": "“x” is rising",
-        "summary": "Climbing fast.", "bucket": "rising",
-        "method": "ratio", "caveat": "noisy on small n",
+        "id": "abc123",
+        "type": "rising",
+        "title": "“x” is rising",
+        "summary": "Climbing fast.",
+        "bucket": "rising",
+        "method": "ratio",
+        "caveat": "noisy on small n",
         "signal": {"metric": "growth_ratio", "value": 3.0},
         "evidence": [{"title": "A story", "url": "https://x.test/a", "source": "Alpha"}],
         "n": 5,

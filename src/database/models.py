@@ -29,11 +29,8 @@ Includes tables for sources and articles, with relationships and indexes.
 Author: Ideotion
 """
 
-import os
-from contextlib import contextmanager
-from datetime import UTC, datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -56,44 +53,43 @@ from sqlalchemy.orm import declarative_base, relationship
 # Engine, session lifecycle, and the FastAPI dependency live in session.py and
 # have NO import-time side effects (no create_all, no monitoring thread). They are
 # re-exported here because much existing code does
-# `from src.database.models import get_session` etc.
+# `from src.database.models import get_session` (and Session/SessionLocal) etc.
+# noqa: F401 on each -- these are intentional backward-compat re-exports, not
+# unused imports; without it `ruff --fix` strips them and breaks importers.
 from src.database.session import (  # noqa: E402
-    Session,
-    SessionLocal,
-    close_session,
-    dispose_engine,
+    Session,  # noqa: F401
+    SessionLocal,  # noqa: F401
     engine,
-    get_db,
     get_session,
     init_db,
-    session_scope,
 )
 
 # =============================================================================
 # Compressed Text Type for SQLAlchemy
 # =============================================================================
 
+
 class CompressedText(TypeDecorator):
     """
     SQLAlchemy type decorator for storing compressed text.
-    
+
     This type automatically compresses text data before storing it in the database
     and decompresses it when retrieving. This is particularly useful for large text
     fields like article content, where compression can significantly reduce storage
     requirements.
-    
+
     Usage:
         class Article(Base):
             content = Column(CompressedText)
     """
-    
+
     impl = LargeBinary
     cache_ok = True
-    
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """
         Initialize the CompressedText type.
-        
+
         Args:
             *args: Positional arguments passed to TypeDecorator.
             **kwargs: Keyword arguments passed to TypeDecorator.
@@ -101,45 +97,46 @@ class CompressedText(TypeDecorator):
         super().__init__(*args, **kwargs)
         # Import here to avoid circular imports
         from src.utils.compression import database_compressor
+
         self.compressor = database_compressor
-    
+
     def process_bind_param(self, value: str | bytes | None, dialect: Any) -> bytes | None:
         """
         Process the value before storing in the database.
-        
+
         Args:
             value: The value to compress.
             dialect: The database dialect.
-            
+
         Returns:
             Compressed value as bytes, or None.
         """
         if value is None:
             return None
-        
+
         if isinstance(value, bytes):
-            value = value.decode('utf-8')
-        
+            value = value.decode("utf-8")
+
         # Compress the text
         return self.compressor.compress_text_for_storage(value)
-    
+
     def process_result_value(self, value: bytes | None, dialect: Any) -> str | None:
         """
         Process the value after retrieving from the database.
-        
+
         Args:
             value: The compressed value from the database.
             dialect: The database dialect.
-            
+
         Returns:
             Decompressed value as string, or None.
         """
         if value is None:
             return None
-        
+
         # Decompress the text
         return self.compressor.decompress_text_from_storage(value)
-    
+
     def copy(self, *args: Any, **kwargs: Any) -> "CompressedText":
         """Create a copy of this type."""
         return CompressedText(*args, **kwargs)
@@ -149,71 +146,73 @@ class CompressedText(TypeDecorator):
 # Compressed JSON Type for SQLAlchemy
 # =============================================================================
 
+
 class CompressedJSON(TypeDecorator):
     """
     SQLAlchemy type decorator for storing compressed JSON data.
-    
+
     This type automatically serializes Python objects to JSON, compresses them,
     and stores them in the database. When retrieving, it decompresses and deserializes
     the JSON back to Python objects.
-    
+
     Usage:
         class Article(Base):
             metadata = Column(CompressedJSON)
     """
-    
+
     impl = LargeBinary
     cache_ok = True
-    
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize the CompressedJSON type."""
         super().__init__(*args, **kwargs)
         import json
 
         from src.utils.compression import database_compressor
+
         self.json = json
         self.compressor = database_compressor
-    
+
     def process_bind_param(self, value: Any, dialect: Any) -> bytes | None:
         """
         Process the value before storing in the database.
-        
+
         Args:
             value: The Python object to serialize and compress.
             dialect: The database dialect.
-            
+
         Returns:
             Compressed JSON as bytes, or None.
         """
         if value is None:
             return None
-        
+
         # Serialize to JSON
         json_str = self.json.dumps(value, ensure_ascii=False, default=str)
-        
+
         # Compress the JSON string
         return self.compressor.compress_text_for_storage(json_str)
-    
+
     def process_result_value(self, value: bytes | None, dialect: Any) -> Any:
         """
         Process the value after retrieving from the database.
-        
+
         Args:
             value: The compressed JSON from the database.
             dialect: The database dialect.
-            
+
         Returns:
             Deserialized Python object, or None.
         """
         if value is None:
             return None
-        
+
         # Decompress the JSON string
         json_str = self.compressor.decompress_text_from_storage(value)
-        
+
         # Deserialize from JSON
         return self.json.loads(json_str)
-    
+
     def copy(self, *args: Any, **kwargs: Any) -> "CompressedJSON":
         """Create a copy of this type."""
         return CompressedJSON(*args, **kwargs)
@@ -229,24 +228,24 @@ Base = declarative_base()
 
 # Association table for many-to-many relationship between Source and SourceGroup
 source_group_association = Table(
-    'source_group_association',
+    "source_group_association",
     Base.metadata,
-    Column('source_id', Integer, ForeignKey('sources.id'), primary_key=True),
-    Column('group_id', Integer, ForeignKey('source_groups.id'), primary_key=True),
-    Column('added_at', DateTime, default=lambda: datetime.now(UTC)),
+    Column("source_id", Integer, ForeignKey("sources.id"), primary_key=True),
+    Column("group_id", Integer, ForeignKey("source_groups.id"), primary_key=True),
+    Column("added_at", DateTime, default=lambda: datetime.now(UTC)),
     # Indexes for performance
-    Index('idx_source_group_source_id', 'source_id'),
-    Index('idx_source_group_group_id', 'group_id'),
+    Index("idx_source_group_source_id", "source_id"),
+    Index("idx_source_group_group_id", "group_id"),
 )
 
 
 class SourceGroup(Base):
     """
     Represents a group of sources for organizational purposes.
-    
+
     Groups allow users to categorize and manage sources in bulk.
     Sources can belong to multiple groups.
-    
+
     Attributes:
         id: Primary key.
         name: Name of the group (e.g., "Technology News", "Financial Sources").
@@ -261,8 +260,9 @@ class SourceGroup(Base):
         updated_at: Timestamp when the group was last updated.
         sources: Relationship to Source model (many-to-many).
     """
+
     __tablename__ = "source_groups"
-    
+
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text)
@@ -273,16 +273,15 @@ class SourceGroup(Base):
     rate_limit_ms = Column(Integer, default=2000)
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
     # Many-to-many relationship with sources
     sources = relationship(
-        "Source",
-        secondary=source_group_association,
-        back_populates="groups",
-        lazy='dynamic'
+        "Source", secondary=source_group_association, back_populates="groups", lazy="dynamic"
     )
-    
+
     def __repr__(self):
         return f"<SourceGroup(name='{self.name}', id={self.id})>"
 
@@ -290,11 +289,11 @@ class SourceGroup(Base):
 class SourceMetadata(Base):
     """
     Additional metadata for sources.
-    
+
     This table stores extended information about sources that doesn't
     fit in the main Source table, such as geographic and language data,
     robots.txt information, and other metadata.
-    
+
     Attributes:
         id: Primary key.
         source_id: Foreign key to Source (one-to-one relationship).
@@ -318,52 +317,53 @@ class SourceMetadata(Base):
         notes: Additional notes about the source.
         source: Relationship to Source model.
     """
+
     __tablename__ = "source_metadata"
-    
+
     id = Column(Integer, primary_key=True)
     source_id = Column(Integer, ForeignKey("sources.id"), nullable=False, unique=True)
-    
+
     # Geographic and language metadata
     language = Column(String(20))
     country = Column(String(2))
     region = Column(String(100))
     city = Column(String(100))
     timezone = Column(String(50))
-    
+
     # Robots.txt and crawling metadata
     robots_txt_url = Column(String(500))
     robots_allowed = Column(Boolean, default=True)
     crawl_delay = Column(Integer)  # In seconds
     sitemap_url = Column(String(500))
-    
+
     # Branding and contact
     favicon_url = Column(String(500))
     logo_url = Column(String(500))
     contact_email = Column(String(255))
-    
+
     # Social media
     social_twitter = Column(String(255))
     social_facebook = Column(String(500))
     social_linkedin = Column(String(500))
-    
+
     # Popularity and ranking
     alexa_rank = Column(Integer)
-    
+
     # Timestamps and notes
     last_checked = Column(DateTime)
     notes = Column(Text)
-    
+
     # Relationship to source
     source = relationship("Source", back_populates="source_metadata", uselist=False)
-    
+
     # Indexes for performance
     __table_args__ = (
-        Index('idx_metadata_source_id', 'source_id', unique=True),
-        Index('idx_metadata_country', 'country'),
-        Index('idx_metadata_language', 'language'),
-        Index('idx_metadata_robots_allowed', 'robots_allowed'),
+        Index("idx_metadata_source_id", "source_id", unique=True),
+        Index("idx_metadata_country", "country"),
+        Index("idx_metadata_language", "language"),
+        Index("idx_metadata_robots_allowed", "robots_allowed"),
     )
-    
+
     def __repr__(self):
         return f"<SourceMetadata(source_id={self.source_id}, language='{self.language}', country='{self.country}')>"
 
@@ -390,8 +390,9 @@ class Source(Base):
         cacheability: Whether responses can be cached.
         articles: Relationship to Article model.
     """
+
     __tablename__ = "sources"
-    
+
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
     domain = Column(String(255), nullable=False, unique=True)
@@ -400,7 +401,7 @@ class Source(Base):
     enabled = Column(Boolean, default=True)
     priority = Column(Integer, default=2)
     tags = Column(String(500))  # Comma-separated tags
-    
+
     # Enhanced metadata fields
     reliability_score = Column(Integer, default=5)  # 1-10 scale
     language = Column(String(10), default="en")  # ISO 639-1 code
@@ -412,30 +413,29 @@ class Source(Base):
 
     # Relationship to articles
     articles = relationship("Article", back_populates="source", cascade="all, delete-orphan")
-    
+
     # Many-to-many relationship with groups
     groups = relationship(
-        "SourceGroup",
-        secondary=source_group_association,
-        back_populates="sources",
-        lazy='dynamic'
+        "SourceGroup", secondary=source_group_association, back_populates="sources", lazy="dynamic"
     )
-    
+
     # One-to-one relationship with metadata
-    source_metadata = relationship("SourceMetadata", back_populates="source", uselist=False, cascade="all, delete-orphan")
-    
+    source_metadata = relationship(
+        "SourceMetadata", back_populates="source", uselist=False, cascade="all, delete-orphan"
+    )
+
     # Indexes for performance
     __table_args__ = (
-        Index('idx_source_domain', 'domain', unique=True),
-        Index('idx_source_enabled', 'enabled'),
-        Index('idx_source_priority', 'priority'),
-        Index('idx_source_reliability', 'reliability_score'),
-        Index('idx_source_language', 'language'),
-        Index('idx_source_region', 'region'),
-        Index('idx_source_country', 'country'),
-        Index('idx_source_type', 'source_type'),
+        Index("idx_source_domain", "domain", unique=True),
+        Index("idx_source_enabled", "enabled"),
+        Index("idx_source_priority", "priority"),
+        Index("idx_source_reliability", "reliability_score"),
+        Index("idx_source_language", "language"),
+        Index("idx_source_region", "region"),
+        Index("idx_source_country", "country"),
+        Index("idx_source_type", "source_type"),
     )
-    
+
     def __repr__(self):
         return f"<Source(name='{self.name}', domain='{self.domain}')>"
 
@@ -460,8 +460,9 @@ class Article(Base):
         author: Author of the article.
         source: Relationship to Source model.
     """
+
     __tablename__ = "articles"
-    
+
     id = Column(Integer, primary_key=True)
     url = Column(String(1000), nullable=False)
     canonical_url = Column(String(1000), nullable=False)
@@ -475,21 +476,21 @@ class Article(Base):
     hash = Column(String(64), nullable=False, unique=True)  # SHA-256 hash length is 64
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, onupdate=lambda: datetime.now(UTC))
-    
+
     # Enhanced metadata fields
     region = Column(String(50))  # Geographic region
     country = Column(String(2))  # ISO 3166-1 alpha-2 country code
     author = Column(String(255))  # Article author
     word_count = Column(Integer)  # Number of words in the article
     reading_time = Column(Integer)  # Estimated reading time in minutes
-    
+
     # Content analysis fields
     sentiment_score = Column(Float)  # Sentiment analysis score (-1 to 1)
     sentiment_label = Column(String(20))  # Sentiment label (positive, negative, neutral)
-    
+
     # Relationship to source
     source = relationship("Source", back_populates="articles")
-    
+
     # Indexes for performance
     __table_args__ = (
         # Index for faster duplicate detection
@@ -498,8 +499,11 @@ class Article(Base):
         Index("idx_article_canonical_url", "canonical_url"),
         # Index for faster source-based queries
         Index("idx_article_source_id", "source_id"),
-        # Index for faster text search (on original content)
-        Index("idx_article_content", "content"),
+        # NB: there is deliberately NO B-tree index on `content`. Full-text search
+        # goes through the FTS5 virtual table (src/database/fts.py); a B-tree over
+        # the full article body is never used by any query yet cost ~224 MB on a
+        # 50k-article DB (63% of the file) and slowed every insert (finding PERF-02,
+        # measured in scripts/benchmark_audit.py). Dropped via migration f1a2b3c4d5e6.
         # Index for faster language queries
         Index("idx_article_language", "language"),
         # Index for faster region queries
@@ -520,65 +524,66 @@ class Article(Base):
         # Index for sentiment analysis
         Index("idx_article_sentiment", "sentiment_score"),
     )
-    
+
     @property
     def is_compressed(self) -> bool:
         """Check if content is stored in compressed format."""
         return self.compressed_content is not None
-    
+
     def compress_content(self) -> None:
         """Compress the content and store in compressed_content field."""
         if self.content and not self.compressed_content:
             from src.utils.compression import database_compressor
+
             self.compressed_content = database_compressor.compress_text_for_storage(self.content)
-    
+
     def decompress_content(self) -> str:
         """Decompress the content from compressed_content field."""
         if self.compressed_content:
             from src.utils.compression import database_compressor
+
             return database_compressor.decompress_text_from_storage(self.compressed_content)
         return self.content or ""
-    
+
     def get_content(self) -> str:
         """Get the content, decompressing if necessary."""
         if self.compressed_content:
             return self.decompress_content()
         return self.content or ""
-    
+
     def set_content(self, content: str) -> None:
         """Set the content, optionally compressing it."""
         self.content = content
         # Clear compressed content to force recompression
         self.compressed_content = None
-    
+
     def __repr__(self):
         title = (self.title or "")[:50]
         return f"<Article(id={self.id}, title='{title}...', source_id={self.source_id})>"
-
 
 
 # Keyword and Category Models for Keyword Extraction
 
 # Association table for many-to-many relationship between Article and Keyword
 article_keyword_association = Table(
-    'article_keyword_association',
+    "article_keyword_association",
     Base.metadata,
-    Column('article_id', Integer, ForeignKey('articles.id'), primary_key=True),
-    Column('keyword_id', Integer, ForeignKey('keywords.id'), primary_key=True),
-    Column('frequency', Integer, default=1),
-    Column('position', Integer),
-    Column('relevance_score', Float, default=0.0),
-    Column('created_at', DateTime, default=lambda: datetime.now(UTC)),
+    Column("article_id", Integer, ForeignKey("articles.id"), primary_key=True),
+    Column("keyword_id", Integer, ForeignKey("keywords.id"), primary_key=True),
+    Column("frequency", Integer, default=1),
+    Column("position", Integer),
+    Column("relevance_score", Float, default=0.0),
+    Column("created_at", DateTime, default=lambda: datetime.now(UTC)),
     # Indexes for performance
-    Index('idx_article_keyword_article_id', 'article_id'),
-    Index('idx_article_keyword_keyword_id', 'keyword_id'),
+    Index("idx_article_keyword_article_id", "article_id"),
+    Index("idx_article_keyword_keyword_id", "keyword_id"),
 )
 
 
 class KeywordCategory(Base):
     """
     Represents a category for classifying keywords.
-    
+
     Attributes:
         id: Primary key.
         name: Name of the category (e.g., "Politics", "Technology").
@@ -590,8 +595,9 @@ class KeywordCategory(Base):
         updated_at: Timestamp when the category was last updated.
         keywords: Relationship to Keyword model.
     """
+
     __tablename__ = "keyword_categories"
-    
+
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text)
@@ -599,15 +605,17 @@ class KeywordCategory(Base):
     color = Column(String(20), default="#666666")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
     # Self-referential relationship for hierarchical categories
     parent = relationship("KeywordCategory", remote_side=[id], back_populates="children")
     children = relationship("KeywordCategory", back_populates="parent")
-    
+
     # One-to-many relationship with keywords
     keywords = relationship("Keyword", back_populates="category", cascade="all, delete-orphan")
-    
+
     def __repr__(self):
         return f"<KeywordCategory(name='{self.name}', id={self.id})>"
 
@@ -615,7 +623,7 @@ class KeywordCategory(Base):
 class Keyword(Base):
     """
     Represents a keyword extracted from articles.
-    
+
     Attributes:
         id: Primary key.
         term: The keyword term (normalized).
@@ -633,8 +641,9 @@ class Keyword(Base):
         category: Relationship to KeywordCategory model.
         articles: Relationship to Article model (many-to-many).
     """
+
     __tablename__ = "keywords"
-    
+
     id = Column(Integer, primary_key=True)
     term = Column(String(255), nullable=False)
     normalized_term = Column(String(255), nullable=False)
@@ -647,32 +656,30 @@ class Keyword(Base):
     entity_type = Column(String(50))
     relevance_score = Column(Float, default=0.0)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
     # Provenance: which extractor labelled this term (e.g. "baseline", "spacy",
     # "llm:<model>"). An entity type is a *labelled-by-X assertion*, never ground
     # truth -- this records the X (PRODUCT_SYNTHESIS §8).
     extractor = Column(String(40))
-    
+
     # Relationships
     category = relationship("KeywordCategory", back_populates="keywords")
-    articles = relationship(
-        "Article",
-        secondary=article_keyword_association,
-        lazy='dynamic'
-    )
-    
+    articles = relationship("Article", secondary=article_keyword_association, lazy="dynamic")
+
     # Indexes for performance
     __table_args__ = (
-        Index('idx_keyword_term', 'term'),
-        Index('idx_keyword_normalized_term', 'normalized_term'),
-        Index('idx_keyword_language', 'language'),
-        Index('idx_keyword_category_id', 'category_id'),
-        Index('idx_keyword_frequency', 'frequency'),
-        Index('idx_keyword_is_ngram', 'is_ngram'),
-        Index('idx_keyword_is_entity', 'is_entity'),
+        Index("idx_keyword_term", "term"),
+        Index("idx_keyword_normalized_term", "normalized_term"),
+        Index("idx_keyword_language", "language"),
+        Index("idx_keyword_category_id", "category_id"),
+        Index("idx_keyword_frequency", "frequency"),
+        Index("idx_keyword_is_ngram", "is_ngram"),
+        Index("idx_keyword_is_entity", "is_entity"),
     )
-    
+
     def __repr__(self):
         return f"<Keyword(term='{self.term}', frequency={self.frequency})>"
 
@@ -680,10 +687,10 @@ class Keyword(Base):
 class ArticleKeyword(Base):
     """
     Represents the relationship between an article and a keyword with additional metadata.
-    
+
     This model stores information about how a keyword appears in a specific article,
     including frequency, position, and relevance score.
-    
+
     Attributes:
         article_id: Foreign key to Article.
         keyword_id: Foreign key to Keyword.
@@ -693,27 +700,28 @@ class ArticleKeyword(Base):
         relevance_score: Relevance score for this keyword in this article.
         created_at: Timestamp when the relationship was created.
     """
+
     __tablename__ = "article_keywords"
-    
-    article_id = Column(Integer, ForeignKey('articles.id'), primary_key=True)
-    keyword_id = Column(Integer, ForeignKey('keywords.id'), primary_key=True)
+
+    article_id = Column(Integer, ForeignKey("articles.id"), primary_key=True)
+    keyword_id = Column(Integer, ForeignKey("keywords.id"), primary_key=True)
     frequency = Column(Integer, default=1)
     first_position = Column(Integer)
     last_position = Column(Integer)
     relevance_score = Column(Float, default=0.0)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    
+
     def __repr__(self):
         return f"<ArticleKeyword(article_id={self.article_id}, keyword_id={self.keyword_id}, frequency={self.frequency})>"
 
 
-
 # Link Tracking Models for Source/Link Tracking System
+
 
 class LinkClassificationRule(Base):
     """
     Represents a rule for classifying links.
-    
+
     Attributes:
         id: Primary key.
         rule_name: Name of the classification rule.
@@ -724,25 +732,30 @@ class LinkClassificationRule(Base):
         created_at: Timestamp when the rule was created.
         updated_at: Timestamp when the rule was last updated.
     """
+
     __tablename__ = "link_classification_rules"
-    
+
     id = Column(Integer, primary_key=True)
     rule_name = Column(String(100), nullable=False, unique=True)
     pattern = Column(String(500), nullable=False)
-    classification_type = Column(String(50), nullable=False)  # source, reference, ad, social, navigation, other
+    classification_type = Column(
+        String(50), nullable=False
+    )  # source, reference, ad, social, navigation, other
     priority = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
     # Indexes for performance
     __table_args__ = (
-        Index('idx_link_classification_rule_name', 'rule_name', unique=True),
-        Index('idx_link_classification_type', 'classification_type'),
-        Index('idx_link_classification_priority', 'priority'),
-        Index('idx_link_classification_active', 'is_active'),
+        Index("idx_link_classification_rule_name", "rule_name", unique=True),
+        Index("idx_link_classification_type", "classification_type"),
+        Index("idx_link_classification_priority", "priority"),
+        Index("idx_link_classification_active", "is_active"),
     )
-    
+
     def __repr__(self):
         return f"<LinkClassificationRule(rule_name='{self.rule_name}', classification_type='{self.classification_type}')>"
 
@@ -750,7 +763,7 @@ class LinkClassificationRule(Base):
 class ExternalSource(Base):
     """
     Represents an external source (website, publication, etc.) that is referenced in articles.
-    
+
     Attributes:
         id: Primary key.
         domain: Domain of the source (e.g., "nytimes.com").
@@ -772,13 +785,16 @@ class ExternalSource(Base):
         source_articles: Relationship to SourceArticle model.
         links: Relationship to ArticleLink model.
     """
+
     __tablename__ = "external_sources"
-    
+
     id = Column(Integer, primary_key=True)
     domain = Column(String(255), nullable=False, unique=True)
     name = Column(String(200), nullable=False)
     url = Column(String(500))
-    source_type = Column(String(50), default="unknown")  # news, blog, academic, government, social, etc.
+    source_type = Column(
+        String(50), default="unknown"
+    )  # news, blog, academic, government, social, etc.
     credibility_score = Column(Float, default=50.0)  # 0-100
     political_bias = Column(Float, default=0.0)  # -100 (left) to 100 (right)
     country = Column(String(2))
@@ -790,22 +806,28 @@ class ExternalSource(Base):
     is_verified = Column(Boolean, default=False)
     last_verified_at = Column(DateTime)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
     # Relationships
-    source_articles = relationship("SourceArticle", back_populates="external_source", cascade="all, delete-orphan")
-    links = relationship("ArticleLink", back_populates="external_source", cascade="all, delete-orphan")
-    
+    source_articles = relationship(
+        "SourceArticle", back_populates="external_source", cascade="all, delete-orphan"
+    )
+    links = relationship(
+        "ArticleLink", back_populates="external_source", cascade="all, delete-orphan"
+    )
+
     # Indexes for performance
     __table_args__ = (
-        Index('idx_external_source_domain', 'domain', unique=True),
-        Index('idx_external_source_name', 'name'),
-        Index('idx_external_source_type', 'source_type'),
-        Index('idx_external_source_credibility', 'credibility_score'),
-        Index('idx_external_source_country', 'country'),
-        Index('idx_external_source_verified', 'is_verified'),
+        Index("idx_external_source_domain", "domain", unique=True),
+        Index("idx_external_source_name", "name"),
+        Index("idx_external_source_type", "source_type"),
+        Index("idx_external_source_credibility", "credibility_score"),
+        Index("idx_external_source_country", "country"),
+        Index("idx_external_source_verified", "is_verified"),
     )
-    
+
     def __repr__(self):
         return f"<ExternalSource(name='{self.name}', domain='{self.domain}', credibility={self.credibility_score})>"
 
@@ -813,7 +835,7 @@ class ExternalSource(Base):
 class SourceArticle(Base):
     """
     Represents an article from an external source that is referenced in our articles.
-    
+
     Attributes:
         id: Primary key.
         source_id: Foreign key to ExternalSource.
@@ -832,8 +854,9 @@ class SourceArticle(Base):
         source: Relationship to ExternalSource model.
         article_links: Relationship to ArticleLink model.
     """
+
     __tablename__ = "source_articles"
-    
+
     id = Column(Integer, primary_key=True)
     source_id = Column(Integer, ForeignKey("external_sources.id"), nullable=False)
     url = Column(String(1000), nullable=False)
@@ -847,21 +870,25 @@ class SourceArticle(Base):
     is_accessible = Column(Boolean, default=True)
     last_accessed_at = Column(DateTime)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
     # Relationships
     external_source = relationship("ExternalSource", back_populates="source_articles")
-    article_links = relationship("ArticleLink", back_populates="source_article", cascade="all, delete-orphan")
-    
+    article_links = relationship(
+        "ArticleLink", back_populates="source_article", cascade="all, delete-orphan"
+    )
+
     # Indexes for performance
     __table_args__ = (
-        Index('idx_source_article_source_id', 'source_id'),
-        Index('idx_source_article_url', 'url', unique=True),
-        Index('idx_source_article_published', 'published_at'),
-        Index('idx_source_article_hash', 'content_hash', unique=True),
-        Index('idx_source_article_accessible', 'is_accessible'),
+        Index("idx_source_article_source_id", "source_id"),
+        Index("idx_source_article_url", "url", unique=True),
+        Index("idx_source_article_published", "published_at"),
+        Index("idx_source_article_hash", "content_hash", unique=True),
+        Index("idx_source_article_accessible", "is_accessible"),
     )
-    
+
     def __repr__(self):
         return f"<SourceArticle(title='{self.title[:50] if self.title else 'Untitled'}...', source_id={self.source_id})>"
 
@@ -869,7 +896,7 @@ class SourceArticle(Base):
 class ArticleLink(Base):
     """
     Represents a link found in an article, with classification and relationship tracking.
-    
+
     Attributes:
         id: Primary key.
         article_id: Foreign key to Article.
@@ -892,16 +919,21 @@ class ArticleLink(Base):
         external_source: Relationship to ExternalSource model.
         source_article: Relationship to SourceArticle model.
     """
+
     __tablename__ = "article_links"
-    
+
     id = Column(Integer, primary_key=True)
     article_id = Column(Integer, ForeignKey("articles.id"), nullable=False)
     url = Column(String(1000), nullable=False)
     normalized_url = Column(String(1000), nullable=False)
     link_text = Column(String(500))
     position = Column(Integer)
-    link_type = Column(String(50), default="external")  # internal, external, image, script, stylesheet, etc.
-    classification = Column(String(50), default="other")  # source, reference, ad, social, navigation, other
+    link_type = Column(
+        String(50), default="external"
+    )  # internal, external, image, script, stylesheet, etc.
+    classification = Column(
+        String(50), default="other"
+    )  # source, reference, ad, social, navigation, other
     external_source_id = Column(Integer, ForeignKey("external_sources.id"))
     source_article_id = Column(Integer, ForeignKey("source_articles.id"))
     is_followable = Column(Boolean, default=True)
@@ -910,25 +942,27 @@ class ArticleLink(Base):
     redirect_url = Column(String(1000))
     http_status = Column(Integer)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
     # Relationships
     article = relationship("Article", back_populates="links")
     external_source = relationship("ExternalSource", back_populates="links")
     source_article = relationship("SourceArticle", back_populates="article_links")
-    
+
     # Indexes for performance
     __table_args__ = (
-        Index('idx_article_link_article_id', 'article_id'),
-        Index('idx_article_link_url', 'url'),
-        Index('idx_article_link_normalized_url', 'normalized_url'),
-        Index('idx_article_link_classification', 'classification'),
-        Index('idx_article_link_source_id', 'external_source_id'),
-        Index('idx_article_link_source_article_id', 'source_article_id'),
-        Index('idx_article_link_working', 'is_working'),
-        Index('idx_article_link_type', 'link_type'),
+        Index("idx_article_link_article_id", "article_id"),
+        Index("idx_article_link_url", "url"),
+        Index("idx_article_link_normalized_url", "normalized_url"),
+        Index("idx_article_link_classification", "classification"),
+        Index("idx_article_link_source_id", "external_source_id"),
+        Index("idx_article_link_source_article_id", "source_article_id"),
+        Index("idx_article_link_working", "is_working"),
+        Index("idx_article_link_type", "link_type"),
     )
-    
+
     def __repr__(self):
         return f"<ArticleLink(url='{self.url[:50]}...', classification='{self.classification}', article_id={self.article_id})>"
 
@@ -948,10 +982,10 @@ class ArticleMentionedDate(Base):
     # ondelete=CASCADE is defense-in-depth: the ORM relationship already cascades on
     # session.delete(), this also covers any future bulk/raw delete of an article.
     article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
-    mentioned_on = Column(Date, nullable=False)        # normalized; month precision -> day 1
-    precision = Column(String(10), nullable=False, default="day")   # 'day' | 'month'
-    snippet = Column(String(300))                       # provenance: the matched text
-    confidence = Column(Float)                          # extractor confidence in [0, 1]
+    mentioned_on = Column(Date, nullable=False)  # normalized; month precision -> day 1
+    precision = Column(String(10), nullable=False, default="day")  # 'day' | 'month'
+    snippet = Column(String(300))  # provenance: the matched text
+    confidence = Column(Float)  # extractor confidence in [0, 1]
     extractor = Column(String(40), default="dateextract")
     status = Column(String(12), nullable=False, default="candidate")  # candidate|confirmed|rejected
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
@@ -966,17 +1000,19 @@ class ArticleMentionedDate(Base):
     )
 
     def __repr__(self):
-        return (f"<ArticleMentionedDate(article_id={self.article_id}, "
-                f"on={self.mentioned_on}, precision='{self.precision}', status='{self.status}')>")
+        return (
+            f"<ArticleMentionedDate(article_id={self.article_id}, "
+            f"on={self.mentioned_on}, precision='{self.precision}', status='{self.status}')>"
+        )
 
 
 class ArticleSourceRelationship(Base):
     """
     Represents the relationship between an article and its external sources.
-    
+
     This table tracks which external sources are referenced in which articles,
     including temporal analysis (article date vs. source article date).
-    
+
     Attributes:
         id: Primary key.
         article_id: Foreign key to Article.
@@ -995,38 +1031,43 @@ class ArticleSourceRelationship(Base):
         source_article: Relationship to SourceArticle model.
         link: Relationship to ArticleLink model.
     """
+
     __tablename__ = "article_source_relationships"
-    
+
     id = Column(Integer, primary_key=True)
     article_id = Column(Integer, ForeignKey("articles.id"), nullable=False)
     source_id = Column(Integer, ForeignKey("external_sources.id"), nullable=False)
     source_article_id = Column(Integer, ForeignKey("source_articles.id"))
     link_id = Column(Integer, ForeignKey("article_links.id"))
-    relationship_type = Column(String(50), default="reference")  # citation, reference, source, mention, etc.
+    relationship_type = Column(
+        String(50), default="reference"
+    )  # citation, reference, source, mention, etc.
     time_delta_days = Column(Float)  # Can be negative if article published before source
     is_temporal_anomaly = Column(Boolean, default=False)
     confidence_score = Column(Float, default=0.0)  # 0-1
     notes = Column(Text)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
     # Relationships
     article = relationship("Article")
     external_source = relationship("ExternalSource")
     source_article = relationship("SourceArticle")
     link = relationship("ArticleLink")
-    
+
     # Indexes for performance
     __table_args__ = (
-        Index('idx_article_source_rel_article_id', 'article_id'),
-        Index('idx_article_source_rel_source_id', 'source_id'),
-        Index('idx_article_source_rel_source_article_id', 'source_article_id'),
-        Index('idx_article_source_rel_link_id', 'link_id'),
-        Index('idx_article_source_rel_type', 'relationship_type'),
-        Index('idx_article_source_rel_anomaly', 'is_temporal_anomaly'),
-        Index('idx_article_source_rel_confidence', 'confidence_score'),
+        Index("idx_article_source_rel_article_id", "article_id"),
+        Index("idx_article_source_rel_source_id", "source_id"),
+        Index("idx_article_source_rel_source_article_id", "source_article_id"),
+        Index("idx_article_source_rel_link_id", "link_id"),
+        Index("idx_article_source_rel_type", "relationship_type"),
+        Index("idx_article_source_rel_anomaly", "is_temporal_anomaly"),
+        Index("idx_article_source_rel_confidence", "confidence_score"),
     )
-    
+
     def __repr__(self):
         return f"<ArticleSourceRelationship(article_id={self.article_id}, source_id={self.source_id}, time_delta={self.time_delta_days} days)"
 
@@ -1034,7 +1075,7 @@ class ArticleSourceRelationship(Base):
 class SourceCredibilityRule(Base):
     """
     Represents a rule for calculating source credibility scores.
-    
+
     Attributes:
         id: Primary key.
         rule_name: Name of the credibility rule.
@@ -1047,26 +1088,33 @@ class SourceCredibilityRule(Base):
         created_at: Timestamp when the rule was created.
         updated_at: Timestamp when the rule was last updated.
     """
+
     __tablename__ = "source_credibility_rules"
-    
+
     id = Column(Integer, primary_key=True)
     rule_name = Column(String(100), nullable=False, unique=True)
-    factor = Column(String(50), nullable=False)  # alexa_rank, social_followers, age, verification_status, etc.
+    factor = Column(
+        String(50), nullable=False
+    )  # alexa_rank, social_followers, age, verification_status, etc.
     weight = Column(Float, default=1.0)  # 0-1
     min_value = Column(Float, default=0.0)
     max_value = Column(Float, default=100.0)
-    is_inverse = Column(Boolean, default=False)  # True for factors where higher = worse (e.g., alexa rank)
+    is_inverse = Column(
+        Boolean, default=False
+    )  # True for factors where higher = worse (e.g., alexa rank)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
     # Indexes for performance
     __table_args__ = (
-        Index('idx_credibility_rule_name', 'rule_name', unique=True),
-        Index('idx_credibility_rule_factor', 'factor'),
-        Index('idx_credibility_rule_active', 'is_active'),
+        Index("idx_credibility_rule_name", "rule_name", unique=True),
+        Index("idx_credibility_rule_factor", "factor"),
+        Index("idx_credibility_rule_active", "is_active"),
     )
-    
+
     def __repr__(self):
         return f"<SourceCredibilityRule(rule_name='{self.rule_name}', factor='{self.factor}', weight={self.weight})>"
 
@@ -1074,7 +1122,8 @@ class SourceCredibilityRule(Base):
 # Add relationships to existing Article model
 Article.links = relationship("ArticleLink", back_populates="article", cascade="all, delete-orphan")
 Article.mentioned_dates = relationship(
-    "ArticleMentionedDate", back_populates="article", cascade="all, delete-orphan")
+    "ArticleMentionedDate", back_populates="article", cascade="all, delete-orphan"
+)
 
 
 class ArticleAnalysis(Base):
@@ -1117,17 +1166,15 @@ class CommodityPrice(Base):
 
     id = Column(Integer, primary_key=True)
     symbol = Column(String(32), nullable=False, index=True)  # e.g. "Nd", "Dy"
-    market = Column(String(100), nullable=True)              # e.g. "china_spot", "USGS"
+    market = Column(String(100), nullable=True)  # e.g. "china_spot", "USGS"
     observed_on = Column(Date, nullable=False, index=True)
     price = Column(Float, nullable=False)
     currency = Column(String(8), nullable=False, default="USD")
     unit = Column(String(16), nullable=False, default="kg")  # mass unit (kg, t, lb, ozt, ...)
-    source = Column(String(255), nullable=True)              # provenance: where it came from
+    source = Column(String(255), nullable=True)  # provenance: where it came from
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
-    __table_args__ = (
-        Index("ix_commodity_symbol_date", "symbol", "observed_on"),
-    )
+    __table_args__ = (Index("ix_commodity_symbol_date", "symbol", "observed_on"),)
 
     def __repr__(self) -> str:
         return f"<CommodityPrice({self.symbol} {self.observed_on} {self.price} {self.currency}/{self.unit})>"
@@ -1149,24 +1196,27 @@ class MarketExtractionRule(Base):
     __tablename__ = "market_extraction_rules"
 
     id = Column(Integer, primary_key=True)
-    source_id = Column(Integer, ForeignKey("sources.id", ondelete="CASCADE"),
-                       nullable=False, index=True)
+    source_id = Column(
+        Integer, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     # Which Markets sub-view this instrument belongs to.
     category = Column(String(20), nullable=False, default="commodity")  # financial|stock|commodity
     symbol = Column(String(32), nullable=False, index=True)  # e.g. "Nd", "AAPL", "XAU"
-    label = Column(String(120))                              # human name, e.g. "Neodymium spot"
-    url = Column(String(1000), nullable=False)               # the exact page to fetch
-    selector = Column(String(500), nullable=False)           # CSS selector locating the price
-    attribute = Column(String(100))                          # optional: read this attr, not text
-    value_regex = Column(String(300))                        # optional: capture-group regex for the number
+    label = Column(String(120))  # human name, e.g. "Neodymium spot"
+    url = Column(String(1000), nullable=False)  # the exact page to fetch
+    selector = Column(String(500), nullable=False)  # CSS selector locating the price
+    attribute = Column(String(100))  # optional: read this attr, not text
+    value_regex = Column(String(300))  # optional: capture-group regex for the number
     currency = Column(String(8), nullable=False, default="USD")
     unit = Column(String(16), nullable=False, default="kg")  # mass unit for commodities
-    market = Column(String(100))                             # market label / provenance
+    market = Column(String(100))  # market label / provenance
     enabled = Column(Boolean, default=True)
     last_run_at = Column(DateTime)
-    last_status = Column(String(255))                        # honest last outcome string
+    last_status = Column(String(255))  # honest last outcome string
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
     source = relationship("Source")
 
@@ -1196,14 +1246,12 @@ class KeywordFamilyOverride(Base):
 
     id = Column(Integer, primary_key=True)
     normalized_term = Column(String(255), nullable=False, unique=True, index=True)
-    family_key = Column(String(255), nullable=False)      # forms sharing this key = one family
-    canonical_label = Column(String(255))                  # preferred display label for the family
-    kind = Column(String(40))                              # cached kind for display
+    family_key = Column(String(255), nullable=False)  # forms sharing this key = one family
+    canonical_label = Column(String(255))  # preferred display label for the family
+    kind = Column(String(40))  # cached kind for display
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
-    __table_args__ = (
-        Index("ix_kwfam_family_key", "family_key"),
-    )
+    __table_args__ = (Index("ix_kwfam_family_key", "family_key"),)
 
     def __repr__(self) -> str:
         return f"<KeywordFamilyOverride({self.normalized_term} -> {self.family_key})>"
@@ -1224,11 +1272,12 @@ class KeywordSuperGroup(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String(120), nullable=False, unique=True)
-    color = Column(String(16))                          # optional UI accent (hex)
+    color = Column(String(16))  # optional UI accent (hex)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
-    members = relationship("KeywordSuperGroupMember", back_populates="supergroup",
-                           cascade="all, delete-orphan")
+    members = relationship(
+        "KeywordSuperGroupMember", back_populates="supergroup", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<KeywordSuperGroup({self.name})>"
@@ -1240,8 +1289,9 @@ class KeywordSuperGroupMember(Base):
     __tablename__ = "keyword_supergroup_members"
 
     id = Column(Integer, primary_key=True)
-    supergroup_id = Column(Integer, ForeignKey("keyword_supergroups.id", ondelete="CASCADE"),
-                           nullable=False)
+    supergroup_id = Column(
+        Integer, ForeignKey("keyword_supergroups.id", ondelete="CASCADE"), nullable=False
+    )
     normalized_term = Column(String(255), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
@@ -1275,10 +1325,10 @@ class KeywordMention(Base):
     keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
     article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
     count = Column(Integer, nullable=False, default=1)
-    first_offset = Column(Integer)                 # char offset in Article.content
-    observed_on = Column(Date, index=True)         # denormalised article date (for trends)
-    country = Column(String(2))                    # denormalised source country (for the map)
-    city = Column(String(120))                     # denormalised source city, when known
+    first_offset = Column(Integer)  # char offset in Article.content
+    observed_on = Column(Date, index=True)  # denormalised article date (for trends)
+    country = Column(String(2))  # denormalised source country (for the map)
+    city = Column(String(120))  # denormalised source city, when known
     extractor = Column(String(40))
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
@@ -1310,14 +1360,14 @@ class WikiPage(Base):
     __tablename__ = "wiki_pages"
 
     id = Column(Integer, primary_key=True)
-    wiki = Column(String(16), nullable=False)          # language edition code, e.g. "en"
+    wiki = Column(String(16), nullable=False)  # language edition code, e.g. "en"
     title = Column(String(512), nullable=False)
-    pageid = Column(Integer)                            # MediaWiki page id
+    pageid = Column(Integer)  # MediaWiki page id
     watched = Column(Boolean, default=True)
-    category = Column(String(255))                     # optional grouping (e.g. a watchlist name)
-    baseline_revid = Column(Integer)                   # revid the baseline_text corresponds to
-    baseline_text = Column(CompressedText)             # one full snapshot; later versions = baseline + diffs
-    last_revid = Column(Integer)                       # newest revid we have stored
+    category = Column(String(255))  # optional grouping (e.g. a watchlist name)
+    baseline_revid = Column(Integer)  # revid the baseline_text corresponds to
+    baseline_text = Column(CompressedText)  # one full snapshot; later versions = baseline + diffs
+    last_revid = Column(Integer)  # newest revid we have stored
     last_checked_at = Column(DateTime)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
@@ -1353,12 +1403,12 @@ class WikiRevision(Base):
     editor = Column(String(255))
     editor_anon = Column(Boolean, default=False)
     comment = Column(Text)
-    size = Column(Integer)                  # new article size in bytes
-    delta_bytes = Column(Integer)           # size - parent size (signed)
-    tags = Column(String(500))              # MediaWiki change tags, comma-separated
+    size = Column(Integer)  # new article size in bytes
+    delta_bytes = Column(Integer)  # size - parent size (signed)
+    tags = Column(String(500))  # MediaWiki change tags, comma-separated
     minor = Column(Boolean, default=False)
     bot = Column(Boolean, default=False)
-    diff = Column(CompressedText)           # added/removed text for this edit
+    diff = Column(CompressedText)  # added/removed text for this edit
 
     # ORES (Wikimedia) model scores -- attributed, optional enrichment.
     ores_damaging = Column(Float)
@@ -1367,7 +1417,7 @@ class WikiRevision(Base):
 
     # Honest large-edit detection computed at ingest.
     flagged = Column(Boolean, default=False)
-    flag_reasons = Column(String(500))      # comma-separated reason codes
+    flag_reasons = Column(String(500))  # comma-separated reason codes
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     page = relationship("WikiPage", back_populates="revisions")
@@ -1399,19 +1449,19 @@ class LawDocument(Base):
     __tablename__ = "law_documents"
 
     id = Column(Integer, primary_key=True)
-    jurisdiction = Column(String(8), nullable=False)   # ISO-ish code: uk, eu, fr, us, int…
+    jurisdiction = Column(String(8), nullable=False)  # ISO-ish code: uk, eu, fr, us, int…
     title = Column(String(512), nullable=False)
-    url = Column(String(1000), nullable=False)         # the page we fetch (consolidated text)
-    official_url = Column(String(1000))                # canonical official link (may equal url)
+    url = Column(String(1000), nullable=False)  # the page we fetch (consolidated text)
+    official_url = Column(String(1000))  # canonical official link (may equal url)
     category = Column(String(40), default="legislation")  # legislation|gazette|ip|case-law
-    consolidated = Column(Boolean, default=False)      # point-in-time consolidation vs raw fetch
+    consolidated = Column(Boolean, default=False)  # point-in-time consolidation vs raw fetch
     watched = Column(Boolean, default=True)
-    baseline_text = Column(CompressedText)             # one full snapshot; later = baseline + diffs
+    baseline_text = Column(CompressedText)  # one full snapshot; later = baseline + diffs
     baseline_hash = Column(String(64))
-    last_hash = Column(String(64))                     # content hash at last successful fetch
+    last_hash = Column(String(64))  # content hash at last successful fetch
     last_size = Column(Integer)
     last_checked_at = Column(DateTime)
-    last_status = Column(String(255))                  # honest last outcome (ok / fetch error / …)
+    last_status = Column(String(255))  # honest last outcome (ok / fetch error / …)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     revisions = relationship("LawRevision", back_populates="document", cascade="all, delete-orphan")
@@ -1437,12 +1487,14 @@ class LawRevision(Base):
     __tablename__ = "law_revisions"
 
     id = Column(Integer, primary_key=True)
-    document_id = Column(Integer, ForeignKey("law_documents.id", ondelete="CASCADE"), nullable=False)
+    document_id = Column(
+        Integer, ForeignKey("law_documents.id", ondelete="CASCADE"), nullable=False
+    )
     observed_at = Column(DateTime, index=True)
     content_hash = Column(String(64), nullable=False)
     size = Column(Integer)
-    delta_bytes = Column(Integer)                      # size - previous size (signed)
-    diff = Column(CompressedText)                      # added/removed text for this change
+    delta_bytes = Column(Integer)  # size - previous size (signed)
+    diff = Column(CompressedText)  # added/removed text for this change
     flagged = Column(Boolean, default=False)
     flag_reasons = Column(String(500))
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
@@ -1459,18 +1511,18 @@ class LawRevision(Base):
         return f"<LawRevision(doc={self.document_id} d={self.delta_bytes})>"
 
 
-
 # Example usage
 if __name__ == "__main__":
     # Test database connection and table creation
     init_db()
     session = get_session()
-    
+
     # Check if tables exist
     from sqlalchemy.inspection import inspect
+
     inspector = inspect(engine)
     tables = inspector.get_table_names()
     print(f"Tables in database: {tables}")
-    
+
     session.close()
     print("Database setup complete. Tables created if they didn't exist.")

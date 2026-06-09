@@ -111,28 +111,41 @@ def import_points(
     genuinely new dates rather than duplicating the series.
     """
     existing = {
-        d for (d,) in session.query(CommodityPrice.observed_on)
-        .filter_by(symbol=symbol, market=market).all()
+        d
+        for (d,) in session.query(CommodityPrice.observed_on)
+        .filter_by(symbol=symbol, market=market)
+        .all()
     }
     imported = 0
     for observed, value in points:
         if observed in existing:
             continue
         existing.add(observed)
-        session.add(CommodityPrice(
-            symbol=symbol, market=market, observed_on=observed,
-            price=value, currency=currency, unit=unit, source=source,
-        ))
+        session.add(
+            CommodityPrice(
+                symbol=symbol,
+                market=market,
+                observed_on=observed,
+                price=value,
+                currency=currency,
+                unit=unit,
+                source=source,
+            )
+        )
         imported += 1
     session.commit()
-    return {"symbol": symbol, "imported": imported,
-            "skipped_existing": len(points) - imported, "received": len(points)}
+    return {
+        "symbol": symbol,
+        "imported": imported,
+        "skipped_existing": len(points) - imported,
+        "received": len(points),
+    }
 
 
 @dataclass
 class FeedImportResult:
     symbol: str
-    status: str            # imported | fetch_failed | parse_failed
+    status: str  # imported | fetch_failed | parse_failed
     imported: int = 0
     skipped_existing: int = 0
     received: int = 0
@@ -141,9 +154,13 @@ class FeedImportResult:
 
     def to_dict(self) -> dict:
         return {
-            "symbol": self.symbol, "status": self.status, "imported": self.imported,
-            "skipped_existing": self.skipped_existing, "received": self.received,
-            "parse_errors": self.parse_errors, "detail": self.detail,
+            "symbol": self.symbol,
+            "status": self.status,
+            "imported": self.imported,
+            "skipped_existing": self.skipped_existing,
+            "received": self.received,
+            "parse_errors": self.parse_errors,
+            "detail": self.detail,
         }
 
 
@@ -175,25 +192,39 @@ def import_feed(
         return FeedImportResult(symbol, "fetch_failed", detail=f"{type(exc).__name__}: {exc}")
 
     try:
-        parsed = parse_series_csv(fetched.content, date_column=date_column, value_column=value_column)
+        parsed = parse_series_csv(
+            fetched.content, date_column=date_column, value_column=value_column
+        )
     except Exception as exc:  # noqa: BLE001 - a malformed feed must not abort the batch
         return FeedImportResult(symbol, "parse_failed", detail=f"{type(exc).__name__}: {exc}")
     if not parsed.points:
         return FeedImportResult(
-            symbol, "parse_failed", parse_errors=len(parsed.errors),
+            symbol,
+            "parse_failed",
+            parse_errors=len(parsed.errors),
             detail="; ".join(parsed.errors[:3]) or "no usable rows in feed",
         )
 
     try:
         res = import_points(
-            session, symbol=symbol, points=parsed.points, currency=currency,
-            unit=unit, market=market, source=source or f"csv-feed:{fetched.final_url}",
+            session,
+            symbol=symbol,
+            points=parsed.points,
+            currency=currency,
+            unit=unit,
+            market=market,
+            source=source or f"csv-feed:{fetched.final_url}",
         )
     except Exception as exc:  # noqa: BLE001 - keep the session usable for the rest of the batch
         session.rollback()
-        return FeedImportResult(symbol, "parse_failed", detail=f"store error: {type(exc).__name__}: {exc}")
+        return FeedImportResult(
+            symbol, "parse_failed", detail=f"store error: {type(exc).__name__}: {exc}"
+        )
     return FeedImportResult(
-        symbol, "imported", imported=res["imported"],
-        skipped_existing=res["skipped_existing"], received=res["received"],
+        symbol,
+        "imported",
+        imported=res["imported"],
+        skipped_existing=res["skipped_existing"],
+        received=res["received"],
         parse_errors=len(parsed.errors),
     )

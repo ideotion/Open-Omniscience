@@ -37,9 +37,14 @@ def load_calendars() -> list[dict]:
     out = []
     for c in _raw().get("calendars", []):
         if isinstance(c, dict) and c.get("key"):
-            out.append({"key": str(c["key"]), "name": str(c.get("name", c["key"])),
-                        "category": str(c.get("category", "other")),
-                        "description": c.get("description")})
+            out.append(
+                {
+                    "key": str(c["key"]),
+                    "name": str(c.get("name", c["key"])),
+                    "category": str(c.get("category", "other")),
+                    "description": c.get("description"),
+                }
+            )
     return out
 
 
@@ -51,20 +56,22 @@ def load_events() -> list[dict]:
         if not (isinstance(e, dict) and e.get("title") and e.get("official_url")):
             continue
         tags = [str(t) for t in (e.get("tags") or []) if t]
-        out.append({
-            "title": str(e["title"]),
-            "calendar": str(e.get("calendar", "other")),
-            "category": str(e.get("category", "other")),
-            "country": e.get("country"),
-            "region": e.get("region"),
-            "cadence": str(e.get("cadence", "annual")),
-            "month": e.get("month"),
-            "day": e.get("day"),
-            "confirmed": bool(e.get("confirmed", False)),
-            "official_url": str(e["official_url"]),
-            "tags": tags,
-            "note": e.get("note"),
-        })
+        out.append(
+            {
+                "title": str(e["title"]),
+                "calendar": str(e.get("calendar", "other")),
+                "category": str(e.get("category", "other")),
+                "country": e.get("country"),
+                "region": e.get("region"),
+                "cadence": str(e.get("cadence", "annual")),
+                "month": e.get("month"),
+                "day": e.get("day"),
+                "confirmed": bool(e.get("confirmed", False)),
+                "official_url": str(e["official_url"]),
+                "tags": tags,
+                "note": e.get("note"),
+            }
+        )
     return out
 
 
@@ -82,9 +89,14 @@ def _next_occurrence(month: int | None, day: int | None, today: date) -> str | N
     return None
 
 
-def agenda(*, category: str | None = None, calendar: str | None = None,
-           country: str | None = None, tag: str | None = None,
-           today: date | None = None) -> list[dict]:
+def agenda(
+    *,
+    category: str | None = None,
+    calendar: str | None = None,
+    country: str | None = None,
+    tag: str | None = None,
+    today: date | None = None,
+) -> list[dict]:
     """Events matching the given facets, enriched with ``next_occurrence``, soonest-first.
 
     All facets are AND-combined; any omitted facet is a wildcard. Fixed-date events are

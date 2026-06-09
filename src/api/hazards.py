@@ -28,13 +28,16 @@ _FEEDS = {
     "gdacs": "https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP",
 }
 
-_CAVEAT = ("Live relay of official open hazard feeds (USGS, GDACS) — space-time-stamped, "
-           "severity from the provider's own scale. It shows what a watched source "
-           "reported, not everything that is happening; silence is not safety.")
+_CAVEAT = (
+    "Live relay of official open hazard feeds (USGS, GDACS) — space-time-stamped, "
+    "severity from the provider's own scale. It shows what a watched source "
+    "reported, not everything that is happening; silence is not safety."
+)
 
 
-def fetch_hazards(source: str = "all",
-                  min_magnitude: float | None = None) -> tuple[list[dict], list[str]]:
+def fetch_hazards(
+    source: str = "all", min_magnitude: float | None = None
+) -> tuple[list[dict], list[str]]:
     """Fetch + parse the open hazard feeds. Returns ``(records, failures)``.
 
     The reusable core of the relay — the route below wraps it, and the temporal map
@@ -55,7 +58,7 @@ def fetch_hazards(source: str = "all",
             items.extend(rows)
         except Exception as exc:  # noqa: BLE001 - one bad feed must not 500 the relay
             failures.append(f"{key}: {type(exc).__name__}: {exc}")
-    items.sort(key=lambda h: (h.get("time") or ""), reverse=True)
+    items.sort(key=lambda h: h.get("time") or "", reverse=True)
     return items, failures
 
 

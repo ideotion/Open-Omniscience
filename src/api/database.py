@@ -85,7 +85,9 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
     for label, tbl in _COUNTED_TABLES.items():
         if tbl in present:
             # COUNT(*) over a table named from our own fixed map (never user input).
-            counts[label] = int(db.execute(select(func.count()).select_from(table(tbl))).scalar() or 0)
+            counts[label] = int(
+                db.execute(select(func.count()).select_from(table(tbl))).scalar() or 0
+            )
 
     backend = engine.url.get_backend_name()
     from src.backup.sqlite_backup import is_sqlite

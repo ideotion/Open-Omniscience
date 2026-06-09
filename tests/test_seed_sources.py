@@ -37,8 +37,9 @@ sources:
 
 
 def _session():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
@@ -57,11 +58,11 @@ def test_seed_maps_rich_fields_and_tags_list(tmp_path):
     s = _session()
     seed_sources(s, rows)
     one = s.query(Source).filter_by(domain="one.example").one()
-    assert one.tags == "a,b"            # list joined to CSV
-    assert one.reliability_score == 9   # rich field mapped
+    assert one.tags == "a,b"  # list joined to CSV
+    assert one.reliability_score == 9  # rich field mapped
     assert one.language == "en" and one.country == "US"
     two = s.query(Source).filter_by(domain="two.example").one()
-    assert two.tags == "single"         # scalar tag preserved
+    assert two.tags == "single"  # scalar tag preserved
     s.close()
 
 
@@ -97,8 +98,9 @@ def test_seed_default_catalog_dedupes_by_domain():
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'seed.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'seed.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
 

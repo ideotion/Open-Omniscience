@@ -53,8 +53,9 @@ def test_parse_requires_date_and_price():
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'csv.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'csv.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
 
@@ -73,8 +74,9 @@ def client(tmp_path):
 
 def test_import_csv_endpoint(client):
     c, Sess = client
-    r = c.post("/api/commodities/Nd/prices/import-csv",
-               files={"file": ("prices.csv", _CSV, "text/csv")})
+    r = c.post(
+        "/api/commodities/Nd/prices/import-csv", files={"file": ("prices.csv", _CSV, "text/csv")}
+    )
     assert r.status_code == 200, r.text
     assert r.json()["imported"] == 2
     with Sess() as s:
@@ -83,6 +85,7 @@ def test_import_csv_endpoint(client):
 
 def test_import_csv_bad_file_400(client):
     c, _ = client
-    r = c.post("/api/commodities/Nd/prices/import-csv",
-               files={"file": ("x.csv", "nope\n1\n", "text/csv")})
+    r = c.post(
+        "/api/commodities/Nd/prices/import-csv", files={"file": ("x.csv", "nope\n1\n", "text/csv")}
+    )
     assert r.status_code == 400

@@ -69,5 +69,10 @@ def flag_revision(
         reasons.append("ores_damaging")
 
     # A flagged-by-tag/score edit stands even if small; size reasons need real size.
-    flagged = bool(reasons) and not (minor and abs(d) < MEDIUM_CHANGE_BYTES and not (tagset & (_REVERT_TAGS | _BLANK_TAGS)) and ores_damaging is None)
+    flagged = bool(reasons) and not (
+        minor
+        and abs(d) < MEDIUM_CHANGE_BYTES
+        and not (tagset & (_REVERT_TAGS | _BLANK_TAGS))
+        and ores_damaging is None
+    )
     return FlagResult(flagged=flagged, reasons=reasons if flagged else [])

@@ -21,7 +21,7 @@ from src.database.models import Article, ArticleMentionedDate
 from src.timemap.dateextract import extract_dates
 
 VALID_STATUS = ("candidate", "confirmed", "rejected")
-_CONFIDENCE = {"day": 0.9, "month": 0.7}      # regex extractor: explicit day is firmer than month
+_CONFIDENCE = {"day": 0.9, "month": 0.7}  # regex extractor: explicit day is firmer than month
 
 
 def _to_row(tag: ArticleMentionedDate) -> dict:
@@ -44,23 +44,28 @@ def store_for_article(db: Session, article: Article, *, today: date | None = Non
     """
     if article is None or not (article.content or "").strip():
         return 0
-    existing = {(t.mentioned_on.isoformat(), t.precision)
-                for t in db.query(ArticleMentionedDate)
-                .filter(ArticleMentionedDate.article_id == article.id).all()}
+    existing = {
+        (t.mentioned_on.isoformat(), t.precision)
+        for t in db.query(ArticleMentionedDate)
+        .filter(ArticleMentionedDate.article_id == article.id)
+        .all()
+    }
     added = 0
     for c in extract_dates(article.content, today=today):
         key = (c["date"], c["precision"])
         if key in existing:
             continue
-        db.add(ArticleMentionedDate(
-            article_id=article.id,
-            mentioned_on=date.fromisoformat(c["date"]),
-            precision=c["precision"],
-            snippet=c["text"][:300],
-            confidence=_CONFIDENCE.get(c["precision"], 0.5),
-            extractor="dateextract",
-            status="candidate",
-        ))
+        db.add(
+            ArticleMentionedDate(
+                article_id=article.id,
+                mentioned_on=date.fromisoformat(c["date"]),
+                precision=c["precision"],
+                snippet=c["text"][:300],
+                confidence=_CONFIDENCE.get(c["precision"], 0.5),
+                extractor="dateextract",
+                status="candidate",
+            )
+        )
         existing.add(key)
         added += 1
     if added:
@@ -68,8 +73,9 @@ def store_for_article(db: Session, article: Article, *, today: date | None = Non
     return added
 
 
-def index_recent(db: Session, *, days: int | None = None, limit: int = 500,
-                 today: date | None = None) -> dict:
+def index_recent(
+    db: Session, *, days: int | None = None, limit: int = 500, today: date | None = None
+) -> dict:
     """Extract+store date tags for recent articles. Returns scan/coverage counts."""
     from datetime import datetime, timedelta
 
@@ -83,17 +89,24 @@ def index_recent(db: Session, *, days: int | None = None, limit: int = 500,
         if added:
             new_tags += added
         # count articles that now carry at least one tag (cheap: any added, or pre-existing)
-        if added or db.query(ArticleMentionedDate.id).filter(
-                ArticleMentionedDate.article_id == art.id).first():
+        if (
+            added
+            or db.query(ArticleMentionedDate.id)
+            .filter(ArticleMentionedDate.article_id == art.id)
+            .first()
+        ):
             with_dates += 1
     return {"scanned": scanned, "articles_with_dates": with_dates, "new_tags": new_tags}
 
 
 def for_article(db: Session, article_id: int) -> list[dict]:
     """All date tags on an article, soonest-first."""
-    rows = (db.query(ArticleMentionedDate)
-            .filter(ArticleMentionedDate.article_id == article_id)
-            .order_by(ArticleMentionedDate.mentioned_on.asc()).all())
+    rows = (
+        db.query(ArticleMentionedDate)
+        .filter(ArticleMentionedDate.article_id == article_id)
+        .order_by(ArticleMentionedDate.mentioned_on.asc())
+        .all()
+    )
     return [_to_row(t) for t in rows]
 
 
@@ -109,25 +122,39 @@ def set_status(db: Session, tag_id: int, status: str) -> dict | None:
     return _to_row(tag)
 
 
-def articles_for_date(db: Session, *, date_str: str, precision: str | None = None,
-                      status: str | None = None, limit: int = 100) -> list[dict]:
+def articles_for_date(
+    db: Session,
+    *,
+    date_str: str,
+    precision: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
     """Articles that mention a given date — the corpus-filter payoff of date tags."""
     try:
         on = date.fromisoformat(date_str)
     except (TypeError, ValueError):
         return []
-    q = (db.query(ArticleMentionedDate, Article)
-         .join(Article, Article.id == ArticleMentionedDate.article_id)
-         .filter(ArticleMentionedDate.mentioned_on == on))
+    q = (
+        db.query(ArticleMentionedDate, Article)
+        .join(Article, Article.id == ArticleMentionedDate.article_id)
+        .filter(ArticleMentionedDate.mentioned_on == on)
+    )
     if precision:
         q = q.filter(ArticleMentionedDate.precision == precision)
     if status:
         q = q.filter(ArticleMentionedDate.status == status)
     out = []
     for tag, art in q.limit(limit).all():
-        out.append({
-            "article_id": art.id, "title": art.title, "url": art.url,
-            "published_at": art.published_at.isoformat() if art.published_at else None,
-            "precision": tag.precision, "status": tag.status, "snippet": tag.snippet,
-        })
+        out.append(
+            {
+                "article_id": art.id,
+                "title": art.title,
+                "url": art.url,
+                "published_at": art.published_at.isoformat() if art.published_at else None,
+                "precision": tag.precision,
+                "status": tag.status,
+                "snippet": tag.snippet,
+            }
+        )
     return out

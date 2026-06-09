@@ -121,6 +121,7 @@ def test_unknown_algorithm_rejected():
 # tested even on machines without the post-quantum library.
 # --------------------------------------------------------------------------- #
 
+
 def test_hybrid_requires_pqc_to_verify_when_absent(tmp_path, monkeypatch):
     """A 'hybrid'-labelled signature must NOT pass on a verifier that cannot check
     the ML-DSA half. This is the exact bug we are guarding against."""

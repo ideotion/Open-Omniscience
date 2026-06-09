@@ -260,7 +260,9 @@ def ensure_fts(engine: Engine) -> None:
 _MAX_CANDIDATES = 20000
 
 
-def search_ids(session: Session, query: str | None, limit: int = _MAX_CANDIDATES) -> list[int] | None:
+def search_ids(
+    session: Session, query: str | None, limit: int = _MAX_CANDIDATES
+) -> list[int] | None:
     """Return article ids matching ``query``, ranked best-first (bm25).
 
     ``None`` means "no text constraint" (empty/positive-less query) -- distinct
@@ -270,10 +272,7 @@ def search_ids(session: Session, query: str | None, limit: int = _MAX_CANDIDATES
     if match is None:
         return None
     rows = session.execute(
-        text(
-            "SELECT rowid FROM article_fts WHERE article_fts MATCH :q "
-            "ORDER BY rank LIMIT :lim"
-        ),
+        text("SELECT rowid FROM article_fts WHERE article_fts MATCH :q ORDER BY rank LIMIT :lim"),
         {"q": match, "lim": limit},
     ).fetchall()
     return [r[0] for r in rows]

@@ -31,8 +31,10 @@ from src.reporting.evidence import verify_bundle
 
 
 def _html(title, body):
-    return (f"<html><head><title>{title}</title></head><body><article><h1>{title}</h1>"
-            f"<p>{(body + ' ') * 30}</p></article></body></html>")
+    return (
+        f"<html><head><title>{title}</title></head><body><article><h1>{title}</h1>"
+        f"<p>{(body + ' ') * 30}</p></article></body></html>"
+    )
 
 
 class _Resp:
@@ -56,31 +58,47 @@ class _NetSession:
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))  # evidence signing key under tmp
-    engine = create_engine(f"sqlite:///{tmp_path / 'wf.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'wf.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     ensure_fts(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
-        s.add(Source(name="Fixture", domain="127.0.0.1",
-                     rss_url="http://127.0.0.1/feed.xml", language="en"))
+        s.add(
+            Source(
+                name="Fixture",
+                domain="127.0.0.1",
+                rss_url="http://127.0.0.1/feed.xml",
+                language="en",
+            )
+        )
         s.commit()
 
-    feed = ("""<?xml version="1.0"?><rss version="2.0"><channel>
+    feed = """<?xml version="1.0"?><rss version="2.0"><channel>
       <item><title>Neodymium supply shock</title><link>http://127.0.0.1/a1</link></item>
-    </channel></rss>""")
+    </channel></rss>"""
     routes = {
         "http://127.0.0.1/robots.txt": _Resp(404, ""),
         "http://127.0.0.1/feed.xml": _Resp(200, feed, "application/rss+xml"),
-        "http://127.0.0.1/a1": _Resp(200, _html(
-            "Neodymium supply shock", "Rare earth neodymium prices surged amid export limits.")),
+        "http://127.0.0.1/a1": _Resp(
+            200,
+            _html(
+                "Neodymium supply shock", "Rare earth neodymium prices surged amid export limits."
+            ),
+        ),
     }
     fetcher = EthicalFetcher(min_interval_s=0.0, session=_NetSession(routes))
 
     def _llm_handler(request):
-        return httpx.Response(200, json={"response": "Neodymium prices surged after export limits."})
-    llm = OllamaClient(client=httpx.Client(transport=httpx.MockTransport(_llm_handler),
-                                           base_url="http://t"), base_url="http://t")
+        return httpx.Response(
+            200, json={"response": "Neodymium prices surged after export limits."}
+        )
+
+    llm = OllamaClient(
+        client=httpx.Client(transport=httpx.MockTransport(_llm_handler), base_url="http://t"),
+        base_url="http://t",
+    )
 
     def _db():
         db = Sess()

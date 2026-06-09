@@ -1,0 +1,147 @@
+src/catalog/coverage.py
+    F 19:0 coverage_report - C (11)
+src/catalog/csv_io.py
+    F 71:0 parse_sources_csv - D (26)
+src/catalog/normalize.py
+    F 61:0 to_entry - C (15)
+src/catalog/cities.py
+    F 90:0 parse_cities_sparql - C (13)
+src/hazards/parse.py
+    F 89:0 parse_gdacs - D (21)
+    F 59:0 parse_usgs - C (15)
+src/verification/metadata.py
+    F 74:0 extract_image_metadata - C (14)
+src/database/source_manager.py
+    M 914:4 SourceManager.add_discovered_sources - C (12)
+src/database/fts.py
+    F 165:0 _render - C (17)
+    M 109:4 _Parser._parse_and - C (12)
+src/database/async_db.py
+    M 630:4 AsyncQueryBuilder.build_article_query - C (12)
+src/config/settings.py
+    M 108:4 Config._load_env - E (35)
+src/awareness/framing.py
+    F 66:0 compare_framing - C (17)
+src/services/article_intelligence.py
+    M 142:4 ArticleIntelligenceAnalyzer.group_by_similarity - D (23)
+    M 83:4 ArticleIntelligenceAnalyzer.calculate_similarity - C (19)
+    C 46:0 ArticleIntelligenceAnalyzer - C (12)
+src/services/keyword_extractor.py
+    M 63:4 KeywordExtractor.extract_keywords - C (14)
+src/services/duckduckgo.py
+    M 279:4 DuckDuckGoSearch.discover_rss_feeds - D (21)
+src/services/link_analyzer/extractor.py
+    M 345:4 LinkExtractor._determine_link_type - D (29)
+    M 151:4 LinkExtractor._extract_link_from_element - C (19)
+    C 44:0 LinkExtractor - C (14)
+    M 230:4 LinkExtractor._extract_links_with_regex - C (14)
+    M 294:4 LinkExtractor.normalize_url - C (14)
+    M 425:4 LinkExtractor.filter_links - C (11)
+src/scraper/scraper.py
+    M 281:4 Scraper._parse_html - C (13)
+src/scraper/source_monitor.py
+    M 240:4 SourceMonitor.check_source_health - C (13)
+src/markets/extract.py
+    F 47:0 parse_number - C (16)
+    F 96:0 extract_price - C (13)
+src/markets/csv_feeds.py
+    F 59:0 parse_series_csv - C (11)
+src/wiki/dumps.py
+    M 117:4 DumpDownloadManager._download - C (12)
+src/wiki/flagging.py
+    F 38:0 flag_revision - C (18)
+src/wiki/track.py
+    F 50:0 update_page - D (23)
+src/commodity/csv_import.py
+    F 37:0 parse_price_csv - C (15)
+src/commodity/correlation.py
+    F 74:0 correlate_price_with_news - C (11)
+src/integrity/collapse.py
+    F 115:0 story_prominence - D (22)
+src/integrity/profile.py
+    F 36:0 source_profile - E (31)
+src/api/main.py
+    F 713:0 view_article - E (31)
+    F 631:0 export_articles - C (15)
+    F 463:0 _structured_filters - C (13)
+    F 1010:0 main - C (12)
+src/api/law.py
+    F 158:0 view_law_document - D (23)
+src/api/timemap.py
+    F 44:0 _hazard_signals - C (13)
+    F 131:0 list_signals - C (11)
+src/api/source_management.py
+    F 57:0 list_sources - D (25)
+    F 130:0 get_source - D (24)
+src/api/hazards.py
+    F 36:0 fetch_hazards - C (12)
+src/api/database.py
+    F 123:0 sources_by_country - C (13)
+src/api/source_io.py
+    F 50:0 list_sources - C (17)
+src/api/link_analysis.py
+    F 103:0 articles_by_link - C (11)
+src/custody/settings.py
+    F 112:0 save_settings - C (11)
+src/custody/signing.py
+    F 266:0 verify - C (17)
+src/briefing/producers.py
+    F 711:0 story_lineage - C (18)
+    F 217:0 price_narrative - C (16)
+    F 270:0 stale_data - C (15)
+    F 665:0 model_legislation - C (13)
+    F 116:0 framing_split - C (12)
+    F 371:0 echo_chamber - C (12)
+src/briefing/draft.py
+    F 113:0 export_markdown - C (15)
+src/events/dedup.py
+    F 47:0 dedup - C (12)
+src/events/catalog.py
+    F 85:0 agenda - C (15)
+src/signals/concentration.py
+    F 103:0 concentration - C (12)
+src/signals/coordination.py
+    F 123:0 detect_coordination - E (35)
+src/annotations/store.py
+    F 181:0 aggregate_for_target - C (13)
+src/timemap/collect.py
+    F 68:0 article_mentions_to_signals - C (11)
+    F 119:0 articles_to_signals - C (11)
+src/timemap/dateextract.py
+    F 60:0 extract_dates - C (16)
+src/personality/catalog.py
+    F 23:0 load_catalog - C (12)
+src/ingest/seed_sources.py
+    F 71:0 _to_source_kwargs - C (12)
+src/ingest/__init__.py
+    M 253:4 EthicalFetcher._read_body - D (21)
+src/ingest/crawl.py
+    F 113:0 crawl_source - C (18)
+src/ingest/pipeline.py
+    F 161:0 _maybe_index_links - C (14)
+src/backup/sqlite_backup.py
+    F 96:0 validate_sqlite_file - C (12)
+src/law/track.py
+    F 60:0 track_document - C (12)
+src/law/catalog.py
+    F 27:0 load_legal_catalog - C (12)
+src/ingestor/normalizer.py
+    M 659:4 ArticleNormalizer.normalize - C (15)
+src/ingestor/pipeline.py
+    M 150:4 IngestionPipeline.ingest_source - D (22)
+src/analysis/statistical_tests.py
+    M 352:4 StatisticalTests.one_way_anova - C (11)
+src/analytics/extract.py
+    M 144:4 BaselineExtractor._entities - D (30)
+    M 223:4 BaselineExtractor._terms - C (15)
+    C 130:0 BaselineExtractor - C (12)
+src/analytics/filters.py
+    F 82:0 save_settings - C (12)
+src/analytics/queries.py
+    F 165:0 trending - C (12)
+    F 248:0 associations - C (12)
+    F 220:0 _group_pairs - C (11)
+src/analytics/families.py
+    F 111:0 build_families - E (31)
+src/analytics/store.py
+    F 51:0 index_article - C (15)

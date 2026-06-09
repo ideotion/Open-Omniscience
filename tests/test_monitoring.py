@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from src.ingest import EthicalFetcher, FetchFailed
+from src.ingest import EthicalFetcher
 from src.monitoring.anomaly import volume_anomalies
 from src.monitoring.health import HealthStatus, check_source
 
@@ -43,6 +43,7 @@ class _Src:
 
 def _fetcher(routes):
     import requests
+
     sess = _Session(routes)
     # _Session.get raises requests exceptions for the error case below
     return EthicalFetcher(min_interval_s=0.0, session=sess), requests
@@ -81,8 +82,11 @@ def test_health_blocked_by_robots():
 
 def test_health_down_on_network_error():
     import requests
-    routes = {"https://err.example/robots.txt": _Resp(404, ""),
-              "https://err.example": requests.ConnectionError("refused")}
+
+    routes = {
+        "https://err.example/robots.txt": _Resp(404, ""),
+        "https://err.example": requests.ConnectionError("refused"),
+    }
     f, _ = _fetcher(routes)
     h = check_source(_Src(4, "Err", "err.example"), fetcher=f)
     assert h.status is HealthStatus.DOWN
@@ -91,6 +95,7 @@ def test_health_down_on_network_error():
 # --------------------------------------------------------------------------- #
 # anomalies
 # --------------------------------------------------------------------------- #
+
 
 def test_anomaly_flags_spike():
     counts = {date(2026, 1, d): 2 for d in range(1, 11)}

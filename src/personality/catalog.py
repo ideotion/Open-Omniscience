@@ -27,13 +27,19 @@ def load_catalog(path: Path | None = None) -> dict[str, list[dict]]:
         return {"quotes": [], "fun_facts": []}
     data = yaml.safe_load(p.read_text("utf-8")) or {}
     quotes = [
-        {"text": str(q["text"]), "author": q.get("author"), "source": q.get("source"),
-         "attribution": q.get("attribution", "confirmed")}
-        for q in (data.get("quotes") or []) if isinstance(q, dict) and q.get("text")
+        {
+            "text": str(q["text"]),
+            "author": q.get("author"),
+            "source": q.get("source"),
+            "attribution": q.get("attribution", "confirmed"),
+        }
+        for q in (data.get("quotes") or [])
+        if isinstance(q, dict) and q.get("text")
     ]
     facts = [
         {"text": str(f["text"]), "source": f.get("source")}
-        for f in (data.get("fun_facts") or []) if isinstance(f, dict) and f.get("text")
+        for f in (data.get("fun_facts") or [])
+        if isinstance(f, dict) and f.get("text")
     ]
     return {"quotes": quotes, "fun_facts": facts}
 

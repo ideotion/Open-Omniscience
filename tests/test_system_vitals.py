@@ -20,13 +20,13 @@ def test_activity_monitor_tracks_current_bytes_and_completion():
 
     before = activity_monitor.snapshot()["bytes_total"]
     activity_monitor.fetch_bytes(5000)
-    activity_monitor.fetch_bytes(-7)   # non-positive deltas are ignored
+    activity_monitor.fetch_bytes(-7)  # non-positive deltas are ignored
     activity_monitor.fetch_bytes(0)
     activity_monitor.fetch_finished()
 
     after = activity_monitor.snapshot()
-    assert after["current_fetch"] is None          # cleared on completion
-    assert after["bytes_total"] == before + 5000   # only the real bytes counted
+    assert after["current_fetch"] is None  # cleared on completion
+    assert after["bytes_total"] == before + 5000  # only the real bytes counted
     assert after["last_url"].endswith("article-9")
 
 

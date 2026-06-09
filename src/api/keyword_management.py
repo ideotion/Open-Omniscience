@@ -31,7 +31,6 @@ Author: Open Omniscience Team
 from fastapi import APIRouter, HTTPException, Query, Request
 
 # Import database models and session
-
 # Import services
 from src.services.keyword_extractor import keyword_extractor
 from src.services.text_processor import text_processor
@@ -56,18 +55,17 @@ def extract_keywords(
     language: str = Query("en", description="Language code"),
     include_ngrams: bool = Query(True, description="Whether to include n-grams"),
     min_frequency: int | None = Query(None, description="Minimum frequency for keywords"),
-    top_n: int | None = Query(None, description="Number of top keywords to return")
+    top_n: int | None = Query(None, description="Number of top keywords to return"),
 ):
     """Extract keywords from text."""
     try:
         result = keyword_extractor.extract_keywords(
-            text, language=language, include_ngrams=include_ngrams,
-            min_frequency=min_frequency
+            text, language=language, include_ngrams=include_ngrams, min_frequency=min_frequency
         )
-        
+
         if top_n:
             result["keywords"] = result["keywords"][:top_n]
-        
+
         return {"success": True, "result": result}
     except Exception as e:
         logger.error(f"Error extracting keywords: {e}")
@@ -81,7 +79,7 @@ def extract_article_keywords(
     article_text: str = Query(..., description="Article content"),
     title: str | None = Query("", description="Article title"),
     language: str = Query("en", description="Language code"),
-    title_weight: float = Query(2.0, description="Weight for title keywords")
+    title_weight: float = Query(2.0, description="Weight for title keywords"),
 ):
     """Extract keywords from an article with title weighting."""
     try:
@@ -109,8 +107,7 @@ def get_keyword_categories(request: Request):
 @router.get("/categorize", response_model=dict)
 @limiter.limit("100/hour")
 def categorize_keywords(
-    request: Request,
-    keywords: list[str] = Query(..., description="List of keywords to categorize")
+    request: Request, keywords: list[str] = Query(..., description="List of keywords to categorize")
 ):
     """Categorize a list of keywords."""
     try:
@@ -128,7 +125,7 @@ def get_top_keywords(
     text: str = Query(..., description="Text to analyze"),
     language: str = Query("en", description="Language code"),
     top_n: int = Query(10, description="Number of top keywords"),
-    include_scores: bool = Query(False, description="Whether to include relevance scores")
+    include_scores: bool = Query(False, description="Whether to include relevance scores"),
 ):
     """Get top N keywords from text."""
     try:
@@ -149,13 +146,16 @@ def extract_key_phrases(
     language: str = Query("en", description="Language code"),
     min_phrase_length: int = Query(2, description="Minimum phrase length"),
     max_phrase_length: int = Query(5, description="Maximum phrase length"),
-    top_n: int = Query(10, description="Number of top phrases")
+    top_n: int = Query(10, description="Number of top phrases"),
 ):
     """Extract key phrases from text."""
     try:
         phrases = keyword_extractor.extract_key_phrases(
-            text, language=language, min_phrase_length=min_phrase_length,
-            max_phrase_length=max_phrase_length, top_n=top_n
+            text,
+            language=language,
+            min_phrase_length=min_phrase_length,
+            max_phrase_length=max_phrase_length,
+            top_n=top_n,
         )
         return {"success": True, "phrases": phrases}
     except Exception as e:
@@ -168,7 +168,7 @@ def extract_key_phrases(
 def get_keyword_statistics(
     request: Request,
     text: str = Query(..., description="Text to analyze"),
-    language: str = Query("en", description="Language code")
+    language: str = Query("en", description="Language code"),
 ):
     """Get comprehensive keyword statistics for text."""
     try:
@@ -184,7 +184,7 @@ def get_keyword_statistics(
 def process_text(
     request: Request,
     text: str = Query(..., description="Text to process"),
-    language: str = Query("en", description="Language code")
+    language: str = Query("en", description="Language code"),
 ):
     """Process text through the complete pipeline."""
     try:
@@ -200,7 +200,7 @@ def process_text(
 def get_word_frequencies(
     request: Request,
     text: str = Query(..., description="Text to analyze"),
-    language: str = Query("en", description="Language code")
+    language: str = Query("en", description="Language code"),
 ):
     """Get word frequencies from text."""
     try:

@@ -29,7 +29,7 @@ def _when_key(e: dict) -> str:
     surfaced (see ``date_variants``) instead of producing two silent rows.
     """
     if e.get("next_occurrence"):
-        return e["next_occurrence"][5:7]           # MM
+        return e["next_occurrence"][5:7]  # MM
     if e.get("month"):
         return f"{int(e['month']):02d}"
     return e.get("cadence") or ""
@@ -69,11 +69,13 @@ def dedup(events: list[dict], cal_names: dict[str, str] | None = None) -> list[d
             d = _when_display(m)
             if d not in displays:
                 displays.append(d)
-        merged = {**canon,
-                  "sources": sources,
-                  "also_in": [cal_names.get(s, s) for s in sources if s != canon.get("calendar")],
-                  "duplicate_count": len(members)}
-        if len(displays) > 1:        # the feeds disagree on the date — surface, don't hide
+        merged = {
+            **canon,
+            "sources": sources,
+            "also_in": [cal_names.get(s, s) for s in sources if s != canon.get("calendar")],
+            "duplicate_count": len(members),
+        }
+        if len(displays) > 1:  # the feeds disagree on the date — surface, don't hide
             merged["date_variants"] = displays
         out.append(merged)
     return out

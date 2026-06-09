@@ -37,7 +37,7 @@ _LOG = logging.getLogger(__name__)
 class RuleOutcome:
     rule_id: int
     symbol: str
-    status: str          # stored_price | duplicate_price | no_match | fetch_failed | blocked_robots | robots_unavailable
+    status: str  # stored_price | duplicate_price | no_match | fetch_failed | blocked_robots | robots_unavailable
     value: float | None = None
     observed_on: str | None = None
     reason: str | None = None
@@ -45,9 +45,13 @@ class RuleOutcome:
 
     def to_dict(self) -> dict:
         return {
-            "rule_id": self.rule_id, "symbol": self.symbol, "status": self.status,
-            "value": self.value, "observed_on": self.observed_on,
-            "reason": self.reason, "raw_capture": self.raw_capture,
+            "rule_id": self.rule_id,
+            "symbol": self.symbol,
+            "status": self.status,
+            "value": self.value,
+            "observed_on": self.observed_on,
+            "reason": self.reason,
+            "raw_capture": self.raw_capture,
         }
 
 
@@ -56,7 +60,9 @@ def _record(rule: MarketExtractionRule, status: str) -> None:
     rule.last_status = status[:255]
 
 
-def run_rule(session: Session, rule: MarketExtractionRule, *, fetcher: EthicalFetcher) -> RuleOutcome:
+def run_rule(
+    session: Session, rule: MarketExtractionRule, *, fetcher: EthicalFetcher
+) -> RuleOutcome:
     """Fetch the rule's page and store one price point (and a raw capture) for today.
 
     Idempotent per day: a second run on the same date is reported as a duplicate
@@ -80,14 +86,17 @@ def run_rule(session: Session, rule: MarketExtractionRule, *, fetcher: EthicalFe
     raw_capture = raw.result.value
 
     result = extract_price(
-        fetched.content, selector=rule.selector,
-        attribute=rule.attribute, value_regex=rule.value_regex,
+        fetched.content,
+        selector=rule.selector,
+        attribute=rule.attribute,
+        value_regex=rule.value_regex,
     )
     if not result.ok:
         _record(rule, f"no_match: {result.reason}")
         session.commit()
-        return RuleOutcome(rule.id, rule.symbol, "no_match",
-                           reason=result.reason, raw_capture=raw_capture)
+        return RuleOutcome(
+            rule.id, rule.symbol, "no_match", reason=result.reason, raw_capture=raw_capture
+        )
 
     observed_on = fetched.fetched_at.date()
     exists = (
@@ -98,21 +107,41 @@ def run_rule(session: Session, rule: MarketExtractionRule, *, fetcher: EthicalFe
     if exists:
         _record(rule, f"duplicate_price: {result.value} already recorded for {observed_on}")
         session.commit()
-        return RuleOutcome(rule.id, rule.symbol, "duplicate_price", value=result.value,
-                           observed_on=observed_on.isoformat(), raw_capture=raw_capture)
+        return RuleOutcome(
+            rule.id,
+            rule.symbol,
+            "duplicate_price",
+            value=result.value,
+            observed_on=observed_on.isoformat(),
+            raw_capture=raw_capture,
+        )
 
-    session.add(CommodityPrice(
-        symbol=rule.symbol, market=rule.market, observed_on=observed_on,
-        price=result.value, currency=rule.currency, unit=rule.unit,
-        source=f"market-rule:{rule.id}:{fetched.final_url}",
-    ))
+    session.add(
+        CommodityPrice(
+            symbol=rule.symbol,
+            market=rule.market,
+            observed_on=observed_on,
+            price=result.value,
+            currency=rule.currency,
+            unit=rule.unit,
+            source=f"market-rule:{rule.id}:{fetched.final_url}",
+        )
+    )
     _record(rule, f"stored_price: {result.value} {rule.currency}/{rule.unit} on {observed_on}")
     session.commit()
-    return RuleOutcome(rule.id, rule.symbol, "stored_price", value=result.value,
-                       observed_on=observed_on.isoformat(), raw_capture=raw_capture)
+    return RuleOutcome(
+        rule.id,
+        rule.symbol,
+        "stored_price",
+        value=result.value,
+        observed_on=observed_on.isoformat(),
+        raw_capture=raw_capture,
+    )
 
 
-def run_rules(session: Session, rules: list[MarketExtractionRule], *, fetcher: EthicalFetcher) -> dict:
+def run_rules(
+    session: Session, rules: list[MarketExtractionRule], *, fetcher: EthicalFetcher
+) -> dict:
     """Run a batch of rules and return an aggregated tally + per-rule outcomes."""
     tally: dict[str, int] = {}
     outcomes: list[dict] = []
@@ -125,9 +154,12 @@ def run_rules(session: Session, rules: list[MarketExtractionRule], *, fetcher: E
             outcome = RuleOutcome(rule.id, rule.symbol, "error", reason=str(exc))
         tally[outcome.status] = tally.get(outcome.status, 0) + 1
         outcomes.append(outcome.to_dict())
-    return {"tally": tally, "outcomes": outcomes,
-            "prices_stored": tally.get("stored_price", 0),
-            "raw_capture_counts": _count_raw(outcomes)}
+    return {
+        "tally": tally,
+        "outcomes": outcomes,
+        "prices_stored": tally.get("stored_price", 0),
+        "raw_capture_counts": _count_raw(outcomes),
+    }
 
 
 def _count_raw(outcomes: list[dict]) -> dict:

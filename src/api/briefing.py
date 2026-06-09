@@ -84,6 +84,7 @@ def clear_dismissed() -> dict:
 
 # --- draft accumulator ----------------------------------------------------- #
 
+
 @router.get("/draft")
 def get_draft() -> dict:
     """The current newsletter draft (pinned cards + notes)."""

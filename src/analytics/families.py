@@ -33,17 +33,59 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-_POSS_APOS_S = re.compile(r"['’]s$")   # trailing 's  -> drop two chars
-_POSS_S_APOS = re.compile(r"['’]$")     # trailing '   -> drop the apostrophe only
+_POSS_APOS_S = re.compile(r"['’]s$")  # trailing 's  -> drop two chars
+_POSS_S_APOS = re.compile(r"['’]$")  # trailing '   -> drop the apostrophe only
 
-_HONORIFICS: frozenset[str] = frozenset({
-    "mr", "mrs", "ms", "mx", "dr", "sir", "dame", "lord", "lady", "prof", "professor",
-    "president", "vice", "vp", "senator", "sen", "representative", "rep", "governor",
-    "gov", "mayor", "minister", "chancellor", "king", "queen", "prince", "princess",
-    "pope", "general", "gen", "colonel", "col", "captain", "capt", "sergeant", "sgt",
-    "ceo", "cfo", "cto", "chairman", "chairwoman", "chair", "director", "secretary",
-    "saint", "st",
-})
+_HONORIFICS: frozenset[str] = frozenset(
+    {
+        "mr",
+        "mrs",
+        "ms",
+        "mx",
+        "dr",
+        "sir",
+        "dame",
+        "lord",
+        "lady",
+        "prof",
+        "professor",
+        "president",
+        "vice",
+        "vp",
+        "senator",
+        "sen",
+        "representative",
+        "rep",
+        "governor",
+        "gov",
+        "mayor",
+        "minister",
+        "chancellor",
+        "king",
+        "queen",
+        "prince",
+        "princess",
+        "pope",
+        "general",
+        "gen",
+        "colonel",
+        "col",
+        "captain",
+        "capt",
+        "sergeant",
+        "sgt",
+        "ceo",
+        "cfo",
+        "cto",
+        "chairman",
+        "chairwoman",
+        "chair",
+        "director",
+        "secretary",
+        "saint",
+        "st",
+    }
+)
 
 
 def _norm(s: str) -> str:
@@ -78,17 +120,17 @@ def _is_contiguous_sub(short_toks: list[str], long_toks: list[str]) -> bool:
     n, m = len(short_toks), len(long_toks)
     if n == 0 or n >= m:
         return False
-    return any(long_toks[i:i + n] == short_toks for i in range(m - n + 1))
+    return any(long_toks[i : i + n] == short_toks for i in range(m - n + 1))
 
 
 @dataclass
 class Family:
-    canonical: str            # display label (the most complete member)
-    normalized: str           # canonical dedup key
+    canonical: str  # display label (the most complete member)
+    normalized: str  # canonical dedup key
     kind: str
     mentions: int = 0
     articles: int = 0
-    manual: bool = False      # True if a user override shaped this family
+    manual: bool = False  # True if a user override shaped this family
     members: list[dict] = field(default_factory=list)
 
     @property
@@ -97,12 +139,19 @@ class Family:
 
     def to_dict(self) -> dict:
         return {
-            "term": self.canonical, "normalized": self.normalized, "kind": self.kind,
-            "mentions": self.mentions, "articles": self.articles,
-            "variants": self.variant_count, "manual": self.manual,
+            "term": self.canonical,
+            "normalized": self.normalized,
+            "kind": self.kind,
+            "mentions": self.mentions,
+            "articles": self.articles,
+            "variants": self.variant_count,
+            "manual": self.manual,
             "members": [
-                {"term": m.get("term"), "normalized": m.get("normalized"),
-                 "mentions": int(m.get("mentions", 0) or 0)}
+                {
+                    "term": m.get("term"),
+                    "normalized": m.get("normalized"),
+                    "mentions": int(m.get("mentions", 0) or 0),
+                }
                 for m in self.members
             ],
         }
@@ -122,14 +171,18 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
     recs = []
     for it in items:
         norm = it.get("normalized") or _norm(it.get("term", ""))
-        recs.append({
-            "it": it, "norm": norm, "kind": it.get("kind", "term"),
-            "ckey": canonical_key(norm),
-            "match": strip_honorifics(norm).split(),
-            "mentions": int(it.get("mentions", it.get("count", 0)) or 0),
-            "articles": int(it.get("articles", 0) or 0),
-            "ov": overrides.get(norm),
-        })
+        recs.append(
+            {
+                "it": it,
+                "norm": norm,
+                "kind": it.get("kind", "term"),
+                "ckey": canonical_key(norm),
+                "match": strip_honorifics(norm).split(),
+                "mentions": int(it.get("mentions", it.get("count", 0)) or 0),
+                "articles": int(it.get("articles", 0) or 0),
+                "ov": overrides.get(norm),
+            }
+        )
 
     parent = list(range(len(recs)))
 
@@ -161,8 +214,9 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
         for b in ents:
             if a == b or recs[a]["kind"] != recs[b]["kind"]:
                 continue
-            if len(recs[a]["match"]) < len(recs[b]["match"]) and \
-                    _is_contiguous_sub(recs[a]["match"], recs[b]["match"]):
+            if len(recs[a]["match"]) < len(recs[b]["match"]) and _is_contiguous_sub(
+                recs[a]["match"], recs[b]["match"]
+            ):
                 union(b, a)  # shorter (a) joins the more complete (b)
 
     # Final grouping: overridden forms group by family_key; the rest by auto-union.
@@ -182,11 +236,16 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
             canon = max(members, key=lambda r: (len(r["match"]), r["mentions"]))
             canonical = canon["it"].get("term") or " ".join(canon["match"])
             normalized, kind, manual = canon["ckey"], canon["kind"], False
-        families.append(Family(
-            canonical=canonical, normalized=normalized, kind=kind, manual=manual,
-            mentions=sum(r["mentions"] for r in members),
-            articles=max((r["articles"] for r in members), default=0),
-            members=[r["it"] for r in members],
-        ))
+        families.append(
+            Family(
+                canonical=canonical,
+                normalized=normalized,
+                kind=kind,
+                manual=manual,
+                mentions=sum(r["mentions"] for r in members),
+                articles=max((r["articles"] for r in members), default=0),
+                members=[r["it"] for r in members],
+            )
+        )
     families.sort(key=lambda f: -f.mentions)
     return families

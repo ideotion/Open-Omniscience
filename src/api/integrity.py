@@ -28,7 +28,9 @@ class SignatureBody(BaseModel):
 
 
 @router.get("/profile")
-def get_profile(source: str, days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db)) -> dict:
+def get_profile(
+    source: str, days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db)
+) -> dict:
     """A source's measured-signal panel — coordination, novelty, capacity, transparency,
     track-record. **No composite trust score** (§6)."""
     result = profile_mod.source_profile(db, source, days=days)

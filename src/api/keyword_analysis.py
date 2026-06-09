@@ -56,5 +56,9 @@ def calculate_article_similarity(
     similarity = article_intelligence_analyzer.calculate_similarity(
         article1.content, article2.content, method=method
     )
-    return {"article_id1": article_id1, "article_id2": article_id2,
-            "similarity": similarity, "method": method}
+    return {
+        "article_id1": article_id1,
+        "article_id2": article_id2,
+        "similarity": similarity,
+        "method": method,
+    }

@@ -54,11 +54,9 @@ def geocode(country: str | None = None, place: str | None = None) -> dict | None
         # name-only fallback can return a same-named city elsewhere (a US "Paris"
         # resolving to Paris, France) — we must not pin that and call it precise.
         if hit and (cc is None or (hit.country or None) == cc):
-            return {"lat": hit.lat, "lon": hit.lon, "geocode": "city",
-                    "place": hit.name}
+            return {"lat": hit.lat, "lon": hit.lon, "geocode": "city", "place": hit.name}
     if cc:
         rep = _country_point().get(cc)
         if rep is not None:
-            return {"lat": rep.lat, "lon": rep.lon, "geocode": "country",
-                    "place": rep.name}
+            return {"lat": rep.lat, "lon": rep.lon, "geocode": "country", "place": rep.name}
     return None

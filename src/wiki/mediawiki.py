@@ -38,9 +38,14 @@ def _parse_ts(value) -> datetime | None:
 def build_revisions_params(title: str, *, limit: int = 20, older_than: int | None = None) -> dict:
     """Params for fetching a page's recent revisions (newest first)."""
     params = {
-        "action": "query", "prop": "revisions", "titles": title,
+        "action": "query",
+        "prop": "revisions",
+        "titles": title,
         "rvprop": "ids|timestamp|user|comment|flags|size|tags",
-        "rvlimit": limit, "rvdir": "older", "format": "json", "formatversion": 2,
+        "rvlimit": limit,
+        "rvdir": "older",
+        "format": "json",
+        "formatversion": 2,
     }
     if older_than:
         params["rvstartid"] = older_than
@@ -57,25 +62,39 @@ def parse_revisions(payload: dict) -> list[dict]:
         # revisions come newest-first; delta is vs the older (next) revision, but
         # we expose raw size and let the caller compute deltas against parents.
         for r in pg.get("revisions", []):
-            out.append({
-                "revid": r.get("revid"), "parent_revid": r.get("parentid"),
-                "timestamp": _parse_ts(r.get("timestamp")), "editor": r.get("user"),
-                "editor_anon": bool(r.get("anon", False)),
-                "comment": r.get("comment"), "size": r.get("size"),
-                "minor": bool(r.get("minor", False)), "bot": bool(r.get("bot", False)),
-                "tags": list(r.get("tags", [])), "pageid": pageid, "title": title,
-            })
+            out.append(
+                {
+                    "revid": r.get("revid"),
+                    "parent_revid": r.get("parentid"),
+                    "timestamp": _parse_ts(r.get("timestamp")),
+                    "editor": r.get("user"),
+                    "editor_anon": bool(r.get("anon", False)),
+                    "comment": r.get("comment"),
+                    "size": r.get("size"),
+                    "minor": bool(r.get("minor", False)),
+                    "bot": bool(r.get("bot", False)),
+                    "tags": list(r.get("tags", [])),
+                    "pageid": pageid,
+                    "title": title,
+                }
+            )
         _ = prev_size
     return out
 
 
-def build_recentchanges_params(*, namespace: int = 0, limit: int = 50,
-                               types: str = "edit|new") -> dict:
+def build_recentchanges_params(
+    *, namespace: int = 0, limit: int = 50, types: str = "edit|new"
+) -> dict:
     """Params for the recentchanges feed of a wiki (article namespace by default)."""
     return {
-        "action": "query", "list": "recentchanges", "rcnamespace": namespace,
+        "action": "query",
+        "list": "recentchanges",
+        "rcnamespace": namespace,
         "rcprop": "ids|sizes|flags|user|userid|comment|timestamp|tags|title",
-        "rctype": types, "rclimit": limit, "format": "json", "formatversion": 2,
+        "rctype": types,
+        "rclimit": limit,
+        "format": "json",
+        "formatversion": 2,
     }
 
 
@@ -86,23 +105,36 @@ def parse_recentchanges(payload: dict) -> list[dict]:
     for c in rc:
         old, new = c.get("oldlen"), c.get("newlen")
         delta = (new - old) if (isinstance(old, int) and isinstance(new, int)) else None
-        out.append({
-            "revid": c.get("revid"), "parent_revid": c.get("old_revid"),
-            "title": c.get("title"), "timestamp": _parse_ts(c.get("timestamp")),
-            "editor": c.get("user"), "editor_anon": bool(c.get("anon", False)),
-            "bot": bool(c.get("bot", False)), "minor": bool(c.get("minor", False)),
-            "comment": c.get("comment"), "size": new, "delta_bytes": delta,
-            "tags": list(c.get("tags", [])),
-        })
+        out.append(
+            {
+                "revid": c.get("revid"),
+                "parent_revid": c.get("old_revid"),
+                "title": c.get("title"),
+                "timestamp": _parse_ts(c.get("timestamp")),
+                "editor": c.get("user"),
+                "editor_anon": bool(c.get("anon", False)),
+                "bot": bool(c.get("bot", False)),
+                "minor": bool(c.get("minor", False)),
+                "comment": c.get("comment"),
+                "size": new,
+                "delta_bytes": delta,
+                "tags": list(c.get("tags", [])),
+            }
+        )
     return out
 
 
 def build_current_text_params(title: str) -> dict:
     """Params for the current wikitext + revid of a page (for a baseline snapshot)."""
     return {
-        "action": "query", "prop": "revisions", "titles": title,
-        "rvprop": "ids|timestamp|content|size", "rvslots": "main", "rvlimit": 1,
-        "format": "json", "formatversion": 2,
+        "action": "query",
+        "prop": "revisions",
+        "titles": title,
+        "rvprop": "ids|timestamp|content|size",
+        "rvslots": "main",
+        "rvlimit": 1,
+        "format": "json",
+        "formatversion": 2,
     }
 
 
@@ -118,15 +150,24 @@ def parse_current_text(payload: dict) -> dict:
     r = revs[0]
     slot = (r.get("slots", {}) or {}).get("main", {})
     return {
-        "revid": r.get("revid"), "text": slot.get("content", ""),
-        "size": r.get("size"), "pageid": pg.get("pageid"), "title": pg.get("title"),
+        "revid": r.get("revid"),
+        "text": slot.get("content", ""),
+        "size": r.get("size"),
+        "pageid": pg.get("pageid"),
+        "title": pg.get("title"),
     }
 
 
 def build_compare_params(from_rev: int, to_rev: int) -> dict:
     """Params for a server-computed diff between two revisions."""
-    return {"action": "compare", "fromrev": from_rev, "torev": to_rev,
-            "prop": "diff", "format": "json", "formatversion": 2}
+    return {
+        "action": "compare",
+        "fromrev": from_rev,
+        "torev": to_rev,
+        "prop": "diff",
+        "format": "json",
+        "formatversion": 2,
+    }
 
 
 def parse_compare(payload: dict) -> dict:
@@ -138,8 +179,10 @@ def parse_compare(payload: dict) -> dict:
     added = " ".join(td.get_text(" ", strip=True) for td in soup.select("td.diff-addedline"))
     removed = " ".join(td.get_text(" ", strip=True) for td in soup.select("td.diff-deletedline"))
     return {
-        "added": added.strip(), "removed": removed.strip(),
-        "added_bytes": len(added.encode("utf-8")), "removed_bytes": len(removed.encode("utf-8")),
+        "added": added.strip(),
+        "removed": removed.strip(),
+        "added_bytes": len(added.encode("utf-8")),
+        "removed_bytes": len(removed.encode("utf-8")),
     }
 
 

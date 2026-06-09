@@ -7,10 +7,10 @@ environment variables and YAML files.
 
 Usage:
     from src.config import get_config, get_database_url
-    
+
     config = get_config()
     db_url = config.get_database_url()
-    
+
     # Or use convenience functions
     db_url = get_database_url()
 

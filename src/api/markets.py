@@ -61,12 +61,20 @@ class RuleUpdate(BaseModel):
 
 def _serialize(r: MarketExtractionRule) -> dict:
     return {
-        "id": r.id, "source_id": r.source_id,
+        "id": r.id,
+        "source_id": r.source_id,
         "source_name": r.source.name if r.source else None,
-        "category": r.category, "symbol": r.symbol, "label": r.label,
-        "url": r.url, "selector": r.selector, "attribute": r.attribute,
-        "value_regex": r.value_regex, "currency": r.currency, "unit": r.unit,
-        "market": r.market, "enabled": r.enabled,
+        "category": r.category,
+        "symbol": r.symbol,
+        "label": r.label,
+        "url": r.url,
+        "selector": r.selector,
+        "attribute": r.attribute,
+        "value_regex": r.value_regex,
+        "currency": r.currency,
+        "unit": r.unit,
+        "market": r.market,
+        "enabled": r.enabled,
         "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None,
         "last_status": r.last_status,
     }
@@ -171,16 +179,20 @@ def overview(category: str | None = None, db: Session = Depends(get_db)) -> dict
             .all()
         )
         latest = rows[0] if rows else None
-        items.append({
-            **_serialize(r),
-            "points": len(rows),
-            "latest": {
-                "observed_on": latest.observed_on.isoformat(),
-                "price": latest.price,
-                "currency": latest.currency,
-                "unit": latest.unit,
-            } if latest else None,
-        })
+        items.append(
+            {
+                **_serialize(r),
+                "points": len(rows),
+                "latest": {
+                    "observed_on": latest.observed_on.isoformat(),
+                    "price": latest.price,
+                    "currency": latest.currency,
+                    "unit": latest.unit,
+                }
+                if latest
+                else None,
+            }
+        )
     return {"category": category, "count": len(items), "items": items}
 
 
@@ -227,9 +239,15 @@ def import_catalog_feed(key: str, db: Session = Depends(get_db)) -> dict:
     if feed is None:
         raise HTTPException(status_code=404, detail=f"Unknown feed {key!r}.")
     result = import_feed(
-        db, url=feed.url, symbol=feed.symbol, fetcher=_fetcher,
-        date_column=feed.date_column, value_column=feed.value_column,
-        currency=feed.currency, unit=feed.unit, market=feed.market,
+        db,
+        url=feed.url,
+        symbol=feed.symbol,
+        fetcher=_fetcher,
+        date_column=feed.date_column,
+        value_column=feed.value_column,
+        currency=feed.currency,
+        unit=feed.unit,
+        market=feed.market,
         source=f"feed:{feed.key}:{feed.url}",
     )
     if result.status != "imported":
@@ -253,9 +271,15 @@ def import_all_feeds(category: str | None = None, db: Session = Depends(get_db))
     for feed in feeds_for_category(category):
         try:
             r = import_feed(
-                db, url=feed.url, symbol=feed.symbol, fetcher=_fetcher,
-                date_column=feed.date_column, value_column=feed.value_column,
-                currency=feed.currency, unit=feed.unit, market=feed.market,
+                db,
+                url=feed.url,
+                symbol=feed.symbol,
+                fetcher=_fetcher,
+                date_column=feed.date_column,
+                value_column=feed.value_column,
+                currency=feed.currency,
+                unit=feed.unit,
+                market=feed.market,
                 source=f"feed:{feed.key}:{feed.url}",
             )
             results.append({"key": feed.key, **r.to_dict()})
@@ -266,9 +290,20 @@ def import_all_feeds(category: str | None = None, db: Session = Depends(get_db))
         except Exception as exc:  # noqa: BLE001 - one feed must never 500 the whole batch
             db.rollback()
             failed += 1
-            results.append({"key": feed.key, "symbol": feed.symbol, "status": "error",
-                            "detail": f"{type(exc).__name__}: {exc}"})
-    return {"feeds": len(results), "points_imported": imported, "failed": failed, "results": results}
+            results.append(
+                {
+                    "key": feed.key,
+                    "symbol": feed.symbol,
+                    "status": "error",
+                    "detail": f"{type(exc).__name__}: {exc}",
+                }
+            )
+    return {
+        "feeds": len(results),
+        "points_imported": imported,
+        "failed": failed,
+        "results": results,
+    }
 
 
 @router.get("/series")
@@ -277,28 +312,46 @@ def list_series(db: Session = Depends(get_db)) -> dict:
     from sqlalchemy import func
 
     rows = (
-        db.query(CommodityPrice.symbol, func.count(CommodityPrice.id),
-                 func.max(CommodityPrice.observed_on))
-        .group_by(CommodityPrice.symbol).all()
+        db.query(
+            CommodityPrice.symbol,
+            func.count(CommodityPrice.id),
+            func.max(CommodityPrice.observed_on),
+        )
+        .group_by(CommodityPrice.symbol)
+        .all()
     )
     out = []
     for symbol, n, _last in rows:
-        latest = (db.query(CommodityPrice).filter_by(symbol=symbol)
-                  .order_by(CommodityPrice.observed_on.desc()).first())
-        out.append({
-            "symbol": symbol, "points": int(n),
-            "latest": {
-                "observed_on": latest.observed_on.isoformat(), "price": latest.price,
-                "currency": latest.currency, "unit": latest.unit, "market": latest.market,
-            } if latest else None,
-        })
+        latest = (
+            db.query(CommodityPrice)
+            .filter_by(symbol=symbol)
+            .order_by(CommodityPrice.observed_on.desc())
+            .first()
+        )
+        out.append(
+            {
+                "symbol": symbol,
+                "points": int(n),
+                "latest": {
+                    "observed_on": latest.observed_on.isoformat(),
+                    "price": latest.price,
+                    "currency": latest.currency,
+                    "unit": latest.unit,
+                    "market": latest.market,
+                }
+                if latest
+                else None,
+            }
+        )
     out.sort(key=lambda s: s["symbol"])
     return {"count": len(out), "series": out}
 
 
 @router.get("/board")
 def market_board(
-    category: str = Query("commodity", description="'index' for the stock-index board, else commodity"),
+    category: str = Query(
+        "commodity", description="'index' for the stock-index board, else commodity"
+    ),
     spark: int = Query(30, ge=2, le=180, description="How many recent points per sparkline"),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -317,7 +370,8 @@ def market_board(
         pts = (
             db.query(CommodityPrice.observed_on, CommodityPrice.price)
             .filter_by(symbol=f.symbol)
-            .order_by(CommodityPrice.observed_on.asc()).all()
+            .order_by(CommodityPrice.observed_on.asc())
+            .all()
         )
         latest = prev = None
         change = change_pct = None
@@ -330,16 +384,29 @@ def market_board(
                 if pts[-2][1]:
                     change = round(pts[-1][1] - pts[-2][1], 6)
                     change_pct = round((change / pts[-2][1]) * 100, 2)
-        cards.append({
-            "key": f.key, "symbol": f.symbol, "name": f.name, "market": f.market,
-            "currency": f.currency, "unit": f.unit, "url": f.url, "category": f.category,
-            "points": len(pts), "latest": latest, "prev": prev,
-            "change": change, "change_pct": change_pct, "spark": spark_pts,
-        })
+        cards.append(
+            {
+                "key": f.key,
+                "symbol": f.symbol,
+                "name": f.name,
+                "market": f.market,
+                "currency": f.currency,
+                "unit": f.unit,
+                "url": f.url,
+                "category": f.category,
+                "points": len(pts),
+                "latest": latest,
+                "prev": prev,
+                "change": change,
+                "change_pct": change_pct,
+                "spark": spark_pts,
+            }
+        )
     # Cards with data first (by name), empty catalog entries after.
     cards.sort(key=lambda c: (c["latest"] is None, (c["name"] or "").lower()))
     return {
-        "category": category, "count": len(cards),
+        "category": category,
+        "count": len(cards),
         "with_data": sum(1 for c in cards if c["latest"]),
         "note": "End-of-day values from official CSV sources; each card shows its as-of date and source. Not real-time.",
         "cards": cards,
@@ -358,9 +425,15 @@ def import_custom_feed(payload: CustomFeedImport, db: Session = Depends(get_db))
     if not payload.url.strip() or not payload.symbol.strip():
         raise HTTPException(status_code=400, detail="url and symbol are required.")
     result = import_feed(
-        db, url=payload.url, symbol=payload.symbol, fetcher=_fetcher,
-        date_column=payload.date_column, value_column=payload.value_column,
-        currency=payload.currency, unit=payload.unit, market=payload.market,
+        db,
+        url=payload.url,
+        symbol=payload.symbol,
+        fetcher=_fetcher,
+        date_column=payload.date_column,
+        value_column=payload.value_column,
+        currency=payload.currency,
+        unit=payload.unit,
+        market=payload.market,
     )
     if result.status != "imported":
         raise HTTPException(status_code=502, detail=result.to_dict())

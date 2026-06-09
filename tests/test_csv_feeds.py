@@ -50,8 +50,9 @@ def test_parse_series_csv_unknown_column_errors():
 
 
 def _db():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
@@ -98,8 +99,14 @@ def _fetcher_serving(url, text):
 def test_import_feed_happy_path():
     s = _db()
     url = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO"
-    res = import_feed(s, url=url, symbol="WTI", unit="barrel", market="EIA",
-                      fetcher=_fetcher_serving(url, _FRED_CSV))
+    res = import_feed(
+        s,
+        url=url,
+        symbol="WTI",
+        unit="barrel",
+        market="EIA",
+        fetcher=_fetcher_serving(url, _FRED_CSV),
+    )
     assert res.status == "imported" and res.imported == 3
     assert s.query(CommodityPrice).filter_by(symbol="WTI").count() == 3
     s.close()
@@ -111,8 +118,9 @@ def test_import_feed_fetch_failure_is_explicit():
     # robots ok, but the feed URL 404s -> fetch_failed, nothing stored.
     sess = FakeSession()
     sess.route("https://fred.stlouisfed.org/robots.txt", status_code=404, text="")
-    res = import_feed(s, url=url, symbol="NOPE",
-                      fetcher=EthicalFetcher(min_interval_s=0.0, session=sess))
+    res = import_feed(
+        s, url=url, symbol="NOPE", fetcher=EthicalFetcher(min_interval_s=0.0, session=sess)
+    )
     assert res.status == "fetch_failed"
     assert s.query(CommodityPrice).count() == 0
     s.close()
@@ -141,8 +149,9 @@ def test_feeds_api_list_and_import(tmp_path, monkeypatch):
 
     # Isolated on-disk DB via dependency override (shared across the threadpool's
     # connections, unlike :memory:, and never touches the dev DB).
-    engine = create_engine(f"sqlite:///{tmp_path / 'feeds.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'feeds.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
 

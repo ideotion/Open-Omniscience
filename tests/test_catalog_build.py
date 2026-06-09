@@ -26,15 +26,23 @@ def _wd(name, url, lang=None):
 def test_generate_catalog_dedups_and_excludes(tmp_path):
     # Fixture WDQS payloads per country.
     payloads = {
-        "fr": {"results": {"bindings": [
-            _wd("Le Example", "https://le-example.fr", "fr"),
-            _wd("Dup", "https://le-example.fr"),          # in-batch dup domain
-            _wd("Social", "https://twitter.com/x"),       # social -> excluded
-        ]}},
-        "jp": {"results": {"bindings": [
-            _wd("Example JP", "https://example.jp", "ja"),
-            _wd("Already Shipped", "https://shipped.test"),  # existing -> excluded
-        ]}},
+        "fr": {
+            "results": {
+                "bindings": [
+                    _wd("Le Example", "https://le-example.fr", "fr"),
+                    _wd("Dup", "https://le-example.fr"),  # in-batch dup domain
+                    _wd("Social", "https://twitter.com/x"),  # social -> excluded
+                ]
+            }
+        },
+        "jp": {
+            "results": {
+                "bindings": [
+                    _wd("Example JP", "https://example.jp", "ja"),
+                    _wd("Already Shipped", "https://shipped.test"),  # existing -> excluded
+                ]
+            }
+        },
     }
 
     def run_query(cc, type_qids):
@@ -42,8 +50,7 @@ def test_generate_catalog_dedups_and_excludes(tmp_path):
         return payloads[cc]
 
     specs = [{"source_type": "news", "type_qids": ["Q11032"], "tags": ["news"]}]
-    res = generate_catalog(run_query, ["fr", "jp"], specs,
-                           existing_domains={"shipped.test"})
+    res = generate_catalog(run_query, ["fr", "jp"], specs, existing_domains={"shipped.test"})
     domains = {s["domain"] for s in res["sources"]}
     assert domains == {"le-example.fr", "example.jp"}
     assert res["stats"]["skipped_dupes"] == 1
@@ -53,6 +60,7 @@ def test_generate_catalog_dedups_and_excludes(tmp_path):
     # And it writes the seeder-compatible YAML shape.
     out = write_catalog_yaml(tmp_path / "world.yml", res["sources"])
     import yaml
+
     loaded = yaml.safe_load(out.read_text())["sources"]
     assert {s["domain"] for s in loaded} == domains
 

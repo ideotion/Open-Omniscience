@@ -37,8 +37,28 @@ _SENT_END = re.compile(r"[.!?]['\"”’)]?\s+$")
 
 # Lowercase connector words allowed *inside* a multi-word entity (e.g. "Bank of
 # England", "Rio Tinto plc", "Université de Paris").
-_CONNECTORS = {"of", "the", "and", "for", "de", "la", "le", "du", "des", "van",
-               "von", "der", "den", "di", "da", "do", "al", "bin", "el", "&"}
+_CONNECTORS = {
+    "of",
+    "the",
+    "and",
+    "for",
+    "de",
+    "la",
+    "le",
+    "du",
+    "des",
+    "van",
+    "von",
+    "der",
+    "den",
+    "di",
+    "da",
+    "do",
+    "al",
+    "bin",
+    "el",
+    "&",
+}
 
 _DEFAULT_MAX_TERMS = 80
 _DEFAULT_MAX_ENTITIES = 80
@@ -116,9 +136,9 @@ def _stopset(language: str) -> frozenset[str]:
 
 @dataclass
 class ExtractedTerm:
-    term: str            # display form (entities keep case; terms are lowercased)
-    normalized: str      # dedup key (casefold)
-    kind: str            # term | person | org | location | entity
+    term: str  # display form (entities keep case; terms are lowercased)
+    normalized: str  # dedup key (casefold)
+    kind: str  # term | person | org | location | entity
     count: int
     first_offset: int | None
 
@@ -132,8 +152,13 @@ class BaselineExtractor:
 
     name = "baseline"
 
-    def __init__(self, *, gazetteer: dict[str, str] | None = None,
-                 max_terms: int = _DEFAULT_MAX_TERMS, max_entities: int = _DEFAULT_MAX_ENTITIES):
+    def __init__(
+        self,
+        *,
+        gazetteer: dict[str, str] | None = None,
+        max_terms: int = _DEFAULT_MAX_TERMS,
+        max_entities: int = _DEFAULT_MAX_ENTITIES,
+    ):
         # gazetteer maps normalized name -> kind ("person"|"org"|"location").
         self.gazetteer = gazetteer or {}
         self.max_terms = max_terms
@@ -150,7 +175,9 @@ class BaselineExtractor:
         while i < n:
             tok = tokens[i]
             surface = tok.group(0)
-            is_titlecase = surface[:1].isupper() and (len(surface) == 1 or any(c.islower() for c in surface))
+            is_titlecase = surface[:1].isupper() and (
+                len(surface) == 1 or any(c.islower() for c in surface)
+            )
             is_acronym = surface.isupper() and len(surface) >= 2
             if not (is_titlecase or is_acronym):
                 i += 1
@@ -160,7 +187,7 @@ class BaselineExtractor:
             j = i + 1
             while j < n:
                 nxt = tokens[j].group(0)
-                gap = text[tokens[j - 1].end():tokens[j].start()]
+                gap = text[tokens[j - 1].end() : tokens[j].start()]
                 if "\n" in gap or len(gap) > 3:  # broken by a line/large gap -> stop the run
                     break
                 if nxt[:1].isupper() or nxt in _CONNECTORS or (nxt.isupper() and len(nxt) >= 2):
@@ -173,7 +200,7 @@ class BaselineExtractor:
                 parts.pop()
             if parts:
                 end_tok = tokens[i + len(parts) - 1]
-                surface_run = text[start:end_tok.end()]
+                surface_run = text[start : end_tok.end()]
                 runs.append((surface_run, start))
             i = max(j, i + 1)
 
@@ -204,11 +231,15 @@ class BaselineExtractor:
             # "I", "A", "The") — unless the gazetteer vouches for it.
             if norm not in self.gazetteer and (len(norm) < 2 or norm in gstop):
                 continue
-            entities.append(ExtractedTerm(
-                term=a["surface"], normalized=norm,
-                kind=self.gazetteer.get(norm, "entity"),
-                count=a["count"], first_offset=a["first"],
-            ))
+            entities.append(
+                ExtractedTerm(
+                    term=a["surface"],
+                    normalized=norm,
+                    kind=self.gazetteer.get(norm, "entity"),
+                    count=a["count"],
+                    first_offset=a["first"],
+                )
+            )
         entities.sort(key=lambda e: (-e.count, e.first_offset or 0))
         return entities[: self.max_entities]
 
@@ -216,7 +247,7 @@ class BaselineExtractor:
     def _at_sentence_start(text: str, offset: int) -> bool:
         if offset == 0:
             return True
-        return bool(_SENT_END.search(text[max(0, offset - 40):offset]))
+        return bool(_SENT_END.search(text[max(0, offset - 40) : offset]))
 
     # -- topical terms ----------------------------------------------------- #
 
@@ -238,7 +269,7 @@ class BaselineExtractor:
         # stopwords so phrases stay meaningful ("prime minister", not "of the").
         for size in (2, 3):
             for k in range(len(toks) - size + 1):
-                window = toks[k:k + size]
+                window = toks[k : k + size]
                 words = [w for w, _ in window]
                 # Drop a phrase if ANY token is a stopword or too short/numeric, so
                 # fillers don't leak inside n-grams ("not one bit", "economy is not").
@@ -249,7 +280,8 @@ class BaselineExtractor:
 
         terms = [
             ExtractedTerm(term=t, normalized=t, kind="term", count=c, first_offset=first_at.get(t))
-            for t, c in counts.items() if c >= 1
+            for t, c in counts.items()
+            if c >= 1
         ]
         terms.sort(key=lambda e: (-e.count, len(e.term)))
         return terms[: self.max_terms]
@@ -269,11 +301,23 @@ class SpacyExtractor:
     """Opt-in real NER (PERSON/ORG/GPE/LOC) + baseline topical terms."""
 
     name = "spacy"
-    _LABELS = {"PERSON": "person", "PER": "person", "ORG": "org",
-               "GPE": "location", "LOC": "location", "FAC": "location", "NORP": "org"}
+    _LABELS = {
+        "PERSON": "person",
+        "PER": "person",
+        "ORG": "org",
+        "GPE": "location",
+        "LOC": "location",
+        "FAC": "location",
+        "NORP": "org",
+    }
 
-    def __init__(self, model: str = "en_core_web_sm", *, max_entities: int = _DEFAULT_MAX_ENTITIES,
-                 baseline: BaselineExtractor | None = None):
+    def __init__(
+        self,
+        model: str = "en_core_web_sm",
+        *,
+        max_entities: int = _DEFAULT_MAX_ENTITIES,
+        baseline: BaselineExtractor | None = None,
+    ):
         import spacy  # raises ImportError if the [nlp] extra is absent
 
         self._nlp = spacy.load(model, disable=["lemmatizer", "tagger"])
@@ -284,7 +328,7 @@ class SpacyExtractor:
     def extract(self, text: str, *, title: str = "", language: str = "en") -> list[ExtractedTerm]:
         if not text or not text.strip():
             return []
-        doc = self._nlp(text[: 1_000_000])  # spaCy default max length guard
+        doc = self._nlp(text[:1_000_000])  # spaCy default max length guard
         ents: dict[str, ExtractedTerm] = {}
         for ent in doc.ents:
             kind = self._LABELS.get(ent.label_)
@@ -295,7 +339,9 @@ class SpacyExtractor:
                 ents[norm].count += 1
             else:
                 ents[norm] = ExtractedTerm(ent.text, norm, kind, 1, ent.start_char)
-        entities = sorted(ents.values(), key=lambda e: (-e.count, e.first_offset or 0))[: self.max_entities]
+        entities = sorted(ents.values(), key=lambda e: (-e.count, e.first_offset or 0))[
+            : self.max_entities
+        ]
         # Topical terms from the baseline (entities here are model-labelled), minus
         # any that duplicate a detected entity.
         ent_norms = {e.normalized for e in entities}

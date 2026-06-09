@@ -19,7 +19,8 @@ from src.utils.compression import CompressionError
 
 def _storage():
     klass = next(
-        o for _, o in inspect.getmembers(C, inspect.isclass)
+        o
+        for _, o in inspect.getmembers(C, inspect.isclass)
         if hasattr(o, "compress_text_for_storage") and hasattr(o, "decompress_text_from_storage")
     )
     return klass()
@@ -42,5 +43,5 @@ def test_storage_falls_back_to_zlib_when_a_codec_raises():
         "decompress": lambda data, config: data,
         "available": True,
     }
-    blob = w.compress_text_for_storage(text)          # must succeed via zlib, not raise
+    blob = w.compress_text_for_storage(text)  # must succeed via zlib, not raise
     assert w.decompress_text_from_storage(blob) == text

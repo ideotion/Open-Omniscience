@@ -37,7 +37,7 @@ class SafetySettingsError(ValueError):
 @dataclass
 class SafetySettings:
     fetch_mode: str = "transparent"
-    http_proxy: str = ""              # e.g. socks5://127.0.0.1:9050 or http://127.0.0.1:8118
+    http_proxy: str = ""  # e.g. socks5://127.0.0.1:9050 or http://127.0.0.1:8118
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -87,10 +87,14 @@ def save_settings(updates: dict) -> SafetySettings:
     if "http_proxy" in updates and updates["http_proxy"] is not None:
         current.http_proxy = str(updates["http_proxy"]).strip()
     if current.is_protected and not current.http_proxy:
-        raise SafetySettingsError("protected mode requires an http_proxy (e.g. socks5://127.0.0.1:9050)")
+        raise SafetySettingsError(
+            "protected mode requires an http_proxy (e.g. socks5://127.0.0.1:9050)"
+        )
     path = _path()
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"version": SETTINGS_VERSION, **current.to_dict()},
-                              indent=2, sort_keys=True), "utf-8")
+    tmp.write_text(
+        json.dumps({"version": SETTINGS_VERSION, **current.to_dict()}, indent=2, sort_keys=True),
+        "utf-8",
+    )
     tmp.replace(path)
     return current

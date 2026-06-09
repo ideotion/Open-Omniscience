@@ -20,17 +20,19 @@ def _by_norm(terms: list[ExtractedTerm]) -> dict[str, ExtractedTerm]:
 
 
 def test_multiword_entity_is_one_unit_with_offset():
-    text = ("Emmanuel Macron met advisers in the capital. "
-            "Emmanuel Macron then addressed reporters about the economy.")
+    text = (
+        "Emmanuel Macron met advisers in the capital. "
+        "Emmanuel Macron then addressed reporters about the economy."
+    )
     ex = BaselineExtractor()
     terms = ex.extract(text)
     by = _by_norm(terms)
     assert "emmanuel macron" in by
     ent = by["emmanuel macron"]
-    assert ent.kind == "entity"          # no gazetteer -> honest generic kind
+    assert ent.kind == "entity"  # no gazetteer -> honest generic kind
     assert ent.count == 2
     # The offset points exactly at the entity in the source text.
-    assert text[ent.first_offset:ent.first_offset + len("Emmanuel Macron")] == "Emmanuel Macron"
+    assert text[ent.first_offset : ent.first_offset + len("Emmanuel Macron")] == "Emmanuel Macron"
 
 
 def test_gazetteer_assigns_entity_kind():
@@ -50,8 +52,10 @@ def test_sentence_initial_capital_not_an_entity():
 
 
 def test_terms_have_counts_and_offsets():
-    text = ("Climate policy dominated the summit. Climate policy negotiators "
-            "debated climate targets and emissions for hours on end today.")
+    text = (
+        "Climate policy dominated the summit. Climate policy negotiators "
+        "debated climate targets and emissions for hours on end today."
+    )
     ex = BaselineExtractor()
     by = _by_norm(ex.extract(text))
     assert "climate" in by and by["climate"].kind == "term"
@@ -59,7 +63,7 @@ def test_terms_have_counts_and_offsets():
     # A bigram phrase is captured as a single term.
     assert "climate policy" in by and by["climate policy"].count >= 2
     off = by["climate"].first_offset
-    assert text[off:off + 7].lower() == "climate"
+    assert text[off : off + 7].lower() == "climate"
 
 
 def test_stopword_bounded_ngrams_are_dropped():
@@ -68,7 +72,11 @@ def test_stopword_bounded_ngrams_are_dropped():
     by = _by_norm(ex.extract(text))
     # No phrase should start or end with a stopword.
     assert "of the" not in by
-    assert not any(t.term.split()[0] in {"the", "of"} for t in ex.extract(text) if t.kind == "term" and " " in t.term)
+    assert not any(
+        t.term.split()[0] in {"the", "of"}
+        for t in ex.extract(text)
+        if t.kind == "term" and " " in t.term
+    )
 
 
 def test_empty_text_yields_nothing():

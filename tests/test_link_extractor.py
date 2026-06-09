@@ -46,7 +46,9 @@ def test_statistics_shape():
 
 
 def test_internal_external_by_domain():
-    links = {l["url"]: l["link_type"] for l in _le().extract_links(_HTML, base_url="https://example.com")}
+    links = {
+        l["url"]: l["link_type"] for l in _le().extract_links(_HTML, base_url="https://example.com")
+    }
     # same-site (incl. resolved relative) -> internal; other-site -> external
     assert links["https://example.com/about"] == "internal"
     assert links["https://example.com/local/page"] == "internal"
@@ -54,7 +56,9 @@ def test_internal_external_by_domain():
 
 
 def test_non_web_scheme_not_mislabelled():
-    links = {l["url"]: l["link_type"] for l in _le().extract_links(_HTML, base_url="https://example.com")}
+    links = {
+        l["url"]: l["link_type"] for l in _le().extract_links(_HTML, base_url="https://example.com")
+    }
     # mailto must NOT be labelled 'internal' (the pre-v0.4 bug)
     assert links["mailto:a@b.com"] == "email"
 

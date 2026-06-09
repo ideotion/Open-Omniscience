@@ -39,8 +39,9 @@ def test_import_all_and_series(tmp_path, monkeypatch):
     import src.api.markets as mk
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'mk.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'mk.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
 

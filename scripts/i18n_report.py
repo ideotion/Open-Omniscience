@@ -56,17 +56,19 @@ def build_report() -> dict:
         covered = len(have)
         identical = sorted(k for k in have if str(data.get(k, "")).strip() and data[k] == k)
         pct = round(100 * covered / n, 1) if n else 100.0
-        locales.append({
-            "code": code,
-            "name": meta.get("name", code),
-            "native": meta.get("native", ""),
-            "declared_status": meta.get("status", "unknown"),
-            "translated": covered,
-            "total": n,
-            "percent": pct,
-            "missing": missing,
-            "identical_to_english": identical,
-        })
+        locales.append(
+            {
+                "code": code,
+                "name": meta.get("name", code),
+                "native": meta.get("native", ""),
+                "declared_status": meta.get("status", "unknown"),
+                "translated": covered,
+                "total": n,
+                "percent": pct,
+                "missing": missing,
+                "identical_to_english": identical,
+            }
+        )
     locales.sort(key=lambda x: (-x["percent"], x["code"]))
     return {"source": "en", "source_keys": n, "locales": locales}
 
@@ -86,8 +88,12 @@ def _print_table(report: dict) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="i18n completeness report")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of a table")
-    ap.add_argument("--min", type=float, default=None,
-                    help="fail (exit 1) if any locale declaring status:complete is below this %%")
+    ap.add_argument(
+        "--min",
+        type=float,
+        default=None,
+        help="fail (exit 1) if any locale declaring status:complete is below this %%",
+    )
     args = ap.parse_args(argv)
 
     report = build_report()
@@ -97,11 +103,16 @@ def main(argv: list[str] | None = None) -> int:
         _print_table(report)
 
     if args.min is not None:
-        regressed = [loc for loc in report["locales"]
-                     if loc["declared_status"] == "complete" and loc["percent"] < args.min]
+        regressed = [
+            loc
+            for loc in report["locales"]
+            if loc["declared_status"] == "complete" and loc["percent"] < args.min
+        ]
         if regressed:
             names = ", ".join(f"{loc['code']} ({loc['percent']}%)" for loc in regressed)
-            print(f"\nFAIL: locales declared 'complete' below {args.min}%: {names}", file=sys.stderr)
+            print(
+                f"\nFAIL: locales declared 'complete' below {args.min}%: {names}", file=sys.stderr
+            )
             return 1
     return 0
 

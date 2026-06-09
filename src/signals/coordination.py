@@ -47,10 +47,10 @@ _CAVEAT = (
 class CoordinationEvent:
     """One near-duplicate story co-published by several sources."""
 
-    representative: str                 # a member document id
+    representative: str  # a member document id
     sources: list[str]
     documents: list[str]
-    span_hours: float | None            # max-min publish time across members (None if unknown)
+    span_hours: float | None  # max-min publish time across members (None if unknown)
     avg_similarity: float
 
     def to_dict(self) -> dict:
@@ -68,7 +68,7 @@ class Actor:
     """A cluster of sources that repeatedly co-publish near-duplicate content."""
 
     sources: list[str]
-    shared_stories: int                 # number of coordination events spanning these sources
+    shared_stories: int  # number of coordination events spanning these sources
     documents: list[str]
     shared_hosts: list[str] = field(default_factory=list)
     median_span_hours: float | None = None
@@ -84,7 +84,9 @@ class Actor:
             "shared_stories": self.shared_stories,
             "documents": self.documents,
             "shared_hosts": self.shared_hosts,
-            "median_span_hours": None if self.median_span_hours is None else round(self.median_span_hours, 2),
+            "median_span_hours": None
+            if self.median_span_hours is None
+            else round(self.median_span_hours, 2),
             "events": [e.to_dict() for e in self.events],
             "signature": self.signature,
         }
@@ -159,10 +161,15 @@ def detect_coordination(
             span = (max(times) - min(times)).total_seconds() / 3600.0
         if require_timing and span is not None and span > window_hours:
             continue  # near-dup but spread out — not lockstep
-        events.append(CoordinationEvent(
-            representative=cluster.representative, sources=distinct, documents=docs,
-            span_hours=span, avg_similarity=cluster.avg_similarity,
-        ))
+        events.append(
+            CoordinationEvent(
+                representative=cluster.representative,
+                sources=distinct,
+                documents=docs,
+                span_hours=span,
+                avg_similarity=cluster.avg_similarity,
+            )
+        )
 
     # Build the source graph: an edge between every pair of sources sharing an event.
     pair_counts: dict[tuple[str, str], int] = {}
@@ -199,20 +206,27 @@ def detect_coordination(
         comp_events = [ev for ev in events if any(s in comp for s in ev.sources)]
         docs = sorted({d for ev in comp_events for d in ev.documents})
         hosts = sorted({by_id[d].get("host") for d in docs if by_id[d].get("host")})
-        actors.append(Actor(
-            sources=comp_sources,
-            shared_stories=len(comp_events),
-            documents=docs,
-            shared_hosts=hosts,
-            median_span_hours=_median([ev.span_hours for ev in comp_events]),
-            events=comp_events,
-        ))
+        actors.append(
+            Actor(
+                sources=comp_sources,
+                shared_stories=len(comp_events),
+                documents=docs,
+                shared_hosts=hosts,
+                median_span_hours=_median([ev.span_hours for ev in comp_events]),
+                events=comp_events,
+            )
+        )
     actors.sort(key=lambda a: (-len(a.sources), -a.shared_stories))
 
     return CoordinationResult(
-        method=(f"near-duplicate co-publication (Jaccard ≥ {threshold}) across ≥2 sources"
-                + (f" within {window_hours}h" if require_timing else "")
-                + f"; sources sharing ≥ {min_shared_stories} story collapsed (union-find)"),
-        n_documents=len(documents), n_sources=len({d.get('source') for d in documents if d.get('source')}),
-        window_hours=window_hours, threshold=threshold, actors=actors,
+        method=(
+            f"near-duplicate co-publication (Jaccard ≥ {threshold}) across ≥2 sources"
+            + (f" within {window_hours}h" if require_timing else "")
+            + f"; sources sharing ≥ {min_shared_stories} story collapsed (union-find)"
+        ),
+        n_documents=len(documents),
+        n_sources=len({d.get("source") for d in documents if d.get("source")}),
+        window_hours=window_hours,
+        threshold=threshold,
+        actors=actors,
     )

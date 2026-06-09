@@ -138,6 +138,7 @@ def fetch_imap(
     """
     if conn is None:  # pragma: no cover - exercised only against a live server
         import imaplib
+
         conn = imaplib.IMAP4_SSL(host) if use_ssl else imaplib.IMAP4(host)
         conn.login(user, password)
     conn.select(folder)
@@ -163,26 +164,30 @@ def ingest_emails(session: Session, source: Source, raw_messages: list[bytes]) -
             continue
         content_hash = generate_content_hash(parsed.body_text)
         canonical = f"imap:{parsed.message_id}"
-        exists = session.query(Article.id).filter(
-            (Article.hash == content_hash) | (Article.canonical_url == canonical)
-        ).first()
+        exists = (
+            session.query(Article.id)
+            .filter((Article.hash == content_hash) | (Article.canonical_url == canonical))
+            .first()
+        )
         if exists:
             tally["duplicate"] += 1
             continue
         now = datetime.now(UTC)
-        session.add(Article(
-            url=canonical,
-            canonical_url=canonical,
-            source_id=source.id,
-            title=parsed.subject,
-            content=parsed.body_text,
-            published_at=parsed.date,
-            author=parsed.from_addr,
-            hash=content_hash,
-            word_count=len(parsed.body_text.split()),
-            created_at=now,
-            updated_at=now,
-        ))
+        session.add(
+            Article(
+                url=canonical,
+                canonical_url=canonical,
+                source_id=source.id,
+                title=parsed.subject,
+                content=parsed.body_text,
+                published_at=parsed.date,
+                author=parsed.from_addr,
+                hash=content_hash,
+                word_count=len(parsed.body_text.split()),
+                created_at=now,
+                updated_at=now,
+            )
+        )
         try:
             session.commit()
             tally["stored"] += 1

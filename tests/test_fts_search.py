@@ -11,16 +11,16 @@ Two layers:
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from src.database.fts import SearchQueryError, build_match, ensure_fts, search_ids
 from src.database.models import Article, Base, Source
 
-
 # --------------------------------------------------------------------------- #
 # Pure translator
 # --------------------------------------------------------------------------- #
+
 
 def test_build_match_quotes_terms_and_neutralises_punctuation():
     # Every term is emitted as an FTS5 phrase literal -> punctuation is safe.
@@ -48,8 +48,8 @@ def test_build_match_phrases_and_empties():
     assert build_match('"climate change"') == '"climate change"'
     assert build_match("") is None
     assert build_match("   ") is None
-    assert build_match("&&&") is None          # punctuation-only -> no content
-    assert build_match("NOT b") is None        # purely negative is inexpressible
+    assert build_match("&&&") is None  # punctuation-only -> no content
+    assert build_match("NOT b") is None  # purely negative is inexpressible
 
 
 def test_build_match_rejects_unbalanced_parens():
@@ -63,10 +63,12 @@ def test_build_match_rejects_unbalanced_parens():
 # End-to-end against a real FTS5 index
 # --------------------------------------------------------------------------- #
 
+
 @pytest.fixture()
 def session(tmp_path):
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'fts.db'}", future=True,
+        f"sqlite:///{tmp_path / 'fts.db'}",
+        future=True,
         connect_args={"check_same_thread": False},
     )
 
@@ -91,14 +93,16 @@ def session(tmp_path):
         "epsilon": "merger talks at AT&T continue",
     }
     for key, content in docs.items():
-        s.add(Article(
-            url=f"https://t.example/{key}",
-            canonical_url=f"https://t.example/{key}",
-            source_id=src.id,
-            title=key,
-            content=content,
-            hash=key.ljust(64, "0"),
-        ))
+        s.add(
+            Article(
+                url=f"https://t.example/{key}",
+                canonical_url=f"https://t.example/{key}",
+                source_id=src.id,
+                title=key,
+                content=content,
+                hash=key.ljust(64, "0"),
+            )
+        )
     s.commit()
     yield s
     s.close()
@@ -152,10 +156,15 @@ def test_triggers_keep_index_in_sync(session):
     assert _titles(session, "quick AND fox") == {"gamma"}
     # Insert a new matching row -> it enters the index.
     src_id = session.query(Source).first().id
-    session.add(Article(
-        url="https://t.example/zeta", canonical_url="https://t.example/zeta",
-        source_id=src_id, title="zeta", content="quick brown fox returns",
-        hash="zeta".ljust(64, "0"),
-    ))
+    session.add(
+        Article(
+            url="https://t.example/zeta",
+            canonical_url="https://t.example/zeta",
+            source_id=src_id,
+            title="zeta",
+            content="quick brown fox returns",
+            hash="zeta".ljust(64, "0"),
+        )
+    )
     session.commit()
     assert _titles(session, "quick AND fox") == {"gamma", "zeta"}

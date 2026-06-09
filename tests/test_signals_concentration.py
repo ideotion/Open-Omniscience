@@ -31,8 +31,8 @@ def test_gini_known_values():
 
 
 def test_gini_undefined_returns_none_not_a_fabricated_zero():
-    assert gini([]) is None        # no actors
-    assert gini([5]) is None       # a single actor has no inequality
+    assert gini([]) is None  # no actors
+    assert gini([5]) is None  # a single actor has no inequality
     assert gini([0, 0, 0]) is None  # zero total
 
 

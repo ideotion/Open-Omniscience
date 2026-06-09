@@ -17,19 +17,43 @@ from src.database.models import Base, Source
 def _client(tmp_path):
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 's.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 's.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
-        s.add_all([
-            Source(name="Alpha", domain="alpha.test", country="FR", language="fr",
-                   source_type="news", tags="politics,world", enabled=True),
-            Source(name="Beta", domain="beta.test", country="us", language="en",
-                   source_type="financial", tags="markets", enabled=False),
-            Source(name="Gamma", domain="gamma.test", country="fr", language="fr",
-                   source_type="news", tags="climate", enabled=True),
-        ])
+        s.add_all(
+            [
+                Source(
+                    name="Alpha",
+                    domain="alpha.test",
+                    country="FR",
+                    language="fr",
+                    source_type="news",
+                    tags="politics,world",
+                    enabled=True,
+                ),
+                Source(
+                    name="Beta",
+                    domain="beta.test",
+                    country="us",
+                    language="en",
+                    source_type="financial",
+                    tags="markets",
+                    enabled=False,
+                ),
+                Source(
+                    name="Gamma",
+                    domain="gamma.test",
+                    country="fr",
+                    language="fr",
+                    source_type="news",
+                    tags="climate",
+                    enabled=True,
+                ),
+            ]
+        )
         s.commit()
 
     def _db():
@@ -50,7 +74,10 @@ def test_filter_by_country_and_tag(tmp_path):
     try:
         with client:
             byc = client.get("/api/catalog/sources?country=fr").json()
-            assert byc["total"] == 2 and {s["domain"] for s in byc["sources"]} == {"alpha.test", "gamma.test"}
+            assert byc["total"] == 2 and {s["domain"] for s in byc["sources"]} == {
+                "alpha.test",
+                "gamma.test",
+            }
             bytag = client.get("/api/catalog/sources?tag=climate").json()
             assert {s["domain"] for s in bytag["sources"]} == {"gamma.test"}
             bytype = client.get("/api/catalog/sources?source_type=financial").json()
@@ -72,7 +99,16 @@ def test_sort_and_search(tmp_path):
             assert {s["domain"] for s in srch["sources"]} == {"gamma.test"}
             # rows carry the fields the Sources table needs.
             row = asc["sources"][0]
-            assert {"id", "name", "domain", "country", "language", "source_type",
-                    "article_count", "tags", "enabled"} <= set(row)
+            assert {
+                "id",
+                "name",
+                "domain",
+                "country",
+                "language",
+                "source_type",
+                "article_count",
+                "tags",
+                "enabled",
+            } <= set(row)
     finally:
         app.dependency_overrides.clear()

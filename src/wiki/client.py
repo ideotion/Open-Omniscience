@@ -23,8 +23,15 @@ WIKI_USER_AGENT = (
 
 
 class WikiClient:
-    def __init__(self, *, session=None, user_agent: str = WIKI_USER_AGENT,
-                 min_interval_s: float = 1.0, timeout: float = 30.0, maxlag: int = 5):
+    def __init__(
+        self,
+        *,
+        session=None,
+        user_agent: str = WIKI_USER_AGENT,
+        min_interval_s: float = 1.0,
+        timeout: float = 30.0,
+        maxlag: int = 5,
+    ):
         import requests
 
         self.session = session or requests.Session()
@@ -46,7 +53,9 @@ class WikiClient:
         self._respect_rate_limit()
         try:
             resp = self.session.get(
-                mw.api_endpoint(wiki), params={**params, "maxlag": self.maxlag}, timeout=self.timeout,
+                mw.api_endpoint(wiki),
+                params={**params, "maxlag": self.maxlag},
+                timeout=self.timeout,
             )
             resp.raise_for_status()
             return resp.json()
@@ -55,11 +64,17 @@ class WikiClient:
 
     # -- typed helpers ----------------------------------------------------- #
 
-    def fetch_revisions(self, wiki: str, title: str, *, limit: int = 20, older_than: int | None = None) -> list[dict]:
-        return mw.parse_revisions(self._get(wiki, mw.build_revisions_params(title, limit=limit, older_than=older_than)))
+    def fetch_revisions(
+        self, wiki: str, title: str, *, limit: int = 20, older_than: int | None = None
+    ) -> list[dict]:
+        return mw.parse_revisions(
+            self._get(wiki, mw.build_revisions_params(title, limit=limit, older_than=older_than))
+        )
 
     def fetch_recentchanges(self, wiki: str, *, namespace: int = 0, limit: int = 50) -> list[dict]:
-        return mw.parse_recentchanges(self._get(wiki, mw.build_recentchanges_params(namespace=namespace, limit=limit)))
+        return mw.parse_recentchanges(
+            self._get(wiki, mw.build_recentchanges_params(namespace=namespace, limit=limit))
+        )
 
     def fetch_current_text(self, wiki: str, title: str) -> dict:
         return mw.parse_current_text(self._get(wiki, mw.build_current_text_params(title)))

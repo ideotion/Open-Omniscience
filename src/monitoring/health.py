@@ -24,7 +24,7 @@ from src.ingest import EthicalFetcher, FetchError, RobotsDisallowed, RobotsUnava
 class HealthStatus(str, Enum):
     UP = "up"
     DOWN = "down"
-    BLOCKED = "blocked"   # robots disallows / can't confirm -> we won't probe further
+    BLOCKED = "blocked"  # robots disallows / can't confirm -> we won't probe further
     UNKNOWN = "unknown"
 
 
@@ -68,12 +68,27 @@ def check_source(source, *, fetcher: EthicalFetcher) -> SourceHealth:
     try:
         fetcher.fetch(url, require_html=False)
         latency = (time.monotonic() - started) * 1000.0
-        return SourceHealth(getattr(source, "id", None), source.name, url,
-                            HealthStatus.UP, round(latency, 1), now)
+        return SourceHealth(
+            getattr(source, "id", None), source.name, url, HealthStatus.UP, round(latency, 1), now
+        )
     except (RobotsDisallowed, RobotsUnavailable) as exc:
-        return SourceHealth(getattr(source, "id", None), source.name, url,
-                            HealthStatus.BLOCKED, None, now, detail=str(exc))
+        return SourceHealth(
+            getattr(source, "id", None),
+            source.name,
+            url,
+            HealthStatus.BLOCKED,
+            None,
+            now,
+            detail=str(exc),
+        )
     except FetchError as exc:
         latency = (time.monotonic() - started) * 1000.0
-        return SourceHealth(getattr(source, "id", None), source.name, url,
-                            HealthStatus.DOWN, round(latency, 1), now, detail=str(exc))
+        return SourceHealth(
+            getattr(source, "id", None),
+            source.name,
+            url,
+            HealthStatus.DOWN,
+            round(latency, 1),
+            now,
+            detail=str(exc),
+        )

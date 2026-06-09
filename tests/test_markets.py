@@ -27,20 +27,24 @@ from src.markets.pipeline import run_rule
 # parse_number
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("text,expected", [
-    ("$1,234.56", 1234.56),
-    ("1.234,56", 1234.56),          # EU grouping + decimal comma
-    ("1 234.56", 1234.56),          # space grouping
-    (" 2 999,00 €", 2999.00),  # nbsp grouping, decimal comma
-    ("12,5%", 12.5),                # decimal comma, percent stripped
-    ("USD 45.30 / kg", 45.30),
-    ("1,234", 1234.0),              # lone comma, 3 trailing -> grouping
-    ("12,56", 12.56),               # lone comma, 2 trailing -> decimal
-    ("1.234.567", 1234567.0),       # repeated dots -> grouping
-    ("1.234", 1.234),               # lone dot -> decimal mark
-    ("-3.5", -3.5),
-    ("price: 0", 0.0),
-])
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("$1,234.56", 1234.56),
+        ("1.234,56", 1234.56),  # EU grouping + decimal comma
+        ("1 234.56", 1234.56),  # space grouping
+        (" 2 999,00 €", 2999.00),  # nbsp grouping, decimal comma
+        ("12,5%", 12.5),  # decimal comma, percent stripped
+        ("USD 45.30 / kg", 45.30),
+        ("1,234", 1234.0),  # lone comma, 3 trailing -> grouping
+        ("12,56", 12.56),  # lone comma, 2 trailing -> decimal
+        ("1.234.567", 1234567.0),  # repeated dots -> grouping
+        ("1.234", 1.234),  # lone dot -> decimal mark
+        ("-3.5", -3.5),
+        ("price: 0", 0.0),
+    ],
+)
 def test_parse_number_formats(text, expected):
     assert parse_number(text) == pytest.approx(expected)
 
@@ -100,6 +104,7 @@ def test_extract_bad_regex_is_reported():
 # run_rule (ingestion) + API
 # --------------------------------------------------------------------------- #
 
+
 class FakeResponse:
     def __init__(self, status_code=200, text="", content_type="text/html", url=None):
         self.status_code = status_code
@@ -123,8 +128,9 @@ class FakeSession:
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="Metals Exchange", domain="metals.test", language="en"))
@@ -136,9 +142,15 @@ def db():
 def _rule(db, **kw):
     src = db.query(Source).first()
     defaults = {
-        "source_id": src.id, "symbol": "Nd", "category": "commodity",
-        "url": "https://metals.test/nd", "selector": "#price",
-        "currency": "USD", "unit": "kg", "market": "spot", "enabled": True,
+        "source_id": src.id,
+        "symbol": "Nd",
+        "category": "commodity",
+        "url": "https://metals.test/nd",
+        "selector": "#price",
+        "currency": "USD",
+        "unit": "kg",
+        "market": "spot",
+        "enabled": True,
     }
     defaults.update(kw)
     r = MarketExtractionRule(**defaults)
@@ -151,8 +163,9 @@ def test_run_rule_stores_price(db):
     rule = _rule(db)
     sess = FakeSession()
     sess.route("https://metals.test/robots.txt", status_code=404, text="")
-    sess.route("https://metals.test/nd",
-               text='<html><body><span id="price">$ 84.50</span></body></html>')
+    sess.route(
+        "https://metals.test/nd", text='<html><body><span id="price">$ 84.50</span></body></html>'
+    )
     out = run_rule(db, rule, fetcher=EthicalFetcher(min_interval_s=0.0, session=sess))
     assert out.status == "stored_price"
     assert out.value == pytest.approx(84.50)
@@ -170,7 +183,9 @@ def test_run_rule_no_match_stores_nothing(db):
     rule = _rule(db, selector="#does-not-exist")
     sess = FakeSession()
     sess.route("https://metals.test/robots.txt", status_code=404, text="")
-    sess.route("https://metals.test/nd", text="<html><body><span id='price'>84</span></body></html>")
+    sess.route(
+        "https://metals.test/nd", text="<html><body><span id='price'>84</span></body></html>"
+    )
     out = run_rule(db, rule, fetcher=EthicalFetcher(min_interval_s=0.0, session=sess))
     assert out.status == "no_match"
     assert db.query(CommodityPrice).count() == 0
@@ -181,7 +196,9 @@ def test_run_rule_blocked_robots(db):
     rule = _rule(db)
     sess = FakeSession()
     sess.route("https://metals.test/robots.txt", text="User-agent: *\nDisallow: /")
-    sess.route("https://metals.test/nd", text="<html><body><span id='price'>84</span></body></html>")
+    sess.route(
+        "https://metals.test/nd", text="<html><body><span id='price'>84</span></body></html>"
+    )
     out = run_rule(db, rule, fetcher=EthicalFetcher(min_interval_s=0.0, session=sess))
     assert out.status == "blocked_robots"
     assert db.query(CommodityPrice).count() == 0
@@ -201,18 +218,30 @@ def test_markets_api_crud_and_overview(tmp_path, monkeypatch):
         with session_scope() as s:
             sid = s.query(Source).filter_by(domain=domain).first().id
 
-        created = client.post("/api/markets/rules", json={
-            "source_id": sid, "symbol": "ZZTEST", "url": "https://x.test/p",
-            "selector": "#p", "category": "commodity",
-        })
+        created = client.post(
+            "/api/markets/rules",
+            json={
+                "source_id": sid,
+                "symbol": "ZZTEST",
+                "url": "https://x.test/p",
+                "selector": "#p",
+                "category": "commodity",
+            },
+        )
         assert created.status_code == 200
         rid = created.json()["id"]
 
         # Invalid category rejected.
-        bad = client.post("/api/markets/rules", json={
-            "source_id": sid, "symbol": "Q", "url": "https://x.test/p",
-            "selector": "#p", "category": "weather",
-        })
+        bad = client.post(
+            "/api/markets/rules",
+            json={
+                "source_id": sid,
+                "symbol": "Q",
+                "url": "https://x.test/p",
+                "selector": "#p",
+                "category": "weather",
+            },
+        )
         assert bad.status_code == 400
 
         lst = client.get("/api/markets/rules?category=commodity").json()
@@ -222,7 +251,10 @@ def test_markets_api_crud_and_overview(tmp_path, monkeypatch):
         entry = next(i for i in ov["items"] if i["id"] == rid)
         assert entry["points"] == 0 and entry["latest"] is None
 
-        assert client.put(f"/api/markets/rules/{rid}", json={"label": "Test"}).json()["label"] == "Test"
+        assert (
+            client.put(f"/api/markets/rules/{rid}", json={"label": "Test"}).json()["label"]
+            == "Test"
+        )
         assert client.delete(f"/api/markets/rules/{rid}").json()["deleted"] == rid
 
         # Clean up the probe source.

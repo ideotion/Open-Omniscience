@@ -36,27 +36,28 @@ Tests cover:
 Author: Ideotion
 """
 
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from utils.security import (
-    SecurityError,
-    sanitize_html,
-    escape_html,
-    validate_and_sanitize_filename,
-    safe_path_join,
-    sanitize_url,
-    validate_email,
-    validate_and_sanitize_search_query,
-    generate_secure_token,
-    hash_password,
-    verify_password,
-    get_security_headers,
     SECURITY_HEADERS,
+    SecurityError,
+    escape_html,
+    generate_secure_token,
+    get_security_headers,
+    hash_password,
+    safe_path_join,
+    sanitize_html,
+    sanitize_url,
+    validate_and_sanitize_filename,
+    validate_and_sanitize_search_query,
+    validate_email,
+    verify_password,
 )
 
 
@@ -81,7 +82,7 @@ class TestSanitizeHtml:
 
     def test_sanitize_html_removes_javascript_urls(self):
         """Test that javascript: URLs are removed from HTML."""
-        html = '<a href="javascript:alert(\'xss\')">Click me</a>'
+        html = "<a href=\"javascript:alert('xss')\">Click me</a>"
         sanitized = sanitize_html(html)
         assert "javascript:" not in sanitized
         assert "Click me" in sanitized
@@ -118,16 +119,16 @@ class TestFilenameValidation:
         """Test that path traversal attempts are rejected."""
         with pytest.raises(SecurityError):
             validate_and_sanitize_filename("../test.txt")
-        
+
         with pytest.raises(SecurityError):
             validate_and_sanitize_filename("/etc/passwd")
-        
+
         with pytest.raises(SecurityError):
             validate_and_sanitize_filename("test/../file.txt")
 
     def test_validate_filename_rejects_dangerous_characters(self):
         """Test that dangerous characters are rejected."""
-        dangerous_chars = ['<', '>', ':', '"', '|', '?', '*']
+        dangerous_chars = ["<", ">", ":", '"', "|", "?", "*"]
         for char in dangerous_chars:
             with pytest.raises(SecurityError):
                 validate_and_sanitize_filename(f"test{char}file.txt")
@@ -141,7 +142,7 @@ class TestFilenameValidation:
             "file with spaces.txt",
             "file_with_underscores.log",
             "file-with-hyphens.db",
-            "12345.dat"
+            "12345.dat",
         ]
         for filename in safe_filenames:
             result = validate_and_sanitize_filename(filename)
@@ -152,7 +153,7 @@ class TestFilenameValidation:
         """Test that empty filenames are rejected."""
         with pytest.raises(SecurityError):
             validate_and_sanitize_filename("")
-        
+
         with pytest.raises(SecurityError):
             validate_and_sanitize_filename(None)
 
@@ -169,20 +170,20 @@ class TestSafePathJoin:
     def test_safe_path_join_rejects_path_traversal(self):
         """Test that path traversal attempts are rejected."""
         base = "/tmp/base"
-        
+
         with pytest.raises(SecurityError):
             safe_path_join(base, "../escape")
-        
+
         with pytest.raises(SecurityError):
             safe_path_join(base, "/absolute/path")
-        
+
         with pytest.raises(SecurityError):
             safe_path_join(base, "subdir", "../escape")
 
     def test_safe_path_join_rejects_absolute_paths(self):
         """Test that absolute paths in parts are rejected."""
         base = "/tmp/base"
-        
+
         with pytest.raises(SecurityError):
             safe_path_join(base, "/etc/passwd")
 
@@ -221,7 +222,7 @@ class TestUrlSanitization:
             "http://example.com:8080/path?query=value",
             "ftp://files.example.com/file.txt",
             "/relative/path",
-            "relative/path"
+            "relative/path",
         ]
         for url in urls:
             sanitized = sanitize_url(url)
@@ -243,7 +244,7 @@ class TestEmailValidation:
             "first.last@sub.domain.com",
             "user+tag@example.co.uk",
             "user123@example.org",
-            "user_name@example.net"
+            "user_name@example.net",
         ]
         for email in valid_emails:
             assert validate_email(email) is True
@@ -252,13 +253,13 @@ class TestEmailValidation:
         """Test that invalid emails are rejected."""
         invalid_emails = [
             "user@example",  # Missing TLD
-            "user@.com",     # Missing domain
+            "user@.com",  # Missing domain
             "@example.com",  # Missing username
             "user@example..com",  # Double dot
             "user example@example.com",  # Space in username
             "user@example.com.",  # Trailing dot
             "",  # Empty
-            None
+            None,
         ]
         for email in invalid_emails:
             assert validate_email(email) is False
@@ -276,7 +277,7 @@ class TestSearchQueryValidation:
             "term1 OR term2",
             '"exact phrase"',
             "test*",
-            "(term1 OR term2) AND term3"
+            "(term1 OR term2) AND term3",
         ]
         for query in queries:
             result = validate_and_sanitize_search_query(query)
@@ -311,7 +312,7 @@ class TestTokenGeneration:
         token = generate_secure_token()
         assert isinstance(token, str)
         # Hex strings should only contain 0-9, a-f
-        assert all(c in '0123456789abcdef' for c in token)
+        assert all(c in "0123456789abcdef" for c in token)
 
     def test_generate_secure_token_unique(self):
         """Test that generated tokens are unique."""
@@ -374,7 +375,7 @@ class TestSecurityHeaders:
             "Content-Security-Policy",
             "Referrer-Policy",
             "Strict-Transport-Security",
-            "Permissions-Policy"
+            "Permissions-Policy",
         ]
         for header in essential_headers:
             assert header in headers
@@ -402,17 +403,17 @@ class TestSecurityConstants:
 
     def test_security_headers_constant_exists(self):
         """Test that SECURITY_HEADERS constant exists."""
-        assert hasattr(SECURITY_HEADERS, '__iter__')
+        assert hasattr(SECURITY_HEADERS, "__iter__")
         assert len(SECURITY_HEADERS) > 0
 
     def test_security_error_exception(self):
         """Test that SecurityError is a proper exception."""
         assert issubclass(SecurityError, Exception)
-        
+
         # Test that it can be raised and caught
         with pytest.raises(SecurityError):
             raise SecurityError("Test error")
-        
+
         try:
             raise SecurityError("Test error")
         except SecurityError as e:

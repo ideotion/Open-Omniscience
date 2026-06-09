@@ -27,12 +27,32 @@ import re
 from datetime import date
 
 _MONTHS = {
-    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
-    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8,
-    "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "sept": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
 }
-_MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))   # longest first so 'sept' beats 'sep'
+_MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))  # longest first so 'sept' beats 'sep'
 
 _ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _DMY_RE = re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_ALT})\.?\s+(\d{{4}})\b", re.I)
@@ -53,7 +73,7 @@ def _valid(year: int, month: int, day: int, today: date) -> date | None:
 
 
 def _snippet(text: str, start: int, end: int, pad: int = 24) -> str:
-    s = text[max(0, start - pad):min(len(text), end + pad)].strip()
+    s = text[max(0, start - pad) : min(len(text), end + pad)].strip()
     return re.sub(r"\s+", " ", s)
 
 
@@ -67,12 +87,12 @@ def extract_dates(text: str, *, today: date | None = None, limit: int = 8) -> li
     if not text:
         return []
     today = today or date.today()
-    consumed: list[tuple[int, int]] = []      # spans claimed by more specific matches
+    consumed: list[tuple[int, int]] = []  # spans claimed by more specific matches
     found: dict[tuple[str, str], dict] = {}
 
     def claim(start: int, end: int) -> bool:
         for cs, ce in consumed:
-            if start < ce and cs < end:        # overlaps an already-claimed span
+            if start < ce and cs < end:  # overlaps an already-claimed span
                 return False
         consumed.append((start, end))
         return True
@@ -80,8 +100,12 @@ def extract_dates(text: str, *, today: date | None = None, limit: int = 8) -> li
     def add(d: date, precision: str, m: re.Match) -> None:
         key = (d.isoformat(), precision)
         if key not in found:
-            found[key] = {"date": d.isoformat(), "precision": precision,
-                          "text": _snippet(text, m.start(), m.end()), "pos": m.start()}
+            found[key] = {
+                "date": d.isoformat(),
+                "precision": precision,
+                "text": _snippet(text, m.start(), m.end()),
+                "pos": m.start(),
+            }
 
     for m in _ISO_RE.finditer(text):
         d = _valid(int(m.group(1)), int(m.group(2)), int(m.group(3)), today)
@@ -95,7 +119,7 @@ def extract_dates(text: str, *, today: date | None = None, limit: int = 8) -> li
         d = _valid(int(m.group(3)), _MONTHS[m.group(1).lower()], int(m.group(2)), today)
         if d and claim(*m.span()):
             add(d, "day", m)
-    for m in _MY_RE.finditer(text):          # month precision — only where no day match claimed it
+    for m in _MY_RE.finditer(text):  # month precision — only where no day match claimed it
         d = _valid(int(m.group(2)), _MONTHS[m.group(1).lower()], 1, today)
         if d and claim(*m.span()):
             add(d, "month", m)

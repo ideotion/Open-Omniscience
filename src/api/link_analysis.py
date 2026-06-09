@@ -40,8 +40,10 @@ def stats(db: Session = Depends(get_db)) -> dict:
     """Corpus-wide link totals (all real COUNT(*) — nothing estimated)."""
     return {
         "external_links": db.query(func.count(ArticleLink.id)).scalar() or 0,
-        "distinct_links": db.query(func.count(func.distinct(ArticleLink.normalized_url))).scalar() or 0,
-        "articles_with_links": db.query(func.count(func.distinct(ArticleLink.article_id))).scalar() or 0,
+        "distinct_links": db.query(func.count(func.distinct(ArticleLink.normalized_url))).scalar()
+        or 0,
+        "articles_with_links": db.query(func.count(func.distinct(ArticleLink.article_id))).scalar()
+        or 0,
     }
 
 
@@ -69,31 +71,43 @@ def top_cited(
         )
         if cutoff is not None:
             q = q.join(Article, ArticleLink.article_id == Article.id).filter(
-                func.coalesce(Article.published_at, Article.created_at) >= cutoff)
-        q = (q.group_by(ArticleLink.normalized_url)
-              .having(func.count(func.distinct(ArticleLink.article_id)) >= min_citations)
-              .order_by(desc("citations")).limit(limit))
-        items = [{
-            "normalized_url": r.nu,
-            "sample_url": r.sample_url,
-            "link_text": r.sample_text,
-            "domain": registrable_domain(r.nu),
-            "citations": r.citations,
-        } for r in q.all()]
+                func.coalesce(Article.published_at, Article.created_at) >= cutoff
+            )
+        q = (
+            q.group_by(ArticleLink.normalized_url)
+            .having(func.count(func.distinct(ArticleLink.article_id)) >= min_citations)
+            .order_by(desc("citations"))
+            .limit(limit)
+        )
+        items = [
+            {
+                "normalized_url": r.nu,
+                "sample_url": r.sample_url,
+                "link_text": r.sample_text,
+                "domain": registrable_domain(r.nu),
+                "citations": r.citations,
+            }
+            for r in q.all()
+        ]
         return {"by": "url", "window_days": window_days, "items": items}
 
     # by == "domain": parse the registrable domain in Python (portable across SQLite).
     pairs = db.query(ArticleLink.normalized_url, ArticleLink.article_id)
     if cutoff is not None:
         pairs = pairs.join(Article, ArticleLink.article_id == Article.id).filter(
-            func.coalesce(Article.published_at, Article.created_at) >= cutoff)
+            func.coalesce(Article.published_at, Article.created_at) >= cutoff
+        )
     by_domain: dict[str, set[int]] = defaultdict(set)
     for nu, aid in pairs.distinct().all():
         dom = registrable_domain(nu)
         if dom:
             by_domain[dom].add(aid)
     items = sorted(
-        ({"domain": d, "citations": len(ids)} for d, ids in by_domain.items() if len(ids) >= min_citations),
+        (
+            {"domain": d, "citations": len(ids)}
+            for d, ids in by_domain.items()
+            if len(ids) >= min_citations
+        ),
         key=lambda x: -x["citations"],
     )[:limit]
     return {"by": "domain", "window_days": window_days, "items": items}
@@ -117,35 +131,55 @@ def articles_by_link(
     if url:
         try:
             from src.services.link_analyzer import LinkExtractor
+
             norm = LinkExtractor().normalize_url(url)
         except Exception:  # noqa: BLE001 - normalisation is best-effort
             norm = url
         match = {"url": url, "normalized_url": norm}
-        ids = [a for (a,) in db.query(ArticleLink.article_id).filter(
-            (ArticleLink.normalized_url == norm) | (ArticleLink.normalized_url == url) | (ArticleLink.url == url)
-        ).distinct().all()]
+        ids = [
+            a
+            for (a,) in db.query(ArticleLink.article_id)
+            .filter(
+                (ArticleLink.normalized_url == norm)
+                | (ArticleLink.normalized_url == url)
+                | (ArticleLink.url == url)
+            )
+            .distinct()
+            .all()
+        ]
     else:
         dom = domain.strip().lower()
         match = {"domain": dom}
         # LIKE pre-filter, then exact registrable-domain check (avoids false hits).
-        ids = sorted({
-            aid for (aid, nu) in db.query(ArticleLink.article_id, ArticleLink.normalized_url)
-            .filter(ArticleLink.normalized_url.like(f"%{dom}%")).all()
-            if registrable_domain(nu) == dom
-        })
+        ids = sorted(
+            {
+                aid
+                for (aid, nu) in db.query(ArticleLink.article_id, ArticleLink.normalized_url)
+                .filter(ArticleLink.normalized_url.like(f"%{dom}%"))
+                .all()
+                if registrable_domain(nu) == dom
+            }
+        )
 
     total = len(ids)
     articles = []
     if ids:
-        rows = (db.query(Article, Source.name)
-                .outerjoin(Source, Article.source_id == Source.id)
-                .filter(Article.id.in_(ids[:limit]))
-                .order_by(desc(func.coalesce(Article.published_at, Article.created_at)))
-                .all())
+        rows = (
+            db.query(Article, Source.name)
+            .outerjoin(Source, Article.source_id == Source.id)
+            .filter(Article.id.in_(ids[:limit]))
+            .order_by(desc(func.coalesce(Article.published_at, Article.created_at)))
+            .all()
+        )
         for art, source_name in rows:
-            articles.append({
-                "id": art.id, "title": art.title, "url": art.url,
-                "source": source_name, "language": art.language,
-                "published_at": art.published_at.isoformat() if art.published_at else None,
-            })
+            articles.append(
+                {
+                    "id": art.id,
+                    "title": art.title,
+                    "url": art.url,
+                    "source": source_name,
+                    "language": art.language,
+                    "published_at": art.published_at.isoformat() if art.published_at else None,
+                }
+            )
     return {"match": match, "count": total, "articles": articles}

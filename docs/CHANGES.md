@@ -1,6 +1,49 @@
 # Changelog
 
-> `0.05` is the repository's **default branch** — the mainline everything builds on.
+> The repository’s **default branch is the active cycle branch** (currently `0.07`); each cycle branch `0.0N` produces release `0.0.N`.
+
+## 0.07 — full audit cycle (hardening, truth-up, performance)
+
+A six-phase, evidence-driven audit of the whole repository (baseline → architecture →
+quality → stabilize → optimize → docs; reports in [`docs/audit/`](audit/), findings in
+[`docs/audit/findings.csv`](audit/findings.csv)). 29 findings: 20 fixed, 9 deferred with
+rationale. Highlights:
+
+- **Ethics invariant restored (ETH-01, the audit's one real invariant breach):** RSS-feed
+  *discovery* used to fetch pages with raw `requests`, bypassing robots.txt, the SSRF
+  guard, and per-host rate limiting. It now goes through the same `EthicalFetcher` as all
+  ingestion, with regression tests proving robots-fail-closed and SSRF refusals apply.
+  The one remaining external call — *Discover by topic* querying DuckDuckGo — is now
+  explicitly documented as a user-triggered, opt-in exception (`docs/SECURITY.md`).
+- **Safe-by-default config:** `.env.example` rewritten to the real `OO_*` surface
+  (previously advertised `0.0.0.0` binds, a wildcard Ollama CORS, an auto-download that
+  doesn't exist, and JWT/auth secrets for an auth system that doesn't exist); Config
+  defaults now loopback; the app version is single-sourced from package metadata
+  (was reported three ways: 0.02 / 0.03 / 0.0.7).
+- **Performance (measured, `scripts/benchmark_audit.py`):** dropped a B-tree index over
+  the full article body that no query used — **a 50k-article DB shrinks 354 → 130 MB
+  (−63%)** (migration `f1a2b3c4d5e6`; run `make migrate` on existing databases).
+  Recency-browse verified at p50 1.3 ms on 50k rows; near-duplicate clustering verified
+  linear (no O(n²)).
+- **Reliability:** the fetcher now retries *transient* failures (network errors, 429,
+  5xx) with bounded backoff — never 4xx or robots/SSRF refusals — staying rate-limit
+  polite. New regression tests for the body-size cap, redirect cap, and DNS-rebinding
+  refusal.
+- **A core-only install is now green:** analysis-dependent tests skip (instead of
+  failing) when the `[analysis]` extra is absent.
+- **Dead code quarantined:** six packages (~4,400 LOC: `ingestor`, `scraper`,
+  `custom_types`, `compliance`, `audit`, `reports`) moved to `quarantine/dead_src/`;
+  `bandit -r src/` now reports zero issues.
+- **CI:** runs on every pushed branch (the old trigger was pinned to `0.04` and silently
+  skipped pushes to the default branch); adds a core-only-install job, plus bandit and
+  pip-audit gates.
+- **Docs truth-up:** `docs/ARCHITECTURE.md`'s fossil "NOT FUNCTIONAL / conceptual only"
+  database section replaced with the verified reality (SQLite supported and tested;
+  PostgreSQL honestly labelled untested scaffolding with no search); doc sprawl
+  consolidated (`NEXT_VERSION` merged into `ROADMAP`, presentation archived, ~68 MB of
+  legacy audit dumps pruned from the tree — retrievable from git history).
+- Lint/format: `ruff --fix` + `ruff format` across the tree (887 → 312 advisory
+  remainder); style debt no longer obscures diffs.
 
 ## 0.07 — space & time, and a calmer GUI
 
@@ -36,7 +79,7 @@ no-server, no-telemetry posture; every new surface states its limits.
 ## 0.06 — Phase B: safety, sense-making, accessibility & governance
 
 A second slice of the `0.06` work, organised around four themes from
-[`NEXT_VERSION.md`](NEXT_VERSION.md). Each ships an honest Phase 1 today; none weakens the
+the "Next version — action plans" section of [`ROADMAP.md`](ROADMAP.md). Each ships an honest Phase 1 today; none weakens the
 local-first, no-server, no-telemetry posture. See [`GOVERNANCE.md`](GOVERNANCE.md).
 
 - **At-risk-user safety (`src/safety/`).** New **Settings → Safety** panel and `/api/safety`

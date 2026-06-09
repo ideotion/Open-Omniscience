@@ -1,0 +1,45 @@
+%% Ingestion path — verified against src/ingest/, src/scheduler/, src/api/ingestion.py (Phase 1 audit)
+flowchart TD
+    subgraph ENTRY ["Entry points"]
+        E1["POST /api/ingest (single URL)"]
+        E2["POST /api/sources/{id}/ingest (RSS)"]
+        E3["POST /api/sources/ingest-batch"]
+        E4["Bounded crawler (crawl_source, depth≤6, pages≤500, same-domain)"]
+        E5["BackgroundScheduler (daemon thread, modes rss/crawl/markets/wiki/law, OO_NO_SCHEDULER kill switch)"]
+        E6["Markets rules + CSV feeds"]
+        E7["Law tracker"]
+        E8["Email ingest (IMAP — no HTTP)"]
+        E9["Wiki tracker (MediaWiki API client, own UA + maxlag)"]
+    end
+
+    subgraph FETCH ["EthicalFetcher — the single HTTP fetch path (src/ingest/__init__.py)"]
+        F0["scheme check: http/https only (rejects file:// etc.)"]
+        F1["SSRF guard: resolve host, block private/loopback/link-local/metadata IPs (re-checked per redirect, max 5)"]
+        F2["robots.txt FAIL-CLOSED: 5xx/401/403/error ⇒ RobotsUnavailable; disallow ⇒ RobotsDisallowed; 1h cache"]
+        F3["per-host rate limit: max(min_interval 1s, robots crawl-delay)"]
+        F4["GET — UA 'OpenOmniscienceBot/x (+repo URL; ethical research crawler)', timeout 30s, body cap 10MB"]
+    end
+
+    subgraph PIPE ["Pipeline (src/ingest/pipeline.py)"]
+        P0["dedup stage 1: canonical URL exists? (pre-fetch, tracking params stripped)"]
+        P1["extract: trafilatura, ≥200 chars body or EXTRACT_FAILED (nothing stored)"]
+        P2["dedup stage 2: SHA-256 content hash exists? + DB UNIQUE(hash) catches races"]
+        P3["store Article: url, canonical_url, source_id, title, content, published_at, language, hash, author"]
+        P4["best-effort: keyword indexing + link extraction (OO_NO_INDEX skips)"]
+        P5["optional: custody log entry (auto_log_on_ingest)"]
+    end
+
+    subgraph STORE ["Storage & search"]
+        S1[("articles (UNIQUE hash)")]
+        S2[("article_fts — FTS5 external-content, synced by AFTER INSERT/UPDATE/DELETE triggers")]
+        S3[("article_links / keywords")]
+        S4[("custody log — append-only, hash-chained, signed")]
+    end
+
+    E1 & E2 & E3 & E4 & E6 & E7 --> F0 --> F1 --> F2 --> F3 --> F4
+    E5 --> E2 & E4 & E6 & E7 & E9
+    F4 --> P0 --> P1 --> P2 --> P3 --> P4
+    P3 --> S1 --> S2
+    P4 --> S3
+    P3 --> P5 --> S4
+    E8 -.->|"IMAP4_SSL, robots N/A"| P1

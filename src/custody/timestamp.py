@@ -116,6 +116,7 @@ def sha256(data: bytes) -> bytes:
 # Local (self-asserted) timestamp -- offline, always available
 # --------------------------------------------------------------------------- #
 
+
 def local_timestamp(digest: bytes) -> TimestampProof:
     """A self-asserted UTC time for ``digest``. Honest about its own weakness."""
     return TimestampProof(
@@ -133,6 +134,7 @@ def local_timestamp(digest: bytes) -> TimestampProof:
 # --------------------------------------------------------------------------- #
 # OpenTimestamps -- independent, Bitcoin-anchored (network required)
 # --------------------------------------------------------------------------- #
+
 
 def ots_stamp(
     digest: bytes,

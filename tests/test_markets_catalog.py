@@ -39,8 +39,9 @@ def test_markets_catalog_parses_and_is_wellformed():
 
 
 def _session():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 

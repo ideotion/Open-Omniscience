@@ -71,6 +71,7 @@ class SigningError(RuntimeError):
 # Key paths / at-rest protection
 # --------------------------------------------------------------------------- #
 
+
 def _keys_dir() -> Path:
     from src.paths import data_dir
 
@@ -107,6 +108,7 @@ def _unwrap(blob: bytes, passphrase: bytes) -> bytes:
 # --------------------------------------------------------------------------- #
 # Hybrid signer
 # --------------------------------------------------------------------------- #
+
 
 @dataclass
 class PublicIdentity:
@@ -211,9 +213,13 @@ class HybridSigner:
 
     # -- identity ---------------------------------------------------------- #
     def public_identity(self) -> PublicIdentity:
-        ed_pub = self._ed_key.public_key().public_bytes(
-            encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
-        ).hex()
+        ed_pub = (
+            self._ed_key.public_key()
+            .public_bytes(
+                encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+            )
+            .hex()
+        )
         if self._mldsa_pk is not None:
             return PublicIdentity(ed_pub, _MLDSA_VARIANT, self._mldsa_pk.hex())
         return PublicIdentity(ed_pub, None, None)
@@ -226,9 +232,13 @@ class HybridSigner:
         ML-DSA key is present, otherwise ``"ed25519"``.
         """
         ed_sig = self._ed_key.sign(data).hex()
-        ed_pub = self._ed_key.public_key().public_bytes(
-            encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
-        ).hex()
+        ed_pub = (
+            self._ed_key.public_key()
+            .public_bytes(
+                encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+            )
+            .hex()
+        )
         if self._mldsa_sk is not None:
             ml_sig = _mldsa.sign(self._mldsa_sk, data).hex()
             return {
@@ -242,6 +252,7 @@ class HybridSigner:
 # --------------------------------------------------------------------------- #
 # Verification (stateless -- needs only the signature dict + data)
 # --------------------------------------------------------------------------- #
+
 
 def _verify_ed25519(pub_hex: str, sig_hex: str, data: bytes) -> bool:
     try:
@@ -263,7 +274,9 @@ def _verify_mldsa(variant: str, pub_hex: str, sig_hex: str, data: bytes) -> bool
         return False
 
 
-def verify(signature: dict, data: bytes, *, pinned: PublicIdentity | None = None) -> tuple[bool, str]:
+def verify(
+    signature: dict, data: bytes, *, pinned: PublicIdentity | None = None
+) -> tuple[bool, str]:
     """Verify a signature dict over ``data``.
 
     Returns ``(ok, reason)``.

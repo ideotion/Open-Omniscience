@@ -44,9 +44,28 @@ DEFAULT_MAX_PAGES = 50
 
 # Link targets that are never worth fetching as article pages.
 _SKIP_SUFFIXES = (
-    ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".ico",
-    ".zip", ".gz", ".mp3", ".mp4", ".avi", ".mov", ".css", ".js", ".rss",
-    ".xml", ".json", ".woff", ".woff2", ".ttf",
+    ".pdf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".ico",
+    ".zip",
+    ".gz",
+    ".mp3",
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".css",
+    ".js",
+    ".rss",
+    ".xml",
+    ".json",
+    ".woff",
+    ".woff2",
+    ".ttf",
 )
 
 

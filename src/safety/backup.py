@@ -63,7 +63,9 @@ def restore_encrypted_backup(blob: bytes, passphrase: str) -> dict:
             from datetime import UTC, datetime
 
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-            dest.with_suffix(dest.suffix + f".pre-restore-{stamp}.bak").write_bytes(dest.read_bytes())
+            dest.with_suffix(dest.suffix + f".pre-restore-{stamp}.bak").write_bytes(
+                dest.read_bytes()
+            )
         dest.write_bytes(plaintext)
         return {"restored": True, "validated_rows": rows, "path": str(dest)}
     finally:

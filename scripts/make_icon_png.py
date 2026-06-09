@@ -25,7 +25,7 @@ from PIL import Image, ImageChops, ImageDraw
 OUT = Path(__file__).resolve().parent.parent / "assets" / "icon.png"
 
 SIZE = 256
-SS = 4                      # supersample factor for crisp antialiasing
+SS = 4  # supersample factor for crisp antialiasing
 N = SIZE * SS
 
 
@@ -88,9 +88,7 @@ def main() -> None:
     # --- globe disc: a faint white sphere for depth ----------------------- #
     globe = Image.new("RGBA", (N, N), (0, 0, 0, 0))
     gd = ImageDraw.Draw(globe)
-    gd.ellipse(
-        [s(128 - 92), s(128 - 92), s(128 + 92), s(128 + 92)], fill=(0xFF, 0xFF, 0xFF, 16)
-    )
+    gd.ellipse([s(128 - 92), s(128 - 92), s(128 + 92), s(128 + 92)], fill=(0xFF, 0xFF, 0xFF, 16))
 
     group = Image.alpha_composite(Image.new("RGBA", (N, N), (0, 0, 0, 0)), globe)
 
@@ -113,8 +111,9 @@ def main() -> None:
     # --- pupil (white) + dark catch-light -------------------------------- #
     pd = ImageDraw.Draw(group)
     pd.ellipse([s(128 - 20), s(128 - 20), s(128 + 20), s(128 + 20)], fill=(0xFF, 0xFF, 0xFF, 255))
-    pd.ellipse([s(120 - 6.5), s(120 - 6.5), s(120 + 6.5), s(120 + 6.5)],
-               fill=(0x00, 0x00, 0x00, 215))
+    pd.ellipse(
+        [s(120 - 6.5), s(120 - 6.5), s(120 + 6.5), s(120 + 6.5)], fill=(0x00, 0x00, 0x00, 215)
+    )
 
     # --- clip the whole globe group to the almond eye --------------------- #
     eye_mask = Image.new("L", (N, N), 0)

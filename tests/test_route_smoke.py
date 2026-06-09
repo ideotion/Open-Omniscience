@@ -22,8 +22,9 @@ from src.database.session import get_db
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'smoke.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'smoke.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     ensure_fts(engine)
     Sess = sessionmaker(bind=engine, future=True)

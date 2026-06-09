@@ -69,7 +69,8 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
     except EncryptionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return StreamingResponse(
-        io.BytesIO(blob), media_type="application/octet-stream",
+        io.BytesIO(blob),
+        media_type="application/octet-stream",
         headers={"Content-Disposition": "attachment; filename=open-omniscience-backup.ooenc"},
     )
 

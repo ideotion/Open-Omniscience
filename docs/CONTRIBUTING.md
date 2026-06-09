@@ -9,7 +9,7 @@ silent degradation — see [DESIGN.md](DESIGN.md) §3.
 ```bash
 python3.13 -m venv .venv && . .venv/bin/activate
 pip install -e ".[analysis,dev]"
-pytest -q          # 400+ tests
+pytest -q          # 800+ tests, ~2.5 min
 ```
 
 ## Workflow

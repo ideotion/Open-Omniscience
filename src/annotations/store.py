@@ -122,8 +122,12 @@ def import_bundle(bundle: dict, *, trusted: bool = True) -> dict:
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), "utf-8")
     tmp.replace(path)
-    return {"author_id": aid, "author_name": record["author_name"],
-            "annotations": len(record["annotations"]), "trusted": trusted}
+    return {
+        "author_id": aid,
+        "author_name": record["author_name"],
+        "annotations": len(record["annotations"]),
+        "trusted": trusted,
+    }
 
 
 def _imported_records() -> list[dict]:
@@ -139,9 +143,13 @@ def _imported_records() -> list[dict]:
 def list_authors() -> list[dict]:
     """All imported authors with their trust flag and counts (transparent web-of-trust)."""
     return [
-        {"author_id": r["author_id"], "author_name": r.get("author_name"),
-         "annotations": len(r.get("annotations", [])), "trusted": bool(r.get("trusted")),
-         "imported_at": r.get("imported_at")}
+        {
+            "author_id": r["author_id"],
+            "author_name": r.get("author_name"),
+            "annotations": len(r.get("annotations", [])),
+            "trusted": bool(r.get("trusted")),
+            "imported_at": r.get("imported_at"),
+        }
         for r in _imported_records()
     ]
 
@@ -191,15 +199,27 @@ def aggregate_for_target(target: str) -> dict:
     mine = load_mine()
     for a in mine.get("annotations", []):
         if a.get("target", "").strip().lower() == norm:
-            contributions.append({"author": mine.get("author_name", _MINE_AUTHOR),
-                                   "author_id": "me", "trusted": True, **a})
+            contributions.append(
+                {
+                    "author": mine.get("author_name", _MINE_AUTHOR),
+                    "author_id": "me",
+                    "trusted": True,
+                    **a,
+                }
+            )
     for r in _imported_records():
         if not r.get("trusted"):
             continue
         for a in r.get("annotations", []):
             if a.get("target", "").strip().lower() == norm:
-                contributions.append({"author": r.get("author_name"),
-                                      "author_id": r.get("author_id"), "trusted": True, **a})
+                contributions.append(
+                    {
+                        "author": r.get("author_name"),
+                        "author_id": r.get("author_id"),
+                        "trusted": True,
+                        **a,
+                    }
+                )
 
     # Group by (kind, value): each claim lists its asserters; differing values = dissent.
     claims: dict[tuple, list[dict]] = {}
@@ -213,7 +233,7 @@ def aggregate_for_target(target: str) -> dict:
     ]
     # Dissent = a kind that carries more than one distinct value.
     kinds: dict[str, set] = {}
-    for (k, v) in claims:
+    for k, v in claims:
         kinds.setdefault(k, set()).add(v)
     dissent = sorted(k for k, vals in kinds.items() if len(vals) > 1)
 
@@ -222,7 +242,9 @@ def aggregate_for_target(target: str) -> dict:
         "total_assertions": len(contributions),
         "claims": grouped,
         "dissent_kinds": dissent,
-        "caveat": ("These are attributed assertions from you and the authors you chose to trust — "
-                   "not a consensus, not a verdict, and never averaged into a score. Differing values "
-                   "for the same kind are shown as dissent, not resolved for you."),
+        "caveat": (
+            "These are attributed assertions from you and the authors you chose to trust — "
+            "not a consensus, not a verdict, and never averaged into a score. Differing values "
+            "for the same kind are shown as dissent, not resolved for you."
+        ),
     }

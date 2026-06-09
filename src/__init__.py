@@ -28,7 +28,10 @@ __version__ = "0.0.7"  # keep in sync with pyproject.toml [project].version
 __author__ = "Open-Omniscience Team"
 __license__ = "GPLv3"
 
-# Pillar 4 modules
-from . import audit, compliance, crypto, reports
+# Cryptographic provenance (Merkle proofs, signatures) -- used by the evidence
+# reporting path. The other former "Pillar 4: Legal Admissibility" siblings
+# (audit, compliance, reports) were superseded by src/custody + src/reporting
+# and moved to quarantine/dead_src/ in the v0.0.7 audit (finding MAINT-01).
+from . import crypto
 
-__all__ = ['crypto', 'audit', 'compliance', 'reports']
+__all__ = ["crypto"]
