@@ -72,7 +72,7 @@ UNATTENDED="${OO_UNATTENDED:-0}"
 
 banner() {
     if [ -f "$SRC_DIR/assets/logo.txt" ]; then
-        printf '%s' "$BLU$BOLD"; cat "$SRC_DIR/assets/logo.txt"; printf '%s' "$RST"
+        printf '%s' "$BOLD"; cat "$SRC_DIR/assets/logo.txt"; printf '%s' "$RST"
     fi
     printf '%s        Open Omniscience%s\n' "$BOLD" "$RST"
     printf '%s  Local-first, ethical intelligence platform for investigative journalism%s\n' "$DIM" "$RST"
