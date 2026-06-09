@@ -182,6 +182,19 @@
       animation:oo-spin .7s linear infinite; }
     .activity.bg .spin { border-top-color:var(--ok); }
     @keyframes oo-spin { to { transform:rotate(360deg); } }
+    /* Activity & vitals popover (opened from the chip). */
+    .vitals-pop { position:fixed; top:52px; right:14px; z-index:60; width:264px;
+      background:var(--panel); border:1px solid var(--border); border-radius:10px;
+      box-shadow:0 10px 34px rgba(0,0,0,.38); padding:10px 12px; font-size:12px; }
+    .vitals-pop[hidden] { display:none; }
+    .vitals-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+    .vitals-pop .vr { display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:4px 0; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
+    .vitals-pop .vr:first-child { border-top:0; }
+    .vitals-pop .vr > span { color:var(--muted); }
+    .vitals-pop .vr b { font-variant-numeric:tabular-nums; font-weight:600; max-width:160px;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .vitals-pop .vnote { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.35; }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -399,7 +412,7 @@
         </div>
         <div class="spacer"></div>
         <div class="status-cluster" id="statusCluster">
-          <span id="activity" class="activity" hidden role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span></span>
+          <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click for details" tabindex="0" aria-expanded="false" aria-haspopup="dialog" style="cursor:pointer" onclick="toggleVitals()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleVitals();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
         </div>
@@ -410,6 +423,14 @@
         <a class="icon-btn" href="/docs" target="_blank" rel="noopener" title="Raw API reference (Swagger)" aria-label="Raw API reference (opens in a new tab)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></a>
       </header>
+
+      <div id="vitals-pop" class="vitals-pop" hidden role="dialog" aria-label="Activity and system vitals">
+        <div class="vitals-head"><b>Activity &amp; vitals</b>
+          <button class="icon-btn" style="width:24px;height:24px" onclick="toggleVitals()" aria-label="Close" title="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+        <div id="vitals-body"></div>
+        <div id="vitals-note"></div>
+      </div>
 
       <main id="main" tabindex="-1">
     <div id="onboard" class="panel" style="display:none;border-color:var(--accent)">
@@ -1275,17 +1296,18 @@
     }
 
     // -- Background-activity indicator -------------------------------------- //
-    // Honest "the app is doing something" signal in the top bar. Two sources:
+    // Honest "the app is doing something" signal in the top bar. Sources:
     //   * in-flight requests -- every backend call goes through api(), so a counter
     //     there lights a "Working…" spinner for ANY action, app-wide. Shown only
     //     after a short delay so fast status polls don't flicker the chrome.
     //   * background work -- a running scrape (scheduler status .active) shows a
-    //     persistent "Collecting…" chip. (A live byte/CPU vitals readout layers
-    //     onto this same element in a later increment.)
-    let _inflight = 0, _bg = null, _spinTimer = null;
+    //     persistent "Collecting… <host>" chip; the host is the URL being fetched
+    //     right now (live, truncated). Click the chip for a vitals popover.
+    let _inflight = 0, _bg = null, _spinTimer = null, _curHost = null;
     function _paintActivity() {
       const el = $("activity"); if (!el) return;
-      if (_bg) { el.hidden = false; el.classList.add("bg"); $("activity-label").textContent = _bg; }
+      if (_bg) { el.hidden = false; el.classList.add("bg");
+        $("activity-label").textContent = _curHost ? (_bg + " " + _curHost) : _bg; }
       else if (_inflight > 0) { el.hidden = false; el.classList.remove("bg"); $("activity-label").textContent = "Working…"; }
       else { el.hidden = true; }
     }
@@ -1301,13 +1323,82 @@
     function setBackgroundActivity(label) {
       const next = label || null;
       if (next === _bg) return;
-      _bg = next; _paintActivity();
+      _bg = next; if (!_bg) _curHost = null;
+      _paintActivity();
       if (!_bg) _bumpInflight(0);   // re-evaluate any still-pending in-flight spinner
+      _ensureVitalsPoll();
     }
     async function _pollActivity() {
       try { const s = await api("/api/scheduler/status");
         setBackgroundActivity(s && s.active ? "Collecting…" : null);
       } catch { /* transient: keep the last known state */ }
+    }
+
+    // -- Live vitals (CPU/RAM/disk + real, app-attributed scraping throughput) -- //
+    // Polls /api/system/vitals only while a scrape is active OR the popover is open,
+    // so an idle app makes no extra requests. Rates are derived by diffing two
+    // snapshots (the endpoint returns cumulative counters -- never a guessed
+    // instantaneous value). The current-fetch URL is shown truncated and live.
+    let _vitalsTimer = null, _vitalsOpen = false, _vitalsPrev = null;
+    function _shortUrl(u) {
+      if (!u) return "";
+      const s = String(u).replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+      return s.length > 40 ? s.slice(0, 39) + "…" : s;
+    }
+    function _fmtBytes(n) {
+      if (n == null) return "—";
+      const u = ["B","KB","MB","GB","TB"]; let i = 0, v = n;
+      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+      return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + " " + u[i];
+    }
+    function _rateBytes(curr, prev, pick) {
+      if (!prev) return null;
+      const dt = curr.at - prev.at; if (dt <= 0) return null;
+      const a = pick(curr), b = pick(prev);
+      if (a == null || b == null) return null;
+      return Math.max(0, (a - b) / dt);
+    }
+    function _vitalsShouldRun() { return _vitalsOpen || !!_bg; }
+    function _ensureVitalsPoll() {
+      if (_vitalsShouldRun() && !_vitalsTimer) {
+        _pollVitals();
+        _vitalsTimer = setInterval(() => { if (!document.hidden) _pollVitals(); }, 2000);
+      } else if (!_vitalsShouldRun() && _vitalsTimer) {
+        clearInterval(_vitalsTimer); _vitalsTimer = null; _vitalsPrev = null;
+      }
+    }
+    async function _pollVitals() {
+      let v; try { v = await api("/api/system/vitals"); } catch { return; }
+      const cur = v.scraping && v.scraping.current_fetch;
+      if (_bg) { _curHost = cur ? _shortUrl(cur.url) : null; _paintActivity(); }
+      if (_vitalsOpen) _renderVitals(v);
+      _vitalsPrev = v;
+    }
+    function _renderVitals(v) {
+      const p = v.process || {}, sc = v.scraping || {}, cur = sc.current_fetch;
+      const dl = _rateBytes(v, _vitalsPrev, x => x.scraping && x.scraping.bytes_total);
+      const wr = _rateBytes(v, _vitalsPrev, x => x.process && x.process.io_write_bytes);
+      const rd = _rateBytes(v, _vitalsPrev, x => x.process && x.process.io_read_bytes);
+      const row = (k, val) => `<div class="vr"><span>${k}</span><b>${val}</b></div>`;
+      $("vitals-body").innerHTML =
+        row("Now fetching", cur ? esc(_shortUrl(cur.url)) : '<span class="muted">idle</span>') +
+        row("Scraping ↓", dl == null ? "—" : _fmtBytes(dl) + "/s") +
+        row("Downloaded", _fmtBytes(sc.bytes_total) + ` <span class="muted">· ${sc.fetches_total||0} fetches</span>`) +
+        row("CPU", p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
+        row("Memory", _fmtBytes(p.rss_bytes)) +
+        row("Disk", (rd == null && wr == null) ? "—"
+              : `↓${rd==null?"—":_fmtBytes(rd)+"/s"} ↑${wr==null?"—":_fmtBytes(wr)+"/s"}`);
+      $("vitals-note").innerHTML = v.network_system_wide
+        ? '<div class="vnote">Network counters are system-wide (can\'t be attributed per-app); the scraping figure above is measured at our own fetcher.</div>'
+        : '';
+    }
+    function toggleVitals() {
+      const pop = $("vitals-pop"); if (!pop) return;
+      _vitalsOpen = !_vitalsOpen;
+      pop.hidden = !_vitalsOpen;
+      const chip = $("activity"); if (chip) chip.setAttribute("aria-expanded", String(_vitalsOpen));
+      if (_vitalsOpen) _vitalsPrev = null;
+      _ensureVitalsPoll();
     }
 
     async function api(path, opts={}) {
@@ -3569,6 +3660,13 @@
     // the user didn't trigger from the current tab). Cheap loopback poll; paused
     // while the tab is hidden.
     _pollActivity(); setInterval(() => { if (!document.hidden) _pollActivity(); }, 5000);
+    // Dismiss the vitals popover on Escape or an outside click.
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && _vitalsOpen) toggleVitals(); });
+    document.addEventListener("click", (e) => {
+      if (!_vitalsOpen) return;
+      const pop = $("vitals-pop"), chip = $("activity");
+      if (pop && !pop.contains(e.target) && chip && !chip.contains(e.target)) toggleVitals();
+    });
     ensureDocList();   // so the command palette can offer docs before Help is opened
     // Honour a deep-link like /#sources on first load; otherwise land on Home.
     const initial = (location.hash || "#home").slice(1);
