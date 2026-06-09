@@ -131,6 +131,9 @@ from src.api.verification import router as verification_router
 # Import safety router (at-risk-user safety: fetch-mode/proxy, encrypted backup, panic)
 from src.api.safety import router as safety_router
 
+# Import world-events agenda router (curated, offline calendar of major events)
+from src.api.events import router as events_router
+
 # Import system router (loopback-only self-observation: live scraping + vitals)
 from src.api.system import router as system_router
 
@@ -351,6 +354,7 @@ app.include_router(ingestion_router)
 
 # Include system router (live scraping URL + process vitals; loopback-only)
 app.include_router(system_router)
+app.include_router(events_router)
 app.include_router(personality_router)
 
 # Include analysis-dependent routers only if the [analysis] extra is installed.

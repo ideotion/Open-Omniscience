@@ -213,6 +213,19 @@
     .idx-spark-empty { height:42px; display:flex; align-items:center; font-size:11px; }
     .idx-foot { font-size:11px; }
     .idx-foot a { color:var(--muted); text-decoration:underline; }
+    /* Agenda (world events) */
+    .ag-row { display:flex; gap:12px; align-items:flex-start; padding:9px 11px; border:1px solid var(--border);
+      border-radius:8px; margin-bottom:7px; background:var(--panel2); }
+    .ag-when { flex:0 0 86px; }
+    .ag-body { flex:1; min-width:0; }
+    .ag-cals { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
+    .ag-cal { font-size:12px; padding:3px 10px; border:1px solid var(--border); border-radius:999px;
+      background:var(--panel); color:var(--muted); cursor:pointer; opacity:.6; }
+    .ag-cal.on { color:var(--accent-fg,var(--fg)); background:color-mix(in srgb,var(--accent) 18%,transparent);
+      border-color:var(--accent); opacity:1; }
+    .ag-tag { display:inline-block; font-size:11px; padding:0 6px; margin-right:3px; border-radius:10px;
+      background:var(--panel2); border:1px solid var(--border); cursor:pointer; }
+    .ag-tag:hover { border-color:var(--accent); color:var(--accent); }
     /* Batch-ingest source picker */
     .bi-list { margin-top:10px; max-height:300px; overflow:auto; border:1px solid var(--border);
       border-radius:8px; background:var(--panel2); }
@@ -441,6 +454,7 @@
           <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
           <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
           <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
+          <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
           <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
           <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span><span class="badge">adv</span></button>
         </div>
@@ -952,6 +966,31 @@
         </div>
         <div id="anno-aggregate" style="margin-top:10px"></div>
       </section>
+    </div>
+
+    <!-- ============================ INDICES ========================== -->
+    <!-- ============================ AGENDA ========================== -->
+    <div class="tab-page" id="tab-agenda">
+    <section class="panel">
+      <h2>Agenda — major world events</h2>
+      <p class="muted" style="margin-top:0">A forward-looking calendar of major recurring events.
+        <b>Fixed civic dates are confirmed</b>; summit/meeting dates move each year — follow the official
+        source for the exact date. Nothing here is fabricated. <span class="muted">(Importing exact dates from
+        official iCal feeds is the next step.)</span></p>
+      <div style="margin-top:6px"><span class="hint">Calendars <span class="muted">— subscribe to the ones you care about; tap to toggle</span></span>
+        <div id="agenda-cals" class="ag-cals"></div></div>
+      <div class="row" style="margin-top:6px">
+        <div><label for="agenda-cat">Category</label><select id="agenda-cat" onchange="renderAgenda()">
+          <option value="">all</option><option value="civic">civic</option><option value="political">political</option>
+          <option value="economic">economic</option><option value="technology">technology</option></select></div>
+        <div><label for="agenda-country">Country</label><select id="agenda-country" onchange="renderAgenda()"><option value="">all</option></select></div>
+        <div><label for="agenda-tag">Tag</label><select id="agenda-tag" onchange="renderAgenda()"><option value="">all</option></select></div>
+        <div><label for="agenda-group">Group by</label><select id="agenda-group" onchange="renderAgenda()">
+          <option value="month">month</option><option value="calendar">calendar</option><option value="country">country</option></select></div>
+        <div style="flex:0 0 auto;align-self:end"><label class="switch" style="margin-top:0"><input type="checkbox" id="agenda-subonly" checked onchange="renderAgenda()"> subscribed only</label></div>
+      </div>
+      <div id="agenda-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
+    </section>
     </div>
 
     <!-- ============================ INDICES ========================== -->
@@ -1605,6 +1644,7 @@
       {id:"insights", label:"Insights",           grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
       {id:"law",      label:"World law",          grp:"Investigate"},
+      {id:"agenda",   label:"Agenda",             grp:"Investigate"},
       {id:"indices",  label:"Indices",            grp:"Investigate"},
       {id:"markets",  label:"Commodities",        grp:"Investigate"},
       {id:"ingest",   label:"Collect",            grp:"Collect"},
@@ -1627,6 +1667,7 @@
       insights: loadInsights,
       wiki: loadWiki,
       law: loadLaw,
+      agenda: loadAgenda,
       sources: loadManagedSources,
       database: () => { loadCoverage(); },   // stats handled by the live poller (startLive)
       custody: loadCustody,
@@ -2114,6 +2155,78 @@
     // ===================================================================== //
     //  WORLD LAW — change tracking (§5)                                       //
     // ===================================================================== //
+    // -- Agenda (world events): subscribe to calendars, filter & group ------ //
+    const _MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const AG = { events: [], cals: [], caveat: "", meta: {} };
+    function agSubs() { try { return new Set(JSON.parse(localStorage.getItem("oo.agenda.subs") || "null") || []); } catch (_e) { return new Set(); } }
+    function agSaveSubs(set) { localStorage.setItem("oo.agenda.subs", JSON.stringify([...set])); }
+
+    async function loadAgenda() {
+      const box = $("agenda-list");
+      box.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const [ev, fac] = await Promise.all([api("/api/events"), api("/api/events/calendars")]);
+        AG.events = ev.events; AG.caveat = ev.caveat; AG.cals = fac.calendars;
+        AG.meta = Object.fromEntries(fac.calendars.map(c => [c.key, c]));
+        // First run: subscribe to all calendars so the agenda isn't empty.
+        if (localStorage.getItem("oo.agenda.subs") == null) agSaveSubs(new Set(fac.calendars.map(c => c.key)));
+        $("agenda-country").innerHTML = '<option value="">all</option>' + fac.countries.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+        $("agenda-tag").innerHTML = '<option value="">all</option>' + fac.tags.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+        renderAgenda();
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load agenda: ${esc(e.message)}</div>`; }
+    }
+
+    function renderAgendaCals() {
+      const subs = agSubs();
+      $("agenda-cals").innerHTML = AG.cals.map(c =>
+        `<button class="ag-cal${subs.has(c.key) ? " on" : ""}" data-k="${esc(c.key)}" onclick="toggleCalSub(this)"
+           title="${esc(c.description || "")}">${esc(c.name)} <span class="muted">${c.count}</span></button>`).join("");
+    }
+    function toggleCalSub(btn) {
+      const subs = agSubs(); const k = btn.dataset.k;
+      subs.has(k) ? subs.delete(k) : subs.add(k);
+      agSaveSubs(subs); renderAgendaCals(); renderAgenda();
+    }
+
+    function agWhen(e) {
+      return e.next_occurrence
+        ? `<span class="pill ok">${esc(e.next_occurrence)}</span>`
+        : `<span class="pill" title="exact date moves each year">${e.month ? esc(_MONTHS[e.month-1]) : esc(e.cadence||"")}</span>`;
+    }
+    function agRow(e) {
+      const conf = e.confirmed ? '<span class="pill ok" title="fixed annual date">confirmed</span>'
+                               : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
+      const tags = (e.tags||[]).map(t => `<span class="ag-tag" onclick="$('agenda-tag').value='${esc(t)}';renderAgenda()">${esc(t)}</span>`).join("");
+      const alsoIn = (e.also_in && e.also_in.length) ? ` <span class="pill" title="this event also appears in: ${esc(e.also_in.join(', '))}">also in ${e.also_in.length}</span>` : "";
+      const variants = (e.date_variants && e.date_variants.length > 1)
+        ? `<div class="hint" style="color:var(--warn)">date varies by source: ${esc(e.date_variants.join(' · '))}</div>` : "";
+      return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
+        <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}</div>
+          ${variants}
+          <div class="hint">${tags} ${e.note?"· "+esc(e.note):""} · <a href="${esc(safeUrl(e.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div></div></div>`;
+    }
+    function renderAgenda() {
+      renderAgendaCals();
+      const box = $("agenda-list");
+      const subs = agSubs();
+      const cat = $("agenda-cat").value, country = $("agenda-country").value, tag = $("agenda-tag").value;
+      const subOnly = $("agenda-subonly").checked, groupBy = $("agenda-group").value;
+      let rows = AG.events.filter(e =>
+        (!cat || e.category === cat) && (!country || e.country === country) &&
+        (!tag || (e.tags||[]).includes(tag)) && (!subOnly || (e.sources || [e.calendar]).some(s => subs.has(s))));
+      if (!rows.length) { box.innerHTML = `<p class="hint">${esc(AG.caveat)}</p><div class="muted">No events match — adjust filters or subscribe to more calendars above.</div>`; return; }
+      const groups = {};
+      for (const e of rows) {
+        const k = groupBy === "month" ? (e.next_occurrence ? _MONTHS[+e.next_occurrence.slice(5,7)-1] : (e.month ? _MONTHS[e.month-1] : "Movable / no fixed date"))
+                : groupBy === "calendar" ? (AG.meta[e.calendar]?.name || e.calendar)
+                : (e.country || "—");
+        (groups[k] = groups[k] || []).push(e);
+      }
+      box.innerHTML = `<p class="hint">${esc(AG.caveat)} · showing ${rows.length} of ${AG.events.length}</p>` +
+        Object.entries(groups).map(([k, list]) =>
+          `<h3 style="font-size:13px;margin:12px 0 6px">${esc(k)} <span class="muted">${list.length}</span></h3>` + list.map(agRow).join("")).join("");
+    }
+
     async function loadLaw() {
       try {
         const s = await api("/api/law/status");
