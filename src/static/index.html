@@ -2177,8 +2177,12 @@
       const conf = e.confirmed ? '<span class="pill ok" title="fixed annual date">confirmed</span>'
                                : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
       const tags = (e.tags||[]).map(t => `<span class="ag-tag" onclick="$('agenda-tag').value='${esc(t)}';renderAgenda()">${esc(t)}</span>`).join("");
+      const alsoIn = (e.also_in && e.also_in.length) ? ` <span class="pill" title="this event also appears in: ${esc(e.also_in.join(', '))}">also in ${e.also_in.length}</span>` : "";
+      const variants = (e.date_variants && e.date_variants.length > 1)
+        ? `<div class="hint" style="color:var(--warn)">date varies by source: ${esc(e.date_variants.join(' · '))}</div>` : "";
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
-        <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}</div>
+        <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}</div>
+          ${variants}
           <div class="hint">${tags} ${e.note?"· "+esc(e.note):""} · <a href="${esc(safeUrl(e.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div></div></div>`;
     }
     function renderAgenda() {
@@ -2189,7 +2193,7 @@
       const subOnly = $("agenda-subonly").checked, groupBy = $("agenda-group").value;
       let rows = AG.events.filter(e =>
         (!cat || e.category === cat) && (!country || e.country === country) &&
-        (!tag || (e.tags||[]).includes(tag)) && (!subOnly || subs.has(e.calendar)));
+        (!tag || (e.tags||[]).includes(tag)) && (!subOnly || (e.sources || [e.calendar]).some(s => subs.has(s))));
       if (!rows.length) { box.innerHTML = `<p class="hint">${esc(AG.caveat)}</p><div class="muted">No events match — adjust filters or subscribe to more calendars above.</div>`; return; }
       const groups = {};
       for (const e of rows) {

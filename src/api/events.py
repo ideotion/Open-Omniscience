@@ -33,15 +33,23 @@ def list_events(
     calendar: str | None = Query(None, description="a calendar key, e.g. un_days"),
     country: str | None = Query(None, description="ISO country code, e.g. FR"),
     tag: str | None = Query(None, description="a single tag, e.g. press-freedom"),
+    dedup: bool = Query(True, description="collapse the same event seen in several calendars"),
 ) -> dict:
     """Curated world events matching the given facets, soonest fixed-date first.
 
     Facets (calendar / country / category / tag) are AND-combined; omit any for a
-    wildcard. Subscription itself is a client preference (which calendars to show).
+    wildcard. With ``dedup`` (default), an event appearing in several calendars is
+    collapsed into one row that lists its sources (``sources`` / ``also_in``) and flags
+    any date disagreement (``date_variants``) rather than hiding it. Subscription itself
+    is a client preference (which calendars to show).
     """
-    from src.events.catalog import agenda
+    from src.events.catalog import agenda, load_calendars
+    from src.events.dedup import dedup as dedup_events
 
     items = agenda(category=category, calendar=calendar, country=country, tag=tag)
+    if dedup:
+        cal_names = {c["key"]: c["name"] for c in load_calendars()}
+        items = dedup_events(items, cal_names)
     return {
         "count": len(items),
         "confirmed": sum(1 for e in items if e["confirmed"]),
