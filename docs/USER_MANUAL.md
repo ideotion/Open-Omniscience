@@ -110,8 +110,9 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
 
 - **⌘K / Ctrl-K — the command palette.** Type to jump to any tool, run a common
   action, or open any document. The fastest way to get anywhere.
-- **Customize** — themes (8 in Console), accent, density, text size, sidebar
-  collapse, and which tools appear. Stored locally only; nothing is transmitted.
+- **Appearance** (**Settings → Appearance**) — themes (8 in Console), accent, density,
+  text size, sidebar collapse, and which tools appear. Stored locally only; nothing is
+  transmitted.
 - **Help (?)** — opens the in-app documentation reader (this manual and the other
   guides), searchable and fully offline. There's also a link to the raw API page at
   `/docs`.
@@ -137,8 +138,8 @@ The core loop is:
 2. **Collect** — fetch a source's RSS feed or paste a single article URL. Or let
    the **scheduler** do it automatically on an interval.
 3. **Search** — Boolean full-text search across everything you've gathered.
-4. **Insights / Markets / Wikipedia** — optional analysis layers on top of the
-   corpus.
+4. **Insights / Temporal map / Markets / Wikipedia** — optional analysis layers on top
+   of the corpus (patterns, space-time, prices, edit-tracking).
 5. **Export** — CSV/JSON, or a **signed evidence bundle** anyone can verify
    offline.
 
@@ -160,7 +161,7 @@ The sidebar groups the tools by intent:
 
 A few names changed in 0.05 to be plainer (the controls are the same): **Ingest →
 Collect**, **Database → Library**, **Chain of custody → Evidence & custody**. In
-*Console* you can hide tools you don't use (Customize → "Tools shown"); *Desk*
+*Console* you can hide tools you don't use (Settings → Appearance → "Tools shown"); *Desk*
 reaches the same tools from its Home launchpad and ⌘K.
 
 ### 3.0 Home
@@ -465,10 +466,17 @@ bake in bias and silence small, foreign, new or dissident sources. Full guide:
 
 ### 3.9 Settings
 
-**What it's for:** preferences and maintenance. Everything is stored locally; no
-telemetry.
+**What it's for:** preferences and maintenance, organized into sections via a sub-nav —
+**Appearance · General · Wikipedia · Data & backup · Safety**. Everything is stored
+locally; no telemetry.
 
-- **Preferences:** **Theme** (System/Dark/Light) and **Default search results**.
+- **Appearance:** themes, accent colour, density, **text size**, sidebar expanded/
+  collapsed, and **which tools show** in the sidebar. (This is the former floating
+  "Customize" drawer, now a first-class Settings section — the standalone Customize
+  buttons were removed to free up the chrome; the sidebar footer has a **Settings**
+  shortcut and the command palette still jumps straight here.)
+- **Preferences (General):** **Theme** (System/Dark/Light), **language**, and **Default
+  search results**.
 - **Keyword filtering:** "dumb" function words (the, you, not, …) are removed by a
   built-in multilingual stoplist. Tune it: set **minimum keyword length**, **drop
   purely numeric terms**, toggle the built-in stoplist, and maintain an **excluded

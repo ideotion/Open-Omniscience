@@ -386,6 +386,8 @@ The app binds to loopback only and (for a single local user) requires no auth.
 | `GET /api/markets/feeds`, `POST /feeds/{key}/import`, `/feeds/import-url` | Official CSV price-feed catalog + import (FRED/World Bank/EIA) + custom-URL import |
 | `GET /api/catalog/export.csv`, `/template.csv`, `/columns`, `POST /api/catalog/import` | Source-list CSV export / template / columns / upsert-by-domain import |
 | `… /api/insights/...` | Keyword & entity analytics: status, reindex, top, trending, trend, associations (PMI), context, map |
+| `GET /api/timemap`, `/timemap/range` | Space-time signals on one map+time-axis (anchors + geocoded corpus + opt-in hazards/mentioned-dates); `?kinds`, `?start`/`?end` fractional-year window, `?hazards`, `?articles`, `?mentions`, `?days` |
+| `… /api/article-dates/...` | Extracted dates mentioned in article text as human-confirmable per-article tags: list/extract per article, confirm/reject, batch index, by-date corpus filter |
 | `GET/POST /api/llm/...` | Local LLM (Ollama): health, models, generate, summarize an article |
 | `… /api/commodities/...` | Commodity prices (import / CSV / list) + honest price↔news correlation |
 | `POST /api/analysis/...` | Scientific-rigor stats: t-test, correlation, ANOVA, Mann-Whitney, CI |
