@@ -690,10 +690,19 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     """Render the locally-stored copy of an article as a clean, offline reading page.
 
     Uses the text captured at ingest (no network), so it works fully offline and
-    shows exactly what is in the corpus. A link to the original source is included
-    for reference, clearly secondary.
+    shows exactly what is in the corpus, with full provenance metadata. The links
+    *this* article cites are listed with a co-citation signal ("also cited by N of
+    your articles"). The only link that leaves the corpus is the original source,
+    and it is rendered as an explicit, confirmed external action — opening it makes
+    a live request from the user's machine, which a surveillance-conscious
+    journalist must opt into knowingly.
     """
     import html as _html
+
+    from sqlalchemy import func
+
+    from src.database.models import ArticleLink
+    from src.utils.security import safe_href
 
     a = db.query(Article).filter_by(id=article_id).first()
     if a is None:
@@ -702,38 +711,126 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     paras = "".join(
         f"<p>{_html.escape(line)}</p>" for line in content.split("\n") if line.strip()
     ) or "<p class='muted'>(no stored body)</p>"
-    meta = " &middot; ".join(filter(None, [
-        _html.escape(a.source.name) if a.source else None,
-        _html.escape(a.published_at.date().isoformat()) if a.published_at else None,
-        ("by " + _html.escape(a.author)) if a.author else None,
-        _html.escape(a.language) if a.language else None,
-    ]))
+
     title = _html.escape(a.title or "(untitled)")
-    # Only render the original URL as a link if it is a plain http(s) URL — a malicious
-    # feed link (javascript:/data:) would otherwise execute on click in this origin (S-005).
-    from src.utils.security import safe_href
-    safe = safe_href(a.url)
-    orig = _html.escape(safe)
-    orig_html = (
-        f"Original source (online): <a href=\"{orig}\" target=\"_blank\" rel=\"noopener noreferrer\">{orig}</a>"
-        if orig else "No original (http/https) URL recorded."
+    lang = _html.escape(a.language or "en")
+
+    def _row(label: str, value: str | None) -> str:
+        return f"<div class='mrow'><span>{label}</span><b>{value}</b></div>" if value else ""
+
+    src_name = _html.escape(a.source.name) if a.source else None
+    published = a.published_at.date().isoformat() if a.published_at else None
+    captured = a.created_at.date().isoformat() if a.created_at else None
+    hash_short = (a.hash[:12] + "…") if a.hash else None
+    safe_src = safe_href(a.url)
+
+    meta_rows = "".join([
+        _row("Source", src_name),
+        _row("Published", _html.escape(published) if published else None),
+        _row("Captured", _html.escape(captured) if captured else None),
+        _row("Author", _html.escape(a.author) if a.author else None),
+        _row("Language", lang if a.language else None),
+        _row("Region", _html.escape(a.country or a.region) if (a.country or a.region) else None),
+        _row("Content hash", f"<code>{_html.escape(hash_short)}</code>" if hash_short else None),
+    ])
+
+    # Co-citation: the external links THIS article cites, each with how many distinct
+    # articles in the corpus cite the same normalized URL (in-degree). > 1 means a
+    # shared source — the "multiple articles point to the same link" signal.
+    links = (
+        db.query(ArticleLink)
+        .filter_by(article_id=a.id, link_type="external")
+        .order_by(ArticleLink.position).all()
     )
-    doc = f"""<!DOCTYPE html><html lang="{_html.escape(a.language or 'en')}"><head>
+    cite_items = []
+    for ln in links[:40]:
+        safe_ln = safe_href(ln.url)
+        if not safe_ln:
+            continue
+        indeg = (
+            db.query(func.count(func.distinct(ArticleLink.article_id)))
+            .filter(ArticleLink.normalized_url == ln.normalized_url).scalar() or 1
+        )
+        host = _html.escape((safe_ln.split("//", 1)[-1].split("/", 1)[0]).replace("www.", ""))
+        label = _html.escape(ln.link_text.strip()) if (ln.link_text and ln.link_text.strip()) else host
+        shared = (
+            f"<span class='shared'>also cited by {indeg - 1} of your article(s)</span>"
+            if indeg > 1 else "<span class='muted'>only here</span>"
+        )
+        cite_items.append(
+            f"<li><a class='ext' href='{_html.escape(safe_ln)}' rel='noopener noreferrer'>{label}</a>"
+            f"<span class='muted'> · {host}</span> {shared}</li>"
+        )
+    cites_html = (
+        "<section class='cites'><h2>Sources this article cites</h2><ul>"
+        + "".join(cite_items) + "</ul></section>"
+        if cite_items else ""
+    )
+
+    orig_html = (
+        f"<a class='ext src-link' href='{_html.escape(safe_src)}' rel='noopener noreferrer'>"
+        f"Open the original source ↗</a>"
+        if safe_src else "<span class='muted'>No original (http/https) URL recorded.</span>"
+    )
+
+    doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title><style>
-  :root {{ color-scheme: light dark; }}
-  body {{ max-width: 720px; margin: 0 auto; padding: 32px 20px 64px;
-    font: 18px/1.7 Georgia, 'Times New Roman', serif; }}
-  h1 {{ font-size: 28px; line-height: 1.25; }}
-  .meta {{ color: #888; font-size: 14px; font-family: system-ui, sans-serif; margin-bottom: 24px; }}
-  p {{ margin: 0 0 1.1em; }}
-  .muted {{ color: #888; }}
-  footer {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid #8884;
-    font-family: system-ui, sans-serif; font-size: 13px; color: #888; word-break: break-all; }}
-  a {{ color: #3a7bd5; }}
+  :root {{ color-scheme: light dark; --ink:#0b0d10; --paper:#0e1116; --fg:#e7e9ee; --mut:#8b93a1;
+    --line:#222833; --accent:#5ea0ff; --card:#141923; --warn:#f0a23a; }}
+  @media (prefers-color-scheme: light) {{ :root {{ --paper:#faf8f4; --fg:#1a1d22; --mut:#6b7280;
+    --line:#e4e0d8; --card:#fff; --accent:#2b6cd4; }} }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin:0; background:var(--paper); color:var(--fg);
+    font: 18px/1.72 Georgia,'Times New Roman',serif; }}
+  .wrap {{ max-width: 760px; margin: 0 auto; padding: 28px 22px 80px; }}
+  .crumb {{ font: 12px/1.4 system-ui,sans-serif; color:var(--mut); margin-bottom:18px;
+    display:flex; gap:8px; align-items:center; }}
+  .dot {{ width:7px; height:7px; border-radius:50%; background:var(--accent); display:inline-block; }}
+  h1 {{ font-size: 30px; line-height: 1.22; margin: 0 0 14px; }}
+  .meta {{ font: 13px/1.6 system-ui,sans-serif; background:var(--card); border:1px solid var(--line);
+    border-radius:10px; padding:10px 14px; margin: 0 0 26px; }}
+  .mrow {{ display:flex; justify-content:space-between; gap:14px; padding:3px 0; border-top:1px solid var(--line); }}
+  .mrow:first-child {{ border-top:0; }}
+  .mrow span {{ color:var(--mut); }} .mrow b {{ font-weight:600; text-align:right; }}
+  code {{ font: 12px ui-monospace,Menlo,Consolas,monospace; color:var(--mut); }}
+  article p {{ margin: 0 0 1.1em; }}
+  .muted {{ color: var(--mut); }}
+  .cites {{ margin-top: 34px; padding-top: 8px; }}
+  .cites h2 {{ font: 600 14px system-ui,sans-serif; color:var(--mut); text-transform:uppercase;
+    letter-spacing:.04em; margin: 0 0 8px; }}
+  .cites ul {{ list-style:none; margin:0; padding:0; font: 14px/1.5 system-ui,sans-serif; }}
+  .cites li {{ padding:6px 0; border-top:1px solid var(--line); }}
+  .shared {{ color:var(--warn); font-weight:600; }}
+  a {{ color: var(--accent); }}
+  footer {{ margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line);
+    font: 13px/1.6 system-ui,sans-serif; color: var(--mut); }}
+  .src-link {{ display:inline-block; margin-top:6px; font-weight:600; }}
+  .ext-note {{ font-size:12px; }}
 </style></head><body>
-<article><h1>{title}</h1><div class="meta">{meta}</div>{paras}</article>
-<footer>Offline copy stored by Open Omniscience. {orig_html}</footer>
+<div class="wrap">
+  <div class="crumb"><span class="dot"></span> Open Omniscience · offline stored copy</div>
+  <article><h1>{title}</h1><div class="meta">{meta_rows}</div>{paras}</article>
+  {cites_html}
+  <footer>
+    This is the copy captured at ingest — it does not change if the source is later edited or removed.
+    <div style="margin-top:8px">{orig_html}</div>
+    <div class="ext-note">Opening the source makes a live request from your machine; the site may see your visit. You'll be asked to confirm.</div>
+  </footer>
+</div>
+<script>
+  // Any link that leaves the corpus is confirmed first — honest about the exposure.
+  document.addEventListener('click', function(e){{
+    var a = e.target.closest && e.target.closest('a.ext');
+    if(!a) return;
+    e.preventDefault();
+    var ok = window.confirm(
+      "Open an EXTERNAL site on the public web?\\n\\n" + a.href +
+      "\\n\\nThis leaves your local copy and makes a live request from your machine — " +
+      "the site may see your visit. Continue?");
+    if(ok) window.open(a.href, '_blank', 'noopener');
+  }});
+</script>
 </body></html>"""
     return HTMLResponse(content=doc)
 

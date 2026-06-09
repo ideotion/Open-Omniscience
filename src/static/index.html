@@ -1713,7 +1713,9 @@
       const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).map(e => {
         const label = esc(e.title || e.url);
         const meta = [e.source, (e.published_at || "").slice(0,10)].filter(Boolean).map(esc).join(" · ");
-        const link = e.url ? `<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${label}</a>` : label;
+        const link = e.article_id
+          ? `<a href="/api/articles/${e.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">${label}</a>`
+          : (e.url ? `<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${label}</a>` : label);
         return `<span>${link}${meta ? ` <span class="muted">— ${meta}</span>` : ""}</span>`;
       }).join("");
       const evidBlock = evid ? `<div class="evid">${evid}</div>` : "";
@@ -3264,7 +3266,7 @@
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
                <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(m.country):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
-                 ${m.url?`· <a href="${esc(safeUrl(m.url))}" target="_blank" rel="noopener">open</a>`:""}</div>
+                 ${m.article_id?`· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>`:""}${m.url?`· <a class="muted" href="${esc(safeUrl(m.url))}" target="_blank" rel="noopener" title="original online source">source&nbsp;↗</a>`:""}</div>
                <div>${esc(m.snippet)}</div></div>`).join("")
           : '<div class="muted">No context snippets.</div>';
       } catch (e) { $("ins-trend").innerHTML = ""; toast("Explore failed: " + e.message, "err"); }
