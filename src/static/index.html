@@ -3232,15 +3232,18 @@
         const x = cx + r * Math.cos(ang), y = cy + r * Math.sin(ang);
         edges += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="${Math.max(1, Math.min(4, p.cooccur/2)).toFixed(1)}"></line>`;
         const col = p.kind === "term" ? "var(--muted)" : "var(--accent)";
-        nodes += `<g style="cursor:pointer" onclick='pickTerm(${JSON.stringify(p.term)})'>
-          <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" fill="${col}"></circle>
-          <text x="${x.toFixed(1)}" y="${(y-9).toFixed(1)}" fill="var(--fg)" font-size="11" text-anchor="middle">${esc(p.term)} <tspan fill="var(--muted)">${p.pmi}</tspan></text></g>`;
+        const fam = (p.variants > 1);
+        const badge = fam ? ` <tspan fill="var(--muted)">·${p.variants}</tspan>` : "";
+        const title = fam ? `<title>Family of ${p.variants}: ${esc((p.members||[]).join(", "))}</title>` : "";
+        nodes += `<g style="cursor:pointer" onclick='pickTerm(${JSON.stringify(p.term)})'>${title}
+          <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${fam ? 7.5 : 6}" fill="${col}"></circle>
+          <text x="${x.toFixed(1)}" y="${(y-9).toFixed(1)}" fill="var(--fg)" font-size="11" text-anchor="middle">${esc(p.term)}${badge} <tspan fill="var(--muted)">${p.pmi}</tspan></text></g>`;
       });
       return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
         ${edges}${nodes}
         <circle cx="${cx}" cy="${cy}" r="9" fill="var(--ok)"></circle>
         <text x="${cx}" y="${(cy-13)}" fill="var(--fg)" font-size="13" text-anchor="middle" font-weight="600">${esc(center)}</text>
-      </svg><div class="hint">Edge width = co-occurrence; distance = PMI (closer is stronger). Click a node to recenter.</div>`;
+      </svg><div class="hint">Edge width = co-occurrence; distance = PMI (closer is stronger). Click a node to recenter. <b>·N</b> = a family of N merged surface forms (hover to see them).</div>`;
     }
 
     async function exploreTerm() {

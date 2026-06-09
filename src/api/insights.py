@@ -90,10 +90,11 @@ def insights_top(
     country: str | None = None,
     kind: str | None = Query(None),
     limit: int = Query(20, ge=1, le=200),
+    group: bool = Query(True, description="Merge surface variants into entity families"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Most-mentioned keywords (optionally windowed / per-country / per-kind)."""
-    return q.top_terms(db, days=days, country=country, kind=_kind(kind), limit=limit)
+    return q.top_terms(db, days=days, country=country, kind=_kind(kind), limit=limit, group=group)
 
 
 @router.get("/trending")
@@ -126,10 +127,11 @@ def insights_associations(
     term: str,
     limit: int = Query(20, ge=1, le=100),
     min_cooccur: int = Query(2, ge=1, le=50),
+    group: bool = Query(True, description="Merge surface variants into entity families"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Keywords co-occurring with ``term`` (PMI-ranked) — powers the mind-map."""
-    return q.associations(db, term, limit=limit, min_cooccur=min_cooccur)
+    return q.associations(db, term, limit=limit, min_cooccur=min_cooccur, group=group)
 
 
 @router.get("/context")

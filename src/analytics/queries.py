@@ -116,8 +116,13 @@ def trend(session, term: str, *, bucket: str = "week", country: str | None = Non
 
 
 def top_terms(session, *, days: int | None = None, country: str | None = None,
-              kind: str | None = None, limit: int = 20) -> dict:
-    """Most-mentioned keywords (optionally within a window / country / kind)."""
+              kind: str | None = None, limit: int = 20, group: bool = False) -> dict:
+    """Most-mentioned keywords (optionally within a window / country / kind).
+
+    With ``group=True`` the surface variants of one entity are merged into a single
+    family (``Trump`` / ``Trump's`` / ``Donald Trump`` -> one row) for display, with
+    summed mentions and the member forms listed — see src/analytics/families.py.
+    """
     q = (
         session.query(
             Keyword, func.sum(KeywordMention.count).label("m"),
@@ -132,15 +137,21 @@ def top_terms(session, *, days: int | None = None, country: str | None = None,
     q = _apply_kind(q, kind)
     rows = q.group_by(Keyword.id).order_by(func.sum(KeywordMention.count).desc()).limit(limit * 4).all()
     is_hidden = _hidden_predicate()
+    cap = limit * 4 if group else limit
     terms = []
     for k, m, a in rows:
         if is_hidden(k.normalized_term):
             continue
         terms.append({"term": k.term, "normalized": k.normalized_term, "kind": kind_of(k),
                       "mentions": int(m), "articles": int(a)})
-        if len(terms) >= limit:
+        if len(terms) >= cap:
             break
-    return {"count": len(terms), "days": days, "country": country, "kind": kind, "terms": terms}
+    if group:
+        from src.analytics.families import build_families
+        terms = [f.to_dict() for f in build_families(terms)]
+    terms = terms[:limit]
+    return {"count": len(terms), "days": days, "country": country, "kind": kind,
+            "grouped": group, "terms": terms}
 
 
 def trending(session, *, window_days: int = 7, baseline_days: int = 30,
@@ -198,8 +209,40 @@ def trending(session, *, window_days: int = 7, baseline_days: int = 30,
     }
 
 
-def associations(session, term: str, *, limit: int = 20, min_cooccur: int = 2) -> dict:
-    """Keywords that co-occur with ``term`` in the same articles, ranked by PMI."""
+def _group_pairs(pairs: list[dict]) -> list[dict]:
+    """Merge co-occurring surface variants into one family node (for the mind-map).
+
+    Summed co-occurrence, the strongest member PMI, and the member forms listed —
+    so ``Trump`` / ``Trump's`` / ``Donald Trump`` are one neighbour, not three.
+    """
+    from src.analytics.families import build_families
+
+    by_norm = {p["normalized"]: p for p in pairs}
+    out = []
+    for fam in build_families(
+        [{"normalized": p["normalized"], "term": p["term"], "kind": p["kind"],
+          "mentions": p["cooccur"]} for p in pairs]
+    ):
+        members = [by_norm[m["normalized"]] for m in fam.members if m["normalized"] in by_norm]
+        out.append({
+            "term": fam.canonical, "normalized": fam.normalized, "kind": fam.kind,
+            "cooccur": sum(p["cooccur"] for p in members),
+            "n_b": max((p["n_b"] for p in members), default=0),
+            "pmi": max((p["pmi"] for p in members), default=0.0),
+            "variants": fam.variant_count,
+            "members": [p["term"] for p in members],
+        })
+    out.sort(key=lambda p: (-p["pmi"], -p["cooccur"]))
+    return out
+
+
+def associations(session, term: str, *, limit: int = 20, min_cooccur: int = 2,
+                 group: bool = False) -> dict:
+    """Keywords that co-occur with ``term`` in the same articles, ranked by PMI.
+
+    With ``group=True`` the neighbours are merged into entity families (one node
+    per entity instead of one per surface form) — see src/analytics/families.py.
+    """
     kw = resolve_keyword(session, term)
     if kw is None:
         return {"term": term, "resolved": None, "pairs": []}
@@ -236,10 +279,12 @@ def associations(session, term: str, *, limit: int = 20, min_cooccur: int = 2) -
             "cooccur": co, "n_b": int(n_b), "pmi": round(pmi, 3),
         })
     pairs.sort(key=lambda p: (-p["pmi"], -p["cooccur"]))
+    if group:
+        pairs = _group_pairs(pairs)
     return {
         "term": term, "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
         "corpus_articles": int(total), "n_articles_with_term": n_a,
-        "pairs": pairs[:limit],
+        "grouped": group, "pairs": pairs[:limit],
         "method": "pointwise mutual information over article co-occurrence",
         "caveat": "Association is not causation; PMI on small samples is noisy.",
     }
