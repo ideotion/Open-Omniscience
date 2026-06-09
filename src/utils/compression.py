@@ -261,8 +261,13 @@ class Compressor:
         try:
             import zstandard as zstd
             self._ALGORITHMS[CompressionAlgorithm.ZSTANDARD] = {
-                "compress": lambda data, config: zstd.compress(data, level=config.level, threads=config.threads),
-                "decompress": lambda data, config: zstd.decompress(data, threads=config.threads),
+                # python-zstandard exposes threads only on the ZstdCompressor class;
+                # the module-level compress()/decompress() take no `threads` kwarg
+                # (passing it raised TypeError and 500'd large-text storage).
+                "compress": lambda data, config: zstd.ZstdCompressor(
+                    level=config.level, threads=int(getattr(config, "threads", 0) or 0)
+                ).compress(data),
+                "decompress": lambda data, config: zstd.ZstdDecompressor().decompress(data),
                 "available": True
             }
         except ImportError:
@@ -1043,8 +1048,21 @@ class DatabaseCompressor:
         
         # Use level 6 for good compression/speed balance
         config = CompressionConfig(algorithm=algorithm, level=6)
-        
-        return self.compressor.compress(text, algorithm=algorithm, config=config)
+
+        try:
+            return self.compressor.compress(text, algorithm=algorithm, config=config)
+        except CompressionError:
+            # Resilience: a codec bug must never block storage of a journalist's
+            # corpus. zlib (stdlib) is the guaranteed floor — fall back to it rather
+            # than letting the write 500. If zlib itself fails, something is truly wrong.
+            if algorithm == CompressionAlgorithm.ZLIB:
+                raise
+            import logging
+            logging.getLogger(__name__).warning(
+                "compression with %s failed; falling back to zlib", algorithm, exc_info=True)
+            return self.compressor.compress(
+                text, algorithm=CompressionAlgorithm.ZLIB,
+                config=CompressionConfig(algorithm=CompressionAlgorithm.ZLIB, level=6))
     
     def decompress_text_from_storage(self, compressed_text: bytes) -> str:
         """

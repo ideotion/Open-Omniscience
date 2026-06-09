@@ -274,7 +274,22 @@ class EthicalFetcher:
                 chunks.append(chunk)
             raw = b"".join(chunks)
             activity_monitor.fetch_bytes(total)  # real, app-attributed download size
-            encoding = getattr(response, "encoding", None) or getattr(response, "apparent_encoding", None) or "utf-8"
+            # Pick a text encoding WITHOUT touching response.apparent_encoding: on a
+            # streamed response the body is already consumed, so apparent_encoding
+            # re-reads it and raises "content already consumed" (crashing the scrape).
+            # Detect from the bytes we just collected instead. requests also defaults
+            # unlabelled text/* to ISO-8859-1, which is usually wrong for modern pages,
+            # so detect in that case too.
+            encoding = getattr(response, "encoding", None)
+            if not encoding or str(encoding).lower() in ("iso-8859-1", "latin-1"):
+                try:
+                    from charset_normalizer import from_bytes
+                    best = from_bytes(raw).best()
+                    if best and best.encoding:
+                        encoding = best.encoding
+                except Exception:  # noqa: BLE001 - detection is best-effort
+                    pass
+                encoding = encoding or "utf-8"
             try:
                 return raw.decode(encoding, errors="replace")
             except (LookupError, TypeError):
