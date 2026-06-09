@@ -17,7 +17,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import func
 
-from src.database.models import Article, Keyword, KeywordMention
+from src.database.models import Article, Keyword, KeywordFamilyOverride, KeywordMention
 
 
 def kind_of(kw: Keyword) -> str:
@@ -28,6 +28,14 @@ def kind_of(kw: Keyword) -> str:
 
 def _normalize(term: str) -> str:
     return " ".join(term.split()).casefold()
+
+
+def load_overrides(session) -> dict[str, dict]:
+    """User family overrides as ``{normalized: {family_key, label, kind}}`` (authoritative)."""
+    return {
+        o.normalized_term: {"family_key": o.family_key, "label": o.canonical_label, "kind": o.kind}
+        for o in session.query(KeywordFamilyOverride).all()
+    }
 
 
 def resolve_keyword(session, term: str) -> Keyword | None:
@@ -148,7 +156,7 @@ def top_terms(session, *, days: int | None = None, country: str | None = None,
             break
     if group:
         from src.analytics.families import build_families
-        terms = [f.to_dict() for f in build_families(terms)]
+        terms = [f.to_dict() for f in build_families(terms, load_overrides(session))]
     terms = terms[:limit]
     return {"count": len(terms), "days": days, "country": country, "kind": kind,
             "grouped": group, "terms": terms}
@@ -209,11 +217,12 @@ def trending(session, *, window_days: int = 7, baseline_days: int = 30,
     }
 
 
-def _group_pairs(pairs: list[dict]) -> list[dict]:
+def _group_pairs(pairs: list[dict], overrides: dict[str, dict] | None = None) -> list[dict]:
     """Merge co-occurring surface variants into one family node (for the mind-map).
 
     Summed co-occurrence, the strongest member PMI, and the member forms listed —
     so ``Trump`` / ``Trump's`` / ``Donald Trump`` are one neighbour, not three.
+    User overrides (manual merge/split) are honoured.
     """
     from src.analytics.families import build_families
 
@@ -221,7 +230,7 @@ def _group_pairs(pairs: list[dict]) -> list[dict]:
     out = []
     for fam in build_families(
         [{"normalized": p["normalized"], "term": p["term"], "kind": p["kind"],
-          "mentions": p["cooccur"]} for p in pairs]
+          "mentions": p["cooccur"]} for p in pairs], overrides or {}
     ):
         members = [by_norm[m["normalized"]] for m in fam.members if m["normalized"] in by_norm]
         out.append({
@@ -280,7 +289,7 @@ def associations(session, term: str, *, limit: int = 20, min_cooccur: int = 2,
         })
     pairs.sort(key=lambda p: (-p["pmi"], -p["cooccur"]))
     if group:
-        pairs = _group_pairs(pairs)
+        pairs = _group_pairs(pairs, load_overrides(session))
     return {
         "term": term, "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
         "corpus_articles": int(total), "n_articles_with_term": n_a,

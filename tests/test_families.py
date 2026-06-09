@@ -51,6 +51,29 @@ def test_families_merge_variants_same_kind_only():
     assert fams[("climate policy", "term")].variant_count == 1
 
 
+def test_overrides_force_merge_and_split():
+    items = [
+        {"normalized": "world bank", "term": "World Bank", "kind": "org", "mentions": 30},
+        {"normalized": "wb", "term": "WB", "kind": "org", "mentions": 10},
+        {"normalized": "trump", "term": "Trump", "kind": "person", "mentions": 50},
+        {"normalized": "donald trump", "term": "Donald Trump", "kind": "person", "mentions": 30},
+    ]
+    # Merge "WB" into "World Bank" (auto rules never would — no shared tokens);
+    # split "trump" out of the auto Trump family.
+    overrides = {
+        "world bank": {"family_key": "world bank", "label": "World Bank", "kind": "org"},
+        "wb": {"family_key": "world bank", "label": "World Bank", "kind": "org"},
+        "trump": {"family_key": "__alone__:trump", "label": "Trump", "kind": "person"},
+    }
+    fams = {f.canonical: f for f in build_families(items, overrides)}
+    wb = fams["World Bank"]
+    assert wb.variant_count == 2 and wb.manual is True and wb.mentions == 40
+    # trump pinned alone; donald trump stays its own auto family (not merged with trump)
+    trump = next(f for f in fams.values() if f.normalized == "__alone__:trump")
+    assert trump.variant_count == 1 and trump.manual is True
+    assert fams["Donald Trump"].variant_count == 1
+
+
 def _kw(s, term, normalized, *, kind):
     k = Keyword(term=term, normalized_term=normalized, language="en", frequency=0,
                 is_entity=(kind != "term"), entity_type=(None if kind == "term" else kind))
@@ -93,3 +116,46 @@ def test_associations_grouping_merges_entity_variants():
     fam = grouped[0]
     assert fam["variants"] == 2
     assert set(fam["members"]) == {"Trump", "Donald Trump"}
+
+
+def test_family_override_api_merge_split_and_clear(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.database.session import get_db
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'ov.db'}", future=True,
+                           connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as c:
+            # Merge needs >= 2 forms.
+            assert c.post("/api/insights/family/merge", json={"normalized": ["wb"]}).status_code == 400
+            r = c.post("/api/insights/family/merge",
+                       json={"normalized": ["World Bank", "WB"], "label": "World Bank", "kind": "org"}).json()
+            assert set(r["merged"]) == {"world bank", "wb"}
+
+            c.post("/api/insights/family/split", json={"normalized": "Trump", "kind": "person"})
+
+            ov = c.get("/api/insights/family/overrides").json()
+            assert ov["count"] == 3
+            keys = {f["family_key"] for f in ov["families"]}
+            assert "__alone__:trump" in keys
+            assert any(f["split"] for f in ov["families"])
+
+            # Clear the split -> back to automatic.
+            d = c.request("DELETE", "/api/insights/family/override", params={"normalized": "trump"}).json()
+            assert d["deleted"] == 1
+            assert c.get("/api/insights/family/overrides").json()["count"] == 2
+    finally:
+        app.dependency_overrides.clear()

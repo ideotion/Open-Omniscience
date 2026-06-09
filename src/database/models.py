@@ -1140,6 +1140,35 @@ class MarketExtractionRule(Base):
         return f"<MarketExtractionRule({self.symbol} <- {self.selector!r} @ {self.url})>"
 
 
+class KeywordFamilyOverride(Base):
+    """A user's manual correction to keyword-family grouping (the "user disposes" rule).
+
+    Families (src/analytics/families.py) merge surface variants automatically, but the
+    user is the final arbiter. Each row pins one normalised surface form to a
+    ``family_key``: forms sharing a key are forced into one family (a manual *merge*);
+    a form whose key is its own normalised term is pinned standalone (a *split* out of
+    an auto-family). Overrides are authoritative over the automatic rules and fully
+    reversible — deleting the row restores automatic behaviour. We store the user's
+    decision, never a rewrite of the underlying keyword rows.
+    """
+
+    __tablename__ = "keyword_family_overrides"
+
+    id = Column(Integer, primary_key=True)
+    normalized_term = Column(String(255), nullable=False, unique=True, index=True)
+    family_key = Column(String(255), nullable=False)      # forms sharing this key = one family
+    canonical_label = Column(String(255))                  # preferred display label for the family
+    kind = Column(String(40))                              # cached kind for display
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("ix_kwfam_family_key", "family_key"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<KeywordFamilyOverride({self.normalized_term} -> {self.family_key})>"
+
+
 class KeywordMention(Base):
     """One article's mention of a keyword/entity, with context + denormalised facets.
 

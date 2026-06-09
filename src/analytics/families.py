@@ -88,6 +88,7 @@ class Family:
     kind: str
     mentions: int = 0
     articles: int = 0
+    manual: bool = False      # True if a user override shaped this family
     members: list[dict] = field(default_factory=list)
 
     @property
@@ -98,7 +99,7 @@ class Family:
         return {
             "term": self.canonical, "normalized": self.normalized, "kind": self.kind,
             "mentions": self.mentions, "articles": self.articles,
-            "variants": self.variant_count,
+            "variants": self.variant_count, "manual": self.manual,
             "members": [
                 {"term": m.get("term"), "normalized": m.get("normalized"),
                  "mentions": int(m.get("mentions", 0) or 0)}
@@ -107,19 +108,27 @@ class Family:
         }
 
 
-def build_families(items: list[dict]) -> list[Family]:
+def build_families(items: list[dict], overrides: dict[str, dict] | None = None) -> list[Family]:
     """Group keyword rows into families. ``items`` carry normalized/term/kind/mentions
     (and optionally articles). Returns families sorted by total mentions, descending.
+
+    ``overrides`` maps a normalised term to ``{"family_key", "label", "kind"}`` — a
+    user's manual decision that is *authoritative* over the automatic rules: forms
+    sharing a ``family_key`` are forced together (a merge), and a form keyed to its
+    own normalised term is pinned standalone (a split). Overridden forms never take
+    part in the automatic possessive/containment grouping.
     """
+    overrides = overrides or {}
     recs = []
     for it in items:
         norm = it.get("normalized") or _norm(it.get("term", ""))
         recs.append({
-            "it": it, "kind": it.get("kind", "term"),
+            "it": it, "norm": norm, "kind": it.get("kind", "term"),
             "ckey": canonical_key(norm),
             "match": strip_honorifics(norm).split(),
             "mentions": int(it.get("mentions", it.get("count", 0)) or 0),
             "articles": int(it.get("articles", 0) or 0),
+            "ov": overrides.get(norm),
         })
 
     parent = list(range(len(recs)))
@@ -135,17 +144,19 @@ def build_families(items: list[dict]) -> list[Family]:
         if ra != rb:
             parent[rb] = ra
 
-    # 1) Possessive / exact collapse: same (kind, canonical key).
+    auto = [i for i, r in enumerate(recs) if r["ov"] is None]
+
+    # 1) Possessive / exact collapse: same (kind, canonical key) — auto items only.
     by_ckey: dict[tuple[str, str], int] = {}
-    for i, r in enumerate(recs):
-        key = (r["kind"], r["ckey"])
+    for i in auto:
+        key = (recs[i]["kind"], recs[i]["ckey"])
         if key in by_ckey:
             union(by_ckey[key], i)
         else:
             by_ckey[key] = i
 
-    # 2) Containment among entities of the same kind (plain terms excluded).
-    ents = [i for i, r in enumerate(recs) if r["kind"] != "term" and r["match"]]
+    # 2) Containment among entities of the same kind (plain terms excluded) — auto only.
+    ents = [i for i in auto if recs[i]["kind"] != "term" and recs[i]["match"]]
     for a in ents:
         for b in ents:
             if a == b or recs[a]["kind"] != recs[b]["kind"]:
@@ -154,17 +165,25 @@ def build_families(items: list[dict]) -> list[Family]:
                     _is_contiguous_sub(recs[a]["match"], recs[b]["match"]):
                 union(b, a)  # shorter (a) joins the more complete (b)
 
-    groups: dict[int, list[dict]] = {}
-    for i in range(len(recs)):
-        groups.setdefault(find(i), []).append(recs[i])
+    # Final grouping: overridden forms group by family_key; the rest by auto-union.
+    groups: dict[tuple, list[dict]] = {}
+    for i, r in enumerate(recs):
+        gkey = ("ov", r["ov"]["family_key"]) if r["ov"] else ("auto", find(i))
+        groups.setdefault(gkey, []).append(r)
 
     families: list[Family] = []
-    for members in groups.values():
-        canon = max(members, key=lambda r: (len(r["match"]), r["mentions"]))
+    for gkey, members in groups.items():
+        if gkey[0] == "ov":
+            label = next((m["ov"].get("label") for m in members if m["ov"].get("label")), None)
+            canon = max(members, key=lambda r: (len(r["match"]), r["mentions"]))
+            canonical = label or canon["it"].get("term") or " ".join(canon["match"])
+            normalized, kind, manual = gkey[1], canon["kind"], True
+        else:
+            canon = max(members, key=lambda r: (len(r["match"]), r["mentions"]))
+            canonical = canon["it"].get("term") or " ".join(canon["match"])
+            normalized, kind, manual = canon["ckey"], canon["kind"], False
         families.append(Family(
-            canonical=canon["it"].get("term") or " ".join(canon["match"]),
-            normalized=canon["ckey"],
-            kind=canon["kind"],
+            canonical=canonical, normalized=normalized, kind=kind, manual=manual,
             mentions=sum(r["mentions"] for r in members),
             articles=max((r["articles"] for r in members), default=0),
             members=[r["it"] for r in members],
