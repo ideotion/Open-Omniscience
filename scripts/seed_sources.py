@@ -23,8 +23,10 @@ def main(argv: list[str]) -> int:
     sources = load_sources_from_yaml(path)
     with session_scope() as session:
         result = seed_sources(session, sources)
-    print(f"Seeded sources: {result['created']} created, {result['skipped']} already present "
-          f"(of {result['total']}).")
+    print(
+        f"Seeded sources: {result['created']} created, {result['skipped']} already present "
+        f"(of {result['total']})."
+    )
     return 0
 
 

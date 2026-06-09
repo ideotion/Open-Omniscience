@@ -38,10 +38,10 @@ def _normalize(term: str) -> str:
 class KeywordFilter:
     """Operator-controlled keyword filtering."""
 
-    excluded: list[str] = field(default_factory=list)   # normalized terms to hide
+    excluded: list[str] = field(default_factory=list)  # normalized terms to hide
     min_length: int = 3
     drop_numeric: bool = True
-    use_builtin_stopwords: bool = True                   # apply the automatic multilingual stoplist
+    use_builtin_stopwords: bool = True  # apply the automatic multilingual stoplist
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -133,5 +133,8 @@ def hidden_set() -> set[str]:
 def _write(cur: KeywordFilter) -> None:
     p = _path()
     tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"version": SETTINGS_VERSION, **cur.to_dict()}, indent=2, sort_keys=True), "utf-8")
+    tmp.write_text(
+        json.dumps({"version": SETTINGS_VERSION, **cur.to_dict()}, indent=2, sort_keys=True),
+        "utf-8",
+    )
     tmp.replace(p)

@@ -53,9 +53,11 @@ def is_sqlite() -> bool:
     """True when the live engine is backed by an on-disk SQLite file."""
     from src.database.session import engine
 
-    return engine.url.get_backend_name() == "sqlite" and bool(
-        engine.url.database
-    ) and engine.url.database != ":memory:"
+    return (
+        engine.url.get_backend_name() == "sqlite"
+        and bool(engine.url.database)
+        and engine.url.database != ":memory:"
+    )
 
 
 def live_db_path() -> Path:
@@ -112,9 +114,10 @@ def validate_sqlite_file(path: Path) -> int:
         check = conn.execute("PRAGMA quick_check").fetchone()
         if not check or check[0] != "ok":
             raise BackupError(f"integrity check failed: {check[0] if check else 'unknown'}")
-        names = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()}
+        names = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
     except sqlite3.DatabaseError as exc:
         raise BackupError(f"not a valid SQLite database: {exc}") from exc
     finally:

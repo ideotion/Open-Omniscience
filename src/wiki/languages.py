@@ -40,11 +40,11 @@ _REGION_RANK = {r: i for i, r in enumerate(_REGION_ORDER)}
 
 @dataclass(frozen=True)
 class WikiLanguage:
-    code: str       # wiki edition code (en, fr, de, ...) -> {code}wiki
-    name: str       # English name
-    autonym: str    # the language's own name
-    tier: str       # huge | large | medium | small (ordering/heaviness hint)
-    region: str     # continent of origin (Europe | Asia | Africa | Americas | Oceania)
+    code: str  # wiki edition code (en, fr, de, ...) -> {code}wiki
+    name: str  # English name
+    autonym: str  # the language's own name
+    tier: str  # huge | large | medium | small (ordering/heaviness hint)
+    region: str  # continent of origin (Europe | Asia | Africa | Americas | Oceania)
 
     def to_dict(self) -> dict:
         return {

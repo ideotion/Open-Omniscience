@@ -29,18 +29,28 @@ def client(tmp_path, monkeypatch):
 
 
 def test_log_and_verify_roundtrip(client):
-    r = client.post("/api/custody/log", json={
-        "item_id": "article:1", "item_hash": "a" * 64,
-        "action": "ingest", "actor": "tester",
-    })
+    r = client.post(
+        "/api/custody/log",
+        json={
+            "item_id": "article:1",
+            "item_hash": "a" * 64,
+            "action": "ingest",
+            "actor": "tester",
+        },
+    )
     assert r.status_code == 200, r.text
     entry = r.json()
     assert entry["action"] == "ingest"
     assert entry["entry_hash"]
 
-    client.post("/api/custody/log", json={
-        "item_id": "article:1", "item_hash": "a" * 64, "action": "access",
-    })
+    client.post(
+        "/api/custody/log",
+        json={
+            "item_id": "article:1",
+            "item_hash": "a" * 64,
+            "action": "access",
+        },
+    )
 
     v = client.get("/api/custody/article:1/verify")
     assert v.status_code == 200
@@ -51,16 +61,26 @@ def test_log_and_verify_roundtrip(client):
 
 
 def test_unknown_action_rejected(client):
-    r = client.post("/api/custody/log", json={
-        "item_id": "x", "item_hash": "b" * 64, "action": "frobnicate",
-    })
+    r = client.post(
+        "/api/custody/log",
+        json={
+            "item_id": "x",
+            "item_hash": "b" * 64,
+            "action": "frobnicate",
+        },
+    )
     assert r.status_code == 400
 
 
 def test_export_then_offline_verify(client, tmp_path):
-    client.post("/api/custody/log", json={
-        "item_id": "article:7", "item_hash": "c" * 64, "action": "ingest",
-    })
+    client.post(
+        "/api/custody/log",
+        json={
+            "item_id": "article:7",
+            "item_hash": "c" * 64,
+            "action": "ingest",
+        },
+    )
     bundle = client.get("/api/custody/export").json()
     assert bundle["entry_count"] == 1
 
@@ -74,7 +94,8 @@ def test_export_then_offline_verify(client, tmp_path):
     repo = Path(__file__).resolve().parents[1]
     res = subprocess.run(
         [sys.executable, str(repo / "scripts" / "verify_custody.py"), str(bundle_file)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stdout + res.stderr
     assert "VERIFIED       : True" in res.stdout

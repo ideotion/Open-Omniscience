@@ -20,11 +20,19 @@ from dateutil import parser as date_parser
 
 # Accepted header aliases (lowercased) -> canonical field.
 _ALIASES = {
-    "observed_on": "observed_on", "date": "observed_on", "day": "observed_on",
-    "price": "price", "value": "price", "close": "price",
-    "currency": "currency", "ccy": "currency",
-    "unit": "unit", "uom": "unit",
-    "market": "market", "exchange": "market", "source_market": "market",
+    "observed_on": "observed_on",
+    "date": "observed_on",
+    "day": "observed_on",
+    "price": "price",
+    "value": "price",
+    "close": "price",
+    "currency": "currency",
+    "ccy": "currency",
+    "unit": "unit",
+    "uom": "unit",
+    "market": "market",
+    "exchange": "market",
+    "source_market": "market",
 }
 
 
@@ -53,8 +61,11 @@ def parse_price_csv(text: str) -> ParsedPrices:
     points: list[dict] = []
     errors: list[str] = []
     for i, row in enumerate(reader, start=2):  # row 1 is the header
-        rec = {colmap[k]: (v.strip() if isinstance(v, str) else v)
-               for k, v in row.items() if k in colmap}
+        rec = {
+            colmap[k]: (v.strip() if isinstance(v, str) else v)
+            for k, v in row.items()
+            if k in colmap
+        }
         try:
             observed = date_parser.parse(rec["observed_on"]).date()
             price = float(rec["price"])

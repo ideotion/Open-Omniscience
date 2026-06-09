@@ -48,13 +48,28 @@ def test_assert_no_score_fields_rejects_a_score_field():
 
 def test_card_rejects_unknown_bucket():
     with pytest.raises(ValueError):
-        Card(type="x", title="t", summary="s", bucket="not-a-bucket",
-             method="m", caveat="c")
+        Card(type="x", title="t", summary="s", bucket="not-a-bucket", method="m", caveat="c")
 
 
 def test_card_stable_id_from_type_and_key():
-    a = Card(type="rising", title="A", summary="s", bucket="rising", method="m", caveat="c", key="election")
-    b = Card(type="rising", title="DIFFERENT", summary="s", bucket="rising", method="m", caveat="c", key="election")
+    a = Card(
+        type="rising",
+        title="A",
+        summary="s",
+        bucket="rising",
+        method="m",
+        caveat="c",
+        key="election",
+    )
+    b = Card(
+        type="rising",
+        title="DIFFERENT",
+        summary="s",
+        bucket="rising",
+        method="m",
+        caveat="c",
+        key="election",
+    )
     assert a.id == b.id  # identity is type+key, not the (volatile) title
 
 
@@ -64,8 +79,9 @@ def test_card_stable_id_from_type_and_key():
 @pytest.fixture()
 def corpus(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="Alpha", domain="alpha.test", country="fr"))
@@ -79,16 +95,23 @@ def corpus(monkeypatch, tmp_path):
         src_id = 1 if i % 3 else 2  # Alpha-heavy -> a concentrated diet
         when = now - timedelta(days=i % 5)
         a = Article(
-            url=f"https://x.test/{i}", canonical_url=f"https://x.test/{i}", source_id=src_id,
-            title=f"Story {i}", hash=f"h{i}", language="en",
-            content=("The election dominated the election news as election coverage spread."
-                     if i < 6 else "Markets moved on quiet trading and steady prices today."),
-            published_at=when, created_at=now,
+            url=f"https://x.test/{i}",
+            canonical_url=f"https://x.test/{i}",
+            source_id=src_id,
+            title=f"Story {i}",
+            hash=f"h{i}",
+            language="en",
+            content=(
+                "The election dominated the election news as election coverage spread."
+                if i < 6
+                else "Markets moved on quiet trading and steady prices today."
+            ),
+            published_at=when,
+            created_at=now,
         )
         s.add(a)
         s.commit()
-        index_article(s, a, extractor=BaselineExtractor(),
-                      country="fr" if src_id == 1 else "us")
+        index_article(s, a, extractor=BaselineExtractor(), country="fr" if src_id == 1 else "us")
     return s
 
 
@@ -112,9 +135,9 @@ def test_diet_self_audit_uses_concentration(corpus):
     assert cards, "expected a diet card with >=10 articles across 2 sources"
     c = cards[0]
     assert c.bucket == "context"
-    assert 0.0 <= c.signal["value"] <= 1.0   # a top-share fraction, not a score
+    assert 0.0 <= c.signal["value"] <= 1.0  # a top-share fraction, not a score
     assert c.signal["gini"] is not None
-    assert "owner" in c.caveat.lower()       # honest: source != owner
+    assert "owner" in c.caveat.lower()  # honest: source != owner
 
 
 # --------------------------------------------------------------------------- #
@@ -146,11 +169,16 @@ def test_dismiss_hides_card_and_is_reversible(corpus):
 def test_draft_add_and_export_markdown(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     card = Card(
-        type="rising", title="“election” is rising", summary="Mentions climbing.",
-        bucket="rising", method="ratio", caveat="not a significance test",
+        type="rising",
+        title="“election” is rising",
+        summary="Mentions climbing.",
+        bucket="rising",
+        method="ratio",
+        caveat="not a significance test",
         signal={"metric": "growth_ratio", "value": 4.2},
         evidence=[{"title": "Story 1", "url": "https://x.test/1", "source": "Alpha"}],
-        n=6, key="election",
+        n=6,
+        key="election",
     ).to_dict()
 
     draft_store.add_card(card, note="Lead item this week.")
@@ -161,7 +189,7 @@ def test_draft_add_and_export_markdown(monkeypatch, tmp_path):
     md = draft_store.export_markdown()
     assert "# Open Omniscience briefing" in md
     assert "“election” is rising" in md
-    assert "https://x.test/1" in md        # evidence link travels with the claim
+    assert "https://x.test/1" in md  # evidence link travels with the claim
     assert "Method:" in md and "Caveat:" in md
     assert "Lead item this week." in md
 

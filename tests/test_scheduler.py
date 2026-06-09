@@ -51,19 +51,30 @@ class FakeSession:
 
 def _article_html(title, body_sentence):
     body = (body_sentence + " ") * 30
-    return (f"<html><head><title>{title}</title></head>"
-            f"<body><article><h1>{title}</h1><p>{body}</p></article></body></html>")
+    return (
+        f"<html><head><title>{title}</title></head>"
+        f"<body><article><h1>{title}</h1><p>{body}</p></article></body></html>"
+    )
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     s = Sess()
-    s.add(Source(name="Feed", domain="example.com",
-                 rss_url="https://example.com/feed.xml", enabled=True, priority=1, language="en"))
+    s.add(
+        Source(
+            name="Feed",
+            domain="example.com",
+            rss_url="https://example.com/feed.xml",
+            enabled=True,
+            priority=1,
+            language="en",
+        )
+    )
     s.add(Source(name="NoFeed", domain="nofeed.test", enabled=True, priority=2))
     s.commit()
     yield s
@@ -78,8 +89,11 @@ def test_run_scrape_once_rss(db):
     sess.route("https://example.com/feed.xml", text=feed, content_type="application/rss+xml")
     sess.route("https://example.com/1", text=_article_html("One", "First story body."))
 
-    result = run_scrape_once(db, EthicalFetcher(min_interval_s=0.0, session=sess),
-                             SchedulerSettings(mode="rss", max_sources_per_run=10))
+    result = run_scrape_once(
+        db,
+        EthicalFetcher(min_interval_s=0.0, session=sess),
+        SchedulerSettings(mode="rss", max_sources_per_run=10),
+    )
     assert result["mode"] == "rss"
     assert result["articles_stored"] == 1
     # Only the RSS source counts; the feedless source is skipped, not errored.
@@ -94,9 +108,13 @@ def test_run_scrape_once_crawl(db):
     sess.route("https://nofeed.test/robots.txt", status_code=404, text="")
     sess.route("https://nofeed.test", text=_article_html("NF", "Nofeed story body here."))
 
-    result = run_scrape_once(db, EthicalFetcher(min_interval_s=0.0, session=sess),
-                             SchedulerSettings(mode="crawl", max_sources_per_run=10,
-                                               crawl_max_depth=0, crawl_max_pages=5))
+    result = run_scrape_once(
+        db,
+        EthicalFetcher(min_interval_s=0.0, session=sess),
+        SchedulerSettings(
+            mode="crawl", max_sources_per_run=10, crawl_max_depth=0, crawl_max_pages=5
+        ),
+    )
     assert result["mode"] == "crawl"
     assert result["pages_fetched"] >= 1
     assert result["sources_processed"] == 2

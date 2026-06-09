@@ -60,5 +60,9 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     with contextlib.suppress(OSError):
         shutil.rmtree(target, ignore_errors=True)
     _LOG.warning("PANIC WIPE executed on %s (%d/%d files)", target, wiped, files)
-    return {"data_dir": str(target), "files_seen": files, "files_wiped": wiped,
-            "limit": _LIMIT_NOTE}
+    return {
+        "data_dir": str(target),
+        "files_seen": files,
+        "files_wiped": wiped,
+        "limit": _LIMIT_NOTE,
+    }

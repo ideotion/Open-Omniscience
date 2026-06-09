@@ -42,7 +42,7 @@ def test_export_then_verify(monkeypatch, tmp_path):
 def test_tampered_bundle_is_refused():
     store.add_annotation("foo.test", "leaning", "lean-left")
     b = store.export_bundle()
-    b["manifest"]["annotations"][0]["value"] = "lean-right"   # tamper after signing
+    b["manifest"]["annotations"][0]["value"] = "lean-right"  # tamper after signing
     ok, reason, _ = bundle_mod.verify_bundle(b)
     assert not ok
     with pytest.raises(ValueError):
@@ -66,8 +66,8 @@ def test_conflicting_imports_show_both_attributions(tmp_path, monkeypatch):
     agg = store.aggregate_for_target("acme.news")
     assert agg["total_assertions"] == 2
     values = {c["value"] for c in agg["claims"]}
-    assert values == {"lean-left", "lean-right"}      # both shown, not averaged
-    assert "leaning" in agg["dissent_kinds"]          # dissent surfaced honestly
+    assert values == {"lean-left", "lean-right"}  # both shown, not averaged
+    assert "leaning" in agg["dissent_kinds"]  # dissent surfaced honestly
 
 
 def test_untrusted_author_is_excluded_then_removed(tmp_path, monkeypatch):
@@ -81,11 +81,11 @@ def test_untrusted_author_is_excluded_then_removed(tmp_path, monkeypatch):
     assert store.aggregate_for_target("x.test")["total_assertions"] == 1
 
     store.set_trusted(aid, False)
-    assert store.aggregate_for_target("x.test")["total_assertions"] == 0   # untrusted -> excluded
+    assert store.aggregate_for_target("x.test")["total_assertions"] == 0  # untrusted -> excluded
 
     store.set_trusted(aid, True)
     assert store.remove_author(aid) is True
-    assert store.aggregate_for_target("x.test")["total_assertions"] == 0   # removed cleanly
+    assert store.aggregate_for_target("x.test")["total_assertions"] == 0  # removed cleanly
 
 
 def test_invalid_kind_rejected():

@@ -50,8 +50,10 @@ def resolve_keyword(session, term: str) -> Keyword | None:
         session.query(Keyword, func.coalesce(func.sum(KeywordMention.count), 0).label("m"))
         .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
         .filter(Keyword.normalized_term.like(f"%{norm}%"))
-        .group_by(Keyword.id).order_by(func.coalesce(func.sum(KeywordMention.count), 0).desc())
-        .limit(1).all()
+        .group_by(Keyword.id)
+        .order_by(func.coalesce(func.sum(KeywordMention.count), 0).desc())
+        .limit(1)
+        .all()
     )
     return rows[0][0] if rows else None
 
@@ -101,9 +103,8 @@ def trend(session, term: str, *, bucket: str = "week", country: str | None = Non
     kw = resolve_keyword(session, term)
     if kw is None:
         return {"term": term, "resolved": None, "points": [], "total": 0, "articles": 0}
-    q = (
-        session.query(KeywordMention.observed_on, func.sum(KeywordMention.count))
-        .filter(KeywordMention.keyword_id == kw.id, KeywordMention.observed_on.isnot(None))
+    q = session.query(KeywordMention.observed_on, func.sum(KeywordMention.count)).filter(
+        KeywordMention.keyword_id == kw.id, KeywordMention.observed_on.isnot(None)
     )
     if country:
         q = q.filter(KeywordMention.country == country.lower())
@@ -114,57 +115,93 @@ def trend(session, term: str, *, bucket: str = "week", country: str | None = Non
     points = [{"date": k, "count": v} for k, v in sorted(buckets.items())]
     articles = (
         session.query(func.count(func.distinct(KeywordMention.article_id)))
-        .filter(KeywordMention.keyword_id == kw.id).scalar() or 0
+        .filter(KeywordMention.keyword_id == kw.id)
+        .scalar()
+        or 0
     )
     return {
-        "term": term, "bucket": bucket,
+        "term": term,
+        "bucket": bucket,
         "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
-        "points": points, "total": sum(p["count"] for p in points), "articles": int(articles),
+        "points": points,
+        "total": sum(p["count"] for p in points),
+        "articles": int(articles),
     }
 
 
-def top_terms(session, *, days: int | None = None, country: str | None = None,
-              kind: str | None = None, limit: int = 20, group: bool = False) -> dict:
+def top_terms(
+    session,
+    *,
+    days: int | None = None,
+    country: str | None = None,
+    kind: str | None = None,
+    limit: int = 20,
+    group: bool = False,
+) -> dict:
     """Most-mentioned keywords (optionally within a window / country / kind).
 
     With ``group=True`` the surface variants of one entity are merged into a single
     family (``Trump`` / ``Trump's`` / ``Donald Trump`` -> one row) for display, with
     summed mentions and the member forms listed — see src/analytics/families.py.
     """
-    q = (
-        session.query(
-            Keyword, func.sum(KeywordMention.count).label("m"),
-            func.count(func.distinct(KeywordMention.article_id)).label("arts"),
-        )
-        .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-    )
+    q = session.query(
+        Keyword,
+        func.sum(KeywordMention.count).label("m"),
+        func.count(func.distinct(KeywordMention.article_id)).label("arts"),
+    ).join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
     if days:
         q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
     if country:
         q = q.filter(KeywordMention.country == country.lower())
     q = _apply_kind(q, kind)
-    rows = q.group_by(Keyword.id).order_by(func.sum(KeywordMention.count).desc()).limit(limit * 4).all()
+    rows = (
+        q.group_by(Keyword.id)
+        .order_by(func.sum(KeywordMention.count).desc())
+        .limit(limit * 4)
+        .all()
+    )
     is_hidden = _hidden_predicate()
     cap = limit * 4 if group else limit
     terms = []
     for k, m, a in rows:
         if is_hidden(k.normalized_term):
             continue
-        terms.append({"term": k.term, "normalized": k.normalized_term, "kind": kind_of(k),
-                      "mentions": int(m), "articles": int(a)})
+        terms.append(
+            {
+                "term": k.term,
+                "normalized": k.normalized_term,
+                "kind": kind_of(k),
+                "mentions": int(m),
+                "articles": int(a),
+            }
+        )
         if len(terms) >= cap:
             break
     if group:
         from src.analytics.families import build_families
+
         terms = [f.to_dict() for f in build_families(terms, load_overrides(session))]
     terms = terms[:limit]
-    return {"count": len(terms), "days": days, "country": country, "kind": kind,
-            "grouped": group, "terms": terms}
+    return {
+        "count": len(terms),
+        "days": days,
+        "country": country,
+        "kind": kind,
+        "grouped": group,
+        "terms": terms,
+    }
 
 
-def trending(session, *, window_days: int = 7, baseline_days: int = 30,
-             country: str | None = None, kind: str | None = None,
-             limit: int = 20, min_recent: int = 3) -> dict:
+def trending(
+    session,
+    *,
+    window_days: int = 7,
+    baseline_days: int = 30,
+    country: str | None = None,
+    kind: str | None = None,
+    limit: int = 20,
+    min_recent: int = 3,
+) -> dict:
     """Rising keywords: recent volume vs the prior-period rate (a defined ratio).
 
     ``growth`` = recent_count / expected, where expected = (prior_count /
@@ -176,9 +213,8 @@ def trending(session, *, window_days: int = 7, baseline_days: int = 30,
     b_start = w_start - timedelta(days=baseline_days)
 
     def _counts(lo, hi):
-        q = (
-            session.query(KeywordMention.keyword_id, func.sum(KeywordMention.count))
-            .filter(KeywordMention.observed_on >= lo, KeywordMention.observed_on < hi)
+        q = session.query(KeywordMention.keyword_id, func.sum(KeywordMention.count)).filter(
+            KeywordMention.observed_on >= lo, KeywordMention.observed_on < hi
         )
         if country:
             q = q.filter(KeywordMention.country == country.lower())
@@ -204,15 +240,26 @@ def trending(session, *, window_days: int = 7, baseline_days: int = 30,
         kw = session.get(Keyword, kid)
         if kw is None or (kind and kind_of(kw) != kind) or is_hidden(kw.normalized_term):
             continue
-        out.append({
-            "term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw),
-            "recent": rc, "prior": pc, "expected": expected, "growth": growth,
-        })
+        out.append(
+            {
+                "term": kw.term,
+                "normalized": kw.normalized_term,
+                "kind": kind_of(kw),
+                "recent": rc,
+                "prior": pc,
+                "expected": expected,
+                "growth": growth,
+            }
+        )
         if len(out) >= limit:
             break
     return {
-        "count": len(out), "window_days": window_days, "baseline_days": baseline_days,
-        "country": country, "kind": kind, "terms": out,
+        "count": len(out),
+        "window_days": window_days,
+        "baseline_days": baseline_days,
+        "country": country,
+        "kind": kind,
+        "terms": out,
         "method": "recent volume vs prior-period rate (ratio, not a significance test)",
     }
 
@@ -229,24 +276,37 @@ def _group_pairs(pairs: list[dict], overrides: dict[str, dict] | None = None) ->
     by_norm = {p["normalized"]: p for p in pairs}
     out = []
     for fam in build_families(
-        [{"normalized": p["normalized"], "term": p["term"], "kind": p["kind"],
-          "mentions": p["cooccur"]} for p in pairs], overrides or {}
+        [
+            {
+                "normalized": p["normalized"],
+                "term": p["term"],
+                "kind": p["kind"],
+                "mentions": p["cooccur"],
+            }
+            for p in pairs
+        ],
+        overrides or {},
     ):
         members = [by_norm[m["normalized"]] for m in fam.members if m["normalized"] in by_norm]
-        out.append({
-            "term": fam.canonical, "normalized": fam.normalized, "kind": fam.kind,
-            "cooccur": sum(p["cooccur"] for p in members),
-            "n_b": max((p["n_b"] for p in members), default=0),
-            "pmi": max((p["pmi"] for p in members), default=0.0),
-            "variants": fam.variant_count,
-            "members": [p["term"] for p in members],
-        })
+        out.append(
+            {
+                "term": fam.canonical,
+                "normalized": fam.normalized,
+                "kind": fam.kind,
+                "cooccur": sum(p["cooccur"] for p in members),
+                "n_b": max((p["n_b"] for p in members), default=0),
+                "pmi": max((p["pmi"] for p in members), default=0.0),
+                "variants": fam.variant_count,
+                "members": [p["term"] for p in members],
+            }
+        )
     out.sort(key=lambda p: (-p["pmi"], -p["cooccur"]))
     return out
 
 
-def associations(session, term: str, *, limit: int = 20, min_cooccur: int = 2,
-                 group: bool = False) -> dict:
+def associations(
+    session, term: str, *, limit: int = 20, min_cooccur: int = 2, group: bool = False
+) -> dict:
     """Keywords that co-occur with ``term`` in the same articles, ranked by PMI.
 
     With ``group=True`` the neighbours are merged into entity families (one node
@@ -257,19 +317,29 @@ def associations(session, term: str, *, limit: int = 20, min_cooccur: int = 2,
         return {"term": term, "resolved": None, "pairs": []}
     total = session.query(func.count(func.distinct(KeywordMention.article_id))).scalar() or 0
     target_articles = [
-        a for (a,) in session.query(KeywordMention.article_id)
-        .filter(KeywordMention.keyword_id == kw.id).distinct()
+        a
+        for (a,) in session.query(KeywordMention.article_id)
+        .filter(KeywordMention.keyword_id == kw.id)
+        .distinct()
     ]
     n_a = len(target_articles)
     if not target_articles or total == 0:
-        return {"term": term, "resolved": {"term": kw.term, "kind": kind_of(kw)},
-                "corpus_articles": int(total), "n_articles_with_term": n_a, "pairs": []}
+        return {
+            "term": term,
+            "resolved": {"term": kw.term, "kind": kind_of(kw)},
+            "corpus_articles": int(total),
+            "n_articles_with_term": n_a,
+            "pairs": [],
+        }
 
     co_rows = (
-        session.query(KeywordMention.keyword_id, func.count(func.distinct(KeywordMention.article_id)))
+        session.query(
+            KeywordMention.keyword_id, func.count(func.distinct(KeywordMention.article_id))
+        )
         .filter(KeywordMention.article_id.in_(target_articles), KeywordMention.keyword_id != kw.id)
         .group_by(KeywordMention.keyword_id)
-        .having(func.count(func.distinct(KeywordMention.article_id)) >= min_cooccur).all()
+        .having(func.count(func.distinct(KeywordMention.article_id)) >= min_cooccur)
+        .all()
     )
     is_hidden = _hidden_predicate()
     pairs = []
@@ -277,23 +347,34 @@ def associations(session, term: str, *, limit: int = 20, min_cooccur: int = 2,
         co = int(co)
         n_b = (
             session.query(func.count(func.distinct(KeywordMention.article_id)))
-            .filter(KeywordMention.keyword_id == kid).scalar() or 1
+            .filter(KeywordMention.keyword_id == kid)
+            .scalar()
+            or 1
         )
         pmi = math.log2((co * total) / (n_a * n_b)) if co > 0 else 0.0
         k2 = session.get(Keyword, kid)
         if k2 is None or is_hidden(k2.normalized_term):
             continue
-        pairs.append({
-            "term": k2.term, "normalized": k2.normalized_term, "kind": kind_of(k2),
-            "cooccur": co, "n_b": int(n_b), "pmi": round(pmi, 3),
-        })
+        pairs.append(
+            {
+                "term": k2.term,
+                "normalized": k2.normalized_term,
+                "kind": kind_of(k2),
+                "cooccur": co,
+                "n_b": int(n_b),
+                "pmi": round(pmi, 3),
+            }
+        )
     pairs.sort(key=lambda p: (-p["pmi"], -p["cooccur"]))
     if group:
         pairs = _group_pairs(pairs, load_overrides(session))
     return {
-        "term": term, "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
-        "corpus_articles": int(total), "n_articles_with_term": n_a,
-        "grouped": group, "pairs": pairs[:limit],
+        "term": term,
+        "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
+        "corpus_articles": int(total),
+        "n_articles_with_term": n_a,
+        "grouped": group,
+        "pairs": pairs[:limit],
         "method": "pointwise mutual information over article co-occurrence",
         "caveat": "Association is not causation; PMI on small samples is noisy.",
     }
@@ -309,7 +390,8 @@ def context(session, term: str, *, limit: int = 10, window: int = 180) -> dict:
         .join(Article, Article.id == KeywordMention.article_id)
         .filter(KeywordMention.keyword_id == kw.id)
         .order_by(KeywordMention.observed_on.desc(), KeywordMention.id.desc())
-        .limit(limit).all()
+        .limit(limit)
+        .all()
     )
     items = []
     for m, a in rows:
@@ -317,19 +399,36 @@ def context(session, term: str, *, limit: int = 10, window: int = 180) -> dict:
         off = m.first_offset or 0
         start, end = max(0, off - window), min(len(content), off + window)
         snippet = content[start:end].strip()
-        items.append({
-            "article_id": a.id, "title": a.title, "url": a.url,
-            "source": a.source.name if a.source else None,
-            "observed_on": m.observed_on.isoformat() if m.observed_on else None,
-            "country": m.country, "city": m.city,
-            "snippet": ("…" if start > 0 else "") + snippet + ("…" if end < len(content) else ""),
-        })
-    return {"term": term, "resolved": {"term": kw.term, "kind": kind_of(kw)},
-            "count": len(items), "mentions": items}
+        items.append(
+            {
+                "article_id": a.id,
+                "title": a.title,
+                "url": a.url,
+                "source": a.source.name if a.source else None,
+                "observed_on": m.observed_on.isoformat() if m.observed_on else None,
+                "country": m.country,
+                "city": m.city,
+                "snippet": ("…" if start > 0 else "")
+                + snippet
+                + ("…" if end < len(content) else ""),
+            }
+        )
+    return {
+        "term": term,
+        "resolved": {"term": kw.term, "kind": kind_of(kw)},
+        "count": len(items),
+        "mentions": items,
+    }
 
 
-def map_data(session, *, days: int | None = 30, kind: str | None = None,
-             top_per_area: int = 5, min_mentions: int = 1) -> dict:
+def map_data(
+    session,
+    *,
+    days: int | None = 30,
+    kind: str | None = None,
+    top_per_area: int = 5,
+    min_mentions: int = 1,
+) -> dict:
     """Top keywords per country and per city (from denormalised mention facets)."""
     is_hidden = _hidden_predicate()
 
@@ -342,7 +441,9 @@ def map_data(session, *, days: int | None = 30, kind: str | None = None,
         if days:
             q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
         q = _apply_kind(q, kind)
-        rows = q.group_by(area_col, Keyword.id).order_by(func.sum(KeywordMention.count).desc()).all()
+        rows = (
+            q.group_by(area_col, Keyword.id).order_by(func.sum(KeywordMention.count).desc()).all()
+        )
         areas: dict[str, list] = {}
         for area, kw, m in rows:
             if is_hidden(kw.normalized_term):
@@ -354,16 +455,23 @@ def map_data(session, *, days: int | None = 30, kind: str | None = None,
 
     def _agg_cities():
         q = (
-            session.query(KeywordMention.city, KeywordMention.country, Keyword,
-                          func.sum(KeywordMention.count).label("m"))
+            session.query(
+                KeywordMention.city,
+                KeywordMention.country,
+                Keyword,
+                func.sum(KeywordMention.count).label("m"),
+            )
             .join(Keyword, Keyword.id == KeywordMention.keyword_id)
             .filter(KeywordMention.city.isnot(None))
         )
         if days:
             q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
         q = _apply_kind(q, kind)
-        rows = q.group_by(KeywordMention.city, KeywordMention.country, Keyword.id).order_by(
-            func.sum(KeywordMention.count).desc()).all()
+        rows = (
+            q.group_by(KeywordMention.city, KeywordMention.country, Keyword.id)
+            .order_by(func.sum(KeywordMention.count).desc())
+            .all()
+        )
         out: dict[tuple, dict] = {}
         for city, country, kw, m in rows:
             if is_hidden(kw.normalized_term):
@@ -375,9 +483,10 @@ def map_data(session, *, days: int | None = 30, kind: str | None = None,
 
     countries = _agg(KeywordMention.country)
     return {
-        "days": days, "kind": kind,
+        "days": days,
+        "kind": kind,
         "countries": [{"code": c, "top": t} for c, t in sorted(countries.items())],
-        "cities": sorted(_agg_cities(), key=lambda c: (c["name"] or "")),
+        "cities": sorted(_agg_cities(), key=lambda c: c["name"] or ""),
     }
 
 
@@ -386,10 +495,15 @@ def status(session) -> dict:
     total_articles = session.query(func.count(Article.id)).scalar() or 0
     indexed = session.query(func.count(func.distinct(KeywordMention.article_id))).scalar() or 0
     keywords = session.query(func.count(Keyword.id)).scalar() or 0
-    entities = session.query(func.count(Keyword.id)).filter(Keyword.is_entity.is_(True)).scalar() or 0
+    entities = (
+        session.query(func.count(Keyword.id)).filter(Keyword.is_entity.is_(True)).scalar() or 0
+    )
     mentions = session.query(func.count(KeywordMention.id)).scalar() or 0
     return {
-        "total_articles": int(total_articles), "indexed_articles": int(indexed),
+        "total_articles": int(total_articles),
+        "indexed_articles": int(indexed),
         "remaining": int(total_articles) - int(indexed),
-        "keywords": int(keywords), "entities": int(entities), "mentions": int(mentions),
+        "keywords": int(keywords),
+        "entities": int(entities),
+        "mentions": int(mentions),
     }

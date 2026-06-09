@@ -20,17 +20,24 @@ from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
 
 def _article(db, hash_, text, *, country="fr", title="T", when="2024-03-01"):
     a = Article(
-        url=f"https://x.test/{hash_}", canonical_url=f"https://x.test/{hash_}",
-        source_id=1, title=title, content=text, hash=hash_, country=country,
-        language="en", published_at=datetime.fromisoformat(when).replace(tzinfo=UTC),
+        url=f"https://x.test/{hash_}",
+        canonical_url=f"https://x.test/{hash_}",
+        source_id=1,
+        title=title,
+        content=text,
+        hash=hash_,
+        country=country,
+        language="en",
+        published_at=datetime.fromisoformat(when).replace(tzinfo=UTC),
         created_at=datetime.now(UTC),
     )
     db.add(a)
@@ -41,8 +48,11 @@ def _article(db, hash_, text, *, country="fr", title="T", when="2024-03-01"):
 def test_index_article_writes_mentions_with_facets(db):
     db.add(Source(name="S", domain="x.test", country="fr"))
     db.commit()
-    art = _article(db, "h1",
-                   "Emmanuel Macron discussed climate policy. Climate policy and trade dominated talks.")
+    art = _article(
+        db,
+        "h1",
+        "Emmanuel Macron discussed climate policy. Climate policy and trade dominated talks.",
+    )
     res = index_article(db, art, extractor=BaselineExtractor(), country="fr", city="Paris")
     assert res["mentions"] > 0 and res["entities"] >= 1
 
@@ -70,7 +80,9 @@ def test_backfill_only_indexes_missing(db):
     db.add(Source(name="S", domain="x.test", country="de"))
     db.commit()
     _article(db, "h3", "Energy prices and energy policy shaped the debate across the region today.")
-    _article(db, "h4", "Election results surprised analysts and shifted the political landscape sharply.")
+    _article(
+        db, "h4", "Election results surprised analysts and shifted the political landscape sharply."
+    )
     r1 = backfill_corpus(db, extractor=BaselineExtractor(), limit=10)
     assert r1["indexed"] == 2 and r1["remaining"] == 0
     # Running again indexes nothing new (all already have mentions).

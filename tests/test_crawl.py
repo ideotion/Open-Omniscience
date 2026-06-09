@@ -56,8 +56,9 @@ def _article_html(title, body_sentence, links=()):
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     s = Sess()
@@ -81,14 +82,20 @@ def test_crawl_discovers_same_domain_articles(db, source):
     sess.route("https://example.com/robots.txt", status_code=404, text="")
     # Homepage: a section index (too short to be an article) linking to two stories
     # plus an off-domain link that must NOT be followed.
-    sess.route("https://example.com", text=_article_html(
-        "Home", "x",  # short body -> not an article
-        links=[("/a", "A"), ("/b", "B"), ("https://other.com/x", "ext")]))
+    sess.route(
+        "https://example.com",
+        text=_article_html(
+            "Home",
+            "x",  # short body -> not an article
+            links=[("/a", "A"), ("/b", "B"), ("https://other.com/x", "ext")],
+        ),
+    )
     sess.route("https://example.com/a", text=_article_html("Story A", "Real body for A."))
     sess.route("https://example.com/b", text=_article_html("Story B", "Real body for B."))
 
-    report = crawl_source(db, source, fetcher=_fetcher(sess),
-                          config=CrawlConfig(max_depth=1, max_pages=50))
+    report = crawl_source(
+        db, source, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=1, max_pages=50)
+    )
 
     assert report.tally["stored"] == 2
     assert db.query(Article).count() == 2
@@ -100,12 +107,15 @@ def test_crawl_discovers_same_domain_articles(db, source):
 def test_depth_zero_only_fetches_start(db, source):
     sess = FakeSession()
     sess.route("https://example.com/robots.txt", status_code=404, text="")
-    sess.route("https://example.com", text=_article_html(
-        "Home", "Long enough body to be an article here.", links=[("/a", "A")]))
+    sess.route(
+        "https://example.com",
+        text=_article_html("Home", "Long enough body to be an article here.", links=[("/a", "A")]),
+    )
     sess.route("https://example.com/a", text=_article_html("Story A", "Body A."))
 
-    report = crawl_source(db, source, fetcher=_fetcher(sess),
-                          config=CrawlConfig(max_depth=0, max_pages=50))
+    report = crawl_source(
+        db, source, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=0, max_pages=50)
+    )
     assert report.pages_fetched == 1
     assert "https://example.com/a" not in sess.fetched
 
@@ -119,8 +129,9 @@ def test_max_pages_caps_the_crawl(db, source):
     for i in range(10):
         sess.route(f"https://example.com/n{i}", text=_article_html(f"N{i}", f"Body {i}."))
 
-    report = crawl_source(db, source, fetcher=_fetcher(sess),
-                          config=CrawlConfig(max_depth=2, max_pages=3))
+    report = crawl_source(
+        db, source, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=2, max_pages=3)
+    )
     assert report.pages_fetched == 3
     assert report.stopped_reason == "max_pages"
 
@@ -131,7 +142,8 @@ def test_crawl_respects_robots_fail_closed(db, source):
     sess.route("https://example.com", text=_article_html("Home", "Body.", links=[("/a", "A")]))
     # (no robots route -> 404 actually means "allowed"); simulate restriction instead:
     sess.route("https://example.com/robots.txt", status_code=403, text="forbidden")
-    report = crawl_source(db, source, fetcher=_fetcher(sess),
-                          config=CrawlConfig(max_depth=1, max_pages=50))
+    report = crawl_source(
+        db, source, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=1, max_pages=50)
+    )
     assert db.query(Article).count() == 0
     assert report.tally["robots_unavailable"] >= 1

@@ -62,6 +62,7 @@ try:
     from src.api.framing import router as framing_router
     from src.api.keyword_analysis import router as keyword_analysis_router
     from src.api.keyword_management import router as keyword_management_router
+
     _ANALYSIS_AVAILABLE = True
 except ImportError:
     commodity_router = analysis_router = None
@@ -215,27 +216,16 @@ app = FastAPI(title="Open Omniscience API", version=APP_VERSION, lifespan=lifesp
 
 # Prometheus metrics
 REQUEST_COUNT = Counter(
-    'open_omniscience_requests_total',
-    'Total HTTP Requests',
-    ['method', 'endpoint', 'http_status']
+    "open_omniscience_requests_total", "Total HTTP Requests", ["method", "endpoint", "http_status"]
 )
 REQUEST_LATENCY = Histogram(
-    'open_omniscience_request_latency_seconds',
-    'HTTP request latency in seconds',
-    ['method', 'endpoint']
+    "open_omniscience_request_latency_seconds",
+    "HTTP request latency in seconds",
+    ["method", "endpoint"],
 )
-ACTIVE_REQUESTS = Gauge(
-    'open_omniscience_active_requests',
-    'Number of active HTTP requests'
-)
-ARTICLES_COUNT = Gauge(
-    'open_omniscience_articles_count',
-    'Total number of articles in database'
-)
-SOURCES_COUNT = Gauge(
-    'open_omniscience_sources_count',
-    'Total number of sources configured'
-)
+ACTIVE_REQUESTS = Gauge("open_omniscience_active_requests", "Number of active HTTP requests")
+ARTICLES_COUNT = Gauge("open_omniscience_articles_count", "Total number of articles in database")
+SOURCES_COUNT = Gauge("open_omniscience_sources_count", "Total number of sources configured")
 
 # Add Prometheus metrics endpoint
 metrics_app = make_asgi_app()
@@ -249,7 +239,9 @@ app.add_middleware(SlowAPIMiddleware)
 
 # CORS middleware - more secure configuration
 # In production, set ALLOWED_ORIGINS environment variable with comma-separated origins
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(
+    ","
+)
 
 # Fixed: Remove trailing whitespace and empty strings from allowed origins
 allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
@@ -277,7 +269,7 @@ _STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline'; "   # UI is inline-heavy; nonce-based CSP is future work
+    "script-src 'self' 'unsafe-inline'; "  # UI is inline-heavy; nonce-based CSP is future work
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
@@ -289,6 +281,7 @@ def _origin_host(value: str | None) -> str | None:
     if not value:
         return None
     from urllib.parse import urlparse
+
     try:
         return urlparse(value).hostname
     except Exception:
@@ -301,7 +294,9 @@ async def csrf_and_security_headers(request: Request, call_next):
     # Origin (or at least a Referer); if present and not loopback, refuse. Requests
     # with no Origin/Referer (CLI, same-origin server-side) are allowed.
     if request.method in _STATE_CHANGING:
-        host = _origin_host(request.headers.get("origin")) or _origin_host(request.headers.get("referer"))
+        host = _origin_host(request.headers.get("origin")) or _origin_host(
+            request.headers.get("referer")
+        )
         if host is not None and host not in _LOOPBACK_HOSTS:
             return JSONResponse(
                 status_code=403,
@@ -314,6 +309,7 @@ async def csrf_and_security_headers(request: Request, call_next):
     if not request.url.path.startswith(_CSP_EXEMPT_PREFIXES):
         response.headers.setdefault("Content-Security-Policy", _CSP)
     return response
+
 
 # Include source management router
 app.include_router(source_management_router)
@@ -398,6 +394,7 @@ app.include_router(verification_router)
 # Include safety router (encrypted backup, panic, protected-fetch settings)
 app.include_router(safety_router)
 
+
 # General health check endpoint
 @app.get("/api/health")
 async def health_check():
@@ -408,32 +405,39 @@ async def health_check():
         "timestamp": datetime.now(UTC).isoformat(),
     }
 
+
 # Serve static files (HTML5 frontend)
-app.mount("/static", StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True),
+    name="static",
+)
+
 
 # Middleware for Prometheus metrics
 @app.middleware("http")
 async def monitor_requests(request: Request, call_next):
     method = request.method
     endpoint = request.url.path
-    
+
     ACTIVE_REQUESTS.inc()
     start_time = time.time()
-    
+
     try:
         response = await call_next(request)
     except Exception as e:
         ACTIVE_REQUESTS.dec()
         raise e
-    
+
     process_time = time.time() - start_time
     status_code = response.status_code
-    
+
     REQUEST_COUNT.labels(method=method, endpoint=endpoint, http_status=status_code).inc()
     REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(process_time)
     ACTIVE_REQUESTS.dec()
-    
+
     return response
+
 
 # Rate limit exceeded handler
 @app.exception_handler(RateLimitExceeded)
@@ -443,7 +447,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
         status_code=429,
         content={"detail": "Too many requests. Please try again later."},
-        headers={"Retry-After": str(exc.retry_after)}
+        headers={"Retry-After": str(exc.retry_after)},
     )
 
 
@@ -498,8 +502,7 @@ def _structured_filters(
             # builds the literal pattern value, not SQL. (No bindparam name reuse.)
             tag_conditions = [Source.tags.ilike(f"%{t}%") for t in tag_list]
             source_ids = [
-                sid for (sid,) in session.query(Source.id)
-                .filter(or_(*tag_conditions)).distinct()
+                sid for (sid,) in session.query(Source.id).filter(or_(*tag_conditions)).distinct()
             ]
             filters.append(Article.source_id.in_(source_ids) if source_ids else false())
 
@@ -527,8 +530,12 @@ def _query_articles(
     from sqlalchemy import and_
 
     filters = _structured_filters(
-        session, source=source, start_date=start_date,
-        end_date=end_date, language=language, tags=tags,
+        session,
+        source=source,
+        start_date=start_date,
+        end_date=end_date,
+        language=language,
+        tags=tags,
     )
 
     fts_ids: list | None = None
@@ -550,7 +557,7 @@ def _query_articles(
         rows.sort(key=lambda a: rank.get(a.id, 1 << 30))
         total = len(rows)
         if limit is not None:
-            rows = rows[offset:offset + limit]
+            rows = rows[offset : offset + limit]
         return rows, total
 
     # No text query: browse by recency.
@@ -603,8 +610,15 @@ async def search_articles(
     _validate_date(end_date, "end_date")
 
     articles, total = _query_articles(
-        db, query=query, source=source, start_date=start_date, end_date=end_date,
-        language=language, tags=tags, limit=limit, offset=offset,
+        db,
+        query=query,
+        source=source,
+        start_date=start_date,
+        end_date=end_date,
+        language=language,
+        tags=tags,
+        limit=limit,
+        offset=offset,
     )
 
     results = [
@@ -616,7 +630,9 @@ async def search_articles(
             "source": a.source.name if a.source else "Unknown",
             "published_at": a.published_at.isoformat() if a.published_at else None,
             "language": a.language,
-            "content": (a.content[:500] + "...") if a.content and len(a.content) > 500 else (a.content or ""),
+            "content": (a.content[:500] + "...")
+            if a.content and len(a.content) > 500
+            else (a.content or ""),
             "hash": a.hash,
         }
         for a in articles
@@ -659,8 +675,15 @@ async def export_articles(
 
     # limit=None -> export every matching row, faithful to the filter.
     articles, _total = _query_articles(
-        db, query=query, source=source, start_date=start_date, end_date=end_date,
-        language=language, tags=tags, limit=None, offset=0,
+        db,
+        query=query,
+        source=source,
+        start_date=start_date,
+        end_date=end_date,
+        language=language,
+        tags=tags,
+        limit=None,
+        offset=0,
     )
 
     if format == "csv":
@@ -669,19 +692,34 @@ async def export_articles(
         # Neutralize spreadsheet formula injection: ingested title/url/content are
         # attacker-controlled, so every cell is passed through csv_safe_cell (S-004).
         from src.utils.security import csv_safe_cell as _c
-        writer.writerow(["ID", "Title", "URL", "Canonical URL", "Source", "Published At", "Language", "Content", "Hash"])
+
+        writer.writerow(
+            [
+                "ID",
+                "Title",
+                "URL",
+                "Canonical URL",
+                "Source",
+                "Published At",
+                "Language",
+                "Content",
+                "Hash",
+            ]
+        )
         for a in articles:
-            writer.writerow([
-                a.id,
-                _c(a.title or ""),
-                _c(a.url or ""),
-                _c(a.canonical_url or ""),
-                _c(a.source.name if a.source else ""),
-                a.published_at.isoformat() if a.published_at else "",
-                _c(a.language or ""),
-                _c(a.content or ""),
-                _c(a.hash or ""),
-            ])
+            writer.writerow(
+                [
+                    a.id,
+                    _c(a.title or ""),
+                    _c(a.url or ""),
+                    _c(a.canonical_url or ""),
+                    _c(a.source.name if a.source else ""),
+                    a.published_at.isoformat() if a.published_at else "",
+                    _c(a.language or ""),
+                    _c(a.content or ""),
+                    _c(a.hash or ""),
+                ]
+            )
         return StreamingResponse(
             iter([stream.getvalue()]),
             media_type="text/csv",
@@ -731,9 +769,10 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     if a is None:
         raise HTTPException(status_code=404, detail="Article not found.")
     content = a.get_content() if hasattr(a, "get_content") else (a.content or "")
-    paras = "".join(
-        f"<p>{_html.escape(line)}</p>" for line in content.split("\n") if line.strip()
-    ) or "<p class='muted'>(no stored body)</p>"
+    paras = (
+        "".join(f"<p>{_html.escape(line)}</p>" for line in content.split("\n") if line.strip())
+        or "<p class='muted'>(no stored body)</p>"
+    )
 
     title = _html.escape(a.title or "(untitled)")
     lang = _html.escape(a.language or "en")
@@ -747,15 +786,21 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     hash_short = (a.hash[:12] + "…") if a.hash else None
     safe_src = safe_href(a.url)
 
-    meta_rows = "".join([
-        _row("Source", src_name),
-        _row("Published", _html.escape(published) if published else None),
-        _row("Captured", _html.escape(captured) if captured else None),
-        _row("Author", _html.escape(a.author) if a.author else None),
-        _row("Language", lang if a.language else None),
-        _row("Region", _html.escape(a.country or a.region) if (a.country or a.region) else None),
-        _row("Content hash", f"<code>{_html.escape(hash_short)}</code>" if hash_short else None),
-    ])
+    meta_rows = "".join(
+        [
+            _row("Source", src_name),
+            _row("Published", _html.escape(published) if published else None),
+            _row("Captured", _html.escape(captured) if captured else None),
+            _row("Author", _html.escape(a.author) if a.author else None),
+            _row("Language", lang if a.language else None),
+            _row(
+                "Region", _html.escape(a.country or a.region) if (a.country or a.region) else None
+            ),
+            _row(
+                "Content hash", f"<code>{_html.escape(hash_short)}</code>" if hash_short else None
+            ),
+        ]
+    )
 
     # Co-citation: the external links THIS article cites, each with how many distinct
     # articles in the corpus cite the same normalized URL (in-degree). > 1 means a
@@ -763,7 +808,8 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     links = (
         db.query(ArticleLink)
         .filter_by(article_id=a.id, link_type="external")
-        .order_by(ArticleLink.position).all()
+        .order_by(ArticleLink.position)
+        .all()
     )
     cite_items = []
     for ln in links[:40]:
@@ -772,13 +818,18 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
             continue
         indeg = (
             db.query(func.count(func.distinct(ArticleLink.article_id)))
-            .filter(ArticleLink.normalized_url == ln.normalized_url).scalar() or 1
+            .filter(ArticleLink.normalized_url == ln.normalized_url)
+            .scalar()
+            or 1
         )
         host = _html.escape((safe_ln.split("//", 1)[-1].split("/", 1)[0]).replace("www.", ""))
-        label = _html.escape(ln.link_text.strip()) if (ln.link_text and ln.link_text.strip()) else host
+        label = (
+            _html.escape(ln.link_text.strip()) if (ln.link_text and ln.link_text.strip()) else host
+        )
         shared = (
             f"<span class='shared'>also cited by {indeg - 1} of your article(s)</span>"
-            if indeg > 1 else "<span class='muted'>only here</span>"
+            if indeg > 1
+            else "<span class='muted'>only here</span>"
         )
         cite_items.append(
             f"<li><a class='ext' href='{_html.escape(safe_ln)}' rel='noopener noreferrer'>{label}</a>"
@@ -786,14 +837,18 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
         )
     cites_html = (
         "<section class='cites'><h2>Sources this article cites</h2><ul>"
-        + "".join(cite_items) + "</ul></section>"
-        if cite_items else ""
+        + "".join(cite_items)
+        + "</ul></section>"
+        if cite_items
+        else ""
     )
 
     orig_html = (
-        "Original source: <a class='ext src-link' href='" + _html.escape(safe_src)
+        "Original source: <a class='ext src-link' href='"
+        + _html.escape(safe_src)
         + f"' rel='noopener noreferrer'>{_html.escape(safe_src)}</a>"
-        if safe_src else "<span class='muted'>No original (http/https) URL recorded.</span>"
+        if safe_src
+        else "<span class='muted'>No original (http/https) URL recorded.</span>"
     )
 
     # Dates mentioned in the text — extracted, human-confirmable per-article tags.
@@ -809,7 +864,11 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
             "<li style='padding:7px 0;border-top:1px solid var(--line)'>"
             f"<b>{_html.escape(t['date'])}</b> <span class='muted'>· {_html.escape(t['precision'])}</span> "
             f"<span style='color:{col};font-weight:600'>· {_html.escape(t['status'])}</span>"
-            + (f"<div class='muted' style='font-size:13px;margin-top:2px'>“…{snip}…”</div>" if snip else "")
+            + (
+                f"<div class='muted' style='font-size:13px;margin-top:2px'>“…{snip}…”</div>"
+                if snip
+                else ""
+            )
             + "<div style='margin-top:4px;display:flex;gap:6px'>"
             f"<button class='amd-act' data-id='{t['id']}' data-act='confirm' "
             "style='font:12px system-ui;padding:2px 9px;cursor:pointer'>confirm</button>"
@@ -818,9 +877,15 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
             "</div></li>"
         )
 
-    _amd_list = ("<ul style='list-style:none;margin:0;padding:0;font:14px/1.5 system-ui,sans-serif'>"
-                 + "".join(_amd_chip(t) for t in _amd_tags) + "</ul>") if _amd_tags else \
-        "<p class='muted' style='font:13px system-ui,sans-serif'>No date tags yet — extract to find dates this text mentions.</p>"
+    _amd_list = (
+        (
+            "<ul style='list-style:none;margin:0;padding:0;font:14px/1.5 system-ui,sans-serif'>"
+            + "".join(_amd_chip(t) for t in _amd_tags)
+            + "</ul>"
+        )
+        if _amd_tags
+        else "<p class='muted' style='font:13px system-ui,sans-serif'>No date tags yet — extract to find dates this text mentions.</p>"
+    )
     dates_section = (
         "<section class='cites'><h2>Dates mentioned in this text</h2>"
         "<p class='muted' style='font:13px/1.5 system-ui,sans-serif;margin:0 0 8px'>"
@@ -935,26 +1000,56 @@ async def list_sources(request: Request, db: Session = Depends(get_db)):
 # allow-list of repo docs — the slug never touches the filesystem path, so there
 # is no traversal surface.
 _DOCS: dict[str, dict[str, str]] = {
-    "user-manual": {"file": "USER_MANUAL.md", "title": "User Manual",
-                    "blurb": "The complete guide: install, every tool, workflows, reference, and per-feature deep-dives."},
-    "quickstart": {"file": "QUICKSTART.md", "title": "Quickstart",
-                   "blurb": "The fastest path from install to your first results."},
-    "ethics": {"file": "ETHICS.md", "title": "Ethics, compliance & notices",
-               "blurb": "The principles this tool upholds, plus licensing and attributions."},
-    "governance": {"file": "GOVERNANCE.md", "title": "Governance & acceptable use",
-                   "blurb": "What the tool is for, the dual-use red lines, and independence."},
-    "security": {"file": "SECURITY.md", "title": "Security",
-                 "blurb": "Threat model, local-first posture, and the security audit."},
-    "design": {"file": "DESIGN.md", "title": "Design",
-               "blurb": "What the app is and isn't, the pillar map, and the GUI reasoning."},
-    "roadmap": {"file": "ROADMAP.md", "title": "Roadmap",
-                "blurb": "Design memory, the phased plan + status, and open questions."},
-    "architecture": {"file": "ARCHITECTURE.md", "title": "Architecture",
-                     "blurb": "Database/config, the HTTP API map, and internationalisation."},
-    "contributing": {"file": "CONTRIBUTING.md", "title": "Contributing",
-                     "blurb": "How to contribute, and the (deliberately under-stated) versioning policy."},
-    "changes": {"file": "CHANGES.md", "title": "Changelog",
-                "blurb": "What changed, release by release."},
+    "user-manual": {
+        "file": "USER_MANUAL.md",
+        "title": "User Manual",
+        "blurb": "The complete guide: install, every tool, workflows, reference, and per-feature deep-dives.",
+    },
+    "quickstart": {
+        "file": "QUICKSTART.md",
+        "title": "Quickstart",
+        "blurb": "The fastest path from install to your first results.",
+    },
+    "ethics": {
+        "file": "ETHICS.md",
+        "title": "Ethics, compliance & notices",
+        "blurb": "The principles this tool upholds, plus licensing and attributions.",
+    },
+    "governance": {
+        "file": "GOVERNANCE.md",
+        "title": "Governance & acceptable use",
+        "blurb": "What the tool is for, the dual-use red lines, and independence.",
+    },
+    "security": {
+        "file": "SECURITY.md",
+        "title": "Security",
+        "blurb": "Threat model, local-first posture, and the security audit.",
+    },
+    "design": {
+        "file": "DESIGN.md",
+        "title": "Design",
+        "blurb": "What the app is and isn't, the pillar map, and the GUI reasoning.",
+    },
+    "roadmap": {
+        "file": "ROADMAP.md",
+        "title": "Roadmap",
+        "blurb": "Design memory, the phased plan + status, and open questions.",
+    },
+    "architecture": {
+        "file": "ARCHITECTURE.md",
+        "title": "Architecture",
+        "blurb": "Database/config, the HTTP API map, and internationalisation.",
+    },
+    "contributing": {
+        "file": "CONTRIBUTING.md",
+        "title": "Contributing",
+        "blurb": "How to contribute, and the (deliberately under-stated) versioning policy.",
+    },
+    "changes": {
+        "file": "CHANGES.md",
+        "title": "Changelog",
+        "blurb": "What changed, release by release.",
+    },
 }
 _DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
 
@@ -964,8 +1059,12 @@ async def list_docs() -> dict:
     """List the in-app documentation available to the Help reader."""
     return {
         "docs": [
-            {"slug": slug, "title": meta["title"], "blurb": meta["blurb"],
-             "available": (_DOCS_DIR / meta["file"]).exists()}
+            {
+                "slug": slug,
+                "title": meta["title"],
+                "blurb": meta["blurb"],
+                "available": (_DOCS_DIR / meta["file"]).exists(),
+            }
             for slug, meta in _DOCS.items()
         ]
     }
@@ -991,7 +1090,10 @@ async def read_root():
         with open(index_path) as f:
             return HTMLResponse(content=f.read(), status_code=200)
     else:
-        return HTMLResponse(content="<h1>Welcome to Open Omniscience</h1><p>API is running. See <a href='/docs'>API Documentation</a></p>", status_code=200)
+        return HTMLResponse(
+            content="<h1>Welcome to Open Omniscience</h1><p>API is running. See <a href='/docs'>API Documentation</a></p>",
+            status_code=200,
+        )
 
 
 # Alternative UI ("Desk") served alongside the default ("Console") so both can be
@@ -1022,6 +1124,7 @@ def main() -> None:
     argv = sys.argv[1:]
     if argv and argv[0] in ("doctor", "check", "--doctor", "--check"):
         from src.diagnostics import run_doctor
+
         sys.exit(run_doctor())
     if argv and argv[0] in ("-h", "--help", "help"):
         print(
@@ -1093,6 +1196,7 @@ def _serve() -> None:
             init_db()
             from src.ingest.seed_sources import seed_default_sources
             from src.law.catalog import register_documents, seed_legal_sources
+
             with session_scope() as session:
                 result = seed_default_sources(session)
                 # Worldwide law & IP catalog (portals as ingestible sources) + the
@@ -1109,7 +1213,8 @@ def _serve() -> None:
     if host not in ("127.0.0.1", "localhost", "::1"):
         logger.warning(
             "Binding to %s exposes the app beyond loopback; this app has no auth "
-            "and is intended for single-user local use only.", host,
+            "and is intended for single-user local use only.",
+            host,
         )
     uvicorn.run(app, host=host, port=port)
 

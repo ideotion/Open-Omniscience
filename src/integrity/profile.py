@@ -45,8 +45,10 @@ def source_profile(session, source_name: str, *, days: int = _PROFILE_DAYS) -> d
     cutoff = datetime.now(UTC) - timedelta(days=days)
     arts = (
         session.query(Article)
-        .filter(Article.source_id == source.id,
-                func.coalesce(Article.published_at, Article.created_at) >= cutoff)
+        .filter(
+            Article.source_id == source.id,
+            func.coalesce(Article.published_at, Article.created_at) >= cutoff,
+        )
         .order_by(func.coalesce(Article.published_at, Article.created_at).asc())
         .limit(_MAX_ARTICLES)
         .all()
@@ -57,9 +59,13 @@ def source_profile(session, source_name: str, *, days: int = _PROFILE_DAYS) -> d
     # -- coordination / actor membership ----------------------------------- #
     actors = corpus_actors(session, days=days)
     membership = [
-        {"signature": a.signature, "co_sources": [s for s in a.sources if s != source.name],
-         "shared_stories": a.shared_stories}
-        for a in actors.actors if source.name in a.sources
+        {
+            "signature": a.signature,
+            "co_sources": [s for s in a.sources if s != source.name],
+            "shared_stories": a.shared_stories,
+        }
+        for a in actors.actors
+        if source.name in a.sources
     ]
     dimensions["coordination"] = {
         "is_member": bool(membership),
@@ -87,8 +93,10 @@ def source_profile(session, source_name: str, *, days: int = _PROFILE_DAYS) -> d
         "mean_ratio": None if mean_novelty is None else round(mean_novelty, 3),
         "n": len(ratios),
         "method": "mean share of word-shingles new to the corpus across this source's recent articles",
-        "caveat": ("Originality vs derivation, not truth or quality. A low ratio means this "
-                   "source mostly echoes text already in your corpus — relative to your corpus."),
+        "caveat": (
+            "Originality vs derivation, not truth or quality. A low ratio means this "
+            "source mostly echoes text already in your corpus — relative to your corpus."
+        ),
     }
 
     # -- output capacity plausibility -------------------------------------- #
@@ -98,7 +106,8 @@ def source_profile(session, source_name: str, *, days: int = _PROFILE_DAYS) -> d
     totals = dict(
         session.query(Article.source_id, func.count(Article.id))
         .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
-        .group_by(Article.source_id).all()
+        .group_by(Article.source_id)
+        .all()
     )
     rates = sorted((c / days) for c in totals.values()) if days else []
     median_rate = rates[len(rates) // 2] if rates else None
@@ -107,8 +116,10 @@ def source_profile(session, source_name: str, *, days: int = _PROFILE_DAYS) -> d
         "per_day": per_day,
         "corpus_median_per_day": None if median_rate is None else round(median_rate, 2),
         "method": f"this source's articles/day over {days}d vs the corpus median",
-        "caveat": ("High output can be entirely legitimate (a wire agency, a large newsroom). "
-                   "This is context for a human question, never a verdict of automation."),
+        "caveat": (
+            "High output can be entirely legitimate (a wire agency, a large newsroom). "
+            "This is context for a human question, never a verdict of automation."
+        ),
     }
 
     # -- transparency facts (descriptive, contestable) --------------------- #
@@ -122,16 +133,20 @@ def source_profile(session, source_name: str, *, days: int = _PROFILE_DAYS) -> d
         "leaning_tags": leaning,
         "reliability_score": source.reliability_score,  # operator-set metadata, not computed here
         "method": "descriptive tags from the curated catalog / operator edits",
-        "caveat": ("Ownership and leaning tags are reputational and CONTESTABLE, editable by you; "
-                   "reliability_score is an operator-set field, not a verdict this tool computed. "
-                   "These are facts to weigh, not a score."),
+        "caveat": (
+            "Ownership and leaning tags are reputational and CONTESTABLE, editable by you; "
+            "reliability_score is an operator-set field, not a verdict this tool computed. "
+            "These are facts to weigh, not a score."
+        ),
     }
 
     # -- corpus track record ----------------------------------------------- #
     first_seen, last_seen, total = (
-        session.query(func.min(Article.created_at), func.max(Article.created_at),
-                      func.count(Article.id))
-        .filter(Article.source_id == source.id).first()
+        session.query(
+            func.min(Article.created_at), func.max(Article.created_at), func.count(Article.id)
+        )
+        .filter(Article.source_id == source.id)
+        .first()
     )
     dimensions["track_record"] = {
         "total_articles": int(total or 0),

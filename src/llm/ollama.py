@@ -56,7 +56,9 @@ class OllamaClient:
         timeout: float = 120.0,
         client: httpx.Client | None = None,
     ):
-        self.base_url = (base_url or os.getenv("OO_OLLAMA_URL", "http://127.0.0.1:11434")).rstrip("/")
+        self.base_url = (base_url or os.getenv("OO_OLLAMA_URL", "http://127.0.0.1:11434")).rstrip(
+            "/"
+        )
         self.timeout = timeout
         self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout)
 
@@ -76,8 +78,7 @@ class OllamaClient:
             resp.raise_for_status()
         except httpx.HTTPError as exc:
             raise LLMUnavailable(
-                f"Ollama not reachable at {self.base_url}: {exc}. "
-                f"Is the ollama service running?"
+                f"Ollama not reachable at {self.base_url}: {exc}. Is the ollama service running?"
             ) from exc
         data = resp.json()
         return [m["name"] for m in data.get("models", [])]
@@ -108,9 +109,7 @@ class OllamaClient:
                 ) from exc
             raise LLMError(f"Ollama error for model {model!r}: {exc}") from exc
         except httpx.HTTPError as exc:
-            raise LLMUnavailable(
-                f"Ollama not reachable at {self.base_url}: {exc}"
-            ) from exc
+            raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {exc}") from exc
         data = resp.json()
         return GenerationResult(
             model=model,

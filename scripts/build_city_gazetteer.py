@@ -30,8 +30,10 @@ from src.wiki.mediawiki import api_endpoint  # noqa: E402 (only for UA constant 
 
 WDQS = "https://query.wikidata.org/sparql"
 _OUT = Path(__file__).resolve().parents[1] / "configs" / "cities.yml"
-_UA = ("OpenOmniscienceBot/0.4 (+https://github.com/ideotion/Open-Omniscience; "
-       "city gazetteer builder; contact open-omniscience@ideotion.com)")
+_UA = (
+    "OpenOmniscienceBot/0.4 (+https://github.com/ideotion/Open-Omniscience; "
+    "city gazetteer builder; contact open-omniscience@ideotion.com)"
+)
 
 
 def _query(min_pop: int) -> str:
@@ -49,8 +51,12 @@ SELECT ?cityLabel ?coord ?cc ?population WHERE {{
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--min-pop", type=int, default=100000, help="minimum population (default 100000)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--min-pop", type=int, default=100000, help="minimum population (default 100000)"
+    )
     ap.add_argument("--out", type=Path, default=_OUT)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()

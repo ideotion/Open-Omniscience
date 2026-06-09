@@ -27,6 +27,7 @@ from datetime import UTC
 class GPGNotAvailableError(Exception):
     pass
 
+
 class SignatureResult:
     def __init__(self, success, signature=None, message=None, fingerprint=None, key_id=None):
         self.success = success
@@ -35,7 +36,9 @@ class SignatureResult:
         self.fingerprint = fingerprint
         self.key_id = key_id
         from datetime import datetime
+
         self.timestamp = datetime.now(UTC).isoformat()
+
 
 class GPGSigner:
     """Placeholder GPG signer -- NOT implemented.

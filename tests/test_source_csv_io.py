@@ -26,8 +26,9 @@ from src.database.models import Base, Source
 
 
 def _db():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
@@ -35,16 +36,16 @@ def _db():
 def test_parse_good_and_bad_rows():
     csv_text = (
         "name,domain,country,tags,priority,enabled\n"
-        "Good Paper,https://www.good.example/,US,\"politics,world\",1,true\n"
-        ",no-name.example,US,,2,true\n"                 # missing name -> error
-        "Bad Priority,bad.example,US,,9,true\n"          # priority out of range -> error
+        'Good Paper,https://www.good.example/,US,"politics,world",1,true\n'
+        ",no-name.example,US,,2,true\n"  # missing name -> error
+        "Bad Priority,bad.example,US,,9,true\n"  # priority out of range -> error
         "Off Source,off.example,fr,sports,3,no\n"
     )
     rows, errors = parse_sources_csv(csv_text)
     domains = {r["domain"] for r in rows}
-    assert domains == {"good.example", "off.example"}    # URL reduced to host
-    assert any("row 3" in e for e in errors)             # missing name
-    assert any("row 4" in e for e in errors)             # priority range
+    assert domains == {"good.example", "off.example"}  # URL reduced to host
+    assert any("row 3" in e for e in errors)  # missing name
+    assert any("row 4" in e for e in errors)  # priority range
     good = next(r for r in rows if r["domain"] == "good.example")
     assert good["country"] == "us" and good["priority"] == 1 and good["enabled"] is True
     off = next(r for r in rows if r["domain"] == "off.example")
@@ -53,13 +54,11 @@ def test_parse_good_and_bad_rows():
 
 def test_upsert_creates_then_updates():
     s = _db()
-    rows, _ = parse_sources_csv(
-        "name,domain,priority\nAcme,acme.example,2\n")
+    rows, _ = parse_sources_csv("name,domain,priority\nAcme,acme.example,2\n")
     r1 = upsert_sources(s, rows)
     assert r1["created"] == 1 and r1["updated"] == 0
 
-    rows2, _ = parse_sources_csv(
-        "name,domain,priority,tags\nAcme Renamed,acme.example,1,news\n")
+    rows2, _ = parse_sources_csv("name,domain,priority,tags\nAcme Renamed,acme.example,1,news\n")
     r2 = upsert_sources(s, rows2)
     assert r2["created"] == 0 and r2["updated"] == 1
     row = s.query(Source).filter_by(domain="acme.example").one()
@@ -83,13 +82,21 @@ def test_write_csv_has_all_columns():
 def test_catalog_api_export_import_roundtrip(tmp_path):
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'cat.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'cat.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
-        s.add(Source(name="Seed One", domain=f"seed-{uuid.uuid4().hex}.example",
-                     country="us", tags="politics", source_type="news"))
+        s.add(
+            Source(
+                name="Seed One",
+                domain=f"seed-{uuid.uuid4().hex}.example",
+                country="us",
+                tags="politics",
+                source_type="news",
+            )
+        )
         s.commit()
 
     def _override():

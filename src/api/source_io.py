@@ -38,10 +38,17 @@ _MAX_IMPORT_BYTES = 64 * 1024 * 1024
 
 def _source_to_row(s: Source) -> dict:
     return {
-        "name": s.name, "domain": s.domain, "rss_url": s.rss_url,
-        "source_type": s.source_type, "country": s.country, "language": s.language,
-        "region": s.region, "tags": s.tags, "priority": s.priority,
-        "rate_limit_ms": s.rate_limit_ms, "enabled": s.enabled,
+        "name": s.name,
+        "domain": s.domain,
+        "rss_url": s.rss_url,
+        "source_type": s.source_type,
+        "country": s.country,
+        "language": s.language,
+        "region": s.region,
+        "tags": s.tags,
+        "priority": s.priority,
+        "rate_limit_ms": s.rate_limit_ms,
+        "enabled": s.enabled,
         "reliability_score": s.reliability_score,
     }
 
@@ -72,7 +79,10 @@ def list_sources(
     filters = []
     if q:
         like = f"%{q.strip()}%"
-        filters.append(func.lower(Source.name).like(func.lower(like)) | func.lower(Source.domain).like(func.lower(like)))
+        filters.append(
+            func.lower(Source.name).like(func.lower(like))
+            | func.lower(Source.domain).like(func.lower(like))
+        )
     if country:
         filters.append(func.lower(Source.country) == country.strip().lower())
     if language:
@@ -97,12 +107,23 @@ def list_sources(
     rows = base.limit(limit).offset(offset).all()
 
     return {
-        "total": int(total_n), "limit": limit, "offset": offset, "sort": sort_key, "order": order,
+        "total": int(total_n),
+        "limit": limit,
+        "offset": offset,
+        "sort": sort_key,
+        "order": order,
         "sources": [
             {
-                "id": s.id, "name": s.name, "domain": s.domain, "rss_url": s.rss_url,
-                "enabled": s.enabled, "priority": s.priority, "source_type": s.source_type,
-                "country": s.country, "language": s.language, "article_count": int(n),
+                "id": s.id,
+                "name": s.name,
+                "domain": s.domain,
+                "rss_url": s.rss_url,
+                "enabled": s.enabled,
+                "priority": s.priority,
+                "source_type": s.source_type,
+                "country": s.country,
+                "language": s.language,
+                "article_count": int(n),
                 "tags": [t.strip() for t in (s.tags or "").split(",") if t.strip()],
             }
             for s, n in rows
@@ -122,7 +143,8 @@ def export_csv(db: Session = Depends(get_db)) -> StreamingResponse:
     rows = [_source_to_row(s) for s in db.query(Source).order_by(Source.name).all()]
     csv_text = write_csv(rows)
     return StreamingResponse(
-        iter([csv_text]), media_type="text/csv",
+        iter([csv_text]),
+        media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=open-omniscience-sources.csv"},
     )
 
@@ -131,7 +153,8 @@ def export_csv(db: Session = Depends(get_db)) -> StreamingResponse:
 def export_template() -> StreamingResponse:
     """Download a CSV template (header + documented example rows)."""
     return StreamingResponse(
-        iter([template_csv()]), media_type="text/csv",
+        iter([template_csv()]),
+        media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=sources-template.csv"},
     )
 

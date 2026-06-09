@@ -35,8 +35,15 @@ def _quake_band(mag: float | None) -> str:
 
 # GDACS alert level → our info/watch/urgent tiers (provider's own scale).
 _GDACS_LEVEL = {"green": "info", "orange": "watch", "red": "urgent"}
-_GDACS_TYPE = {"EQ": "earthquake", "TC": "cyclone", "FL": "flood", "VO": "volcano",
-               "DR": "drought", "WF": "wildfire", "TS": "tsunami"}
+_GDACS_TYPE = {
+    "EQ": "earthquake",
+    "TC": "cyclone",
+    "FL": "flood",
+    "VO": "volcano",
+    "DR": "drought",
+    "WF": "wildfire",
+    "TS": "tsunami",
+}
 
 
 def _ms_to_iso(ms) -> str | None:
@@ -50,7 +57,7 @@ def _coords(geom: dict) -> tuple[float | None, float | None]:
     c = (geom or {}).get("coordinates") or []
     if isinstance(c, list) and len(c) >= 2:
         try:
-            return float(c[1]), float(c[0])   # GeoJSON is [lon, lat]
+            return float(c[1]), float(c[0])  # GeoJSON is [lon, lat]
         except (ValueError, TypeError):
             return None, None
     return None, None
@@ -75,14 +82,21 @@ def parse_usgs(text: str) -> list[dict]:
             mag = float(mag) if mag is not None else None
         except (ValueError, TypeError):
             mag = None
-        out.append({
-            "source": "usgs", "id": str(f.get("id") or p.get("code") or ""),
-            "type": "earthquake", "title": p.get("title") or p.get("place") or "Earthquake",
-            "severity": _quake_band(mag), "magnitude": mag,
-            "lat": lat, "lon": lon, "place": p.get("place"),
-            "time": _ms_to_iso(p.get("time")),
-            "url": p.get("url") or "https://earthquake.usgs.gov/",
-        })
+        out.append(
+            {
+                "source": "usgs",
+                "id": str(f.get("id") or p.get("code") or ""),
+                "type": "earthquake",
+                "title": p.get("title") or p.get("place") or "Earthquake",
+                "severity": _quake_band(mag),
+                "magnitude": mag,
+                "lat": lat,
+                "lon": lon,
+                "place": p.get("place"),
+                "time": _ms_to_iso(p.get("time")),
+                "url": p.get("url") or "https://earthquake.usgs.gov/",
+            }
+        )
     return out
 
 
@@ -103,18 +117,26 @@ def parse_gdacs(text: str) -> list[dict]:
         level = str(p.get("alertlevel") or "").strip().lower()
         etype = str(p.get("eventtype") or "").strip().upper()
         url = p.get("url")
-        if isinstance(url, dict):                 # GDACS sometimes nests {report: ...}
+        if isinstance(url, dict):  # GDACS sometimes nests {report: ...}
             url = url.get("report") or url.get("details") or next(iter(url.values()), None)
-        out.append({
-            "source": "gdacs", "id": str(p.get("eventid") or f.get("id") or ""),
-            "type": _GDACS_TYPE.get(etype, etype.lower() or "hazard"),
-            "title": p.get("name") or p.get("eventname") or p.get("htmldescription") or "Disaster alert",
-            "severity": _GDACS_LEVEL.get(level, "info"),
-            "magnitude": None,
-            "lat": lat, "lon": lon, "place": p.get("country"),
-            "time": p.get("fromdate") or p.get("datemodified"),
-            "url": url or "https://www.gdacs.org/",
-        })
+        out.append(
+            {
+                "source": "gdacs",
+                "id": str(p.get("eventid") or f.get("id") or ""),
+                "type": _GDACS_TYPE.get(etype, etype.lower() or "hazard"),
+                "title": p.get("name")
+                or p.get("eventname")
+                or p.get("htmldescription")
+                or "Disaster alert",
+                "severity": _GDACS_LEVEL.get(level, "info"),
+                "magnitude": None,
+                "lat": lat,
+                "lon": lon,
+                "place": p.get("country"),
+                "time": p.get("fromdate") or p.get("datemodified"),
+                "url": url or "https://www.gdacs.org/",
+            }
+        )
     return out
 
 

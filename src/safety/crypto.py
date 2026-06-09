@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 # Self-describing container so a file can be decrypted years later without out-of-band
 # parameters:  MAGIC(8) | n(4) | r(4) | p(4) | salt(16) | nonce(12) | ciphertext+tag.
 _MAGIC = b"OOENC1\x00\x00"
-_N, _R, _P = 2**15, 8, 1   # conservative, matches custody key wrapping
+_N, _R, _P = 2**15, 8, 1  # conservative, matches custody key wrapping
 
 
 class EncryptionError(RuntimeError):

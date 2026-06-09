@@ -20,7 +20,7 @@ def _iter_rings(geometry: dict):
     coords = geometry.get("coordinates") or []
     if gtype == "Polygon":
         if coords:
-            yield coords[0]                       # exterior ring only (drop holes — coastline is enough)
+            yield coords[0]  # exterior ring only (drop holes — coastline is enough)
     elif gtype == "MultiPolygon":
         for poly in coords:
             if poly:

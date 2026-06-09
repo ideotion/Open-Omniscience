@@ -52,9 +52,9 @@ def test_backup_download_returns_valid_sqlite(tmp_path):
     # The downloaded bytes open as a real SQLite DB containing core tables.
     conn = sqlite3.connect(str(out))
     try:
-        names = {row[0] for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )}
+        names = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
     finally:
         conn.close()
     assert {"articles", "sources"} <= names

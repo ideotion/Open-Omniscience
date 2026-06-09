@@ -53,8 +53,13 @@ def parse_ores(payload: dict, wiki: str) -> dict:
 class OresClient:
     """Score revisions via ORES. ``session`` is injectable for testing."""
 
-    def __init__(self, *, session=None, timeout: float = 20.0,
-                 user_agent: str = "OpenOmniscienceBot/0.4 (+https://github.com/ideotion/Open-Omniscience)"):
+    def __init__(
+        self,
+        *,
+        session=None,
+        timeout: float = 20.0,
+        user_agent: str = "OpenOmniscienceBot/0.4 (+https://github.com/ideotion/Open-Omniscience)",
+    ):
         import requests
 
         self.session = session or requests.Session()
@@ -67,7 +72,9 @@ class OresClient:
             return {}
         params = {"models": "damaging|goodfaith", "revids": "|".join(str(r) for r in revids)}
         try:
-            resp = self.session.get(f"{ORES_ENDPOINT}/{dbname(wiki)}/", params=params, timeout=self.timeout)
+            resp = self.session.get(
+                f"{ORES_ENDPOINT}/{dbname(wiki)}/", params=params, timeout=self.timeout
+            )
             resp.raise_for_status()
             return parse_ores(resp.json(), wiki)
         except Exception:  # noqa: BLE001 - ORES is optional; never break tracking

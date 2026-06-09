@@ -25,8 +25,19 @@ _SECRET_RE = re.compile(
     r"\s*=\s*['\"][A-Za-z0-9/+_\-]{8,}['\"]",
     re.IGNORECASE,
 )
-_SECRET_ALLOW = ("getenv", "environ", "os.", "Column", "description", "example",
-                 "placeholder", "field(", "default=", "None", "self.")
+_SECRET_ALLOW = (
+    "getenv",
+    "environ",
+    "os.",
+    "Column",
+    "description",
+    "example",
+    "placeholder",
+    "field(",
+    "default=",
+    "None",
+    "self.",
+)
 
 
 def _live_py_files() -> list[Path]:

@@ -20,8 +20,10 @@ def client():
 
 
 def test_independent_t_test(client):
-    r = client.post("/api/analysis/t-test/independent",
-                    json={"sample1": [1, 2, 3, 4, 5], "sample2": [6, 7, 8, 9, 10]})
+    r = client.post(
+        "/api/analysis/t-test/independent",
+        json={"sample1": [1, 2, 3, 4, 5], "sample2": [6, 7, 8, 9, 10]},
+    )
     assert r.status_code == 200, r.text
     body = r.json()
     assert "p_value" in body and "statistic" in body
@@ -29,30 +31,35 @@ def test_independent_t_test(client):
 
 
 def test_pearson_correlation(client):
-    r = client.post("/api/analysis/correlation/pearson",
-                    json={"x": [1, 2, 3, 4, 5], "y": [2, 4, 6, 8, 10]})
+    r = client.post(
+        "/api/analysis/correlation/pearson", json={"x": [1, 2, 3, 4, 5], "y": [2, 4, 6, 8, 10]}
+    )
     body = r.json()
     assert body["statistic"] == pytest.approx(1.0)  # perfect linear correlation
     assert "p_value" in body
 
 
 def test_one_way_anova(client):
-    r = client.post("/api/analysis/anova/one-way",
-                    json={"groups": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]})
+    r = client.post(
+        "/api/analysis/anova/one-way", json={"groups": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}
+    )
     assert r.status_code == 200
     assert "p_value" in r.json()
 
 
 def test_mann_whitney(client):
-    r = client.post("/api/analysis/mann-whitney",
-                    json={"sample1": [1, 2, 3, 4], "sample2": [10, 11, 12, 13]})
+    r = client.post(
+        "/api/analysis/mann-whitney", json={"sample1": [1, 2, 3, 4], "sample2": [10, 11, 12, 13]}
+    )
     assert r.status_code == 200
     assert "p_value" in r.json()
 
 
 def test_mean_confidence_interval(client):
-    r = client.post("/api/analysis/confidence-interval/mean",
-                    json={"data": [10, 12, 14, 11, 13, 9], "confidence_level": 0.95})
+    r = client.post(
+        "/api/analysis/confidence-interval/mean",
+        json={"data": [10, 12, 14, 11, 13, 9], "confidence_level": 0.95},
+    )
     body = r.json()
     # the CI brackets the sample mean (~11.5)
     assert body["lower"] < 11.5 < body["upper"]

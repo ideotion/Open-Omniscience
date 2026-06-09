@@ -21,7 +21,12 @@ from pathlib import Path
 # ANSI only when writing to a terminal.
 if sys.stdout.isatty():
     _G, _Y, _R, _B, _D, _RST = (
-        "\033[32m", "\033[33m", "\033[31m", "\033[1m", "\033[2m", "\033[0m",
+        "\033[32m",
+        "\033[33m",
+        "\033[31m",
+        "\033[1m",
+        "\033[2m",
+        "\033[0m",
     )
 else:
     _G = _Y = _R = _B = _D = _RST = ""
@@ -45,6 +50,7 @@ class _Report:
 def _app_version() -> str:
     try:
         from importlib.metadata import version
+
         return version("open-omniscience")
     except Exception:
         return "unknown"
@@ -66,7 +72,8 @@ def _check_python(r: _Report) -> None:
         r.line(OK, "venv module", "ensurepip available")
     else:
         r.line(
-            WARN, "venv module",
+            WARN,
+            "venv module",
             "missing -- install python3-venv (Qubes: in the TemplateVM) to (re)create the virtualenv",
         )
 
@@ -74,6 +81,7 @@ def _check_python(r: _Report) -> None:
 def _check_data_dir(r: _Report) -> Path | None:
     try:
         from src.paths import data_dir
+
         d = data_dir()
     except Exception as exc:  # pragma: no cover - defensive
         r.line(FAIL, "Data directory", f"could not resolve: {exc}")
@@ -110,6 +118,7 @@ def _check_components(r: _Report) -> None:
     try:
         import numpy  # noqa: F401
         import vaderSentiment  # noqa: F401
+
         r.line(OK, "Analysis tools", "installed (numpy, sentiment, ...)")
     except Exception:
         r.line(WARN, "Analysis tools", "not installed -- add with: ./install.sh (choose Analysis)")
@@ -118,6 +127,7 @@ def _check_components(r: _Report) -> None:
 def _check_ollama(r: _Report) -> None:
     try:
         from src.llm.ollama import OllamaClient
+
         client = OllamaClient()
         if client.is_available():
             models = client.list_installed()
@@ -125,10 +135,16 @@ def _check_ollama(r: _Report) -> None:
             if models:
                 r.line(OK, "Local LLM (Ollama)", f"running; models: {', '.join(models)}")
             else:
-                r.line(WARN, "Local LLM (Ollama)", "running but no models -- run: ollama pull llama3.2:1b")
+                r.line(
+                    WARN,
+                    "Local LLM (Ollama)",
+                    "running but no models -- run: ollama pull llama3.2:1b",
+                )
         else:
             client.close()
-            r.line(WARN, "Local LLM (Ollama)", "not reachable (LLM features will say 'unavailable')")
+            r.line(
+                WARN, "Local LLM (Ollama)", "not reachable (LLM features will say 'unavailable')"
+            )
     except Exception as exc:
         r.line(WARN, "Local LLM (Ollama)", f"not available: {exc}")
 
@@ -139,7 +155,9 @@ def _check_launcher(r: _Report) -> None:
     desktop = base / "applications" / "open-omniscience.desktop"
     mac = Path.home() / "Desktop" / "Open Omniscience.command"
     if desktop.exists() or mac.exists():
-        r.line(OK, "Launcher", "installed (look for 'Open Omniscience' in your apps menu / Desktop)")
+        r.line(
+            OK, "Launcher", "installed (look for 'Open Omniscience' in your apps menu / Desktop)"
+        )
     else:
         r.line(WARN, "Launcher", "not installed -- re-run ./install.sh to create it")
 
@@ -158,6 +176,8 @@ def run_doctor() -> int:
     if r.failed:
         print(f"  {_R}{_B}Some critical checks failed.{_RST} See the [XX] lines above.\n")
         return 1
-    print(f"  {_G}{_B}Core looks healthy.{_RST} "
-          f"Warnings (!!) are optional extras you can add later.\n")
+    print(
+        f"  {_G}{_B}Core looks healthy.{_RST} "
+        f"Warnings (!!) are optional extras you can add later.\n"
+    )
     return 0

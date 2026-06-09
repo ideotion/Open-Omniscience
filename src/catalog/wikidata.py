@@ -23,7 +23,9 @@ from src.catalog.normalize import to_entry
 WDQS_ENDPOINT = "https://query.wikidata.org/sparql"
 
 
-def build_query(country_code: str, type_qids: list[str], *, label_lang: str = "en", limit: int = 2000) -> str:
+def build_query(
+    country_code: str, type_qids: list[str], *, label_lang: str = "en", limit: int = 2000
+) -> str:
     """Return a SPARQL query for entities of the given ``type_qids`` in one country.
 
     ``type_qids`` are Wikidata item ids (e.g. ``Q11032`` newspaper). Subtypes are
@@ -47,7 +49,9 @@ def build_query(country_code: str, type_qids: list[str], *, label_lang: str = "e
     )
 
 
-def parse_results(payload: dict, *, country_code: str, source_type: str, tags: list[str] | None = None) -> list[dict]:
+def parse_results(
+    payload: dict, *, country_code: str, source_type: str, tags: list[str] | None = None
+) -> list[dict]:
     """Turn a WDQS JSON response into normalised catalog entries.
 
     Robust to missing optional bindings; entries without a usable domain (or that
@@ -60,8 +64,12 @@ def parse_results(payload: dict, *, country_code: str, source_type: str, tags: l
         website = (b.get("website") or {}).get("value")
         lang = (b.get("lang") or {}).get("value")
         entry = to_entry(
-            name=name, url=website, country=country_code, language=lang,
-            source_type=source_type, tags=list(tags or []),
+            name=name,
+            url=website,
+            country=country_code,
+            language=lang,
+            source_type=source_type,
+            tags=list(tags or []),
         )
         if entry is not None:
             out.append(entry)

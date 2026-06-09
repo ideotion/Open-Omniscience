@@ -51,9 +51,9 @@ class FetchResult:
     """A successfully fetched HTML page with provenance."""
 
     requested_url: str
-    final_url: str            # after redirects
+    final_url: str  # after redirects
     status_code: int
-    content: str              # decoded HTML
+    content: str  # decoded HTML
     content_type: str
     fetched_at: datetime
 
@@ -91,8 +91,12 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     metadata), reserved, multicast and the unspecified address.
     """
     return (
-        ip.is_private or ip.is_loopback or ip.is_link_local
-        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
     )
 
 
@@ -284,6 +288,7 @@ class EthicalFetcher:
             if not encoding or str(encoding).lower() in ("iso-8859-1", "latin-1"):
                 try:
                     from charset_normalizer import from_bytes
+
                     best = from_bytes(raw).best()
                     if best and best.encoding:
                         encoding = best.encoding

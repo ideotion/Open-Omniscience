@@ -43,15 +43,18 @@ class _Session:
 
 
 def _html(title, body):
-    return (f"<html><head><title>{title}</title></head><body><article><h1>{title}</h1>"
-            f"<p>{(body + ' ') * 30}</p></article></body></html>")
+    return (
+        f"<html><head><title>{title}</title></head><body><article><h1>{title}</h1>"
+        f"<p>{(body + ' ') * 30}</p></article></body></html>"
+    )
 
 
 @pytest.fixture()
 def client(tmp_path):
     # A file DB (not :memory:) so every connection sees the same schema/data.
-    engine = create_engine(f"sqlite:///{tmp_path / 'ing.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'ing.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     ensure_fts(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -61,8 +64,9 @@ def client(tmp_path):
 
     routes = {
         "https://example.com/robots.txt": dict(status_code=404, text=""),
-        "https://example.com/story":
-            dict(text=_html("Corruption Exposed", "An investigation into public funds.")),
+        "https://example.com/story": dict(
+            text=_html("Corruption Exposed", "An investigation into public funds.")
+        ),
     }
     fetcher = EthicalFetcher(min_interval_s=0.0, session=_Session(routes))
 

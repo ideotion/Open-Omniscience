@@ -18,6 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 For inquiries, contact: open-omniscience@ideotion.com
 """
+
 """
 Tests for Open-Omniscience Pillar 4
 

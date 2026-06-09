@@ -44,12 +44,14 @@ class DownloadEntry:
     dest: str
     total_bytes: int = 0
     downloaded_bytes: int = 0
-    status: str = "queued"          # queued | downloading | paused | done | error
+    status: str = "queued"  # queued | downloading | paused | done | error
     error: str | None = None
 
     def to_dict(self) -> dict:
         d = asdict(self)
-        d["percent"] = round(100.0 * self.downloaded_bytes / self.total_bytes, 1) if self.total_bytes else 0.0
+        d["percent"] = (
+            round(100.0 * self.downloaded_bytes / self.total_bytes, 1) if self.total_bytes else 0.0
+        )
         return d
 
 
@@ -77,13 +79,17 @@ class DumpDownloadManager:
             try:
                 raw = json.loads(self.state_path.read_text("utf-8"))
                 for k, v in raw.items():
-                    self._entries[k] = DownloadEntry(**{f: v[f] for f in DownloadEntry.__annotations__ if f in v})
+                    self._entries[k] = DownloadEntry(
+                        **{f: v[f] for f in DownloadEntry.__annotations__ if f in v}
+                    )
             except Exception:  # noqa: BLE001 - a bad state file must not crash startup
                 _LOG.warning("wiki dumps state unreadable; ignoring", exc_info=True)
 
     def _save(self) -> None:
         tmp = self.state_path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps({k: asdict(e) for k, e in self._entries.items()}, indent=2), "utf-8")
+        tmp.write_text(
+            json.dumps({k: asdict(e) for k, e in self._entries.items()}, indent=2), "utf-8"
+        )
         tmp.replace(self.state_path)
 
     def list(self) -> list[dict]:
@@ -109,12 +115,16 @@ class DumpDownloadManager:
         e = self._entries.get(key)
         if e is None:
             dest = self.base_dir / f"{wiki.lower()}wiki-latest-{kind}.xml.bz2"
-            e = DownloadEntry(key=key, wiki=wiki.lower(), kind=kind, url=dump_url(wiki, kind), dest=str(dest))
+            e = DownloadEntry(
+                key=key, wiki=wiki.lower(), kind=kind, url=dump_url(wiki, kind), dest=str(dest)
+            )
             self._entries[key] = e
             self._save()
         return e
 
-    def _download(self, entry: DownloadEntry, stop_event: threading.Event | None = None) -> DownloadEntry:
+    def _download(
+        self, entry: DownloadEntry, stop_event: threading.Event | None = None
+    ) -> DownloadEntry:
         """Run the (resumable) download loop. Synchronous; used by start() in a thread."""
         http_get = self._http_get or _default_get
         dest = Path(entry.dest)
@@ -126,9 +136,9 @@ class DumpDownloadManager:
             resp.raise_for_status()
             status_code = getattr(resp, "status_code", 200)
             cl = int(resp.headers.get("Content-Length", 0) or 0)
-            if status_code == 206:                 # partial -> append
+            if status_code == 206:  # partial -> append
                 mode, entry.total_bytes = "ab", resume + cl
-            else:                                  # full -> restart
+            else:  # full -> restart
                 resume, mode, entry.total_bytes = 0, "wb", (cl or entry.total_bytes)
             entry.downloaded_bytes = resume
             entry.status = "downloading"
@@ -162,7 +172,9 @@ class DumpDownloadManager:
             return entry.to_dict()
         stop = threading.Event()
         self._stops[entry.key] = stop
-        t = threading.Thread(target=self._download, args=(entry, stop), name=f"oo-dump-{entry.key}", daemon=True)
+        t = threading.Thread(
+            target=self._download, args=(entry, stop), name=f"oo-dump-{entry.key}", daemon=True
+        )
         self._threads[entry.key] = t
         t.start()
         return entry.to_dict()
@@ -189,15 +201,17 @@ class DumpDownloadManager:
 def _default_get(url: str, headers: dict):
     import requests
 
-    return requests.get(url, headers={**headers, "User-Agent": "OpenOmniscienceBot/0.4"},
-                        stream=True, timeout=60)
+    return requests.get(
+        url, headers={**headers, "User-Agent": "OpenOmniscienceBot/0.4"}, stream=True, timeout=60
+    )
 
 
 def _default_head(url: str):
     import requests
 
-    return requests.head(url, headers={"User-Agent": "OpenOmniscienceBot/0.4"},
-                         allow_redirects=True, timeout=30)
+    return requests.head(
+        url, headers={"User-Agent": "OpenOmniscienceBot/0.4"}, allow_redirects=True, timeout=30
+    )
 
 
 _manager: DumpDownloadManager | None = None

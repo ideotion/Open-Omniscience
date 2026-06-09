@@ -36,6 +36,7 @@ def _isolated_data(tmp_path, monkeypatch):
 # settings store
 # --------------------------------------------------------------------------- #
 
+
 def test_defaults_are_local_and_off():
     s = cset.load_settings()
     assert s.anchoring_mode == "local"
@@ -80,6 +81,7 @@ def test_auto_log_default_seeds_from_legacy_config(monkeypatch):
 # signer honesty under the toggle
 # --------------------------------------------------------------------------- #
 
+
 def test_use_pqc_false_forces_ed25519(tmp_path):
     signer = HybridSigner(use_pqc=False)
     sig = signer.sign(b"payload")
@@ -99,6 +101,7 @@ def test_pqc_unavailable_but_requested_is_honest():
 # --------------------------------------------------------------------------- #
 # settings API
 # --------------------------------------------------------------------------- #
+
 
 def test_get_settings_not_shadowed_by_item_route(client):
     r = client.get("/api/custody/settings")
@@ -124,9 +127,13 @@ def test_put_invalid_mode_400(client):
 
 
 def test_put_then_get_roundtrip(client):
-    client.put("/api/custody/settings", json={
-        "anchoring_mode": "opentimestamps", "auto_log_on_ingest": True,
-    })
+    client.put(
+        "/api/custody/settings",
+        json={
+            "anchoring_mode": "opentimestamps",
+            "auto_log_on_ingest": True,
+        },
+    )
     body = client.get("/api/custody/settings").json()
     assert body["anchoring_mode"] == "opentimestamps"
     assert body["auto_log_on_ingest"] is True

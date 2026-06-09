@@ -75,17 +75,17 @@ def parse_number(text: str | None) -> float | None:
     has_dot, has_comma = "." in token, "," in token
     if has_dot and has_comma:
         if token.rfind(".") > token.rfind(","):
-            token = token.replace(",", "")            # 1,234.56 -> 1234.56
+            token = token.replace(",", "")  # 1,234.56 -> 1234.56
         else:
             token = token.replace(".", "").replace(",", ".")  # 1.234,56 -> 1234.56
     elif has_comma:
         parts = token.split(",")
         if len(parts) == 2 and len(parts[1]) != 3:
-            token = parts[0] + "." + parts[1]         # 12,5 -> 12.5
+            token = parts[0] + "." + parts[1]  # 12,5 -> 12.5
         else:
-            token = token.replace(",", "")            # 1,234 / 1,234,567 -> grouping
+            token = token.replace(",", "")  # 1,234 / 1,234,567 -> grouping
     elif has_dot and token.count(".") > 1:
-        token = token.replace(".", "")                # 1.234.567 -> grouping; a lone dot is decimal
+        token = token.replace(".", "")  # 1.234.567 -> grouping; a lone dot is decimal
 
     try:
         return float(sign + token)

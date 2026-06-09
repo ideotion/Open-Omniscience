@@ -43,10 +43,16 @@ def test_anchor_skipped_without_coordinate(monkeypatch):
 
     mod._raw.cache_clear()
     mod.load_anchors.cache_clear()
-    monkeypatch.setattr(mod, "_raw", lambda: {"anchors": [
-        {"id": "no-coord", "title": "Somewhere", "date": "2000-01-01"},
-        {"id": "ok", "title": "Placed", "date": "2000-01-01", "lat": 10, "lon": 20},
-    ]})
+    monkeypatch.setattr(
+        mod,
+        "_raw",
+        lambda: {
+            "anchors": [
+                {"id": "no-coord", "title": "Somewhere", "date": "2000-01-01"},
+                {"id": "ok", "title": "Placed", "date": "2000-01-01", "lat": 10, "lon": 20},
+            ]
+        },
+    )
     got = mod.load_anchors()
     ids = {a["id"] for a in got}
     assert "ok" in ids and "no-coord" not in ids
@@ -71,10 +77,16 @@ def test_collect_window_and_kind_filter():
 
 def test_extra_signals_injected_and_validated():
     base = len(collect())
-    good = {"id": "x", "title": "Live", "kind": "hazard", "lat": 0.0, "lon": 0.0,
-            "t": 2026.5, "date": "2026-07-01"}
-    bad_no_coord = {"id": "y", "title": "No coord", "kind": "hazard", "lat": None,
-                    "t": 2026.5}
+    good = {
+        "id": "x",
+        "title": "Live",
+        "kind": "hazard",
+        "lat": 0.0,
+        "lon": 0.0,
+        "t": 2026.5,
+        "date": "2026-07-01",
+    }
+    bad_no_coord = {"id": "y", "title": "No coord", "kind": "hazard", "lat": None, "t": 2026.5}
     out = collect(extra=[good, bad_no_coord])
     titles = {s["title"] for s in out}
     assert "Live" in titles and "No coord" not in titles
@@ -86,13 +98,29 @@ def test_articles_to_signals_geocodes_and_dates():
 
     rows = [
         # a known gazetteer city -> placed (Paris is in the shipped sample)
-        {"title": "A story", "url": "https://x/1", "published": datetime(2024, 5, 1, 9, 0),
-         "country": "fr", "city": "Paris"},
+        {
+            "title": "A story",
+            "url": "https://x/1",
+            "published": datetime(2024, 5, 1, 9, 0),
+            "country": "fr",
+            "city": "Paris",
+        },
         # no date -> skipped
-        {"title": "No date", "url": "https://x/2", "published": None, "country": "fr", "city": "Paris"},
+        {
+            "title": "No date",
+            "url": "https://x/2",
+            "published": None,
+            "country": "fr",
+            "city": "Paris",
+        },
         # unknown country, no city -> not geocodable -> skipped (never plotted at 0,0)
-        {"title": "Nowhere", "url": "https://x/3", "published": datetime(2024, 5, 2),
-         "country": "zz", "city": None},
+        {
+            "title": "Nowhere",
+            "url": "https://x/3",
+            "published": datetime(2024, 5, 2),
+            "country": "zz",
+            "city": None,
+        },
     ]
     sigs = articles_to_signals(rows)
     assert len(sigs) == 1
@@ -106,9 +134,17 @@ def test_articles_join_the_collected_stream():
     from datetime import date
 
     base = len(collect())
-    extra = articles_to_signals([
-        {"title": "T", "url": "u", "published": date(2024, 1, 1), "country": "gb", "city": "London"},
-    ])
+    extra = articles_to_signals(
+        [
+            {
+                "title": "T",
+                "url": "u",
+                "published": date(2024, 1, 1),
+                "country": "gb",
+                "city": "London",
+            },
+        ]
+    )
     assert len(collect(extra=extra)) == base + 1
     # respects the kind filter like any other signal
     assert all(s["kind"] == "article" for s in collect(kinds={"article"}, extra=extra))
@@ -122,7 +158,7 @@ def test_geocode_does_not_mislabel_wrong_country_city():
     us = geocode("us", "Paris")
     assert us is not None
     if us["geocode"] == "city":
-        assert (us.get("place") or "").lower() != "paris"   # never France-as-city for a US article
+        assert (us.get("place") or "").lower() != "paris"  # never France-as-city for a US article
     else:
         assert us["geocode"] == "country"
     # the matching country/city pair is still a precise city hit
@@ -133,22 +169,38 @@ def test_geocode_does_not_mislabel_wrong_country_city():
 def test_article_mentions_become_extracted_signals():
     from datetime import date as _date
 
-    rows = [{
-        "title": "Looking back", "url": "https://x/9",
-        "content": "The attacks of 11 September 2001 reshaped the decade; by March 2003 war had begun.",
-        "country": "fr", "city": "Paris",
-    }]
+    rows = [
+        {
+            "title": "Looking back",
+            "url": "https://x/9",
+            "content": "The attacks of 11 September 2001 reshaped the decade; by March 2003 war had begun.",
+            "country": "fr",
+            "city": "Paris",
+        }
+    ]
     sigs = article_mentions_to_signals(rows, today=_date(2026, 6, 9))
     by_date = {s["date"]: s for s in sigs}
     assert "2001-09-11" in by_date and "2003-03-01" in by_date
     s = by_date["2001-09-11"]
     assert s["source"] == "corpus-mention" and s["confirmed"] is False and s["extracted"] is True
     assert s["kind"] == "article" and s["lat"] is not None
-    assert "extracted" in s["note"].lower()              # provenance/caveat carried
+    assert "extracted" in s["note"].lower()  # provenance/caveat carried
     # no geocodable place -> no mention signals (never plotted at 0,0)
-    assert article_mentions_to_signals(
-        [{"title": "x", "url": "u", "content": "On 1 January 2000 it began.", "country": "zz", "city": None}],
-        today=_date(2026, 6, 9)) == []
+    assert (
+        article_mentions_to_signals(
+            [
+                {
+                    "title": "x",
+                    "url": "u",
+                    "content": "On 1 January 2000 it began.",
+                    "country": "zz",
+                    "city": None,
+                }
+            ],
+            today=_date(2026, 6, 9),
+        )
+        == []
+    )
 
 
 def test_time_range_reports_bounds_and_counts():

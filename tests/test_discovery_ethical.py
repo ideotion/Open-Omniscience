@@ -58,9 +58,9 @@ def _html(url: str, body: str) -> FetchResult:
 def test_discovery_uses_injected_fetcher_not_raw_requests(monkeypatch):
     """discover_rss_feeds must route the page fetch through the given fetcher."""
     page = (
-        '<html><head>'
+        "<html><head>"
         '<link rel="alternate" type="application/rss+xml" href="/feed.xml">'
-        '</head></html>'
+        "</head></html>"
     )
     fetcher = _RecordingFetcher(
         {
@@ -72,9 +72,7 @@ def test_discovery_uses_injected_fetcher_not_raw_requests(monkeypatch):
                 status_code=200,
                 content='<?xml version="1.0"?><rss></rss>',
                 content_type="application/rss+xml",
-                fetched_at=__import__("datetime").datetime.now(
-                    __import__("datetime").timezone.utc
-                ),
+                fetched_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
             ),
         }
     )
@@ -85,9 +83,7 @@ def test_discovery_uses_injected_fetcher_not_raw_requests(monkeypatch):
         _ForbiddenRequests(),
     )
 
-    feeds = DuckDuckGoSearch.discover_rss_feeds(
-        "https://example.com", fetcher=fetcher
-    )
+    feeds = DuckDuckGoSearch.discover_rss_feeds("https://example.com", fetcher=fetcher)
 
     assert ("https://example.com", True) in fetcher.calls
     assert "https://example.com/feed.xml" in feeds
@@ -99,13 +95,9 @@ def test_discovery_respects_robots_fail_closed(monkeypatch):
     fetcher = _RecordingFetcher(
         {"https://blocked.example": RobotsDisallowed("robots.txt disallows")}
     )
-    monkeypatch.setattr(
-        "src.services.duckduckgo.requests", _ForbiddenRequests()
-    )
+    monkeypatch.setattr("src.services.duckduckgo.requests", _ForbiddenRequests())
 
-    feeds = DuckDuckGoSearch.discover_rss_feeds(
-        "https://blocked.example", fetcher=fetcher
-    )
+    feeds = DuckDuckGoSearch.discover_rss_feeds("https://blocked.example", fetcher=fetcher)
 
     assert feeds == []
     assert fetcher.calls == [("https://blocked.example", True)]
@@ -113,16 +105,10 @@ def test_discovery_respects_robots_fail_closed(monkeypatch):
 
 def test_discovery_respects_ssrf_guard(monkeypatch):
     """A target the fetcher blocks for SSRF reasons must not be fetched raw."""
-    fetcher = _RecordingFetcher(
-        {"http://169.254.169.254/": BlockedTarget("non-public address")}
-    )
-    monkeypatch.setattr(
-        "src.services.duckduckgo.requests", _ForbiddenRequests()
-    )
+    fetcher = _RecordingFetcher({"http://169.254.169.254/": BlockedTarget("non-public address")})
+    monkeypatch.setattr("src.services.duckduckgo.requests", _ForbiddenRequests())
 
-    feeds = DuckDuckGoSearch.discover_rss_feeds(
-        "http://169.254.169.254/", fetcher=fetcher
-    )
+    feeds = DuckDuckGoSearch.discover_rss_feeds("http://169.254.169.254/", fetcher=fetcher)
 
     assert feeds == []
 
@@ -132,9 +118,7 @@ class _ForbiddenRequests:
     is called -- proving discovery no longer reaches the network directly."""
 
     def _boom(self, *a, **k):  # noqa: ANN001, ANN002, ANN003
-        raise AssertionError(
-            "discovery made a raw requests call, bypassing the EthicalFetcher"
-        )
+        raise AssertionError("discovery made a raw requests call, bypassing the EthicalFetcher")
 
     get = property(lambda self: self._boom)
     head = property(lambda self: self._boom)

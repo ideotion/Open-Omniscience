@@ -67,7 +67,7 @@ def setup_logging(name: str, log_file: str = None, level: int = logging.INFO) ->
         filename=file_path,
         maxBytes=10 * 1024 * 1024,  # 10 MB
         backupCount=5,
-        encoding="utf-8"
+        encoding="utf-8",
     )
     file_handler.setLevel(level)
 
@@ -77,8 +77,7 @@ def setup_logging(name: str, log_file: str = None, level: int = logging.INFO) ->
 
     # Formatter
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
@@ -99,7 +98,9 @@ def log_audit_trail(action: str, details: dict, user: str = None):
         details: Dictionary of details about the action.
         user: Optional user identifier (default: None for automated actions).
     """
-    audit_file = AUDIT_DIR / f"{datetime.now(UTC).strftime('%Y%m%d')}_OpenOmniscience_AUDIT_TRAIL.md"
+    audit_file = (
+        AUDIT_DIR / f"{datetime.now(UTC).strftime('%Y%m%d')}_OpenOmniscience_AUDIT_TRAIL.md"
+    )
     timestamp = datetime.now(UTC).isoformat()
 
     # Format details as a string
@@ -127,6 +128,6 @@ if __name__ == "__main__":
             "source": "BBC News",
             "url": "https://bbc.com/news",
             "status": "success",
-            "articles": 10
-        }
+            "articles": 10,
+        },
     )

@@ -69,13 +69,15 @@ def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
         if article.id in seen:
             continue
         seen.add(article.id)
-        out.append({
-            "title": article.title,
-            "url": article.url,
-            "source": source_name,
-            "published_at": article.published_at.isoformat() if article.published_at else None,
-            "article_id": article.id,
-        })
+        out.append(
+            {
+                "title": article.title,
+                "url": article.url,
+                "source": source_name,
+                "published_at": article.published_at.isoformat() if article.published_at else None,
+                "article_id": article.id,
+            }
+        )
         if len(out) >= limit:
             break
     return out
@@ -92,21 +94,35 @@ def rising_now(session) -> list[Card]:
     for term in data.get("terms", []):
         kw = resolve_keyword(session, term["term"])
         rows = _articles_for_term(session, kw.id, days=14, limit=6) if kw else []
-        cards.append(Card(
-            type="rising",
-            title=f"“{term['term']}” is rising",
-            summary=(f"Mentions of “{term['term']}” are running ~{term['growth']}× the "
-                     f"prior-period rate ({term['recent']} recent vs {term['prior']} before)."),
-            bucket="rising",
-            signal={"metric": "growth_ratio", "value": term["growth"],
-                    "recent": term["recent"], "prior": term["prior"], "kind": term["kind"]},
-            method=data.get("method", "recent volume vs prior-period rate (a ratio, not a significance test)"),
-            caveat=("A rising count reflects your source set, not the world; a ratio is not a "
-                    "significance test, and small samples are noisy."),
-            evidence=_evidence_from_articles(rows),
-            n=term["recent"],
-            key=term["normalized"],
-        ))
+        cards.append(
+            Card(
+                type="rising",
+                title=f"“{term['term']}” is rising",
+                summary=(
+                    f"Mentions of “{term['term']}” are running ~{term['growth']}× the "
+                    f"prior-period rate ({term['recent']} recent vs {term['prior']} before)."
+                ),
+                bucket="rising",
+                signal={
+                    "metric": "growth_ratio",
+                    "value": term["growth"],
+                    "recent": term["recent"],
+                    "prior": term["prior"],
+                    "kind": term["kind"],
+                },
+                method=data.get(
+                    "method",
+                    "recent volume vs prior-period rate (a ratio, not a significance test)",
+                ),
+                caveat=(
+                    "A rising count reflects your source set, not the world; a ratio is not a "
+                    "significance test, and small samples are noisy."
+                ),
+                evidence=_evidence_from_articles(rows),
+                n=term["recent"],
+                key=term["normalized"],
+            )
+        )
     return cards
 
 
@@ -131,12 +147,16 @@ def framing_split(session) -> list[Card]:
         for article, source_name in rows:
             if not source_name:
                 continue
-            by_source.setdefault(source_name, []).append({
-                "title": article.title,
-                "content": article.get_content(),
-                "url": article.url,
-                "published_at": article.published_at.isoformat() if article.published_at else None,
-            })
+            by_source.setdefault(source_name, []).append(
+                {
+                    "title": article.title,
+                    "content": article.get_content(),
+                    "url": article.url,
+                    "published_at": article.published_at.isoformat()
+                    if article.published_at
+                    else None,
+                }
+            )
         if len(by_source) < 2:
             continue
         result = compare_framing(by_source)
@@ -151,26 +171,41 @@ def framing_split(session) -> list[Card]:
         evidence = []
         for f in (high, low):
             for hd in f.get("headlines", [])[:2]:
-                evidence.append({"title": hd.get("title"), "url": hd.get("url"),
-                                 "source": f["source"], "published_at": hd.get("published_at")})
-        return [Card(
-            type="framing_split",
-            title=f"“{term['term']}”: outlets frame it differently",
-            summary=(f"On “{term['term']}”, {high['source']} reads {high['tone_label']} "
-                     f"(tone {high['avg_tone']:+.2f}) while {low['source']} reads "
-                     f"{low['tone_label']} (tone {low['avg_tone']:+.2f})."),
-            bucket="debunk",
-            signal={"metric": "tone_spread", "value": round(high["avg_tone"] - low["avg_tone"], 4),
+                evidence.append(
+                    {
+                        "title": hd.get("title"),
+                        "url": hd.get("url"),
+                        "source": f["source"],
+                        "published_at": hd.get("published_at"),
+                    }
+                )
+        return [
+            Card(
+                type="framing_split",
+                title=f"“{term['term']}”: outlets frame it differently",
+                summary=(
+                    f"On “{term['term']}”, {high['source']} reads {high['tone_label']} "
+                    f"(tone {high['avg_tone']:+.2f}) while {low['source']} reads "
+                    f"{low['tone_label']} (tone {low['avg_tone']:+.2f})."
+                ),
+                bucket="debunk",
+                signal={
+                    "metric": "tone_spread",
+                    "value": round(high["avg_tone"] - low["avg_tone"], 4),
                     "high": {"source": high["source"], "tone": high["avg_tone"]},
-                    "low": {"source": low["source"], "tone": low["avg_tone"]}},
-            method="VADER compound sentiment of each outlet's coverage of the term",
-            caveat=(result.get("caveat", "")
+                    "low": {"source": low["source"], "tone": low["avg_tone"]},
+                },
+                method="VADER compound sentiment of each outlet's coverage of the term",
+                caveat=(
+                    result.get("caveat", "")
                     + " Tone is valence, not stance: negative tone may be alarm, grief OR "
-                    "skepticism. This is a signal to read, never a label that an outlet is biased."),
-            evidence=evidence,
-            n=result.get("total_articles"),
-            key=term["normalized"],
-        )]
+                    "skepticism. This is a signal to read, never a label that an outlet is biased."
+                ),
+                evidence=evidence,
+                n=result.get("total_articles"),
+                key=term["normalized"],
+            )
+        ]
     return []
 
 
@@ -190,24 +225,38 @@ def record_reshaped(session) -> list[Card]:
     for rev, page in rows:
         reasons = (rev.flag_reasons or "").replace(",", ", ")
         url = f"https://{page.wiki}.wikipedia.org/wiki/{page.title.replace(' ', '_')}?diff={rev.revid}"
-        cards.append(Card(
-            type="record_reshaped",
-            title=f"Wikipedia ({page.wiki}): “{page.title}” reshaped",
-            summary=(f"A flagged edit changed “{page.title}” by {rev.delta_bytes:+} bytes"
-                     + (f" — {reasons}." if reasons else ".")),
-            bucket="watch",
-            signal={"metric": "delta_bytes", "value": rev.delta_bytes,
+        cards.append(
+            Card(
+                type="record_reshaped",
+                title=f"Wikipedia ({page.wiki}): “{page.title}” reshaped",
+                summary=(
+                    f"A flagged edit changed “{page.title}” by {rev.delta_bytes:+} bytes"
+                    + (f" — {reasons}." if reasons else ".")
+                ),
+                bucket="watch",
+                signal={
+                    "metric": "delta_bytes",
+                    "value": rev.delta_bytes,
                     "flag_reasons": (rev.flag_reasons or "").split(",") if rev.flag_reasons else [],
-                    "editor_anon": bool(rev.editor_anon)},
-            method="Honest large-edit flagging at ingest (size delta, revert/blank tags, anon/burst, optional ORES).",
-            caveat=("A flag marks an edit worth a human look — size or pattern — not a judgement that "
-                    "it is vandalism or revisionism. Open the diff and decide."),
-            evidence=[{"title": f"{page.title} (diff {rev.revid})", "url": url,
-                       "source": f"{page.wiki}.wikipedia.org",
-                       "published_at": rev.timestamp.isoformat() if rev.timestamp else None}],
-            n=1,
-            key=f"{page.wiki}:{page.title}:{rev.revid}",
-        ))
+                    "editor_anon": bool(rev.editor_anon),
+                },
+                method="Honest large-edit flagging at ingest (size delta, revert/blank tags, anon/burst, optional ORES).",
+                caveat=(
+                    "A flag marks an edit worth a human look — size or pattern — not a judgement that "
+                    "it is vandalism or revisionism. Open the diff and decide."
+                ),
+                evidence=[
+                    {
+                        "title": f"{page.title} (diff {rev.revid})",
+                        "url": url,
+                        "source": f"{page.wiki}.wikipedia.org",
+                        "published_at": rev.timestamp.isoformat() if rev.timestamp else None,
+                    }
+                ],
+                n=1,
+                key=f"{page.wiki}:{page.title}:{rev.revid}",
+            )
+        )
     return cards
 
 
@@ -221,46 +270,65 @@ def price_narrative(session) -> list[Card]:
         _LOG.info("price_narrative skipped: the [analysis] extra (scipy) is not installed.")
         return []
 
-    symbols = [s for (s,) in session.query(CommodityPrice.symbol).distinct().limit(_MAX_SYMBOLS * 3)]
+    symbols = [
+        s for (s,) in session.query(CommodityPrice.symbol).distinct().limit(_MAX_SYMBOLS * 3)
+    ]
     cards: list[Card] = []
     for symbol in symbols:
         if len(cards) >= _MAX_SYMBOLS:
             break
         points = [
-            (d, float(p)) for d, p in
-            session.query(CommodityPrice.observed_on, CommodityPrice.price)
+            (d, float(p))
+            for d, p in session.query(CommodityPrice.observed_on, CommodityPrice.price)
             .filter(CommodityPrice.symbol == symbol)
-            .order_by(CommodityPrice.observed_on.asc()).all()
+            .order_by(CommodityPrice.observed_on.asc())
+            .all()
         ]
         if len(points) < 4:
             continue
         rule = session.query(MarketExtractionRule).filter_by(symbol=symbol).first()
-        label = (rule.label if rule and rule.label else symbol)
+        label = rule.label if rule and rule.label else symbol
         kw = resolve_keyword(session, label) or resolve_keyword(session, symbol)
         if kw is None:
             continue
         article_dates = [
-            d for (d,) in session.query(KeywordMention.observed_on)
-            .filter(KeywordMention.keyword_id == kw.id, KeywordMention.observed_on.isnot(None)).all()
+            d
+            for (d,) in session.query(KeywordMention.observed_on)
+            .filter(KeywordMention.keyword_id == kw.id, KeywordMention.observed_on.isnot(None))
+            .all()
         ]
         result = correlate_price_with_news(points, article_dates)
         if result.insufficient_data or result.coefficient is None:
             continue
-        cards.append(Card(
-            type="price_narrative",
-            title=f"{label}: price moves vs coverage",
-            summary=(f"Daily price change and news volume for {label} correlate "
-                     f"{result.coefficient:+.2f} (p={result.p_value:.3g}, n={result.n})."),
-            bucket="context",
-            signal={"metric": f"{result.method}_r", "value": round(result.coefficient, 4),
-                    "p_value": result.p_value, "significant": result.significant, "symbol": symbol},
-            method=f"{result.method} correlation of daily price change vs daily article count on shared dates",
-            caveat=result.caveat,
-            evidence=[{"title": f"{label} price series & coverage", "url": "/#markets",
-                       "source": (rule.market if rule and rule.market else None)}],
-            n=result.n,
-            key=symbol,
-        ))
+        cards.append(
+            Card(
+                type="price_narrative",
+                title=f"{label}: price moves vs coverage",
+                summary=(
+                    f"Daily price change and news volume for {label} correlate "
+                    f"{result.coefficient:+.2f} (p={result.p_value:.3g}, n={result.n})."
+                ),
+                bucket="context",
+                signal={
+                    "metric": f"{result.method}_r",
+                    "value": round(result.coefficient, 4),
+                    "p_value": result.p_value,
+                    "significant": result.significant,
+                    "symbol": symbol,
+                },
+                method=f"{result.method} correlation of daily price change vs daily article count on shared dates",
+                caveat=result.caveat,
+                evidence=[
+                    {
+                        "title": f"{label} price series & coverage",
+                        "url": "/#markets",
+                        "source": (rule.market if rule and rule.market else None),
+                    }
+                ],
+                n=result.n,
+                key=symbol,
+            )
+        )
     return cards
 
 
@@ -286,23 +354,35 @@ def stale_data(session) -> list[Card]:
     if not stale:
         return []
     sample = ", ".join(f"{r.label or r.symbol}" for r in stale[:5])
-    return [Card(
-        type="stale_data",
-        title=f"{len(stale)} price feed(s) need attention",
-        summary=(f"{len(stale)} enabled extraction rule(s) are cold (>{_STALE_DAYS}d) or last "
-                 f"reported a problem — e.g. {sample}."),
-        bucket="trust",
-        signal={"metric": "stale_rules", "value": len(stale),
-                "rules": [{"symbol": r.symbol, "label": r.label,
-                           "last_status": r.last_status,
-                           "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None}
-                          for r in stale[:20]]},
-        method=f"Extraction rules whose last_run_at is older than {_STALE_DAYS} days or whose last_status reports a failure.",
-        caveat="A stale feed means the *number* may be old or its selector broke — not that the price moved. Re-run or fix the rule.",
-        evidence=[{"title": "Markets — extraction rules", "url": "/#markets", "source": None}],
-        n=len(stale),
-        key="stale-feeds",
-    )]
+    return [
+        Card(
+            type="stale_data",
+            title=f"{len(stale)} price feed(s) need attention",
+            summary=(
+                f"{len(stale)} enabled extraction rule(s) are cold (>{_STALE_DAYS}d) or last "
+                f"reported a problem — e.g. {sample}."
+            ),
+            bucket="trust",
+            signal={
+                "metric": "stale_rules",
+                "value": len(stale),
+                "rules": [
+                    {
+                        "symbol": r.symbol,
+                        "label": r.label,
+                        "last_status": r.last_status,
+                        "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None,
+                    }
+                    for r in stale[:20]
+                ],
+            },
+            method=f"Extraction rules whose last_run_at is older than {_STALE_DAYS} days or whose last_status reports a failure.",
+            caveat="A stale feed means the *number* may be old or its selector broke — not that the price moved. Re-run or fix the rule.",
+            evidence=[{"title": "Markets — extraction rules", "url": "/#markets", "source": None}],
+            n=len(stale),
+            key="stale-feeds",
+        )
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -327,23 +407,35 @@ def diet_self_audit(session) -> list[Card]:
         return []
     top_labels = ", ".join(s["label"] for s in result.shares[:3])
     pct = round(result.top_share * 100)
-    return [Card(
-        type="diet_self_audit",
-        title="Your reading diet leans on a few sources",
-        summary=(f"Over the last {_DIET_DAYS} days, the top 3 of {result.n} sources account for "
-                 f"~{pct}% of what you collected (Gini {result.gini:.2f}). Top: {top_labels}."),
-        bucket="context",
-        signal={"metric": "top3_share", "value": result.top_share,
-                "gini": result.gini, "sources": result.n,
-                "shares": result.shares[:10]},
-        method=result.method,
-        caveat=(result.caveat
+    return [
+        Card(
+            type="diet_self_audit",
+            title="Your reading diet leans on a few sources",
+            summary=(
+                f"Over the last {_DIET_DAYS} days, the top 3 of {result.n} sources account for "
+                f"~{pct}% of what you collected (Gini {result.gini:.2f}). Top: {top_labels}."
+            ),
+            bucket="context",
+            signal={
+                "metric": "top3_share",
+                "value": result.top_share,
+                "gini": result.gini,
+                "sources": result.n,
+                "shares": result.shares[:10],
+            },
+            method=result.method,
+            caveat=(
+                result.caveat
                 + " This groups by source, not owner: several sources may share one owner, so true "
-                "concentration may be higher. Selection is yours — this is a prompt, not a cap."),
-        evidence=[{"title": "Sources — manage your coverage", "url": "/#sources", "source": None}],
-        n=result.n,
-        key="diet",
-    )]
+                "concentration may be higher. Selection is yours — this is a prompt, not a cap."
+            ),
+            evidence=[
+                {"title": "Sources — manage your coverage", "url": "/#sources", "source": None}
+            ],
+            n=result.n,
+            key="diet",
+        )
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -361,11 +453,18 @@ def _articles_by_id(session, ids: list[str]) -> dict[str, dict]:
     rows = (
         session.query(Article, Source.name)
         .outerjoin(Source, Source.id == Article.source_id)
-        .filter(Article.id.in_(int_ids)).all()
+        .filter(Article.id.in_(int_ids))
+        .all()
     )
-    return {str(a.id): {"title": a.title, "url": a.url, "source": name,
-                        "published_at": a.published_at.isoformat() if a.published_at else None}
-            for a, name in rows}
+    return {
+        str(a.id): {
+            "title": a.title,
+            "url": a.url,
+            "source": name,
+            "published_at": a.published_at.isoformat() if a.published_at else None,
+        }
+        for a, name in rows
+    }
 
 
 def echo_chamber(session) -> list[Card]:
@@ -387,26 +486,43 @@ def echo_chamber(session) -> list[Card]:
         ev_lookup = _articles_by_id(session, rep_ids)
         evidence = [ev_lookup[i] for i in rep_ids if i in ev_lookup]
         n = len(actor.sources)
-        summary = (f"{n} sources published near-identical text on {actor.shared_stories} "
-                   f"story(ies)" + (f", sharing host {actor.shared_hosts[0]}" if actor.shared_hosts else "")
-                   + (". You have collapsed this into one actor." if applied
-                      else ". Apply a collapse to count it as one voice, or expand to inspect."))
-        cards.append(Card(
-            type="echo_chamber",
-            title=(f"{n} sources moving in lockstep" if not applied
-                   else f"Coordinated actor ({n} sources) — collapsed"),
-            summary=summary,
-            bucket="overtold",
-            signal={"metric": "coordinated_sources", "value": n,
-                    "shared_stories": actor.shared_stories, "signature": sig,
-                    "sources": actor.sources, "shared_hosts": actor.shared_hosts,
-                    "median_span_hours": actor.median_span_hours, "collapse_applied": applied},
-            method=result.method,
-            caveat=result.caveat,
-            evidence=evidence,
-            n=n,
-            key=sig or ",".join(actor.sources),
-        ))
+        summary = (
+            f"{n} sources published near-identical text on {actor.shared_stories} "
+            f"story(ies)"
+            + (f", sharing host {actor.shared_hosts[0]}" if actor.shared_hosts else "")
+            + (
+                ". You have collapsed this into one actor."
+                if applied
+                else ". Apply a collapse to count it as one voice, or expand to inspect."
+            )
+        )
+        cards.append(
+            Card(
+                type="echo_chamber",
+                title=(
+                    f"{n} sources moving in lockstep"
+                    if not applied
+                    else f"Coordinated actor ({n} sources) — collapsed"
+                ),
+                summary=summary,
+                bucket="overtold",
+                signal={
+                    "metric": "coordinated_sources",
+                    "value": n,
+                    "shared_stories": actor.shared_stories,
+                    "signature": sig,
+                    "sources": actor.sources,
+                    "shared_hosts": actor.shared_hosts,
+                    "median_span_hours": actor.median_span_hours,
+                    "collapse_applied": applied,
+                },
+                method=result.method,
+                caveat=result.caveat,
+                evidence=evidence,
+                n=n,
+                key=sig or ",".join(actor.sources),
+            )
+        )
     return cards
 
 
@@ -431,20 +547,30 @@ def lonely_signal(session) -> list[Card]:
     for story in singles[:_MAX_LONELY]:
         ev = _articles_by_id(session, [story["representative"]])
         evidence = list(ev.values())
-        cards.append(Card(
-            type="lonely_signal",
-            title=f"Single-source: “{story['title'][:80]}”",
-            summary=(f"Only {story['sources'][0] if story['sources'] else 'one source'} carried this; "
-                     "no other source published near-identical text. It could be an exclusive — or minor."),
-            bucket="undertold",
-            signal={"metric": "voices", "value": 1, "source": story["sources"][0] if story["sources"] else None},
-            method="A near-duplicate story cluster of size 1 (one source, no echo) over the recent window.",
-            caveat=("‘Single-source, did not echo’ is the ONLY claim — not that it is important, true, or "
-                    "suppressed. Many minor items are single-source. Read it and judge."),
-            evidence=evidence,
-            n=1,
-            key=f"lonely:{story['representative']}",
-        ))
+        cards.append(
+            Card(
+                type="lonely_signal",
+                title=f"Single-source: “{story['title'][:80]}”",
+                summary=(
+                    f"Only {story['sources'][0] if story['sources'] else 'one source'} carried this; "
+                    "no other source published near-identical text. It could be an exclusive — or minor."
+                ),
+                bucket="undertold",
+                signal={
+                    "metric": "voices",
+                    "value": 1,
+                    "source": story["sources"][0] if story["sources"] else None,
+                },
+                method="A near-duplicate story cluster of size 1 (one source, no echo) over the recent window.",
+                caveat=(
+                    "‘Single-source, did not echo’ is the ONLY claim — not that it is important, true, or "
+                    "suppressed. Many minor items are single-source. Read it and judge."
+                ),
+                evidence=evidence,
+                n=1,
+                key=f"lonely:{story['representative']}",
+            )
+        )
     return cards
 
 
@@ -452,8 +578,8 @@ def lonely_signal(session) -> list[Card]:
 #  Capacity implausible — output rate far above the corpus norm (§6 B)
 # --------------------------------------------------------------------------- #
 _CAPACITY_DAYS = 14
-_CAPACITY_MIN_PER_DAY = 20      # absolute floor before we even ask the question
-_CAPACITY_FACTOR = 8.0          # and well above the corpus median
+_CAPACITY_MIN_PER_DAY = 20  # absolute floor before we even ask the question
+_CAPACITY_FACTOR = 8.0  # and well above the corpus median
 
 
 def capacity_implausible(session) -> list[Card]:
@@ -464,7 +590,8 @@ def capacity_implausible(session) -> list[Card]:
         session.query(Source.name, func.count(Article.id))
         .join(Article, Article.source_id == Source.id)
         .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
-        .group_by(Source.id).all()
+        .group_by(Source.id)
+        .all()
     )
     if len(rows) < 3:
         return []
@@ -479,22 +606,34 @@ def capacity_implausible(session) -> list[Card]:
     if not flagged:
         return []
     top = flagged[0]
-    return [Card(
-        type="capacity_implausible",
-        title=f"{len(flagged)} source(s) publishing unusually fast",
-        summary=(f"{top['source']} averaged ~{top['per_day']}/day over {_CAPACITY_DAYS}d — "
-                 f"≥{_CAPACITY_FACTOR:.0f}× the corpus median ({round(median,2)}/day)."),
-        bucket="investigate",
-        signal={"metric": "max_articles_per_day", "value": top["per_day"],
-                "corpus_median_per_day": round(median, 2), "flagged": flagged[:20]},
-        method=(f"Sources whose articles/day over {_CAPACITY_DAYS}d is ≥ {_CAPACITY_MIN_PER_DAY} and "
-                f"≥ {_CAPACITY_FACTOR:.0f}× the corpus median per-source rate."),
-        caveat=("High output is often legitimate (wire agencies, large newsrooms, aggregators). This "
-                "is a capacity *question* for a human, never a determination that a source is automated."),
-        evidence=[{"title": "Sources — review output", "url": "/#sources", "source": None}],
-        n=len(flagged),
-        key="capacity",
-    )]
+    return [
+        Card(
+            type="capacity_implausible",
+            title=f"{len(flagged)} source(s) publishing unusually fast",
+            summary=(
+                f"{top['source']} averaged ~{top['per_day']}/day over {_CAPACITY_DAYS}d — "
+                f"≥{_CAPACITY_FACTOR:.0f}× the corpus median ({round(median, 2)}/day)."
+            ),
+            bucket="investigate",
+            signal={
+                "metric": "max_articles_per_day",
+                "value": top["per_day"],
+                "corpus_median_per_day": round(median, 2),
+                "flagged": flagged[:20],
+            },
+            method=(
+                f"Sources whose articles/day over {_CAPACITY_DAYS}d is ≥ {_CAPACITY_MIN_PER_DAY} and "
+                f"≥ {_CAPACITY_FACTOR:.0f}× the corpus median per-source rate."
+            ),
+            caveat=(
+                "High output is often legitimate (wire agencies, large newsrooms, aggregators). This "
+                "is a capacity *question* for a human, never a determination that a source is automated."
+            ),
+            evidence=[{"title": "Sources — review output", "url": "/#sources", "source": None}],
+            n=len(flagged),
+            key="capacity",
+        )
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -517,35 +656,55 @@ def emotion_profile_card(session) -> list[Card]:
     prof = emotion_profile(snippets)
     if not prof["total_hits"] or not prof["dominant"]:
         return []
-    kw = resolve_keyword(session, term["term"])   # resolve once (F-009)
+    kw = resolve_keyword(session, term["term"])  # resolve once (F-009)
     rows = _articles_for_term(session, kw.id, days=21, limit=4) if kw else []
-    return [Card(
-        type="emotion_profile",
-        title=f"“{term['term']}”: coverage skews {prof['dominant']}",
-        summary=(f"Across {prof['n_snippets']} context windows around “{term['term']}”, "
-                 f"{prof['dominant']}-associated words are the most frequent "
-                 f"({prof['categories'][prof['dominant']]} of {prof['total_hits']} hits)."),
-        bucket="context",
-        signal={"metric": "dominant_emotion", "value": prof["dominant"],
-                "categories": prof["categories"], "lexicon": prof["lexicon_source"]},
-        method=prof["method"],
-        caveat=prof["caveat"],
-        evidence=_evidence_from_articles(rows),
-        n=prof["total_hits"],
-        key=f"emotion:{term['normalized']}",
-    )]
+    return [
+        Card(
+            type="emotion_profile",
+            title=f"“{term['term']}”: coverage skews {prof['dominant']}",
+            summary=(
+                f"Across {prof['n_snippets']} context windows around “{term['term']}”, "
+                f"{prof['dominant']}-associated words are the most frequent "
+                f"({prof['categories'][prof['dominant']]} of {prof['total_hits']} hits)."
+            ),
+            bucket="context",
+            signal={
+                "metric": "dominant_emotion",
+                "value": prof["dominant"],
+                "categories": prof["categories"],
+                "lexicon": prof["lexicon_source"],
+            },
+            method=prof["method"],
+            caveat=prof["caveat"],
+            evidence=_evidence_from_articles(rows),
+            n=prof["total_hits"],
+            key=f"emotion:{term['normalized']}",
+        )
+    ]
 
 
 # --------------------------------------------------------------------------- #
 #  IP / legal news cards (§4) — thin: trends + deal verbs over the NEWS corpus
 # --------------------------------------------------------------------------- #
 _IP_TERMS = {
-    "patent", "patents", "lawsuit", "lawsuits", "injunction", "infringement",
-    "licensing", "antitrust", "copyright", "trademark", "litigation", "settlement",
+    "patent",
+    "patents",
+    "lawsuit",
+    "lawsuits",
+    "injunction",
+    "infringement",
+    "licensing",
+    "antitrust",
+    "copyright",
+    "trademark",
+    "litigation",
+    "settlement",
 }
 _DEAL_RE = re.compile(
     r"\b(acquir\w+|merg\w+|takeover|buyout|divest\w+|sold to|sells? to|"
-    r"acquisition|stake in|controlling stake)\b", re.IGNORECASE)
+    r"acquisition|stake in|controlling stake)\b",
+    re.IGNORECASE,
+)
 _MAX_DEAL = 4
 _IP_DAYS = 30
 
@@ -562,21 +721,31 @@ def ip_litigation_pulse(session) -> list[Card]:
     kw = resolve_keyword(session, top["term"])
     rows = _articles_for_term(session, kw.id, days=_IP_DAYS, limit=6) if kw else []
     names = ", ".join(sorted({t["term"] for t in hits}))
-    return [Card(
-        type="ip_litigation_pulse",
-        title="IP / legal terms are rising",
-        summary=(f"IP/legal vocabulary is trending in your corpus ({names}); “{top['term']}” "
-                 f"is up ~{top['growth']}× vs the prior period."),
-        bucket="context",
-        signal={"metric": "ip_terms_rising", "value": len(hits),
-                "terms": [t["term"] for t in hits], "top": top["term"]},
-        method="trending IP/legal terms (recent-vs-prior ratio) over the news corpus",
-        caveat=("Measures *coverage* of IP/legal language, not the merits of any case. The tool "
-                "sees reporting about filings, not the filings themselves."),
-        evidence=_evidence_from_articles(rows),
-        n=len(hits),
-        key="ip-pulse",
-    )]
+    return [
+        Card(
+            type="ip_litigation_pulse",
+            title="IP / legal terms are rising",
+            summary=(
+                f"IP/legal vocabulary is trending in your corpus ({names}); “{top['term']}” "
+                f"is up ~{top['growth']}× vs the prior period."
+            ),
+            bucket="context",
+            signal={
+                "metric": "ip_terms_rising",
+                "value": len(hits),
+                "terms": [t["term"] for t in hits],
+                "top": top["term"],
+            },
+            method="trending IP/legal terms (recent-vs-prior ratio) over the news corpus",
+            caveat=(
+                "Measures *coverage* of IP/legal language, not the merits of any case. The tool "
+                "sees reporting about filings, not the filings themselves."
+            ),
+            evidence=_evidence_from_articles(rows),
+            n=len(hits),
+            key="ip-pulse",
+        )
+    ]
 
 
 def ownership_change(session) -> list[Card]:
@@ -602,24 +771,36 @@ def ownership_change(session) -> list[Card]:
             break
     if not matches:
         return []
-    evidence = [{"title": a.title, "url": a.url, "source": name,
-                 "published_at": a.published_at.isoformat() if a.published_at else None}
-                for a, name in matches]
+    evidence = [
+        {
+            "title": a.title,
+            "url": a.url,
+            "source": name,
+            "published_at": a.published_at.isoformat() if a.published_at else None,
+        }
+        for a, name in matches
+    ]
     lead = matches[0][0].title or "(untitled)"
-    return [Card(
-        type="ownership_change",
-        title=f"{len(matches)} possible ownership-change report(s)",
-        summary=(f"Recent articles use deal language (acquired / merger / divested), e.g. "
-                 f"“{lead[:80]}”. Candidate corporate-control stories to verify."),
-        bucket="investigate",
-        signal={"metric": "deal_reports", "value": len(matches)},
-        method="recent articles whose text matches acquisition/merger/divestiture verbs",
-        caveat=("Matches *reporting language*, not confirmed deals — and never asserts IP was "
-                "transferred or stripped. Foreground the primary filing; the human confirms."),
-        evidence=evidence,
-        n=len(matches),
-        key="ownership-change",
-    )]
+    return [
+        Card(
+            type="ownership_change",
+            title=f"{len(matches)} possible ownership-change report(s)",
+            summary=(
+                f"Recent articles use deal language (acquired / merger / divested), e.g. "
+                f"“{lead[:80]}”. Candidate corporate-control stories to verify."
+            ),
+            bucket="investigate",
+            signal={"metric": "deal_reports", "value": len(matches)},
+            method="recent articles whose text matches acquisition/merger/divestiture verbs",
+            caveat=(
+                "Matches *reporting language*, not confirmed deals — and never asserts IP was "
+                "transferred or stripped. Foreground the primary filing; the human confirms."
+            ),
+            evidence=evidence,
+            n=len(matches),
+            key="ownership-change",
+        )
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -637,28 +818,44 @@ def law_change(session) -> list[Card]:
         .join(LawDocument, LawDocument.id == LawRevision.document_id)
         .filter(LawRevision.flagged.is_(True))
         .order_by(LawRevision.observed_at.desc(), LawRevision.id.desc())
-        .limit(_MAX_LAW).all()
+        .limit(_MAX_LAW)
+        .all()
     )
     cards: list[Card] = []
     for rev, doc in rows:
         reasons = (rev.flag_reasons or "").replace(",", ", ")
-        cards.append(Card(
-            type="law_change",
-            title=f"Law changed ({doc.jurisdiction}): {doc.title[:70]}",
-            summary=(f"A tracked legal document changed by {rev.delta_bytes:+} bytes vs its baseline"
-                     + (f" — {reasons}." if reasons else ".")),
-            bucket="watch",
-            signal={"metric": "delta_bytes", "value": rev.delta_bytes,
-                    "jurisdiction": doc.jurisdiction, "category": doc.category,
-                    "flag_reasons": (rev.flag_reasons or "").split(",") if rev.flag_reasons else []},
-            method="Baseline → normalised-text diff on re-fetch; large-change flag (reused wiki thresholds).",
-            caveat=("A research mirror, NOT the authoritative source and not legal advice. A flag marks "
-                    "a change worth a human look — not a judgement of the law. Open the official source."),
-            evidence=[{"title": f"{doc.title} (official)", "url": doc.official_url or doc.url,
-                       "source": doc.jurisdiction}],
-            n=1,
-            key=f"law:{doc.id}:{rev.content_hash[:12]}",
-        ))
+        cards.append(
+            Card(
+                type="law_change",
+                title=f"Law changed ({doc.jurisdiction}): {doc.title[:70]}",
+                summary=(
+                    f"A tracked legal document changed by {rev.delta_bytes:+} bytes vs its baseline"
+                    + (f" — {reasons}." if reasons else ".")
+                ),
+                bucket="watch",
+                signal={
+                    "metric": "delta_bytes",
+                    "value": rev.delta_bytes,
+                    "jurisdiction": doc.jurisdiction,
+                    "category": doc.category,
+                    "flag_reasons": (rev.flag_reasons or "").split(",") if rev.flag_reasons else [],
+                },
+                method="Baseline → normalised-text diff on re-fetch; large-change flag (reused wiki thresholds).",
+                caveat=(
+                    "A research mirror, NOT the authoritative source and not legal advice. A flag marks "
+                    "a change worth a human look — not a judgement of the law. Open the official source."
+                ),
+                evidence=[
+                    {
+                        "title": f"{doc.title} (official)",
+                        "url": doc.official_url or doc.url,
+                        "source": doc.jurisdiction,
+                    }
+                ],
+                n=1,
+                key=f"law:{doc.id}:{rev.content_hash[:12]}",
+            )
+        )
     return cards
 
 
@@ -681,23 +878,38 @@ def model_legislation(session) -> list[Card]:
         if len(cards) >= _MAX_LAW:
             break
         titles = [by_id[m] for m in cluster.members]
-        cards.append(Card(
-            type="model_legislation",
-            title=f"Near-identical law across {len(jurs)} jurisdictions",
-            summary=(f"Legal text is near-duplicate across {', '.join(jurs)} "
-                     f"(e.g. “{titles[0].title[:60]}”) — possible model legislation / diffusion."),
-            bucket="investigate",
-            signal={"metric": "jurisdictions", "value": len(jurs), "jurisdictions": jurs,
-                    "avg_similarity": cluster.avg_similarity},
-            method=result.method,
-            caveat=("Shared *text* across jurisdictions — a measurable diffusion pattern, not proof of "
-                    "coordinated lobbying. Common templates and treaties also share text. Read the sources."),
-            evidence=[{"title": f"{by_id[m].title} ({by_id[m].jurisdiction})",
-                       "url": by_id[m].official_url or by_id[m].url, "source": by_id[m].jurisdiction}
-                      for m in cluster.members[:5]],
-            n=len(cluster.members),
-            key=f"model:{','.join(sorted(cluster.members))}",
-        ))
+        cards.append(
+            Card(
+                type="model_legislation",
+                title=f"Near-identical law across {len(jurs)} jurisdictions",
+                summary=(
+                    f"Legal text is near-duplicate across {', '.join(jurs)} "
+                    f"(e.g. “{titles[0].title[:60]}”) — possible model legislation / diffusion."
+                ),
+                bucket="investigate",
+                signal={
+                    "metric": "jurisdictions",
+                    "value": len(jurs),
+                    "jurisdictions": jurs,
+                    "avg_similarity": cluster.avg_similarity,
+                },
+                method=result.method,
+                caveat=(
+                    "Shared *text* across jurisdictions — a measurable diffusion pattern, not proof of "
+                    "coordinated lobbying. Common templates and treaties also share text. Read the sources."
+                ),
+                evidence=[
+                    {
+                        "title": f"{by_id[m].title} ({by_id[m].jurisdiction})",
+                        "url": by_id[m].official_url or by_id[m].url,
+                        "source": by_id[m].jurisdiction,
+                    }
+                    for m in cluster.members[:5]
+                ],
+                n=len(cluster.members),
+                key=f"model:{','.join(sorted(cluster.members))}",
+            )
+        )
     return cards
 
 
@@ -718,7 +930,9 @@ def story_lineage(session) -> list[Card]:
         session.query(Article.id, Source.name, Article.title, Article.content, Article.published_at)
         .outerjoin(Source, Source.id == Article.source_id)
         .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
-        .order_by(Article.id.desc()).limit(2000).all()
+        .order_by(Article.id.desc())
+        .limit(2000)
+        .all()
     )
     by_id = {}
     texts = {}
@@ -742,23 +956,31 @@ def story_lineage(session) -> list[Card]:
             continue
         ev = _articles_by_id(session, [i.doc_id for i in lin.chain[:5]])
         evidence = [ev[i.doc_id] for i in lin.chain[:5] if i.doc_id in ev]
-        return [Card(
-            type="story_lineage",
-            title=f"One story, {len(sources)} outlets — tracing the source",
-            summary=(f"A story echoed across {len(sources)} sources traces earliest to "
-                     f"{lin.primary.source or 'an unknown source'}"
-                     + (f", attributed to the wire **{lin.wire_origin}**" if lin.wire_origin else "")
-                     + ". Foreground the original; weigh the echoes."),
-            bucket="context",
-            signal={"metric": "echoing_sources", "value": len(sources),
-                    "primary_source": lin.primary.source, "wire_origin": lin.wire_origin,
-                    "chain": [i.to_dict() for i in lin.chain[:20]]},
-            method=lin.method,
-            caveat=lin.caveat,
-            evidence=evidence,
-            n=len(sources),
-            key=f"lineage:{lin.primary.doc_id}",
-        )]
+        return [
+            Card(
+                type="story_lineage",
+                title=f"One story, {len(sources)} outlets — tracing the source",
+                summary=(
+                    f"A story echoed across {len(sources)} sources traces earliest to "
+                    f"{lin.primary.source or 'an unknown source'}"
+                    + (f", attributed to the wire **{lin.wire_origin}**" if lin.wire_origin else "")
+                    + ". Foreground the original; weigh the echoes."
+                ),
+                bucket="context",
+                signal={
+                    "metric": "echoing_sources",
+                    "value": len(sources),
+                    "primary_source": lin.primary.source,
+                    "wire_origin": lin.wire_origin,
+                    "chain": [i.to_dict() for i in lin.chain[:20]],
+                },
+                method=lin.method,
+                caveat=lin.caveat,
+                evidence=evidence,
+                n=len(sources),
+                key=f"lineage:{lin.primary.doc_id}",
+            )
+        ]
     return []
 
 
@@ -766,7 +988,7 @@ def story_lineage(session) -> list[Card]:
 #  Coverage advisor — gentle, overridable diet guidance (§1/§3, Theme 4)
 # --------------------------------------------------------------------------- #
 _COVERAGE_DAYS = 30
-_COVERAGE_DOMINANCE = 0.6   # one country/language ≥ 60% of recent collection
+_COVERAGE_DOMINANCE = 0.6  # one country/language ≥ 60% of recent collection
 
 
 def coverage_advisor(session) -> list[Card]:
@@ -776,10 +998,13 @@ def coverage_advisor(session) -> list[Card]:
     cutoff = datetime.now(UTC) - timedelta(days=_COVERAGE_DAYS)
 
     def _share(col):
-        rows = (session.query(col, func.count(Article.id))
-                .join(Article, Article.source_id == Source.id)
-                .filter(Article.created_at >= cutoff, col.isnot(None))
-                .group_by(col).all())
+        rows = (
+            session.query(col, func.count(Article.id))
+            .join(Article, Article.source_id == Source.id)
+            .filter(Article.created_at >= cutoff, col.isnot(None))
+            .group_by(col)
+            .all()
+        )
         counts = {str(k): int(c) for k, c in rows if c}
         if sum(counts.values()) < 10:
             return None  # too little collected to say anything honest
@@ -800,23 +1025,34 @@ def coverage_advisor(session) -> list[Card]:
         return []
     kind, label, share, n = flagged[0]
     pct = round(share * 100)
-    return [Card(
-        type="coverage_advisor",
-        title=f"Your recent collection leans on one {kind}",
-        summary=(f"~{pct}% of what you collected in {_COVERAGE_DAYS} days is from {kind} "
-                 f"“{label}” (of {n}). Consider adding under-represented {kind}s — a fuller "
-                 "picture is harder to skew. This is a suggestion you can ignore."),
-        bucket="context",
-        signal={"metric": f"top_{kind}_share", "value": share, "label": label, "n": n,
-                "all": flagged},
-        method=f"concentration (top share) of recent articles by source {kind}",
-        caveat=("Selection is yours: this surfaces a coverage fact, it never filters or caps "
+    return [
+        Card(
+            type="coverage_advisor",
+            title=f"Your recent collection leans on one {kind}",
+            summary=(
+                f"~{pct}% of what you collected in {_COVERAGE_DAYS} days is from {kind} "
+                f"“{label}” (of {n}). Consider adding under-represented {kind}s — a fuller "
+                "picture is harder to skew. This is a suggestion you can ignore."
+            ),
+            bucket="context",
+            signal={
+                "metric": f"top_{kind}_share",
+                "value": share,
+                "label": label,
+                "n": n,
+                "all": flagged,
+            },
+            method=f"concentration (top share) of recent articles by source {kind}",
+            caveat=(
+                "Selection is yours: this surfaces a coverage fact, it never filters or caps "
                 "anything. A skewed corpus skews every downstream signal — see your World "
-                "coverage view to balance it."),
-        evidence=[{"title": "Sources — World coverage", "url": "/#sources", "source": None}],
-        n=n,
-        key=f"coverage:{kind}",
-    )]
+                "coverage view to balance it."
+            ),
+            evidence=[{"title": "Sources — World coverage", "url": "/#sources", "source": None}],
+            n=n,
+            key=f"coverage:{kind}",
+        )
+    ]
 
 
 _DEFAULT_PRODUCERS = (

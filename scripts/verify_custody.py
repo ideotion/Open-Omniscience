@@ -31,8 +31,9 @@ def main(argv: list[str]) -> int:
     args = [a for a in argv[1:] if not a.startswith("--")]
     flags = {a for a in argv[1:] if a.startswith("--")}
     if len(args) != 1:
-        print("usage: python scripts/verify_custody.py <custody_bundle.json> [--pin]",
-              file=sys.stderr)
+        print(
+            "usage: python scripts/verify_custody.py <custody_bundle.json> [--pin]", file=sys.stderr
+        )
         return 2
 
     bundle = json.loads(Path(args[0]).read_text())

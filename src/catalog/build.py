@@ -33,11 +33,13 @@ def load_query_config(path: Path | None = None) -> dict:
     specs = []
     for s in data.get("specs", []):
         if isinstance(s, dict) and s.get("source_type") and s.get("type_qids"):
-            specs.append({
-                "source_type": str(s["source_type"]),
-                "type_qids": [str(q) for q in s["type_qids"]],
-                "tags": [str(t) for t in (s.get("tags") or [])],
-            })
+            specs.append(
+                {
+                    "source_type": str(s["source_type"]),
+                    "type_qids": [str(q) for q in s["type_qids"]],
+                    "tags": [str(t) for t in (s.get("tags") or [])],
+                }
+            )
     return {
         "label_lang": str(data.get("label_lang", "en")),
         "limit": int(data.get("limit", 2000)),
@@ -73,8 +75,10 @@ def generate_catalog(
                 errors.append(f"{cc}/{spec['source_type']}: {exc}")
                 continue
             entries = parse_results(
-                payload, country_code=cc,
-                source_type=spec["source_type"], tags=spec.get("tags"),
+                payload,
+                country_code=cc,
+                source_type=spec["source_type"],
+                tags=spec.get("tags"),
             )
             all_entries.extend(entries)
             found += len(entries)

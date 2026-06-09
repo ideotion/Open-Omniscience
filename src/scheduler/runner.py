@@ -142,7 +142,9 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         try:
             if settings.mode == "crawl":
                 report = crawl_source(
-                    session, source, fetcher=fetcher,
+                    session,
+                    source,
+                    fetcher=fetcher,
                     config=CrawlConfig(
                         max_depth=settings.crawl_max_depth,
                         max_pages=settings.crawl_max_pages,

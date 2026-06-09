@@ -37,7 +37,7 @@ _CAVEAT = (
 
 @dataclass
 class NoveltyResult:
-    ratio: float | None          # new_shingles / total_shingles, or None if no shingles
+    ratio: float | None  # new_shingles / total_shingles, or None if no shingles
     n_shingles: int
     new_shingles: int
     method: str = "share of word-shingles not previously seen in the corpus (incremental)"

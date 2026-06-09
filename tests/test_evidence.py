@@ -78,6 +78,7 @@ def test_tamper_and_resign_caught_by_pinned_key(tmp_path):
     and swaps in their public key. Integrity-only verify passes, but pinning the
     real signer's key catches it."""
     from src.reporting.evidence import build_manifest, public_key_hex, sign_manifest
+
     signer = load_or_create_signing_key(tmp_path / "signer.pem")
     bundle = build_signed_bundle([_Art(1, "alpha")], signer, case_name="Real")
     real_key = public_key_hex(signer)
@@ -102,6 +103,7 @@ def test_wrong_key_fails(tmp_path):
     bundle = build_signed_bundle([_Art(1, "alpha")], key)
     other = load_or_create_signing_key(tmp_path / "other.pem")
     from src.reporting.evidence import public_key_hex
+
     bundle["public_key"] = public_key_hex(other)
     ok, _ = verify_bundle(bundle)
     assert not ok
@@ -112,6 +114,7 @@ def test_key_persists(tmp_path):
     k1 = load_or_create_signing_key(p)
     k2 = load_or_create_signing_key(p)
     from src.reporting.evidence import public_key_hex
+
     assert public_key_hex(k1) == public_key_hex(k2)
 
 
@@ -123,7 +126,8 @@ def test_standalone_verifier_script(tmp_path):
     repo = Path(__file__).resolve().parents[1]
     res = subprocess.run(
         [sys.executable, str(repo / "scripts" / "verify_evidence.py"), str(bundle_file)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stdout + res.stderr
     assert "VERIFIED       : True" in res.stdout
@@ -132,7 +136,8 @@ def test_standalone_verifier_script(tmp_path):
     bundle_file.write_text(json.dumps(bundle))
     res2 = subprocess.run(
         [sys.executable, str(repo / "scripts" / "verify_evidence.py"), str(bundle_file)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert res2.returncode == 1
 
@@ -141,19 +146,29 @@ def test_standalone_verifier_script(tmp_path):
 # API
 # --------------------------------------------------------------------------- #
 
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))  # signing key under tmp
-    engine = create_engine(f"sqlite:///{tmp_path / 'r.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'r.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     ensure_fts(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
         s.add(Source(name="S", domain="s.example"))
         s.flush()
-        s.add(Article(url="https://s/1", canonical_url="https://s/1", source_id=1,
-                      title="leak", content="a leaked memo", hash="1".rjust(64, "0")))
+        s.add(
+            Article(
+                url="https://s/1",
+                canonical_url="https://s/1",
+                source_id=1,
+                title="leak",
+                content="a leaked memo",
+                hash="1".rjust(64, "0"),
+            )
+        )
         s.commit()
 
     def _db():

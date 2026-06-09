@@ -29,6 +29,7 @@ from src.database.session import get_db
 # units
 # --------------------------------------------------------------------------- #
 
+
 def test_convert_price_per_gram_to_per_kg():
     # A kilogram costs 1000x a gram -- NOT value/35.274 (the old bug).
     assert convert_price(100.0, "g", "kg") == pytest.approx(100_000.0)
@@ -53,6 +54,7 @@ def test_convert_price_unknown_unit():
 # correlation -- real statistics, no fabrication
 # --------------------------------------------------------------------------- #
 
+
 def test_correlation_matches_scipy_and_pvalue_is_real():
     # Imperfectly correlated so the p-value is a non-trivial real number.
     prices = [
@@ -64,8 +66,10 @@ def test_correlation_matches_scipy_and_pvalue_is_real():
     ]
     # counts on change-dates Jan 2..5: 1, 3, 2, 5 (not a perfect line)
     article_dates = (
-        [date(2026, 1, 2)] * 1 + [date(2026, 1, 3)] * 3 +
-        [date(2026, 1, 4)] * 2 + [date(2026, 1, 5)] * 5
+        [date(2026, 1, 2)] * 1
+        + [date(2026, 1, 3)] * 3
+        + [date(2026, 1, 4)] * 2
+        + [date(2026, 1, 5)] * 5
     )
     res = correlate_price_with_news(prices, article_dates, method="pearson")
     assert res.n == 4
@@ -88,10 +92,12 @@ def test_correlation_insufficient_data():
 # API
 # --------------------------------------------------------------------------- #
 
+
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'c.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'c.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     ensure_fts(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -141,10 +147,17 @@ def test_correlation_endpoint(client):
         for day, c in counts.items():
             for _ in range(c):
                 aid += 1
-                db.add(Article(url=f"u{aid}", canonical_url=f"u{aid}", source_id=1,
-                               title="neodymium", content="neodymium supply news",
-                               hash=f"{aid:064d}",
-                               published_at=datetime(2026, 1, day, tzinfo=UTC)))
+                db.add(
+                    Article(
+                        url=f"u{aid}",
+                        canonical_url=f"u{aid}",
+                        source_id=1,
+                        title="neodymium",
+                        content="neodymium supply news",
+                        hash=f"{aid:064d}",
+                        published_at=datetime(2026, 1, day, tzinfo=UTC),
+                    )
+                )
         db.commit()
 
     r = client.get("/api/commodities/Nd/correlation", params={"query": "neodymium"})

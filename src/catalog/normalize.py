@@ -17,14 +17,38 @@ from urllib.parse import urlparse
 # Hosts excluded for now: social networks / link aggregators / video & chat
 # platforms. Matched by registrable domain or as a suffix (so m.facebook.com,
 # x.com, fb.me etc. are all caught).
-SOCIAL_HOSTS: frozenset[str] = frozenset({
-    "facebook.com", "fb.com", "fb.me", "instagram.com", "threads.net",
-    "twitter.com", "x.com", "t.co", "tiktok.com", "youtube.com", "youtu.be",
-    "reddit.com", "linkedin.com", "lnkd.in", "telegram.org", "t.me",
-    "whatsapp.com", "wa.me", "snapchat.com", "pinterest.com", "tumblr.com",
-    "mastodon.social", "bsky.app", "vk.com", "ok.ru", "weibo.com",
-    "medium.com", "substack.com",
-})
+SOCIAL_HOSTS: frozenset[str] = frozenset(
+    {
+        "facebook.com",
+        "fb.com",
+        "fb.me",
+        "instagram.com",
+        "threads.net",
+        "twitter.com",
+        "x.com",
+        "t.co",
+        "tiktok.com",
+        "youtube.com",
+        "youtu.be",
+        "reddit.com",
+        "linkedin.com",
+        "lnkd.in",
+        "telegram.org",
+        "t.me",
+        "whatsapp.com",
+        "wa.me",
+        "snapchat.com",
+        "pinterest.com",
+        "tumblr.com",
+        "mastodon.social",
+        "bsky.app",
+        "vk.com",
+        "ok.ru",
+        "weibo.com",
+        "medium.com",
+        "substack.com",
+    }
+)
 
 
 def registrable_domain(url_or_host: str | None) -> str | None:
@@ -42,9 +66,9 @@ def registrable_domain(url_or_host: str | None) -> str | None:
     # Ensure urlparse sees a netloc even for a bare host.
     parsed = urlparse(raw if "//" in raw else f"//{raw}", scheme="https")
     host = (parsed.netloc or parsed.path).strip().lower()
-    host = host.split("@")[-1]          # drop any userinfo
-    host = host.split(":")[0]           # drop port
-    host = host.rstrip(".")             # drop trailing dot
+    host = host.split("@")[-1]  # drop any userinfo
+    host = host.split(":")[0]  # drop port
+    host = host.rstrip(".")  # drop trailing dot
     if host.startswith("www."):
         host = host[4:]
     return host or None

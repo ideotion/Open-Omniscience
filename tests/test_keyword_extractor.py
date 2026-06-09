@@ -11,8 +11,7 @@ from __future__ import annotations
 from src.services.keyword_extractor import KeywordExtractor
 
 _TEXT = (
-    "Climate policy and energy markets. Climate change drives energy policy. "
-    "Energy energy climate."
+    "Climate policy and energy markets. Climate change drives energy policy. Energy energy climate."
 )
 
 
@@ -23,7 +22,7 @@ def _ke():
 def test_extracts_and_ranks_by_frequency():
     top = _ke().get_top_keywords(_TEXT, top_n=3)
     words = [w for w, _ in top]
-    assert words[0] == "energy"          # most frequent
+    assert words[0] == "energy"  # most frequent
     assert "climate" in words and "policy" in words
     # frequencies are non-increasing
     counts = [c for _, c in top]
@@ -46,8 +45,9 @@ def test_top_n_and_scores():
 
 def test_title_is_weighted():
     # A title term should outrank a body term that appears the same number of times.
-    out = _ke().extract_keywords_from_article("oil spill report", title="Pollution",
-                                              title_weight=3.0)
+    out = _ke().extract_keywords_from_article(
+        "oil spill report", title="Pollution", title_weight=3.0
+    )
     assert "pollution" in out["keywords"]
 
 

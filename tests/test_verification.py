@@ -28,7 +28,7 @@ def _jpeg_with_software_tag():
     img = Image.new("RGB", (10, 10), (0, 128, 255))
     exif = img.getexif()
     exif[0x0131] = "Adobe Photoshop 25.0"  # Software tag
-    exif[0x0132] = "2026:01:02 03:04:05"   # DateTime
+    exif[0x0132] = "2026:01:02 03:04:05"  # DateTime
     img.save(buf, format="JPEG", exif=exif)
     return buf.getvalue()
 

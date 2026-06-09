@@ -34,4 +34,4 @@ __license__ = "GPLv3"
 # and moved to quarantine/dead_src/ in the v0.0.7 audit (finding MAINT-01).
 from . import crypto
 
-__all__ = ['crypto']
+__all__ = ["crypto"]

@@ -39,8 +39,14 @@ def framing(
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
         if not ids:
-            return {"query": query, "sources_compared": 0, "total_articles": 0,
-                    "framing": [], "shared_terms": [], "caveat": ""}
+            return {
+                "query": query,
+                "sources_compared": 0,
+                "total_articles": 0,
+                "framing": [],
+                "shared_terms": [],
+                "caveat": "",
+            }
         articles = q.filter(Article.id.in_(ids)).limit(limit).all()
     else:
         articles = q.order_by(Article.id.desc()).limit(limit).all()
@@ -48,12 +54,14 @@ def framing(
     by_source: dict[str, list[dict]] = {}
     for a in articles:
         source = a.source.name if a.source else "Unknown"
-        by_source.setdefault(source, []).append({
-            "title": a.title,
-            "content": a.content,
-            "url": a.url,
-            "published_at": a.published_at.isoformat() if a.published_at else None,
-        })
+        by_source.setdefault(source, []).append(
+            {
+                "title": a.title,
+                "content": a.content,
+                "url": a.url,
+                "published_at": a.published_at.isoformat() if a.published_at else None,
+            }
+        )
 
     result = compare_framing(by_source)
     return {"query": query, **result}

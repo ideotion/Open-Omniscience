@@ -23,8 +23,9 @@ from src.wiki.track import ensure_page, track_watched, update_page
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
@@ -42,7 +43,9 @@ class FakeClient:
         return [dict(r) for r in self._revisions]
 
     def fetch_compare(self, wiki, a, b):
-        return self._compares.get((a, b), {"added": "", "removed": "", "added_bytes": 0, "removed_bytes": 0})
+        return self._compares.get(
+            (a, b), {"added": "", "removed": "", "added_bytes": 0, "removed_bytes": 0}
+        )
 
 
 def test_baseline_captured_on_first_update(db):
@@ -52,7 +55,7 @@ def test_baseline_captured_on_first_update(db):
     assert res["baseline"] is True
     assert page.baseline_revid == 100 and page.last_revid == 100
     assert page.baseline_text == "baseline text" and page.pageid == 5
-    assert db.query(WikiRevision).count() == 0   # baseline is not a tracked edit
+    assert db.query(WikiRevision).count() == 0  # baseline is not a tracked edit
 
 
 def test_large_anon_removal_is_stored_and_flagged(db):
@@ -62,18 +65,43 @@ def test_large_anon_removal_is_stored_and_flagged(db):
     db.commit()
     now = datetime.now(UTC)
     revs = [
-        {"revid": 101, "parent_revid": 100, "timestamp": now, "editor": "1.2.3.4",
-         "editor_anon": True, "comment": "remove section", "size": 100, "minor": False,
-         "bot": False, "tags": []},
-        {"revid": 100, "parent_revid": 99, "timestamp": now, "editor": "Bot",
-         "editor_anon": False, "size": 1200, "minor": False, "bot": True, "tags": []},
+        {
+            "revid": 101,
+            "parent_revid": 100,
+            "timestamp": now,
+            "editor": "1.2.3.4",
+            "editor_anon": True,
+            "comment": "remove section",
+            "size": 100,
+            "minor": False,
+            "bot": False,
+            "tags": [],
+        },
+        {
+            "revid": 100,
+            "parent_revid": 99,
+            "timestamp": now,
+            "editor": "Bot",
+            "editor_anon": False,
+            "size": 1200,
+            "minor": False,
+            "bot": True,
+            "tags": [],
+        },
     ]
-    compares = {(100, 101): {"added": "", "removed": "a deleted paragraph", "added_bytes": 0, "removed_bytes": 1100}}
+    compares = {
+        (100, 101): {
+            "added": "",
+            "removed": "a deleted paragraph",
+            "added_bytes": 0,
+            "removed_bytes": 1100,
+        }
+    }
     client = FakeClient(revisions=revs, compares=compares)
     res = update_page(db, client, page)
     assert res["new"] == 1 and res["flagged"] == 1
     rev = db.query(WikiRevision).filter_by(revid=101).one()
-    assert rev.delta_bytes == -1100              # 100 - 1200
+    assert rev.delta_bytes == -1100  # 100 - 1200
     assert rev.flagged and "large_removal" in rev.flag_reasons and "anon_large" in rev.flag_reasons
     assert rev.diff and "deleted paragraph" in rev.diff
     assert page.last_revid == 101
@@ -84,7 +112,9 @@ def test_repoll_stores_nothing_new(db):
     page.baseline_revid = 50
     page.last_revid = 50
     db.commit()
-    client = FakeClient(revisions=[{"revid": 50, "parent_revid": 49, "size": 10, "timestamp": datetime.now(UTC)}])
+    client = FakeClient(
+        revisions=[{"revid": 50, "parent_revid": 49, "size": 10, "timestamp": datetime.now(UTC)}]
+    )
     res = update_page(db, client, page)
     assert res["new"] == 0
     assert db.query(WikiRevision).count() == 0
@@ -98,12 +128,32 @@ def test_ores_score_attached_and_flagged(db):
 
     class FakeOres:
         def score(self, wiki, revids):
-            return {revids[0]: {"damaging": 0.95, "goodfaith": 0.1, "provenance": "ores:damaging,goodfaith"}}
+            return {
+                revids[0]: {
+                    "damaging": 0.95,
+                    "goodfaith": 0.1,
+                    "provenance": "ores:damaging,goodfaith",
+                }
+            }
 
-    revs = [{"revid": 11, "parent_revid": 10, "timestamp": datetime.now(UTC), "editor": "U",
-             "editor_anon": False, "size": 100, "minor": True, "bot": False, "tags": []},
-            {"revid": 10, "size": 90, "timestamp": datetime.now(UTC)}]
-    client = FakeClient(revisions=revs, compares={(10, 11): {"added": "x", "removed": "", "added_bytes": 1, "removed_bytes": 0}})
+    revs = [
+        {
+            "revid": 11,
+            "parent_revid": 10,
+            "timestamp": datetime.now(UTC),
+            "editor": "U",
+            "editor_anon": False,
+            "size": 100,
+            "minor": True,
+            "bot": False,
+            "tags": [],
+        },
+        {"revid": 10, "size": 90, "timestamp": datetime.now(UTC)},
+    ]
+    client = FakeClient(
+        revisions=revs,
+        compares={(10, 11): {"added": "x", "removed": "", "added_bytes": 1, "removed_bytes": 0}},
+    )
     update_page(db, client, page, ores_client=FakeOres())
     rev = db.query(WikiRevision).filter_by(revid=11).one()
     assert rev.ores_damaging == 0.95 and rev.ores_provenance.startswith("ores")
@@ -124,10 +174,16 @@ def test_track_watched_aggregates(db):
 
 
 def test_parse_ores_fixture():
-    payload = {"enwiki": {"scores": {
-        "101": {"damaging": {"score": {"probability": {"true": 0.8, "false": 0.2}}},
-                "goodfaith": {"score": {"probability": {"true": 0.3, "false": 0.7}}}},
-    }}}
+    payload = {
+        "enwiki": {
+            "scores": {
+                "101": {
+                    "damaging": {"score": {"probability": {"true": 0.8, "false": 0.2}}},
+                    "goodfaith": {"score": {"probability": {"true": 0.3, "false": 0.7}}},
+                },
+            }
+        }
+    }
     out = parse_ores(payload, "en")
     assert out[101]["damaging"] == 0.8 and out[101]["goodfaith"] == 0.3
 
@@ -145,14 +201,32 @@ def test_wiki_client_parses_through_fake_session():
         def json(self):
             return self._d
 
-    payload = {"query": {"pages": [{"pageid": 1, "title": "T", "revisions": [
-        {"revid": 9, "parentid": 8, "timestamp": "2024-01-01T00:00:00Z", "user": "U", "size": 100, "tags": []}]}]}}
+    payload = {
+        "query": {
+            "pages": [
+                {
+                    "pageid": 1,
+                    "title": "T",
+                    "revisions": [
+                        {
+                            "revid": 9,
+                            "parentid": 8,
+                            "timestamp": "2024-01-01T00:00:00Z",
+                            "user": "U",
+                            "size": 100,
+                            "tags": [],
+                        }
+                    ],
+                }
+            ]
+        }
+    }
 
     class Sess:
         headers = {}
 
         def get(self, url, params=None, timeout=None):
-            assert "maxlag" in params           # etiquette honoured
+            assert "maxlag" in params  # etiquette honoured
             return Resp(payload)
 
     c = WikiClient(session=Sess(), min_interval_s=0.0)

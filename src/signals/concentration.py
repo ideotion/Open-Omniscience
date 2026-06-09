@@ -47,11 +47,11 @@ class ConcentrationResult:
     """
 
     method: str
-    n: int                                   # number of actors (non-empty buckets counted)
-    total: float                             # sum of all values
-    gini: float | None = None               # None when undefined (n < 2 or total == 0)
+    n: int  # number of actors (non-empty buckets counted)
+    total: float  # sum of all values
+    gini: float | None = None  # None when undefined (n < 2 or total == 0)
     top_n: int = 0
-    top_share: float | None = None          # fraction held by the top_n actors
+    top_share: float | None = None  # fraction held by the top_n actors
     shares: list[dict] = field(default_factory=list)  # [{label, value, share}], descending
     caveat: str = _CAVEAT
 

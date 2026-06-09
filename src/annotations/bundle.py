@@ -23,12 +23,12 @@ BUNDLE_VERSION = "oo-annotations-1"
 
 # Annotation kinds are *descriptive, contestable facts/tags* — never a composite score.
 VALID_KINDS = (
-    "coordination-tag",     # "these sources are a coordinated network"
-    "ownership",            # "owned by X" / "state-media" / "wire-agency"
-    "leaning",              # reputational political-leaning tag
-    "transparency-fact",    # masthead, registration, funding disclosure, etc.
-    "correction",           # a noted error / dispute about a source
-    "note",                 # free-text observation
+    "coordination-tag",  # "these sources are a coordinated network"
+    "ownership",  # "owned by X" / "state-media" / "wire-agency"
+    "leaning",  # reputational political-leaning tag
+    "transparency-fact",  # masthead, registration, funding disclosure, etc.
+    "correction",  # a noted error / dispute about a source
+    "note",  # free-text observation
 )
 
 
@@ -36,10 +36,10 @@ VALID_KINDS = (
 class Annotation:
     """One assertion about a source — a contestable fact/tag, never a verdict/score."""
 
-    target: str             # source name or domain the annotation is about
-    kind: str               # one of VALID_KINDS
-    value: str              # the asserted tag/fact (e.g. "state-media", "owned by ACME")
-    note: str = ""          # optional free-text context / evidence link
+    target: str  # source name or domain the annotation is about
+    kind: str  # one of VALID_KINDS
+    value: str  # the asserted tag/fact (e.g. "state-media", "owned by ACME")
+    note: str = ""  # optional free-text context / evidence link
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def __post_init__(self) -> None:
@@ -49,13 +49,23 @@ class Annotation:
             raise ValueError("target and value are required")
 
     def to_dict(self) -> dict:
-        return {"target": self.target, "kind": self.kind, "value": self.value,
-                "note": self.note, "created_at": self.created_at}
+        return {
+            "target": self.target,
+            "kind": self.kind,
+            "value": self.value,
+            "note": self.note,
+            "created_at": self.created_at,
+        }
 
     @classmethod
     def from_dict(cls, d: dict) -> Annotation:
-        return cls(target=d["target"], kind=d["kind"], value=d["value"],
-                   note=d.get("note", ""), created_at=d.get("created_at", datetime.now(UTC).isoformat()))
+        return cls(
+            target=d["target"],
+            kind=d["kind"],
+            value=d["value"],
+            note=d.get("note", ""),
+            created_at=d.get("created_at", datetime.now(UTC).isoformat()),
+        )
 
 
 def build_manifest(author_name: str, annotations: list[Annotation]) -> dict:
@@ -67,8 +77,9 @@ def build_manifest(author_name: str, annotations: list[Annotation]) -> dict:
     }
 
 
-def build_signed_bundle(author_name: str, annotations: list[Annotation],
-                        signer: HybridSigner) -> dict:
+def build_signed_bundle(
+    author_name: str, annotations: list[Annotation], signer: HybridSigner
+) -> dict:
     """Build a portable, signed annotation bundle."""
     manifest = build_manifest(author_name, annotations)
     signature = signer.sign(canonical_bytes(manifest))

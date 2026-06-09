@@ -79,17 +79,16 @@ class AnchorProvider(ABC):
     name: str = "abstract"
 
     @abstractmethod
-    def anchor(self, merkle_root: str, metadata: dict | None = None) -> AnchorReceipt:
-        ...
+    def anchor(self, merkle_root: str, metadata: dict | None = None) -> AnchorReceipt: ...
 
     @abstractmethod
-    def verify(self, receipt: AnchorReceipt) -> tuple[bool, str]:
-        ...
+    def verify(self, receipt: AnchorReceipt) -> tuple[bool, str]: ...
 
 
 # --------------------------------------------------------------------------- #
 # Local anchor book (offline, default)
 # --------------------------------------------------------------------------- #
+
 
 class LocalAnchorProvider(AnchorProvider):
     name = "local"
@@ -144,6 +143,7 @@ class LocalAnchorProvider(AnchorProvider):
 # OpenTimestamps anchor (Bitcoin, independent; network required)
 # --------------------------------------------------------------------------- #
 
+
 class OpenTimestampsAnchorProvider(AnchorProvider):
     name = "opentimestamps"
 
@@ -192,6 +192,7 @@ class OpenTimestampsAnchorProvider(AnchorProvider):
 # Public-chain providers -- declared, not faked
 # --------------------------------------------------------------------------- #
 
+
 class UnavailableAnchorProvider(AnchorProvider):
     """A named-but-unimplemented public-chain provider that refuses honestly."""
 
@@ -220,7 +221,10 @@ def available_providers() -> dict[str, str]:
             if OTS_AVAILABLE
             else "needs the 'timestamping' extra"
         ),
-        **dict.fromkeys(_PUBLIC_CHAIN_NAMES, "not implemented (see docs); public-chain anchoring has privacy risks"),
+        **dict.fromkeys(
+            _PUBLIC_CHAIN_NAMES,
+            "not implemented (see docs); public-chain anchoring has privacy risks",
+        ),
     }
 
 

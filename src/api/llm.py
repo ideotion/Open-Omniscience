@@ -81,7 +81,12 @@ def llm_health(client: OllamaClient = Depends(get_llm_client)) -> dict:
         installed = client.list_installed()
         return {"available": True, "base_url": client.base_url, "installed_models": installed}
     except LLMUnavailable as exc:
-        return {"available": False, "base_url": client.base_url, "installed_models": [], "detail": str(exc)}
+        return {
+            "available": False,
+            "base_url": client.base_url,
+            "installed_models": [],
+            "detail": str(exc),
+        }
 
 
 @router.get("/models")
@@ -92,8 +97,12 @@ def llm_models(client: OllamaClient = Depends(get_llm_client)) -> dict:
         available = True
     except LLMUnavailable:
         installed, available = [], False
-    return {"available": available, "default": DEFAULT_MODEL,
-            "catalog": MODEL_CATALOG, "installed": installed}
+    return {
+        "available": available,
+        "default": DEFAULT_MODEL,
+        "catalog": MODEL_CATALOG,
+        "installed": installed,
+    }
 
 
 @router.post("/generate")

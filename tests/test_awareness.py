@@ -26,10 +26,25 @@ from src.llm.ollama import OllamaClient
 # framing (pure function)
 # --------------------------------------------------------------------------- #
 
+
 def test_framing_surfaces_tone_and_terms_no_verdict():
     data = {
-        "Outlet A": [{"title": "Reform praised", "content": "The landmark reform was praised as a historic success and a triumph.", "url": "a1", "published_at": None}],
-        "Outlet B": [{"title": "Reform slammed", "content": "The disastrous reform was slammed as a corrupt failure and a scandal.", "url": "b1", "published_at": None}],
+        "Outlet A": [
+            {
+                "title": "Reform praised",
+                "content": "The landmark reform was praised as a historic success and a triumph.",
+                "url": "a1",
+                "published_at": None,
+            }
+        ],
+        "Outlet B": [
+            {
+                "title": "Reform slammed",
+                "content": "The disastrous reform was slammed as a corrupt failure and a scandal.",
+                "url": "b1",
+                "published_at": None,
+            }
+        ],
     }
     res = compare_framing(data)
     assert res["sources_compared"] == 2
@@ -49,7 +64,12 @@ def test_framing_surfaces_tone_and_terms_no_verdict():
 
 
 def test_framing_empty_source_skipped():
-    res = compare_framing({"A": [], "B": [{"title": "x", "content": "good news great", "url": "u", "published_at": None}]})
+    res = compare_framing(
+        {
+            "A": [],
+            "B": [{"title": "x", "content": "good news great", "url": "u", "published_at": None}],
+        }
+    )
     assert res["sources_compared"] == 1
 
 
@@ -57,10 +77,12 @@ def test_framing_empty_source_skipped():
 # API: translation + framing
 # --------------------------------------------------------------------------- #
 
+
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'a.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'a.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     ensure_fts(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -69,14 +91,28 @@ def client(tmp_path):
         b = Source(name="Guardian", domain="theguardian.com", language="en")
         s.add_all([a, b])
         s.flush()
-        s.add_all([
-            Article(url="https://lemonde.fr/1", canonical_url="https://lemonde.fr/1", source_id=a.id,
-                    title="Élection", content="le scandale de corruption a indigné les électeurs",
-                    hash="1".rjust(64, "0"), language="fr"),
-            Article(url="https://theguardian.com/2", canonical_url="https://theguardian.com/2", source_id=b.id,
-                    title="Election reform", content="the reform was welcomed as a positive step forward",
-                    hash="2".rjust(64, "0"), language="en"),
-        ])
+        s.add_all(
+            [
+                Article(
+                    url="https://lemonde.fr/1",
+                    canonical_url="https://lemonde.fr/1",
+                    source_id=a.id,
+                    title="Élection",
+                    content="le scandale de corruption a indigné les électeurs",
+                    hash="1".rjust(64, "0"),
+                    language="fr",
+                ),
+                Article(
+                    url="https://theguardian.com/2",
+                    canonical_url="https://theguardian.com/2",
+                    source_id=b.id,
+                    title="Election reform",
+                    content="the reform was welcomed as a positive step forward",
+                    hash="2".rjust(64, "0"),
+                    language="en",
+                ),
+            ]
+        )
         s.commit()
 
     def _db():
@@ -88,7 +124,10 @@ def client(tmp_path):
 
     def _fake_llm():
         def handler(request):
-            return httpx.Response(200, json={"response": "Election: the corruption scandal outraged voters."})
+            return httpx.Response(
+                200, json={"response": "Election: the corruption scandal outraged voters."}
+            )
+
         http = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://t")
         return OllamaClient(client=http, base_url="http://t")
 

@@ -33,14 +33,17 @@ class FakeClient:
         return [dict(r) for r in self._revisions]
 
     def fetch_compare(self, wiki, a, b):
-        return self._compares.get((a, b), {"added": "", "removed": "", "added_bytes": 0, "removed_bytes": 0})
+        return self._compares.get(
+            (a, b), {"added": "", "removed": "", "added_bytes": 0, "removed_bytes": 0}
+        )
 
 
 def _client(tmp_path):
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'wiki.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'wiki.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
 
@@ -64,25 +67,49 @@ def test_wiki_api_crud_track_and_changes(tmp_path, monkeypatch):
     try:
         with client:
             # Add a watched page.
-            r = client.post("/api/wiki/pages", json={"wiki": "en", "title": "Berlin", "category": "cities"})
+            r = client.post(
+                "/api/wiki/pages", json={"wiki": "en", "title": "Berlin", "category": "cities"}
+            )
             assert r.status_code == 200
             pid = r.json()["id"]
-            assert any(p["title"] == "Berlin" for p in client.get("/api/wiki/pages").json()["pages"])
+            assert any(
+                p["title"] == "Berlin" for p in client.get("/api/wiki/pages").json()["pages"]
+            )
 
             # First track -> baseline only (stub the shared client to return current text).
-            monkeypatch.setattr(wapi, "_client", FakeClient(current={"revid": 100, "text": "base", "size": 1200, "pageid": 7}))
+            monkeypatch.setattr(
+                wapi,
+                "_client",
+                FakeClient(current={"revid": 100, "text": "base", "size": 1200, "pageid": 7}),
+            )
             res = client.post(f"/api/wiki/pages/{pid}/track?ores=false").json()
             assert res["baseline"] is True
 
             # Second track -> a large anonymous removal, flagged + diff stored.
             now = datetime.now(UTC)
             revs = [
-                {"revid": 101, "parent_revid": 100, "timestamp": now, "editor": "1.2.3.4",
-                 "editor_anon": True, "comment": "blank section", "size": 50, "minor": False,
-                 "bot": False, "tags": []},
+                {
+                    "revid": 101,
+                    "parent_revid": 100,
+                    "timestamp": now,
+                    "editor": "1.2.3.4",
+                    "editor_anon": True,
+                    "comment": "blank section",
+                    "size": 50,
+                    "minor": False,
+                    "bot": False,
+                    "tags": [],
+                },
                 {"revid": 100, "parent_revid": 99, "timestamp": now, "size": 1200},
             ]
-            comp = {(100, 101): {"added": "", "removed": "removed text", "added_bytes": 0, "removed_bytes": 1200}}
+            comp = {
+                (100, 101): {
+                    "added": "",
+                    "removed": "removed text",
+                    "added_bytes": 0,
+                    "removed_bytes": 1200,
+                }
+            }
             monkeypatch.setattr(wapi, "_client", FakeClient(revisions=revs, compares=comp))
             res2 = client.post(f"/api/wiki/pages/{pid}/track?ores=false").json()
             assert res2["new"] == 1 and res2["flagged"] == 1

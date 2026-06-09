@@ -16,12 +16,12 @@ def test_catalog_is_wellformed_and_honest():
     cat = load_catalog()
     assert len(cat["quotes"]) >= 6 and len(cat["fun_facts"]) >= 4
     for qt in cat["quotes"]:
-        assert qt["text"] and qt["author"]                 # always attributed
+        assert qt["text"] and qt["author"]  # always attributed
         assert qt["attribution"] in ("confirmed", "disputed", "traditional")
     # At least one disputed attribution is honestly flagged (we don't pretend certainty).
     assert any(q["attribution"] == "disputed" for q in cat["quotes"])
     for f in cat["fun_facts"]:
-        assert f["text"] and f["source"]                   # facts must be citable
+        assert f["text"] and f["source"]  # facts must be citable
 
 
 def test_random_item_kinds():

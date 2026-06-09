@@ -118,7 +118,9 @@ def test_pinning_catches_resigned_bundle(tmp_path):
     log.close()
 
     # Attacker rebuilds the log with their OWN signer, forging the same actions.
-    attacker = HybridSigner(ed25519_path=tmp_path / "atk_ed.pem", mldsa_path=tmp_path / "atk_ml.key")
+    attacker = HybridSigner(
+        ed25519_path=tmp_path / "atk_ed.pem", mldsa_path=tmp_path / "atk_ml.key"
+    )
     alog = CustodyLog(db_path=str(tmp_path / "atk.db"), signer=attacker)
     alog.record("article:1", "a" * 64, CustodyAction.INGEST, actor="pipeline")
     forged = alog.export()

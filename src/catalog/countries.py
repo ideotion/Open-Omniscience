@@ -14,8 +14,7 @@ from __future__ import annotations
 
 # ISO 3166-1 alpha-2 (officially assigned codes), lowercased. Kept as a
 # whitespace-separated string (split at import) so it stays compact and neutral.
-_CODES = (
-    """
+_CODES = """
     ad ae af ag ai al am ao aq ar as at au aw ax az
     ba bb bd be bf bg bh bi bj bl bm bn bo bq br bs bt bv bw by bz
     ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz
@@ -42,6 +41,5 @@ _CODES = (
     ye yt
     za zm zw
     """
-)
 
 ISO_3166_1_ALPHA2: frozenset[str] = frozenset(_CODES.split())

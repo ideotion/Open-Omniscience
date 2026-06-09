@@ -87,8 +87,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 # Async database URL - replace sqlite with postgresql+asyncpg for production
 ASYNC_DATABASE_URL = os.getenv(
-    "ASYNC_DATABASE_URL", 
-    f"sqlite+aiosqlite:///{DATA_DIR / 'open_omniscience_async.db'}"
+    "ASYNC_DATABASE_URL", f"sqlite+aiosqlite:///{DATA_DIR / 'open_omniscience_async.db'}"
 )
 
 # Async database configuration
@@ -126,20 +125,17 @@ ASYNC_DATABASE_CONFIG = {
 def get_async_database_config() -> dict[str, Any]:
     """Get async database configuration based on URL."""
     config = ASYNC_DATABASE_CONFIG["sqlite"].copy()
-    
+
     if ASYNC_DATABASE_URL.startswith("postgresql"):
         config.update(ASYNC_DATABASE_CONFIG["postgresql"])
     elif ASYNC_DATABASE_URL.startswith("mysql"):
         config.update(ASYNC_DATABASE_CONFIG["mysql"])
-    
+
     return config
 
 
 # Create async engine
-async_engine = create_async_engine(
-    ASYNC_DATABASE_URL, 
-    **get_async_database_config()
-)
+async_engine = create_async_engine(ASYNC_DATABASE_URL, **get_async_database_config())
 
 # Create async session factory
 AsyncSessionLocal = async_sessionmaker(
@@ -157,46 +153,53 @@ AsyncBase = declarative_base()
 # Async Compressed Types
 # =============================================================================
 
+
 class AsyncCompressedText(TypeDecorator):
     """Async version of CompressedText type."""
+
     impl = LargeBinary
     cache_ok = True
-    
+
     def process_bind_param(self, value: str | bytes | None, dialect: Any) -> bytes | None:
         if value is None:
             return None
         if isinstance(value, bytes):
-            value = value.decode('utf-8')
+            value = value.decode("utf-8")
         from src.utils.compression import database_compressor
+
         return database_compressor.compress_text_for_storage(value)
-    
+
     def process_result_value(self, value: bytes | None, dialect: Any) -> str | None:
         if value is None:
             return None
         from src.utils.compression import database_compressor
+
         return database_compressor.decompress_text_from_storage(value)
 
 
 class AsyncCompressedJSON(TypeDecorator):
     """Async version of CompressedJSON type."""
+
     impl = LargeBinary
     cache_ok = True
-    
+
     def process_bind_param(self, value: Any, dialect: Any) -> bytes | None:
         if value is None:
             return None
         import json
 
         from src.utils.compression import database_compressor
+
         json_str = json.dumps(value, ensure_ascii=False, default=str)
         return database_compressor.compress_text_for_storage(json_str)
-    
+
     def process_result_value(self, value: bytes | None, dialect: Any) -> Any:
         if value is None:
             return None
         import json
 
         from src.utils.compression import database_compressor
+
         json_str = database_compressor.decompress_text_from_storage(value)
         return json.loads(json_str)
 
@@ -207,20 +210,21 @@ class AsyncCompressedJSON(TypeDecorator):
 
 # Association table for many-to-many relationship between Source and SourceGroup
 async_source_group_association = Table(
-    'async_source_group_association',
+    "async_source_group_association",
     AsyncBase.metadata,
-    Column('source_id', Integer, ForeignKey('async_sources.id'), primary_key=True),
-    Column('group_id', Integer, ForeignKey('async_source_groups.id'), primary_key=True),
-    Column('added_at', DateTime, default=lambda: datetime.now(UTC)),
-    Index('idx_async_source_group_source_id', 'source_id'),
-    Index('idx_async_source_group_group_id', 'group_id'),
+    Column("source_id", Integer, ForeignKey("async_sources.id"), primary_key=True),
+    Column("group_id", Integer, ForeignKey("async_source_groups.id"), primary_key=True),
+    Column("added_at", DateTime, default=lambda: datetime.now(UTC)),
+    Index("idx_async_source_group_source_id", "source_id"),
+    Index("idx_async_source_group_group_id", "group_id"),
 )
 
 
 class AsyncSourceGroup(AsyncBase):
     """Async version of SourceGroup model."""
+
     __tablename__ = "async_source_groups"
-    
+
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text)
@@ -231,59 +235,63 @@ class AsyncSourceGroup(AsyncBase):
     rate_limit_ms = Column(Integer, default=2000)
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
     sources = relationship(
         "AsyncSource",
         secondary=async_source_group_association,
         back_populates="groups",
-        lazy='dynamic'
+        lazy="dynamic",
     )
 
 
 class AsyncSourceMetadata(AsyncBase):
     """Async version of SourceMetadata model."""
+
     __tablename__ = "async_source_metadata"
-    
+
     id = Column(Integer, primary_key=True)
     source_id = Column(Integer, ForeignKey("async_sources.id"), nullable=False, unique=True)
-    
+
     language = Column(String(20))
     country = Column(String(2))
     region = Column(String(100))
     city = Column(String(100))
     timezone = Column(String(50))
-    
+
     robots_txt_url = Column(String(500))
     robots_allowed = Column(Boolean, default=True)
     crawl_delay = Column(Integer)
     sitemap_url = Column(String(500))
-    
+
     favicon_url = Column(String(500))
     logo_url = Column(String(500))
     contact_email = Column(String(255))
-    
+
     social_twitter = Column(String(255))
     social_facebook = Column(String(500))
     social_linkedin = Column(String(500))
-    
+
     alexa_rank = Column(Integer)
     last_checked = Column(DateTime)
     notes = Column(Text)
-    
+
     source = relationship("AsyncSource", back_populates="source_metadata", uselist=False)
-    
+
     __table_args__ = (
-        Index('idx_async_metadata_source_id', 'source_id', unique=True),
-        Index('idx_async_metadata_country', 'country'),
-        Index('idx_async_metadata_language', 'language'),
+        Index("idx_async_metadata_source_id", "source_id", unique=True),
+        Index("idx_async_metadata_country", "country"),
+        Index("idx_async_metadata_language", "language"),
     )
 
 
 class AsyncSource(AsyncBase):
     """Async version of Source model."""
+
     __tablename__ = "async_sources"
-    
+
     id = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
     domain = Column(String(255), nullable=False, unique=True)
@@ -292,7 +300,7 @@ class AsyncSource(AsyncBase):
     enabled = Column(Boolean, default=True)
     priority = Column(Integer, default=2)
     tags = Column(String(500))
-    
+
     reliability_score = Column(Integer, default=5)
     language = Column(String(10), default="en")
     region = Column(String(50), default="global")
@@ -300,30 +308,33 @@ class AsyncSource(AsyncBase):
     source_type = Column(String(50), default="news")
     update_frequency = Column(Integer, default=60)
     cacheability = Column(Boolean, default=True)
-    
+
     articles = relationship("AsyncArticle", back_populates="source", cascade="all, delete-orphan")
     groups = relationship(
         "AsyncSourceGroup",
         secondary=async_source_group_association,
         back_populates="sources",
-        lazy='dynamic'
+        lazy="dynamic",
     )
-    source_metadata = relationship("AsyncSourceMetadata", back_populates="source", uselist=False, cascade="all, delete-orphan")
-    
+    source_metadata = relationship(
+        "AsyncSourceMetadata", back_populates="source", uselist=False, cascade="all, delete-orphan"
+    )
+
     __table_args__ = (
-        Index('idx_async_source_domain', 'domain', unique=True),
-        Index('idx_async_source_enabled', 'enabled'),
-        Index('idx_async_source_priority', 'priority'),
-        Index('idx_async_source_language', 'language'),
-        Index('idx_async_source_region', 'region'),
-        Index('idx_async_source_country', 'country'),
+        Index("idx_async_source_domain", "domain", unique=True),
+        Index("idx_async_source_enabled", "enabled"),
+        Index("idx_async_source_priority", "priority"),
+        Index("idx_async_source_language", "language"),
+        Index("idx_async_source_region", "region"),
+        Index("idx_async_source_country", "country"),
     )
 
 
 class AsyncArticle(AsyncBase):
     """Async version of Article model."""
+
     __tablename__ = "async_articles"
-    
+
     id = Column(Integer, primary_key=True)
     url = Column(String(1000), nullable=False)
     canonical_url = Column(String(1000), nullable=False)
@@ -336,18 +347,18 @@ class AsyncArticle(AsyncBase):
     hash = Column(String(64), nullable=False, unique=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, onupdate=lambda: datetime.now(UTC))
-    
+
     region = Column(String(50))
     country = Column(String(2))
     author = Column(String(255))
     word_count = Column(Integer)
     reading_time = Column(Integer)
-    
+
     sentiment_score = Column(Float)
     sentiment_label = Column(String(20))
-    
+
     source = relationship("AsyncSource", back_populates="articles")
-    
+
     __table_args__ = (
         Index("idx_async_article_hash", "hash", unique=True),
         Index("idx_async_article_canonical_url", "canonical_url"),
@@ -364,27 +375,29 @@ class AsyncArticle(AsyncBase):
         Index("idx_async_article_word_count", "word_count"),
         Index("idx_async_article_sentiment", "sentiment_score"),
     )
-    
+
     @property
     def is_compressed(self) -> bool:
         return self.compressed_content is not None
-    
+
     def compress_content(self) -> None:
         if self.content and not self.compressed_content:
             from src.utils.compression import database_compressor
+
             self.compressed_content = database_compressor.compress_text_for_storage(self.content)
-    
+
     def decompress_content(self) -> str:
         if self.compressed_content:
             from src.utils.compression import database_compressor
+
             return database_compressor.decompress_text_from_storage(self.compressed_content)
         return self.content or ""
-    
+
     def get_content(self) -> str:
         if self.compressed_content:
             return self.decompress_content()
         return self.content or ""
-    
+
     def set_content(self, content: str) -> None:
         self.content = content
         self.compressed_content = None
@@ -394,11 +407,12 @@ class AsyncArticle(AsyncBase):
 # Async Query Utilities
 # =============================================================================
 
+
 @asynccontextmanager
 async def get_async_session() -> AsyncGenerator[AsyncSession]:
     """
     Context manager for async database sessions.
-    
+
     Usage:
         async with get_async_session() as session:
             result = await session.execute(select(AsyncArticle))
@@ -419,7 +433,7 @@ async def get_async_session() -> AsyncGenerator[AsyncSession]:
 async def async_session_scope() -> AsyncGenerator[AsyncSession]:
     """
     Transactional scope for async operations.
-    
+
     Usage:
         async with async_session_scope() as session:
             # Do async database operations
@@ -442,13 +456,14 @@ async def async_session_scope() -> AsyncGenerator[AsyncSession]:
 # Async CRUD Operations
 # =============================================================================
 
+
 class AsyncCRUD:
     """
     Async CRUD operations for database models.
-    
+
     Provides common async CRUD operations with performance optimizations.
     """
-    
+
     @staticmethod
     async def create(session: AsyncSession, obj: Any) -> Any:
         """Create a new record."""
@@ -456,46 +471,31 @@ class AsyncCRUD:
         await session.flush()
         await session.refresh(obj)
         return obj
-    
+
     @staticmethod
-    async def get(
-        session: AsyncSession, 
-        model: type, 
-        id: int
-    ) -> Any | None:
+    async def get(session: AsyncSession, model: type, id: int) -> Any | None:
         """Get a record by ID."""
-        result = await session.execute(
-            select(model).where(model.id == id)
-        )
+        result = await session.execute(select(model).where(model.id == id))
         return result.scalars().first()
-    
+
     @staticmethod
     async def get_by_field(
-        session: AsyncSession, 
-        model: type, 
-        field: str, 
-        value: Any
+        session: AsyncSession, model: type, field: str, value: Any
     ) -> Any | None:
         """Get a record by field value."""
-        result = await session.execute(
-            select(model).where(getattr(model, field) == value)
-        )
+        result = await session.execute(select(model).where(getattr(model, field) == value))
         return result.scalars().first()
-    
+
     @staticmethod
-    async def get_all(
-        session: AsyncSession, 
-        model: type,
-        limit: int | None = None
-    ) -> list[Any]:
+    async def get_all(session: AsyncSession, model: type, limit: int | None = None) -> list[Any]:
         """Get all records."""
         query = select(model)
         if limit:
             query = query.limit(limit)
-        
+
         result = await session.execute(query)
         return result.scalars().all()
-    
+
     @staticmethod
     async def get_paginated(
         session: AsyncSession,
@@ -503,26 +503,24 @@ class AsyncCRUD:
         page: int = 1,
         page_size: int = 20,
         order_by: str | None = None,
-        descending: bool = True
+        descending: bool = True,
     ) -> tuple[list[Any], int, int]:
         """
         Get paginated records.
-        
+
         Returns:
             Tuple of (items, total_count, total_pages).
         """
         # Get total count
-        count_result = await session.execute(
-            select(func.count()).select_from(model)
-        )
+        count_result = await session.execute(select(func.count()).select_from(model))
         total_count = count_result.scalar()
-        
+
         # Calculate total pages
         total_pages = (total_count + page_size - 1) // page_size
-        
+
         # Build query
         query = select(model)
-        
+
         # Apply ordering
         if order_by and hasattr(model, order_by):
             column = getattr(model, order_by)
@@ -530,43 +528,33 @@ class AsyncCRUD:
                 query = query.order_by(desc(column))
             else:
                 query = query.order_by(asc(column))
-        
+
         # Apply pagination
         offset = (page - 1) * page_size
         query = query.offset(offset).limit(page_size)
-        
+
         # Execute query
         result = await session.execute(query)
         items = result.scalars().all()
-        
+
         return items, total_count, total_pages
-    
+
     @staticmethod
-    async def update(
-        session: AsyncSession, 
-        obj: Any
-    ) -> Any:
+    async def update(session: AsyncSession, obj: Any) -> Any:
         """Update a record."""
         session.add(obj)
         await session.flush()
         await session.refresh(obj)
         return obj
-    
+
     @staticmethod
-    async def delete(
-        session: AsyncSession, 
-        obj: Any
-    ) -> None:
+    async def delete(session: AsyncSession, obj: Any) -> None:
         """Delete a record."""
         await session.delete(obj)
         await session.flush()
-    
+
     @staticmethod
-    async def delete_by_id(
-        session: AsyncSession, 
-        model: type, 
-        id: int
-    ) -> bool:
+    async def delete_by_id(session: AsyncSession, model: type, id: int) -> bool:
         """Delete a record by ID."""
         obj = await AsyncCRUD.get(session, model, id)
         if obj:
@@ -574,41 +562,33 @@ class AsyncCRUD:
             await session.flush()
             return True
         return False
-    
+
     @staticmethod
     async def search(
         session: AsyncSession,
         model: type,
         search_term: str,
         search_fields: list[str],
-        limit: int = 50
+        limit: int = 50,
     ) -> list[Any]:
         """Search records by multiple fields."""
         conditions = []
         for field in search_fields:
             if hasattr(model, field):
-                conditions.append(
-                    getattr(model, field).ilike(f"%{search_term}%")
-                )
-        
+                conditions.append(getattr(model, field).ilike(f"%{search_term}%"))
+
         if not conditions:
             return []
-        
+
         query = select(model).where(or_(*conditions)).limit(limit)
         result = await session.execute(query)
         return result.scalars().all()
-    
+
     @staticmethod
-    async def get_by_hash(
-        session: AsyncSession, 
-        model: type, 
-        hash_value: str
-    ) -> Any | None:
+    async def get_by_hash(session: AsyncSession, model: type, hash_value: str) -> Any | None:
         """Get a record by hash value (for duplicate detection)."""
-        if hasattr(model, 'hash'):
-            result = await session.execute(
-                select(model).where(model.hash == hash_value)
-            )
+        if hasattr(model, "hash"):
+            result = await session.execute(select(model).where(model.hash == hash_value))
             return result.scalars().first()
         return None
 
@@ -617,14 +597,15 @@ class AsyncCRUD:
 # Async Query Builder
 # =============================================================================
 
+
 class AsyncQueryBuilder:
     """
     Builder for complex async queries with optimizations.
     """
-    
+
     def __init__(self, session: AsyncSession):
         self.session = session
-    
+
     async def build_article_query(
         self,
         source_id: int | None = None,
@@ -637,38 +618,38 @@ class AsyncQueryBuilder:
         limit: int = 50,
         offset: int = 0,
         order_by: str = "published_at",
-        descending: bool = True
+        descending: bool = True,
     ) -> list[AsyncArticle]:
         """Build a complex article query."""
         query = select(AsyncArticle)
-        
+
         # Apply filters
         if source_id is not None:
             query = query.where(AsyncArticle.source_id == source_id)
-        
+
         if language is not None:
             query = query.where(AsyncArticle.language == language)
-        
+
         if region is not None:
             query = query.where(AsyncArticle.region == region)
-        
+
         if country is not None:
             query = query.where(AsyncArticle.country == country)
-        
+
         if published_after is not None:
             query = query.where(AsyncArticle.published_at >= published_after)
-        
+
         if published_before is not None:
             query = query.where(AsyncArticle.published_at <= published_before)
-        
+
         if search_term is not None:
             query = query.where(
                 or_(
                     AsyncArticle.title.ilike(f"%{search_term}%"),
-                    AsyncArticle.content.ilike(f"%{search_term}%")
+                    AsyncArticle.content.ilike(f"%{search_term}%"),
                 )
             )
-        
+
         # Apply ordering
         if order_by == "published_at":
             if descending:
@@ -680,52 +661,48 @@ class AsyncQueryBuilder:
                 query = query.order_by(desc(AsyncArticle.created_at))
             else:
                 query = query.order_by(asc(AsyncArticle.created_at))
-        
+
         # Apply pagination
         query = query.offset(offset).limit(limit)
-        
+
         # Execute query
         result = await self.session.execute(query)
         return result.scalars().all()
-    
+
     async def get_article_count(
         self,
         source_id: int | None = None,
         language: str | None = None,
         region: str | None = None,
-        published_after: datetime | None = None
+        published_after: datetime | None = None,
     ) -> int:
         """Get count of articles matching criteria."""
         query = select(func.count()).select_from(AsyncArticle)
-        
+
         if source_id is not None:
             query = query.where(AsyncArticle.source_id == source_id)
-        
+
         if language is not None:
             query = query.where(AsyncArticle.language == language)
-        
+
         if region is not None:
             query = query.where(AsyncArticle.region == region)
-        
+
         if published_after is not None:
             query = query.where(AsyncArticle.published_at >= published_after)
-        
+
         result = await self.session.execute(query)
         return result.scalar()
-    
-    async def get_recent_articles(
-        self,
-        hours: int = 24,
-        limit: int = 100
-    ) -> list[AsyncArticle]:
+
+    async def get_recent_articles(self, hours: int = 24, limit: int = 100) -> list[AsyncArticle]:
         """Get articles published in the last N hours."""
         cutoff = datetime.now(UTC) - timedelta(hours=hours)
-        
+
         query = select(AsyncArticle)
         query = query.where(AsyncArticle.published_at >= cutoff)
         query = query.order_by(desc(AsyncArticle.published_at))
         query = query.limit(limit)
-        
+
         result = await self.session.execute(query)
         return result.scalars().all()
 
@@ -734,106 +711,100 @@ class AsyncQueryBuilder:
 # Async Batch Processing
 # =============================================================================
 
+
 class AsyncBatchProcessor:
     """
     Async batch processor for large datasets.
     """
-    
+
     @staticmethod
     async def process_in_batches(
-        items: list[Any],
-        batch_size: int = 100,
-        process_func: callable = None
+        items: list[Any], batch_size: int = 100, process_func: callable = None
     ) -> list[Any]:
         """Process items in async batches."""
         results = []
-        
+
         for i in range(0, len(items), batch_size):
-            batch = items[i:i + batch_size]
+            batch = items[i : i + batch_size]
             if process_func:
                 result = await process_func(batch)
                 results.append(result)
             else:
                 results.append(batch)
-        
+
         return results
-    
+
     @staticmethod
     async def batch_create(
-        session: AsyncSession,
-        model: type,
-        data_list: list[dict[str, Any]],
-        batch_size: int = 100
+        session: AsyncSession, model: type, data_list: list[dict[str, Any]], batch_size: int = 100
     ) -> list[Any]:
         """Create multiple records in batches."""
         created_objects = []
-        
+
         for i in range(0, len(data_list), batch_size):
-            batch = data_list[i:i + batch_size]
+            batch = data_list[i : i + batch_size]
             batch_objects = [model(**data) for data in batch]
-            
+
             session.add_all(batch_objects)
             await session.flush()
-            
+
             # Refresh objects to get IDs
             for obj in batch_objects:
                 await session.refresh(obj)
-            
+
             created_objects.extend(batch_objects)
-        
+
         return created_objects
-    
+
     @staticmethod
     async def batch_update(
         session: AsyncSession,
         model: type,
         filter_conditions: dict[str, Any],
         update_data: dict[str, Any],
-        batch_size: int = 100
+        batch_size: int = 100,
     ) -> int:
         """Update records in batches."""
         # For simplicity, we'll do a single update
         # In practice, for very large datasets, you'd need to batch
-        
+
         query = select(model)
         for field, value in filter_conditions.items():
             if hasattr(model, field):
                 query = query.where(getattr(model, field) == value)
-        
+
         result = await session.execute(query)
         objects = result.scalars().all()
-        
+
         for obj in objects:
             for field, value in update_data.items():
                 if hasattr(obj, field):
                     setattr(obj, field, value)
-        
+
         await session.flush()
         return len(objects)
-    
+
     @staticmethod
     async def async_chunked_query(
-        session: AsyncSession,
-        query: Select,
-        chunk_size: int = 100
+        session: AsyncSession, query: Select, chunk_size: int = 100
     ) -> AsyncGenerator[list[Any]]:
         """
         Execute a query in async chunks.
-        
+
         Usage:
             async for chunk in AsyncBatchProcessor.async_chunked_query(session, query):
                 process_chunk(chunk)
         """
         offset = 0
-        
+
         while True:
             chunk_query = query.offset(offset).limit(chunk_size)
             result = await session.execute(chunk_query)
             items = result.scalars().all()
-            
+
             if not items:
                 break
-            
+
             yield items
             offset += chunk_size
 
@@ -842,26 +813,24 @@ class AsyncBatchProcessor:
 # Async Performance Utilities
 # =============================================================================
 
+
 class AsyncQueryOptimizer:
     """
     Async query optimizer with caching and performance monitoring.
     """
-    
+
     def __init__(self):
         self._cache: dict[str, Any] = {}
         self._cache_ttl: dict[str, float] = {}
         self._cache_timeout = 300  # 5 minutes
-    
+
     async def cached_query(
-        self,
-        session: AsyncSession,
-        query: Select,
-        cache_key: str | None = None
+        self, session: AsyncSession, query: Select, cache_key: str | None = None
     ) -> Any:
         """Execute a query with caching."""
         if cache_key is None:
             cache_key = str(query)
-        
+
         # Check cache
         if cache_key in self._cache:
             if time.time() < self._cache_ttl.get(cache_key, 0):
@@ -870,22 +839,18 @@ class AsyncQueryOptimizer:
                 # Cache expired
                 del self._cache[cache_key]
                 del self._cache_ttl[cache_key]
-        
+
         # Execute query
         result = await session.execute(query)
         items = result.scalars().all()
-        
+
         # Cache result
         self._cache[cache_key] = items
         self._cache_ttl[cache_key] = time.time() + self._cache_timeout
-        
+
         return items
-    
-    async def with_timeout(
-        self,
-        coroutine: Any,
-        timeout: float = 30.0
-    ) -> Any:
+
+    async def with_timeout(self, coroutine: Any, timeout: float = 30.0) -> Any:
         """Execute a coroutine with timeout."""
         try:
             return await asyncio.wait_for(coroutine, timeout=timeout)

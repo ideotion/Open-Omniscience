@@ -25,7 +25,10 @@ def _alembic(args: list[str], data_dir: Path) -> subprocess.CompletedProcess:
     env = {**os.environ, "OO_DATA_DIR": str(data_dir)}
     return subprocess.run(
         [sys.executable, "-m", "alembic", *args],
-        cwd=REPO, env=env, capture_output=True, text=True,
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -34,7 +37,13 @@ def test_upgrade_head_builds_full_schema(tmp_path):
     assert res.returncode == 0, res.stdout + res.stderr
     db = tmp_path / "open_omniscience.db"
     tables = set(inspect(create_engine(f"sqlite:///{db}")).get_table_names())
-    for required in ("articles", "sources", "article_analyses", "commodity_prices", "alembic_version"):
+    for required in (
+        "articles",
+        "sources",
+        "article_analyses",
+        "commodity_prices",
+        "alembic_version",
+    ):
         assert required in tables
 
 
@@ -60,7 +69,11 @@ def test_init_db_stamps_fresh_database(tmp_path, monkeypatch):
         "import sys;"
         "sys.exit(0 if 'alembic_version' in ver and 'articles' in ver else 1)"
     )
-    res = subprocess.run([sys.executable, "-c", code], cwd=REPO,
-                         env={**os.environ, "OO_DATA_DIR": str(tmp_path)},
-                         capture_output=True, text=True)
+    res = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=REPO,
+        env={**os.environ, "OO_DATA_DIR": str(tmp_path)},
+        capture_output=True,
+        text=True,
+    )
     assert res.returncode == 0, res.stdout + res.stderr

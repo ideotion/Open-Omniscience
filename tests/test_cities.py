@@ -29,11 +29,19 @@ def test_sample_gazetteer_loads_and_looks_up():
 
 
 def test_parse_cities_sparql():
-    payload = {"results": {"bindings": [
-        {"cityLabel": {"value": "Lyon"}, "coord": {"value": "Point(4.8357 45.7640)"},
-         "cc": {"value": "FR"}, "population": {"value": "513000"}},
-        {"cityLabel": {"value": "NoCoord"}},  # dropped
-    ]}}
+    payload = {
+        "results": {
+            "bindings": [
+                {
+                    "cityLabel": {"value": "Lyon"},
+                    "coord": {"value": "Point(4.8357 45.7640)"},
+                    "cc": {"value": "FR"},
+                    "population": {"value": "513000"},
+                },
+                {"cityLabel": {"value": "NoCoord"}},  # dropped
+            ]
+        }
+    }
     cities = parse_cities_sparql(payload)
     assert len(cities) == 1
     assert cities[0].name == "Lyon" and cities[0].country == "fr"
@@ -45,17 +53,26 @@ def test_map_endpoint_attaches_coordinates(tmp_path):
     from src.analytics.store import index_article
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'map.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'map.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
         s.add(Source(name="S", domain="x.test", country="fr"))
         s.commit()
-        a = Article(url="https://x.test/p", canonical_url="https://x.test/p", source_id=1,
-                    title="T", content="Election rallies and election debates filled the capital this week here.",
-                    hash="h1", country="fr", language="en",
-                    published_at=datetime(2024, 5, 1, tzinfo=UTC), created_at=datetime.now(UTC))
+        a = Article(
+            url="https://x.test/p",
+            canonical_url="https://x.test/p",
+            source_id=1,
+            title="T",
+            content="Election rallies and election debates filled the capital this week here.",
+            hash="h1",
+            country="fr",
+            language="en",
+            published_at=datetime(2024, 5, 1, tzinfo=UTC),
+            created_at=datetime.now(UTC),
+        )
         s.add(a)
         s.commit()
         index_article(s, a, extractor=BaselineExtractor(), country="fr", city="Paris")
@@ -75,7 +92,7 @@ def test_map_endpoint_attaches_coordinates(tmp_path):
             data = client.get("/api/insights/map?days=3650").json()
             paris = next((c for c in data["cities"] if c["name"] == "Paris"), None)
             assert paris is not None
-            assert "lat" in paris and "lon" in paris   # coordinates attached
+            assert "lat" in paris and "lon" in paris  # coordinates attached
             assert data["cities_placed"] >= 1
     finally:
         app.dependency_overrides.clear()

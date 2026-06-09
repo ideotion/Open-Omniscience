@@ -51,8 +51,17 @@ LEGAL_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "legal_so
 # YAML keys that map 1:1 to Source columns (everything except name/domain/tags,
 # which are handled explicitly).
 _PASSTHROUGH_FIELDS = (
-    "rss_url", "rate_limit_ms", "enabled", "priority", "reliability_score",
-    "language", "region", "country", "source_type", "update_frequency", "cacheability",
+    "rss_url",
+    "rate_limit_ms",
+    "enabled",
+    "priority",
+    "reliability_score",
+    "language",
+    "region",
+    "country",
+    "source_type",
+    "update_frequency",
+    "cacheability",
 )
 
 
@@ -133,9 +142,11 @@ def seed_default_sources(session: Session, path: Path | None = None) -> dict[str
     if path is None:
         for s in sources:
             s.setdefault("_provenance", "curated")
-        for extra, prov in ((MARKETS_SOURCES_PATH, "markets"),
-                            (SPECTRUM_SOURCES_PATH, "spectrum"),
-                            (WORLD_SOURCES_PATH, "wikidata")):
+        for extra, prov in (
+            (MARKETS_SOURCES_PATH, "markets"),
+            (SPECTRUM_SOURCES_PATH, "spectrum"),
+            (WORLD_SOURCES_PATH, "wikidata"),
+        ):
             if extra.exists():
                 extra_sources = load_sources_from_yaml(extra)
                 for s in extra_sources:

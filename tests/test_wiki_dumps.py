@@ -13,7 +13,10 @@ from src.wiki.dumps import DumpDownloadManager, dump_url
 
 
 def test_dump_url():
-    assert dump_url("en") == "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2"
+    assert (
+        dump_url("en")
+        == "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2"
+    )
     assert "frwiki" in dump_url("FR")
 
 
@@ -32,8 +35,9 @@ class FakeResp:
 
 def test_full_download(tmp_path):
     payload = [b"abc", b"defgh", b"ij"]  # 10 bytes
+
     def http_get(url, headers):
-        assert "Range" not in headers          # first run: no resume
+        assert "Range" not in headers  # first run: no resume
         return FakeResp(status_code=200, length=10, chunks=payload)
 
     m = DumpDownloadManager(base_dir=tmp_path, http_get=http_get)
@@ -49,7 +53,7 @@ def test_full_download(tmp_path):
 def test_resume_appends(tmp_path):
     m = DumpDownloadManager(base_dir=tmp_path, http_get=None)
     entry = m._entry_for("fr", "pages-articles")
-    Path(entry.dest).write_bytes(b"HEAD")        # 4 bytes already on disk
+    Path(entry.dest).write_bytes(b"HEAD")  # 4 bytes already on disk
 
     def http_get(url, headers):
         assert headers.get("Range") == "bytes=4-"  # resumes from offset
@@ -71,7 +75,7 @@ def test_pause_via_stop_event(tmp_path):
     m = DumpDownloadManager(base_dir=tmp_path, http_get=http_get)
     entry = m._entry_for("de", "pages-articles")
     stop = threading.Event()
-    stop.set()                                    # already requested -> stop immediately
+    stop.set()  # already requested -> stop immediately
     res = m._download(entry, stop_event=stop)
     assert res.status == "paused"
 

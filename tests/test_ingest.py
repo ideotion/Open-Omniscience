@@ -26,6 +26,7 @@ from src.ingest.pipeline import IngestResult, ingest_source, ingest_url
 # Fake HTTP layer
 # --------------------------------------------------------------------------- #
 
+
 class FakeResponse:
     def __init__(self, status_code=200, text="", content_type="text/html", url=None):
         self.status_code = status_code
@@ -68,13 +69,20 @@ def _article_html(title, body_sentence):
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     s = Sess()
-    s.add(Source(name="Example", domain="example.com", rss_url="https://example.com/feed.xml",
-                 language="en"))
+    s.add(
+        Source(
+            name="Example",
+            domain="example.com",
+            rss_url="https://example.com/feed.xml",
+            language="en",
+        )
+    )
     s.commit()
     yield s
     s.close()
@@ -94,11 +102,14 @@ def _fetcher(session):
 # robots.txt: fail-closed
 # --------------------------------------------------------------------------- #
 
+
 def test_robots_disallow_blocks_fetch(db, source):
     sess = FakeSession()
     sess.route("https://example.com/robots.txt", text="User-agent: *\nDisallow: /private/")
-    sess.route("https://example.com/private/secret",
-               text=_article_html("Secret", "should never be fetched"))
+    sess.route(
+        "https://example.com/private/secret",
+        text=_article_html("Secret", "should never be fetched"),
+    )
     out = ingest_url(db, source, "https://example.com/private/secret", fetcher=_fetcher(sess))
     assert out.result is IngestResult.BLOCKED_ROBOTS
     assert db.query(Article).count() == 0
@@ -125,11 +136,14 @@ def test_robots_403_treats_site_as_offlimits(db, source):
 # happy path + provenance
 # --------------------------------------------------------------------------- #
 
+
 def test_stores_article_with_provenance(db, source):
     sess = FakeSession()
     sess.route("https://example.com/robots.txt", status_code=404, text="")
-    sess.route("https://example.com/news/1",
-               text=_article_html("Big Story", "Investigative journalism matters."))
+    sess.route(
+        "https://example.com/news/1",
+        text=_article_html("Big Story", "Investigative journalism matters."),
+    )
     out = ingest_url(db, source, "https://example.com/news/1", fetcher=_fetcher(sess))
     assert out.result is IngestResult.STORED
     art = db.query(Article).one()
@@ -148,13 +162,19 @@ def test_stores_article_with_provenance(db, source):
 # dedup
 # --------------------------------------------------------------------------- #
 
+
 def test_dedup_same_url(db, source):
     sess = FakeSession()
     sess.route("https://example.com/robots.txt", status_code=404, text="")
-    sess.route("https://example.com/news/1",
-               text=_article_html("Big Story", "Investigative journalism matters."))
+    sess.route(
+        "https://example.com/news/1",
+        text=_article_html("Big Story", "Investigative journalism matters."),
+    )
     f = _fetcher(sess)
-    assert ingest_url(db, source, "https://example.com/news/1", fetcher=f).result is IngestResult.STORED
+    assert (
+        ingest_url(db, source, "https://example.com/news/1", fetcher=f).result
+        is IngestResult.STORED
+    )
     second = ingest_url(db, source, "https://example.com/news/1", fetcher=f)
     assert second.result is IngestResult.DUPLICATE
     assert db.query(Article).count() == 1
@@ -177,6 +197,7 @@ def test_dedup_same_content_different_url(db, source):
 # failure modes (no junk stored)
 # --------------------------------------------------------------------------- #
 
+
 def test_extract_failure_stores_nothing(db, source):
     sess = FakeSession()
     sess.route("https://example.com/robots.txt", status_code=404, text="")
@@ -198,6 +219,7 @@ def test_non_html_is_rejected(db, source):
 # --------------------------------------------------------------------------- #
 # RSS feed ingestion through the ethical path
 # --------------------------------------------------------------------------- #
+
 
 def test_ingest_source_via_rss(db, source):
     sess = FakeSession()

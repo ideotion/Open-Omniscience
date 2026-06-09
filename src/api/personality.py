@@ -29,5 +29,8 @@ def all_personality() -> dict:
     from src.personality.catalog import load_catalog
 
     cat = load_catalog()
-    return {"quotes": cat["quotes"], "fun_facts": cat["fun_facts"],
-            "counts": {"quotes": len(cat["quotes"]), "fun_facts": len(cat["fun_facts"])}}
+    return {
+        "quotes": cat["quotes"],
+        "fun_facts": cat["fun_facts"],
+        "counts": {"quotes": len(cat["quotes"]), "fun_facts": len(cat["fun_facts"])},
+    }

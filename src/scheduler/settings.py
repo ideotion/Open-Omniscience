@@ -32,7 +32,7 @@ class SchedulerSettings:
 
     autostart: bool = False
     interval_minutes: int = 60
-    mode: str = "rss"               # "rss" (feeds) or "crawl" (bounded recursion)
+    mode: str = "rss"  # "rss" (feeds) or "crawl" (bounded recursion)
     max_sources_per_run: int = 25
     crawl_max_depth: int = 2
     crawl_max_pages: int = 50
@@ -100,9 +100,13 @@ def load_settings() -> SchedulerSettings:
         mode = d.mode
     return SchedulerSettings(
         autostart=_coerce_bool(raw.get("autostart"), d.autostart),
-        interval_minutes=_coerce_int(raw.get("interval_minutes"), d.interval_minutes, _MIN_INTERVAL, _MAX_INTERVAL),
+        interval_minutes=_coerce_int(
+            raw.get("interval_minutes"), d.interval_minutes, _MIN_INTERVAL, _MAX_INTERVAL
+        ),
         mode=mode,
-        max_sources_per_run=_coerce_int(raw.get("max_sources_per_run"), d.max_sources_per_run, 1, 1000),
+        max_sources_per_run=_coerce_int(
+            raw.get("max_sources_per_run"), d.max_sources_per_run, 1, 1000
+        ),
         crawl_max_depth=_coerce_int(raw.get("crawl_max_depth"), d.crawl_max_depth, 0, 6),
         crawl_max_pages=_coerce_int(raw.get("crawl_max_pages"), d.crawl_max_pages, 1, 500),
         select_languages=_coerce_list(raw.get("select_languages")),

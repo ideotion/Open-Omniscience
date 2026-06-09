@@ -46,10 +46,17 @@ def import_prices(symbol: str, req: ImportPricesRequest, db: Session = Depends(g
     if not req.points:
         raise HTTPException(status_code=400, detail="No price points supplied.")
     for p in req.points:
-        db.add(CommodityPrice(
-            symbol=symbol, market=p.market, observed_on=p.observed_on,
-            price=p.price, currency=p.currency, unit=p.unit, source=req.source,
-        ))
+        db.add(
+            CommodityPrice(
+                symbol=symbol,
+                market=p.market,
+                observed_on=p.observed_on,
+                price=p.price,
+                currency=p.currency,
+                unit=p.unit,
+                source=req.source,
+            )
+        )
     db.commit()
     return {"symbol": symbol, "imported": len(req.points)}
 
@@ -67,14 +74,24 @@ async def import_prices_csv(symbol: str, file: UploadFile, db: Session = Depends
     if not parsed.points and parsed.errors:
         raise HTTPException(status_code=400, detail="; ".join(parsed.errors[:5]))
     for p in parsed.points:
-        db.add(CommodityPrice(
-            symbol=symbol, market=p.get("market"), observed_on=p["observed_on"],
-            price=p["price"], currency=p.get("currency", "USD"),
-            unit=p.get("unit", "kg"), source=f"csv:{file.filename}",
-        ))
+        db.add(
+            CommodityPrice(
+                symbol=symbol,
+                market=p.get("market"),
+                observed_on=p["observed_on"],
+                price=p["price"],
+                currency=p.get("currency", "USD"),
+                unit=p.get("unit", "kg"),
+                source=f"csv:{file.filename}",
+            )
+        )
     db.commit()
-    return {"symbol": symbol, "imported": len(parsed.points),
-            "skipped": len(parsed.errors), "errors": parsed.errors[:20]}
+    return {
+        "symbol": symbol,
+        "imported": len(parsed.points),
+        "skipped": len(parsed.errors),
+        "errors": parsed.errors[:20],
+    }
 
 
 @router.get("/{symbol}/prices")
@@ -84,8 +101,9 @@ def list_prices(
     db: Session = Depends(get_db),
 ) -> dict:
     """List stored price points for a symbol, optionally normalized to one unit."""
-    rows = (db.query(CommodityPrice).filter_by(symbol=symbol)
-            .order_by(CommodityPrice.observed_on).all())
+    rows = (
+        db.query(CommodityPrice).filter_by(symbol=symbol).order_by(CommodityPrice.observed_on).all()
+    )
     out = []
     for r in rows:
         price, u = r.price, r.unit
@@ -95,10 +113,15 @@ def list_prices(
                 u = unit
             except UnitError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-        out.append({
-            "observed_on": r.observed_on.isoformat(), "price": price,
-            "currency": r.currency, "unit": u, "market": r.market,
-        })
+        out.append(
+            {
+                "observed_on": r.observed_on.isoformat(),
+                "price": price,
+                "currency": r.currency,
+                "unit": u,
+                "market": r.market,
+            }
+        )
     return {"symbol": symbol, "count": len(out), "prices": out}
 
 

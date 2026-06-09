@@ -54,7 +54,9 @@ def applied_signatures() -> set[str]:
 def _save(sigs: set[str]) -> None:
     path = _path()
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"version": COLLAPSE_VERSION, "applied": sorted(sigs)}, indent=2), "utf-8")
+    tmp.write_text(
+        json.dumps({"version": COLLAPSE_VERSION, "applied": sorted(sigs)}, indent=2), "utf-8"
+    )
     tmp.replace(path)
 
 
@@ -112,9 +114,15 @@ def collapse_status(session, **kwargs) -> dict:
     }
 
 
-def story_prominence(session, *, days: int = 14, threshold: float = 0.6,
-                     min_chars: int = 200, limit: int = 2000,
-                     weight_by_novelty: bool = False) -> dict:
+def story_prominence(
+    session,
+    *,
+    days: int = 14,
+    threshold: float = 0.6,
+    min_chars: int = 200,
+    limit: int = 2000,
+    weight_by_novelty: bool = False,
+) -> dict:
     """How many **independent voices** carry each story — raw vs actor-collapsed.
 
     A *story* is a near-duplicate cluster of recent articles (singletons included). Its
@@ -173,8 +181,9 @@ def story_prominence(session, *, days: int = 14, threshold: float = 0.6,
     applied = applied_signatures()
     applied_member_sets: list[set[str]] = []
     if applied:
-        for actor in corpus_actors(session, days=days, threshold=threshold,
-                                   min_chars=min_chars, limit=limit).actors:
+        for actor in corpus_actors(
+            session, days=days, threshold=threshold, min_chars=min_chars, limit=limit
+        ).actors:
             if actor.signature in applied:
                 applied_member_sets.append(set(actor.sources))
 
@@ -185,7 +194,7 @@ def story_prominence(session, *, days: int = 14, threshold: float = 0.6,
         voices = 0
         for members in applied_member_sets:
             if remaining & members:
-                voices += 1               # the whole actor = one voice
+                voices += 1  # the whole actor = one voice
                 remaining -= members
         return voices + len(remaining)
 
@@ -224,7 +233,9 @@ def story_prominence(session, *, days: int = 14, threshold: float = 0.6,
             item["novelty_weighted_voices"] = round(item["voices_collapsed"] * nov, 3)
         out.append(item)
     if weight_by_novelty:
-        out.sort(key=lambda s: (-s["novelty_weighted_voices"], -s["voices_collapsed"], -s["articles"]))
+        out.sort(
+            key=lambda s: (-s["novelty_weighted_voices"], -s["voices_collapsed"], -s["articles"])
+        )
     else:
         out.sort(key=lambda s: (-s["voices_collapsed"], -s["voices_raw"], -s["articles"]))
     return {"applied": bool(applied), "weighted_by_novelty": weight_by_novelty, "stories": out}

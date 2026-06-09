@@ -47,16 +47,21 @@ _EXISTING = [
     Path(__file__).resolve().parents[1] / "configs" / "sources.yml",
     Path(__file__).resolve().parents[1] / "configs" / "markets_sources.yml",
 ]
-_UA = ("OpenOmniscienceBot/0.4 (+https://github.com/ideotion/Open-Omniscience; "
-       "catalog builder; contact open-omniscience@ideotion.com)")
+_UA = (
+    "OpenOmniscienceBot/0.4 (+https://github.com/ideotion/Open-Omniscience; "
+    "catalog builder; contact open-omniscience@ideotion.com)"
+)
 
 
 def _existing_domains() -> set[str]:
     from src.ingest.seed_sources import load_sources_from_yaml
+
     domains: set[str] = set()
     for p in _EXISTING:
         if p.exists():
-            domains.update(s["domain"].lower() for s in load_sources_from_yaml(p) if s.get("domain"))
+            domains.update(
+                s["domain"].lower() for s in load_sources_from_yaml(p) if s.get("domain")
+            )
     return domains
 
 
@@ -78,7 +83,8 @@ def _merge_csv_entries(path: Path, source_type: str) -> list[dict]:
                 url=row.get(url_c),
                 country=row.get(cc_c) if cc_c else None,
                 language=row.get(lang_c) if lang_c else None,
-                source_type=source_type, tags=[source_type, "world-catalog", "imported"],
+                source_type=source_type,
+                tags=[source_type, "world-catalog", "imported"],
             )
             if e:
                 entries.append(e)
@@ -86,13 +92,20 @@ def _merge_csv_entries(path: Path, source_type: str) -> list[dict]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--countries", help="comma-separated ISO alpha-2 subset (default: all)")
     ap.add_argument("--source-types", help="comma-separated subset of spec source_types to run")
     ap.add_argument("--config", type=Path, default=None, help="path to catalog_query.yml")
     ap.add_argument("--out", type=Path, default=_OUT, help="output catalog path")
-    ap.add_argument("--merge-csv", type=Path, action="append", default=[],
-                    help="external CSV (GDELT/Media Cloud) to fold in; repeatable")
+    ap.add_argument(
+        "--merge-csv",
+        type=Path,
+        action="append",
+        default=[],
+        help="external CSV (GDELT/Media Cloud) to fold in; repeatable",
+    )
     ap.add_argument("--delay", type=float, default=1.0, help="seconds between queries (be polite)")
     ap.add_argument("--dry-run", action="store_true", help="print stats, do not write the file")
     args = ap.parse_args()
@@ -112,8 +125,11 @@ def main() -> int:
         print("No specs to run (check --source-types / config).", file=sys.stderr)
         return 2
 
-    codes = ([c.strip().lower() for c in args.countries.split(",")]
-             if args.countries else sorted(ISO_3166_1_ALPHA2))
+    codes = (
+        [c.strip().lower() for c in args.countries.split(",")]
+        if args.countries
+        else sorted(ISO_3166_1_ALPHA2)
+    )
 
     session = requests.Session()
     session.headers.update({"User-Agent": _UA, "Accept": "application/sparql-results+json"})
@@ -126,7 +142,9 @@ def main() -> int:
 
     print(f"Querying Wikidata for {len(codes)} countries × {len(specs)} spec(s)…", file=sys.stderr)
     result = generate_catalog(
-        run_query, codes, specs,
+        run_query,
+        codes,
+        specs,
         existing_domains=_existing_domains(),
         sleep=(lambda: time.sleep(args.delay)) if args.delay else None,
         on_progress=lambda cc, n: print(f"  {cc}: {n}", file=sys.stderr),
@@ -139,6 +157,7 @@ def main() -> int:
         sources.extend(merged)
     # Final dedup pass (CSV merges can re-introduce dupes).
     from src.catalog.normalize import dedup_entries
+
     sources = dedup_entries(sources, _existing_domains())["kept"]
 
     counts: dict[str, int] = {}
@@ -149,11 +168,17 @@ def main() -> int:
     cov = coverage_report(counts)
 
     st = result["stats"]
-    print(f"\nGenerated {len(sources)} sources; raw={st['raw_entries']} "
-          f"dupes={st['skipped_dupes']} already-shipped={st['skipped_existing']} "
-          f"errors={len(st['errors'])}", file=sys.stderr)
-    print(f"Country coverage: {cov['covered']}/{cov['total_countries']} "
-          f"({cov['coverage_pct']}%); {cov['missing_count']} missing.", file=sys.stderr)
+    print(
+        f"\nGenerated {len(sources)} sources; raw={st['raw_entries']} "
+        f"dupes={st['skipped_dupes']} already-shipped={st['skipped_existing']} "
+        f"errors={len(st['errors'])}",
+        file=sys.stderr,
+    )
+    print(
+        f"Country coverage: {cov['covered']}/{cov['total_countries']} "
+        f"({cov['coverage_pct']}%); {cov['missing_count']} missing.",
+        file=sys.stderr,
+    )
 
     if args.dry_run:
         print("(dry-run: not writing)", file=sys.stderr)

@@ -28,4 +28,4 @@ including keyword extraction, analysis, and other processing services.
 
 from .duckduckgo import DuckDuckGoSearch
 
-__all__ = ['DuckDuckGoSearch']
+__all__ = ["DuckDuckGoSearch"]

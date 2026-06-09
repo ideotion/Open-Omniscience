@@ -27,7 +27,7 @@ def test_function_words_no_longer_leak():
     norms = _norms(text)
     for dumb in ("i", "you", "the", "not", "one", "not one", "not one bit", "economy is not"):
         assert dumb not in norms, f"{dumb!r} should be filtered"
-    assert "economy" in norms          # real content survives
+    assert "economy" in norms  # real content survives
 
 
 def test_global_stopwords_is_multilingual():
@@ -56,22 +56,31 @@ def test_filter_settings_roundtrip(tmp_path, monkeypatch):
 
 def test_excluded_terms_hidden_in_top(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    engine = create_engine("sqlite:///:memory:", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="S", domain="x.test", country="us"))
     s.commit()
-    a = Article(url="https://x.test/p", canonical_url="https://x.test/p", source_id=1, title="T",
-                content="Sanctions and sanctions on copper. Copper and copper exports and tariffs.",
-                hash="h1", language="en", published_at=datetime(2024, 1, 1, tzinfo=UTC),
-                created_at=datetime.now(UTC))
+    a = Article(
+        url="https://x.test/p",
+        canonical_url="https://x.test/p",
+        source_id=1,
+        title="T",
+        content="Sanctions and sanctions on copper. Copper and copper exports and tariffs.",
+        hash="h1",
+        language="en",
+        published_at=datetime(2024, 1, 1, tzinfo=UTC),
+        created_at=datetime.now(UTC),
+    )
     s.add(a)
     s.commit()
     index_article(s, a, extractor=BaselineExtractor(), country="us")
 
     assert any(t["normalized"] == "copper" for t in q.top_terms(s, limit=20)["terms"])
     from src.analytics.filters import add_excluded
+
     add_excluded("copper")
     assert not any(t["normalized"] == "copper" for t in q.top_terms(s, limit=20)["terms"])
     s.close()
@@ -83,6 +92,6 @@ def test_stoplist_covers_flagged_function_words_and_contractions():
     sw = global_stopwords()
     for w in ("since", "last", "it's", "don't", "said", "reportedly", "today", "meanwhile"):
         assert w in sw, w
-    assert "it’s" in sw and "don’t" in sw          # curly-apostrophe variants
+    assert "it’s" in sw and "don’t" in sw  # curly-apostrophe variants
     for keep in ("inflation", "russia", "sanctions", "election", "macron"):
         assert keep not in sw, keep

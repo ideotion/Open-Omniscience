@@ -62,7 +62,7 @@ def _normalise(a: dict) -> dict | None:
         "url": a.get("url"),
         "note": a.get("note"),
         "source": "anchor",
-        "geocode": "exact",       # anchors carry their own real coordinate
+        "geocode": "exact",  # anchors carry their own real coordinate
     }
 
 

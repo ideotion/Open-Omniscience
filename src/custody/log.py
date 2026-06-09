@@ -158,9 +158,7 @@ class CustodyLog:
             )
             """
         )
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_custody_item ON custody_entries(item_id)"
-        )
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_custody_item ON custody_entries(item_id)")
         self.conn.commit()
 
     # -- write ------------------------------------------------------------- #
@@ -282,9 +280,7 @@ class CustodyLog:
         )
 
     def all_entries(self) -> list[CustodyEntry]:
-        rows = self.conn.execute(
-            "SELECT * FROM custody_entries ORDER BY seq ASC"
-        ).fetchall()
+        rows = self.conn.execute("SELECT * FROM custody_entries ORDER BY seq ASC").fetchall()
         return [self._row_to_entry(r) for r in rows]
 
     def entries_for(self, item_id: str) -> list[CustodyEntry]:
@@ -324,6 +320,7 @@ class CustodyLog:
 # Stateless verification -- needs only the entries (and optionally a pinned key)
 # --------------------------------------------------------------------------- #
 
+
 def verify_entries(
     entries: list[CustodyEntry],
     *,
@@ -350,7 +347,9 @@ def verify_entries(
         if recomputed != e.entry_hash:
             issues.append(f"entry_hash mismatch at seq {e.seq} (entry contents altered)")
         # Signature covers the full core (including the entry's timestamp proof).
-        ok, reason = signing.verify(e.signature, canonical_bytes({**e.signable_core()}), pinned=pinned)
+        ok, reason = signing.verify(
+            e.signature, canonical_bytes({**e.signable_core()}), pinned=pinned
+        )
         if not ok:
             issues.append(f"signature invalid at seq {e.seq}: {reason}")
         # The timestamp proof must be over this entry's pre-timestamp digest.

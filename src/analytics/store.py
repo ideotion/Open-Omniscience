@@ -27,15 +27,21 @@ from src.database.models import Article, Keyword, KeywordMention
 _LOG = logging.getLogger(__name__)
 
 
-def _get_or_create_keyword(session: Session, t: ExtractedTerm, *, language: str, extractor: str) -> Keyword:
+def _get_or_create_keyword(
+    session: Session, t: ExtractedTerm, *, language: str, extractor: str
+) -> Keyword:
     kw = session.query(Keyword).filter_by(normalized_term=t.normalized).first()
     is_entity = t.kind != "term"
     if kw is None:
         kw = Keyword(
-            term=t.term, normalized_term=t.normalized, language=language or "en",
-            frequency=0, is_entity=is_entity,
+            term=t.term,
+            normalized_term=t.normalized,
+            language=language or "en",
+            frequency=0,
+            is_entity=is_entity,
             entity_type=(t.kind if is_entity else None),
-            is_ngram=(" " in t.normalized), ngram_size=len(t.normalized.split()),
+            is_ngram=(" " in t.normalized),
+            ngram_size=len(t.normalized.split()),
             extractor=extractor,
         )
         session.add(kw)
@@ -59,12 +65,14 @@ def index_article(
     """Extract + store mentions for one article (idempotent). Returns a small tally."""
     content = article.get_content() if hasattr(article, "get_content") else (article.content or "")
     terms = extractor.extract(
-        content or "", title=article.title or "", language=article.language or "en",
+        content or "",
+        title=article.title or "",
+        language=article.language or "en",
     )
 
     observed = article.published_at or article.created_at
     observed_on = observed.date() if observed else None
-    cc = (country or article.country or "")
+    cc = country or article.country or ""
     cc = cc[:2].lower() if cc else None
 
     # Idempotent re-index: drop this article's existing mentions first.
@@ -72,17 +80,28 @@ def index_article(
 
     written = 0
     for t in terms:
-        kw = _get_or_create_keyword(session, t, language=article.language or "en",
-                                    extractor=extractor.name)
-        session.add(KeywordMention(
-            keyword_id=kw.id, article_id=article.id, count=t.count,
-            first_offset=t.first_offset, observed_on=observed_on,
-            country=cc, city=city, extractor=extractor.name,
-        ))
+        kw = _get_or_create_keyword(
+            session, t, language=article.language or "en", extractor=extractor.name
+        )
+        session.add(
+            KeywordMention(
+                keyword_id=kw.id,
+                article_id=article.id,
+                count=t.count,
+                first_offset=t.first_offset,
+                observed_on=observed_on,
+                country=cc,
+                city=city,
+                extractor=extractor.name,
+            )
+        )
         written += 1
     session.commit()
-    return {"article_id": article.id, "mentions": written,
-            "entities": sum(1 for t in terms if t.kind != "term")}
+    return {
+        "article_id": article.id,
+        "mentions": written,
+        "entities": sum(1 for t in terms if t.kind != "term"),
+    }
 
 
 def _unindexed_query(session: Session):

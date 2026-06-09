@@ -52,7 +52,7 @@ def shingles(text: str, k: int = 5) -> set[int]:
         return {_h64(w) for w in words}
     out: set[int] = set()
     for i in range(len(words) - k + 1):
-        out.add(_h64(" ".join(words[i:i + k])))
+        out.add(_h64(" ".join(words[i : i + k])))
     return out
 
 
@@ -96,7 +96,7 @@ class DuplicateCluster:
     """A set of document ids whose texts are mutually near-duplicate."""
 
     members: list[str]
-    representative: str                       # earliest/most-central member id (caller-defined)
+    representative: str  # earliest/most-central member id (caller-defined)
     avg_similarity: float = 0.0
     evidence: list[dict] = field(default_factory=list)
 
@@ -113,7 +113,7 @@ class DuplicateCluster:
 @dataclass
 class NearDupResult:
     method: str
-    n: int                                    # documents considered
+    n: int  # documents considered
     threshold: float
     clusters: list[DuplicateCluster] = field(default_factory=list)
     caveat: str = _CAVEAT
@@ -128,12 +128,14 @@ class NearDupResult:
         }
 
 
-def _lsh_candidate_pairs(signatures: dict[str, list[int]], bands: int, rows: int) -> set[tuple[str, str]]:
+def _lsh_candidate_pairs(
+    signatures: dict[str, list[int]], bands: int, rows: int
+) -> set[tuple[str, str]]:
     """Candidate near-duplicate id pairs via LSH banding (sub-quadratic)."""
     buckets: dict[tuple, list[str]] = {}
     for doc_id, sig in signatures.items():
         for b in range(bands):
-            band = tuple(sig[b * rows:(b + 1) * rows])
+            band = tuple(sig[b * rows : (b + 1) * rows])
             buckets.setdefault((b, band), []).append(doc_id)
     pairs: set[tuple[str, str]] = set()
     for ids in buckets.values():
@@ -180,10 +182,12 @@ def near_duplicate_clusters(
     must equal ``num_perm``.
     """
     if bands * rows != num_perm:
-        raise ValueError(f"bands*rows ({bands*rows}) must equal num_perm ({num_perm})")
+        raise ValueError(f"bands*rows ({bands * rows}) must equal num_perm ({num_perm})")
 
-    signatures = {doc_id: minhash_signature(shingles(text), num_perm, seed=seed)
-                  for doc_id, text in docs.items()}
+    signatures = {
+        doc_id: minhash_signature(shingles(text), num_perm, seed=seed)
+        for doc_id, text in docs.items()
+    }
     candidates = _lsh_candidate_pairs(signatures, bands, rows)
 
     edges: set[tuple[str, str]] = set()
@@ -199,13 +203,21 @@ def near_duplicate_clusters(
         members = sorted(comp)
         member_sims = [sims[p] for p in sims if p[0] in comp and p[1] in comp]
         avg = sum(member_sims) / len(member_sims) if member_sims else 0.0
-        clusters.append(DuplicateCluster(
-            members=members, representative=members[0], avg_similarity=avg,
-        ))
+        clusters.append(
+            DuplicateCluster(
+                members=members,
+                representative=members[0],
+                avg_similarity=avg,
+            )
+        )
     clusters.sort(key=lambda c: (-len(c.members), -c.avg_similarity))
 
     return NearDupResult(
-        method=(f"MinHash({num_perm} perm) + LSH({bands}×{rows} banding); pairs confirmed "
-                f"at Jaccard ≥ {threshold}"),
-        n=len(docs), threshold=threshold, clusters=clusters,
+        method=(
+            f"MinHash({num_perm} perm) + LSH({bands}×{rows} banding); pairs confirmed "
+            f"at Jaccard ≥ {threshold}"
+        ),
+        n=len(docs),
+        threshold=threshold,
+        clusters=clusters,
     )

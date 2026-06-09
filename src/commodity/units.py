@@ -22,11 +22,11 @@ _KG_PER_UNIT: dict[str, float] = {
     "kg": 1.0,
     "g": 0.001,
     "mg": 1e-6,
-    "t": 1000.0,            # metric tonne
+    "t": 1000.0,  # metric tonne
     "tonne": 1000.0,
-    "lb": 0.45359237,       # avoirdupois pound
-    "oz": 0.028349523125,   # avoirdupois ounce
-    "ozt": 0.0311034768,    # troy ounce
+    "lb": 0.45359237,  # avoirdupois pound
+    "oz": 0.028349523125,  # avoirdupois ounce
+    "ozt": 0.0311034768,  # troy ounce
 }
 
 

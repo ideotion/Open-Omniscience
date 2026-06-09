@@ -25,7 +25,8 @@ from src.database.session import get_db
 @pytest.fixture()
 def client(tmp_path):
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'api.db'}", future=True,
+        f"sqlite:///{tmp_path / 'api.db'}",
+        future=True,
         connect_args={"check_same_thread": False},
     )
 
@@ -44,20 +45,37 @@ def client(tmp_path):
         src2 = Source(name="Beta Wire", domain="beta.example", tags="markets")
         s.add_all([src1, src2])
         s.flush()
-        s.add_all([
-            Article(url="https://alpha.example/1", canonical_url="https://alpha.example/1",
-                    source_id=src1.id, title="Quantum leap",
-                    content="scientists report a quantum breakthrough", hash="1".ljust(64, "0"),
-                    language="en"),
-            Article(url="https://alpha.example/2", canonical_url="https://alpha.example/2",
-                    source_id=src1.id, title="Market jitters",
-                    content="oil prices DROP amid quantum computing hype", hash="2".ljust(64, "0"),
-                    language="en"),
-            Article(url="https://beta.example/3", canonical_url="https://beta.example/3",
-                    source_id=src2.id, title="Telecom",
-                    content="AT&T announces a merger", hash="3".ljust(64, "0"),
-                    language="fr"),
-        ])
+        s.add_all(
+            [
+                Article(
+                    url="https://alpha.example/1",
+                    canonical_url="https://alpha.example/1",
+                    source_id=src1.id,
+                    title="Quantum leap",
+                    content="scientists report a quantum breakthrough",
+                    hash="1".ljust(64, "0"),
+                    language="en",
+                ),
+                Article(
+                    url="https://alpha.example/2",
+                    canonical_url="https://alpha.example/2",
+                    source_id=src1.id,
+                    title="Market jitters",
+                    content="oil prices DROP amid quantum computing hype",
+                    hash="2".ljust(64, "0"),
+                    language="en",
+                ),
+                Article(
+                    url="https://beta.example/3",
+                    canonical_url="https://beta.example/3",
+                    source_id=src2.id,
+                    title="Telecom",
+                    content="AT&T announces a merger",
+                    hash="3".ljust(64, "0"),
+                    language="fr",
+                ),
+            ]
+        )
         s.commit()
 
     def _override_get_db():
@@ -78,6 +96,7 @@ def test_health_reports_real_version(client):
     # hardcoded literal, so the version can never silently drift between pyproject and
     # the running app (see docs/CONTRIBUTING.md).
     from importlib.metadata import version as _pkg_version
+
     r = client.get("/api/health")
     assert r.status_code == 200
     assert r.json()["version"] == _pkg_version("open-omniscience")

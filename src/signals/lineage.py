@@ -26,11 +26,23 @@ from datetime import datetime
 # Major wire agencies (lowercase tokens). Attribution to a wire is a strong signal that a
 # piece is *derivative* of the wire's original reporting.
 _WIRE_AGENCIES = {
-    "reuters": "Reuters", "afp": "AFP", "agence france-presse": "AFP",
-    "associated press": "Associated Press", "ap": "Associated Press",
-    "bloomberg": "Bloomberg", "pa media": "PA Media", "press association": "PA Media",
-    "dpa": "dpa", "efe": "EFE", "ansa": "ANSA", "tass": "TASS", "xinhua": "Xinhua",
-    "kyodo": "Kyodo", "yonhap": "Yonhap", "pti": "PTI", "ians": "IANS",
+    "reuters": "Reuters",
+    "afp": "AFP",
+    "agence france-presse": "AFP",
+    "associated press": "Associated Press",
+    "ap": "Associated Press",
+    "bloomberg": "Bloomberg",
+    "pa media": "PA Media",
+    "press association": "PA Media",
+    "dpa": "dpa",
+    "efe": "EFE",
+    "ansa": "ANSA",
+    "tass": "TASS",
+    "xinhua": "Xinhua",
+    "kyodo": "Kyodo",
+    "yonhap": "Yonhap",
+    "pti": "PTI",
+    "ians": "IANS",
 }
 # "according to X", "X reported/said", "(X)" near the start — attribution patterns.
 _ATTRIB_RES = [
@@ -54,8 +66,11 @@ def detect_wire_attribution(text: str) -> str | None:
         if re.search(rf"\b{re.escape(token)}\b", low):
             # Avoid the bare "ap"/"efe" false positives unless attribution-shaped.
             if len(token) <= 2:
-                if re.search(rf"\(\s*{re.escape(token)}\s*\)|according to {re.escape(token)}\b"
-                             rf"|\b{re.escape(token)} (?:reported|said)\b", low):
+                if re.search(
+                    rf"\(\s*{re.escape(token)}\s*\)|according to {re.escape(token)}\b"
+                    rf"|\b{re.escape(token)} (?:reported|said)\b",
+                    low,
+                ):
                     return canonical
                 continue
             return canonical
@@ -84,17 +99,19 @@ class LineageItem:
 
     def to_dict(self) -> dict:
         return {
-            "doc_id": self.doc_id, "source": self.source,
+            "doc_id": self.doc_id,
+            "source": self.source,
             "published_at": self.published_at.isoformat() if self.published_at else None,
-            "wire": self.wire, "cites": self.cites,
+            "wire": self.wire,
+            "cites": self.cites,
         }
 
 
 @dataclass
 class LineageResult:
     n: int
-    primary: LineageItem | None              # earliest in the corpus (a candidate, not "the truth")
-    wire_origin: str | None                  # a wire agency the chain attributes to, if any
+    primary: LineageItem | None  # earliest in the corpus (a candidate, not "the truth")
+    wire_origin: str | None  # a wire agency the chain attributes to, if any
     chain: list[LineageItem] = field(default_factory=list)  # time-ordered
     method: str = "near-duplicate cluster ordered by publication time + wire/citation detection"
     caveat: str = _CAVEAT
@@ -120,8 +137,11 @@ def trace_lineage(docs: list[dict]) -> LineageResult:
     """
     items = [
         LineageItem(
-            doc_id=str(d["id"]), source=d.get("source"),
-            published_at=d.get("published_at") if isinstance(d.get("published_at"), datetime) else None,
+            doc_id=str(d["id"]),
+            source=d.get("source"),
+            published_at=d.get("published_at")
+            if isinstance(d.get("published_at"), datetime)
+            else None,
             wire=detect_wire_attribution(d.get("text", "")),
             cites=detect_attribution(d.get("text", "")),
         )

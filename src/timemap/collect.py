@@ -21,8 +21,19 @@ from src.timemap.geocode import geocode
 
 # Known kinds get a stable identity in the legend; anything else falls back.
 KNOWN_KINDS = (
-    "disaster", "conflict", "milestone", "civic", "space", "science",
-    "climate", "sport", "economic", "political", "technology", "hazard", "article",
+    "disaster",
+    "conflict",
+    "milestone",
+    "civic",
+    "space",
+    "science",
+    "climate",
+    "sport",
+    "economic",
+    "political",
+    "technology",
+    "hazard",
+    "article",
 )
 
 
@@ -35,38 +46,43 @@ def _events_signals() -> list[dict]:
     out: list[dict] = []
     for e in agenda():
         occ = e.get("next_occurrence")
-        if not occ:                       # a movable summit with no fixed date: no point on the axis
+        if not occ:  # a movable summit with no fixed date: no point on the axis
             continue
         try:
             d = date.fromisoformat(occ)
         except (TypeError, ValueError):
             continue
         g = geocode(e.get("country"), e.get("region"))
-        if not g:                         # global/undatable-to-a-place observance: honestly no pin
+        if not g:  # global/undatable-to-a-place observance: honestly no pin
             continue
         cat = e.get("category")
         kind = cat if cat in KNOWN_KINDS else "civic"
-        out.append({
-            "id": "agenda:" + str(e.get("title", "")),
-            "title": str(e.get("title", "")),
-            "kind": kind,
-            "lat": g["lat"], "lon": g["lon"],
-            "t": round(year_float(d), 3),
-            "date": d.isoformat(), "year": d.year,
-            "date_precision": "day",
-            "confirmed": bool(e.get("confirmed", False)),
-            "place": g.get("place"),
-            "country": (e.get("country") or "").lower() or None,
-            "url": e.get("official_url"),
-            "note": e.get("note"),
-            "source": "agenda",
-            "geocode": g["geocode"],
-        })
+        out.append(
+            {
+                "id": "agenda:" + str(e.get("title", "")),
+                "title": str(e.get("title", "")),
+                "kind": kind,
+                "lat": g["lat"],
+                "lon": g["lon"],
+                "t": round(year_float(d), 3),
+                "date": d.isoformat(),
+                "year": d.year,
+                "date_precision": "day",
+                "confirmed": bool(e.get("confirmed", False)),
+                "place": g.get("place"),
+                "country": (e.get("country") or "").lower() or None,
+                "url": e.get("official_url"),
+                "note": e.get("note"),
+                "source": "agenda",
+                "geocode": g["geocode"],
+            }
+        )
     return out
 
 
-def article_mentions_to_signals(rows: list[dict], *, today=None,
-                                per_article: int = 3) -> list[dict]:
+def article_mentions_to_signals(
+    rows: list[dict], *, today=None, per_article: int = 3
+) -> list[dict]:
     """Dates *mentioned in* article text -> candidate signals (pure; API supplies rows).
 
     Each row is ``{title, url, content, country, city}``. We extract explicit dates from
@@ -90,25 +106,32 @@ def article_mentions_to_signals(rows: list[dict], *, today=None,
                 d = date.fromisoformat(c["date"])
             except (TypeError, ValueError):
                 continue
-            out.append({
-                "id": "mention:" + str(r.get("url") or title) + ":" + c["date"],
-                "title": title,
-                "kind": "article",
-                "lat": g["lat"], "lon": g["lon"],
-                "t": round(year_float(d), 3),
-                "date": c["date"], "year": d.year,
-                "date_precision": c["precision"],
-                "confirmed": False,           # an extracted mention, not a verified event
-                "place": g.get("place"),
-                "country": (r.get("country") or "").lower() or None,
-                "url": r.get("url"),
-                "note": ('Date mentioned in coverage (extracted): “…' + c["text"]
-                         + '…”. Placed at the source location — when the story refers to, '
-                           'not necessarily where the event occurred.'),
-                "source": "corpus-mention",
-                "geocode": g["geocode"],
-                "extracted": True,
-            })
+            out.append(
+                {
+                    "id": "mention:" + str(r.get("url") or title) + ":" + c["date"],
+                    "title": title,
+                    "kind": "article",
+                    "lat": g["lat"],
+                    "lon": g["lon"],
+                    "t": round(year_float(d), 3),
+                    "date": c["date"],
+                    "year": d.year,
+                    "date_precision": c["precision"],
+                    "confirmed": False,  # an extracted mention, not a verified event
+                    "place": g.get("place"),
+                    "country": (r.get("country") or "").lower() or None,
+                    "url": r.get("url"),
+                    "note": (
+                        "Date mentioned in coverage (extracted): “…"
+                        + c["text"]
+                        + "…”. Placed at the source location — when the story refers to, "
+                        "not necessarily where the event occurred."
+                    ),
+                    "source": "corpus-mention",
+                    "geocode": g["geocode"],
+                    "extracted": True,
+                }
+            )
     return out
 
 
@@ -138,29 +161,37 @@ def articles_to_signals(rows: list[dict]) -> list[dict]:
         if not g:
             continue
         title = (r.get("title") or "").strip() or "(untitled article)"
-        out.append({
-            "id": "article:" + str(r.get("url") or title),
-            "title": title,
-            "kind": "article",
-            "lat": g["lat"], "lon": g["lon"],
-            "t": round(year_float(d), 3),
-            "date": d.isoformat(), "year": year,
-            "date_precision": "day",
-            "confirmed": True,            # a real publication date
-            "place": g.get("place"),
-            "country": (r.get("country") or "").lower() or None,
-            "url": r.get("url"),
-            "note": "Placed at the source/detected location on its publication date — coverage origin, not the event site.",
-            "source": "corpus",
-            "geocode": g["geocode"],
-        })
+        out.append(
+            {
+                "id": "article:" + str(r.get("url") or title),
+                "title": title,
+                "kind": "article",
+                "lat": g["lat"],
+                "lon": g["lon"],
+                "t": round(year_float(d), 3),
+                "date": d.isoformat(),
+                "year": year,
+                "date_precision": "day",
+                "confirmed": True,  # a real publication date
+                "place": g.get("place"),
+                "country": (r.get("country") or "").lower() or None,
+                "url": r.get("url"),
+                "note": "Placed at the source/detected location on its publication date — coverage origin, not the event site.",
+                "source": "corpus",
+                "geocode": g["geocode"],
+            }
+        )
     return out
 
 
-def collect(*, kinds: set[str] | None = None,
-            start: float | None = None, end: float | None = None,
-            include_events: bool = True,
-            extra: list[dict] | None = None) -> list[dict]:
+def collect(
+    *,
+    kinds: set[str] | None = None,
+    start: float | None = None,
+    end: float | None = None,
+    include_events: bool = True,
+    extra: list[dict] | None = None,
+) -> list[dict]:
     """All locatable+datable signals, filtered by kind and time window, sorted by time.
 
     ``start``/``end`` are fractional years (see :func:`year_float`). ``extra`` lets

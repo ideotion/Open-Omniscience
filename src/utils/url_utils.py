@@ -69,17 +69,17 @@ def normalize_domain(domain: str) -> str:
         return domain
 
     domain = domain.lower().strip()
-    
+
     # Remove default ports
     if domain.endswith(":80"):
         domain = domain[:-3]
     elif domain.endswith(":443"):
         domain = domain[:-4]
-    
+
     # Strip www. prefix
     if domain.startswith("www."):
         domain = domain[4:]
-    
+
     return domain.rstrip("/")
 
 
@@ -142,35 +142,44 @@ def canonicalize_url(url: str) -> str:
         # Remove tracking parameters
         query = parse_qs(parsed.query, keep_blank_values=True)
         tracking_params = {
-            'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-            'gclid', 'fbclid', 'mc_cid', 'mc_eid', 'dclid', 'msclkid'
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "utm_term",
+            "utm_content",
+            "gclid",
+            "fbclid",
+            "mc_cid",
+            "mc_eid",
+            "dclid",
+            "msclkid",
         }
         filtered_query = {k: v for k, v in query.items() if k.lower() not in tracking_params}
-        
+
         # Sort remaining query parameters for consistency, preserving ALL values of
         # multi-valued params (a=1&a=2 must not collapse to a=1 -- that changes
         # semantics and dedup).
         sorted_query = dict(sorted(filtered_query.items()))
-        clean_query = "&".join(
-            f"{k}={val}" for k, vals in sorted_query.items() for val in vals
-        )
+        clean_query = "&".join(f"{k}={val}" for k, vals in sorted_query.items() for val in vals)
 
         # Normalize path
         path = parsed.path
         if not path:
-            path = '/'
-        elif len(path) > 1 and path.endswith('/'):
-            path = path.rstrip('/')
+            path = "/"
+        elif len(path) > 1 and path.endswith("/"):
+            path = path.rstrip("/")
 
         # Rebuild URL
-        canonical_url = urlunparse((
-            scheme,
-            netloc,
-            path,
-            parsed.params,
-            clean_query,
-            ""  # Remove fragment
-        ))
+        canonical_url = urlunparse(
+            (
+                scheme,
+                netloc,
+                path,
+                parsed.params,
+                clean_query,
+                "",  # Remove fragment
+            )
+        )
 
         return canonical_url
 
@@ -195,16 +204,12 @@ def resolve_redirects(url: str, max_redirects: int = 5) -> str:
 
     try:
         # Ensure URL starts with http:// or https://
-        if not url.startswith(('http://', 'https://')):
+        if not url.startswith(("http://", "https://")):
             url = f"https://{url}"
 
         headers = {"User-Agent": "OpenOmniscience/1.0"}
         response = requests.head(
-            url,
-            allow_redirects=True,
-            timeout=10,
-            headers=headers,
-            max_redirects=max_redirects
+            url, allow_redirects=True, timeout=10, headers=headers, max_redirects=max_redirects
         )
         return response.url
 

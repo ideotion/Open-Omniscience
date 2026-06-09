@@ -18,6 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 For inquiries, contact: open-omniscience@ideotion.com
 """
+
 """
 Cryptographic Module for Open-Omniscience Pillar 4
 
@@ -35,6 +36,7 @@ from .provenance import DataProvenance, ProvenanceLedger
 
 try:
     from .signatures import GPGNotAvailableError, GPGSigner, SignatureResult
+
     HAS_SIGNATURES = True
 except Exception:
     HAS_SIGNATURES = False

@@ -52,6 +52,7 @@ def test_empty_passphrase_refused():
 def live_db(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     from src.database.session import init_db
+
     init_db()
     return tmp_path
 
@@ -61,6 +62,7 @@ def test_encrypted_backup_roundtrip(live_db):
 
     blob = make_encrypted_backup("pw1234")
     from src.safety.crypto import _MAGIC
+
     assert blob.startswith(_MAGIC)
     report = restore_encrypted_backup(blob, "pw1234")
     assert report["restored"] is True and report["validated_rows"] >= 0
@@ -68,6 +70,7 @@ def test_encrypted_backup_roundtrip(live_db):
 
 def test_restore_wrong_passphrase(live_db):
     from src.safety import make_encrypted_backup, restore_encrypted_backup
+
     blob = make_encrypted_backup("pw1234")
     with pytest.raises(EncryptionError):
         restore_encrypted_backup(blob, "nope")
@@ -76,6 +79,7 @@ def test_restore_wrong_passphrase(live_db):
 def test_restore_rejects_non_oo_payload(live_db):
     from src.backup.sqlite_backup import BackupError
     from src.safety import restore_encrypted_backup
+
     # A correctly-encrypted but non-database payload must NOT overwrite the corpus.
     blob = encrypt_bytes(b"this is not a sqlite database", "pw")
     with pytest.raises(BackupError):
@@ -106,6 +110,7 @@ def test_make_fetcher_transparent_by_default(monkeypatch, tmp_path):
     monkeypatch.delenv("OO_HTTP_PROXY", raising=False)
     from src.ingest import DEFAULT_USER_AGENT
     from src.safety.fetcher import make_fetcher
+
     f = make_fetcher()
     assert f.proxy is None
     assert f.user_agent == DEFAULT_USER_AGENT
@@ -116,6 +121,7 @@ def test_make_fetcher_protected_uses_proxy_and_generic_ua(monkeypatch, tmp_path)
     monkeypatch.setenv("OO_FETCH_MODE", "protected")
     monkeypatch.setenv("OO_HTTP_PROXY", "socks5://127.0.0.1:9050")
     from src.safety.fetcher import make_fetcher
+
     f = make_fetcher()
     assert f.proxy == "socks5://127.0.0.1:9050"
     assert f.session.proxies.get("https") == "socks5://127.0.0.1:9050"
@@ -127,6 +133,7 @@ def test_protected_mode_requires_proxy(monkeypatch, tmp_path):
     monkeypatch.delenv("OO_FETCH_MODE", raising=False)
     monkeypatch.delenv("OO_HTTP_PROXY", raising=False)
     from src.safety.settings import SafetySettingsError, save_settings
+
     with pytest.raises(SafetySettingsError):
         save_settings({"fetch_mode": "protected", "http_proxy": ""})
 
@@ -139,6 +146,7 @@ def client(monkeypatch, tmp_path):
     from fastapi.testclient import TestClient
 
     from src.api.main import app
+
     with TestClient(app) as c:
         yield c
 
@@ -147,8 +155,10 @@ def test_api_settings_get_and_protected_requires_proxy(client):
     assert client.get("/api/safety/settings").json()["fetch_mode"] == "transparent"
     bad = client.put("/api/safety/settings", json={"fetch_mode": "protected", "http_proxy": ""})
     assert bad.status_code == 400
-    ok = client.put("/api/safety/settings",
-                    json={"fetch_mode": "protected", "http_proxy": "socks5://127.0.0.1:9050"})
+    ok = client.put(
+        "/api/safety/settings",
+        json={"fetch_mode": "protected", "http_proxy": "socks5://127.0.0.1:9050"},
+    )
     assert ok.status_code == 200 and ok.json()["fetch_mode"] == "protected"
 
 
@@ -156,14 +166,18 @@ def test_api_encrypted_backup_then_restore(client):
     blob = client.post("/api/safety/backup/encrypted", json={"passphrase": "pw"}).content
     assert blob[:8] == b"OOENC1\x00\x00"
     # restore via multipart
-    r = client.post("/api/safety/restore/encrypted",
-                    files={"file": ("b.ooenc", blob, "application/octet-stream")},
-                    data={"passphrase": "pw"})
+    r = client.post(
+        "/api/safety/restore/encrypted",
+        files={"file": ("b.ooenc", blob, "application/octet-stream")},
+        data={"passphrase": "pw"},
+    )
     assert r.status_code == 200 and r.json()["restored"] is True
     # wrong passphrase -> 400
-    bad = client.post("/api/safety/restore/encrypted",
-                      files={"file": ("b.ooenc", blob, "application/octet-stream")},
-                      data={"passphrase": "WRONG"})
+    bad = client.post(
+        "/api/safety/restore/encrypted",
+        files={"file": ("b.ooenc", blob, "application/octet-stream")},
+        data={"passphrase": "WRONG"},
+    )
     assert bad.status_code == 400
 
 

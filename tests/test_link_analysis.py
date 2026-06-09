@@ -18,25 +18,40 @@ def _client(tmp_path):
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'links.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'links.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
         s.add(Source(name="Src", domain="s.test"))
         s.flush()
         for i in range(3):
-            s.add(Article(url=f"https://s.test/{i}", canonical_url=f"https://s.test/{i}",
-                          source_id=1, title=f"Article {i}", content="x", hash=f"h{i}"))
+            s.add(
+                Article(
+                    url=f"https://s.test/{i}",
+                    canonical_url=f"https://s.test/{i}",
+                    source_id=1,
+                    title=f"Article {i}",
+                    content="x",
+                    hash=f"h{i}",
+                )
+            )
         s.flush()
         reut = "https://www.reuters.com/world/report"
         # Articles 1 and 2 both cite Reuters; article 3 cites AP.
-        s.add_all([
-            ArticleLink(article_id=1, url=reut, normalized_url=reut, link_type="external"),
-            ArticleLink(article_id=2, url=reut, normalized_url=reut, link_type="external"),
-            ArticleLink(article_id=3, url="https://apnews.com/x", normalized_url="https://apnews.com/x",
-                        link_type="external"),
-        ])
+        s.add_all(
+            [
+                ArticleLink(article_id=1, url=reut, normalized_url=reut, link_type="external"),
+                ArticleLink(article_id=2, url=reut, normalized_url=reut, link_type="external"),
+                ArticleLink(
+                    article_id=3,
+                    url="https://apnews.com/x",
+                    normalized_url="https://apnews.com/x",
+                    link_type="external",
+                ),
+            ]
+        )
         s.commit()
 
     def _db():

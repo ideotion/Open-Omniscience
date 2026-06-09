@@ -21,8 +21,18 @@ from src.catalog.normalize import registrable_domain
 
 # The defined column set (export order). Only name + domain are required on import.
 EXPORT_COLUMNS: list[str] = [
-    "name", "domain", "rss_url", "source_type", "country", "language",
-    "region", "tags", "priority", "rate_limit_ms", "enabled", "reliability_score",
+    "name",
+    "domain",
+    "rss_url",
+    "source_type",
+    "country",
+    "language",
+    "region",
+    "tags",
+    "priority",
+    "rate_limit_ms",
+    "enabled",
+    "reliability_score",
 ]
 
 # Integer columns and their (lo, hi) clamps; out-of-range -> reported as an error.
@@ -42,6 +52,7 @@ def write_csv(rows: list[dict]) -> str:
     writer.writeheader()
     # Neutralize spreadsheet formula injection in every cell (S-004).
     from src.utils.security import csv_safe_cell
+
     for r in rows:
         writer.writerow({c: csv_safe_cell(r.get(c)) for c in EXPORT_COLUMNS})
     return buf.getvalue()
@@ -51,17 +62,31 @@ def template_csv() -> str:
     """A header row plus two example rows documenting the expected format."""
     examples = [
         {
-            "name": "Example News", "domain": "example.com",
-            "rss_url": "https://example.com/feed.xml", "source_type": "news",
-            "country": "us", "language": "en", "region": "north-america",
-            "tags": "politics,world", "priority": 2, "rate_limit_ms": 2000,
-            "enabled": "true", "reliability_score": 7,
+            "name": "Example News",
+            "domain": "example.com",
+            "rss_url": "https://example.com/feed.xml",
+            "source_type": "news",
+            "country": "us",
+            "language": "en",
+            "region": "north-america",
+            "tags": "politics,world",
+            "priority": 2,
+            "rate_limit_ms": 2000,
+            "enabled": "true",
+            "reliability_score": 7,
         },
         {
-            "name": "Example Exchange", "domain": "exchange.example",
-            "rss_url": "", "source_type": "stock_exchange", "country": "gb",
-            "language": "en", "region": "europe", "tags": "markets,equities",
-            "priority": 2, "rate_limit_ms": 3000, "enabled": "true",
+            "name": "Example Exchange",
+            "domain": "exchange.example",
+            "rss_url": "",
+            "source_type": "stock_exchange",
+            "country": "gb",
+            "language": "en",
+            "region": "europe",
+            "tags": "markets,equities",
+            "priority": 2,
+            "rate_limit_ms": 3000,
+            "enabled": "true",
             "reliability_score": 8,
         },
     ]
@@ -86,8 +111,11 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
     rows: list[dict] = []
     errors: list[str] = []
     for i, raw_row in enumerate(reader, start=2):  # row 1 is the header
-        rec = {colmap[k]: (v.strip() if isinstance(v, str) else v)
-               for k, v in raw_row.items() if colmap.get(k) in known}
+        rec = {
+            colmap[k]: (v.strip() if isinstance(v, str) else v)
+            for k, v in raw_row.items()
+            if colmap.get(k) in known
+        }
         name = (rec.get("name") or "").strip()
         domain = registrable_domain(rec.get("domain"))
         if not name or not domain:
@@ -165,5 +193,4 @@ def upsert_sources(session, rows: list[dict]) -> dict:
             errors.append(f"{domain}: {exc}")
             continue
     session.commit()
-    return {"created": created, "updated": updated,
-            "skipped": len(errors), "errors": errors}
+    return {"created": created, "updated": updated, "skipped": len(errors), "errors": errors}

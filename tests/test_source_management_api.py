@@ -21,8 +21,9 @@ from src.database.session import get_db
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 's.db'}", future=True,
-                           connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 's.db'}", future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
 
@@ -41,8 +42,15 @@ def client(tmp_path):
 
 def test_source_crud_via_router(client):
     # create
-    r = client.post("/api/sources/", json={"name": "Alpha", "domain": "alpha.example",
-                                            "rss_url": "https://alpha.example/feed", "tags": "news"})
+    r = client.post(
+        "/api/sources/",
+        json={
+            "name": "Alpha",
+            "domain": "alpha.example",
+            "rss_url": "https://alpha.example/feed",
+            "tags": "news",
+        },
+    )
     assert r.status_code == 200, r.text
     sid = r.json()["id"]
     # the override DB sees it (proves request-scoped session)
@@ -64,17 +72,19 @@ def test_missing_required_field_400(client):
 def test_blank_required_field_400(client):
     # Present-but-empty / whitespace-only values must be rejected, not stored as a
     # junk source (regression guard ported from the abandoned 0.03 debug branch).
-    assert client.post("/api/sources/", json={"name": "  ", "domain": "x.example"}).status_code == 400
+    assert (
+        client.post("/api/sources/", json={"name": "  ", "domain": "x.example"}).status_code == 400
+    )
     assert client.post("/api/sources/", json={"name": "X", "domain": ""}).status_code == 400
     assert client.post("/api/sources/", json={"name": "X", "domain": 123}).status_code == 400
-
 
 
 def test_group_flow_and_refresh_endpoint(client):
     # create a tag-based group, then refresh it (this endpoint used to 500 on a
     # nonexistent manager.get_group()).
-    g = client.post("/api/sources/groups/tag-based",
-                    params={"name": "World", "tag_pattern": "world"})
+    g = client.post(
+        "/api/sources/groups/tag-based", params={"name": "World", "tag_pattern": "world"}
+    )
     assert g.status_code == 200, g.text
     gid = g.json().get("id") or g.json().get("group", {}).get("id")
     r = client.post(f"/api/sources/groups/{gid}/refresh")

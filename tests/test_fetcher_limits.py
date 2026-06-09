@@ -27,9 +27,17 @@ from src.ingest import BlockedTarget, EthicalFetcher, FetchFailed
 # Fake session that supports redirects (Location) and explicit headers/content.
 # --------------------------------------------------------------------------- #
 
+
 class _Resp:
-    def __init__(self, status_code=200, text="", content_type="text/html",
-                 url=None, location=None, content_length=None):
+    def __init__(
+        self,
+        status_code=200,
+        text="",
+        content_type="text/html",
+        url=None,
+        location=None,
+        content_length=None,
+    ):
         self.status_code = status_code
         self.text = text
         self.content = text.encode("utf-8")
@@ -67,10 +75,12 @@ def _fetcher(session, **kw):
 
 # --- TEST-01: body-size cap ------------------------------------------------- #
 
+
 def test_declared_content_length_over_cap_is_rejected():
     sess = _Session()
-    sess.route("https://example.com/robots.txt", text="User-agent: *\nAllow: /",
-               content_type="text/plain")
+    sess.route(
+        "https://example.com/robots.txt", text="User-agent: *\nAllow: /", content_type="text/plain"
+    )
     sess.route("https://example.com/big", text="x", content_length=10_000_000)
     f = _fetcher(sess, max_bytes=1024)
     with pytest.raises(FetchFailed, match="declared length"):
@@ -79,8 +89,9 @@ def test_declared_content_length_over_cap_is_rejected():
 
 def test_materialised_body_over_cap_is_rejected():
     sess = _Session()
-    sess.route("https://example.com/robots.txt", text="User-agent: *\nAllow: /",
-               content_type="text/plain")
+    sess.route(
+        "https://example.com/robots.txt", text="User-agent: *\nAllow: /", content_type="text/plain"
+    )
     # No Content-Length header, but the actual body exceeds the cap.
     sess.route("https://example.com/big", text="A" * 5000)
     f = _fetcher(sess, max_bytes=1024)
@@ -89,6 +100,7 @@ def test_materialised_body_over_cap_is_rejected():
 
 
 # --- TEST-02: redirect cap -------------------------------------------------- #
+
 
 class _RedirectSession(_Session):
     """Always 302s to the next numbered URL -> an unbounded chain."""
@@ -106,6 +118,7 @@ def test_redirect_chain_terminates_at_cap():
 
 
 # --- TEST-03: SSRF guard blocks a hostname resolving to an internal IP ------- #
+
 
 def test_hostname_resolving_to_internal_ip_is_blocked(monkeypatch):
     """A public-looking hostname that resolves to 127.0.0.1 (DNS rebinding to

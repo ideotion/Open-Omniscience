@@ -107,8 +107,14 @@ def insights_trending(
     db: Session = Depends(get_db),
 ) -> dict:
     """Rising keywords by a transparent recent-vs-prior ratio."""
-    return q.trending(db, window_days=window_days, baseline_days=baseline_days,
-                      country=country, kind=_kind(kind), limit=limit)
+    return q.trending(
+        db,
+        window_days=window_days,
+        baseline_days=baseline_days,
+        country=country,
+        kind=_kind(kind),
+        limit=limit,
+    )
 
 
 @router.get("/trend")
@@ -178,6 +184,7 @@ def _kind(kind: str | None) -> str | None:
 
 # -- Keyword-family overrides (manual merge / split — "the user disposes") ---- #
 
+
 class FamilyMerge(BaseModel):
     normalized: list[str]
     label: str | None = None
@@ -194,16 +201,20 @@ def _n(s: str | None) -> str:
     return " ".join((s or "").split()).casefold()
 
 
-def _upsert_override(db: Session, normalized: str, family_key: str,
-                     label: str | None, kind: str | None) -> None:
+def _upsert_override(
+    db: Session, normalized: str, family_key: str, label: str | None, kind: str | None
+) -> None:
     from src.database.models import KeywordFamilyOverride
 
     row = db.query(KeywordFamilyOverride).filter_by(normalized_term=normalized).first()
     if row:
         row.family_key, row.canonical_label, row.kind = family_key, label, kind
     else:
-        db.add(KeywordFamilyOverride(normalized_term=normalized, family_key=family_key,
-                                     canonical_label=label, kind=kind))
+        db.add(
+            KeywordFamilyOverride(
+                normalized_term=normalized, family_key=family_key, canonical_label=label, kind=kind
+            )
+        )
 
 
 @router.get("/family/overrides")
@@ -213,8 +224,16 @@ def family_overrides(db: Session = Depends(get_db)) -> dict:
 
     fams: dict[str, dict] = {}
     for o in db.query(KeywordFamilyOverride).order_by(KeywordFamilyOverride.family_key).all():
-        f = fams.setdefault(o.family_key, {"family_key": o.family_key, "label": o.canonical_label,
-                                           "kind": o.kind, "members": [], "split": o.family_key.startswith("__alone__:")})
+        f = fams.setdefault(
+            o.family_key,
+            {
+                "family_key": o.family_key,
+                "label": o.canonical_label,
+                "kind": o.kind,
+                "members": [],
+                "split": o.family_key.startswith("__alone__:"),
+            },
+        )
         f["members"].append(o.normalized_term)
     return {"count": sum(len(f["members"]) for f in fams.values()), "families": list(fams.values())}
 
@@ -259,6 +278,7 @@ def family_override_clear(normalized: str, db: Session = Depends(get_db)) -> dic
 
 # -- Keyword super-groups (a user-named group of families) -------------------- #
 
+
 class SuperGroupCreate(BaseModel):
     name: str
     color: str | None = None
@@ -279,13 +299,21 @@ def _supergroup_totals(db: Session, members: set[str]) -> dict[str, dict]:
     if not members:
         return totals
     rows = (
-        db.query(Keyword.normalized_term, func.sum(KeywordMention.count),
-                 func.count(func.distinct(KeywordMention.article_id)))
+        db.query(
+            Keyword.normalized_term,
+            func.sum(KeywordMention.count),
+            func.count(func.distinct(KeywordMention.article_id)),
+        )
         .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-        .group_by(Keyword.id).all()
+        .group_by(Keyword.id)
+        .all()
     )
     for norm, m, a in rows:
-        key = norm if norm in members else (canonical_key(norm) if canonical_key(norm) in members else None)
+        key = (
+            norm
+            if norm in members
+            else (canonical_key(norm) if canonical_key(norm) in members else None)
+        )
         if key is not None:
             totals[key]["mentions"] += int(m or 0)
             totals[key]["articles"] = max(totals[key]["articles"], int(a or 0))
@@ -311,16 +339,25 @@ def list_supergroups(db: Session = Depends(get_db)) -> dict:
     totals = _supergroup_totals(db, all_members)
     out = []
     for sg in sgs:
-        members = [{"normalized": m.normalized_term,
-                    "mentions": totals.get(m.normalized_term, {}).get("mentions", 0),
-                    "articles": totals.get(m.normalized_term, {}).get("articles", 0)}
-                   for m in sg.members]
+        members = [
+            {
+                "normalized": m.normalized_term,
+                "mentions": totals.get(m.normalized_term, {}).get("mentions", 0),
+                "articles": totals.get(m.normalized_term, {}).get("articles", 0),
+            }
+            for m in sg.members
+        ]
         members.sort(key=lambda x: -x["mentions"])
-        out.append({
-            "id": sg.id, "name": sg.name, "color": sg.color,
-            "members": members, "count": len(members),
-            "mentions": sum(x["mentions"] for x in members),
-        })
+        out.append(
+            {
+                "id": sg.id,
+                "name": sg.name,
+                "color": sg.color,
+                "members": members,
+                "count": len(members),
+                "mentions": sum(x["mentions"] for x in members),
+            }
+        )
     out.sort(key=lambda s: -s["mentions"])
     return {"count": len(out), "supergroups": out}
 
@@ -351,7 +388,9 @@ def delete_supergroup(sg_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/supergroups/{sg_id}/members")
-def add_supergroup_members(sg_id: int, body: SuperGroupMembers, db: Session = Depends(get_db)) -> dict:
+def add_supergroup_members(
+    sg_id: int, body: SuperGroupMembers, db: Session = Depends(get_db)
+) -> dict:
     """Assign one or more families (by normalized term) to a super-group (idempotent)."""
     from src.database.models import KeywordSuperGroupMember
 
@@ -375,7 +414,8 @@ def remove_supergroup_member(sg_id: int, normalized: str, db: Session = Depends(
 
     _get_supergroup(db, sg_id)
     n = _n(normalized)
-    deleted = (db.query(KeywordSuperGroupMember)
-               .filter_by(supergroup_id=sg_id, normalized_term=n).delete())
+    deleted = (
+        db.query(KeywordSuperGroupMember).filter_by(supergroup_id=sg_id, normalized_term=n).delete()
+    )
     db.commit()
     return {"supergroup": sg_id, "removed": n, "deleted": int(deleted)}

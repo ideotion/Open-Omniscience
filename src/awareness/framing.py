@@ -47,7 +47,7 @@ def _tone_label(compound: float) -> str:
 class SourceFraming:
     source: str
     article_count: int
-    avg_tone: float            # mean VADER compound across the source's coverage
+    avg_tone: float  # mean VADER compound across the source's coverage
     tone_label: str
     top_terms: list[str]
     headlines: list[dict] = field(default_factory=list)  # {title, url, published_at}
@@ -81,18 +81,19 @@ def compare_framing(articles_by_source: dict[str, list[dict]], *, top_terms: int
         combined = " ".join((a.get("content") or "") for a in articles)
         terms = [w for w, _ in _extractor.get_top_keywords(combined, top_n=top_terms)]
         headlines = [
-            {"title": a.get("title"), "url": a.get("url"),
-             "published_at": a.get("published_at")}
+            {"title": a.get("title"), "url": a.get("url"), "published_at": a.get("published_at")}
             for a in articles[:5]
         ]
-        per_source.append(SourceFraming(
-            source=source,
-            article_count=len(articles),
-            avg_tone=avg,
-            tone_label=_tone_label(avg),
-            top_terms=terms,
-            headlines=headlines,
-        ))
+        per_source.append(
+            SourceFraming(
+                source=source,
+                article_count=len(articles),
+                avg_tone=avg,
+                tone_label=_tone_label(avg),
+                top_terms=terms,
+                headlines=headlines,
+            )
+        )
 
     total = sum(s.article_count for s in per_source)
     # Terms that appear for one source but not the (combined) others = distinctive emphasis.

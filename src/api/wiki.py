@@ -40,22 +40,38 @@ def _live_diff_url(wiki: str, revid: int) -> str:
 
 def _serialize_page(p: WikiPage, *, revs: int = 0, flagged: int = 0) -> dict:
     return {
-        "id": p.id, "wiki": p.wiki, "title": p.title, "category": p.category,
-        "watched": p.watched, "baseline_revid": p.baseline_revid, "last_revid": p.last_revid,
+        "id": p.id,
+        "wiki": p.wiki,
+        "title": p.title,
+        "category": p.category,
+        "watched": p.watched,
+        "baseline_revid": p.baseline_revid,
+        "last_revid": p.last_revid,
         "last_checked_at": p.last_checked_at.isoformat() if p.last_checked_at else None,
-        "revisions": revs, "flagged": flagged,
+        "revisions": revs,
+        "flagged": flagged,
     }
 
 
 def _serialize_rev(r: WikiRevision, *, page: WikiPage | None = None) -> dict:
     return {
-        "id": r.id, "revid": r.revid, "parent_revid": r.parent_revid,
-        "wiki": page.wiki if page else None, "title": page.title if page else None,
+        "id": r.id,
+        "revid": r.revid,
+        "parent_revid": r.parent_revid,
+        "wiki": page.wiki if page else None,
+        "title": page.title if page else None,
         "timestamp": r.timestamp.isoformat() if r.timestamp else None,
-        "editor": r.editor, "editor_anon": r.editor_anon, "comment": r.comment,
-        "delta_bytes": r.delta_bytes, "tags": r.tags, "minor": r.minor, "bot": r.bot,
-        "ores_damaging": r.ores_damaging, "ores_goodfaith": r.ores_goodfaith,
-        "flagged": r.flagged, "flag_reasons": (r.flag_reasons or "").split(",") if r.flag_reasons else [],
+        "editor": r.editor,
+        "editor_anon": r.editor_anon,
+        "comment": r.comment,
+        "delta_bytes": r.delta_bytes,
+        "tags": r.tags,
+        "minor": r.minor,
+        "bot": r.bot,
+        "ores_damaging": r.ores_damaging,
+        "ores_goodfaith": r.ores_goodfaith,
+        "flagged": r.flagged,
+        "flag_reasons": (r.flag_reasons or "").split(",") if r.flag_reasons else [],
         "diff_url": _live_diff_url(page.wiki, r.revid) if page else None,
     }
 
@@ -73,15 +89,24 @@ def wiki_status(db: Session = Depends(get_db)) -> dict:
 @router.get("/pages")
 def list_pages(db: Session = Depends(get_db)) -> dict:
     counts = dict(
-        db.query(WikiRevision.page_id, func.count(WikiRevision.id)).group_by(WikiRevision.page_id).all()
+        db.query(WikiRevision.page_id, func.count(WikiRevision.id))
+        .group_by(WikiRevision.page_id)
+        .all()
     )
     flagged = dict(
         db.query(WikiRevision.page_id, func.count(WikiRevision.id))
-        .filter_by(flagged=True).group_by(WikiRevision.page_id).all()
+        .filter_by(flagged=True)
+        .group_by(WikiRevision.page_id)
+        .all()
     )
     pages = db.query(WikiPage).order_by(WikiPage.wiki, WikiPage.title).all()
-    return {"count": len(pages),
-            "pages": [_serialize_page(p, revs=counts.get(p.id, 0), flagged=flagged.get(p.id, 0)) for p in pages]}
+    return {
+        "count": len(pages),
+        "pages": [
+            _serialize_page(p, revs=counts.get(p.id, 0), flagged=flagged.get(p.id, 0))
+            for p in pages
+        ],
+    }
 
 
 @router.post("/pages")
@@ -124,8 +149,9 @@ def track_page(page_id: int, ores: bool = True, db: Session = Depends(get_db)) -
 
 
 @router.post("/track-now")
-def track_now(ores: bool = True, limit: int = Query(25, ge=1, le=500),
-              db: Session = Depends(get_db)) -> dict:
+def track_now(
+    ores: bool = True, limit: int = Query(25, ge=1, le=500), db: Session = Depends(get_db)
+) -> dict:
     """Track all watched pages now (synchronous; for a handful of pages)."""
     from src.wiki.track import track_watched
 
@@ -133,7 +159,9 @@ def track_now(ores: bool = True, limit: int = Query(25, ge=1, le=500),
         return track_watched(db, _client, ores_client=_ores if ores else None, limit_pages=limit)
     except Exception as exc:  # noqa: BLE001 - never 500 the batch on one bad fetch
         db.rollback()
-        raise HTTPException(status_code=502, detail=f"Tracking failed: {type(exc).__name__}: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"Tracking failed: {type(exc).__name__}: {exc}"
+        ) from exc
 
 
 @router.get("/changes")
