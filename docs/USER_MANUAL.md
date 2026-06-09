@@ -344,6 +344,14 @@ to the near future — so you can watch what clustered, where, and when.
   box; run `python scripts/build_world_outline.py` once (needs network) to add real
   Natural Earth coastlines. Until then, no coastlines are *invented*.
 
+**Dates a story is *about*:** toggle **dates in text** to extract explicit dates
+mentioned in your articles (e.g. a 2024 piece on the *1945* bombing) and plot them at
+the source location — drawn as dashed "extracted" pins. These also become **per-article
+date tags**: open an article's offline reader to see them listed, **confirm or reject**
+each candidate, or **extract** on demand; the corpus can then be filtered by a mentioned
+date (`GET /api/article-dates/by-date`). High-precision only — bare years and relative
+phrases ("last week") are deliberately not extracted.
+
 **Honesty by construction:** a pin needs **both** a coordinate and a date — anything
 missing one is simply absent, never dropped onto (0, 0), and the caveat says so.
 Country-level pins are flagged **approximate** (a stand-in point, not the exact
@@ -624,7 +632,11 @@ catalog at `/api/catalog/sources`, `/export.csv`, `/template.csv`, `POST /import
 `GET /api/database/backup`; `POST /api/database/restore`.
 
 **Temporal map** — `GET /api/timemap` (space-time signals; `?kinds`, `?start`/`?end`
-fractional-year window, `?hazards`, `?articles`, `?days`); `GET /api/timemap/range`.
+fractional-year window, `?hazards`, `?articles`, `?mentions`, `?days`); `GET /api/timemap/range`.
+
+**Article date tags** — `GET/POST /api/article-dates/article/{id}` (list / extract);
+`POST /api/article-dates/{tag_id}/confirm|reject`; `POST /api/article-dates/index`;
+`GET /api/article-dates/by-date`.
 
 **Insights** — `GET/PUT /api/insights/filter`; `POST /api/insights/exclude|include`;
 `GET /api/insights/status`; `POST /api/insights/reindex`;

@@ -136,6 +136,9 @@ from src.api.system import router as system_router
 
 # Import temporal-map router (space-time signals on one zoomable map + time axis)
 from src.api.timemap import router as timemap_router
+
+# Import article date-tag router (extracted, human-confirmable dates mentioned in text)
+from src.api.article_dates import router as article_dates_router
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -354,6 +357,9 @@ app.include_router(system_router)
 
 # Include temporal-map router (offline by default; hazards layer opt-in)
 app.include_router(timemap_router)
+
+# Include article date-tag router (extracted dates as human-confirmable per-article tags)
+app.include_router(article_dates_router)
 
 # Include analysis-dependent routers only if the [analysis] extra is installed.
 if _ANALYSIS_AVAILABLE:
@@ -779,6 +785,55 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
         if safe_src else "<span class='muted'>No original (http/https) URL recorded.</span>"
     )
 
+    # Dates mentioned in the text — extracted, human-confirmable per-article tags.
+    from src.timemap import datestore
+
+    _amd_tags = datestore.for_article(db, a.id)
+    _stcol = {"confirmed": "#3fb950", "rejected": "#e5484d"}
+
+    def _amd_chip(t: dict) -> str:
+        col = _stcol.get(t["status"], "var(--mut)")
+        snip = _html.escape((t.get("snippet") or "")[:140])
+        return (
+            "<li style='padding:7px 0;border-top:1px solid var(--line)'>"
+            f"<b>{_html.escape(t['date'])}</b> <span class='muted'>· {_html.escape(t['precision'])}</span> "
+            f"<span style='color:{col};font-weight:600'>· {_html.escape(t['status'])}</span>"
+            + (f"<div class='muted' style='font-size:13px;margin-top:2px'>“…{snip}…”</div>" if snip else "")
+            + "<div style='margin-top:4px;display:flex;gap:6px'>"
+            f"<button class='amd-act' data-id='{t['id']}' data-act='confirm' "
+            "style='font:12px system-ui;padding:2px 9px;cursor:pointer'>confirm</button>"
+            f"<button class='amd-act' data-id='{t['id']}' data-act='reject' "
+            "style='font:12px system-ui;padding:2px 9px;cursor:pointer'>reject</button>"
+            "</div></li>"
+        )
+
+    _amd_list = ("<ul style='list-style:none;margin:0;padding:0;font:14px/1.5 system-ui,sans-serif'>"
+                 + "".join(_amd_chip(t) for t in _amd_tags) + "</ul>") if _amd_tags else \
+        "<p class='muted' style='font:13px system-ui,sans-serif'>No date tags yet — extract to find dates this text mentions.</p>"
+    dates_section = (
+        "<section class='cites'><h2>Dates mentioned in this text</h2>"
+        "<p class='muted' style='font:13px/1.5 system-ui,sans-serif;margin:0 0 8px'>"
+        "Explicit dates the article refers to (extracted, high-precision — no bare years or "
+        "relative phrases). Each is a candidate; confirm or reject. The date is <em>when the "
+        "story refers to</em>, not when it was published.</p>"
+        + _amd_list
+        + "<div style='margin-top:8px'><button id='amd-extract' "
+        "style='font:12px system-ui,sans-serif;padding:3px 11px;cursor:pointer'>"
+        "Extract dates from this article</button></div></section>"
+    )
+    dates_script = (
+        "<script>(function(){var aid=" + str(a.id) + ";"
+        "function reload(){location.reload();}"
+        "document.addEventListener('click',function(e){"
+        "var b=e.target.closest&&e.target.closest('.amd-act');"
+        "if(b){e.preventDefault();fetch('/api/article-dates/'+b.dataset.id+'/'+b.dataset.act,"
+        "{method:'POST'}).then(reload).catch(function(){});return;}"
+        "var x=e.target.closest&&e.target.closest('#amd-extract');"
+        "if(x){e.preventDefault();x.disabled=true;x.textContent='Extracting…';"
+        "fetch('/api/article-dates/article/'+aid,{method:'POST'}).then(reload).catch(function(){});}"
+        "});})();</script>"
+    )
+
     doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title><style>
@@ -818,6 +873,7 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
   <div class="crumb"><span class="dot"></span> Open Omniscience · offline stored copy</div>
   <article><h1>{title}</h1><div class="meta">{meta_rows}</div>{paras}</article>
   {cites_html}
+  {dates_section}
   <footer>
     This is the copy captured at ingest — it does not change if the source is later edited or removed.
     <div style="margin-top:8px">{orig_html}</div>
@@ -837,6 +893,7 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     if(ok) window.open(a.href, '_blank', 'noopener');
   }});
 </script>
+{dates_script}
 </body></html>"""
     return HTMLResponse(content=doc)
 
