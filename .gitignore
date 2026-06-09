@@ -55,6 +55,7 @@ coverage.xml
 .venv
 .venv-audit/
 .venv-core/
+.venv-fresh/
 env/
 venv/
 ENV/
