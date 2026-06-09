@@ -1702,6 +1702,7 @@
       document.querySelectorAll(".tab-page").forEach(p =>
         p.classList.toggle("active", p.id === "tab-" + name));
       if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
+      if (name !== "timemap" && typeof stopTmapPlay === "function") stopTmapPlay();  // don't animate a hidden tab
       startLive(name);                                  // live status for the active tab
       document.body.classList.remove("nav-open");       // close mobile drawer
       closePalette();
@@ -3921,6 +3922,7 @@
     let TMAP_OFF = new Set();                     // kinds toggled off
     let TMAP_VB = {x:0, y:0, w:MAP_W, h:MAP_H};
     let _tmapVisible = [], _tmapPlay = null, TMAP_OUTLINE = null;
+    let _tmapDrag = false, _tmapDragSX = 0, _tmapDragSY = 0, _tmapMouseupWired = false;
     const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     function fmtYear(t) {                          // fractional year -> "Sep 2001"
@@ -3951,16 +3953,25 @@
     function wireTmapDrag() {
       const svg = document.getElementById("oo-tmap");
       if (!svg) return;
-      let drag = false, sx = 0, sy = 0;
-      svg.addEventListener("mousedown", e => { drag = true; sx = e.clientX; sy = e.clientY; svg.style.cursor = "grabbing"; });
-      window.addEventListener("mouseup", () => { drag = false; if (svg) svg.style.cursor = "grab"; });
+      // svg-bound listeners die with the element when the next render replaces it; the
+      // window-level mouseup is attached exactly ONCE (drag state is module-level) so it
+      // can't accumulate across the many re-renders that 'play' triggers.
+      svg.addEventListener("mousedown", e => {
+        _tmapDrag = true; _tmapDragSX = e.clientX; _tmapDragSY = e.clientY; svg.style.cursor = "grabbing"; });
       svg.addEventListener("mousemove", e => {
-        if (!drag) return;
+        if (!_tmapDrag) return;
         const r = svg.getBoundingClientRect();
-        TMAP_VB.x -= (e.clientX - sx) * TMAP_VB.w / r.width;
-        TMAP_VB.y -= (e.clientY - sy) * TMAP_VB.h / r.height;
-        sx = e.clientX; sy = e.clientY; applyTmapVB();
+        TMAP_VB.x -= (e.clientX - _tmapDragSX) * TMAP_VB.w / r.width;
+        TMAP_VB.y -= (e.clientY - _tmapDragSY) * TMAP_VB.h / r.height;
+        _tmapDragSX = e.clientX; _tmapDragSY = e.clientY; applyTmapVB();
       });
+      if (!_tmapMouseupWired) {
+        _tmapMouseupWired = true;
+        window.addEventListener("mouseup", () => {
+          _tmapDrag = false;
+          const s = document.getElementById("oo-tmap"); if (s) s.style.cursor = "grab";
+        });
+      }
     }
 
     function tmapSpan() {                          // [min,max] fractional years, padded
@@ -3994,13 +4005,16 @@
       }).join("") || `<span class="muted">No signals to show.</span>`;
     }
 
+    function stopTmapPlay() {                       // also called by showTab when leaving the tab
+      if (_tmapPlay) { clearInterval(_tmapPlay); _tmapPlay = null; }
+      const btn = $("tmap-play"); if (btn) btn.textContent = "▶ play";
+    }
     function toggleTmapPlay() {
-      const btn = $("tmap-play");
-      if (_tmapPlay) { clearInterval(_tmapPlay); _tmapPlay = null; btn.textContent = "▶ play"; return; }
-      btn.textContent = "❚❚ pause";
+      if (_tmapPlay) { stopTmapPlay(); return; }
+      const btn = $("tmap-play"); if (btn) btn.textContent = "❚❚ pause";
       _tmapPlay = setInterval(() => {
         const s = $("tmap-slider"); let v = +s.value + 6;
-        if (v >= 1000) { v = 1000; toggleTmapPlay(); }
+        if (v >= 1000) { v = 1000; stopTmapPlay(); }
         s.value = v; onTmapSlide();
       }, 120);
     }
