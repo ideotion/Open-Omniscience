@@ -253,6 +253,14 @@
     .fam-chip:hover { border-color:var(--err); color:var(--err); }
     .fam-ov { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px;
       padding:5px 8px; border-bottom:1px solid var(--border); }
+    /* Corpus landscape (super-families by kind) */
+    .ls-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-top:10px; }
+    .ls-col { border:1px solid var(--border); border-radius:8px; padding:9px 11px; background:var(--panel2); }
+    .ls-h { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-bottom:7px; }
+    .ls-chips { display:flex; flex-wrap:wrap; gap:5px 7px; align-items:baseline; }
+    .ls-chip { background:transparent; border:0; padding:1px 3px; color:var(--fg); cursor:pointer;
+      line-height:1.25; border-bottom:1px dotted transparent; }
+    .ls-chip:hover { color:var(--accent); border-bottom-color:var(--accent); }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -1065,6 +1073,12 @@
                  onkeydown="if(event.key==='Enter')exploreTerm()"></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="exploreTerm()">Explore</button></div>
       </div>
+
+      <details id="ins-landscape-wrap" open style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:13px;font-weight:600">Corpus landscape <span class="muted">— families by kind (zoom out); click one to zoom in</span></summary>
+        <div id="ins-landscape"><div class="muted" style="margin-top:8px">Loading…</div></div>
+      </details>
+
       <div id="ins-trend" style="margin-top:12px"></div>
       <h2 style="margin:14px 0 6px;font-size:13px">Associated keywords (mind-map)</h2>
       <div id="ins-mindmap"></div>
@@ -3362,6 +3376,41 @@
       }
     }
 
+    // -- Corpus landscape: super-families by semantic kind (the "zoom out") --- //
+    const _KIND_GROUPS = [
+      {key: "person",   label: "People",  match: k => k === "person"},
+      {key: "org",      label: "Orgs",    match: k => k === "org"},
+      {key: "location", label: "Places",  match: k => k === "location"},
+      {key: "entity",   label: "Other entities", match: k => !["person", "org", "location", "term"].includes(k)},
+      {key: "term",     label: "Themes",  match: k => k === "term"},
+    ];
+    let _landscapeLoaded = false;
+    async function loadLandscape(force) {
+      if (_landscapeLoaded && !force) return;
+      const box = $("ins-landscape");
+      box.innerHTML = '<div class="muted" style="margin-top:8px">Loading…</div>';
+      try {
+        const d = await api("/api/insights/top?group=true&limit=200");
+        _landscapeLoaded = true;
+        const fams = d.terms || [];
+        if (!fams.length) { box.innerHTML = '<div class="muted" style="margin-top:8px">No families yet — index the corpus.</div>'; return; }
+        const cols = _KIND_GROUPS.map(g => {
+          const items = fams.filter(f => g.match(f.kind)).slice(0, 16);
+          if (!items.length) return "";
+          const max = Math.max(...items.map(f => f.mentions), 1);
+          const chips = items.map(f => {
+            const scale = 0.82 + 0.5 * (f.mentions / max);     // size by prominence
+            const fam = f.variants > 1;
+            return `<button class="ls-chip" style="font-size:${(11.5*scale).toFixed(1)}px"
+              title="${fam ? `family of ${f.variants}: ${esc((f.members||[]).map(m=>m.term).join(', '))} · ` : ""}${f.mentions} mentions — click to zoom in"
+              onclick="pickTerm(${JSON.stringify(f.term)})">${esc(f.term)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
+          }).join("");
+          return `<div class="ls-col"><div class="ls-h">${g.label} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
+        }).join("");
+        box.innerHTML = `<div class="ls-grid">${cols}</div>`;
+      } catch (e) { box.innerHTML = `<div class="muted" style="margin-top:8px">Could not load: ${esc(e.message)}</div>`; }
+    }
+
     // -- Keyword families: review + manual merge/split ---------------------- //
     async function loadFamilies() {
       const list = $("fam-list");
@@ -3498,6 +3547,7 @@
         $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
         $("ins-remaining").innerHTML = s.remaining ? `· <strong>${s.remaining.toLocaleString()}</strong> to index` : "";
       } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = "Status unavailable: " + e.message; }
+      loadLandscape();
     }
 
     let _indexing = false;
