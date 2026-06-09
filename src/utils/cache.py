@@ -333,7 +333,9 @@ def _stable_cache_key(name, args, kwargs):
         raw = repr((args, sorted(kwargs.items())))
     except Exception:
         raw = repr((args, list(kwargs.items())))
-    return f"{name}:{hashlib.sha1(raw.encode('utf-8', 'replace')).hexdigest()}"
+    # usedforsecurity=False: this is an in-memory cache key, not a security
+    # boundary (finding SEC-03). Silences bandit B324 and states intent.
+    return f"{name}:{hashlib.sha1(raw.encode('utf-8', 'replace'), usedforsecurity=False).hexdigest()}"
 
 
 def cached(ttl: int = 300, cache_instance: SimpleCache | None = None):
