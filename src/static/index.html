@@ -228,6 +228,20 @@
     .law-diff .dl.add { background:color-mix(in srgb, var(--ok) 16%, transparent); }
     .law-diff .dl.del { background:color-mix(in srgb, var(--err) 16%, transparent); }
     .law-diff .dl.ctx { color:var(--muted); }
+    /* Most-cited sources (co-citation) */
+    .cs-row { border:1px solid var(--border); border-radius:8px; margin-bottom:6px; overflow:hidden; background:var(--panel2); }
+    .cs-head { position:relative; display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; }
+    .cs-head:hover { background:color-mix(in srgb, var(--accent) 7%, transparent); }
+    .cs-head.open { background:color-mix(in srgb, var(--accent) 12%, transparent); }
+    .cs-bar { position:absolute; left:0; top:0; bottom:0; background:color-mix(in srgb, var(--accent) 14%, transparent); z-index:0; }
+    .cs-main { position:relative; z-index:1; flex:1; min-width:0; }
+    .cs-label { font-weight:600; word-break:break-word; }
+    .cs-url { font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .cs-count { position:relative; z-index:1; font-variant-numeric:tabular-nums; font-weight:700; flex:0 0 auto; }
+    .cs-arts { padding:0 12px; }
+    .cs-arts:not(:empty) { padding:6px 12px 10px; border-top:1px solid var(--border); }
+    .cs-arts-h { font-size:11px; margin-bottom:4px; }
+    .cs-art { font-size:13px; padding:3px 0; }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -1027,6 +1041,7 @@
       <nav class="tabs" style="position:static;padding:0;border:0;margin-top:10px">
         <button class="active" data-ins="explore" onclick="showInsightCat('explore')">Explore</button>
         <button data-ins="trends" onclick="showInsightCat('trends')">Trends</button>
+        <button data-ins="sources" onclick="showInsightCat('sources')">Sources</button>
         <button data-ins="map" onclick="showInsightCat('map')">Map</button>
       </nav>
     </section>
@@ -1062,6 +1077,21 @@
         <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Top</h2><div id="trd-top"></div></div>
       </div>
       <div id="trd-method" class="hint" style="margin-top:8px"></div>
+    </section>
+
+    <section class="panel ins-view" id="ins-sources" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Most-cited sources <span class="muted">(co-citation)</span></h2>
+      <p class="hint" style="margin-top:0">Which external links or domains <em>many of your articles point to</em> —
+        a citation-graph signal grounded in what reporters actually reference. Click a row to assemble every
+        article in your corpus that cites it (opens the offline stored copy).</p>
+      <div class="row">
+        <div><label for="cs-by">Group by</label><select id="cs-by" onchange="loadCitedSources()">
+          <option value="domain">domain</option><option value="url">exact link</option></select></div>
+        <div><label for="cs-window">Window (days)</label><input id="cs-window" type="number" placeholder="all" min="1" max="3650" onkeydown="if(event.key==='Enter')loadCitedSources()"></div>
+        <div><label for="cs-min">Min. articles</label><input id="cs-min" type="number" value="2" min="1" max="100"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="loadCitedSources()">Refresh</button></div>
+      </div>
+      <div id="cs-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
     </section>
 
     <section class="panel ins-view" id="ins-map" style="display:none">
@@ -3297,7 +3327,54 @@
         _insLoaded.add(cat);
         if (cat === "trends") loadTrends();
         if (cat === "map") loadMap();
+        if (cat === "sources") loadCitedSources();
       }
+    }
+
+    // -- Most-cited sources (corpus-wide co-citation) ----------------------- //
+    async function loadCitedSources() {
+      const box = $("cs-list");
+      const by = $("cs-by").value;
+      const win = $("cs-window").value.trim();
+      const min = Math.max(1, parseInt($("cs-min").value, 10) || 2);
+      box.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        let url = `/api/links/top-cited?by=${by}&min_citations=${min}&limit=60`;
+        if (win) url += `&window_days=${encodeURIComponent(win)}`;
+        const d = await api(url);
+        if (!d.items.length) {
+          box.innerHTML = `<div class="muted">No source cited by ≥${min} article(s) yet. Ingest more, or lower the threshold. (Links are indexed from article text on ingest.)</div>`;
+          return;
+        }
+        const max = Math.max(...d.items.map(i => i.citations), 1);
+        box.innerHTML = d.items.map(it => {
+          const label = by === "domain" ? it.domain : (it.link_text || it.domain || it.sample_url || it.normalized_url);
+          const key = by === "domain" ? `domain=${encodeURIComponent(it.domain)}` : `url=${encodeURIComponent(it.normalized_url)}`;
+          const sub = by === "domain" ? "" : `<div class="cs-url muted">${esc(it.sample_url || it.normalized_url)}</div>`;
+          return `<div class="cs-row"><div class="cs-head" data-key="${esc(key)}" onclick="expandCitedSource(this)">
+            <div class="cs-bar" style="width:${(it.citations/max*100).toFixed(1)}%"></div>
+            <div class="cs-main"><span class="cs-label">${esc(label || "—")}</span>${sub}</div>
+            <span class="cs-count">${it.citations}</span></div>
+            <div class="cs-arts"></div></div>`;
+        }).join("");
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+    }
+
+    async function expandCitedSource(head) {
+      const tgt = head.parentElement.querySelector(".cs-arts");
+      const key = head.dataset.key;
+      if (head.classList.contains("open")) { head.classList.remove("open"); tgt.innerHTML = ""; return; }
+      head.classList.add("open");
+      tgt.innerHTML = '<div class="muted" style="padding:6px 0">Assembling citing articles…</div>';
+      try {
+        const d = await api(`/api/links/articles-by-link?${key}&limit=200`);
+        if (!d.articles.length) { tgt.innerHTML = '<div class="muted" style="padding:6px 0">No stored articles.</div>'; return; }
+        tgt.innerHTML = `<div class="cs-arts-h muted">${d.count} article(s) cite this${d.count>d.articles.length?` (showing ${d.articles.length})`:""}:</div>` +
+          d.articles.map(a => `<div class="cs-art">
+            <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">${esc(a.title || a.url)}</a>
+            <span class="muted"> — ${esc(a.source || "")}${a.published_at?" · "+esc(a.published_at.slice(0,10)):""}</span>
+            ${a.url?` · <a class="muted" href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener noreferrer">source&nbsp;↗</a>`:""}</div>`).join("");
+      } catch (e) { tgt.innerHTML = `<div class="muted" style="padding:6px 0">Could not load: ${esc(e.message)}</div>`; }
     }
 
     let _insStatusBuilt = false;
