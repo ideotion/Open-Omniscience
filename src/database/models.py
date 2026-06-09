@@ -945,7 +945,9 @@ class ArticleMentionedDate(Base):
     __tablename__ = "article_mentioned_dates"
 
     id = Column(Integer, primary_key=True)
-    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False)
+    # ondelete=CASCADE is defense-in-depth: the ORM relationship already cascades on
+    # session.delete(), this also covers any future bulk/raw delete of an article.
+    article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
     mentioned_on = Column(Date, nullable=False)        # normalized; month precision -> day 1
     precision = Column(String(10), nullable=False, default="day")   # 'day' | 'month'
     snippet = Column(String(300))                       # provenance: the matched text

@@ -90,6 +90,21 @@ def test_index_recent_counts(tmp_path):
         assert res["new_tags"] == 2
 
 
+def test_deleting_source_cascades_to_date_tags(tmp_path):
+    # Source -> Article -> ArticleMentionedDate must all cascade on an ORM delete,
+    # leaving no orphaned date tags.
+    from src.database.models import ArticleMentionedDate
+
+    Sess = _session(tmp_path)
+    with Sess() as db:
+        datestore.store_for_article(db, db.get(Article, 1), today=TODAY)
+        assert db.query(ArticleMentionedDate).count() == 2
+        db.delete(db.get(Source, 1))          # cascades to its articles, then their date tags
+        db.commit()
+        assert db.query(Article).count() == 0
+        assert db.query(ArticleMentionedDate).count() == 0
+
+
 def test_api_flow(tmp_path):
     from src.database.session import get_db
 

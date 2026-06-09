@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.Column("extractor", sa.String(length=40), nullable=True),
         sa.Column("status", sa.String(length=12), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(["article_id"], ["articles.id"]),
+        sa.ForeignKeyConstraint(["article_id"], ["articles.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("article_id", "mentioned_on", "precision", name="uq_amd_article_date"),
     )
