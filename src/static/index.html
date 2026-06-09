@@ -242,6 +242,17 @@
     .cs-arts:not(:empty) { padding:6px 12px 10px; border-top:1px solid var(--border); }
     .cs-arts-h { font-size:11px; margin-bottom:4px; }
     .cs-art { font-size:13px; padding:3px 0; }
+    /* Keyword families (merge/split) */
+    .fam-row { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border:1px solid var(--border);
+      border-radius:8px; margin-bottom:6px; background:var(--panel2); }
+    .fam-row input.fam-pick { width:auto; flex:0 0 auto; margin-top:3px; }
+    .fam-body { flex:1; min-width:0; }
+    .fam-chips { margin-top:5px; display:flex; flex-wrap:wrap; gap:5px; }
+    .fam-chip { font-size:12px; padding:2px 8px; border:1px solid var(--border); border-radius:12px;
+      background:var(--panel); color:var(--fg); cursor:pointer; }
+    .fam-chip:hover { border-color:var(--err); color:var(--err); }
+    .fam-ov { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px;
+      padding:5px 8px; border-bottom:1px solid var(--border); }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -1042,6 +1053,7 @@
         <button class="active" data-ins="explore" onclick="showInsightCat('explore')">Explore</button>
         <button data-ins="trends" onclick="showInsightCat('trends')">Trends</button>
         <button data-ins="sources" onclick="showInsightCat('sources')">Sources</button>
+        <button data-ins="families" onclick="showInsightCat('families')">Families</button>
         <button data-ins="map" onclick="showInsightCat('map')">Map</button>
       </nav>
     </section>
@@ -1092,6 +1104,24 @@
         <div style="flex:0 0 auto;align-self:end"><button onclick="loadCitedSources()">Refresh</button></div>
       </div>
       <div id="cs-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+    </section>
+
+    <section class="panel ins-view" id="ins-families" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Keyword families <span class="muted">— you decide</span></h2>
+      <p class="hint" style="margin-top:0">Surface variants are grouped automatically (<b>Trump</b> = <b>Trump's</b> =
+        <b>Donald Trump</b>). Here you correct it: <b>tick</b> two or more rows and <b>Merge</b> them, or click a
+        member's <b>✕</b> to <b>split</b> it out. Your decisions win over the automatic rules and are fully reversible.</p>
+      <div class="row" style="align-items:center">
+        <div><label for="fam-kind">Kind</label><select id="fam-kind" onchange="loadFamilies()">
+          <option value="entity">entities</option><option value="person">people</option>
+          <option value="org">orgs</option><option value="location">places</option>
+          <option value="">all</option></select></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="familyMerge()">Merge selected</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadFamilies()">Refresh</button></div>
+        <span id="fam-status" class="hint"></span>
+      </div>
+      <div id="fam-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="fam-overrides" style="margin-top:14px"></div>
     </section>
 
     <section class="panel ins-view" id="ins-map" style="display:none">
@@ -3328,7 +3358,76 @@
         if (cat === "trends") loadTrends();
         if (cat === "map") loadMap();
         if (cat === "sources") loadCitedSources();
+        if (cat === "families") loadFamilies();
       }
+    }
+
+    // -- Keyword families: review + manual merge/split ---------------------- //
+    async function loadFamilies() {
+      const list = $("fam-list");
+      list.innerHTML = '<div class="muted">Loading…</div>';
+      const kind = $("fam-kind").value;
+      try {
+        const [top, ov] = await Promise.all([
+          api(`/api/insights/top?group=true&limit=80${kind ? "&kind=" + encodeURIComponent(kind) : ""}`),
+          api("/api/insights/family/overrides"),
+        ]);
+        const fams = top.terms.filter(f => f.kind !== "term");
+        list.innerHTML = fams.length ? fams.map(f => {
+          const norms = JSON.stringify((f.members || []).map(m => m.normalized));
+          const chips = (f.members || []).map(m =>
+            `<button class="fam-chip" data-norm="${esc(m.normalized)}" data-kind="${esc(f.kind)}"
+               onclick="familySplit(this)" title="split this form out">${esc(m.term)}${f.variants > 1 ? " ✕" : ""}</button>`).join("");
+          return `<div class="fam-row">
+            <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}">
+            <div class="fam-body"><div><b>${esc(f.term)}</b> <span class="pill">${esc(f.kind)}</span>
+              ${f.manual ? '<span class="pill ok">manual</span>' : ""}
+              <span class="muted">· ${f.mentions} mentions</span></div>
+              <div class="fam-chips">${chips}</div></div></div>`;
+        }).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
+        renderFamOverrides(ov);
+      } catch (e) { list.innerHTML = `<div class="muted">Could not load families: ${esc(e.message)}</div>`; }
+    }
+
+    function renderFamOverrides(ov) {
+      const box = $("fam-overrides");
+      if (!ov.families || !ov.families.length) { box.innerHTML = ""; return; }
+      box.innerHTML = `<h2 style="font-size:13px;margin:0 0 6px">Your manual overrides</h2>` +
+        ov.families.map(f => `<div class="fam-ov">
+          <span>${f.split ? "split" : "merge"}: <b>${esc(f.label || f.family_key)}</b>
+            <span class="muted">${esc((f.members || []).join(", "))}</span></span>
+          <button class="ghost tiny" data-members="${esc(JSON.stringify(f.members || []))}" onclick="familyResetGroup(this)">reset</button>
+        </div>`).join("");
+    }
+
+    async function familySplit(btn) {
+      try {
+        await api("/api/insights/family/split", {method: "POST",
+          body: JSON.stringify({normalized: btn.dataset.norm, kind: btn.dataset.kind})});
+        toast("Split out."); loadFamilies();
+      } catch (e) { toast("Split failed: " + e.message, "err"); }
+    }
+
+    async function familyMerge() {
+      const picks = [...document.querySelectorAll(".fam-pick:checked")];
+      if (picks.length < 2) { toast("Tick at least two families to merge.", "err"); return; }
+      const norms = picks.flatMap(p => JSON.parse(p.dataset.norms));
+      const label = prompt("Name for the merged family:", picks[0].dataset.label || "");
+      if (label === null) return;
+      try {
+        const r = await api("/api/insights/family/merge", {method: "POST",
+          body: JSON.stringify({normalized: norms, label: label.trim() || undefined, kind: picks[0].dataset.kind})});
+        $("fam-status").textContent = `Merged ${r.merged.length} forms into “${r.label}”.`;
+        toast("Merged."); loadFamilies();
+      } catch (e) { toast("Merge failed: " + e.message, "err"); }
+    }
+
+    async function familyResetGroup(btn) {
+      const members = JSON.parse(btn.dataset.members);
+      try {
+        for (const n of members) await api("/api/insights/family/override?normalized=" + encodeURIComponent(n), {method: "DELETE"});
+        toast("Override cleared."); loadFamilies();
+      } catch (e) { toast("Reset failed: " + e.message, "err"); }
     }
 
     // -- Most-cited sources (corpus-wide co-citation) ----------------------- //
