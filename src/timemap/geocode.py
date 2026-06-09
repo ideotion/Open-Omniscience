@@ -49,7 +49,11 @@ def geocode(country: str | None = None, place: str | None = None) -> dict | None
     cc = (country or "").strip().lower() or None
     if place:
         hit = lookup(_index(), place, cc)
-        if hit:
+        # Accept the city match only when it is unambiguous: either no country was
+        # given, or the matched city is actually IN that country. Otherwise lookup's
+        # name-only fallback can return a same-named city elsewhere (a US "Paris"
+        # resolving to Paris, France) — we must not pin that and call it precise.
+        if hit and (cc is None or (hit.country or None) == cc):
             return {"lat": hit.lat, "lon": hit.lon, "geocode": "city",
                     "place": hit.name}
     if cc:

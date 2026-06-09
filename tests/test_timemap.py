@@ -109,6 +109,22 @@ def test_articles_join_the_collected_stream():
     assert all(s["kind"] == "article" for s in collect(kinds={"article"}, extra=extra))
 
 
+def test_geocode_does_not_mislabel_wrong_country_city():
+    from src.timemap.geocode import geocode
+
+    # Paris exists in the gazetteer under FR; asking for a US "Paris" must NOT return
+    # France tagged as a precise city — it falls back to a US country-level point.
+    us = geocode("us", "Paris")
+    assert us is not None
+    if us["geocode"] == "city":
+        assert (us.get("place") or "").lower() != "paris"   # never France-as-city for a US article
+    else:
+        assert us["geocode"] == "country"
+    # the matching country/city pair is still a precise city hit
+    fr = geocode("fr", "Paris")
+    assert fr and fr["geocode"] == "city" and fr["place"] == "Paris"
+
+
 def test_time_range_reports_bounds_and_counts():
     rng = time_range(collect())
     assert rng["min"] <= rng["max"]

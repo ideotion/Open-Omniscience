@@ -119,7 +119,13 @@ def list_signals(
             failures.append(f"corpus articles unavailable: {exc}")
     sig = collect(kinds=_kinds_param(kinds), start=start, end=end, extra=extra)
     if len(sig) > limit:
-        sig = sig[:limit]
+        # Cap the payload without discarding the curated backbone or the *recent* end:
+        # keep every anchor, then the newest of everything else (collect sorts ascending,
+        # so naive sig[:limit] would have dropped the recent corpus the caller asked for).
+        anchors = [s for s in sig if s.get("source") == "anchor"]
+        rest = [s for s in sig if s.get("source") != "anchor"]
+        rest = sorted(rest, key=lambda s: s["t"], reverse=True)[:max(0, limit - len(anchors))]
+        sig = sorted(anchors + rest, key=lambda s: s["t"])
     return {
         "signals": sig,
         "count": len(sig),
