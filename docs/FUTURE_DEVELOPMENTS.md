@@ -72,6 +72,49 @@ de-duplication and date-change tracking (treat like the law tracker — an event
 moves is itself a signal); time-zone honesty; and avoiding a US/EU bias in the starter
 catalog.
 
+### How the calendar gets populated — two complementary feeds
+
+Both are feasible, and they reinforce each other: aggregated official calendars are the
+**trustworthy backbone**; corpus-extracted dates are a **soft signal layer** that suggests
+events and powers comparative-over-time analysis. They reconcile — a date a reporter
+mentions that lands on a confirmed calendar event corroborates coverage.
+
+**A. Aggregate openly-accessible calendars → a new source *type*.** Most authorities
+already publish machine-readable calendars: **iCal (`.ics`)** and CSV/JSON feeds from
+electoral commissions, parliaments, central banks (Fed/ECB meeting calendars), exchanges
+(IPO/earnings/expiry calendars), the UN, standards/sports bodies, conference organisers.
+The right shape is a **new source type** — `events`/`calendar` — handled with its own
+peculiarities, exactly the way financial data (FRED/Stooq CSV) and legal catalogs are
+their own kinds of source. Concretely: an `EventSource` (curated `configs/world_events.yml`
++ user-added feeds) and an **iCal/CSV importer** through the same ethical, robots-respecting
+fetch path, idempotent per `(source, uid)`, every event provenanced with `official_url` +
+`captured_at`. High trust, low risk — this is the **P1** backbone.
+
+**B. Extrapolate dates *from* articles → comparative-over-time analysis.** Run temporal
+expression extraction on article text: absolute dates, and **relative expressions**
+("next Tuesday", "last week", "by year-end") resolved against the article's *publication
+date* as the anchor (baseline: a `dateparser`/regex pass; richer: a HeidelTime/SUTime-style
+normaliser if a dependency is ever warranted). This yields, per article, the **event
+date(s) it references** — distinct from when it was published. The payoff is exactly the
+comparative analysis asked for: bucket and **align the corpus on the event-time axis** so
+you can compare *how different outlets covered the same moment/event*, and correlate that
+with the existing Insights trends / market / law signals.
+- **Honesty (critical here).** An extracted date is *an assertion in the text, attributed
+  to that article* — never ground truth. Confidence is graded (explicit ISO date ≫ resolved
+  relative expression ≫ vague), stored alongside provenance. Unresolvable/ambiguous → left
+  out, never guessed.
+- **Feeds the calendar semi-automatically, not silently.** Article-extracted event-dates
+  become **candidate** calendar entries (clustered across corroborating articles, linked to
+  their sources) that the user confirms or dismisses. We never auto-publish a corpus-derived
+  date as a confirmed fact — that would betray the verification mission. Full automation is
+  acceptable only for *suggestion/ranking*, with a human (or a confirmed official-feed
+  match) closing the loop. This is the **P2** enrichment.
+
+**Verdict.** Ship **A** first (official iCal/CSV aggregation as a new source type — clean,
+high-trust, mirrors the markets/law catalog pattern); add **B** as a corpus-derived signal
+layer that suggests events and unlocks the comparative-over-time view, kept honest with
+provenance + confidence + human-in-the-loop confirmation.
+
 ---
 
 ## Other ideas captured this cycle (stubs)
