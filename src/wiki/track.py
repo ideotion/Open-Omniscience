@@ -87,7 +87,11 @@ def update_page(session: Session, client, page: WikiPage, *, ores_client=None,
 
         ores_d = ores_g = ores_prov = None
         if ores_client:
-            sc = ores_client.score(page.wiki, [r["revid"]]).get(r["revid"])
+            try:
+                sc = ores_client.score(page.wiki, [r["revid"]]).get(r["revid"])
+            except Exception:  # noqa: BLE001 - ORES is optional and MUST fail-open (it's often down/deprecated)
+                _LOG.warning("ORES scoring failed for %s rev %s", page.title, r["revid"], exc_info=True)
+                sc = None
             if sc:
                 ores_d, ores_g, ores_prov = sc.get("damaging"), sc.get("goodfaith"), sc.get("provenance")
 
