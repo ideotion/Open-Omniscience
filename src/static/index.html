@@ -195,6 +195,20 @@
     .vitals-pop .vr b { font-variant-numeric:tabular-nums; font-weight:600; max-width:160px;
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .vitals-pop .vnote { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.35; }
+    /* Indices board */
+    .idx-board { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; margin-top:14px; }
+    .idx-card { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+    .idx-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .idx-name { font-weight:600; }
+    .idx-mkt { font-size:11px; margin-top:1px; }
+    .idx-quote { text-align:right; }
+    .idx-num { font-variant-numeric:tabular-nums; font-weight:700; font-size:17px; }
+    .idx-chg { font-size:12px; font-variant-numeric:tabular-nums; margin-top:1px; }
+    .idx-chg.up { color:var(--ok); } .idx-chg.down { color:var(--err); } .idx-chg.flat { color:var(--muted); }
+    .idx-spark { width:100%; height:42px; margin:8px 0 4px; display:block; }
+    .idx-spark-empty { height:42px; display:flex; align-items:center; font-size:11px; }
+    .idx-foot { font-size:11px; }
+    .idx-foot a { color:var(--muted); text-decoration:underline; }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -368,7 +382,8 @@
           <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
           <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
           <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
-          <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Markets</span><span class="badge">adv</span></button>
+          <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
+          <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span><span class="badge">adv</span></button>
         </div>
         <div class="nav-group" data-grp="collect">
           <div class="gl">Collect</div>
@@ -852,10 +867,26 @@
       </section>
     </div>
 
-    <!-- ============================ MARKETS ========================== -->
+    <!-- ============================ INDICES ========================== -->
+    <div class="tab-page" id="tab-indices">
+    <section class="panel">
+      <h2>World stock indices</h2>
+      <p class="muted" style="margin-top:0">Major stock-exchange indices from official, free sources
+        (FRED, Stooq) — <b>end-of-day</b> values, each labelled with its as-of date and source.
+        <b>Not real-time</b>; every number comes straight from the downloaded file — nothing scraped or guessed.</p>
+      <div class="row">
+        <div style="flex:0 0 auto"><button onclick="loadIndicesData(this)">Load / refresh indices</button></div>
+        <div id="idx-status" class="hint" style="align-self:center"></div>
+      </div>
+      <div id="idx-note" class="hint muted" style="margin-top:4px"></div>
+      <div id="idx-board" class="idx-board"><div class="muted">Loading…</div></div>
+    </section>
+    </div>
+
+    <!-- ============================ COMMODITIES ====================== -->
     <div class="tab-page" id="tab-markets">
     <section class="panel">
-      <h2>Market trends</h2>
+      <h2>Commodities &amp; rare-earth</h2>
       <p class="muted" style="margin-top:0">Real series from official feeds (FRED → World Bank / EIA):
         FX (EUR/USD), energy (WTI, Brent, gas), metals &amp; gold. Every point comes straight from the
         downloaded file — nothing scraped or guessed.</p>
@@ -1427,7 +1458,8 @@
       {id:"insights", label:"Insights",           grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
       {id:"law",      label:"World law",          grp:"Investigate"},
-      {id:"markets",  label:"Markets",            grp:"Investigate"},
+      {id:"indices",  label:"Indices",            grp:"Investigate"},
+      {id:"markets",  label:"Commodities",        grp:"Investigate"},
       {id:"ingest",   label:"Collect",            grp:"Collect"},
       {id:"sources",  label:"Sources",            grp:"Collect"},
       {id:"database", label:"Library",            grp:"Collect"},
@@ -1443,6 +1475,7 @@
     const TAB_LOADERS = {
       home: loadHome,
       ingest: loadScheduler,
+      indices: loadIndices,
       markets: loadMarkets,
       insights: loadInsights,
       wiki: loadWiki,
@@ -2789,6 +2822,63 @@
     let MKT_SERIES = [];
     const MKT_PRICES = {};            // symbol -> [{observed_on, price, currency, unit}]
     let _mktConfigLoaded = false;
+
+    // -- Indices board (world stock-exchange indices) ----------------------- //
+    async function loadIndices() { loadIndicesBoard(); }
+
+    async function loadIndicesBoard() {
+      const el = $("idx-board");
+      el.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const b = await api("/api/markets/board?category=index");
+        $("idx-note").textContent = b.note || "";
+        el.innerHTML = b.cards.length ? b.cards.map(idxCard).join("")
+          : '<div class="muted">No index catalog found.</div>';
+      } catch (e) { el.innerHTML = `<div class="muted">Could not load indices: ${esc(e.message)}</div>`; }
+    }
+
+    function _num(n) { return n == null ? "—" : Number(n).toLocaleString(undefined, {maximumFractionDigits: 2}); }
+
+    function idxSpark(pts, chg) {
+      if (!pts || pts.length < 2) return '<div class="idx-spark-empty muted">no series yet</div>';
+      const w = 280, h = 42, n = pts.length, vals = pts.map(p => p[1]);
+      const min = Math.min(...vals), max = Math.max(...vals), rng = (max - min) || 1;
+      const x = i => (i / (n - 1)) * w, y = v => h - ((v - min) / rng) * (h - 6) - 3;
+      const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
+      const col = chg == null ? "var(--muted)" : (chg >= 0 ? "var(--ok)" : "var(--err)");
+      return `<svg class="idx-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="${col}" stroke-width="1.5"/></svg>`;
+    }
+
+    function idxCard(c) {
+      const has = !!c.latest;
+      const chg = c.change_pct;
+      const cls = chg == null ? "flat" : (chg >= 0 ? "up" : "down");
+      const chgTxt = chg == null ? "" : `${chg >= 0 ? "▲" : "▼"} ${Math.abs(chg).toFixed(2)}%`;
+      return `<div class="idx-card">
+        <div class="idx-top">
+          <div class="idx-id"><div class="idx-name">${esc(c.name)}</div>
+            <div class="idx-mkt muted">${esc(c.market || "")}</div></div>
+          <div class="idx-quote"><div class="idx-num">${_num(has ? c.latest.price : null)}</div>
+            <div class="idx-chg ${cls}">${chgTxt}</div></div>
+        </div>
+        ${idxSpark(c.spark, chg)}
+        <div class="idx-foot muted">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
+          · ${esc(c.currency || "")} · <a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">source</a></div>
+      </div>`;
+    }
+
+    async function loadIndicesData(btn) {
+      btn.disabled = true;
+      const st = $("idx-status");
+      st.textContent = "Importing index feeds (official end-of-day CSVs; may take a moment)…";
+      try {
+        const r = await api("/api/markets/feeds/import-all?category=index", {method: "POST"});
+        st.textContent = `Imported ${r.points_imported} point(s) across ${r.feeds} feed(s)${r.failed ? `, ${r.failed} failed` : ""}.`;
+        await loadIndicesBoard();
+        toast("Indices updated.");
+      } catch (e) { st.textContent = ""; toast("Load failed: " + e.message, "err"); }
+      finally { btn.disabled = false; }
+    }
 
     async function loadMarkets() { loadDashboard(); }
 
