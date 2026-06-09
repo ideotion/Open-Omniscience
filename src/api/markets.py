@@ -251,17 +251,23 @@ def import_all_feeds(category: str | None = None, db: Session = Depends(get_db))
 
     results, imported, failed = [], 0, 0
     for feed in feeds_for_category(category):
-        r = import_feed(
-            db, url=feed.url, symbol=feed.symbol, fetcher=_fetcher,
-            date_column=feed.date_column, value_column=feed.value_column,
-            currency=feed.currency, unit=feed.unit, market=feed.market,
-            source=f"feed:{feed.key}:{feed.url}",
-        )
-        results.append({"key": feed.key, **r.to_dict()})
-        if r.status == "imported":
-            imported += r.imported
-        else:
+        try:
+            r = import_feed(
+                db, url=feed.url, symbol=feed.symbol, fetcher=_fetcher,
+                date_column=feed.date_column, value_column=feed.value_column,
+                currency=feed.currency, unit=feed.unit, market=feed.market,
+                source=f"feed:{feed.key}:{feed.url}",
+            )
+            results.append({"key": feed.key, **r.to_dict()})
+            if r.status == "imported":
+                imported += r.imported
+            else:
+                failed += 1
+        except Exception as exc:  # noqa: BLE001 - one feed must never 500 the whole batch
+            db.rollback()
             failed += 1
+            results.append({"key": feed.key, "symbol": feed.symbol, "status": "error",
+                            "detail": f"{type(exc).__name__}: {exc}"})
     return {"feeds": len(results), "points_imported": imported, "failed": failed, "results": results}
 
 

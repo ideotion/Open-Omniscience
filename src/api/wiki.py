@@ -111,7 +111,16 @@ def track_page(page_id: int, ores: bool = True, db: Session = Depends(get_db)) -
     page = db.query(WikiPage).filter_by(id=page_id).first()
     if page is None:
         raise HTTPException(status_code=404, detail=f"Page {page_id} not found.")
-    return update_page(db, _client, page, ores_client=_ores if ores else None)
+    try:
+        return update_page(db, _client, page, ores_client=_ores if ores else None)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - a MediaWiki fetch/parse failure is a 502, not a crash
+        db.rollback()
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not track '{page.title}': {type(exc).__name__}: {exc}",
+        ) from exc
 
 
 @router.post("/track-now")
@@ -120,7 +129,11 @@ def track_now(ores: bool = True, limit: int = Query(25, ge=1, le=500),
     """Track all watched pages now (synchronous; for a handful of pages)."""
     from src.wiki.track import track_watched
 
-    return track_watched(db, _client, ores_client=_ores if ores else None, limit_pages=limit)
+    try:
+        return track_watched(db, _client, ores_client=_ores if ores else None, limit_pages=limit)
+    except Exception as exc:  # noqa: BLE001 - never 500 the batch on one bad fetch
+        db.rollback()
+        raise HTTPException(status_code=502, detail=f"Tracking failed: {type(exc).__name__}: {exc}") from exc
 
 
 @router.get("/changes")

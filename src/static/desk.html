@@ -1590,10 +1590,10 @@
         (rows.length ? rows.map(c => {
           const tags = (c.top_tags || []).map(([t, n]) =>
             `<span class="pill" style="cursor:pointer" title="show ${esc(t)} sources in ${esc(c.code)}"
-                onclick="openSourcesForKeyword(${JSON.stringify(esc(c.code))}, ${JSON.stringify(esc(t))})">${esc(t)} ${n}</span>`
+                onclick="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, ${esc(JSON.stringify(t))})">${esc(t)} ${n}</span>`
           ).join(" ") || '<span class="muted">—</span>';
           const codeCell = `<strong style="cursor:pointer" title="show sources in ${esc(c.code)}"
-                onclick="openSourcesForKeyword(${JSON.stringify(esc(c.code))}, null)">${esc(c.code)}</strong>`;
+                onclick="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, null)">${esc(c.code)}</strong>`;
           return `<tr><td>${codeCell}</td><td>${c.sources}</td>
                   <td class="muted">${c.enabled}</td><td>${tags}</td></tr>`;
         }).join("") : `<tr><td colspan="4" class="muted">No matching countries.</td></tr>`);
@@ -1693,7 +1693,7 @@
 
     function sourceRow(s) {
       const tags = (s.tags || []).map(x =>
-        `<span class="pill" style="cursor:pointer" title="filter by this tag" onclick="srcFilterTag(${JSON.stringify(esc(x))})">${esc(x)}</span>`).join(" ");
+        `<span class="pill" style="cursor:pointer" title="filter by this tag" onclick="srcFilterTag(${esc(JSON.stringify(x))})">${esc(x)}</span>`).join(" ");
       const prio = [1,2,3].map(p =>
         `<option value="${p}" ${s.priority===p?"selected":""}>${p}</option>`).join("");
       return `<tr>
@@ -1707,7 +1707,7 @@
         <td class="muted">${s.article_count!=null?s.article_count:'—'}</td>
         <td><input type="checkbox" style="width:auto" ${s.enabled?"checked":""}
               onchange="updateSource(${s.id},{enabled:this.checked})"></td>
-        <td><button class="tiny danger" onclick="deleteSource(${s.id}, ${JSON.stringify(esc(s.name))})">Delete</button></td>
+        <td><button class="tiny danger" onclick="deleteSource(${s.id}, ${esc(JSON.stringify(s.name))})">Delete</button></td>
       </tr>`;
     }
 
@@ -2002,7 +2002,7 @@
         }
         const lv = last ? `${last.price} <span class="muted">${esc(last.currency)}/${esc(last.unit)}</span>` : '—';
         return `<div class="stat" style="cursor:pointer" title="open detail + correlation"
-            onclick="chartSymbol(${JSON.stringify(esc(s.symbol))}, ${JSON.stringify(esc(last?last.unit:''))})">
+            onclick="chartSymbol(${esc(JSON.stringify(s.symbol))}, ${esc(JSON.stringify(last?last.unit:''))})">
           <div style="display:flex;justify-content:space-between;align-items:baseline">
             <strong>${esc(s.symbol)}</strong> ${change}</div>
           <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv} · ${pts.length} pts</div>
@@ -2053,7 +2053,7 @@
             <td class="muted" style="font-size:12px;max-width:240px">${esc(r.last_status||"never run")}</td>
             <td style="white-space:nowrap">
               <button class="tiny secondary" onclick="runMarketRule(${r.id})" title="Fetch once and apply the rule">Test</button>
-              <button class="tiny secondary" onclick="chartSymbol(${JSON.stringify(esc(r.symbol))}, ${JSON.stringify(esc(r.unit||''))})">Chart</button>
+              <button class="tiny secondary" onclick="chartSymbol(${esc(JSON.stringify(r.symbol))}, ${esc(JSON.stringify(r.unit||''))})">Chart</button>
               <button class="tiny danger" onclick="deleteMarketRule(${r.id})">Delete</button></td></tr>`).join("")
             : `<tr><td colspan="5" class="muted">No extraction rules. Feeds cover most needs; add a rule below to scrape a price off a specific page.</td></tr>`);
       } catch (e) { /* rules optional */ }
@@ -2072,8 +2072,8 @@
             <td class="muted">${esc(f.currency)}/${esc(f.unit)}</td>
             <td class="muted">${f.points}</td>
             <td style="white-space:nowrap">
-              <button class="tiny secondary" onclick="importFeed(${JSON.stringify(esc(f.key))})">Import</button>
-              <button class="tiny secondary" onclick="chartSymbol(${JSON.stringify(esc(f.symbol))}, ${JSON.stringify(esc(f.unit))})">Chart</button>
+              <button class="tiny secondary" onclick="importFeed(${esc(JSON.stringify(f.key))})">Import</button>
+              <button class="tiny secondary" onclick="chartSymbol(${esc(JSON.stringify(f.symbol))}, ${esc(JSON.stringify(f.unit))})">Chart</button>
             </td></tr>`).join("");
       } catch (e) { /* feeds optional */ }
     }
@@ -2178,7 +2178,7 @@
       try {
         const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`);
         el.innerHTML = `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} — ${d.count} point(s)
-            <button class="tiny secondary" onclick="correlateSymbol(${JSON.stringify(esc(symbol))})" title="Correlate price change vs news volume">Correlate with news</button></h2>` +
+            <button class="tiny secondary" onclick="correlateSymbol(${esc(JSON.stringify(symbol))})" title="Correlate price change vs news volume">Correlate with news</button></h2>` +
           sparkSvg(d.prices) +
           `<div id="mkt-corr" class="hint" style="margin-top:8px"></div>`;
       } catch (e) {
@@ -2459,9 +2459,9 @@
             <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:""}</td>
             <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
             <td style="white-space:nowrap">
-              ${e.status==='downloading'?`<button class="tiny secondary" onclick="pauseDump(${JSON.stringify(esc(e.key))})">Pause</button>`:
-                (e.status!=='done'?`<button class="tiny secondary" onclick="startDump(${JSON.stringify(esc(e.wiki))})">Resume</button>`:"")}
-              <button class="tiny danger" onclick="deleteDump(${JSON.stringify(esc(e.key))})">Delete</button>
+              ${e.status==='downloading'?`<button class="tiny secondary" onclick="pauseDump(${esc(JSON.stringify(e.key))})">Pause</button>`:
+                (e.status!=='done'?`<button class="tiny secondary" onclick="startDump(${esc(JSON.stringify(e.wiki))})">Resume</button>`:"")}
+              <button class="tiny danger" onclick="deleteDump(${esc(JSON.stringify(e.key))})">Delete</button>
             </td></tr>`).join("");
       } catch (e) { /* dumps optional */ }
     }
@@ -2506,7 +2506,7 @@
             <td>${p.revisions}</td><td class="muted">${p.flagged}</td>
             <td style="white-space:nowrap">
               <button class="tiny secondary" onclick="trackWikiPage(${p.id})">Track</button>
-              <button class="tiny danger" onclick="deleteWikiPage(${p.id}, ${JSON.stringify(esc(p.title))})">Delete</button>
+              <button class="tiny danger" onclick="deleteWikiPage(${p.id}, ${esc(JSON.stringify(p.title))})">Delete</button>
             </td></tr>`).join("")
             : `<tr><td colspan="7" class="muted">No watched pages yet. Add one above.</td></tr>`);
       } catch (e) { toast("Wiki pages: " + e.message, "err"); }
