@@ -218,6 +218,14 @@
       border-radius:8px; margin-bottom:7px; background:var(--panel2); }
     .ag-when { flex:0 0 86px; }
     .ag-body { flex:1; min-width:0; }
+    .ag-cals { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
+    .ag-cal { font-size:12px; padding:3px 10px; border:1px solid var(--border); border-radius:999px;
+      background:var(--panel); color:var(--muted); cursor:pointer; opacity:.6; }
+    .ag-cal.on { color:var(--accent-fg,var(--fg)); background:color-mix(in srgb,var(--accent) 18%,transparent);
+      border-color:var(--accent); opacity:1; }
+    .ag-tag { display:inline-block; font-size:11px; padding:0 6px; margin-right:3px; border-radius:10px;
+      background:var(--panel2); border:1px solid var(--border); cursor:pointer; }
+    .ag-tag:hover { border-color:var(--accent); color:var(--accent); }
     /* Batch-ingest source picker */
     .bi-list { margin-top:10px; max-height:300px; overflow:auto; border:1px solid var(--border);
       border-radius:8px; background:var(--panel2); }
@@ -966,11 +974,17 @@
         <b>Fixed civic dates are confirmed</b>; summit/meeting dates move each year — follow the official
         source for the exact date. Nothing here is fabricated. <span class="muted">(Importing exact dates from
         official iCal feeds is the next step.)</span></p>
-      <div class="row">
-        <div><label for="agenda-cat">Category</label><select id="agenda-cat" onchange="loadAgenda()">
+      <div style="margin-top:6px"><span class="hint">Calendars <span class="muted">— subscribe to the ones you care about; tap to toggle</span></span>
+        <div id="agenda-cals" class="ag-cals"></div></div>
+      <div class="row" style="margin-top:6px">
+        <div><label for="agenda-cat">Category</label><select id="agenda-cat" onchange="renderAgenda()">
           <option value="">all</option><option value="civic">civic</option><option value="political">political</option>
           <option value="economic">economic</option><option value="technology">technology</option></select></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadAgenda()">Refresh</button></div>
+        <div><label for="agenda-country">Country</label><select id="agenda-country" onchange="renderAgenda()"><option value="">all</option></select></div>
+        <div><label for="agenda-tag">Tag</label><select id="agenda-tag" onchange="renderAgenda()"><option value="">all</option></select></div>
+        <div><label for="agenda-group">Group by</label><select id="agenda-group" onchange="renderAgenda()">
+          <option value="month">month</option><option value="calendar">calendar</option><option value="country">country</option></select></div>
+        <div style="flex:0 0 auto;align-self:end"><label class="switch" style="margin-top:0"><input type="checkbox" id="agenda-subonly" checked onchange="renderAgenda()"> subscribed only</label></div>
       </div>
       <div id="agenda-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
     </section>
@@ -2121,28 +2135,72 @@
     // ===================================================================== //
     //  WORLD LAW — change tracking (§5)                                       //
     // ===================================================================== //
-    // -- Agenda (world events) ---------------------------------------------- //
+    // -- Agenda (world events): subscribe to calendars, filter & group ------ //
     const _MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const AG = { events: [], cals: [], caveat: "", meta: {} };
+    function agSubs() { try { return new Set(JSON.parse(localStorage.getItem("oo.agenda.subs") || "null") || []); } catch (_e) { return new Set(); } }
+    function agSaveSubs(set) { localStorage.setItem("oo.agenda.subs", JSON.stringify([...set])); }
+
     async function loadAgenda() {
       const box = $("agenda-list");
       box.innerHTML = '<div class="muted">Loading…</div>';
-      const cat = $("agenda-cat").value;
       try {
-        const d = await api("/api/events" + (cat ? "?category=" + encodeURIComponent(cat) : ""));
-        if (!d.events.length) { box.innerHTML = '<div class="muted">No events.</div>'; return; }
-        box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.events.map(e => {
-          const when = e.next_occurrence
-            ? `<span class="pill ok">${esc(e.next_occurrence)}</span>`
-            : `<span class="pill" title="exact date moves each year">${e.month ? esc(_MONTHS[e.month-1]) : esc(e.cadence||"")}</span>`;
-          const conf = e.confirmed ? '<span class="pill ok" title="fixed annual date">confirmed</span>'
-                                   : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
-          return `<div class="ag-row">
-            <div class="ag-when">${when}</div>
-            <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${conf}</div>
-              <div class="hint">${e.note?esc(e.note)+" · ":""}${e.region?esc(e.region)+" · ":""}<a href="${esc(safeUrl(e.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div></div>
-          </div>`;
-        }).join("");
+        const [ev, fac] = await Promise.all([api("/api/events"), api("/api/events/calendars")]);
+        AG.events = ev.events; AG.caveat = ev.caveat; AG.cals = fac.calendars;
+        AG.meta = Object.fromEntries(fac.calendars.map(c => [c.key, c]));
+        // First run: subscribe to all calendars so the agenda isn't empty.
+        if (localStorage.getItem("oo.agenda.subs") == null) agSaveSubs(new Set(fac.calendars.map(c => c.key)));
+        $("agenda-country").innerHTML = '<option value="">all</option>' + fac.countries.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+        $("agenda-tag").innerHTML = '<option value="">all</option>' + fac.tags.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+        renderAgenda();
       } catch (e) { box.innerHTML = `<div class="muted">Could not load agenda: ${esc(e.message)}</div>`; }
+    }
+
+    function renderAgendaCals() {
+      const subs = agSubs();
+      $("agenda-cals").innerHTML = AG.cals.map(c =>
+        `<button class="ag-cal${subs.has(c.key) ? " on" : ""}" data-k="${esc(c.key)}" onclick="toggleCalSub(this)"
+           title="${esc(c.description || "")}">${esc(c.name)} <span class="muted">${c.count}</span></button>`).join("");
+    }
+    function toggleCalSub(btn) {
+      const subs = agSubs(); const k = btn.dataset.k;
+      subs.has(k) ? subs.delete(k) : subs.add(k);
+      agSaveSubs(subs); renderAgendaCals(); renderAgenda();
+    }
+
+    function agWhen(e) {
+      return e.next_occurrence
+        ? `<span class="pill ok">${esc(e.next_occurrence)}</span>`
+        : `<span class="pill" title="exact date moves each year">${e.month ? esc(_MONTHS[e.month-1]) : esc(e.cadence||"")}</span>`;
+    }
+    function agRow(e) {
+      const conf = e.confirmed ? '<span class="pill ok" title="fixed annual date">confirmed</span>'
+                               : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
+      const tags = (e.tags||[]).map(t => `<span class="ag-tag" onclick="$('agenda-tag').value='${esc(t)}';renderAgenda()">${esc(t)}</span>`).join("");
+      return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
+        <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}</div>
+          <div class="hint">${tags} ${e.note?"· "+esc(e.note):""} · <a href="${esc(safeUrl(e.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div></div></div>`;
+    }
+    function renderAgenda() {
+      renderAgendaCals();
+      const box = $("agenda-list");
+      const subs = agSubs();
+      const cat = $("agenda-cat").value, country = $("agenda-country").value, tag = $("agenda-tag").value;
+      const subOnly = $("agenda-subonly").checked, groupBy = $("agenda-group").value;
+      let rows = AG.events.filter(e =>
+        (!cat || e.category === cat) && (!country || e.country === country) &&
+        (!tag || (e.tags||[]).includes(tag)) && (!subOnly || subs.has(e.calendar)));
+      if (!rows.length) { box.innerHTML = `<p class="hint">${esc(AG.caveat)}</p><div class="muted">No events match — adjust filters or subscribe to more calendars above.</div>`; return; }
+      const groups = {};
+      for (const e of rows) {
+        const k = groupBy === "month" ? (e.next_occurrence ? _MONTHS[+e.next_occurrence.slice(5,7)-1] : (e.month ? _MONTHS[e.month-1] : "Movable / no fixed date"))
+                : groupBy === "calendar" ? (AG.meta[e.calendar]?.name || e.calendar)
+                : (e.country || "—");
+        (groups[k] = groups[k] || []).push(e);
+      }
+      box.innerHTML = `<p class="hint">${esc(AG.caveat)} · showing ${rows.length} of ${AG.events.length}</p>` +
+        Object.entries(groups).map(([k, list]) =>
+          `<h3 style="font-size:13px;margin:12px 0 6px">${esc(k)} <span class="muted">${list.length}</span></h3>` + list.map(agRow).join("")).join("");
     }
 
     async function loadLaw() {
