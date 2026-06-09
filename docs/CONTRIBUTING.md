@@ -73,15 +73,15 @@ else derives from it:
 The software is young and still being proven, so it sits **below `0.1`**:
 
 ```
-0.0.x  pre-alpha   ← we are here (0.0.6). Things work and are tested, but the surface
+0.0.x  pre-alpha   ← we are here (0.0.7). Things work and are tested, but the surface
                      is still moving; not yet inviting public commentary.
 0.1.x  alpha       a public, working, honestly-labelled alpha — open to feedback.
 0.x    beta        once things consolidate.
 1.0    release      an official, stable release.
 ```
 
-We will **not** jump to `0.4`/`0.6`-style numbers that imply more maturity than exists.
-`0.0.6` is the sixth small iteration of the pre-alpha series — nothing more is claimed.
+We will **not** jump to `0.4`/`0.7`-style numbers that imply more maturity than exists.
+`0.0.7` is the seventh small iteration of the pre-alpha series — nothing more is claimed.
 
 ### Cycle ↔ version mapping
 
@@ -93,6 +93,7 @@ leading zeros elided for brevity:
 | `0.04` | `0.0.4` |
 | `0.05` | `0.0.5` |
 | `0.06` | `0.0.6` |
+| `0.07` | `0.0.7` |
 
 So "the `0.06` intelligence layer" means "the work that ships in `0.0.6`". When you read a
 cycle shorthand like `0.05` in the docs, read it as `0.0.5`.

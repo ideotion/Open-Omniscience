@@ -55,6 +55,28 @@ from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
+# Optional accelerator libraries (zstandard / lz4 / blosc / snappy) are exactly
+# that -- optional. When one is absent the codec simply isn't offered and callers
+# fall back to a stdlib algorithm (zlib/bz2/lzma/gzip), so their absence is normal,
+# not an error. We therefore note it once per process at DEBUG (never per Compressor
+# instance, of which several are created at import) so the terminal isn't spammed
+# with WARNINGs that wrongly imply something is broken. Install them for better
+# ratios:  pip install -e ".[compression]"
+_REPORTED_MISSING: set[str] = set()
+
+
+def _note_missing_optional(name: str, pip_hint: str) -> None:
+    """Record an absent optional accelerator at most once per process, at DEBUG."""
+    if name in _REPORTED_MISSING:
+        return
+    _REPORTED_MISSING.add(name)
+    logger.debug(
+        "Optional compression library '%s' not available; using stdlib fallback. "
+        "Install for better ratios: %s",
+        name, pip_hint,
+    )
+
+
 # =============================================================================
 # Compression Algorithm Definitions
 # =============================================================================
@@ -249,7 +271,7 @@ class Compressor:
                 "decompress": None,
                 "available": False
             }
-            logger.warning("zstandard library not available. Install with: pip install zstandard")
+            _note_missing_optional("zstandard", 'pip install ".[compression]"  (or: pip install zstandard)')
         
         try:
             import lz4.frame
@@ -264,7 +286,7 @@ class Compressor:
                 "decompress": None,
                 "available": False
             }
-            logger.warning("lz4 library not available. Install with: pip install lz4")
+            _note_missing_optional("lz4", 'pip install ".[compression]"  (or: pip install lz4)')
         
         try:
             import blosc
@@ -285,7 +307,7 @@ class Compressor:
                 "decompress": None,
                 "available": False
             }
-            logger.warning("blosc library not available. Install with: pip install blosc")
+            _note_missing_optional("blosc", "pip install blosc")
         
         try:
             import gzip
@@ -314,7 +336,7 @@ class Compressor:
                 "decompress": None,
                 "available": False
             }
-            logger.warning("snappy library not available. Install with: pip install python-snappy")
+            _note_missing_optional("snappy", "pip install python-snappy")
     
     def is_available(self, algorithm: CompressionAlgorithm) -> bool:
         """Check if a compression algorithm is available."""

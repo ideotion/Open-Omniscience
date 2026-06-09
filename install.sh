@@ -7,14 +7,15 @@
 #   * One command to install: clone (via scripts/bootstrap.sh) then this script
 #     puts up a simple menu and does the rest.
 #   * Pick what you want: the Core (scrape / store / search / export) is always
-#     installed; Analysis tools and Local-LLM tools are optional and can be added
-#     later by simply re-running this script -- it is idempotent.
+#     installed; Analysis tools, storage Compression accelerators and Local-LLM
+#     tools are optional and can be added later by simply re-running this script
+#     -- it is idempotent.
 #   * A double-click launcher so non-technical users never need the terminal.
 #
 # Modes:
 #   ./install.sh                 interactive menu (default)
 #   ./install.sh --template      Qubes: install system packages in the TemplateVM
-#   ./install.sh --appvm         Qubes: non-interactive Core+Analysis under $HOME
+#   ./install.sh --appvm         Qubes: non-interactive Core+Analysis+Compression under $HOME
 #   ./install.sh --unattended    scripted install driven by env vars (see below)
 #   ./install.sh --help
 #
@@ -83,7 +84,7 @@ Open Omniscience installer
 
 Usage:
   ./install.sh                 Interactive menu (recommended)
-  ./install.sh --appvm         Qubes AppVM: Core + Analysis under \$HOME (no prompts)
+  ./install.sh --appvm         Qubes AppVM: Core + Analysis + Compression under \$HOME (no prompts)
   sudo ./install.sh --template Qubes TemplateVM: install system packages (run once)
   ./install.sh --unattended    Scripted install (driven by OO_* env vars)
   ./install.sh --check         Health check (Python, data, db, LLM, launcher)
@@ -106,16 +107,17 @@ EOF
 CHOSEN_EXTRAS=""
 choose_components() {
     if [ "$UNATTENDED" = "1" ] || [ "$INTERACTIVE" = "0" ]; then
-        CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis}"
+        CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis,compression}"
         return
     fi
     if [ "$HAVE_WHIPTAIL" = "1" ]; then
         # Strip whiptail's surrounding quotes and join selections with commas.
         CHOSEN_EXTRAS="$(whiptail --title "Open Omniscience -- choose components" \
             --checklist "Core (scrape, store, search, export) is always installed.\nSelect optional add-ons (Space to toggle, Enter to confirm):" \
-            14 72 2 \
-            "analysis" "Quantitative analysis, keywords, framing, sentiment" ON \
-            "llm"      "Local LLM tools (summarize / translate via Ollama)"  OFF \
+            16 74 3 \
+            "analysis"    "Quantitative analysis, keywords, framing, sentiment" ON \
+            "compression" "Storage compression accelerators (zstandard, lz4)"   ON \
+            "llm"         "Local LLM tools (summarize / translate via Ollama)"  OFF \
             3>&1 1>&2 2>&3 < "$TTY_IN" | tr -d '"' | tr ' ' ',')"
         return
     fi
@@ -123,6 +125,9 @@ choose_components() {
     say "${BOLD}Choose components${RST} (Core is always installed):"
     local extras=""
     if ask_yn "Install Analysis tools (keywords, framing, sentiment)?" y; then extras="analysis"; fi
+    if ask_yn "Install storage Compression accelerators (zstandard, lz4 -- smaller database)?" y; then
+        extras="${extras:+$extras,}compression"
+    fi
     if ask_yn "Install Local-LLM tools (summarize / translate via Ollama)?" n; then
         extras="${extras:+$extras,}llm"
     fi
@@ -472,9 +477,9 @@ main() {
     case "${1:-}" in
         ""|--menu|--interactive) run_interactive ;;
         --template)              install_template ;;
-        --appvm)                 OO_UNATTENDED=1 OO_COMPONENTS="analysis" OO_MAKE_LAUNCHER="${OO_MAKE_LAUNCHER:-1}" \
-                                 UNATTENDED=1 do_install "analysis" ;;
-        --unattended)            UNATTENDED=1; do_install "${OO_COMPONENTS-analysis}" ;;
+        --appvm)                 OO_UNATTENDED=1 OO_COMPONENTS="analysis,compression" OO_MAKE_LAUNCHER="${OO_MAKE_LAUNCHER:-1}" \
+                                 UNATTENDED=1 do_install "analysis,compression" ;;
+        --unattended)            UNATTENDED=1; do_install "${OO_COMPONENTS-analysis,compression}" ;;
         --check|--doctor)        do_check ;;
         --uninstall)             do_uninstall ;;
         -h|--help)               usage ;;
