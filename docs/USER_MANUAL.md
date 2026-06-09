@@ -512,6 +512,11 @@ locally; no telemetry.
     unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails)
     and destroy the key. There is also a `panic` CLI and an `--ephemeral` run mode
     (RAM-only data, wiped on exit).
+  - **Uninstall the app** — removes the app's **virtualenv** and **desktop launchers**,
+    then stops the server (type-confirmed). Your **data is kept** (use Panic wipe first to
+    destroy it); the app folder is left in place to delete manually. Equivalent to
+    `./install.sh --uninstall` or the **“Uninstall Open Omniscience”** desktop icon the
+    installer creates next to the two app launchers.
 
   Governance and the dual-use red lines that bound all of this are in
   [`GOVERNANCE.md`](GOVERNANCE.md) (also in **Help & docs**).

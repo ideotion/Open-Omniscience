@@ -1529,6 +1529,17 @@
         full-disk encryption (LUKS/Qubes/Tails) and destroy the key.</p>
       <button class="danger" onclick="panicWipe()">Wipe everything now</button>
       <div id="panic-result" class="hint"></div>
+
+      <hr>
+      <h3 style="margin-bottom:6px">Uninstall the app</h3>
+      <p class="muted" style="margin-top:0">Removes the app's <strong>virtualenv</strong> and its
+        <strong>desktop launchers</strong>, then stops the server. Your <strong>data is kept</strong>
+        (to destroy the corpus/keys, use <em>Panic wipe</em> above first). The app folder itself is left in
+        place — delete it manually if you want it gone. You can also run
+        <code>./install.sh --uninstall</code> in a terminal, or use the
+        <em>“Uninstall Open Omniscience”</em> desktop icon.</p>
+      <button class="danger" onclick="uninstallApp()">Uninstall &amp; stop the app</button>
+      <div id="uninstall-result" class="hint"></div>
     </section>
     </div>
     </div>
@@ -2722,6 +2733,22 @@
           `Restart the app. <span class="muted">${esc(r.limit)}</span>`;
         toast("Local data wiped. Restart the app.", "warn");
       } catch (e) { toast("Panic wipe failed: " + e.message, "err"); }
+    }
+
+    async function uninstallApp() {
+      if (!confirm("UNINSTALL: remove the app's virtualenv and desktop launchers, then stop the server?\n\n" +
+                   "Your data is KEPT (use Panic wipe to destroy it). The app folder is left in place.")) return;
+      if (prompt('To confirm, type UNINSTALL in capitals:') !== "UNINSTALL") {
+        toast("Uninstall cancelled.", "err"); return; }
+      try {
+        const r = await api("/api/safety/uninstall", {method: "POST", body: JSON.stringify({confirm: true})});
+        if (!r.scheduled) { $("uninstall-result").textContent = r.note || "Nothing to remove."; return; }
+        $("uninstall-result").innerHTML =
+          `<span class="pill warn">uninstalling</span> The app is stopping now; this page will stop responding. ` +
+          `Your data is kept at <code>${esc(r.data_dir || "")}</code>. ` +
+          `Removing the virtualenv and ${(r.launchers || []).length} launcher(s).`;
+        toast("Uninstalling — the app is stopping.", "warn");
+      } catch (e) { toast("Uninstall failed: " + e.message, "err"); }
     }
 
     // -- First-run onboarding (empty corpus) -------------------------------- //
