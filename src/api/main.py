@@ -137,6 +137,9 @@ from src.api.events import router as events_router
 # Import system router (loopback-only self-observation: live scraping + vitals)
 from src.api.system import router as system_router
 
+# Import hazards router (open natural-hazard/weather feeds, space-time relay)
+from src.api.hazards import router as hazards_router
+
 # Import temporal-map router (space-time signals on one zoomable map + time axis)
 from src.api.timemap import router as timemap_router
 
@@ -360,6 +363,7 @@ app.include_router(ingestion_router)
 
 # Include system router (live scraping URL + process vitals; loopback-only)
 app.include_router(system_router)
+app.include_router(hazards_router)
 app.include_router(events_router)
 app.include_router(personality_router)
 
