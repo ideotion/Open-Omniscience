@@ -1,0 +1,10 @@
+Found 4 known vulnerabilities in 1 package
+Name Version ID             Fix Versions
+---- ------- -------------- ------------
+pip  25.3    PYSEC-2026-196 26.1.2
+pip  25.3    CVE-2026-1703  26.0
+pip  25.3    CVE-2026-3219  26.1
+pip  25.3    CVE-2026-6357  26.1
+Name             Skip Reason
+---------------- -------------------------------
+open-omniscience distribution marked as editable
