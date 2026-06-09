@@ -35,7 +35,8 @@ HTTP API) and troubleshooting.
 3. [The tools, one by one](#3-the-tools-one-by-one)
    - [Home](#30-home) · [Search](#31-search) · [Collect](#32-collect) ·
      [Sources](#33-sources) · [Library](#34-library) · [Markets](#35-markets) ·
-     [Insights](#36-insights) · [Wikipedia](#37-wikipedia) ·
+     [Insights](#36-insights) · [Temporal map](#36a-temporal-map) ·
+     [Wikipedia](#37-wikipedia) ·
      [Evidence & custody](#38-evidence--custody) · [Settings](#39-settings) ·
      [Help & docs](#310-help--docs)
 4. [Common workflows (how-to)](#4-common-workflows-how-to)
@@ -152,7 +153,7 @@ Destructive actions always ask first.
 
 The sidebar groups the tools by intent:
 
-- **Investigate** — Home · Search · Insights · Wikipedia · Markets *(advanced)*
+- **Investigate** — Home · Search · Insights · Temporal map · Wikipedia · Markets *(advanced)*
 - **Collect** — Collect · Sources · Library
 - **Trust** — Evidence & custody
 - **System** — Settings · Help & docs
@@ -316,6 +317,38 @@ opt-in via the spaCy `[nlp]` extra.)*
 Every figure is a real aggregate with its sample size and a caveat. See
 [`docs/USER_MANUAL.md`](USER_MANUAL.md). To tune which keywords appear, use the
 [keyword filter in Settings](#39-settings).
+
+### 3.6a Temporal map
+
+**What it's for:** seeing *where* and *when* together. A journalist's two oldest
+questions are location and time; the Temporal map puts every locatable, datable
+signal on one zoomable world map under a **time slider** that sweeps from antiquity
+to the near future — so you can watch what clustered, where, and when.
+
+- **What it plots:** a curated set of well-documented historical & scheduled
+  **anchors** (e.g. Vesuvius 79 CE → upcoming eclipses and Olympics) ships by
+  default. Toggle **my corpus** to add your own articles (placed at the source's
+  location on its publication date) and **live hazards** to relay open earthquake/
+  disaster feeds (USGS/GDACS). Each kind has a colour in the legend; click a legend
+  chip to show/hide it.
+- **Moving through time:** drag the slider (or click the density strip beneath it)
+  to set the moment in focus; **▶ play** sweeps it forward. Events fade with
+  distance in time; **future / unconfirmed** ones are drawn as dashed rings. The
+  **window** control (± a year up to all of time) decides how much past/future is
+  visible at once.
+- **Reading the map:** drag to pan, zoom in to reveal labels (semantic zoom). Click
+  any pin for its date, place, source, official link, and a **"Find coverage in your
+  corpus"** button that runs a search for that place — closing the loop from a point
+  in space-time back to what you've gathered.
+- **Coastlines (optional):** the map shows an accurate lat/lon graticule out of the
+  box; run `python scripts/build_world_outline.py` once (needs network) to add real
+  Natural Earth coastlines. Until then, no coastlines are *invented*.
+
+**Honesty by construction:** a pin needs **both** a coordinate and a date — anything
+missing one is simply absent, never dropped onto (0, 0), and the caveat says so.
+Country-level pins are flagged **approximate** (a stand-in point, not the exact
+spot); corpus pins mark **coverage origin on the publication date**, not the event
+site; scholarly date doubt (e.g. Pompeii's exact day) rides along in the pin's note.
 
 ### 3.7 Wikipedia
 
@@ -589,6 +622,9 @@ catalog at `/api/catalog/sources`, `/export.csv`, `/template.csv`, `POST /import
 
 **Database** — `GET /api/database/stats|coverage|countries`;
 `GET /api/database/backup`; `POST /api/database/restore`.
+
+**Temporal map** — `GET /api/timemap` (space-time signals; `?kinds`, `?start`/`?end`
+fractional-year window, `?hazards`, `?articles`, `?days`); `GET /api/timemap/range`.
 
 **Insights** — `GET/PUT /api/insights/filter`; `POST /api/insights/exclude|include`;
 `GET /api/insights/status`; `POST /api/insights/reindex`;

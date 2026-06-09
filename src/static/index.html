@@ -577,6 +577,9 @@
           <button class="qcard" onclick="showTab('insights')">
             <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg></span>
             <span><b>See the patterns</b><small>Trends, who's mentioned with whom, where.</small></span></button>
+          <button class="qcard" onclick="showTab('timemap')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
+            <span><b>See it in space &amp; time</b><small>Events, hazards and your coverage on a world map with a time slider.</small></span></button>
           <button class="qcard" onclick="showTab('custody')">
             <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
             <span><b>Prove it</b><small>Tamper-evident, signed provenance for your evidence.</small></span></button>
@@ -4077,9 +4080,17 @@
         ${coast}${grid}${dots}</svg>`;
     }
 
+    // Close the space-time loop: jump to a corpus search for this place/subject.
+    function tmapFindCoverage(q) {
+      showTab("search");
+      const i = $("q"); if (i) i.value = q;
+      if (typeof doSearch === "function") doSearch();
+    }
+
     function showTmapDetail(i) {
       const s = _tmapVisible[i]; if (!s) return;
       const url = s.url ? safeUrl(s.url) : null;
+      const cov = (s.place || s.title || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
       const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">≈ country</span>`
                 : s.geocode === "city" ? `<span class="pill" title="placed at a known city">city</span>` : "";
       const conf = s.confirmed ? `<span class="pill ok">confirmed</span>` : `<span class="pill warn">unconfirmed / scheduled</span>`;
@@ -4094,7 +4105,10 @@
           · ${(+s.lat).toFixed(2)}, ${(+s.lon).toFixed(2)} · <span title="data source">${esc(s.source)}</span>
         </div>
         ${s.note?`<div class="hint" style="margin-top:5px">${esc(s.note)}</div>`:""}
-        ${url?`<div style="margin-top:6px"><a href="${url}" target="_blank" rel="noopener noreferrer">Official / reference source ↗</a></div>`:""}
+        <div class="row" style="margin-top:7px;gap:8px">
+          ${url?`<a class="tiny secondary" href="${url}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;align-self:center">Official / reference source ↗</a>`:""}
+          ${cov?`<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>`:""}
+        </div>
       </div>`;
     }
 
