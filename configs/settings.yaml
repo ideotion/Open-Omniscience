@@ -17,68 +17,51 @@
 #
 # For inquiries, contact: open-omniscience@ideotion.com
 
-# Open Omniscience Configuration Settings
-# This file contains user preferences and rate limits for the application
+# Open Omniscience configuration.
+#
+# Honest contract (v0.0.7 audit, finding DOC-02): every key in this file is
+# actually read by src/config/settings.py:_apply_yaml_config. Keys that were
+# documented here but ignored by the code (database.sqlite_path, logging
+# rotation sizes, audit file paths, frontend.*, export.*, CORS method/header
+# lists) have been removed rather than left as decoys. Environment variables
+# override these values; runtime UI preferences live in data/app_settings.json.
+#
+# Not configured here (by design):
+#   - database location  -> DATABASE_URL / OO_DATA_DIR environment variables
+#   - app version        -> single-sourced from package metadata (pyproject.toml)
+#   - theme & UI prefs   -> Settings UI, persisted to data/app_settings.json
 
 # Application settings
 app:
   name: "Open Omniscience"
-  # The version is single-sourced from the installed package metadata
-  # (pyproject.toml) at runtime -- see src/config/settings.py:_package_version
-  # (finding BUG-03). Any value here is ignored on purpose to prevent drift.
   debug: false
-  
-# Scraping settings
+
+# Scraping settings (the ethical fetcher also honours OO_FETCH_* env vars)
 scraping:
-  max_workers: 5  # Number of parallel threads for scraping
-  max_retries: 3  # Maximum retries for failed requests
-  initial_retry_delay: 1  # Initial delay in seconds for retries (exponential backoff)
-  timeout: 10  # Request timeout in seconds
+  max_workers: 5        # Number of parallel threads for scraping
+  max_retries: 3        # Maximum retries for transient fetch failures
+  initial_retry_delay: 1  # Initial backoff delay in seconds (exponential)
+  timeout: 10           # Request timeout in seconds
   user_agent: "OpenOmniscience/1.0 (+https://github.com/ideotion/Open-Omniscience)"
-  
-# Rate limiting
+
+# API rate limiting
 rate_limiting:
-  global_rate_limit: "100/hour"  # Global API rate limit
-  search_rate_limit: "100/hour"  # Rate limit for search endpoint
-  export_rate_limit: "50/hour"  # Rate limit for export endpoint
+  global_rate_limit: "100/hour"   # Global API rate limit
+  search_rate_limit: "100/hour"   # Rate limit for search endpoint
+  export_rate_limit: "50/hour"    # Rate limit for export endpoint
   sources_rate_limit: "100/hour"  # Rate limit for sources endpoint
-  
-# Database settings
-database:
-  # For SQLite (default)
-  sqlite_path: "data/open_omniscience.db"
-  
-  # For PostgreSQL (uncomment and configure for production)
-  # postgres_url: "postgresql://user:password@localhost:5432/open_omniscience"
-  
+
 # Logging settings
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_file: "logs/open_omniscience.log"
-  max_log_size: 10485760  # 10MB
-  backup_count: 5
-  
+
 # Audit settings
 audit:
   enabled: true
   log_directory: "audit"
-  scrape_log: "audit/scrape_log.csv"
-  error_log: "audit/errors.log"
-  
-# Frontend settings
-frontend:
-  articles_per_page: 20
-  default_language: "en"
-  theme: "system"  # light, dark, or system
-  
-# Export settings
-export:
-  max_export_size: 10000  # Maximum number of articles to export at once
-  csv_encoding: "utf-8"
-  
-# Security settings
+
+# Security settings (loopback only -- do not widen on a local-first deployment)
 security:
-  cors_origins: ["http://127.0.0.1:8000", "http://localhost:8000"]  # loopback only
+  cors_origins: ["http://127.0.0.1:8000", "http://localhost:8000"]
   cors_allow_credentials: true
-  cors_allow_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-  cors_allow_headers: ["Authorization", "Content-Type", "Accept"]

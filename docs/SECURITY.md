@@ -2,7 +2,7 @@
 
 ## Model
 
-Open Omniscience v0.0.6 targets a **single local user** on a **Qubes OS Debian AppVM**:
+Open Omniscience v0.0.7 targets a **single local user** on a **Qubes OS Debian AppVM**:
 
 - Binds to **127.0.0.1 only** (loopback). It must never be exposed on a network
   interface; there is intentionally no authentication/RBAC for this deployment.
@@ -10,6 +10,15 @@ Open Omniscience v0.0.6 targets a **single local user** on a **Qubes OS Debian A
 - Outbound traffic happens **only during ingestion**, and only through the single
   ethical fetcher: robots.txt is honoured and **fail-closed** (if it can't be
   confirmed, the URL is not fetched), per-host rate-limited, identifying User-Agent.
+  As of the v0.0.7 audit (finding ETH-01) this includes RSS-feed **discovery** —
+  it fetches through the same ethical fetcher, with the same guards.
+- **One documented exception** (audit finding ETH-02): *Sources → Discover by topic*
+  sends your topic query to **DuckDuckGo** (an external service) to find candidate
+  outlets. It is strictly **user-triggered** — never part of ingestion, the scheduler,
+  or any default path — and nothing else in the app calls out to third-party services.
+  If your threat model forbids any third-party query, simply don't use that button;
+  everything else works without it. (The browser-rendered `/docs` Swagger page also
+  references a CDN for its own assets; the app itself never fetches it.)
 
 ## Data integrity / chain of custody
 
