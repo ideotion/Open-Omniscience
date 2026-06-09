@@ -499,8 +499,11 @@ class Article(Base):
         Index("idx_article_canonical_url", "canonical_url"),
         # Index for faster source-based queries
         Index("idx_article_source_id", "source_id"),
-        # Index for faster text search (on original content)
-        Index("idx_article_content", "content"),
+        # NB: there is deliberately NO B-tree index on `content`. Full-text search
+        # goes through the FTS5 virtual table (src/database/fts.py); a B-tree over
+        # the full article body is never used by any query yet cost ~224 MB on a
+        # 50k-article DB (63% of the file) and slowed every insert (finding PERF-02,
+        # measured in scripts/benchmark_audit.py). Dropped via migration f1a2b3c4d5e6.
         # Index for faster language queries
         Index("idx_article_language", "language"),
         # Index for faster region queries
