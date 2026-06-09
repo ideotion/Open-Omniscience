@@ -136,6 +136,9 @@ from src.api.events import router as events_router
 
 # Import system router (loopback-only self-observation: live scraping + vitals)
 from src.api.system import router as system_router
+
+# Import personality router (bundled, local quotes + fun facts — UI flourishes)
+from src.api.personality import router as personality_router
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -352,6 +355,7 @@ app.include_router(ingestion_router)
 # Include system router (live scraping URL + process vitals; loopback-only)
 app.include_router(system_router)
 app.include_router(events_router)
+app.include_router(personality_router)
 
 # Include analysis-dependent routers only if the [analysis] extra is installed.
 if _ANALYSIS_AVAILABLE:
