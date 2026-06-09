@@ -40,6 +40,10 @@ class IngestUrlRequest(BaseModel):
     url: str
 
 
+class BatchIngestRequest(BaseModel):
+    source_ids: list[int]
+
+
 class IngestEmailRequest(BaseModel):
     host: str
     user: str
@@ -81,6 +85,48 @@ def ingest_source_endpoint(
         )
     tally = ingest_source(db, source, fetcher=fetcher)
     return {"source_id": source_id, "source": source.name, "tally": tally}
+
+
+@router.post("/sources/ingest-batch")
+def ingest_batch_endpoint(
+    req: BatchIngestRequest,
+    db: Session = Depends(get_db),
+    fetcher: EthicalFetcher = Depends(get_fetcher),
+) -> dict:
+    """Fetch the RSS/Atom feeds of many sources in one run (the batch picker).
+
+    Best-effort: each selected source is fetched through the same ethical path
+    (robots fail-closed, rate-limited) and reported individually — one bad feed
+    never aborts the batch. Bounded to 50 sources per call so a click can't kick
+    off an unbounded crawl; sources without a feed are skipped with a clear status.
+    Synchronous (runs in the threadpool); a queued/background variant is a future
+    step for very large batches.
+    """
+    ids = list(dict.fromkeys(req.source_ids))[:50]  # de-dup, cap
+    if not ids:
+        raise HTTPException(status_code=400, detail="No source_ids provided.")
+    results: list[dict] = []
+    aggregate: dict[str, int] = {}
+    ingested = 0
+    for sid in ids:
+        source = db.query(Source).filter_by(id=sid).first()
+        if source is None:
+            results.append({"source_id": sid, "status": "not_found"})
+            continue
+        if not source.rss_url:
+            results.append({"source_id": sid, "source": source.name, "status": "no_feed"})
+            continue
+        try:
+            tally = ingest_source(db, source, fetcher=fetcher)
+            results.append({"source_id": sid, "source": source.name, "status": "ok", "tally": tally})
+            ingested += 1
+            for k, v in tally.items():
+                if isinstance(v, int):
+                    aggregate[k] = aggregate.get(k, 0) + v
+        except Exception as exc:  # noqa: BLE001 - one bad feed must not abort the batch
+            db.rollback()
+            results.append({"source_id": sid, "source": source.name, "status": "error", "detail": str(exc)})
+    return {"requested": len(ids), "ingested": ingested, "aggregate": aggregate, "results": results}
 
 
 @router.post("/sources/{source_id}/ingest-email")

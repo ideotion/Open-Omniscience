@@ -209,6 +209,18 @@
     .idx-spark-empty { height:42px; display:flex; align-items:center; font-size:11px; }
     .idx-foot { font-size:11px; }
     .idx-foot a { color:var(--muted); text-decoration:underline; }
+    /* Batch-ingest source picker */
+    .bi-list { margin-top:10px; max-height:300px; overflow:auto; border:1px solid var(--border);
+      border-radius:8px; background:var(--panel2); }
+    .bi-row { display:flex; align-items:center; gap:9px; padding:6px 11px; border-bottom:1px solid var(--border);
+      cursor:pointer; font-size:13px; }
+    .bi-row:last-child { border-bottom:0; }
+    .bi-row:hover { background:color-mix(in srgb, var(--accent) 7%, transparent); }
+    .bi-row input { width:auto; flex:0 0 auto; }
+    .bi-nofeed { opacity:.5; cursor:not-allowed; }
+    .bi-name { font-weight:600; } .bi-meta { font-size:11px; }
+    table.bi-res { width:100%; border-collapse:collapse; font-size:12px; }
+    table.bi-res th, table.bi-res td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--border); }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -630,6 +642,35 @@
       </div>
       <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
       <div id="ingest-result" class="hint"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Batch ingest — pick sources</h2>
+      <p class="hint" style="margin-top:0">Select several sources and fetch all their feeds in one run. Filter by
+        language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed,
+        rate-limited); up to 50 per run.</p>
+      <div class="row">
+        <div style="flex:2"><label for="bi-search">Search</label>
+          <input id="bi-search" placeholder="name or domain" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-lang">Language</label><input id="bi-lang" placeholder="en" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-country">Country</label><input id="bi-country" placeholder="fr" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-type">Type</label><input id="bi-type" placeholder="news" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-enabled">Show</label>
+          <select id="bi-enabled" onchange="renderBatchPicker()">
+            <option value="">all</option><option value="1" selected>enabled</option><option value="0">disabled</option>
+          </select></div>
+      </div>
+      <div class="row" style="margin-top:6px;align-items:center">
+        <button class="ghost tiny" onclick="batchSelectAll(true)">Select all (filtered)</button>
+        <button class="ghost tiny" onclick="batchSelectAll(false)">Clear</button>
+        <span id="bi-count" class="hint"></span>
+      </div>
+      <div id="bi-list" class="bi-list"><div class="muted">Loading sources…</div></div>
+      <div class="row" style="margin-top:8px;align-items:center">
+        <button onclick="ingestBatch(this)">Ingest selected feeds</button>
+        <span id="bi-status" class="hint"></span>
+      </div>
+      <div id="bi-results" style="margin-top:8px"></div>
     </section>
     </div>
 
@@ -2721,6 +2762,81 @@
       } catch (e) { $("ingest-result").textContent = ""; toast("Ingest failed: " + e.message, "err"); }
     }
 
+    // -- Batch ingest picker ------------------------------------------------ //
+    const BI = { sources: [], selected: new Set() };
+
+    async function loadBatchPicker() {
+      try {
+        BI.sources = await api("/api/sources/?limit=1000");
+        BI.selected = new Set();
+      } catch (e) { BI.sources = []; }
+      renderBatchPicker();
+    }
+
+    function _biFiltered() {
+      const q = ($("bi-search").value || "").trim().toLowerCase();
+      const lang = ($("bi-lang").value || "").trim().toLowerCase();
+      const country = ($("bi-country").value || "").trim().toLowerCase();
+      const type = ($("bi-type").value || "").trim().toLowerCase();
+      const en = $("bi-enabled").value;
+      return BI.sources.filter(s => {
+        if (q && !((s.name||"").toLowerCase().includes(q) || (s.domain||"").toLowerCase().includes(q))) return false;
+        if (lang && (s.language||"").toLowerCase() !== lang) return false;
+        if (country && (s.country||"").toLowerCase() !== country) return false;
+        if (type && !(s.source_type||"").toLowerCase().includes(type)) return false;
+        if (en === "1" && !s.enabled) return false;
+        if (en === "0" && s.enabled) return false;
+        return true;
+      });
+    }
+
+    function renderBatchPicker() {
+      const list = $("bi-list"); if (!list) return;
+      const rows = _biFiltered();
+      if (!rows.length) { list.innerHTML = '<div class="muted">No sources match these filters.</div>'; }
+      else {
+        list.innerHTML = rows.map(s => {
+          const feed = !!s.rss_url;
+          const meta = [s.language, s.country, s.source_type].filter(Boolean).map(esc).join(" · ");
+          return `<label class="bi-row${feed ? "" : " bi-nofeed"}" title="${feed ? esc(s.rss_url) : "no RSS feed — cannot batch-fetch"}">
+            <input type="checkbox" ${feed ? "" : "disabled"} ${BI.selected.has(s.id) ? "checked" : ""}
+              onchange="batchToggle(${s.id}, this.checked)">
+            <span class="bi-name">${esc(s.name)}</span>
+            <span class="bi-meta muted">${meta}${feed ? "" : " · no feed"}${s.enabled ? "" : " · disabled"}</span></label>`;
+        }).join("");
+      }
+      const ingestable = rows.filter(s => s.rss_url).length;
+      $("bi-count").textContent = `${BI.selected.size} selected · ${ingestable} feed-bearing of ${rows.length} shown`;
+    }
+
+    function batchToggle(id, on) { on ? BI.selected.add(id) : BI.selected.delete(id); renderBatchPicker(); }
+
+    function batchSelectAll(on) {
+      const rows = _biFiltered().filter(s => s.rss_url);
+      if (on) rows.forEach(s => BI.selected.add(s.id));
+      else rows.forEach(s => BI.selected.delete(s.id));
+      renderBatchPicker();
+    }
+
+    async function ingestBatch(btn) {
+      const ids = [...BI.selected];
+      if (!ids.length) { toast("Select at least one source with a feed.", "err"); return; }
+      btn.disabled = true;
+      $("bi-status").textContent = `Fetching ${ids.length} feed(s)… (ethical & rate-limited; may take a while)`;
+      $("bi-results").innerHTML = "";
+      try {
+        const r = await api("/api/sources/ingest-batch", {method: "POST", body: JSON.stringify({source_ids: ids})});
+        $("bi-status").textContent = `Done: ${r.ingested}/${r.requested} fetched · ${tally(r.aggregate)}`;
+        $("bi-results").innerHTML = `<table class="bi-res"><tr><th>Source</th><th>Result</th></tr>` +
+          r.results.map(x => `<tr><td>${esc(x.source || ("#" + x.source_id))}</td>` +
+            `<td>${x.status === "ok" ? tally(x.tally)
+              : `<span class="pill warn">${esc(x.status)}</span>${x.detail ? " " + esc(x.detail) : ""}`}</td></tr>`).join("") +
+          `</table>`;
+        toast("Batch ingest complete."); doSearch();
+      } catch (e) { $("bi-status").textContent = ""; toast("Batch ingest failed: " + e.message, "err"); }
+      finally { btn.disabled = false; }
+    }
+
     // -- Scheduler ---------------------------------------------------------- //
     function toggleCrawlFields() {
       $("crawl-fields").style.display = $("sch-mode").value === "crawl" ? "flex" : "none";
@@ -2765,6 +2881,7 @@
       try { applySchedConfig(await api("/api/scheduler/config")); }
       catch (e) { /* config panel stays at defaults */ }
       previewTargets();
+      loadBatchPicker();
     }
 
     async function previewTargets() {
