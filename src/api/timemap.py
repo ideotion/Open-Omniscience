@@ -12,9 +12,11 @@ future. Live geophysical hazards are layered in best-effort *only when asked*
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
-from src.timemap.collect import KNOWN_KINDS, collect, time_range
+from src.database.session import get_db
+from src.timemap.collect import KNOWN_KINDS, articles_to_signals, collect, time_range
 
 router = APIRouter(prefix="/api/timemap", tags=["timemap"])
 
@@ -71,19 +73,50 @@ def _hazard_signals() -> tuple[list[dict], list[str]]:
     return sigs, failures
 
 
+def _article_signals(db: Session, days: int | None, limit: int) -> list[dict]:
+    """Recent corpus articles (with a publication date + geocodable source) as signals."""
+    from datetime import datetime, timedelta
+
+    from src.database.models import Article
+
+    q = db.query(Article).filter(Article.published_at.isnot(None))
+    if days:
+        q = q.filter(Article.published_at >= datetime.utcnow() - timedelta(days=days))
+    rows = []
+    for a in q.order_by(Article.published_at.desc()).limit(limit).all():
+        src = getattr(a, "source", None)
+        meta = getattr(src, "source_metadata", None) if src else None
+        rows.append({
+            "title": a.title,
+            "url": a.url,
+            "published": a.published_at,
+            "country": a.country or (getattr(src, "country", None) if src else None),
+            "city": getattr(meta, "city", None) if meta else None,
+        })
+    return articles_to_signals(rows)
+
+
 @router.get("")
 def list_signals(
     kinds: str | None = Query(None, description="comma-separated kinds to keep"),
     start: float | None = Query(None, description="earliest fractional year, e.g. 1900"),
     end: float | None = Query(None, description="latest fractional year, e.g. 2030"),
     hazards: bool = Query(False, description="layer in live geophysical hazards (network)"),
+    articles: bool = Query(False, description="layer in geocoded corpus articles (publication date)"),
+    days: int | None = Query(None, ge=1, le=36500, description="only articles from the last N days"),
     limit: int = Query(2000, ge=1, le=10000),
+    db: Session = Depends(get_db),
 ) -> dict:
     """Space-time signals within an optional time window and kind filter."""
     extra: list[dict] = []
     failures: list[str] = []
     if hazards:
         extra, failures = _hazard_signals()
+    if articles:
+        try:
+            extra += _article_signals(db, days, limit)
+        except Exception as exc:  # pragma: no cover - DB guard
+            failures.append(f"corpus articles unavailable: {exc}")
     sig = collect(kinds=_kinds_param(kinds), start=start, end=end, extra=extra)
     if len(sig) > limit:
         sig = sig[:limit]

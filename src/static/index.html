@@ -1201,6 +1201,8 @@
         <button class="tiny secondary" onclick="zoomTmap(1.4)">－ zoom</button>
         <button class="tiny secondary" onclick="resetTmap()">reset view</button>
         <label class="tiny" style="display:inline-flex;align-items:center;gap:5px;margin-left:6px">
+          <input type="checkbox" id="tmap-articles" onchange="loadTimemap()"> my corpus</label>
+        <label class="tiny" style="display:inline-flex;align-items:center;gap:5px">
           <input type="checkbox" id="tmap-hazards" onchange="loadTimemap()"> live hazards</label>
         <button class="tiny secondary" onclick="loadTimemap()">refresh</button>
         <span class="hint" style="align-self:center">drag to pan · zoom in to read labels · click a pin for detail</span>
@@ -4104,13 +4106,14 @@
 
     async function loadTimemap() {
       const hz = $("tmap-hazards") && $("tmap-hazards").checked;
+      const arts = $("tmap-articles") && $("tmap-articles").checked;
       $("tmap-status").textContent = "Loading…";
       if (TMAP_OUTLINE == null) {                 // best-effort, once: real coastlines if the asset exists
         try { const o = await fetch("/static/world_outline.json"); TMAP_OUTLINE = o.ok ? await o.json() : false; }
         catch { TMAP_OUTLINE = false; }            // absent -> graticule fallback, no error
       }
       try {
-        const d = await api(`/api/timemap?limit=4000${hz?"&hazards=true":""}`);
+        const d = await api(`/api/timemap?limit=4000${hz?"&hazards=true":""}${arts?"&articles=true":""}`);
         TMAP = {signals: d.signals || [], range: d.range || null, caveat: d.caveat || ""};
         const r = TMAP.range || {};
         $("tmap-status").innerHTML = `${TMAP.signals.length} signals · ${r.min!=null?Math.floor(r.min):"?"}–${r.max!=null?Math.ceil(r.max):"?"}`

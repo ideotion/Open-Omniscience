@@ -69,6 +69,47 @@ def _in_window(t: float, start: float | None, end: float | None) -> bool:
     return (start is None or t >= start) and (end is None or t <= end)
 
 
+def articles_to_signals(rows: list[dict]) -> list[dict]:
+    """Corpus articles -> space-time signals (pure; the API supplies ``rows`` from the DB).
+
+    Each row is ``{title, url, published, country, city}``. We place an article at its
+    *source/detected location* (geocoded via the gazetteer) on its *publication date* —
+    an honest coverage-origin signal, not a claim about where the story happened. An
+    article with no date, or no geocodable place, is skipped (never plotted at 0,0).
+    """
+    out: list[dict] = []
+    for r in rows:
+        pub = r.get("published")
+        if pub is None:
+            continue
+        d = pub.date() if hasattr(pub, "date") else pub
+        try:
+            year = d.year
+        except AttributeError:
+            continue
+        g = geocode(r.get("country"), r.get("city"))
+        if not g:
+            continue
+        title = (r.get("title") or "").strip() or "(untitled article)"
+        out.append({
+            "id": "article:" + str(r.get("url") or title),
+            "title": title,
+            "kind": "article",
+            "lat": g["lat"], "lon": g["lon"],
+            "t": round(year_float(d), 3),
+            "date": d.isoformat(), "year": year,
+            "date_precision": "day",
+            "confirmed": True,            # a real publication date
+            "place": g.get("place"),
+            "country": (r.get("country") or "").lower() or None,
+            "url": r.get("url"),
+            "note": "Placed at the source/detected location on its publication date — coverage origin, not the event site.",
+            "source": "corpus",
+            "geocode": g["geocode"],
+        })
+    return out
+
+
 def collect(*, kinds: set[str] | None = None,
             start: float | None = None, end: float | None = None,
             include_events: bool = True,

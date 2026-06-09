@@ -10,7 +10,7 @@ from datetime import date
 
 from src.timemap import year_float
 from src.timemap.anchors import load_anchors
-from src.timemap.collect import collect, time_range
+from src.timemap.collect import articles_to_signals, collect, time_range
 
 
 def test_year_float_is_monotonic_and_in_range():
@@ -74,6 +74,39 @@ def test_extra_signals_injected_and_validated():
     titles = {s["title"] for s in out}
     assert "Live" in titles and "No coord" not in titles
     assert len(out) == base + 1
+
+
+def test_articles_to_signals_geocodes_and_dates():
+    from datetime import datetime
+
+    rows = [
+        # a known gazetteer city -> placed (Paris is in the shipped sample)
+        {"title": "A story", "url": "https://x/1", "published": datetime(2024, 5, 1, 9, 0),
+         "country": "fr", "city": "Paris"},
+        # no date -> skipped
+        {"title": "No date", "url": "https://x/2", "published": None, "country": "fr", "city": "Paris"},
+        # unknown country, no city -> not geocodable -> skipped (never plotted at 0,0)
+        {"title": "Nowhere", "url": "https://x/3", "published": datetime(2024, 5, 2),
+         "country": "zz", "city": None},
+    ]
+    sigs = articles_to_signals(rows)
+    assert len(sigs) == 1
+    s = sigs[0]
+    assert s["kind"] == "article" and s["source"] == "corpus" and s["confirmed"] is True
+    assert s["date"] == "2024-05-01" and int(s["t"]) == 2024
+    assert s["lat"] is not None and s["lon"] is not None
+
+
+def test_articles_join_the_collected_stream():
+    from datetime import date
+
+    base = len(collect())
+    extra = articles_to_signals([
+        {"title": "T", "url": "u", "published": date(2024, 1, 1), "country": "gb", "city": "London"},
+    ])
+    assert len(collect(extra=extra)) == base + 1
+    # respects the kind filter like any other signal
+    assert all(s["kind"] == "article" for s in collect(kinds={"article"}, extra=extra))
 
 
 def test_time_range_reports_bounds_and_counts():
