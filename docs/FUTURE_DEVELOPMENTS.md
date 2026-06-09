@@ -181,3 +181,83 @@ slot. Easter eggs live behind harmless triggers (a Konami-style key sequence, a 
 on the logo, a date like Press Freedom Day) and are documented in the code so they're
 reviewable, never hidden surprises in a security tool.
 
+---
+
+## Space–time: the agenda as the anchoring layer for *all* information
+
+**The reframe.** The agenda is not "a list of upcoming events." It is the **time spine**
+of a deeper idea: *every signal the app holds is anchored in **time** (when) and **space**
+(where), and the meaning often lives in their **synchronicity**.* Tensions over oil →
+a war (a place, a timeline of escalation). Tensions over chips → Taiwan between China and
+the US (a strait, a sequence of moves). Climate → Arctic ice melt → new passages → a
+"useless" place becomes a pivotal chokepoint and a rare-earth frontier. These are not
+separate stories; they are **the same story read along time and across space**. An
+election is a *place* (a polity) + a *time* (the vote, the mandate). A war is a *geography*
+(borders, terrain, routes) + a *time* (emergence → casualties → tech adoption → settlement).
+The tool should let a journalist **anchor everything in space and time, then see what
+converges.**
+
+**The data is already space-time-stamped.** Keyword mentions carry `observed_on` +
+`country` + `city`; articles carry dates + source geography + extracted places; market
+series are dated; law changes carry `observed_at` + `jurisdiction`; events carry
+date/window + country/region + tags. What's missing is a **unifying read model** and the
+**views + detectors** that treat them as one fabric.
+
+### Layer 1 — a unifying "signal" model (when × where × what)
+A thin, read-only projection: every domain exposes a common shape —
+`Signal(domain, title, when[date|window], where[country/region/(lat,lon)], entities[],
+tags[], magnitude?, link)`. Articles, keyword spikes, market moves, law diffs, events all
+become Signals. No new storage of substance — just a uniform lens over what exists.
+
+### Layer 2 — the two spines made navigable
+- **Timeline (the agenda, generalised):** overlay events **+** keyword-trend spikes **+**
+  market moves **+** law changes on one time axis. The agenda becomes the backbone other
+  domains plot onto — "what is converging this quarter."
+- **Map + time slider:** the existing map gains a temporal control, so you scrub space
+  *through* time (the Arctic-route scenario is literally a map cell changing meaning over
+  years).
+- **A space-time cell** = (region × window). It is the unit of convergence.
+
+### Layer 3 — synchronicity / convergence detection (honest, not oracular)
+Scan for **space-time cells where several *independent* domains light up at once** — e.g.
+an upcoming OPEC date **+** a spike in "sanctions/oil" keywords **+** a crude-price move
+**+** a sanctions-law change, all in one region/window. That convergence is itself worth a
+human's eye. **It is reported as real co-occurrence (counts, dates, the actual signals) —
+never as causation or prediction.** Correlation ≠ causation is stated; sample sizes shown.
+
+### Layer 4 — "if-this-then-watch" early-signal rules (the forecasting ask, done honestly)
+A **user-defined, fully transparent rule engine** — an *attention director*, **not an
+oracle**. A rule is a conjunction of conditions over **real stored signals**:
+> *IF* `keyword "rare earth" rising in region X` *AND* `an upcoming "shipping/Arctic" event`
+> *AND* `a related law/market move` → **flag for attention** (the user's hypothesis "a new
+> route may be opening") — **never** an assertion that it will happen.
+
+Guardrails (this is forecasting-adjacent, so they are non-negotiable):
+- It surfaces **conditions that currently hold**, computed from real signals, and shows
+  **exactly which matched** (explainable, auditable) — it never states a future fact. The
+  "then" is *the user's labelled hypothesis*, presented as a prompt to investigate.
+- Rules are **user-owned, editable, reversible**; ship a few **example** rules, **off by
+  default**. No black-box scoring (the quarantined credibility/relationship analyzer in
+  `docs/HISTORY.md` is the cautionary tale: we surface structure, the human decides).
+
+### New Home scenarios (briefing producers) to automate the approach
+The Home "cards" engine is the natural home for this. New producers:
+- **"Converging now"** — space-time cells where ≥N independent domains are active, with the
+  contributing signals listed and linked.
+- **"On the horizon"** — an agenda event intersects your *tracked* keywords/region
+  ("COP in 12 days; your ‘climate’ coverage is rising 40% vs prior month — prepare").
+- **"Through time / anniversary lens"** — a past event recurs (an election cycle, a war's
+  onset) and may resurface; bridges the corpus's past to the agenda's forward view.
+- **"Your watch-rules fired"** — if-then matches, each showing the real matched conditions.
+
+### Build sequence (each honest and incremental)
+1. The **Signal** read-model + put events + keyword spikes + law changes + market moves on
+   one timeline (read-only).
+2. **Map + time slider.**
+3. **"Converging now" + "On the horizon"** Home producers (pure co-occurrence; explainable).
+4. The **watch-rule engine** (user-defined, transparent, off by default) + "rules fired".
+
+Depends on the events agenda (P0.5 ✓) and on the event↔keyword/region/market/law
+cross-links (events P2). This is the through-line that turns the separate verticals into
+one space-time instrument.
+
