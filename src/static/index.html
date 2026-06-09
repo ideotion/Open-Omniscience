@@ -1188,7 +1188,7 @@
                  style="width:100%" oninput="onTmapSlide()">
           <div id="tmap-strip" style="margin-top:4px"></div>
         </div>
-        <div><label for="tmap-window">Window</label><select id="tmap-window" onchange="renderTimemap()">
+        <div><label for="tmap-window">Window</label><select id="tmap-window" onchange="onTmapWindowChange()">
           <option value="0">all of time</option>
           <option value="2000">± 2000 yrs</option>
           <option value="100">± 100 yrs</option>
@@ -3922,7 +3922,25 @@
     let TMAP_OFF = new Set();                     // kinds toggled off
     let TMAP_VB = {x:0, y:0, w:MAP_W, h:MAP_H};
     let _tmapVisible = [], _tmapPlay = null, TMAP_OUTLINE = null;
-    let _tmapDrag = false, _tmapDragSX = 0, _tmapDragSY = 0, _tmapMouseupWired = false;
+    let _tmapDrag = false, _tmapDragSX = 0, _tmapDragSY = 0, _tmapMouseupWired = false, _tmapPrefsLoaded = false;
+
+    // Remember the user's layers/window across sessions (local only, like agenda subs).
+    const TMAP_PREFS = "oo.timemap.prefs";
+    function tmapSavePrefs() {
+      try { localStorage.setItem(TMAP_PREFS, JSON.stringify({
+        articles: !!($("tmap-articles") && $("tmap-articles").checked),
+        hazards: !!($("tmap-hazards") && $("tmap-hazards").checked),
+        window: $("tmap-window") ? $("tmap-window").value : "25",
+      })); } catch { /* storage may be disabled — preferences just won't persist */ }
+    }
+    function tmapRestorePrefs() {
+      let p; try { p = JSON.parse(localStorage.getItem(TMAP_PREFS) || "null"); } catch { p = null; }
+      if (!p) return;
+      if ($("tmap-articles")) $("tmap-articles").checked = !!p.articles;
+      if ($("tmap-hazards")) $("tmap-hazards").checked = !!p.hazards;
+      if ($("tmap-window") && p.window != null) $("tmap-window").value = String(p.window);
+    }
+    function onTmapWindowChange() { tmapSavePrefs(); renderTimemap(); }
     const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     function fmtYear(t) {                          // fractional year -> "Sep 2001"
@@ -4157,14 +4175,19 @@
     }
 
     function renderTimemap() {
-      buildTmapStrip && ($("tmap-strip").innerHTML = buildTmapStrip());
-      $("tmap-svg").innerHTML = buildTmapSvg();
+      $("tmap-strip").innerHTML = buildTmapStrip();
+      const svg = buildTmapSvg();                  // sets _tmapVisible
+      const note = (TMAP.signals.length && !_tmapVisible.length)
+        ? `<div class="hint" style="margin-top:6px">No signals fall in this time window — widen the <b>Window</b> or move the slider.</div>` : "";
+      $("tmap-svg").innerHTML = svg + note;
       applyTmapVB(); wireTmapDrag();
     }
 
     async function loadTimemap() {
+      if (!_tmapPrefsLoaded) { _tmapPrefsLoaded = true; tmapRestorePrefs(); }  // restore once, before reading controls
       const hz = $("tmap-hazards") && $("tmap-hazards").checked;
       const arts = $("tmap-articles") && $("tmap-articles").checked;
+      tmapSavePrefs();
       $("tmap-status").textContent = "Loading…";
       if (TMAP_OUTLINE == null) {                 // best-effort, once: real coastlines if the asset exists
         try { const o = await fetch("/static/world_outline.json"); TMAP_OUTLINE = o.ok ? await o.json() : false; }
