@@ -27,13 +27,7 @@ Tests for canonicalize_url, resolve_redirects, and generate_content_hash functio
 Author: Ideotion
 """
 
-import sys
-from pathlib import Path
-
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent / "src"))
-
-from ingestor.url_utils import canonicalize_url, generate_content_hash
+from src.utils.url_utils import canonicalize_url, generate_content_hash
 
 
 def test_canonicalize_url():
