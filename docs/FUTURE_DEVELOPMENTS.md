@@ -181,3 +181,54 @@ slot. Easter eggs live behind harmless triggers (a Konami-style key sequence, a 
 on the logo, a date like Press Freedom Day) and are documented in the code so they're
 reviewable, never hidden surprises in a security tool.
 
+---
+
+## Training & onboarding — two tracks
+
+Even an intuitive tool benefits from deliberate teaching: training is **another channel
+for communicating what the app is for and how to use it well** — and for at-risk users it
+is itself a **safety control** (the most dangerous mistakes are operational, not UI). We
+keep two clearly-distinct tracks, because they answer different needs.
+
+### 1. Notice / guidance — for *autonomous* learning (in-app, self-service)
+The learner is alone, possibly offline, possibly under pressure. Goals: get value in
+minutes, and absorb the *why* (and the limits) along the way.
+- **First-run guided tour** — a short, skippable, dismissible walkthrough of the core
+  loop (collect → search → read → insights), resumable from Help, **off by default after
+  first run** and never blocking a task.
+- **Contextual "why" notes** — the honest one-liners already next to risky/ambiguous
+  actions (confirm-before-external, "not legal advice", "association ≠ causation",
+  EOD-not-real-time) are *teaching surface*: keep them consistent and discoverable.
+- **Task recipes** — short, goal-oriented how-tos ("track a law for changes", "find every
+  article citing the same source", "build a keyword super-group"), searchable in the
+  in-app docs reader. Fully **offline**.
+- **Progressive disclosure** — advanced surfaces stay behind drawers (as today) so a
+  newcomer isn't overwhelmed; tooltips/`aria-label`s do double duty as micro-lessons.
+- **Self-check** — an optional "are you set up safely?" checklist (fetch mode, backup,
+  panic understood) that *informs*, never nags or gates.
+- Honesty bar: guidance must teach the tool's **limits**, not just its features — what it
+  cannot verify, where a number is a real aggregate vs. a heuristic, why it never decides.
+
+### 2. Supervised training — for *facilitated* learning (workshops, train-the-trainer)
+A human teacher with a group (newsroom, NGO, at-risk community). Goals: build correct
+mental models, operational-security habits, and **norms of responsible/ethical use** that
+no UI can enforce.
+- **Curriculum + facilitator guide** — modular sessions (foundations → investigations →
+  safety/opsec → ethics & dual-use red lines), with timings, exercises and discussion
+  prompts. The **safety/opsec and ethics modules are mandatory**, not optional.
+- **Train-the-trainer** material so trusted partners can run it locally, in their own
+  language and threat context (ties into i18n).
+- **Hands-on exercise corpus** — a small, shareable, *synthetic/public-domain* dataset so
+  trainees practise without touching real sensitive material.
+- **Threat-model-first framing** — teach when *not* to use a networked feature, how
+  protected-fetch/proxy actually works (and its limits), backup/passphrase discipline,
+  and the panic-wipe caveats — because for these users a training gap is a security risk.
+- Delivered as docs/materials in-repo (and printable), **never** as a hosted service or
+  anything that phones home (keeps the GOVERNANCE red lines intact).
+
+**Why the split matters.** Autonomous guidance scales and meets people where they are;
+supervised training builds the judgement and safe-use habits that protect sources and
+users. The app should make the first effortless and give partners everything they need for
+the second — and both are, above all, a way of communicating the project's ethic of
+*surfacing structure for a human to judge, never deciding for them.*
+
