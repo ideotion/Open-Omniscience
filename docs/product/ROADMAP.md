@@ -29,6 +29,7 @@
 | RM-16 | capability | Multi-LLM cross-validation (run N local models, surface agreement/divergence, never a single "truth") | Higher-trust LLM assistance | RM-12 | L | All local; surfaces divergence, asserts nothing |
 | RM-17 | capability | Pluggable source/analysis connector architecture | Community-extensible without forking | RM-01 | XL | Plugins must declare network use; sandbox review |
 | RM-18 | UX | UI internationalisation completion (i18n scaffold exists) | Reach non-English newsrooms | — | M | Bundled locales, no web fonts/CDN |
+| RM-19 | capability | Automated background source identification & aggregation: a discovery agent (corpus citation-promotion + Wikidata catalog refresh offline; DuckDuckGo channel behind the RM-03 gate) feeding a visible **candidates** staging state, with a full activity log and a user-set resource budget in Settings (see `docs/FUTURE_DEVELOPMENTS.md`) | Coverage grows without operator plumbing effort — focus on content, not source wrangling (all personas; esp. 1,2,4) | RM-03 | L | **Transparency non-negotiable:** background ≠ hidden — every query/candidate visible & logged; external channel opt-in and individually toggleable; candidates verified real (the `fabricated_sources.md` lesson) before promotion; budgeted, never resource-greedy |
 
 ## 2. Prioritisation (RICE)
 
@@ -54,6 +55,7 @@ Impact 1–3, Confidence 0.5–1.0, Effort in person-weeks (S=1, M=3, L=6, XL=12
 | RM-18 | 3 | 1 | 0.8 | 3 | **0.8** | Later |
 | RM-16 | 2 | 2 | 0.6 | 6 | **0.4** | Later |
 | RM-14 | 3 | 3 | 0.5 | 12 | **0.4** | Later |
+| RM-19 | 4 | 3 | 0.6 | 6 | **1.2** | Next |
 | RM-17 | 2 | 2 | 0.5 | 12 | **0.17** | Later |
 
 ## 3. Horizons
@@ -71,8 +73,10 @@ lint+types.
 The capabilities the scenarios most want: **RM-05** (semantic/NER search — the #1 cross-scenario
 gap), **RM-07** + **RM-15** (report generator + richer provenance-preserving exports),
 **RM-06** (scheduler/integration polish), **RM-12** (corpus-wide LLM synthesis), **RM-08**
-(offline/Qubes packaging), **RM-04** (perf). This is the jump from "searchable archive" to
-"sense-making workbench" and is the natural gate to a **0.1 public alpha**.
+(offline/Qubes packaging), **RM-04** (perf), and **RM-19** (automated background source
+discovery — offline channels first, the gated DuckDuckGo channel once RM-03 ships). This is
+the jump from "searchable archive" to "sense-making workbench" and is the natural gate to a
+**0.1 public alpha**.
 
 ### Later — vision (post-0.1): "intelligence platform, still local-first"
 The ambitions that need the foundation above: **RM-11** (semantic-network visualization),
