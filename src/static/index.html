@@ -436,6 +436,7 @@
           <button class="nav-item" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg><span>Home</span></button>
           <button class="nav-item" data-tab="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search</span></button>
           <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
+          <button class="nav-item" data-tab="timemap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/><circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg><span>Temporal map</span></button>
           <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
           <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
           <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
@@ -1165,6 +1166,56 @@
     </section>
     </div>
 
+    <!-- ========================== TEMPORAL MAP ======================= -->
+    <div class="tab-page" id="tab-timemap">
+    <section class="panel">
+      <h2>Temporal map <span class="muted" style="font-weight:400">— space &amp; time on one axis</span></h2>
+      <p class="muted" style="margin-top:0">Every locatable, datable signal on one zoomable world map, with a
+        slider that sweeps from antiquity to the near future. Drag the slider to move the moment in focus; events
+        fade with distance in time. Pins need <em>both</em> a place and a date — what has neither stays honestly off the map.</p>
+      <div id="tmap-status" class="hint">Loading…</div>
+
+      <div class="row" style="margin-top:10px;align-items:center;gap:14px">
+        <div style="flex:1;min-width:240px">
+          <label for="tmap-slider" style="display:flex;justify-content:space-between">
+            <span>Moment in focus</span>
+            <strong id="tmap-focus-label" style="font-variant-numeric:tabular-nums">—</strong>
+          </label>
+          <input id="tmap-slider" type="range" min="0" max="1000" value="1000" step="1"
+                 style="width:100%" oninput="onTmapSlide()">
+          <div id="tmap-strip" style="margin-top:4px"></div>
+        </div>
+        <div><label for="tmap-window">Window</label><select id="tmap-window" onchange="renderTimemap()">
+          <option value="0">all of time</option>
+          <option value="2000">± 2000 yrs</option>
+          <option value="100">± 100 yrs</option>
+          <option value="25" selected>± 25 yrs</option>
+          <option value="5">± 5 yrs</option>
+          <option value="1">± 1 yr</option>
+        </select></div>
+        <div style="flex:0 0 auto;align-self:end">
+          <button class="tiny secondary" id="tmap-play" onclick="toggleTmapPlay()" title="Sweep time forward">▶ play</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:8px;align-items:center;gap:8px">
+        <button class="tiny secondary" onclick="zoomTmap(0.7)">＋ zoom</button>
+        <button class="tiny secondary" onclick="zoomTmap(1.4)">－ zoom</button>
+        <button class="tiny secondary" onclick="resetTmap()">reset view</button>
+        <label class="tiny" style="display:inline-flex;align-items:center;gap:5px;margin-left:6px">
+          <input type="checkbox" id="tmap-hazards" onchange="loadTimemap()"> live hazards</label>
+        <button class="tiny secondary" onclick="loadTimemap()">refresh</button>
+        <span class="hint" style="align-self:center">drag to pan · zoom in to read labels · click a pin for detail</span>
+      </div>
+
+      <div id="tmap-legend" class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap"></div>
+
+      <div id="tmap-svg" style="margin-top:6px"></div>
+      <div id="tmap-detail" style="margin-top:8px"></div>
+      <div id="tmap-caveat" class="hint" style="margin-top:8px"></div>
+    </section>
+    </div>
+
     <!-- ============================ WIKIPEDIA ======================== -->
     <div class="tab-page" id="tab-wiki">
     <section class="panel">
@@ -1583,6 +1634,7 @@
       {id:"home",     label:"Home",               grp:"Investigate"},
       {id:"search",   label:"Search",             grp:"Investigate"},
       {id:"insights", label:"Insights",           grp:"Investigate"},
+      {id:"timemap",  label:"Temporal map",       grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
       {id:"law",      label:"World law",          grp:"Investigate"},
       {id:"indices",  label:"Indices",            grp:"Investigate"},
@@ -1605,6 +1657,7 @@
       indices: loadIndices,
       markets: loadMarkets,
       insights: loadInsights,
+      timemap: loadTimemap,
       wiki: loadWiki,
       law: loadLaw,
       sources: loadManagedSources,
@@ -3813,6 +3866,216 @@
         $("map-countries").innerHTML = rowsFor(d.countries, "Country");
         $("map-cities").innerHTML = rowsFor(d.cities, "City");
       } catch (e) { toast("Map failed: " + e.message, "err"); }
+    }
+
+    // -- Temporal map: space-time signals on the world map + a time slider -- //
+    // Reuses the equirectangular projection (lon2x/lat2y, MAP_W/MAP_H) with its
+    // own viewBox so it pans/zooms independently of the Insights map.
+    const TMAP_KINDS = {
+      disaster:{c:"#e5484d", l:"Disaster"}, conflict:{c:"#d6731f", l:"Conflict"},
+      milestone:{c:"#7aa2f7", l:"Milestone"}, civic:{c:"#3fb950", l:"Civic"},
+      space:{c:"#bf7af0", l:"Space"}, science:{c:"#1fb8c4", l:"Science"},
+      climate:{c:"#2da44e", l:"Climate"}, sport:{c:"#e3b341", l:"Sport"},
+      economic:{c:"#c9a227", l:"Economic"}, political:{c:"#8b949e", l:"Political"},
+      technology:{c:"#58a6ff", l:"Technology"}, hazard:{c:"#f85149", l:"Hazard (live)"},
+      article:{c:"#a371f7", l:"Article"},
+    };
+    const kindColor = k => (TMAP_KINDS[k] || {c:"var(--muted)"}).c;
+
+    let TMAP = {signals: [], range: null, caveat: ""};
+    let TMAP_FOCUS = null;                       // fractional year in focus
+    let TMAP_OFF = new Set();                     // kinds toggled off
+    let TMAP_VB = {x:0, y:0, w:MAP_W, h:MAP_H};
+    let _tmapVisible = [], _tmapPlay = null;
+    const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+    function fmtYear(t) {                          // fractional year -> "Sep 2001"
+      if (t == null) return "—";
+      const y = Math.floor(t), doy = Math.round((t - y) * 365);
+      const d = new Date(2001, 0, 1); d.setDate(doy + 1);
+      return `${MON[d.getMonth()]} ${y < 0 ? "" : ""}${y}`;
+    }
+    function fmtDate(s) {                          // a signal's ISO date -> "Oct 24, 79"
+      const m = /^(\-?\d+)-(\d{2})-(\d{2})/.exec(s.date || "");
+      if (!m) return s.date || "";
+      return `${MON[+m[2]-1]} ${+m[3]}, ${+m[1]}`;
+    }
+
+    function applyTmapVB() {
+      const svg = document.getElementById("oo-tmap");
+      if (svg) svg.setAttribute("viewBox", `${TMAP_VB.x} ${TMAP_VB.y} ${TMAP_VB.w} ${TMAP_VB.h}`);
+    }
+    function zoomTmap(f) {
+      const cx = TMAP_VB.x + TMAP_VB.w/2, cy = TMAP_VB.y + TMAP_VB.h/2;
+      TMAP_VB.w = Math.min(MAP_W, Math.max(30, TMAP_VB.w * f));
+      TMAP_VB.h = Math.min(MAP_H, Math.max(15, TMAP_VB.h * f));
+      TMAP_VB.x = cx - TMAP_VB.w/2; TMAP_VB.y = cy - TMAP_VB.h/2;
+      applyTmapVB(); renderTimemap();             // re-render to toggle labels (semantic zoom)
+    }
+    function resetTmap() { TMAP_VB = {x:0, y:0, w:MAP_W, h:MAP_H}; applyTmapVB(); renderTimemap(); }
+
+    function wireTmapDrag() {
+      const svg = document.getElementById("oo-tmap");
+      if (!svg) return;
+      let drag = false, sx = 0, sy = 0;
+      svg.addEventListener("mousedown", e => { drag = true; sx = e.clientX; sy = e.clientY; svg.style.cursor = "grabbing"; });
+      window.addEventListener("mouseup", () => { drag = false; if (svg) svg.style.cursor = "grab"; });
+      svg.addEventListener("mousemove", e => {
+        if (!drag) return;
+        const r = svg.getBoundingClientRect();
+        TMAP_VB.x -= (e.clientX - sx) * TMAP_VB.w / r.width;
+        TMAP_VB.y -= (e.clientY - sy) * TMAP_VB.h / r.height;
+        sx = e.clientX; sy = e.clientY; applyTmapVB();
+      });
+    }
+
+    function tmapSpan() {                          // [min,max] fractional years, padded
+      const r = TMAP.range || {};
+      if (r.min == null) return [2000, 2030];
+      const pad = Math.max(1, (r.max - r.min) * 0.02);
+      return [r.min - pad, r.max + pad];
+    }
+    function sliderToT(v) { const [a, b] = tmapSpan(); return a + (v/1000) * (b - a); }
+    function tToSlider(t) { const [a, b] = tmapSpan(); return b > a ? Math.round((t-a)/(b-a)*1000) : 1000; }
+
+    function onTmapSlide() {
+      TMAP_FOCUS = sliderToT(+$("tmap-slider").value);
+      $("tmap-focus-label").textContent = fmtYear(TMAP_FOCUS);
+      renderTimemap();
+    }
+
+    function toggleTmapKind(k) {
+      if (TMAP_OFF.has(k)) TMAP_OFF.delete(k); else TMAP_OFF.add(k);
+      buildTmapLegend(); renderTimemap();
+    }
+    function buildTmapLegend() {
+      const counts = (TMAP.range && TMAP.range.by_kind) || {};
+      const present = Object.keys(TMAP_KINDS).filter(k => counts[k]);
+      $("tmap-legend").innerHTML = present.map(k => {
+        const off = TMAP_OFF.has(k);
+        return `<button class="tiny" onclick="toggleTmapKind('${k}')" title="show/hide"
+          style="border-color:${kindColor(k)};opacity:${off?0.4:1};display:inline-flex;align-items:center;gap:5px">
+          <span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)};display:inline-block"></span>
+          ${esc(TMAP_KINDS[k].l)} <span class="muted">${counts[k]}</span></button>`;
+      }).join("") || `<span class="muted">No signals to show.</span>`;
+    }
+
+    function toggleTmapPlay() {
+      const btn = $("tmap-play");
+      if (_tmapPlay) { clearInterval(_tmapPlay); _tmapPlay = null; btn.textContent = "▶ play"; return; }
+      btn.textContent = "❚❚ pause";
+      _tmapPlay = setInterval(() => {
+        const s = $("tmap-slider"); let v = +s.value + 6;
+        if (v >= 1000) { v = 1000; toggleTmapPlay(); }
+        s.value = v; onTmapSlide();
+      }, 120);
+    }
+
+    function buildTmapStrip() {                    // density-over-time orientation strip
+      const [a, b] = tmapSpan(), W = 1000, H = 22, N = 80;
+      const bins = new Array(N).fill(0);
+      TMAP.signals.forEach(s => {
+        if (TMAP_OFF.has(s.kind)) return;
+        const i = Math.min(N-1, Math.max(0, Math.floor((s.t - a)/(b - a) * N)));
+        bins[i]++;
+      });
+      const max = Math.max(1, ...bins);
+      const bars = bins.map((c, i) => c ? `<rect x="${(i/N*W).toFixed(1)}" y="${(H-2 - (H-4)*Math.sqrt(c/max)).toFixed(1)}"
+        width="${(W/N-1).toFixed(1)}" height="${((H-2)-(H-2 - (H-4)*Math.sqrt(c/max))).toFixed(1)}"
+        fill="var(--accent)" fill-opacity="0.6"/>` : "").join("");
+      const cx = TMAP_FOCUS == null ? W : (TMAP_FOCUS - a)/(b - a) * W;
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" onclick="stripClick(event)"
+        style="height:22px;background:var(--panel2);border:1px solid var(--border);border-radius:5px;cursor:crosshair">
+        ${bars}<line x1="${cx.toFixed(1)}" y1="0" x2="${cx.toFixed(1)}" y2="${H}" stroke="var(--fg)" stroke-width="2"/></svg>`;
+    }
+    function stripClick(ev) {
+      const svg = ev.currentTarget, r = svg.getBoundingClientRect();
+      const v = Math.round((ev.clientX - r.left)/r.width * 1000);
+      $("tmap-slider").value = Math.min(1000, Math.max(0, v)); onTmapSlide();
+    }
+
+    function buildTmapSvg() {
+      const win = +$("tmap-window").value, focus = TMAP_FOCUS;
+      const labels = TMAP_VB.w < MAP_W * 0.55;     // semantic zoom: labels only when zoomed in
+      let grid = "";
+      for (let lon = -180; lon <= 180; lon += 30)
+        grid += `<line x1="${lon2x(lon)}" y1="0" x2="${lon2x(lon)}" y2="${MAP_H}" stroke="var(--border)" stroke-width="0.3"/>`;
+      for (let lat = -90; lat <= 90; lat += 30)
+        grid += `<line x1="0" y1="${lat2y(lat)}" x2="${MAP_W}" y2="${lat2y(lat)}" stroke="var(--border)" stroke-width="0.3"/>`;
+
+      _tmapVisible = TMAP.signals.filter(s =>
+        !TMAP_OFF.has(s.kind) && (win === 0 || focus == null || Math.abs(s.t - focus) <= win));
+      const dots = _tmapVisible.map((s, i) => {
+        const x = lon2x(s.lon).toFixed(1), y = lat2y(s.lat).toFixed(1);
+        const dist = focus == null ? 0 : Math.abs(s.t - focus);
+        const span = win || (tmapSpan()[1] - tmapSpan()[0]) || 1;
+        const op = Math.max(0.15, 1 - (dist/span) * 0.8);
+        const future = focus != null && s.t > focus + 0.001;
+        const mag = +s.magnitude || 0;
+        const r = (mag ? 1.8 + mag*0.7 : (s.confirmed ? 3 : 2.4)).toFixed(1);
+        const col = kindColor(s.kind);
+        const ring = future || !s.confirmed
+          ? `fill="none" stroke="${col}" stroke-width="1.1" stroke-dasharray="${future?'2 1.5':''}"`
+          : `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`;
+        const lab = labels ? `<text x="${x}" y="${(+y - +r - 1).toFixed(1)}" fill="var(--fg)"
+          font-size="3.4" text-anchor="middle" opacity="${op.toFixed(2)}">${esc((s.title||"").slice(0,42))}</text>` : "";
+        return `<g opacity="${op.toFixed(2)}" style="cursor:pointer" onclick="showTmapDetail(${i})">
+          <circle cx="${x}" cy="${y}" r="${r}" ${ring}><title>${esc(s.title)} — ${esc(fmtDate(s))}</title></circle>${lab}</g>`;
+      }).join("");
+
+      if (!TMAP.signals.length)
+        return `<div class="muted">No signals with both a place and a date yet. Curated anchors ship by default;
+          index a geocoded corpus, enable live hazards, or install the events agenda to add more.</div>`;
+      return `<svg id="oo-tmap" viewBox="0 0 ${MAP_W} ${MAP_H}" width="100%"
+        style="max-width:${MAP_W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab">
+        ${grid}${dots}</svg>`;
+    }
+
+    function showTmapDetail(i) {
+      const s = _tmapVisible[i]; if (!s) return;
+      const url = s.url ? safeUrl(s.url) : null;
+      const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">≈ country</span>`
+                : s.geocode === "city" ? `<span class="pill" title="placed at a known city">city</span>` : "";
+      const conf = s.confirmed ? `<span class="pill ok">confirmed</span>` : `<span class="pill warn">unconfirmed / scheduled</span>`;
+      $("tmap-detail").innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="width:11px;height:11px;border-radius:50%;background:${kindColor(s.kind)};display:inline-block"></span>
+          <strong>${esc(s.title)}</strong>
+          <span class="pill">${esc(TMAP_KINDS[s.kind]?.l || s.kind)}</span> ${conf} ${geo}
+        </div>
+        <div class="muted" style="margin-top:5px;font-size:13px">
+          ${esc(fmtDate(s))}${s.place?` · ${esc(s.place)}`:""}${s.country?` (${esc(s.country.toUpperCase())})`:""}
+          · ${(+s.lat).toFixed(2)}, ${(+s.lon).toFixed(2)} · <span title="data source">${esc(s.source)}</span>
+        </div>
+        ${s.note?`<div class="hint" style="margin-top:5px">${esc(s.note)}</div>`:""}
+        ${url?`<div style="margin-top:6px"><a href="${url}" target="_blank" rel="noopener noreferrer">Official / reference source ↗</a></div>`:""}
+      </div>`;
+    }
+
+    function renderTimemap() {
+      buildTmapStrip && ($("tmap-strip").innerHTML = buildTmapStrip());
+      $("tmap-svg").innerHTML = buildTmapSvg();
+      applyTmapVB(); wireTmapDrag();
+    }
+
+    async function loadTimemap() {
+      const hz = $("tmap-hazards") && $("tmap-hazards").checked;
+      $("tmap-status").textContent = "Loading…";
+      try {
+        const d = await api(`/api/timemap?limit=4000${hz?"&hazards=true":""}`);
+        TMAP = {signals: d.signals || [], range: d.range || null, caveat: d.caveat || ""};
+        const r = TMAP.range || {};
+        $("tmap-status").innerHTML = `${TMAP.signals.length} signals · ${r.min!=null?Math.floor(r.min):"?"}–${r.max!=null?Math.ceil(r.max):"?"}`
+          + ((d.failures && d.failures.length) ? ` · <span class="warn" title="${esc(d.failures.join('; '))}">${d.failures.length} source(s) unavailable</span>` : "");
+        $("tmap-caveat").textContent = TMAP.caveat;
+        if (TMAP_FOCUS == null || TMAP_FOCUS < tmapSpan()[0] || TMAP_FOCUS > tmapSpan()[1]) {
+          $("tmap-slider").value = 1000; TMAP_FOCUS = sliderToT(1000);   // start "now-ish" (latest)
+        }
+        $("tmap-focus-label").textContent = fmtYear(TMAP_FOCUS);
+        buildTmapLegend(); renderTimemap();
+      } catch (e) {
+        $("tmap-status").innerHTML = `<span class="err">Could not load: ${esc(e.message)}</span>`;
+      }
     }
 
     // -- Wikipedia change-tracking ------------------------------------------ //

@@ -1,0 +1,111 @@
+"""Assemble normalised space-time signals from every available source.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+One shape to rule the map: ``{id, title, kind, lat, lon, t, date, confirmed,
+geocode, place, country, url, note, source}``. Sources are layered in *if they
+exist* — the curated anchors are always present; the recurring-events agenda and
+geocoded corpus join automatically once those modules are installed; live
+hazards are injected by the API (they need a network fetch, kept out of this
+pure layer). A source that isn't there is simply absent, never faked.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+from src.timemap import year_float
+from src.timemap.anchors import load_anchors
+from src.timemap.geocode import geocode
+
+# Known kinds get a stable identity in the legend; anything else falls back.
+KNOWN_KINDS = (
+    "disaster", "conflict", "milestone", "civic", "space", "science",
+    "climate", "sport", "economic", "political", "technology", "hazard", "article",
+)
+
+
+def _events_signals() -> list[dict]:
+    """The recurring-events agenda, geocoded + dated. Empty if events not installed."""
+    try:
+        from src.events.catalog import agenda
+    except Exception:
+        return []
+    out: list[dict] = []
+    for e in agenda():
+        occ = e.get("next_occurrence")
+        if not occ:                       # a movable summit with no fixed date: no point on the axis
+            continue
+        try:
+            d = date.fromisoformat(occ)
+        except (TypeError, ValueError):
+            continue
+        g = geocode(e.get("country"), e.get("region"))
+        if not g:                         # global/undatable-to-a-place observance: honestly no pin
+            continue
+        cat = e.get("category")
+        kind = cat if cat in KNOWN_KINDS else "civic"
+        out.append({
+            "id": "agenda:" + str(e.get("title", "")),
+            "title": str(e.get("title", "")),
+            "kind": kind,
+            "lat": g["lat"], "lon": g["lon"],
+            "t": round(year_float(d), 3),
+            "date": d.isoformat(), "year": d.year,
+            "date_precision": "day",
+            "confirmed": bool(e.get("confirmed", False)),
+            "place": g.get("place"),
+            "country": (e.get("country") or "").lower() or None,
+            "url": e.get("official_url"),
+            "note": e.get("note"),
+            "source": "agenda",
+            "geocode": g["geocode"],
+        })
+    return out
+
+
+def _in_window(t: float, start: float | None, end: float | None) -> bool:
+    return (start is None or t >= start) and (end is None or t <= end)
+
+
+def collect(*, kinds: set[str] | None = None,
+            start: float | None = None, end: float | None = None,
+            include_events: bool = True,
+            extra: list[dict] | None = None) -> list[dict]:
+    """All locatable+datable signals, filtered by kind and time window, sorted by time.
+
+    ``start``/``end`` are fractional years (see :func:`year_float`). ``extra`` lets
+    the API inject already-normalised signals (e.g. live hazards) without this pure
+    layer touching the network.
+    """
+    signals: list[dict] = list(load_anchors())
+    if include_events:
+        signals += _events_signals()
+    if extra:
+        signals += [s for s in extra if s.get("lat") is not None and s.get("t") is not None]
+
+    out = []
+    for s in signals:
+        if kinds and s.get("kind") not in kinds:
+            continue
+        if not _in_window(s.get("t"), start, end):
+            continue
+        out.append(s)
+    out.sort(key=lambda s: s["t"])
+    return out
+
+
+def time_range(signals: list[dict]) -> dict:
+    """Min/max time present (to set the slider extent), plus counts by kind."""
+    counts: dict[str, int] = {}
+    ts = []
+    for s in signals:
+        ts.append(s["t"])
+        counts[s["kind"]] = counts.get(s["kind"], 0) + 1
+    return {
+        "min": round(min(ts), 3) if ts else None,
+        "max": round(max(ts), 3) if ts else None,
+        "count": len(signals),
+        "by_kind": counts,
+    }

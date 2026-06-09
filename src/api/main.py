@@ -133,6 +133,9 @@ from src.api.safety import router as safety_router
 
 # Import system router (loopback-only self-observation: live scraping + vitals)
 from src.api.system import router as system_router
+
+# Import temporal-map router (space-time signals on one zoomable map + time axis)
+from src.api.timemap import router as timemap_router
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -348,6 +351,9 @@ app.include_router(ingestion_router)
 
 # Include system router (live scraping URL + process vitals; loopback-only)
 app.include_router(system_router)
+
+# Include temporal-map router (offline by default; hazards layer opt-in)
+app.include_router(timemap_router)
 
 # Include analysis-dependent routers only if the [analysis] extra is installed.
 if _ANALYSIS_AVAILABLE:
