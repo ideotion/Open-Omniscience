@@ -1,17 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Open Omniscience app icon: an almond eye whose pupil is a wireframe globe,
-     mirroring the project's ASCII logo (assets/logo.txt). GPL-3.0-or-later. -->
+<!-- Open Omniscience app icon (black & white): an almond eye whose pupil is a
+     wireframe globe, mirroring the project's ASCII logo (assets/logo.txt).
+     Monochrome by design. GPL-3.0-or-later. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#10294c"/>
-      <stop offset="1" stop-color="#0a1730"/>
-    </linearGradient>
-    <radialGradient id="globe" cx="42%" cy="38%" r="65%">
-      <stop offset="0" stop-color="#5cc0ff"/>
-      <stop offset="0.65" stop-color="#1f7fd6"/>
-      <stop offset="1" stop-color="#0b3f78"/>
-    </radialGradient>
     <!-- The almond eye opening; everything globe-ish is clipped to it so the
          grid lines fill the eye and taper toward the points, like the ASCII. -->
     <clipPath id="eye">
@@ -19,13 +11,13 @@
     </clipPath>
   </defs>
 
-  <rect x="0" y="0" width="256" height="256" rx="48" fill="url(#bg)"/>
+  <rect x="0" y="0" width="256" height="256" rx="48" fill="#000000"/>
 
   <g clip-path="url(#eye)">
-    <!-- globe body -->
-    <circle cx="128" cy="128" r="92" fill="url(#globe)"/>
+    <!-- faint sphere body for depth (white, very low opacity) -->
+    <circle cx="128" cy="128" r="92" fill="#ffffff" opacity="0.06"/>
     <!-- graticule: latitudes (curved for sphere feel) + meridians (ellipses) -->
-    <g stroke="#cfecff" stroke-width="3.5" fill="none" opacity="0.8">
+    <g stroke="#ffffff" stroke-width="3.5" fill="none" opacity="0.92">
       <path d="M36 88  Q128 76 220 88"/>
       <path d="M36 108 Q128 100 220 108"/>
       <line x1="30" y1="128" x2="226" y2="128"/>
@@ -35,12 +27,12 @@
       <ellipse cx="128" cy="128" rx="34" ry="100"/>
       <ellipse cx="128" cy="128" rx="66" ry="100"/>
     </g>
-    <!-- central pupil -->
-    <circle cx="128" cy="128" r="20" fill="#06203c"/>
-    <circle cx="120" cy="120" r="6.5" fill="#e6f4ff" opacity="0.92"/>
+    <!-- central pupil (white) with a small dark catch-light -->
+    <circle cx="128" cy="128" r="20" fill="#ffffff"/>
+    <circle cx="120" cy="120" r="6.5" fill="#000000" opacity="0.85"/>
   </g>
 
   <!-- eye outline on top -->
   <path d="M24 128 Q128 40 232 128 Q128 216 24 128 Z"
-        fill="none" stroke="#8fd6ff" stroke-width="9" stroke-linejoin="round"/>
+        fill="none" stroke="#ffffff" stroke-width="9" stroke-linejoin="round"/>
 </svg>

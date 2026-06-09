@@ -26,13 +26,22 @@ import socket
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import requests
 
+from src.monitoring.activity import activity_monitor
+
+try:  # Single source of truth is pyproject; never hardcode a version literal.
+    _OO_VERSION = _pkg_version("open-omniscience")
+except PackageNotFoundError:  # raw checkout / not installed -> honest fallback
+    _OO_VERSION = "0.0.0"
+
 DEFAULT_USER_AGENT = (
-    "OpenOmniscienceBot/0.0.6 (+https://github.com/ideotion/Open-Omniscience; "
+    f"OpenOmniscienceBot/{_OO_VERSION} (+https://github.com/ideotion/Open-Omniscience; "
     "ethical research crawler)"
 )
 
@@ -156,30 +165,36 @@ class EthicalFetcher:
 
         self._respect_rate_limit(parsed.netloc, host_key)
 
+        # Record the in-flight fetch so the UI can show a live "currently scraping
+        # <url>" readout + real scraping throughput. Best-effort; cleared on exit.
+        activity_monitor.fetch_started(url)
         try:
-            response, final_url = self._http_get(url)
-        except requests.RequestException as exc:
-            raise FetchFailed(f"request error for {url}: {exc}") from exc
+            try:
+                response, final_url = self._http_get(url)
+            except requests.RequestException as exc:
+                raise FetchFailed(f"request error for {url}: {exc}") from exc
+            finally:
+                self._last_request[parsed.netloc] = self._now()
+
+            if response.status_code != 200:
+                raise FetchFailed(f"HTTP {response.status_code} for {url}")
+
+            content_type = response.headers.get("Content-Type", "")
+            if require_html and "html" not in content_type.lower():
+                raise FetchFailed(f"non-HTML content ({content_type!r}) for {url}")
+
+            content = self._read_body(response, url)
+
+            return FetchResult(
+                requested_url=url,
+                final_url=final_url,
+                status_code=response.status_code,
+                content=content,
+                content_type=content_type,
+                fetched_at=datetime.now(UTC),
+            )
         finally:
-            self._last_request[parsed.netloc] = self._now()
-
-        if response.status_code != 200:
-            raise FetchFailed(f"HTTP {response.status_code} for {url}")
-
-        content_type = response.headers.get("Content-Type", "")
-        if require_html and "html" not in content_type.lower():
-            raise FetchFailed(f"non-HTML content ({content_type!r}) for {url}")
-
-        content = self._read_body(response, url)
-
-        return FetchResult(
-            requested_url=url,
-            final_url=final_url,
-            status_code=response.status_code,
-            content=content,
-            content_type=content_type,
-            fetched_at=datetime.now(UTC),
-        )
+            activity_monitor.fetch_finished()
 
     # -- SSRF guard + bounded redirects + size-capped body ----------------- #
 
@@ -258,6 +273,7 @@ class EthicalFetcher:
                     raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
                 chunks.append(chunk)
             raw = b"".join(chunks)
+            activity_monitor.fetch_bytes(total)  # real, app-attributed download size
             encoding = getattr(response, "encoding", None) or getattr(response, "apparent_encoding", None) or "utf-8"
             try:
                 return raw.decode(encoding, errors="replace")
@@ -266,6 +282,7 @@ class EthicalFetcher:
         # Injected (test) session: not streamed; check the already-materialised body.
         if response.content and len(response.content) > self.max_bytes:
             raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
+        activity_monitor.fetch_bytes(len(response.content or b""))
         return response.text
 
     # -- robots ------------------------------------------------------------ #

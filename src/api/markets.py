@@ -13,7 +13,7 @@ number is shown without a real series behind it.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -204,11 +204,15 @@ def _symbol_point_count(db: Session, symbol: str) -> int:
 
 
 @router.get("/feeds")
-def list_feeds(db: Session = Depends(get_db)) -> dict:
-    """List curated official CSV feeds and how many points each symbol already has."""
-    from src.markets.feed_catalog import load_feeds
+def list_feeds(category: str | None = None, db: Session = Depends(get_db)) -> dict:
+    """List curated official CSV feeds and how many points each symbol already has.
 
-    feeds = load_feeds()
+    ``category='index'`` lists the world stock-index catalog; otherwise the
+    commodity catalog (default, backward-compatible).
+    """
+    from src.markets.feed_catalog import feeds_for_category
+
+    feeds = feeds_for_category(category)
     out = [{**f.to_dict(), "points": _symbol_point_count(db, f.symbol)} for f in feeds]
     return {"count": len(out), "feeds": out}
 
@@ -234,17 +238,19 @@ def import_catalog_feed(key: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/feeds/import-all")
-def import_all_feeds(db: Session = Depends(get_db)) -> dict:
+def import_all_feeds(category: str | None = None, db: Session = Depends(get_db)) -> dict:
     """Import every curated feed (for one-click out-of-the-box market data).
 
-    Best-effort: each feed is attempted; failures are reported per-key rather than
-    aborting the batch, so a single retired series doesn't block the rest.
+    ``category='index'`` imports the world stock-index catalog; otherwise the
+    commodity catalog (default, backward-compatible). Best-effort: each feed is
+    attempted; failures are reported per-key rather than aborting the batch, so a
+    single retired series doesn't block the rest.
     """
     from src.markets.csv_feeds import import_feed
-    from src.markets.feed_catalog import load_feeds
+    from src.markets.feed_catalog import feeds_for_category
 
     results, imported, failed = [], 0, 0
-    for feed in load_feeds():
+    for feed in feeds_for_category(category):
         r = import_feed(
             db, url=feed.url, symbol=feed.symbol, fetcher=_fetcher,
             date_column=feed.date_column, value_column=feed.value_column,
@@ -282,6 +288,56 @@ def list_series(db: Session = Depends(get_db)) -> dict:
         })
     out.sort(key=lambda s: s["symbol"])
     return {"count": len(out), "series": out}
+
+
+@router.get("/board")
+def market_board(
+    category: str = Query("commodity", description="'index' for the stock-index board, else commodity"),
+    spark: int = Query(30, ge=2, le=180, description="How many recent points per sparkline"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Curated board cards for a category, each with its latest value, day-over-day
+    change and a recent sparkline — drives the Indices / Commodities dashboards.
+
+    Every card is a *curated catalog entry* enriched with whatever real points are
+    stored for its symbol. Entries with no data yet are returned with ``latest:
+    null`` (so the comprehensive list shows before a first import); nothing is
+    fabricated, and the change is a real day-over-day delta of stored points.
+    """
+    from src.markets.feed_catalog import feeds_for_category
+
+    cards = []
+    for f in feeds_for_category(category):
+        pts = (
+            db.query(CommodityPrice.observed_on, CommodityPrice.price)
+            .filter_by(symbol=f.symbol)
+            .order_by(CommodityPrice.observed_on.asc()).all()
+        )
+        latest = prev = None
+        change = change_pct = None
+        spark_pts: list[list] = []
+        if pts:
+            spark_pts = [[d.isoformat(), p] for (d, p) in pts[-spark:]]
+            latest = {"observed_on": pts[-1][0].isoformat(), "price": pts[-1][1]}
+            if len(pts) >= 2:
+                prev = {"observed_on": pts[-2][0].isoformat(), "price": pts[-2][1]}
+                if pts[-2][1]:
+                    change = round(pts[-1][1] - pts[-2][1], 6)
+                    change_pct = round((change / pts[-2][1]) * 100, 2)
+        cards.append({
+            "key": f.key, "symbol": f.symbol, "name": f.name, "market": f.market,
+            "currency": f.currency, "unit": f.unit, "url": f.url, "category": f.category,
+            "points": len(pts), "latest": latest, "prev": prev,
+            "change": change, "change_pct": change_pct, "spark": spark_pts,
+        })
+    # Cards with data first (by name), empty catalog entries after.
+    cards.sort(key=lambda c: (c["latest"] is None, (c["name"] or "").lower()))
+    return {
+        "category": category, "count": len(cards),
+        "with_data": sum(1 for c in cards if c["latest"]),
+        "note": "End-of-day values from official CSV sources; each card shows its as-of date and source. Not real-time.",
+        "cards": cards,
+    }
 
 
 @router.post("/feeds/import-url")

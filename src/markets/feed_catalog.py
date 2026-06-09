@@ -17,6 +17,7 @@ from pathlib import Path
 import yaml
 
 CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "commodity_feeds.yml"
+INDEX_CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "index_feeds.yml"
 
 
 @dataclass
@@ -61,5 +62,39 @@ def load_feeds(path: Path | None = None) -> list[Feed]:
     return feeds
 
 
+def load_index_feeds(path: Path | None = None) -> list[Feed]:
+    """Curated world stock-market index feeds (configs/index_feeds.yml).
+
+    Same shape as the commodity catalog, kept in a separate file so the Indices
+    board and the Commodities board stay cleanly separated. Defaults differ: an
+    index value is an index level (``unit='pts'``) and ``category='index'``.
+    """
+    path = path or INDEX_CATALOG_PATH
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text("utf-8")) or {}
+    feeds: list[Feed] = []
+    for f in data.get("feeds", []):
+        if not (isinstance(f, dict) and f.get("key") and f.get("symbol") and f.get("url")):
+            continue
+        feeds.append(Feed(
+            key=str(f["key"]), name=str(f.get("name", f["key"])), symbol=str(f["symbol"]),
+            url=str(f["url"]), category=str(f.get("category", "index")),
+            currency=str(f.get("currency", "USD")), unit=str(f.get("unit", "pts")),
+            market=f.get("market"), date_column=f.get("date_column"),
+            value_column=f.get("value_column"),
+        ))
+    return feeds
+
+
+def feeds_for_category(category: str | None) -> list[Feed]:
+    """The right catalog for a board/import: index feeds for 'index', else commodity."""
+    return load_index_feeds() if category == "index" else load_feeds()
+
+
 def get_feed(key: str, path: Path | None = None) -> Feed | None:
     return next((f for f in load_feeds(path) if f.key == key), None)
+
+
+def get_index_feed(key: str, path: Path | None = None) -> Feed | None:
+    return next((f for f in load_index_feeds(path) if f.key == key), None)

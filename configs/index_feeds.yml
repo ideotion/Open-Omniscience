@@ -1,0 +1,123 @@
+# Open Omniscience — curated official stock-market INDEX feed catalog.
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# A thought-through, no-API-key set of world stock-exchange index series that can
+# be imported straight into the store and shown on the Indices board. Every point
+# comes from the downloaded CSV on a real date — nothing is scraped or guessed, and
+# the values are END-OF-DAY (daily), never a fabricated real-time tick. Each card
+# is labelled with its as-of date and source.
+#
+# Providers (both free, machine-readable, no key):
+#   • FRED (https://fred.stlouisfed.org/graph/fredgraph.csv?id=<ID>) — US indices &
+#     VIX & Nikkei as clean CSV (date in col 0, value in col 1; missing = ".").
+#   • Stooq (https://stooq.com/q/d/l/?s=<symbol>&i=d) — world indices as daily OHLC
+#     CSV (columns: Date,Open,High,Low,Close,Volume → we read Date + Close).
+#
+# Honesty note: index symbols/IDs are accurate to our knowledge. If a provider
+# retires or renames one, the import fails *loudly* (HTTP error / no rows) rather
+# than inventing data — fix the URL/symbol here. `unit: pts` records that the value
+# is an index level (points), and `currency` is the market's nominal denomination
+# (provenance only; index levels are never currency-converted).
+
+feeds:
+  # --- United States (FRED) ----------------------------------------------- #
+  - key: idx_sp500
+    name: "S&P 500"
+    symbol: SP500
+    category: index
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SP500"
+    currency: USD
+    unit: pts
+    market: "US · NYSE/Nasdaq"
+  - key: idx_nasdaq
+    name: "NASDAQ Composite"
+    symbol: NASDAQCOM
+    category: index
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=NASDAQCOM"
+    currency: USD
+    unit: pts
+    market: "US · Nasdaq"
+  - key: idx_nasdaq100
+    name: "NASDAQ 100"
+    symbol: NASDAQ100
+    category: index
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=NASDAQ100"
+    currency: USD
+    unit: pts
+    market: "US · Nasdaq"
+  - key: idx_dow
+    name: "Dow Jones Industrial Average"
+    symbol: DJIA
+    category: index
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DJIA"
+    currency: USD
+    unit: pts
+    market: "US · NYSE"
+  - key: idx_wilshire5000
+    name: "Wilshire 5000 (Total Market)"
+    symbol: WILL5000IND
+    category: index
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=WILL5000IND"
+    currency: USD
+    unit: pts
+    market: "US · total market"
+  - key: idx_vix
+    name: "CBOE Volatility Index (VIX)"
+    symbol: VIX
+    category: index
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS"
+    currency: USD
+    unit: pts
+    market: "US · CBOE (volatility)"
+
+  # --- Asia (FRED + Stooq) ------------------------------------------------- #
+  - key: idx_nikkei225
+    name: "Nikkei 225"
+    symbol: N225
+    category: index
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=NIKKEI225"
+    currency: JPY
+    unit: pts
+    market: "Japan · Tokyo (TSE)"
+  - key: idx_hangseng
+    name: "Hang Seng"
+    symbol: HSI
+    category: index
+    url: "https://stooq.com/q/d/l/?s=^hsi&i=d"
+    currency: HKD
+    unit: pts
+    market: "Hong Kong (HKEX)"
+    date_column: Date
+    value_column: Close
+
+  # --- Europe (Stooq) ------------------------------------------------------ #
+  - key: idx_dax
+    name: "DAX 40"
+    symbol: DAX
+    category: index
+    url: "https://stooq.com/q/d/l/?s=^dax&i=d"
+    currency: EUR
+    unit: pts
+    market: "Germany · Frankfurt (Xetra)"
+    date_column: Date
+    value_column: Close
+  - key: idx_ftse100
+    name: "FTSE 100"
+    symbol: UKX
+    category: index
+    url: "https://stooq.com/q/d/l/?s=^ukx&i=d"
+    currency: GBP
+    unit: pts
+    market: "UK · London (LSE)"
+    date_column: Date
+    value_column: Close
+  - key: idx_cac40
+    name: "CAC 40"
+    symbol: CAC
+    category: index
+    url: "https://stooq.com/q/d/l/?s=^cac&i=d"
+    currency: EUR
+    unit: pts
+    market: "France · Euronext Paris"
+    date_column: Date
+    value_column: Close

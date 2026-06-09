@@ -120,8 +120,8 @@ def test_curl_pipe_install_does_not_leak_menu_into_pip_spec(tmp_path):
                        input="", capture_output=True, text=True, env=env)
     out = r.stdout + r.stderr
     assert r.returncode == 0, out
-    assert "(.[analysis])" in out                          # clean, well-formed spec
-    assert "Selected components: core, analysis" in out
+    assert "(.[analysis,compression])" in out              # clean, well-formed spec
+    assert "Selected components: core, analysis,compression" in out
     # The failure signatures we must never reintroduce:
     assert "InvalidRequirement" not in out
     assert "Traceback" not in out

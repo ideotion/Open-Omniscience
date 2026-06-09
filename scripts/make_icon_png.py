@@ -78,31 +78,26 @@ def vertical_gradient(top: tuple[int, int, int], bottom: tuple[int, int, int]) -
 
 
 def main() -> None:
-    # --- background: rounded night-blue gradient -------------------------- #
-    base = vertical_gradient((0x10, 0x29, 0x4C), (0x0A, 0x17, 0x30)).convert("RGBA")
+    # Black & white by design (mirrors assets/icon.svg): a near-black rounded
+    # square, a white wireframe globe clipped to an almond eye, a white pupil with
+    # a dark catch-light, and a white eye outline on top.
 
-    # --- globe disc: radial shading via concentric circles ---------------- #
+    # --- background: rounded near-black square ---------------------------- #
+    base = vertical_gradient((0x12, 0x12, 0x12), (0x00, 0x00, 0x00)).convert("RGBA")
+
+    # --- globe disc: a faint white sphere for depth ----------------------- #
     globe = Image.new("RGBA", (N, N), (0, 0, 0, 0))
     gd = ImageDraw.Draw(globe)
-    stops = [(0.0, (0x5C, 0xC0, 0xFF)), (0.65, (0x1F, 0x7F, 0xD6)), (1.0, (0x0B, 0x3F, 0x78))]
-    hx, hy = s(113.3), s(105.9)         # highlight centre (cx42%/cy38% of the disc bbox)
-    grad_r = s(120)
-    for rr in range(int(s(120)), 0, -1):
-        col = grad_color(stops, rr / grad_r)
-        gd.ellipse([hx - rr, hy - rr, hx + rr, hy + rr], fill=col + (255,))
-    # clip the shading to the actual r=92 disc
-    disc_mask = Image.new("L", (N, N), 0)
-    ImageDraw.Draw(disc_mask).ellipse(
-        [s(128 - 92), s(128 - 92), s(128 + 92), s(128 + 92)], fill=255
+    gd.ellipse(
+        [s(128 - 92), s(128 - 92), s(128 + 92), s(128 + 92)], fill=(0xFF, 0xFF, 0xFF, 16)
     )
-    globe.putalpha(ImageChops.multiply(globe.getchannel("A"), disc_mask))
 
     group = Image.alpha_composite(Image.new("RGBA", (N, N), (0, 0, 0, 0)), globe)
 
-    # --- graticule (latitudes, meridians) at 80% opacity ------------------ #
+    # --- graticule (latitudes, meridians) in white ----------------------- #
     grat = Image.new("RGBA", (N, N), (0, 0, 0, 0))
     gr = ImageDraw.Draw(grat)
-    line_col = (0xCF, 0xEC, 0xFF, 255)
+    line_col = (0xFF, 0xFF, 0xFF, 255)
     w = max(1, round(s(3.5)))
     gr.line(quad((36, 88), (128, 76), (220, 88)), fill=line_col, width=w, joint="curve")
     gr.line(quad((36, 108), (128, 100), (220, 108)), fill=line_col, width=w, joint="curve")
@@ -112,14 +107,14 @@ def main() -> None:
     gr.line([(s(128), s(28)), (s(128), s(228))], fill=line_col, width=w)
     for rx, ry in ((34, 100), (66, 100)):
         gr.ellipse([s(128 - rx), s(128 - ry), s(128 + rx), s(128 + ry)], outline=line_col, width=w)
-    grat.putalpha(grat.getchannel("A").point(lambda a: int(a * 0.8)))
+    grat.putalpha(grat.getchannel("A").point(lambda a: int(a * 0.92)))
     group = Image.alpha_composite(group, grat)
 
-    # --- pupil + catch-light --------------------------------------------- #
+    # --- pupil (white) + dark catch-light -------------------------------- #
     pd = ImageDraw.Draw(group)
-    pd.ellipse([s(128 - 20), s(128 - 20), s(128 + 20), s(128 + 20)], fill=(0x06, 0x20, 0x3C, 255))
+    pd.ellipse([s(128 - 20), s(128 - 20), s(128 + 20), s(128 + 20)], fill=(0xFF, 0xFF, 0xFF, 255))
     pd.ellipse([s(120 - 6.5), s(120 - 6.5), s(120 + 6.5), s(120 + 6.5)],
-               fill=(0xE6, 0xF4, 0xFF, 235))
+               fill=(0x00, 0x00, 0x00, 215))
 
     # --- clip the whole globe group to the almond eye --------------------- #
     eye_mask = Image.new("L", (N, N), 0)
@@ -129,7 +124,7 @@ def main() -> None:
 
     # --- bright eye outline on top ---------------------------------------- #
     ImageDraw.Draw(base).line(
-        EYE + [EYE[0]], fill=(0x8F, 0xD6, 0xFF, 255), width=round(s(9)), joint="curve"
+        EYE + [EYE[0]], fill=(0xFF, 0xFF, 0xFF, 255), width=round(s(9)), joint="curve"
     )
 
     # --- rounded-square alpha mask (rx=48) -------------------------------- #

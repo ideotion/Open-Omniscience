@@ -135,9 +135,45 @@
     .muted { color:var(--muted); }
     .hint { font-size:12px; color:var(--muted); margin-top:4px; }
     .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; background:var(--panel2); border:1px solid var(--border); }
+    .idx-board { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; margin-top:14px; }
+    .idx-card { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+    .idx-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .idx-name { font-weight:600; } .idx-mkt { font-size:11px; margin-top:1px; }
+    .idx-quote { text-align:right; }
+    .idx-num { font-variant-numeric:tabular-nums; font-weight:700; font-size:17px; }
+    .idx-chg { font-size:12px; font-variant-numeric:tabular-nums; margin-top:1px; }
+    .idx-chg.up { color:var(--ok); } .idx-chg.down { color:var(--err); } .idx-chg.flat { color:var(--muted); }
+    .idx-spark { width:100%; height:42px; margin:8px 0 4px; display:block; }
+    .idx-spark-empty { height:42px; display:flex; align-items:center; font-size:11px; }
+    .idx-foot { font-size:11px; } .idx-foot a { color:var(--muted); text-decoration:underline; }
     .pill.ok{ color:var(--ok); } .pill.warn{ color:var(--warn); } .pill.err{ color:var(--err); }
     .dot { display:inline-block; width:8px; height:8px; border-radius:99px; background:var(--muted); }
     .dot.ok{ background:var(--ok); } .dot.err{ background:var(--err); } .dot.warn{ background:var(--warn); }
+    /* Background-activity indicator: honest "the app is doing something" signal.
+       The ring stays legible even when prefers-reduced-motion freezes the spin. */
+    .activity { display:inline-flex; align-items:center; gap:6px; padding:1px 9px;
+      border:1px solid var(--border); border-radius:999px; background:var(--panel2);
+      font-size:12px; color:var(--muted); white-space:nowrap; }
+    .activity[hidden] { display:none; }
+    .activity.bg { color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--border)); }
+    .activity .spin { width:11px; height:11px; border-radius:50%; flex:0 0 auto;
+      border:2px solid color-mix(in srgb,var(--fg) 22%,transparent); border-top-color:var(--accent);
+      animation:oo-spin .7s linear infinite; }
+    .activity.bg .spin { border-top-color:var(--ok); }
+    @keyframes oo-spin { to { transform:rotate(360deg); } }
+    /* Activity & vitals popover (opened from the chip). */
+    .vitals-pop { position:fixed; top:54px; right:16px; z-index:60; width:264px;
+      background:var(--panel); border:1px solid var(--border); border-radius:10px;
+      box-shadow:0 10px 34px rgba(0,0,0,.30); padding:10px 12px; font-size:12px; }
+    .vitals-pop[hidden] { display:none; }
+    .vitals-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+    .vitals-pop .vr { display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:4px 0; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
+    .vitals-pop .vr:first-child { border-top:0; }
+    .vitals-pop .vr > span { color:var(--muted); }
+    .vitals-pop .vr b { font-variant-numeric:tabular-nums; font-weight:600; max-width:160px;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .vitals-pop .vnote { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.35; }
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
     .stat .n { font-family:var(--serif); font-size:26px; font-weight:600; }
@@ -206,15 +242,16 @@
     <div class="db-inner">
       <a class="db-brand" href="#home" onclick="showTab('home');return false;">
         <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <circle cx="16" cy="16" r="13" style="stroke:var(--accent)" stroke-width="2"/>
-          <circle cx="16" cy="16" r="5.5" style="fill:var(--accent)"/>
+          <circle cx="16" cy="16" r="13" style="stroke:currentColor" stroke-width="2"/>
+          <circle cx="16" cy="16" r="5.5" style="fill:currentColor"/>
           <circle cx="16" cy="16" r="2" style="fill:var(--panel)"/>
-          <path d="M16 1.5v6M16 24.5v6M1.5 16h6M24.5 16h6" style="stroke:var(--accent)" stroke-width="2" stroke-linecap="round" opacity=".5"/>
+          <path d="M16 1.5v6M16 24.5v6M1.5 16h6M24.5 16h6" style="stroke:currentColor" stroke-width="2" stroke-linecap="round" opacity=".5"/>
         </svg><span>Open Omniscience</span></a>
       <button class="omnibar" onclick="openPalette()" title="Search or jump (Ctrl/Cmd-K)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <span>Search or jump to anything</span><span class="kbd">Ctrl K</span></button>
       <div class="db-right">
+        <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click for details" tabindex="0" aria-expanded="false" aria-haspopup="dialog" style="cursor:pointer" onclick="toggleVitals()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleVitals();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span></span>
         <span id="health" class="db-stat" title="Backend status"><span class="dot"></span></span>
         <span id="llm" class="db-stat pill" title="Local LLM (Ollama) status">LLM —</span>
         <span id="version" class="db-stat"></span>
@@ -231,6 +268,14 @@
       Local · Offline · Nothing leaves this machine
     </div>
   </header>
+
+      <div id="vitals-pop" class="vitals-pop" hidden role="dialog" aria-label="Activity and system vitals">
+        <div class="vitals-head"><b>Activity &amp; vitals</b>
+          <button class="icon-btn" style="width:24px;height:24px" onclick="toggleVitals()" aria-label="Close" title="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+        <div id="vitals-body"></div>
+        <div id="vitals-note"></div>
+      </div>
 
       <main class="deskmain">
     <div id="onboard" class="panel" style="display:none;border-color:var(--accent)">
@@ -267,7 +312,8 @@
       <p class="desk-more">Or go straight to
         <a href="#" onclick="showTab('sources');return false">Sources</a> ·
         <a href="#" onclick="showTab('database');return false">Library</a> ·
-        <a href="#" onclick="showTab('markets');return false">Markets</a> ·
+        <a href="#" onclick="showTab('indices');return false">Indices</a> ·
+        <a href="#" onclick="showTab('markets');return false">Commodities</a> ·
         <a href="#" onclick="showTab('wiki');return false">Wikipedia</a> ·
         <a href="#" onclick="showTab('settings');return false">Settings</a> ·
         <a href="#" onclick="showTab('help');return false">Help</a></p>
@@ -514,10 +560,26 @@
     </section>
     </div>
 
-    <!-- ============================ MARKETS ========================== -->
+    <!-- ============================ INDICES ========================== -->
+    <div class="tab-page" id="tab-indices">
+    <section class="panel">
+      <h2>World stock indices</h2>
+      <p class="muted" style="margin-top:0">Major stock-exchange indices from official, free sources
+        (FRED, Stooq) — <b>end-of-day</b> values, each labelled with its as-of date and source.
+        <b>Not real-time</b>; every number comes straight from the downloaded file — nothing scraped or guessed.</p>
+      <div class="row">
+        <div style="flex:0 0 auto"><button onclick="loadIndicesData(this)">Load / refresh indices</button></div>
+        <div id="idx-status" class="hint" style="align-self:center"></div>
+      </div>
+      <div id="idx-note" class="hint muted" style="margin-top:4px"></div>
+      <div id="idx-board" class="idx-board"><div class="muted">Loading…</div></div>
+    </section>
+    </div>
+
+    <!-- ============================ COMMODITIES ====================== -->
     <div class="tab-page" id="tab-markets">
     <section class="panel">
-      <h2>Market trends</h2>
+      <h2>Commodities &amp; rare-earth</h2>
       <p class="muted" style="margin-top:0">Real series from official feeds (FRED → World Bank / EIA):
         FX (EUR/USD), energy (WTI, Brent, gas), metals &amp; gold. Every point comes straight from the
         downloaded file — nothing scraped or guessed.</p>
@@ -870,14 +932,118 @@
       setTimeout(() => n.remove(), 5000);
     }
 
+    // -- Background-activity indicator (mirrors Console) -------------------- //
+    // Every backend call goes through api(); a counter there lights a "Working…"
+    // spinner for any action (after a short delay so fast polls don't flicker).
+    // A running scrape shows a "Collecting… <host>" chip (host = the URL being
+    // fetched right now, live); click the chip for a vitals popover.
+    let _inflight = 0, _bg = null, _spinTimer = null, _curHost = null;
+    function _paintActivity() {
+      const el = $("activity"); if (!el) return;
+      if (_bg) { el.hidden = false; el.classList.add("bg");
+        $("activity-label").textContent = _curHost ? (_bg + " " + _curHost) : _bg; }
+      else if (_inflight > 0) { el.hidden = false; el.classList.remove("bg"); $("activity-label").textContent = "Working…"; }
+      else { el.hidden = true; }
+    }
+    function _bumpInflight(d) {
+      _inflight = Math.max(0, _inflight + d);
+      if (_inflight > 0 && !_bg) {
+        if (!_spinTimer) _spinTimer = setTimeout(() => { _spinTimer = null; _paintActivity(); }, 350);
+      } else {
+        if (_spinTimer) { clearTimeout(_spinTimer); _spinTimer = null; }
+        _paintActivity();
+      }
+    }
+    function setBackgroundActivity(label) {
+      const next = label || null;
+      if (next === _bg) return;
+      _bg = next; if (!_bg) _curHost = null;
+      _paintActivity();
+      if (!_bg) _bumpInflight(0);
+      _ensureVitalsPoll();
+    }
+    async function _pollActivity() {
+      try { const s = await api("/api/scheduler/status");
+        setBackgroundActivity(s && s.active ? "Collecting…" : null);
+      } catch { /* transient: keep the last known state */ }
+    }
+
+    // -- Live vitals (CPU/RAM/disk + real, app-attributed scraping throughput) -- //
+    // Polls /api/system/vitals only while a scrape is active OR the popover is open.
+    // Rates are derived by diffing two cumulative snapshots (never a guessed value).
+    let _vitalsTimer = null, _vitalsOpen = false, _vitalsPrev = null;
+    function _shortUrl(u) {
+      if (!u) return "";
+      const s = String(u).replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+      return s.length > 40 ? s.slice(0, 39) + "…" : s;
+    }
+    function _fmtBytes(n) {
+      if (n == null) return "—";
+      const u = ["B","KB","MB","GB","TB"]; let i = 0, v = n;
+      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+      return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + " " + u[i];
+    }
+    function _rateBytes(curr, prev, pick) {
+      if (!prev) return null;
+      const dt = curr.at - prev.at; if (dt <= 0) return null;
+      const a = pick(curr), b = pick(prev);
+      if (a == null || b == null) return null;
+      return Math.max(0, (a - b) / dt);
+    }
+    function _vitalsShouldRun() { return _vitalsOpen || !!_bg; }
+    function _ensureVitalsPoll() {
+      if (_vitalsShouldRun() && !_vitalsTimer) {
+        _pollVitals();
+        _vitalsTimer = setInterval(() => { if (!document.hidden) _pollVitals(); }, 2000);
+      } else if (!_vitalsShouldRun() && _vitalsTimer) {
+        clearInterval(_vitalsTimer); _vitalsTimer = null; _vitalsPrev = null;
+      }
+    }
+    async function _pollVitals() {
+      let v; try { v = await api("/api/system/vitals"); } catch { return; }
+      const cur = v.scraping && v.scraping.current_fetch;
+      if (_bg) { _curHost = cur ? _shortUrl(cur.url) : null; _paintActivity(); }
+      if (_vitalsOpen) _renderVitals(v);
+      _vitalsPrev = v;
+    }
+    function _renderVitals(v) {
+      const p = v.process || {}, sc = v.scraping || {}, cur = sc.current_fetch;
+      const dl = _rateBytes(v, _vitalsPrev, x => x.scraping && x.scraping.bytes_total);
+      const wr = _rateBytes(v, _vitalsPrev, x => x.process && x.process.io_write_bytes);
+      const rd = _rateBytes(v, _vitalsPrev, x => x.process && x.process.io_read_bytes);
+      const row = (k, val) => `<div class="vr"><span>${k}</span><b>${val}</b></div>`;
+      $("vitals-body").innerHTML =
+        row("Now fetching", cur ? esc(_shortUrl(cur.url)) : '<span class="muted">idle</span>') +
+        row("Scraping ↓", dl == null ? "—" : _fmtBytes(dl) + "/s") +
+        row("Downloaded", _fmtBytes(sc.bytes_total) + ` <span class="muted">· ${sc.fetches_total||0} fetches</span>`) +
+        row("CPU", p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
+        row("Memory", _fmtBytes(p.rss_bytes)) +
+        row("Disk", (rd == null && wr == null) ? "—"
+              : `↓${rd==null?"—":_fmtBytes(rd)+"/s"} ↑${wr==null?"—":_fmtBytes(wr)+"/s"}`);
+      $("vitals-note").innerHTML = v.network_system_wide
+        ? '<div class="vnote">Network counters are system-wide (can\'t be attributed per-app); the scraping figure above is measured at our own fetcher.</div>'
+        : '';
+    }
+    function toggleVitals() {
+      const pop = $("vitals-pop"); if (!pop) return;
+      _vitalsOpen = !_vitalsOpen;
+      pop.hidden = !_vitalsOpen;
+      const chip = $("activity"); if (chip) chip.setAttribute("aria-expanded", String(_vitalsOpen));
+      if (_vitalsOpen) _vitalsPrev = null;
+      _ensureVitalsPoll();
+    }
+
     async function api(path, opts={}) {
-      const res = await fetch(path, {
-        headers: {"Content-Type": "application/json"}, ...opts,
-      });
-      const text = await res.text();
-      let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-      if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
-      return data;
+      _bumpInflight(1);
+      try {
+        const res = await fetch(path, {
+          headers: {"Content-Type": "application/json"}, ...opts,
+        });
+        const text = await res.text();
+        let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+        if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
+        return data;
+      } finally { _bumpInflight(-1); }
     }
 
     // ===================================================================== //
@@ -891,7 +1057,8 @@
       {id:"search",   label:"Search",             grp:"Investigate"},
       {id:"insights", label:"Insights",           grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
-      {id:"markets",  label:"Markets",            grp:"Investigate"},
+      {id:"indices",  label:"Indices",            grp:"Investigate"},
+      {id:"markets",  label:"Commodities",        grp:"Investigate"},
       {id:"ingest",   label:"Collect",            grp:"Collect"},
       {id:"sources",  label:"Sources",            grp:"Collect"},
       {id:"database", label:"Library",            grp:"Collect"},
@@ -903,6 +1070,7 @@
     const TAB_LOADERS = {
       home: loadHome,
       ingest: loadScheduler,
+      indices: loadIndices,
       markets: loadMarkets,
       insights: loadInsights,
       wiki: loadWiki,
@@ -1622,6 +1790,7 @@
     }
 
     function renderSchedStatus(st) {
+      setBackgroundActivity(st.active ? "Collecting…" : null);
       const pill = st.running
         ? (st.active ? '<span class="pill ok">running — scrape in progress</span>'
                      : '<span class="pill ok">running</span>')
@@ -1718,6 +1887,63 @@
     let MKT_SERIES = [];
     const MKT_PRICES = {};            // symbol -> [{observed_on, price, currency, unit}]
     let _mktConfigLoaded = false;
+
+    // -- Indices board (world stock-exchange indices) ----------------------- //
+    async function loadIndices() { loadIndicesBoard(); }
+
+    async function loadIndicesBoard() {
+      const el = $("idx-board");
+      el.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const b = await api("/api/markets/board?category=index");
+        $("idx-note").textContent = b.note || "";
+        el.innerHTML = b.cards.length ? b.cards.map(idxCard).join("")
+          : '<div class="muted">No index catalog found.</div>';
+      } catch (e) { el.innerHTML = `<div class="muted">Could not load indices: ${esc(e.message)}</div>`; }
+    }
+
+    function _num(n) { return n == null ? "—" : Number(n).toLocaleString(undefined, {maximumFractionDigits: 2}); }
+
+    function idxSpark(pts, chg) {
+      if (!pts || pts.length < 2) return '<div class="idx-spark-empty muted">no series yet</div>';
+      const w = 280, h = 42, n = pts.length, vals = pts.map(p => p[1]);
+      const min = Math.min(...vals), max = Math.max(...vals), rng = (max - min) || 1;
+      const x = i => (i / (n - 1)) * w, y = v => h - ((v - min) / rng) * (h - 6) - 3;
+      const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
+      const col = chg == null ? "var(--muted)" : (chg >= 0 ? "var(--ok)" : "var(--err)");
+      return `<svg class="idx-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="${col}" stroke-width="1.5"/></svg>`;
+    }
+
+    function idxCard(c) {
+      const has = !!c.latest;
+      const chg = c.change_pct;
+      const cls = chg == null ? "flat" : (chg >= 0 ? "up" : "down");
+      const chgTxt = chg == null ? "" : `${chg >= 0 ? "▲" : "▼"} ${Math.abs(chg).toFixed(2)}%`;
+      return `<div class="idx-card">
+        <div class="idx-top">
+          <div class="idx-id"><div class="idx-name">${esc(c.name)}</div>
+            <div class="idx-mkt muted">${esc(c.market || "")}</div></div>
+          <div class="idx-quote"><div class="idx-num">${_num(has ? c.latest.price : null)}</div>
+            <div class="idx-chg ${cls}">${chgTxt}</div></div>
+        </div>
+        ${idxSpark(c.spark, chg)}
+        <div class="idx-foot muted">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
+          · ${esc(c.currency || "")} · <a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">source</a></div>
+      </div>`;
+    }
+
+    async function loadIndicesData(btn) {
+      btn.disabled = true;
+      const st = $("idx-status");
+      st.textContent = "Importing index feeds (official end-of-day CSVs; may take a moment)…";
+      try {
+        const r = await api("/api/markets/feeds/import-all?category=index", {method: "POST"});
+        st.textContent = `Imported ${r.points_imported} point(s) across ${r.feeds} feed(s)${r.failed ? `, ${r.failed} failed` : ""}.`;
+        await loadIndicesBoard();
+        toast("Indices updated.");
+      } catch (e) { st.textContent = ""; toast("Load failed: " + e.message, "err"); }
+      finally { btn.disabled = false; }
+    }
 
     async function loadMarkets() { loadDashboard(); }
 
@@ -2588,6 +2814,16 @@
     _loaded.add("settings");
     loadSettings().then(doSearch);
     loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus();
+    // Keep the background-activity chip live app-wide (e.g. a scheduled scrape).
+    // Cheap loopback poll; paused while the tab is hidden.
+    _pollActivity(); setInterval(() => { if (!document.hidden) _pollActivity(); }, 5000);
+    // Dismiss the vitals popover on Escape or an outside click.
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && _vitalsOpen) toggleVitals(); });
+    document.addEventListener("click", (e) => {
+      if (!_vitalsOpen) return;
+      const pop = $("vitals-pop"), chip = $("activity");
+      if (pop && !pop.contains(e.target) && chip && !chip.contains(e.target)) toggleVitals();
+    });
     ensureDocList();   // so the jump overlay can offer docs before Help is opened
     const initial = (location.hash || "#home").slice(1);
     showTab(document.getElementById("tab-" + initial) ? initial : "home");

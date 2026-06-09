@@ -90,10 +90,11 @@ def insights_top(
     country: str | None = None,
     kind: str | None = Query(None),
     limit: int = Query(20, ge=1, le=200),
+    group: bool = Query(True, description="Merge surface variants into entity families"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Most-mentioned keywords (optionally windowed / per-country / per-kind)."""
-    return q.top_terms(db, days=days, country=country, kind=_kind(kind), limit=limit)
+    return q.top_terms(db, days=days, country=country, kind=_kind(kind), limit=limit, group=group)
 
 
 @router.get("/trending")
@@ -126,10 +127,11 @@ def insights_associations(
     term: str,
     limit: int = Query(20, ge=1, le=100),
     min_cooccur: int = Query(2, ge=1, le=50),
+    group: bool = Query(True, description="Merge surface variants into entity families"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Keywords co-occurring with ``term`` (PMI-ranked) — powers the mind-map."""
-    return q.associations(db, term, limit=limit, min_cooccur=min_cooccur)
+    return q.associations(db, term, limit=limit, min_cooccur=min_cooccur, group=group)
 
 
 @router.get("/context")
@@ -172,3 +174,84 @@ def insights_map(
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None
+
+
+# -- Keyword-family overrides (manual merge / split — "the user disposes") ---- #
+
+class FamilyMerge(BaseModel):
+    normalized: list[str]
+    label: str | None = None
+    kind: str | None = None
+
+
+class FamilySplit(BaseModel):
+    normalized: str
+    label: str | None = None
+    kind: str | None = None
+
+
+def _n(s: str | None) -> str:
+    return " ".join((s or "").split()).casefold()
+
+
+def _upsert_override(db: Session, normalized: str, family_key: str,
+                     label: str | None, kind: str | None) -> None:
+    from src.database.models import KeywordFamilyOverride
+
+    row = db.query(KeywordFamilyOverride).filter_by(normalized_term=normalized).first()
+    if row:
+        row.family_key, row.canonical_label, row.kind = family_key, label, kind
+    else:
+        db.add(KeywordFamilyOverride(normalized_term=normalized, family_key=family_key,
+                                     canonical_label=label, kind=kind))
+
+
+@router.get("/family/overrides")
+def family_overrides(db: Session = Depends(get_db)) -> dict:
+    """List the user's manual family overrides, grouped by family."""
+    from src.database.models import KeywordFamilyOverride
+
+    fams: dict[str, dict] = {}
+    for o in db.query(KeywordFamilyOverride).order_by(KeywordFamilyOverride.family_key).all():
+        f = fams.setdefault(o.family_key, {"family_key": o.family_key, "label": o.canonical_label,
+                                           "kind": o.kind, "members": [], "split": o.family_key.startswith("__alone__:")})
+        f["members"].append(o.normalized_term)
+    return {"count": sum(len(f["members"]) for f in fams.values()), "families": list(fams.values())}
+
+
+@router.post("/family/merge")
+def family_merge(body: FamilyMerge, db: Session = Depends(get_db)) -> dict:
+    """Force two or more surface forms into one family (authoritative over auto-rules)."""
+    from src.analytics.families import canonical_key
+
+    norms = list(dict.fromkeys(n for n in (_n(x) for x in body.normalized) if n))
+    if len(norms) < 2:
+        raise HTTPException(status_code=400, detail="Provide at least two distinct forms to merge.")
+    label = body.label or norms[0]
+    family_key = canonical_key(_n(label)) or norms[0]
+    for n in norms:
+        _upsert_override(db, n, family_key, label, body.kind)
+    db.commit()
+    return {"merged": norms, "family_key": family_key, "label": label}
+
+
+@router.post("/family/split")
+def family_split(body: FamilySplit, db: Session = Depends(get_db)) -> dict:
+    """Pin a surface form standalone, removing it from any automatic family."""
+    n = _n(body.normalized)
+    if not n:
+        raise HTTPException(status_code=400, detail="normalized is required.")
+    _upsert_override(db, n, "__alone__:" + n, body.label or body.normalized, body.kind)
+    db.commit()
+    return {"split": n}
+
+
+@router.delete("/family/override")
+def family_override_clear(normalized: str, db: Session = Depends(get_db)) -> dict:
+    """Remove an override for a form, restoring automatic grouping."""
+    from src.database.models import KeywordFamilyOverride
+
+    n = _n(normalized)
+    deleted = db.query(KeywordFamilyOverride).filter_by(normalized_term=n).delete()
+    db.commit()
+    return {"cleared": n, "deleted": int(deleted)}

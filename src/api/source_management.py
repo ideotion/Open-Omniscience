@@ -112,7 +112,12 @@ async def list_sources(
                 "tags": [t.strip() for t in (s.tags or '').split(',') if t.strip()],
                 "article_count": len(s.articles) if s.articles else 0,
                 "groups": [g.name for g in s.groups.all()] if s.groups else [],
-                "has_metadata": s.source_metadata is not None
+                "has_metadata": s.source_metadata is not None,
+                # Geo/type metadata — powers the batch-ingest source picker's filters.
+                "language": s.language,
+                "country": s.country,
+                "region": s.region,
+                "source_type": s.source_type,
             }
             for s in sources
         ]

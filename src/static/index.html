@@ -170,6 +170,97 @@
     .dot.ok{ background:var(--ok); box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent); }
     .dot.err{ background:var(--err); box-shadow:0 0 0 3px color-mix(in srgb,var(--err) 22%,transparent); }
     .dot.warn{ background:var(--warn); }
+    /* Background-activity indicator (top bar): an honest "the app is doing something"
+       signal. The ring stays legible even when prefers-reduced-motion freezes the spin. */
+    .activity { display:inline-flex; align-items:center; gap:6px; padding:1px 9px;
+      border:1px solid var(--border); border-radius:999px; background:var(--panel2);
+      font-size:12px; color:var(--muted); white-space:nowrap; }
+    .activity[hidden] { display:none; }
+    .activity.bg { color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--border)); }
+    .activity .spin { width:11px; height:11px; border-radius:50%; flex:0 0 auto;
+      border:2px solid color-mix(in srgb,var(--fg) 22%,transparent); border-top-color:var(--accent);
+      animation:oo-spin .7s linear infinite; }
+    .activity.bg .spin { border-top-color:var(--ok); }
+    @keyframes oo-spin { to { transform:rotate(360deg); } }
+    /* Activity & vitals popover (opened from the chip). */
+    .vitals-pop { position:fixed; top:52px; right:14px; z-index:60; width:264px;
+      background:var(--panel); border:1px solid var(--border); border-radius:10px;
+      box-shadow:0 10px 34px rgba(0,0,0,.38); padding:10px 12px; font-size:12px; }
+    .vitals-pop[hidden] { display:none; }
+    .vitals-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+    .vitals-pop .vr { display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:4px 0; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
+    .vitals-pop .vr:first-child { border-top:0; }
+    .vitals-pop .vr > span { color:var(--muted); }
+    .vitals-pop .vr b { font-variant-numeric:tabular-nums; font-weight:600; max-width:160px;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .vitals-pop .vnote { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.35; }
+    /* Indices board */
+    .idx-board { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; margin-top:14px; }
+    .idx-card { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+    .idx-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .idx-name { font-weight:600; }
+    .idx-mkt { font-size:11px; margin-top:1px; }
+    .idx-quote { text-align:right; }
+    .idx-num { font-variant-numeric:tabular-nums; font-weight:700; font-size:17px; }
+    .idx-chg { font-size:12px; font-variant-numeric:tabular-nums; margin-top:1px; }
+    .idx-chg.up { color:var(--ok); } .idx-chg.down { color:var(--err); } .idx-chg.flat { color:var(--muted); }
+    .idx-spark { width:100%; height:42px; margin:8px 0 4px; display:block; }
+    .idx-spark-empty { height:42px; display:flex; align-items:center; font-size:11px; }
+    .idx-foot { font-size:11px; }
+    .idx-foot a { color:var(--muted); text-decoration:underline; }
+    /* Batch-ingest source picker */
+    .bi-list { margin-top:10px; max-height:300px; overflow:auto; border:1px solid var(--border);
+      border-radius:8px; background:var(--panel2); }
+    .bi-row { display:flex; align-items:center; gap:9px; padding:6px 11px; border-bottom:1px solid var(--border);
+      cursor:pointer; font-size:13px; }
+    .bi-row:last-child { border-bottom:0; }
+    .bi-row:hover { background:color-mix(in srgb, var(--accent) 7%, transparent); }
+    .bi-row input { width:auto; flex:0 0 auto; }
+    .bi-nofeed { opacity:.5; cursor:not-allowed; }
+    .bi-name { font-weight:600; } .bi-meta { font-size:11px; }
+    table.bi-res { width:100%; border-collapse:collapse; font-size:12px; }
+    table.bi-res th, table.bi-res td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--border); }
+    /* World-law colourised diff */
+    .law-diff { font-family:var(--mono,ui-monospace,monospace); font-size:12px; line-height:1.5;
+      max-height:240px; overflow:auto; border:1px solid var(--border); border-radius:6px; margin-top:6px; }
+    .law-diff .dl { padding:0 10px; white-space:pre-wrap; word-break:break-word; }
+    .law-diff .dl.add { background:color-mix(in srgb, var(--ok) 16%, transparent); }
+    .law-diff .dl.del { background:color-mix(in srgb, var(--err) 16%, transparent); }
+    .law-diff .dl.ctx { color:var(--muted); }
+    /* Most-cited sources (co-citation) */
+    .cs-row { border:1px solid var(--border); border-radius:8px; margin-bottom:6px; overflow:hidden; background:var(--panel2); }
+    .cs-head { position:relative; display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; }
+    .cs-head:hover { background:color-mix(in srgb, var(--accent) 7%, transparent); }
+    .cs-head.open { background:color-mix(in srgb, var(--accent) 12%, transparent); }
+    .cs-bar { position:absolute; left:0; top:0; bottom:0; background:color-mix(in srgb, var(--accent) 14%, transparent); z-index:0; }
+    .cs-main { position:relative; z-index:1; flex:1; min-width:0; }
+    .cs-label { font-weight:600; word-break:break-word; }
+    .cs-url { font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .cs-count { position:relative; z-index:1; font-variant-numeric:tabular-nums; font-weight:700; flex:0 0 auto; }
+    .cs-arts { padding:0 12px; }
+    .cs-arts:not(:empty) { padding:6px 12px 10px; border-top:1px solid var(--border); }
+    .cs-arts-h { font-size:11px; margin-bottom:4px; }
+    .cs-art { font-size:13px; padding:3px 0; }
+    /* Keyword families (merge/split) */
+    .fam-row { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border:1px solid var(--border);
+      border-radius:8px; margin-bottom:6px; background:var(--panel2); }
+    .fam-row input.fam-pick { width:auto; flex:0 0 auto; margin-top:3px; }
+    .fam-body { flex:1; min-width:0; }
+    .fam-chips { margin-top:5px; display:flex; flex-wrap:wrap; gap:5px; }
+    .fam-chip { font-size:12px; padding:2px 8px; border:1px solid var(--border); border-radius:12px;
+      background:var(--panel); color:var(--fg); cursor:pointer; }
+    .fam-chip:hover { border-color:var(--err); color:var(--err); }
+    .fam-ov { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px;
+      padding:5px 8px; border-bottom:1px solid var(--border); }
+    /* Corpus landscape (super-families by kind) */
+    .ls-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-top:10px; }
+    .ls-col { border:1px solid var(--border); border-radius:8px; padding:9px 11px; background:var(--panel2); }
+    .ls-h { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-bottom:7px; }
+    .ls-chips { display:flex; flex-wrap:wrap; gap:5px 7px; align-items:baseline; }
+    .ls-chip { background:transparent; border:0; padding:1px 3px; color:var(--fg); cursor:pointer;
+      line-height:1.25; border-bottom:1px dotted transparent; }
+    .ls-chip:hover { color:var(--accent); border-bottom-color:var(--accent); }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -327,10 +418,10 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <circle cx="16" cy="16" r="13" style="stroke:var(--accent)" stroke-width="2"/>
-          <circle cx="16" cy="16" r="5.5" style="fill:var(--accent)"/>
+          <circle cx="16" cy="16" r="13" style="stroke:currentColor" stroke-width="2"/>
+          <circle cx="16" cy="16" r="5.5" style="fill:currentColor"/>
           <circle cx="16" cy="16" r="2" style="fill:var(--bg2)"/>
-          <path d="M16 1.5v6M16 24.5v6M1.5 16h6M24.5 16h6" style="stroke:var(--accent)" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+          <path d="M16 1.5v6M16 24.5v6M1.5 16h6M24.5 16h6" style="stroke:currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>
         </svg>
         <div class="txt"><b>Open Omniscience</b><span id="version">v—</span></div>
       </div>
@@ -343,7 +434,8 @@
           <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
           <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
           <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
-          <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Markets</span><span class="badge">adv</span></button>
+          <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
+          <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span><span class="badge">adv</span></button>
         </div>
         <div class="nav-group" data-grp="collect">
           <div class="gl">Collect</div>
@@ -387,6 +479,7 @@
         </div>
         <div class="spacer"></div>
         <div class="status-cluster" id="statusCluster">
+          <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click for details" tabindex="0" aria-expanded="false" aria-haspopup="dialog" style="cursor:pointer" onclick="toggleVitals()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleVitals();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
         </div>
@@ -397,6 +490,14 @@
         <a class="icon-btn" href="/docs" target="_blank" rel="noopener" title="Raw API reference (Swagger)" aria-label="Raw API reference (opens in a new tab)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></a>
       </header>
+
+      <div id="vitals-pop" class="vitals-pop" hidden role="dialog" aria-label="Activity and system vitals">
+        <div class="vitals-head"><b>Activity &amp; vitals</b>
+          <button class="icon-btn" style="width:24px;height:24px" onclick="toggleVitals()" aria-label="Close" title="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+        <div id="vitals-body"></div>
+        <div id="vitals-note"></div>
+      </div>
 
       <main id="main" tabindex="-1">
     <div id="onboard" class="panel" style="display:none;border-color:var(--accent)">
@@ -582,6 +683,35 @@
       <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
       <div id="ingest-result" class="hint"></div>
     </section>
+
+    <section class="panel">
+      <h2>Batch ingest — pick sources</h2>
+      <p class="hint" style="margin-top:0">Select several sources and fetch all their feeds in one run. Filter by
+        language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed,
+        rate-limited); up to 50 per run.</p>
+      <div class="row">
+        <div style="flex:2"><label for="bi-search">Search</label>
+          <input id="bi-search" placeholder="name or domain" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-lang">Language</label><input id="bi-lang" placeholder="en" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-country">Country</label><input id="bi-country" placeholder="fr" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-type">Type</label><input id="bi-type" placeholder="news" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-enabled">Show</label>
+          <select id="bi-enabled" onchange="renderBatchPicker()">
+            <option value="">all</option><option value="1" selected>enabled</option><option value="0">disabled</option>
+          </select></div>
+      </div>
+      <div class="row" style="margin-top:6px;align-items:center">
+        <button class="ghost tiny" onclick="batchSelectAll(true)">Select all (filtered)</button>
+        <button class="ghost tiny" onclick="batchSelectAll(false)">Clear</button>
+        <span id="bi-count" class="hint"></span>
+      </div>
+      <div id="bi-list" class="bi-list"><div class="muted">Loading sources…</div></div>
+      <div class="row" style="margin-top:8px;align-items:center">
+        <button onclick="ingestBatch(this)">Ingest selected feeds</button>
+        <span id="bi-status" class="hint"></span>
+      </div>
+      <div id="bi-results" style="margin-top:8px"></div>
+    </section>
     </div>
 
     <!-- ===================== SOURCE MANAGEMENT ====================== -->
@@ -737,7 +867,7 @@
           record links back to its official gazette. Fetched only through the ethical, robots-respecting
           path. See <a href="#" onclick="showTab('help');openDoc('law');return false">the Law guide</a>.</p>
         <div class="row">
-          <button onclick="lawTrack()" style="margin-top:0">Track changes now</button>
+          <button onclick="lawTrack(this)" style="margin-top:0">Track changes now</button>
           <button class="secondary" onclick="lawSeed()" style="margin-top:0">Re-seed catalog</button>
           <button class="secondary" onclick="loadLaw()" style="margin-top:0">Refresh</button>
         </div>
@@ -818,10 +948,26 @@
       </section>
     </div>
 
-    <!-- ============================ MARKETS ========================== -->
+    <!-- ============================ INDICES ========================== -->
+    <div class="tab-page" id="tab-indices">
+    <section class="panel">
+      <h2>World stock indices</h2>
+      <p class="muted" style="margin-top:0">Major stock-exchange indices from official, free sources
+        (FRED, Stooq) — <b>end-of-day</b> values, each labelled with its as-of date and source.
+        <b>Not real-time</b>; every number comes straight from the downloaded file — nothing scraped or guessed.</p>
+      <div class="row">
+        <div style="flex:0 0 auto"><button onclick="loadIndicesData(this)">Load / refresh indices</button></div>
+        <div id="idx-status" class="hint" style="align-self:center"></div>
+      </div>
+      <div id="idx-note" class="hint muted" style="margin-top:4px"></div>
+      <div id="idx-board" class="idx-board"><div class="muted">Loading…</div></div>
+    </section>
+    </div>
+
+    <!-- ============================ COMMODITIES ====================== -->
     <div class="tab-page" id="tab-markets">
     <section class="panel">
-      <h2>Market trends</h2>
+      <h2>Commodities &amp; rare-earth</h2>
       <p class="muted" style="margin-top:0">Real series from official feeds (FRED → World Bank / EIA):
         FX (EUR/USD), energy (WTI, Brent, gas), metals &amp; gold. Every point comes straight from the
         downloaded file — nothing scraped or guessed.</p>
@@ -914,6 +1060,8 @@
       <nav class="tabs" style="position:static;padding:0;border:0;margin-top:10px">
         <button class="active" data-ins="explore" onclick="showInsightCat('explore')">Explore</button>
         <button data-ins="trends" onclick="showInsightCat('trends')">Trends</button>
+        <button data-ins="sources" onclick="showInsightCat('sources')">Sources</button>
+        <button data-ins="families" onclick="showInsightCat('families')">Families</button>
         <button data-ins="map" onclick="showInsightCat('map')">Map</button>
       </nav>
     </section>
@@ -925,6 +1073,12 @@
                  onkeydown="if(event.key==='Enter')exploreTerm()"></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="exploreTerm()">Explore</button></div>
       </div>
+
+      <details id="ins-landscape-wrap" open style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:13px;font-weight:600">Corpus landscape <span class="muted">— families by kind (zoom out); click one to zoom in</span></summary>
+        <div id="ins-landscape"><div class="muted" style="margin-top:8px">Loading…</div></div>
+      </details>
+
       <div id="ins-trend" style="margin-top:12px"></div>
       <h2 style="margin:14px 0 6px;font-size:13px">Associated keywords (mind-map)</h2>
       <div id="ins-mindmap"></div>
@@ -949,6 +1103,39 @@
         <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Top</h2><div id="trd-top"></div></div>
       </div>
       <div id="trd-method" class="hint" style="margin-top:8px"></div>
+    </section>
+
+    <section class="panel ins-view" id="ins-sources" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Most-cited sources <span class="muted">(co-citation)</span></h2>
+      <p class="hint" style="margin-top:0">Which external links or domains <em>many of your articles point to</em> —
+        a citation-graph signal grounded in what reporters actually reference. Click a row to assemble every
+        article in your corpus that cites it (opens the offline stored copy).</p>
+      <div class="row">
+        <div><label for="cs-by">Group by</label><select id="cs-by" onchange="loadCitedSources()">
+          <option value="domain">domain</option><option value="url">exact link</option></select></div>
+        <div><label for="cs-window">Window (days)</label><input id="cs-window" type="number" placeholder="all" min="1" max="3650" onkeydown="if(event.key==='Enter')loadCitedSources()"></div>
+        <div><label for="cs-min">Min. articles</label><input id="cs-min" type="number" value="2" min="1" max="100"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="loadCitedSources()">Refresh</button></div>
+      </div>
+      <div id="cs-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+    </section>
+
+    <section class="panel ins-view" id="ins-families" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Keyword families <span class="muted">— you decide</span></h2>
+      <p class="hint" style="margin-top:0">Surface variants are grouped automatically (<b>Trump</b> = <b>Trump's</b> =
+        <b>Donald Trump</b>). Here you correct it: <b>tick</b> two or more rows and <b>Merge</b> them, or click a
+        member's <b>✕</b> to <b>split</b> it out. Your decisions win over the automatic rules and are fully reversible.</p>
+      <div class="row" style="align-items:center">
+        <div><label for="fam-kind">Kind</label><select id="fam-kind" onchange="loadFamilies()">
+          <option value="entity">entities</option><option value="person">people</option>
+          <option value="org">orgs</option><option value="location">places</option>
+          <option value="">all</option></select></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="familyMerge()">Merge selected</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadFamilies()">Refresh</button></div>
+        <span id="fam-status" class="hint"></span>
+      </div>
+      <div id="fam-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="fam-overrides" style="margin-top:14px"></div>
     </section>
 
     <section class="panel ins-view" id="ins-map" style="display:none">
@@ -1261,14 +1448,123 @@
       setTimeout(() => n.remove(), 5000);
     }
 
+    // -- Background-activity indicator -------------------------------------- //
+    // Honest "the app is doing something" signal in the top bar. Sources:
+    //   * in-flight requests -- every backend call goes through api(), so a counter
+    //     there lights a "Working…" spinner for ANY action, app-wide. Shown only
+    //     after a short delay so fast status polls don't flicker the chrome.
+    //   * background work -- a running scrape (scheduler status .active) shows a
+    //     persistent "Collecting… <host>" chip; the host is the URL being fetched
+    //     right now (live, truncated). Click the chip for a vitals popover.
+    let _inflight = 0, _bg = null, _spinTimer = null, _curHost = null;
+    function _paintActivity() {
+      const el = $("activity"); if (!el) return;
+      if (_bg) { el.hidden = false; el.classList.add("bg");
+        $("activity-label").textContent = _curHost ? (_bg + " " + _curHost) : _bg; }
+      else if (_inflight > 0) { el.hidden = false; el.classList.remove("bg"); $("activity-label").textContent = "Working…"; }
+      else { el.hidden = true; }
+    }
+    function _bumpInflight(d) {
+      _inflight = Math.max(0, _inflight + d);
+      if (_inflight > 0 && !_bg) {
+        if (!_spinTimer) _spinTimer = setTimeout(() => { _spinTimer = null; _paintActivity(); }, 350);
+      } else {
+        if (_spinTimer) { clearTimeout(_spinTimer); _spinTimer = null; }
+        _paintActivity();
+      }
+    }
+    function setBackgroundActivity(label) {
+      const next = label || null;
+      if (next === _bg) return;
+      _bg = next; if (!_bg) _curHost = null;
+      _paintActivity();
+      if (!_bg) _bumpInflight(0);   // re-evaluate any still-pending in-flight spinner
+      _ensureVitalsPoll();
+    }
+    async function _pollActivity() {
+      try { const s = await api("/api/scheduler/status");
+        setBackgroundActivity(s && s.active ? "Collecting…" : null);
+      } catch { /* transient: keep the last known state */ }
+    }
+
+    // -- Live vitals (CPU/RAM/disk + real, app-attributed scraping throughput) -- //
+    // Polls /api/system/vitals only while a scrape is active OR the popover is open,
+    // so an idle app makes no extra requests. Rates are derived by diffing two
+    // snapshots (the endpoint returns cumulative counters -- never a guessed
+    // instantaneous value). The current-fetch URL is shown truncated and live.
+    let _vitalsTimer = null, _vitalsOpen = false, _vitalsPrev = null;
+    function _shortUrl(u) {
+      if (!u) return "";
+      const s = String(u).replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+      return s.length > 40 ? s.slice(0, 39) + "…" : s;
+    }
+    function _fmtBytes(n) {
+      if (n == null) return "—";
+      const u = ["B","KB","MB","GB","TB"]; let i = 0, v = n;
+      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+      return (v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)) + " " + u[i];
+    }
+    function _rateBytes(curr, prev, pick) {
+      if (!prev) return null;
+      const dt = curr.at - prev.at; if (dt <= 0) return null;
+      const a = pick(curr), b = pick(prev);
+      if (a == null || b == null) return null;
+      return Math.max(0, (a - b) / dt);
+    }
+    function _vitalsShouldRun() { return _vitalsOpen || !!_bg; }
+    function _ensureVitalsPoll() {
+      if (_vitalsShouldRun() && !_vitalsTimer) {
+        _pollVitals();
+        _vitalsTimer = setInterval(() => { if (!document.hidden) _pollVitals(); }, 2000);
+      } else if (!_vitalsShouldRun() && _vitalsTimer) {
+        clearInterval(_vitalsTimer); _vitalsTimer = null; _vitalsPrev = null;
+      }
+    }
+    async function _pollVitals() {
+      let v; try { v = await api("/api/system/vitals"); } catch { return; }
+      const cur = v.scraping && v.scraping.current_fetch;
+      if (_bg) { _curHost = cur ? _shortUrl(cur.url) : null; _paintActivity(); }
+      if (_vitalsOpen) _renderVitals(v);
+      _vitalsPrev = v;
+    }
+    function _renderVitals(v) {
+      const p = v.process || {}, sc = v.scraping || {}, cur = sc.current_fetch;
+      const dl = _rateBytes(v, _vitalsPrev, x => x.scraping && x.scraping.bytes_total);
+      const wr = _rateBytes(v, _vitalsPrev, x => x.process && x.process.io_write_bytes);
+      const rd = _rateBytes(v, _vitalsPrev, x => x.process && x.process.io_read_bytes);
+      const row = (k, val) => `<div class="vr"><span>${k}</span><b>${val}</b></div>`;
+      $("vitals-body").innerHTML =
+        row("Now fetching", cur ? esc(_shortUrl(cur.url)) : '<span class="muted">idle</span>') +
+        row("Scraping ↓", dl == null ? "—" : _fmtBytes(dl) + "/s") +
+        row("Downloaded", _fmtBytes(sc.bytes_total) + ` <span class="muted">· ${sc.fetches_total||0} fetches</span>`) +
+        row("CPU", p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
+        row("Memory", _fmtBytes(p.rss_bytes)) +
+        row("Disk", (rd == null && wr == null) ? "—"
+              : `↓${rd==null?"—":_fmtBytes(rd)+"/s"} ↑${wr==null?"—":_fmtBytes(wr)+"/s"}`);
+      $("vitals-note").innerHTML = v.network_system_wide
+        ? '<div class="vnote">Network counters are system-wide (can\'t be attributed per-app); the scraping figure above is measured at our own fetcher.</div>'
+        : '';
+    }
+    function toggleVitals() {
+      const pop = $("vitals-pop"); if (!pop) return;
+      _vitalsOpen = !_vitalsOpen;
+      pop.hidden = !_vitalsOpen;
+      const chip = $("activity"); if (chip) chip.setAttribute("aria-expanded", String(_vitalsOpen));
+      if (_vitalsOpen) _vitalsPrev = null;
+      _ensureVitalsPoll();
+    }
+
     async function api(path, opts={}) {
-      const res = await fetch(path, {
-        headers: {"Content-Type": "application/json"}, ...opts,
-      });
-      const text = await res.text();
-      let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-      if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
-      return data;
+      _bumpInflight(1);
+      try {
+        const res = await fetch(path, {
+          headers: {"Content-Type": "application/json"}, ...opts,
+        });
+        const text = await res.text();
+        let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+        if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
+        return data;
+      } finally { _bumpInflight(-1); }
     }
 
     // ===================================================================== //
@@ -1284,7 +1580,8 @@
       {id:"insights", label:"Insights",           grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
       {id:"law",      label:"World law",          grp:"Investigate"},
-      {id:"markets",  label:"Markets",            grp:"Investigate"},
+      {id:"indices",  label:"Indices",            grp:"Investigate"},
+      {id:"markets",  label:"Commodities",        grp:"Investigate"},
       {id:"ingest",   label:"Collect",            grp:"Collect"},
       {id:"sources",  label:"Sources",            grp:"Collect"},
       {id:"database", label:"Library",            grp:"Collect"},
@@ -1300,6 +1597,7 @@
     const TAB_LOADERS = {
       home: loadHome,
       ingest: loadScheduler,
+      indices: loadIndices,
       markets: loadMarkets,
       insights: loadInsights,
       wiki: loadWiki,
@@ -1537,7 +1835,9 @@
       const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).map(e => {
         const label = esc(e.title || e.url);
         const meta = [e.source, (e.published_at || "").slice(0,10)].filter(Boolean).map(esc).join(" · ");
-        const link = e.url ? `<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${label}</a>` : label;
+        const link = e.article_id
+          ? `<a href="/api/articles/${e.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">${label}</a>`
+          : (e.url ? `<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${label}</a>` : label);
         return `<span>${link}${meta ? ` <span class="muted">— ${meta}</span>` : ""}</span>`;
       }).join("");
       const evidBlock = evid ? `<div class="evid">${evid}</div>` : "";
@@ -1802,6 +2102,17 @@
       } catch (e) { $("law-status").innerHTML = '<div class="muted">Status unavailable.</div>'; }
       loadLawChanges(); loadLawDocs();
     }
+    // Colourised unified diff (green added / red removed), bounded for the feed.
+    function renderDiff(diff, max = 400) {
+      if (!diff) return "";
+      const lines = diff.split("\n").slice(0, max);
+      const more = diff.split("\n").length > max ? `<div class="dl ctx">… (diff truncated)</div>` : "";
+      return `<div class="law-diff">` + lines.map(ln => {
+        const c = ln[0] === "+" ? "add" : (ln[0] === "-" ? "del" : "ctx");
+        return `<div class="dl ${c}">${esc(ln)}</div>`;
+      }).join("") + more + `</div>`;
+    }
+
     async function loadLawChanges() {
       const box = $("law-changes");
       const fo = $("law-flagged-only") ? $("law-flagged-only").checked : true;
@@ -1814,8 +2125,9 @@
             <span class="pill ${ch.flagged?'warn':''}">${ch.delta_bytes>0?'+':''}${ch.delta_bytes} bytes</span>
             ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(esc).join(', ')+'</span>':''}
             <div class="hint" style="margin-top:4px">${ch.observed_at?new Date(ch.observed_at).toLocaleString():''} ·
-              <a href="${esc(safeUrl(ch.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div>
-            ${ch.diff?`<pre style="white-space:pre-wrap;max-height:160px;overflow:auto;font-size:12px;margin-top:6px">${esc(ch.diff.slice(0,1500))}</pre>`:''}
+              <a href="/api/law/documents/${ch.document_id}/view" target="_blank" rel="noopener" title="offline stored copy + history">open reader</a> ·
+              <a class="muted" href="${esc(safeUrl(ch.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div>
+            ${renderDiff(ch.diff)}
           </div>`).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load changes.</div>'; }
     }
@@ -1828,15 +2140,23 @@
             `<tr><td>${esc(x.jurisdiction.toUpperCase())}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
               <td>${x.has_baseline?'<span class="pill ok">yes</span>':'<span class="pill">no</span>'}</td>
               <td>${x.revisions}${x.flagged?` (${x.flagged} flagged)`:''}</td>
-              <td><a href="${esc(safeUrl(x.official_url||x.url))}" target="_blank" rel="noopener noreferrer">official ↗</a></td></tr>`).join("") +
+              <td><a href="/api/law/documents/${x.id}/view" target="_blank" rel="noopener" title="offline stored copy + history">reader</a>
+                · <a class="muted" href="${esc(safeUrl(x.official_url||x.url))}" target="_blank" rel="noopener noreferrer">official ↗</a></td></tr>`).join("") +
           "</tbody>";
       } catch (e) { /* table optional */ }
     }
-    async function lawTrack() {
-      toast("Tracking legal documents (ethical fetch)…");
+    async function lawTrack(btn) {
+      // Long synchronous op (ethical, rate-limited fetch of each watched document):
+      // give a persistent busy state so it never reads as "nothing happened".
+      const label = btn ? btn.textContent : null;
+      if (btn) { btn.disabled = true; btn.textContent = "Tracking…"; }
+      const st = $("law-status");
+      if (st) st.innerHTML = '<div class="muted">Tracking watched documents — ethical, rate-limited fetch; this can take a moment…</div>';
       try { const r = await api("/api/law/track", {method:"POST"});
         toast(`Tracked ${r.documents}: ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.`);
-        loadLaw(); } catch (e) { toast("Tracking failed: " + e.message, "err"); }
+        loadLaw(); loadLawChanges && loadLawChanges();
+      } catch (e) { toast("Tracking failed: " + e.message, "err"); if (st) loadLaw(); }
+      finally { if (btn) { btn.disabled = false; btn.textContent = label || "Track changes now"; } }
     }
     async function lawSeed() {
       try { const r = await api("/api/law/seed", {method:"POST"});
@@ -2536,12 +2856,88 @@
       } catch (e) { $("ingest-result").textContent = ""; toast("Ingest failed: " + e.message, "err"); }
     }
 
+    // -- Batch ingest picker ------------------------------------------------ //
+    const BI = { sources: [], selected: new Set() };
+
+    async function loadBatchPicker() {
+      try {
+        BI.sources = await api("/api/sources/?limit=1000");
+        BI.selected = new Set();
+      } catch (e) { BI.sources = []; }
+      renderBatchPicker();
+    }
+
+    function _biFiltered() {
+      const q = ($("bi-search").value || "").trim().toLowerCase();
+      const lang = ($("bi-lang").value || "").trim().toLowerCase();
+      const country = ($("bi-country").value || "").trim().toLowerCase();
+      const type = ($("bi-type").value || "").trim().toLowerCase();
+      const en = $("bi-enabled").value;
+      return BI.sources.filter(s => {
+        if (q && !((s.name||"").toLowerCase().includes(q) || (s.domain||"").toLowerCase().includes(q))) return false;
+        if (lang && (s.language||"").toLowerCase() !== lang) return false;
+        if (country && (s.country||"").toLowerCase() !== country) return false;
+        if (type && !(s.source_type||"").toLowerCase().includes(type)) return false;
+        if (en === "1" && !s.enabled) return false;
+        if (en === "0" && s.enabled) return false;
+        return true;
+      });
+    }
+
+    function renderBatchPicker() {
+      const list = $("bi-list"); if (!list) return;
+      const rows = _biFiltered();
+      if (!rows.length) { list.innerHTML = '<div class="muted">No sources match these filters.</div>'; }
+      else {
+        list.innerHTML = rows.map(s => {
+          const feed = !!s.rss_url;
+          const meta = [s.language, s.country, s.source_type].filter(Boolean).map(esc).join(" · ");
+          return `<label class="bi-row${feed ? "" : " bi-nofeed"}" title="${feed ? esc(s.rss_url) : "no RSS feed — cannot batch-fetch"}">
+            <input type="checkbox" ${feed ? "" : "disabled"} ${BI.selected.has(s.id) ? "checked" : ""}
+              onchange="batchToggle(${s.id}, this.checked)">
+            <span class="bi-name">${esc(s.name)}</span>
+            <span class="bi-meta muted">${meta}${feed ? "" : " · no feed"}${s.enabled ? "" : " · disabled"}</span></label>`;
+        }).join("");
+      }
+      const ingestable = rows.filter(s => s.rss_url).length;
+      $("bi-count").textContent = `${BI.selected.size} selected · ${ingestable} feed-bearing of ${rows.length} shown`;
+    }
+
+    function batchToggle(id, on) { on ? BI.selected.add(id) : BI.selected.delete(id); renderBatchPicker(); }
+
+    function batchSelectAll(on) {
+      const rows = _biFiltered().filter(s => s.rss_url);
+      if (on) rows.forEach(s => BI.selected.add(s.id));
+      else rows.forEach(s => BI.selected.delete(s.id));
+      renderBatchPicker();
+    }
+
+    async function ingestBatch(btn) {
+      const ids = [...BI.selected];
+      if (!ids.length) { toast("Select at least one source with a feed.", "err"); return; }
+      btn.disabled = true;
+      $("bi-status").textContent = `Fetching ${ids.length} feed(s)… (ethical & rate-limited; may take a while)`;
+      $("bi-results").innerHTML = "";
+      try {
+        const r = await api("/api/sources/ingest-batch", {method: "POST", body: JSON.stringify({source_ids: ids})});
+        $("bi-status").textContent = `Done: ${r.ingested}/${r.requested} fetched · ${tally(r.aggregate)}`;
+        $("bi-results").innerHTML = `<table class="bi-res"><tr><th>Source</th><th>Result</th></tr>` +
+          r.results.map(x => `<tr><td>${esc(x.source || ("#" + x.source_id))}</td>` +
+            `<td>${x.status === "ok" ? tally(x.tally)
+              : `<span class="pill warn">${esc(x.status)}</span>${x.detail ? " " + esc(x.detail) : ""}`}</td></tr>`).join("") +
+          `</table>`;
+        toast("Batch ingest complete."); doSearch();
+      } catch (e) { $("bi-status").textContent = ""; toast("Batch ingest failed: " + e.message, "err"); }
+      finally { btn.disabled = false; }
+    }
+
     // -- Scheduler ---------------------------------------------------------- //
     function toggleCrawlFields() {
       $("crawl-fields").style.display = $("sch-mode").value === "crawl" ? "flex" : "none";
     }
 
     function renderSchedStatus(st) {
+      setBackgroundActivity(st.active ? "Collecting…" : null);
       const pill = st.running
         ? (st.active ? '<span class="pill ok">running — scrape in progress</span>'
                      : '<span class="pill ok">running</span>')
@@ -2579,6 +2975,7 @@
       try { applySchedConfig(await api("/api/scheduler/config")); }
       catch (e) { /* config panel stays at defaults */ }
       previewTargets();
+      loadBatchPicker();
     }
 
     async function previewTargets() {
@@ -2638,6 +3035,63 @@
     let MKT_SERIES = [];
     const MKT_PRICES = {};            // symbol -> [{observed_on, price, currency, unit}]
     let _mktConfigLoaded = false;
+
+    // -- Indices board (world stock-exchange indices) ----------------------- //
+    async function loadIndices() { loadIndicesBoard(); }
+
+    async function loadIndicesBoard() {
+      const el = $("idx-board");
+      el.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const b = await api("/api/markets/board?category=index");
+        $("idx-note").textContent = b.note || "";
+        el.innerHTML = b.cards.length ? b.cards.map(idxCard).join("")
+          : '<div class="muted">No index catalog found.</div>';
+      } catch (e) { el.innerHTML = `<div class="muted">Could not load indices: ${esc(e.message)}</div>`; }
+    }
+
+    function _num(n) { return n == null ? "—" : Number(n).toLocaleString(undefined, {maximumFractionDigits: 2}); }
+
+    function idxSpark(pts, chg) {
+      if (!pts || pts.length < 2) return '<div class="idx-spark-empty muted">no series yet</div>';
+      const w = 280, h = 42, n = pts.length, vals = pts.map(p => p[1]);
+      const min = Math.min(...vals), max = Math.max(...vals), rng = (max - min) || 1;
+      const x = i => (i / (n - 1)) * w, y = v => h - ((v - min) / rng) * (h - 6) - 3;
+      const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
+      const col = chg == null ? "var(--muted)" : (chg >= 0 ? "var(--ok)" : "var(--err)");
+      return `<svg class="idx-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="${col}" stroke-width="1.5"/></svg>`;
+    }
+
+    function idxCard(c) {
+      const has = !!c.latest;
+      const chg = c.change_pct;
+      const cls = chg == null ? "flat" : (chg >= 0 ? "up" : "down");
+      const chgTxt = chg == null ? "" : `${chg >= 0 ? "▲" : "▼"} ${Math.abs(chg).toFixed(2)}%`;
+      return `<div class="idx-card">
+        <div class="idx-top">
+          <div class="idx-id"><div class="idx-name">${esc(c.name)}</div>
+            <div class="idx-mkt muted">${esc(c.market || "")}</div></div>
+          <div class="idx-quote"><div class="idx-num">${_num(has ? c.latest.price : null)}</div>
+            <div class="idx-chg ${cls}">${chgTxt}</div></div>
+        </div>
+        ${idxSpark(c.spark, chg)}
+        <div class="idx-foot muted">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
+          · ${esc(c.currency || "")} · <a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">source</a></div>
+      </div>`;
+    }
+
+    async function loadIndicesData(btn) {
+      btn.disabled = true;
+      const st = $("idx-status");
+      st.textContent = "Importing index feeds (official end-of-day CSVs; may take a moment)…";
+      try {
+        const r = await api("/api/markets/feeds/import-all?category=index", {method: "POST"});
+        st.textContent = `Imported ${r.points_imported} point(s) across ${r.feeds} feed(s)${r.failed ? `, ${r.failed} failed` : ""}.`;
+        await loadIndicesBoard();
+        toast("Indices updated.");
+      } catch (e) { st.textContent = ""; toast("Load failed: " + e.message, "err"); }
+      finally { btn.disabled = false; }
+    }
 
     async function loadMarkets() { loadDashboard(); }
 
@@ -2917,7 +3371,158 @@
         _insLoaded.add(cat);
         if (cat === "trends") loadTrends();
         if (cat === "map") loadMap();
+        if (cat === "sources") loadCitedSources();
+        if (cat === "families") loadFamilies();
       }
+    }
+
+    // -- Corpus landscape: super-families by semantic kind (the "zoom out") --- //
+    const _KIND_GROUPS = [
+      {key: "person",   label: "People",  match: k => k === "person"},
+      {key: "org",      label: "Orgs",    match: k => k === "org"},
+      {key: "location", label: "Places",  match: k => k === "location"},
+      {key: "entity",   label: "Other entities", match: k => !["person", "org", "location", "term"].includes(k)},
+      {key: "term",     label: "Themes",  match: k => k === "term"},
+    ];
+    let _landscapeLoaded = false;
+    async function loadLandscape(force) {
+      if (_landscapeLoaded && !force) return;
+      const box = $("ins-landscape");
+      box.innerHTML = '<div class="muted" style="margin-top:8px">Loading…</div>';
+      try {
+        const d = await api("/api/insights/top?group=true&limit=200");
+        _landscapeLoaded = true;
+        const fams = d.terms || [];
+        if (!fams.length) { box.innerHTML = '<div class="muted" style="margin-top:8px">No families yet — index the corpus.</div>'; return; }
+        const cols = _KIND_GROUPS.map(g => {
+          const items = fams.filter(f => g.match(f.kind)).slice(0, 16);
+          if (!items.length) return "";
+          const max = Math.max(...items.map(f => f.mentions), 1);
+          const chips = items.map(f => {
+            const scale = 0.82 + 0.5 * (f.mentions / max);     // size by prominence
+            const fam = f.variants > 1;
+            return `<button class="ls-chip" style="font-size:${(11.5*scale).toFixed(1)}px"
+              title="${fam ? `family of ${f.variants}: ${esc((f.members||[]).map(m=>m.term).join(', '))} · ` : ""}${f.mentions} mentions — click to zoom in"
+              onclick="pickTerm(${JSON.stringify(f.term)})">${esc(f.term)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
+          }).join("");
+          return `<div class="ls-col"><div class="ls-h">${g.label} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
+        }).join("");
+        box.innerHTML = `<div class="ls-grid">${cols}</div>`;
+      } catch (e) { box.innerHTML = `<div class="muted" style="margin-top:8px">Could not load: ${esc(e.message)}</div>`; }
+    }
+
+    // -- Keyword families: review + manual merge/split ---------------------- //
+    async function loadFamilies() {
+      const list = $("fam-list");
+      list.innerHTML = '<div class="muted">Loading…</div>';
+      const kind = $("fam-kind").value;
+      try {
+        const [top, ov] = await Promise.all([
+          api(`/api/insights/top?group=true&limit=80${kind ? "&kind=" + encodeURIComponent(kind) : ""}`),
+          api("/api/insights/family/overrides"),
+        ]);
+        const fams = top.terms.filter(f => f.kind !== "term");
+        list.innerHTML = fams.length ? fams.map(f => {
+          const norms = JSON.stringify((f.members || []).map(m => m.normalized));
+          const chips = (f.members || []).map(m =>
+            `<button class="fam-chip" data-norm="${esc(m.normalized)}" data-kind="${esc(f.kind)}"
+               onclick="familySplit(this)" title="split this form out">${esc(m.term)}${f.variants > 1 ? " ✕" : ""}</button>`).join("");
+          return `<div class="fam-row">
+            <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}">
+            <div class="fam-body"><div><b>${esc(f.term)}</b> <span class="pill">${esc(f.kind)}</span>
+              ${f.manual ? '<span class="pill ok">manual</span>' : ""}
+              <span class="muted">· ${f.mentions} mentions</span></div>
+              <div class="fam-chips">${chips}</div></div></div>`;
+        }).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
+        renderFamOverrides(ov);
+      } catch (e) { list.innerHTML = `<div class="muted">Could not load families: ${esc(e.message)}</div>`; }
+    }
+
+    function renderFamOverrides(ov) {
+      const box = $("fam-overrides");
+      if (!ov.families || !ov.families.length) { box.innerHTML = ""; return; }
+      box.innerHTML = `<h2 style="font-size:13px;margin:0 0 6px">Your manual overrides</h2>` +
+        ov.families.map(f => `<div class="fam-ov">
+          <span>${f.split ? "split" : "merge"}: <b>${esc(f.label || f.family_key)}</b>
+            <span class="muted">${esc((f.members || []).join(", "))}</span></span>
+          <button class="ghost tiny" data-members="${esc(JSON.stringify(f.members || []))}" onclick="familyResetGroup(this)">reset</button>
+        </div>`).join("");
+    }
+
+    async function familySplit(btn) {
+      try {
+        await api("/api/insights/family/split", {method: "POST",
+          body: JSON.stringify({normalized: btn.dataset.norm, kind: btn.dataset.kind})});
+        toast("Split out."); loadFamilies();
+      } catch (e) { toast("Split failed: " + e.message, "err"); }
+    }
+
+    async function familyMerge() {
+      const picks = [...document.querySelectorAll(".fam-pick:checked")];
+      if (picks.length < 2) { toast("Tick at least two families to merge.", "err"); return; }
+      const norms = picks.flatMap(p => JSON.parse(p.dataset.norms));
+      const label = prompt("Name for the merged family:", picks[0].dataset.label || "");
+      if (label === null) return;
+      try {
+        const r = await api("/api/insights/family/merge", {method: "POST",
+          body: JSON.stringify({normalized: norms, label: label.trim() || undefined, kind: picks[0].dataset.kind})});
+        $("fam-status").textContent = `Merged ${r.merged.length} forms into “${r.label}”.`;
+        toast("Merged."); loadFamilies();
+      } catch (e) { toast("Merge failed: " + e.message, "err"); }
+    }
+
+    async function familyResetGroup(btn) {
+      const members = JSON.parse(btn.dataset.members);
+      try {
+        for (const n of members) await api("/api/insights/family/override?normalized=" + encodeURIComponent(n), {method: "DELETE"});
+        toast("Override cleared."); loadFamilies();
+      } catch (e) { toast("Reset failed: " + e.message, "err"); }
+    }
+
+    // -- Most-cited sources (corpus-wide co-citation) ----------------------- //
+    async function loadCitedSources() {
+      const box = $("cs-list");
+      const by = $("cs-by").value;
+      const win = $("cs-window").value.trim();
+      const min = Math.max(1, parseInt($("cs-min").value, 10) || 2);
+      box.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        let url = `/api/links/top-cited?by=${by}&min_citations=${min}&limit=60`;
+        if (win) url += `&window_days=${encodeURIComponent(win)}`;
+        const d = await api(url);
+        if (!d.items.length) {
+          box.innerHTML = `<div class="muted">No source cited by ≥${min} article(s) yet. Ingest more, or lower the threshold. (Links are indexed from article text on ingest.)</div>`;
+          return;
+        }
+        const max = Math.max(...d.items.map(i => i.citations), 1);
+        box.innerHTML = d.items.map(it => {
+          const label = by === "domain" ? it.domain : (it.link_text || it.domain || it.sample_url || it.normalized_url);
+          const key = by === "domain" ? `domain=${encodeURIComponent(it.domain)}` : `url=${encodeURIComponent(it.normalized_url)}`;
+          const sub = by === "domain" ? "" : `<div class="cs-url muted">${esc(it.sample_url || it.normalized_url)}</div>`;
+          return `<div class="cs-row"><div class="cs-head" data-key="${esc(key)}" onclick="expandCitedSource(this)">
+            <div class="cs-bar" style="width:${(it.citations/max*100).toFixed(1)}%"></div>
+            <div class="cs-main"><span class="cs-label">${esc(label || "—")}</span>${sub}</div>
+            <span class="cs-count">${it.citations}</span></div>
+            <div class="cs-arts"></div></div>`;
+        }).join("");
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+    }
+
+    async function expandCitedSource(head) {
+      const tgt = head.parentElement.querySelector(".cs-arts");
+      const key = head.dataset.key;
+      if (head.classList.contains("open")) { head.classList.remove("open"); tgt.innerHTML = ""; return; }
+      head.classList.add("open");
+      tgt.innerHTML = '<div class="muted" style="padding:6px 0">Assembling citing articles…</div>';
+      try {
+        const d = await api(`/api/links/articles-by-link?${key}&limit=200`);
+        if (!d.articles.length) { tgt.innerHTML = '<div class="muted" style="padding:6px 0">No stored articles.</div>'; return; }
+        tgt.innerHTML = `<div class="cs-arts-h muted">${d.count} article(s) cite this${d.count>d.articles.length?` (showing ${d.articles.length})`:""}:</div>` +
+          d.articles.map(a => `<div class="cs-art">
+            <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">${esc(a.title || a.url)}</a>
+            <span class="muted"> — ${esc(a.source || "")}${a.published_at?" · "+esc(a.published_at.slice(0,10)):""}</span>
+            ${a.url?` · <a class="muted" href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener noreferrer">source&nbsp;↗</a>`:""}</div>`).join("");
+      } catch (e) { tgt.innerHTML = `<div class="muted" style="padding:6px 0">Could not load: ${esc(e.message)}</div>`; }
     }
 
     let _insStatusBuilt = false;
@@ -2942,6 +3547,7 @@
         $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
         $("ins-remaining").innerHTML = s.remaining ? `· <strong>${s.remaining.toLocaleString()}</strong> to index` : "";
       } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = "Status unavailable: " + e.message; }
+      loadLandscape();
     }
 
     let _indexing = false;
@@ -2978,26 +3584,96 @@
       </svg>`;
     }
 
-    function mindmapSvg(center, pairs) {
-      if (!pairs.length) return '<div class="muted">No strong associations yet.</div>';
-      const w = 680, h = 440, cx = w/2, cy = h/2, top = pairs.slice(0, 14);
-      const maxP = Math.max(...top.map(p => p.pmi), 0.1);
-      let edges = "", nodes = "";
+    // Interactive, force-directed mind-map: drag to pan, scroll to zoom, drag a node
+    // to pin it, click a node to recenter (re-query). Vanilla — a tiny spring layout
+    // over an SVG viewBox, no dependencies. Respects prefers-reduced-motion (settles
+    // synchronously, no animation). _mmRAF holds the running animation handle.
+    let _mmRAF = null;
+    function renderMindmap(center, pairs) {
+      if (_mmRAF) { cancelAnimationFrame(_mmRAF); _mmRAF = null; }
+      const host = $("ins-mindmap");
+      if (!pairs || !pairs.length) { host.innerHTML = '<div class="muted">No strong associations yet.</div>'; return; }
+      const W = 680, H = 460, top = pairs.slice(0, 20);
+      const maxCo = Math.max(...top.map(p => p.cooccur || 1), 1);
+      const maxP  = Math.max(...top.map(p => p.pmi || 0), 0.1);
+      const nodes = [{id:0, label:center, center:true, r:13, x:W/2, y:H/2, vx:0, vy:0, pinned:true}];
+      const edges = [];
       top.forEach((p, i) => {
-        const ang = (i / top.length) * 2 * Math.PI - Math.PI/2;
-        const r = 110 + 110 * (1 - Math.max(0, p.pmi) / maxP);   // stronger PMI -> closer
-        const x = cx + r * Math.cos(ang), y = cy + r * Math.sin(ang);
-        edges += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="${Math.max(1, Math.min(4, p.cooccur/2)).toFixed(1)}"></line>`;
-        const col = p.kind === "term" ? "var(--muted)" : "var(--accent)";
-        nodes += `<g style="cursor:pointer" onclick='pickTerm(${JSON.stringify(p.term)})'>
-          <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" fill="${col}"></circle>
-          <text x="${x.toFixed(1)}" y="${(y-9).toFixed(1)}" fill="var(--fg)" font-size="11" text-anchor="middle">${esc(p.term)} <tspan fill="var(--muted)">${p.pmi}</tspan></text></g>`;
+        const ang = (i / top.length) * 2 * Math.PI;
+        nodes.push({id:i+1, label:p.term, kind:p.kind, variants:p.variants||1, members:p.members||[],
+          pmi:p.pmi, cooccur:p.cooccur, r:6 + 5*Math.sqrt((p.cooccur||1)/maxCo),
+          x:W/2 + 150*Math.cos(ang) + (Math.random()-0.5)*40,
+          y:H/2 + 150*Math.sin(ang) + (Math.random()-0.5)*40, vx:0, vy:0, pinned:false});
+        edges.push({a:0, b:i+1, w:p.cooccur||1, len:70 + 130*(1 - Math.max(0,p.pmi)/maxP)});
       });
-      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
-        ${edges}${nodes}
-        <circle cx="${cx}" cy="${cy}" r="9" fill="var(--ok)"></circle>
-        <text x="${cx}" y="${(cy-13)}" fill="var(--fg)" font-size="13" text-anchor="middle" font-weight="600">${esc(center)}</text>
-      </svg><div class="hint">Edge width = co-occurrence; distance = PMI (closer is stronger). Click a node to recenter.</div>`;
+
+      host.innerHTML =
+        `<svg id="mm-svg" viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;touch-action:none;cursor:grab"><g id="mm-view"></g></svg>` +
+        `<div class="hint">Drag to pan · scroll to zoom · drag a node to pin · click a node to recenter. Edge width = co-occurrence; closer = stronger (PMI). <b>·N</b> = a family of N surface forms (hover). Association is not causation; PMI on small samples is noisy.</div>`;
+      const svg = $("mm-svg"), view = $("mm-view");
+
+      view.innerHTML =
+        edges.map(e => `<line class="mm-edge" data-e="${e.a}-${e.b}" stroke="var(--border)" stroke-width="${Math.max(1,Math.min(4,e.w/2)).toFixed(1)}"></line>`).join("") +
+        nodes.map(n => {
+          const col = n.center ? "var(--ok)" : (n.kind === "term" ? "var(--muted)" : "var(--accent)");
+          const fam = n.variants > 1;
+          const title = fam ? `<title>Family of ${n.variants}: ${esc((n.members||[]).join(", "))}</title>` : "";
+          const sub = n.center ? "" : (fam ? ` <tspan fill="var(--muted)">·${n.variants}</tspan>` : "") + ` <tspan fill="var(--muted)">${n.pmi}</tspan>`;
+          return `<g class="mm-node" data-id="${n.id}">${title}<circle r="${n.r.toFixed(1)}" fill="${col}"></circle>` +
+            `<text y="${(-n.r-4).toFixed(1)}" text-anchor="middle" font-size="11" fill="var(--fg)">${esc(n.label)}${sub}</text></g>`;
+        }).join("");
+
+      const nodeEls = nodes.map(n => view.querySelector(`.mm-node[data-id="${n.id}"]`));
+      const edgeEls = edges.map(e => view.querySelector(`.mm-edge[data-e="${e.a}-${e.b}"]`));
+      function paint() {
+        nodes.forEach((n, i) => nodeEls[i].setAttribute("transform", `translate(${n.x.toFixed(1)},${n.y.toFixed(1)})`));
+        edges.forEach((e, i) => { const a = nodes[e.a], b = nodes[e.b]; const el = edgeEls[i];
+          el.setAttribute("x1", a.x.toFixed(1)); el.setAttribute("y1", a.y.toFixed(1));
+          el.setAttribute("x2", b.x.toFixed(1)); el.setAttribute("y2", b.y.toFixed(1)); });
+      }
+      function step() {
+        for (let i = 0; i < nodes.length; i++) for (let j = i+1; j < nodes.length; j++) {
+          const a = nodes[i], b = nodes[j]; let dx = a.x-b.x, dy = a.y-b.y; let d2 = dx*dx+dy*dy || 0.01;
+          const f = 2800/d2, d = Math.sqrt(d2); const fx = dx/d*f, fy = dy/d*f;
+          a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+        }
+        edges.forEach(e => { const a = nodes[e.a], b = nodes[e.b]; let dx = b.x-a.x, dy = b.y-a.y;
+          const d = Math.sqrt(dx*dx+dy*dy) || 0.01; const f = (d-e.len)*0.02; const fx = dx/d*f, fy = dy/d*f;
+          a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy; });
+        nodes.forEach(n => { if (n.center) { n.x = W/2; n.y = H/2; n.vx = n.vy = 0; return; }
+          n.vx += (W/2-n.x)*0.0018; n.vy += (H/2-n.y)*0.0018;
+          if (n.pinned) { n.vx = n.vy = 0; } else { n.vx *= 0.85; n.vy *= 0.85; n.x += n.vx; n.y += n.vy; } });
+      }
+      const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) { for (let i = 0; i < 300; i++) step(); paint(); }
+      else { let f = 0; (function loop(){ step(); paint(); if (++f < 320) _mmRAF = requestAnimationFrame(loop); })(); }
+
+      // -- pan / zoom / node-drag over the viewBox -------------------------- //
+      let vb = {x:0, y:0, w:W, h:H};
+      const applyVB = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+      const ptVB = (e) => { const m = svg.getScreenCTM().inverse(); const p = svg.createSVGPoint();
+        p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(m); };
+      svg.addEventListener("wheel", (e) => { e.preventDefault(); const p = ptVB(e);
+        const s = Math.min(3, Math.max(0.34, vb.w*Math.exp(e.deltaY*0.0015)/W)) * W / vb.w;
+        vb.x = p.x - (p.x-vb.x)*s; vb.y = p.y - (p.y-vb.y)*s; vb.w *= s; vb.h *= s; applyVB(); }, {passive:false});
+      let drag = null;
+      svg.addEventListener("pointerdown", (e) => {
+        const g = e.target.closest && e.target.closest(".mm-node");
+        if (g) { const id = +g.dataset.id; drag = {type:"node", id, sx:e.clientX, sy:e.clientY, moved:false};
+          if (!nodes[id].center) nodes[id].pinned = true; }
+        else { const r = svg.getBoundingClientRect();
+          drag = {type:"pan", x0:vb.x, y0:vb.y, cx:e.clientX, cy:e.clientY, sx:vb.w/r.width, sy:vb.h/r.height}; }
+        svg.setPointerCapture(e.pointerId);
+      });
+      svg.addEventListener("pointermove", (e) => { if (!drag) return;
+        if (drag.type === "node") { const n = nodes[drag.id]; if (n.center) return; const p = ptVB(e);
+          n.x = p.x; n.y = p.y; if (Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy) > 4) drag.moved = true; paint(); }
+        else { vb.x = drag.x0 - (e.clientX-drag.cx)*drag.sx; vb.y = drag.y0 - (e.clientY-drag.cy)*drag.sy; applyVB(); }
+      });
+      svg.addEventListener("pointerup", (e) => {
+        if (drag && drag.type === "node" && !drag.moved && !nodes[drag.id].center) pickTerm(nodes[drag.id].label);
+        drag = null; try { svg.releasePointerCapture(e.pointerId); } catch (_e) {}
+      });
     }
 
     async function exploreTerm() {
@@ -3017,13 +3693,12 @@
           `<div style="margin-bottom:6px">Resolved to <strong>${esc(r.term)}</strong> ` +
           `<span class="pill">${esc(r.kind)}</span> · ${tr.total} mentions in ${tr.articles} articles</div>` +
           trendSvg(tr.points);
-        $("ins-mindmap").innerHTML = mindmapSvg(r.term, assoc.pairs) +
-          (assoc.caveat ? `<div class="hint">${esc(assoc.caveat)}</div>` : "");
+        renderMindmap(r.term, assoc.pairs);
         loadFraming(r.term);
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
                <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(m.country):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
-                 ${m.url?`· <a href="${esc(safeUrl(m.url))}" target="_blank" rel="noopener">open</a>`:""}</div>
+                 ${m.article_id?`· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>`:""}${m.url?`· <a class="muted" href="${esc(safeUrl(m.url))}" target="_blank" rel="noopener" title="original online source">source&nbsp;↗</a>`:""}</div>
                <div>${esc(m.snippet)}</div></div>`).join("")
           : '<div class="muted">No context snippets.</div>';
       } catch (e) { $("ins-trend").innerHTML = ""; toast("Explore failed: " + e.message, "err"); }
@@ -3512,6 +4187,17 @@
       if (getUi().theme === "system") applyThemeAttr("system");
     });
     loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus();
+    // Keep the background-activity chip live app-wide (e.g. a scheduled scrape that
+    // the user didn't trigger from the current tab). Cheap loopback poll; paused
+    // while the tab is hidden.
+    _pollActivity(); setInterval(() => { if (!document.hidden) _pollActivity(); }, 5000);
+    // Dismiss the vitals popover on Escape or an outside click.
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && _vitalsOpen) toggleVitals(); });
+    document.addEventListener("click", (e) => {
+      if (!_vitalsOpen) return;
+      const pop = $("vitals-pop"), chip = $("activity");
+      if (pop && !pop.contains(e.target) && chip && !chip.contains(e.target)) toggleVitals();
+    });
     ensureDocList();   // so the command palette can offer docs before Help is opened
     // Honour a deep-link like /#sources on first load; otherwise land on Home.
     const initial = (location.hash || "#home").slice(1);

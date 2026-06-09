@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "open-omniscience"
-version = "0.0.6"
+version = "0.0.7"
 description = "Local-first, ethical intelligence platform for investigative journalists."
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
@@ -117,6 +117,17 @@ pqc = [
 # a self-asserted local time and anchoring falls back to the offline local book.
 timestamping = [
     "opentimestamps>=0.4.5",
+]
+
+# Optional compression accelerators for the on-disk content store. When absent the
+# DB content/JSON columns fall back to stdlib zlib automatically (honest: nothing
+# breaks, the ratio is just lower) -- see src/utils/compression.py. Installing
+# zstandard markedly improves text compression (it is the store's preferred codec
+# when available); lz4 favours speed. Both ship 3.13 wheels; existing zlib-stored
+# blobs still decompress unchanged (the codec is recorded per blob in the header).
+compression = [
+    "zstandard>=0.22",
+    "lz4>=4.3",
 ]
 
 dev = [
