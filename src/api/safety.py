@@ -101,3 +101,17 @@ def panic(body: PanicBody) -> dict:
     from src.safety import panic_wipe
 
     return panic_wipe(confirm=True)
+
+
+@router.post("/uninstall")
+def uninstall(body: PanicBody) -> dict:
+    """Remove the virtualenv + desktop launchers, then stop the server. Requires confirm=true.
+
+    Keeps your data (use /panic to destroy that). Deletion happens in a detached watcher
+    after the server exits — so the response returns first and the app shuts down cleanly.
+    """
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="set confirm=true to uninstall")
+    from src.safety.uninstall import request_uninstall
+
+    return request_uninstall(confirm=True)

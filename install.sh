@@ -278,7 +278,7 @@ make_launcher() {
 
     # Two interfaces ship side by side -- "Console" (default) and "Desk" -- so we
     # create TWO launchers. They share one server and the same data, so you can run
-    # both and compare them (see docs/GUI_DIALECTIC.md).
+    # both and compare them (see the "Console vs Desk" section in docs/DESIGN.md).
     local os; os="$(uname -s)"
     if [ "$os" = "Darwin" ]; then
         # macOS: two double-clickable .command files on the Desktop.
@@ -293,9 +293,15 @@ EOF
 #!/usr/bin/env bash
 exec "$SRC_DIR/scripts/launch.sh" desk
 EOF
-        chmod +x "$cmd_console" "$cmd_desk"
-        ok "Created launchers: 'Open Omniscience' and 'Open Omniscience — Desk' on your Desktop."
-        say "  ${BOLD}To start:${RST} double-click either icon (run both to compare)."
+        # An Uninstall icon next to the launchers (runs the confirmed --uninstall flow).
+        local cmd_uninstall="$HOME/Desktop/Uninstall Open Omniscience.command"
+        cat > "$cmd_uninstall" <<EOF
+#!/usr/bin/env bash
+exec "$SRC_DIR/install.sh" --uninstall
+EOF
+        chmod +x "$cmd_console" "$cmd_desk" "$cmd_uninstall"
+        ok "Created launchers: 'Open Omniscience', 'Open Omniscience — Desk', and 'Uninstall Open Omniscience' on your Desktop."
+        say "  ${BOLD}To start:${RST} double-click either app icon (run both to compare)."
         return 0
     fi
 
@@ -333,6 +339,30 @@ EOF
     }
     _mk_desktop "$APP_NAME"      "Open Omniscience"        "Local-first intelligence platform for investigative journalism" "console" "$icon_console"
     _mk_desktop "$APP_NAME-desk" "Open Omniscience — Desk" "Open Omniscience — the calm, content-first 'Desk' interface"     "desk"    "$icon_desk"
+
+    # An "Uninstall" entry alongside the launchers. It runs install.sh --uninstall in a
+    # terminal (Terminal=true) so the existing confirmation prompts are shown; it removes
+    # the virtualenv + launchers and keeps your data unless you separately confirm.
+    local uf="$apps/$APP_NAME-uninstall.desktop"
+    cat > "$uf" <<EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Uninstall Open Omniscience
+GenericName=Uninstaller
+Comment=Remove the Open Omniscience virtualenv and launchers (your data is kept unless you confirm)
+Exec=$SRC_DIR/install.sh --uninstall
+Icon=$icon_console
+Terminal=true
+Categories=Utility;
+Keywords=uninstall;remove;
+StartupNotify=false
+EOF
+    chmod +x "$uf"
+    if [ -d "$desk" ]; then
+        cp "$uf" "$desk/$APP_NAME-uninstall.desktop"; chmod +x "$desk/$APP_NAME-uninstall.desktop"
+        gio set "$desk/$APP_NAME-uninstall.desktop" metadata::trusted true 2>/dev/null || true
+    fi
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" 2>/dev/null || true
 
     ok "Created two launchers (Console + Desk) in your applications menu${desk:+ and on the Desktop}"
@@ -424,16 +454,22 @@ do_uninstall() {
     local desk_file_desk="$desk/$APP_NAME-desk.desktop"
     local mac_file="$HOME/Desktop/Open Omniscience.command"
     local mac_file_desk="$HOME/Desktop/Open Omniscience — Desk.command"
+    local apps_uninstall="$HOME/.local/share/applications/$APP_NAME-uninstall.desktop"
+    local desk_file_uninstall="$desk/$APP_NAME-uninstall.desktop"
+    local mac_file_uninstall="$HOME/Desktop/Uninstall Open Omniscience.command"
 
     say ""
     say "  The following will be ${BOLD}removed${RST}:"
-    [ -d "$SRC_DIR/.venv" ]    && say "    • virtualenv:  $SRC_DIR/.venv"
-    [ -f "$apps" ]             && say "    • launcher:    $apps"
-    [ -f "$apps_desk" ]        && say "    • launcher:    $apps_desk"
-    [ -f "$desk_file" ]        && say "    • launcher:    $desk_file"
-    [ -f "$desk_file_desk" ]   && say "    • launcher:    $desk_file_desk"
-    [ -f "$mac_file" ]         && say "    • launcher:    $mac_file"
-    [ -f "$mac_file_desk" ]    && say "    • launcher:    $mac_file_desk"
+    [ -d "$SRC_DIR/.venv" ]      && say "    • virtualenv:  $SRC_DIR/.venv"
+    [ -f "$apps" ]               && say "    • launcher:    $apps"
+    [ -f "$apps_desk" ]          && say "    • launcher:    $apps_desk"
+    [ -f "$apps_uninstall" ]     && say "    • launcher:    $apps_uninstall"
+    [ -f "$desk_file" ]          && say "    • launcher:    $desk_file"
+    [ -f "$desk_file_desk" ]     && say "    • launcher:    $desk_file_desk"
+    [ -f "$desk_file_uninstall" ] && say "    • launcher:    $desk_file_uninstall"
+    [ -f "$mac_file" ]           && say "    • launcher:    $mac_file"
+    [ -f "$mac_file_desk" ]      && say "    • launcher:    $mac_file_desk"
+    [ -f "$mac_file_uninstall" ] && say "    • launcher:    $mac_file_uninstall"
     say "  Your repository ($SRC_DIR) and your data will be ${BOLD}kept${RST} unless you choose otherwise."
     say ""
 
@@ -445,7 +481,9 @@ do_uninstall() {
         return 0
     fi
 
-    rm -f "$apps" "$apps_desk" "$desk_file" "$desk_file_desk" "$mac_file" "$mac_file_desk"
+    rm -f "$apps" "$apps_desk" "$apps_uninstall" \
+          "$desk_file" "$desk_file_desk" "$desk_file_uninstall" \
+          "$mac_file" "$mac_file_desk" "$mac_file_uninstall"
     command -v update-desktop-database >/dev/null 2>&1 && \
         update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
     [ -d "$SRC_DIR/.venv" ] && rm -rf "$SRC_DIR/.venv"
