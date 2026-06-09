@@ -16,7 +16,13 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
-from src.timemap.collect import KNOWN_KINDS, articles_to_signals, collect, time_range
+from src.timemap.collect import (
+    KNOWN_KINDS,
+    article_mentions_to_signals,
+    articles_to_signals,
+    collect,
+    time_range,
+)
 
 router = APIRouter(prefix="/api/timemap", tags=["timemap"])
 
@@ -96,6 +102,31 @@ def _article_signals(db: Session, days: int | None, limit: int) -> list[dict]:
     return articles_to_signals(rows)
 
 
+def _mention_signals(db: Session, days: int | None, limit: int) -> list[dict]:
+    """Explicit dates mentioned in recent article *text* (extracted, unconfirmed)."""
+    from datetime import datetime, timedelta
+
+    from src.database.models import Article
+
+    # Scanning full text is heavier than reading a timestamp; bound the article count.
+    scan = min(limit, 600)
+    q = db.query(Article).filter(Article.published_at.isnot(None))
+    if days:
+        q = q.filter(Article.published_at >= datetime.utcnow() - timedelta(days=days))
+    rows = []
+    for a in q.order_by(Article.published_at.desc()).limit(scan).all():
+        src = getattr(a, "source", None)
+        meta = getattr(src, "source_metadata", None) if src else None
+        rows.append({
+            "title": a.title,
+            "url": a.url,
+            "content": a.content,
+            "country": a.country or (getattr(src, "country", None) if src else None),
+            "city": getattr(meta, "city", None) if meta else None,
+        })
+    return article_mentions_to_signals(rows)
+
+
 @router.get("")
 def list_signals(
     kinds: str | None = Query(None, description="comma-separated kinds to keep"),
@@ -103,6 +134,7 @@ def list_signals(
     end: float | None = Query(None, description="latest fractional year, e.g. 2030"),
     hazards: bool = Query(False, description="layer in live geophysical hazards (network)"),
     articles: bool = Query(False, description="layer in geocoded corpus articles (publication date)"),
+    mentions: bool = Query(False, description="layer in dates mentioned in article text (extracted)"),
     days: int | None = Query(None, ge=1, le=36500, description="only articles from the last N days"),
     limit: int = Query(2000, ge=1, le=10000),
     db: Session = Depends(get_db),
@@ -117,6 +149,11 @@ def list_signals(
             extra += _article_signals(db, days, limit)
         except Exception as exc:  # pragma: no cover - DB guard
             failures.append(f"corpus articles unavailable: {exc}")
+    if mentions:
+        try:
+            extra += _mention_signals(db, days, limit)
+        except Exception as exc:  # pragma: no cover - DB guard
+            failures.append(f"mentioned dates unavailable: {exc}")
     sig = collect(kinds=_kinds_param(kinds), start=start, end=end, extra=extra)
     if len(sig) > limit:
         # Cap the payload without discarding the curated backbone or the *recent* end:

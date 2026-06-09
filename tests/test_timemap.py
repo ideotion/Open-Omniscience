@@ -10,7 +10,12 @@ from datetime import date
 
 from src.timemap import year_float
 from src.timemap.anchors import load_anchors
-from src.timemap.collect import articles_to_signals, collect, time_range
+from src.timemap.collect import (
+    article_mentions_to_signals,
+    articles_to_signals,
+    collect,
+    time_range,
+)
 
 
 def test_year_float_is_monotonic_and_in_range():
@@ -123,6 +128,27 @@ def test_geocode_does_not_mislabel_wrong_country_city():
     # the matching country/city pair is still a precise city hit
     fr = geocode("fr", "Paris")
     assert fr and fr["geocode"] == "city" and fr["place"] == "Paris"
+
+
+def test_article_mentions_become_extracted_signals():
+    from datetime import date as _date
+
+    rows = [{
+        "title": "Looking back", "url": "https://x/9",
+        "content": "The attacks of 11 September 2001 reshaped the decade; by March 2003 war had begun.",
+        "country": "fr", "city": "Paris",
+    }]
+    sigs = article_mentions_to_signals(rows, today=_date(2026, 6, 9))
+    by_date = {s["date"]: s for s in sigs}
+    assert "2001-09-11" in by_date and "2003-03-01" in by_date
+    s = by_date["2001-09-11"]
+    assert s["source"] == "corpus-mention" and s["confirmed"] is False and s["extracted"] is True
+    assert s["kind"] == "article" and s["lat"] is not None
+    assert "extracted" in s["note"].lower()              # provenance/caveat carried
+    # no geocodable place -> no mention signals (never plotted at 0,0)
+    assert article_mentions_to_signals(
+        [{"title": "x", "url": "u", "content": "On 1 January 2000 it began.", "country": "zz", "city": None}],
+        today=_date(2026, 6, 9)) == []
 
 
 def test_time_range_reports_bounds_and_counts():

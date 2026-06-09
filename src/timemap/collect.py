@@ -65,6 +65,53 @@ def _events_signals() -> list[dict]:
     return out
 
 
+def article_mentions_to_signals(rows: list[dict], *, today=None,
+                                per_article: int = 3) -> list[dict]:
+    """Dates *mentioned in* article text -> candidate signals (pure; API supplies rows).
+
+    Each row is ``{title, url, content, country, city}``. We extract explicit dates from
+    the text (see :mod:`src.timemap.dateextract`) and emit, per article, up to
+    ``per_article`` candidates at the article's geocoded source location. These are
+    **unconfirmed extractions** (``source='corpus-mention'``, ``confirmed=False``) with
+    the matched snippet as provenance — the temporal map draws them as dashed rings. The
+    date is *when the story refers to*; the place is the source's, not necessarily the
+    event's — both stated in the note.
+    """
+    from src.timemap.dateextract import extract_dates
+
+    out: list[dict] = []
+    for r in rows:
+        g = geocode(r.get("country"), r.get("city"))
+        if not g:
+            continue
+        title = (r.get("title") or "").strip() or "(untitled article)"
+        for c in extract_dates(r.get("content") or "", today=today, limit=per_article):
+            try:
+                d = date.fromisoformat(c["date"])
+            except (TypeError, ValueError):
+                continue
+            out.append({
+                "id": "mention:" + str(r.get("url") or title) + ":" + c["date"],
+                "title": title,
+                "kind": "article",
+                "lat": g["lat"], "lon": g["lon"],
+                "t": round(year_float(d), 3),
+                "date": c["date"], "year": d.year,
+                "date_precision": c["precision"],
+                "confirmed": False,           # an extracted mention, not a verified event
+                "place": g.get("place"),
+                "country": (r.get("country") or "").lower() or None,
+                "url": r.get("url"),
+                "note": ('Date mentioned in coverage (extracted): “…' + c["text"]
+                         + '…”. Placed at the source location — when the story refers to, '
+                           'not necessarily where the event occurred.'),
+                "source": "corpus-mention",
+                "geocode": g["geocode"],
+                "extracted": True,
+            })
+    return out
+
+
 def _in_window(t: float, start: float | None, end: float | None) -> bool:
     return (start is None or t >= start) and (end is None or t <= end)
 

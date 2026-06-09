@@ -1207,6 +1207,9 @@
         <button class="tiny secondary" onclick="resetTmap()">reset view</button>
         <label class="tiny" style="display:inline-flex;align-items:center;gap:5px;margin-left:6px">
           <input type="checkbox" id="tmap-articles" onchange="loadTimemap()"> my corpus</label>
+        <label class="tiny" style="display:inline-flex;align-items:center;gap:5px"
+               title="Dates mentioned in your articles' text (extracted, unconfirmed)">
+          <input type="checkbox" id="tmap-mentions" onchange="loadTimemap()"> dates in text</label>
         <label class="tiny" style="display:inline-flex;align-items:center;gap:5px">
           <input type="checkbox" id="tmap-hazards" onchange="loadTimemap()"> live hazards</label>
         <button class="tiny secondary" onclick="loadTimemap()">refresh</button>
@@ -3929,6 +3932,7 @@
     function tmapSavePrefs() {
       try { localStorage.setItem(TMAP_PREFS, JSON.stringify({
         articles: !!($("tmap-articles") && $("tmap-articles").checked),
+        mentions: !!($("tmap-mentions") && $("tmap-mentions").checked),
         hazards: !!($("tmap-hazards") && $("tmap-hazards").checked),
         window: $("tmap-window") ? $("tmap-window").value : "25",
       })); } catch { /* storage may be disabled — preferences just won't persist */ }
@@ -3937,6 +3941,7 @@
       let p; try { p = JSON.parse(localStorage.getItem(TMAP_PREFS) || "null"); } catch { p = null; }
       if (!p) return;
       if ($("tmap-articles")) $("tmap-articles").checked = !!p.articles;
+      if ($("tmap-mentions")) $("tmap-mentions").checked = !!p.mentions;
       if ($("tmap-hazards")) $("tmap-hazards").checked = !!p.hazards;
       if ($("tmap-window") && p.window != null) $("tmap-window").value = String(p.window);
     }
@@ -4143,7 +4148,8 @@
       const cov = (s.place || s.title || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
       const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">≈ country</span>`
                 : s.geocode === "city" ? `<span class="pill" title="placed at a known city">city</span>` : "";
-      const conf = s.confirmed ? `<span class="pill ok">confirmed</span>` : `<span class="pill warn">unconfirmed / scheduled</span>`;
+      const conf = s.source === "corpus-mention" ? `<span class="pill warn" title="a date extracted from article text">mentioned · extracted</span>`
+                 : s.confirmed ? `<span class="pill ok">confirmed</span>` : `<span class="pill warn">unconfirmed / scheduled</span>`;
       $("tmap-detail").innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="width:11px;height:11px;border-radius:50%;background:${kindColor(s.kind)};display:inline-block"></span>
@@ -4187,6 +4193,7 @@
       if (!_tmapPrefsLoaded) { _tmapPrefsLoaded = true; tmapRestorePrefs(); }  // restore once, before reading controls
       const hz = $("tmap-hazards") && $("tmap-hazards").checked;
       const arts = $("tmap-articles") && $("tmap-articles").checked;
+      const ment = $("tmap-mentions") && $("tmap-mentions").checked;
       tmapSavePrefs();
       $("tmap-status").textContent = "Loading…";
       if (TMAP_OUTLINE == null) {                 // best-effort, once: real coastlines if the asset exists
@@ -4194,7 +4201,7 @@
         catch { TMAP_OUTLINE = false; }            // absent -> graticule fallback, no error
       }
       try {
-        const d = await api(`/api/timemap?limit=4000${hz?"&hazards=true":""}${arts?"&articles=true":""}`);
+        const d = await api(`/api/timemap?limit=4000${hz?"&hazards=true":""}${arts?"&articles=true":""}${ment?"&mentions=true":""}`);
         TMAP = {signals: d.signals || [], range: d.range || null, caveat: d.caveat || ""};
         const r = TMAP.range || {};
         $("tmap-status").innerHTML = `${TMAP.signals.length} signals · ${r.min!=null?Math.floor(r.min):"?"}–${r.max!=null?Math.ceil(r.max):"?"}`
