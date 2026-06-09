@@ -3913,7 +3913,7 @@
     let TMAP_FOCUS = null;                       // fractional year in focus
     let TMAP_OFF = new Set();                     // kinds toggled off
     let TMAP_VB = {x:0, y:0, w:MAP_W, h:MAP_H};
-    let _tmapVisible = [], _tmapPlay = null;
+    let _tmapVisible = [], _tmapPlay = null, TMAP_OUTLINE = null;
     const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
     function fmtYear(t) {                          // fractional year -> "Sep 2001"
@@ -4021,9 +4021,26 @@
       $("tmap-slider").value = Math.min(1000, Math.max(0, v)); onTmapSlide();
     }
 
+    // Real coastlines, only if the offline outline asset has been generated
+    // (scripts/build_world_outline.py). Never fabricated — absent -> graticule only.
+    function buildTmapCoast() {
+      if (!TMAP_OUTLINE || !TMAP_OUTLINE.rings) return "";
+      const paths = TMAP_OUTLINE.rings.map(ring => {
+        let d = "", prevLon = null;
+        ring.forEach(([lon, lat]) => {
+          const cmd = (prevLon == null || Math.abs(lon - prevLon) > 180) ? "M" : "L";  // break across the dateline
+          d += `${cmd}${lon2x(lon).toFixed(1)} ${lat2y(lat).toFixed(1)}`;
+          prevLon = lon;
+        });
+        return `<path d="${d}Z" fill="var(--panel3)" fill-opacity="0.5" stroke="var(--border)" stroke-width="0.3"/>`;
+      }).join("");
+      return paths;
+    }
+
     function buildTmapSvg() {
       const win = +$("tmap-window").value, focus = TMAP_FOCUS;
       const labels = TMAP_VB.w < MAP_W * 0.55;     // semantic zoom: labels only when zoomed in
+      const coast = buildTmapCoast();
       let grid = "";
       for (let lon = -180; lon <= 180; lon += 30)
         grid += `<line x1="${lon2x(lon)}" y1="0" x2="${lon2x(lon)}" y2="${MAP_H}" stroke="var(--border)" stroke-width="0.3"/>`;
@@ -4055,7 +4072,7 @@
           index a geocoded corpus, enable live hazards, or install the events agenda to add more.</div>`;
       return `<svg id="oo-tmap" viewBox="0 0 ${MAP_W} ${MAP_H}" width="100%"
         style="max-width:${MAP_W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab">
-        ${grid}${dots}</svg>`;
+        ${coast}${grid}${dots}</svg>`;
     }
 
     function showTmapDetail(i) {
@@ -4088,6 +4105,10 @@
     async function loadTimemap() {
       const hz = $("tmap-hazards") && $("tmap-hazards").checked;
       $("tmap-status").textContent = "Loading…";
+      if (TMAP_OUTLINE == null) {                 // best-effort, once: real coastlines if the asset exists
+        try { const o = await fetch("/static/world_outline.json"); TMAP_OUTLINE = o.ok ? await o.json() : false; }
+        catch { TMAP_OUTLINE = false; }            // absent -> graticule fallback, no error
+      }
       try {
         const d = await api(`/api/timemap?limit=4000${hz?"&hazards=true":""}`);
         TMAP = {signals: d.signals || [], range: d.range || null, caveat: d.caveat || ""};
