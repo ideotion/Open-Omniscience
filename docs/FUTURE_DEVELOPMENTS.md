@@ -115,6 +115,36 @@ high-trust, mirrors the markets/law catalog pattern); add **B** as a corpus-deri
 layer that suggests events and unlocks the comparative-over-time view, kept honest with
 provenance + confidence + human-in-the-loop confirmation.
 
+### De-duplication across calendars — events as "event families"
+
+Subscribe to several calendars/feeds and the *same* real-world event arrives more than
+once (World Press Freedom Day is in both our `civic` and `un_days` calendars; an election
+appears in a national feed *and* an aggregator; two iCal sources carry the same summit).
+The elegant fix is **not a new mechanism — it's the one we already have for keywords**:
+treat duplicate events as an **event family** (auto-group, list members, user disposes).
+
+- **Fingerprint.** A stable key per event: `normalize(title) + when + country` (for movable
+  events, `normalize(title) + month + country`). `normalize` lowercases, strips
+  punctuation and parenthetical source-suffixes ("(UN)"). Within an iCal feed the UID is
+  authoritative; the fingerprint catches *cross-feed* duplicates the UID can't.
+- **Collapse to one, keep provenance.** Matching events merge into a single display row
+  that lists every calendar/feed it came from — *"World Press Freedom Day · also in: UN
+  Days, civic."* One entry, all sources preserved (and all official links).
+- **Disagreements are a signal, not noise.** If two sources give *different* dates for the
+  "same" event, we do **not** silently pick one — we surface the discrepancy
+  (*"date varies: 14 Jul (UN) / 15 Jul (gov)"*), exactly as the law tracker treats a moved
+  date as information. Honesty over tidiness.
+- **The user disposes** (mirrors keyword merge/split, so the mental model is identical): a
+  wrongly-merged pair can be **split** ("these are different"), a missed pair **merged**;
+  a "show duplicates" toggle expands the collapsed set. Auto-merge by fingerprint is the
+  default; overrides are stored and reversible.
+- **Source precedence** for the merged row's canonical fields: prefer the most authoritative
+  subscribed source (a confirmed official feed over an aggregator), but never drop the
+  others' links.
+
+This keeps the agenda readable as subscriptions multiply, reuses a proven pattern, and
+holds the line: we **surface and group, never fabricate or silently discard**.
+
 ---
 
 ## Other ideas captured this cycle (stubs)
