@@ -213,6 +213,19 @@
     .idx-spark-empty { height:42px; display:flex; align-items:center; font-size:11px; }
     .idx-foot { font-size:11px; }
     .idx-foot a { color:var(--muted); text-decoration:underline; }
+    /* Agenda (world events) */
+    .ag-row { display:flex; gap:12px; align-items:flex-start; padding:9px 11px; border:1px solid var(--border);
+      border-radius:8px; margin-bottom:7px; background:var(--panel2); }
+    .ag-when { flex:0 0 86px; }
+    .ag-body { flex:1; min-width:0; }
+    .ag-cals { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
+    .ag-cal { font-size:12px; padding:3px 10px; border:1px solid var(--border); border-radius:999px;
+      background:var(--panel); color:var(--muted); cursor:pointer; opacity:.6; }
+    .ag-cal.on { color:var(--accent-fg,var(--fg)); background:color-mix(in srgb,var(--accent) 18%,transparent);
+      border-color:var(--accent); opacity:1; }
+    .ag-tag { display:inline-block; font-size:11px; padding:0 6px; margin-right:3px; border-radius:10px;
+      background:var(--panel2); border:1px solid var(--border); cursor:pointer; }
+    .ag-tag:hover { border-color:var(--accent); color:var(--accent); }
     /* Batch-ingest source picker */
     .bi-list { margin-top:10px; max-height:300px; overflow:auto; border:1px solid var(--border);
       border-radius:8px; background:var(--panel2); }
@@ -257,6 +270,9 @@
     .fam-chip:hover { border-color:var(--err); color:var(--err); }
     .fam-ov { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px;
       padding:5px 8px; border-bottom:1px solid var(--border); }
+    .sg-card { border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:10px;
+      background:var(--panel2); }
+    .sg-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
     /* Corpus landscape (super-families by kind) */
     .ls-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-top:10px; }
     .ls-col { border:1px solid var(--border); border-radius:8px; padding:9px 11px; background:var(--panel2); }
@@ -436,8 +452,10 @@
           <button class="nav-item" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg><span>Home</span></button>
           <button class="nav-item" data-tab="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search</span></button>
           <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
+          <button class="nav-item" data-tab="timemap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/><circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg><span>Temporal map</span></button>
           <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
           <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
+          <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
           <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
           <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span><span class="badge">adv</span></button>
         </div>
@@ -460,10 +478,10 @@
       </nav>
 
       <div class="sb-foot">
-        <button class="secondary" onclick="openDrawer()" title="Themes, accent, density, layout"
-                style="display:flex;align-items:center;justify-content:center;gap:8px">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="20" cy="14" r="2"/></svg>
-          <span class="lbl">Customize</span></button>
+        <button class="secondary" onclick="showTab('settings')" title="Open Settings (appearance, language, data, safety)"
+                style="display:flex;align-items:center;justify-content:center;gap:8px;flex:1">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.2A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 14H2.5a2 2 0 0 1 0-4h.2A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 2.6V2.5a2 2 0 0 1 4 0v.2A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H23a2 2 0 0 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg>
+          <span class="lbl">Settings</span></button>
         <button class="icon-btn" onclick="toggleSidebar()" title="Collapse sidebar" aria-label="Collapse sidebar" style="flex:0 0 auto">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
       </div>
@@ -487,8 +505,6 @@
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
         </div>
-        <button class="icon-btn" onclick="openDrawer()" title="Customize appearance" aria-label="Customize appearance">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="20" cy="14" r="2"/></svg></button>
         <button class="icon-btn" onclick="showTab('help')" title="Help &amp; documentation" aria-label="Help and documentation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></button>
         <a class="icon-btn" href="/docs" target="_blank" rel="noopener" title="Raw API reference (Swagger)" aria-label="Raw API reference (opens in a new tab)">
@@ -578,6 +594,9 @@
           <button class="qcard" onclick="showTab('insights')">
             <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg></span>
             <span><b>See the patterns</b><small>Trends, who's mentioned with whom, where.</small></span></button>
+          <button class="qcard" onclick="showTab('timemap')">
+            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
+            <span><b>See it in space &amp; time</b><small>Events, hazards and your coverage on a world map with a time slider.</small></span></button>
           <button class="qcard" onclick="showTab('custody')">
             <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
             <span><b>Prove it</b><small>Tamper-evident, signed provenance for your evidence.</small></span></button>
@@ -952,6 +971,31 @@
     </div>
 
     <!-- ============================ INDICES ========================== -->
+    <!-- ============================ AGENDA ========================== -->
+    <div class="tab-page" id="tab-agenda">
+    <section class="panel">
+      <h2>Agenda — major world events</h2>
+      <p class="muted" style="margin-top:0">A forward-looking calendar of major recurring events.
+        <b>Fixed civic dates are confirmed</b>; summit/meeting dates move each year — follow the official
+        source for the exact date. Nothing here is fabricated. <span class="muted">(Importing exact dates from
+        official iCal feeds is the next step.)</span></p>
+      <div style="margin-top:6px"><span class="hint">Calendars <span class="muted">— subscribe to the ones you care about; tap to toggle</span></span>
+        <div id="agenda-cals" class="ag-cals"></div></div>
+      <div class="row" style="margin-top:6px">
+        <div><label for="agenda-cat">Category</label><select id="agenda-cat" onchange="renderAgenda()">
+          <option value="">all</option><option value="civic">civic</option><option value="political">political</option>
+          <option value="economic">economic</option><option value="technology">technology</option></select></div>
+        <div><label for="agenda-country">Country</label><select id="agenda-country" onchange="renderAgenda()"><option value="">all</option></select></div>
+        <div><label for="agenda-tag">Tag</label><select id="agenda-tag" onchange="renderAgenda()"><option value="">all</option></select></div>
+        <div><label for="agenda-group">Group by</label><select id="agenda-group" onchange="renderAgenda()">
+          <option value="month">month</option><option value="calendar">calendar</option><option value="country">country</option></select></div>
+        <div style="flex:0 0 auto;align-self:end"><label class="switch" style="margin-top:0"><input type="checkbox" id="agenda-subonly" checked onchange="renderAgenda()"> subscribed only</label></div>
+      </div>
+      <div id="agenda-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
+    </section>
+    </div>
+
+    <!-- ============================ INDICES ========================== -->
     <div class="tab-page" id="tab-indices">
     <section class="panel">
       <h2>World stock indices</h2>
@@ -1065,6 +1109,7 @@
         <button data-ins="trends" onclick="showInsightCat('trends')">Trends</button>
         <button data-ins="sources" onclick="showInsightCat('sources')">Sources</button>
         <button data-ins="families" onclick="showInsightCat('families')">Families</button>
+        <button data-ins="supergroups" onclick="showInsightCat('supergroups')">Groups</button>
         <button data-ins="map" onclick="showInsightCat('map')">Map</button>
       </nav>
     </section>
@@ -1141,6 +1186,22 @@
       <div id="fam-overrides" style="margin-top:14px"></div>
     </section>
 
+    <section class="panel ins-view" id="ins-supergroups" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families</span></h2>
+      <p class="hint" style="margin-top:0">Gather several families under one theme (e.g. <b>Russia–Ukraine war</b>
+        over Russia, Ukraine, Putin, sanctions…) for sorting and discovery. Pure curation — nothing in the
+        keyword store changes.</p>
+      <div class="row" style="align-items:center">
+        <div style="flex:2"><label for="sg-name">New super-group</label>
+          <input id="sg-name" placeholder="e.g. Russia–Ukraine war" onkeydown="if(event.key==='Enter')createSuperGroup()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="createSuperGroup()">Create</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadSuperGroups()">Refresh</button></div>
+        <span id="sg-status" class="hint"></span>
+      </div>
+      <datalist id="sg-family-options"></datalist>
+      <div id="sg-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
+    </section>
+
     <section class="panel ins-view" id="ins-map" style="display:none">
       <div class="row">
         <div><label for="map-days">Window (days)</label><input id="map-days" type="number" value="30" min="1" max="3650"></div>
@@ -1156,12 +1217,69 @@
         <button class="tiny secondary" onclick="zoomMap(1.4)">－ zoom</button>
         <button class="tiny secondary" onclick="resetMap()">reset</button>
         <span class="hint" style="align-self:center">drag to pan · hover a dot for details · zoom in to read city names</span>
+        <span class="sp"></span>
+        <button class="tiny secondary" onclick="showTab('timemap')" title="See locations on a world map with a time slider">See these over time →</button>
       </div>
       <div id="map-svg"></div>
       <h2 style="margin:12px 0 6px;font-size:13px">By country</h2>
       <div style="overflow:auto"><table id="map-countries"></table></div>
       <h2 style="margin:12px 0 6px;font-size:13px">By city</h2>
       <div style="overflow:auto"><table id="map-cities"></table></div>
+    </section>
+    </div>
+
+    <!-- ========================== TEMPORAL MAP ======================= -->
+    <div class="tab-page" id="tab-timemap">
+    <section class="panel">
+      <h2>Temporal map <span class="muted" style="font-weight:400">— space &amp; time on one axis</span></h2>
+      <p class="muted" style="margin-top:0">Every locatable, datable signal on one zoomable world map, with a
+        slider that sweeps from antiquity to the near future. Drag the slider to move the moment in focus; events
+        fade with distance in time. Pins need <em>both</em> a place and a date — what has neither stays honestly off the map.</p>
+      <div id="tmap-status" class="hint">Loading…</div>
+
+      <div class="row" style="margin-top:10px;align-items:center;gap:14px">
+        <div style="flex:1;min-width:240px">
+          <label for="tmap-slider" style="display:flex;justify-content:space-between">
+            <span>Moment in focus</span>
+            <strong id="tmap-focus-label" style="font-variant-numeric:tabular-nums">—</strong>
+          </label>
+          <input id="tmap-slider" type="range" min="0" max="1000" value="1000" step="1"
+                 style="width:100%" oninput="onTmapSlide()">
+          <div id="tmap-strip" style="margin-top:4px"></div>
+        </div>
+        <div><label for="tmap-window">Window</label><select id="tmap-window" onchange="onTmapWindowChange()">
+          <option value="0">all of time</option>
+          <option value="2000">± 2000 yrs</option>
+          <option value="100">± 100 yrs</option>
+          <option value="25" selected>± 25 yrs</option>
+          <option value="5">± 5 yrs</option>
+          <option value="1">± 1 yr</option>
+        </select></div>
+        <div style="flex:0 0 auto;align-self:end">
+          <button class="tiny secondary" id="tmap-play" onclick="toggleTmapPlay()" title="Sweep time forward">▶ play</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:8px;align-items:center;gap:8px">
+        <button class="tiny secondary" onclick="zoomTmap(0.7)">＋ zoom</button>
+        <button class="tiny secondary" onclick="zoomTmap(1.4)">－ zoom</button>
+        <button class="tiny secondary" onclick="resetTmap()">reset view</button>
+        <label class="tiny" style="display:inline-flex;align-items:center;gap:5px;margin-left:6px">
+          <input type="checkbox" id="tmap-articles" onchange="loadTimemap()"> my corpus</label>
+        <label class="tiny" style="display:inline-flex;align-items:center;gap:5px"
+               title="Dates mentioned in your articles' text (extracted, unconfirmed)">
+          <input type="checkbox" id="tmap-mentions" onchange="loadTimemap()"> dates in text</label>
+        <label class="tiny" style="display:inline-flex;align-items:center;gap:5px">
+          <input type="checkbox" id="tmap-hazards" onchange="loadTimemap()"> live hazards</label>
+        <button class="tiny secondary" onclick="loadTimemap()">refresh</button>
+        <span class="hint" style="align-self:center">drag to pan · zoom in to read labels · click a pin for detail</span>
+      </div>
+
+      <div id="tmap-legend" class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap"></div>
+
+      <div id="tmap-svg" style="margin-top:6px"></div>
+      <div id="tmap-detail" style="margin-top:8px"></div>
+      <div id="tmap-caveat" class="hint" style="margin-top:8px"></div>
     </section>
     </div>
 
@@ -1215,6 +1333,37 @@
 
     <!-- ============================ SETTINGS ========================= -->
     <div class="tab-page" id="tab-settings">
+    <section class="panel">
+      <h2>Settings</h2>
+      <p class="muted" style="margin-top:0">Everything that shapes how the app looks and behaves on this
+        machine. Pick a section — your choices stay local.</p>
+      <nav class="tabs" style="position:static;padding:0;border:0;margin-top:8px">
+        <button class="active" data-set="appearance" onclick="showSetCat('appearance')">Appearance</button>
+        <button data-set="general" onclick="showSetCat('general')">General</button>
+        <button data-set="wikipedia" onclick="showSetCat('wikipedia')">Wikipedia</button>
+        <button data-set="data" onclick="showSetCat('data')">Data &amp; backup</button>
+        <button data-set="safety" onclick="showSetCat('safety')">Safety</button>
+      </nav>
+    </section>
+
+    <div class="set-view" id="set-appearance">
+    <section class="panel">
+      <h2>Appearance</h2>
+      <p class="hint" style="margin-top:0">Your look, your machine. These settings stay in this browser —
+        nothing is sent anywhere.</p>
+      <div class="seg"><div class="sl">Theme</div><div class="theme-grid" id="dr-themes"></div></div>
+      <div class="seg"><div class="sl">Accent</div><div class="swatches" id="dr-accents"></div></div>
+      <div class="seg"><div class="sl">Density</div><div class="seg-toggle" id="dr-density"></div></div>
+      <div class="seg"><div class="sl">Text size · <span id="dr-font-val">100%</span></div>
+        <input type="range" id="dr-font" min="88" max="124" step="2" oninput="setFont(this.value)"></div>
+      <div class="seg"><div class="sl">Sidebar</div><div class="seg-toggle" id="dr-sidebar"></div></div>
+      <div class="seg"><div class="sl">Tools shown in the sidebar</div>
+        <div class="modlist" id="dr-modules"></div></div>
+      <div class="seg"><button class="secondary" onclick="resetUi()">Reset appearance to defaults</button></div>
+    </section>
+    </div>
+
+    <div class="set-view" id="set-general" style="display:none">
     <section class="panel">
       <h2>Preferences</h2>
       <div class="row">
@@ -1272,7 +1421,9 @@
       <button onclick="saveKeywordFilter()">Save keyword filter</button>
       <div id="kf-result" class="hint"></div>
     </section>
+    </div>
 
+    <div class="set-view" id="set-wikipedia" style="display:none">
     <section class="panel">
       <h2>Wikipedia offline baselines</h2>
       <p class="muted" style="margin-top:0">Optional, heavy, and separate from live change-tracking. Pick a
@@ -1297,7 +1448,9 @@
         type any edition code that isn't listed.</div>
       <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>
     </section>
+    </div>
 
+    <div class="set-view" id="set-data" style="display:none">
     <section class="panel" id="backup-panel">
       <h2>Backup &amp; restore</h2>
       <div id="backup-status" class="hint">Checking backend…</div>
@@ -1318,7 +1471,9 @@
       </div>
       <div id="restore-result" class="hint"></div>
     </section>
+    </div>
 
+    <div class="set-view" id="set-safety" style="display:none">
     <!-- ============================ SAFETY (Theme 2) ================= -->
     <section class="panel" id="safety-panel">
       <div class="phead"><h2>Safety &amp; at-risk use</h2></div>
@@ -1376,6 +1531,7 @@
       <div id="panic-result" class="hint"></div>
     </section>
     </div>
+    </div>
 
     <!-- ============================ HELP / DOCS ====================== -->
     <div class="tab-page" id="tab-help">
@@ -1406,26 +1562,6 @@
            placeholder="Jump to a tool, run an action, or open a doc…"
            oninput="renderPalette()" onkeydown="palKey(event)">
     <div class="pal-list" id="pal-list"></div>
-  </div>
-
-  <!-- ====================== CUSTOMIZE DRAWER ========================= -->
-  <div class="overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
-  <div class="drawer" id="customize" role="dialog" aria-label="Customize appearance">
-    <div class="phead"><h3>Customize</h3><span class="sp"></span>
-      <button class="icon-btn" onclick="closeDrawer()" title="Close">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
-    <p class="hint" style="margin-top:0">Your look, your machine. These settings stay in this browser —
-      nothing is sent anywhere.</p>
-
-    <div class="seg"><div class="sl">Theme</div><div class="theme-grid" id="dr-themes"></div></div>
-    <div class="seg"><div class="sl">Accent</div><div class="swatches" id="dr-accents"></div></div>
-    <div class="seg"><div class="sl">Density</div><div class="seg-toggle" id="dr-density"></div></div>
-    <div class="seg"><div class="sl">Text size · <span id="dr-font-val">100%</span></div>
-      <input type="range" id="dr-font" min="88" max="124" step="2" oninput="setFont(this.value)"></div>
-    <div class="seg"><div class="sl">Sidebar</div><div class="seg-toggle" id="dr-sidebar"></div></div>
-    <div class="seg"><div class="sl">Tools shown in the sidebar</div>
-      <div class="modlist" id="dr-modules"></div></div>
-    <div class="seg"><button class="secondary" onclick="resetUi()">Reset to defaults</button></div>
   </div>
 
   <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -1583,8 +1719,10 @@
       {id:"home",     label:"Home",               grp:"Investigate"},
       {id:"search",   label:"Search",             grp:"Investigate"},
       {id:"insights", label:"Insights",           grp:"Investigate"},
+      {id:"timemap",  label:"Temporal map",       grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
       {id:"law",      label:"World law",          grp:"Investigate"},
+      {id:"agenda",   label:"Agenda",             grp:"Investigate"},
       {id:"indices",  label:"Indices",            grp:"Investigate"},
       {id:"markets",  label:"Commodities",        grp:"Investigate"},
       {id:"ingest",   label:"Collect",            grp:"Collect"},
@@ -1605,8 +1743,10 @@
       indices: loadIndices,
       markets: loadMarkets,
       insights: loadInsights,
+      timemap: loadTimemap,
       wiki: loadWiki,
       law: loadLaw,
+      agenda: loadAgenda,
       sources: loadManagedSources,
       database: () => { loadCoverage(); },   // stats handled by the live poller (startLive)
       custody: loadCustody,
@@ -1626,6 +1766,7 @@
       document.querySelectorAll(".tab-page").forEach(p =>
         p.classList.toggle("active", p.id === "tab-" + name));
       if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
+      if (name !== "timemap" && typeof stopTmapPlay === "function") stopTmapPlay();  // don't animate a hidden tab
       startLive(name);                                  // live status for the active tab
       document.body.classList.remove("nav-open");       // close mobile drawer
       closePalette();
@@ -1691,9 +1832,20 @@
     function syncThemeSelect() { const t = getUi().theme; const sel = $("set-theme");
       if (sel) sel.value = (t === "light" ? "light" : t === "system" ? "system" : "dark"); }
 
-    // Customize drawer
-    function openDrawer()  { buildDrawer(); $("customize").classList.add("open"); $("drawerOverlay").classList.add("open"); }
-    function closeDrawer() { $("customize").classList.remove("open"); $("drawerOverlay").classList.remove("open"); }
+    // Appearance now lives in Settings → Appearance (the old drawer is gone).
+    // openDrawer() is kept as the single "take me to appearance" entry point so the
+    // command palette and any deep link still work; closeDrawer() is a safe no-op.
+    function openDrawer()  { showTab("settings"); showSetCat("appearance"); }
+    function closeDrawer() { /* drawer removed — appearance is a Settings section */ }
+
+    // Settings sections (Appearance · General · Wikipedia · Data · Safety).
+    function showSetCat(cat) {
+      document.querySelectorAll("#tab-settings [data-set]").forEach(b =>
+        b.classList.toggle("active", b.dataset.set === cat));
+      document.querySelectorAll("#tab-settings .set-view").forEach(v =>
+        v.style.display = (v.id === "set-" + cat) ? "" : "none");
+      if (cat === "appearance") buildDrawer();      // (re)paint theme/accent/module state
+    }
     function buildDrawer() {
       const ui = getUi();
       $("dr-themes").innerHTML = THEMES.map(t =>
@@ -2094,6 +2246,78 @@
     // ===================================================================== //
     //  WORLD LAW — change tracking (§5)                                       //
     // ===================================================================== //
+    // -- Agenda (world events): subscribe to calendars, filter & group ------ //
+    const _MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const AG = { events: [], cals: [], caveat: "", meta: {} };
+    function agSubs() { try { return new Set(JSON.parse(localStorage.getItem("oo.agenda.subs") || "null") || []); } catch (_e) { return new Set(); } }
+    function agSaveSubs(set) { localStorage.setItem("oo.agenda.subs", JSON.stringify([...set])); }
+
+    async function loadAgenda() {
+      const box = $("agenda-list");
+      box.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const [ev, fac] = await Promise.all([api("/api/events"), api("/api/events/calendars")]);
+        AG.events = ev.events; AG.caveat = ev.caveat; AG.cals = fac.calendars;
+        AG.meta = Object.fromEntries(fac.calendars.map(c => [c.key, c]));
+        // First run: subscribe to all calendars so the agenda isn't empty.
+        if (localStorage.getItem("oo.agenda.subs") == null) agSaveSubs(new Set(fac.calendars.map(c => c.key)));
+        $("agenda-country").innerHTML = '<option value="">all</option>' + fac.countries.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+        $("agenda-tag").innerHTML = '<option value="">all</option>' + fac.tags.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+        renderAgenda();
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load agenda: ${esc(e.message)}</div>`; }
+    }
+
+    function renderAgendaCals() {
+      const subs = agSubs();
+      $("agenda-cals").innerHTML = AG.cals.map(c =>
+        `<button class="ag-cal${subs.has(c.key) ? " on" : ""}" data-k="${esc(c.key)}" onclick="toggleCalSub(this)"
+           title="${esc(c.description || "")}">${esc(c.name)} <span class="muted">${c.count}</span></button>`).join("");
+    }
+    function toggleCalSub(btn) {
+      const subs = agSubs(); const k = btn.dataset.k;
+      subs.has(k) ? subs.delete(k) : subs.add(k);
+      agSaveSubs(subs); renderAgendaCals(); renderAgenda();
+    }
+
+    function agWhen(e) {
+      return e.next_occurrence
+        ? `<span class="pill ok">${esc(e.next_occurrence)}</span>`
+        : `<span class="pill" title="exact date moves each year">${e.month ? esc(_MONTHS[e.month-1]) : esc(e.cadence||"")}</span>`;
+    }
+    function agRow(e) {
+      const conf = e.confirmed ? '<span class="pill ok" title="fixed annual date">confirmed</span>'
+                               : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
+      const tags = (e.tags||[]).map(t => `<span class="ag-tag" onclick="$('agenda-tag').value='${esc(t)}';renderAgenda()">${esc(t)}</span>`).join("");
+      const alsoIn = (e.also_in && e.also_in.length) ? ` <span class="pill" title="this event also appears in: ${esc(e.also_in.join(', '))}">also in ${e.also_in.length}</span>` : "";
+      const variants = (e.date_variants && e.date_variants.length > 1)
+        ? `<div class="hint" style="color:var(--warn)">date varies by source: ${esc(e.date_variants.join(' · '))}</div>` : "";
+      return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
+        <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}</div>
+          ${variants}
+          <div class="hint">${tags} ${e.note?"· "+esc(e.note):""} · <a href="${esc(safeUrl(e.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div></div></div>`;
+    }
+    function renderAgenda() {
+      renderAgendaCals();
+      const box = $("agenda-list");
+      const subs = agSubs();
+      const cat = $("agenda-cat").value, country = $("agenda-country").value, tag = $("agenda-tag").value;
+      const subOnly = $("agenda-subonly").checked, groupBy = $("agenda-group").value;
+      let rows = AG.events.filter(e =>
+        (!cat || e.category === cat) && (!country || e.country === country) &&
+        (!tag || (e.tags||[]).includes(tag)) && (!subOnly || (e.sources || [e.calendar]).some(s => subs.has(s))));
+      if (!rows.length) { box.innerHTML = `<p class="hint">${esc(AG.caveat)}</p><div class="muted">No events match — adjust filters or subscribe to more calendars above.</div>`; return; }
+      const groups = {};
+      for (const e of rows) {
+        const k = groupBy === "month" ? (e.next_occurrence ? _MONTHS[+e.next_occurrence.slice(5,7)-1] : (e.month ? _MONTHS[e.month-1] : "Movable / no fixed date"))
+                : groupBy === "calendar" ? (AG.meta[e.calendar]?.name || e.calendar)
+                : (e.country || "—");
+        (groups[k] = groups[k] || []).push(e);
+      }
+      box.innerHTML = `<p class="hint">${esc(AG.caveat)} · showing ${rows.length} of ${AG.events.length}</p>` +
+        Object.entries(groups).map(([k, list]) =>
+          `<h3 style="font-size:13px;margin:12px 0 6px">${esc(k)} <span class="muted">${list.length}</span></h3>` + list.map(agRow).join("")).join("");
+    }
+
     async function loadLaw() {
       try {
         const s = await api("/api/law/status");
@@ -3378,6 +3602,7 @@
         if (cat === "map") loadMap();
         if (cat === "sources") loadCitedSources();
         if (cat === "families") loadFamilies();
+        if (cat === "supergroups") loadSuperGroups();
       }
     }
 
@@ -3482,6 +3707,74 @@
         for (const n of members) await api("/api/insights/family/override?normalized=" + encodeURIComponent(n), {method: "DELETE"});
         toast("Override cleared."); loadFamilies();
       } catch (e) { toast("Reset failed: " + e.message, "err"); }
+    }
+
+    // -- Super-groups: groups of families ----------------------------------- //
+    async function loadSuperGroups() {
+      const box = $("sg-list");
+      box.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const [sgs, top] = await Promise.all([
+          api("/api/insights/supergroups"),
+          api("/api/insights/top?group=true&limit=200"),
+        ]);
+        $("sg-family-options").innerHTML = (top.terms || []).map(f =>
+          `<option value="${esc(f.normalized)}">${esc(f.term)} (${f.mentions})</option>`).join("");
+        box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
+          : '<div class="muted">No super-groups yet. Create one above, then add families to it.</div>';
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+    }
+
+    function sgCard(g) {
+      const chips = g.members.length ? g.members.map(m =>
+        `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
+           title="remove from this group">${esc(m.normalized)} <span class="muted">${m.mentions}</span> ✕</button>`).join("")
+        : '<span class="muted">No families yet — add one below.</span>';
+      return `<div class="sg-card">
+        <div class="sg-head"><b>${esc(g.name)}</b>
+          <span class="muted">· ${g.count} famil${g.count === 1 ? "y" : "ies"} · ${g.mentions} mentions</span>
+          <button class="ghost tiny" style="margin-left:auto" data-sg="${g.id}" data-name="${esc(g.name)}"
+            onclick="deleteSuperGroup(this)">delete</button></div>
+        <div class="fam-chips" style="margin-top:6px">${chips}</div>
+        <div class="row" style="margin-top:8px">
+          <div style="flex:2"><input list="sg-family-options" placeholder="add a family (type or pick)…"
+            data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddMember(this)"></div>
+          <div style="flex:0 0 auto;align-self:end"><button class="secondary"
+            onclick="sgAddMember(this.closest('.row').querySelector('input'))">Add</button></div>
+        </div></div>`;
+    }
+
+    async function createSuperGroup() {
+      const name = $("sg-name").value.trim();
+      if (!name) { toast("Name the super-group.", "err"); return; }
+      try {
+        await api("/api/insights/supergroups", {method: "POST", body: JSON.stringify({name})});
+        $("sg-name").value = ""; toast("Super-group created."); loadSuperGroups();
+      } catch (e) { toast("Create failed: " + e.message, "err"); }
+    }
+
+    async function sgAddMember(input) {
+      const sg = input.dataset.sg, norm = input.value.trim();
+      if (!norm) return;
+      try {
+        await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({normalized: [norm]})});
+        toast("Added."); loadSuperGroups();
+      } catch (e) { toast("Add failed: " + e.message, "err"); }
+    }
+
+    async function sgRemoveMember(btn) {
+      try {
+        await api(`/api/insights/supergroups/${btn.dataset.sg}/members?normalized=` + encodeURIComponent(btn.dataset.norm), {method: "DELETE"});
+        loadSuperGroups();
+      } catch (e) { toast("Remove failed: " + e.message, "err"); }
+    }
+
+    async function deleteSuperGroup(btn) {
+      if (!confirm(`Delete super-group "${btn.dataset.name}"? (keyword data is untouched)`)) return;
+      try {
+        await api(`/api/insights/supergroups/${btn.dataset.sg}`, {method: "DELETE"});
+        toast("Deleted."); loadSuperGroups();
+      } catch (e) { toast("Delete failed: " + e.message, "err"); }
     }
 
     // -- Most-cited sources (corpus-wide co-citation) ----------------------- //
@@ -3813,6 +4106,317 @@
         $("map-countries").innerHTML = rowsFor(d.countries, "Country");
         $("map-cities").innerHTML = rowsFor(d.cities, "City");
       } catch (e) { toast("Map failed: " + e.message, "err"); }
+    }
+
+    // -- Temporal map: space-time signals on the world map + a time slider -- //
+    // Reuses the equirectangular projection (lon2x/lat2y, MAP_W/MAP_H) with its
+    // own viewBox so it pans/zooms independently of the Insights map.
+    const TMAP_KINDS = {
+      disaster:{c:"#e5484d", l:"Disaster"}, conflict:{c:"#d6731f", l:"Conflict"},
+      milestone:{c:"#7aa2f7", l:"Milestone"}, civic:{c:"#3fb950", l:"Civic"},
+      space:{c:"#bf7af0", l:"Space"}, science:{c:"#1fb8c4", l:"Science"},
+      climate:{c:"#2da44e", l:"Climate"}, sport:{c:"#e3b341", l:"Sport"},
+      economic:{c:"#c9a227", l:"Economic"}, political:{c:"#8b949e", l:"Political"},
+      technology:{c:"#58a6ff", l:"Technology"}, hazard:{c:"#f85149", l:"Hazard (live)"},
+      article:{c:"#a371f7", l:"Article"},
+    };
+    const kindColor = k => (TMAP_KINDS[k] || {c:"var(--muted)"}).c;
+
+    let TMAP = {signals: [], range: null, caveat: ""};
+    let TMAP_FOCUS = null;                       // fractional year in focus
+    let TMAP_OFF = new Set();                     // kinds toggled off
+    let TMAP_VB = {x:0, y:0, w:MAP_W, h:MAP_H};
+    let _tmapVisible = [], _tmapPlay = null, TMAP_OUTLINE = null;
+    let _tmapDrag = false, _tmapDragSX = 0, _tmapDragSY = 0, _tmapMouseupWired = false, _tmapPrefsLoaded = false;
+
+    // Remember the user's layers/window across sessions (local only, like agenda subs).
+    const TMAP_PREFS = "oo.timemap.prefs";
+    function tmapSavePrefs() {
+      try { localStorage.setItem(TMAP_PREFS, JSON.stringify({
+        articles: !!($("tmap-articles") && $("tmap-articles").checked),
+        mentions: !!($("tmap-mentions") && $("tmap-mentions").checked),
+        hazards: !!($("tmap-hazards") && $("tmap-hazards").checked),
+        window: $("tmap-window") ? $("tmap-window").value : "25",
+      })); } catch { /* storage may be disabled — preferences just won't persist */ }
+    }
+    function tmapRestorePrefs() {
+      let p; try { p = JSON.parse(localStorage.getItem(TMAP_PREFS) || "null"); } catch { p = null; }
+      if (!p) return;
+      if ($("tmap-articles")) $("tmap-articles").checked = !!p.articles;
+      if ($("tmap-mentions")) $("tmap-mentions").checked = !!p.mentions;
+      if ($("tmap-hazards")) $("tmap-hazards").checked = !!p.hazards;
+      if ($("tmap-window") && p.window != null) $("tmap-window").value = String(p.window);
+    }
+    function onTmapWindowChange() { tmapSavePrefs(); renderTimemap(); }
+    const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+    function fmtYear(t) {                          // fractional year -> "Sep 2001"
+      if (t == null) return "—";
+      const y = Math.floor(t), doy = Math.round((t - y) * 365);
+      const d = new Date(2001, 0, 1); d.setDate(doy + 1);
+      return `${MON[d.getMonth()]} ${y < 0 ? "" : ""}${y}`;
+    }
+    function fmtDate(s) {                          // a signal's ISO date -> "Oct 24, 79"
+      const m = /^(\-?\d+)-(\d{2})-(\d{2})/.exec(s.date || "");
+      if (!m) return s.date || "";
+      return `${MON[+m[2]-1]} ${+m[3]}, ${+m[1]}`;
+    }
+
+    function applyTmapVB() {
+      const svg = document.getElementById("oo-tmap");
+      if (svg) svg.setAttribute("viewBox", `${TMAP_VB.x} ${TMAP_VB.y} ${TMAP_VB.w} ${TMAP_VB.h}`);
+    }
+    function zoomTmap(f) {
+      const cx = TMAP_VB.x + TMAP_VB.w/2, cy = TMAP_VB.y + TMAP_VB.h/2;
+      TMAP_VB.w = Math.min(MAP_W, Math.max(30, TMAP_VB.w * f));
+      TMAP_VB.h = Math.min(MAP_H, Math.max(15, TMAP_VB.h * f));
+      TMAP_VB.x = cx - TMAP_VB.w/2; TMAP_VB.y = cy - TMAP_VB.h/2;
+      applyTmapVB(); renderTimemap();             // re-render to toggle labels (semantic zoom)
+    }
+    function resetTmap() { TMAP_VB = {x:0, y:0, w:MAP_W, h:MAP_H}; applyTmapVB(); renderTimemap(); }
+
+    function wireTmapDrag() {
+      const svg = document.getElementById("oo-tmap");
+      if (!svg) return;
+      // svg-bound listeners die with the element when the next render replaces it; the
+      // window-level mouseup is attached exactly ONCE (drag state is module-level) so it
+      // can't accumulate across the many re-renders that 'play' triggers.
+      svg.addEventListener("mousedown", e => {
+        _tmapDrag = true; _tmapDragSX = e.clientX; _tmapDragSY = e.clientY; svg.style.cursor = "grabbing"; });
+      svg.addEventListener("mousemove", e => {
+        if (!_tmapDrag) return;
+        const r = svg.getBoundingClientRect();
+        TMAP_VB.x -= (e.clientX - _tmapDragSX) * TMAP_VB.w / r.width;
+        TMAP_VB.y -= (e.clientY - _tmapDragSY) * TMAP_VB.h / r.height;
+        _tmapDragSX = e.clientX; _tmapDragSY = e.clientY; applyTmapVB();
+      });
+      if (!_tmapMouseupWired) {
+        _tmapMouseupWired = true;
+        window.addEventListener("mouseup", () => {
+          _tmapDrag = false;
+          const s = document.getElementById("oo-tmap"); if (s) s.style.cursor = "grab";
+        });
+      }
+    }
+
+    function tmapSpan() {                          // [min,max] fractional years, padded
+      const r = TMAP.range || {};
+      if (r.min == null) return [2000, 2030];
+      const pad = Math.max(1, (r.max - r.min) * 0.02);
+      return [r.min - pad, r.max + pad];
+    }
+    function sliderToT(v) { const [a, b] = tmapSpan(); return a + (v/1000) * (b - a); }
+    function tToSlider(t) { const [a, b] = tmapSpan(); return b > a ? Math.round((t-a)/(b-a)*1000) : 1000; }
+
+    function onTmapSlide() {
+      TMAP_FOCUS = sliderToT(+$("tmap-slider").value);
+      $("tmap-focus-label").textContent = fmtYear(TMAP_FOCUS);
+      renderTimemap();
+    }
+
+    function toggleTmapKind(k) {
+      if (TMAP_OFF.has(k)) TMAP_OFF.delete(k); else TMAP_OFF.add(k);
+      buildTmapLegend(); renderTimemap();
+    }
+    function buildTmapLegend() {
+      const counts = (TMAP.range && TMAP.range.by_kind) || {};
+      const present = Object.keys(TMAP_KINDS).filter(k => counts[k]);
+      $("tmap-legend").innerHTML = present.map(k => {
+        const off = TMAP_OFF.has(k);
+        return `<button class="tiny" onclick="toggleTmapKind('${k}')" title="show/hide"
+          style="border-color:${kindColor(k)};opacity:${off?0.4:1};display:inline-flex;align-items:center;gap:5px">
+          <span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)};display:inline-block"></span>
+          ${esc(TMAP_KINDS[k].l)} <span class="muted">${counts[k]}</span></button>`;
+      }).join("") || `<span class="muted">No signals to show.</span>`;
+    }
+
+    function stopTmapPlay() {                       // also called by showTab when leaving the tab
+      if (_tmapPlay) { clearInterval(_tmapPlay); _tmapPlay = null; }
+      const btn = $("tmap-play"); if (btn) btn.textContent = "▶ play";
+    }
+    function toggleTmapPlay() {
+      if (_tmapPlay) { stopTmapPlay(); return; }
+      const btn = $("tmap-play"); if (btn) btn.textContent = "❚❚ pause";
+      _tmapPlay = setInterval(() => {
+        const s = $("tmap-slider"); let v = +s.value + 6;
+        if (v >= 1000) { v = 1000; stopTmapPlay(); }
+        s.value = v; onTmapSlide();
+      }, 120);
+    }
+
+    function buildTmapStrip() {                    // density-over-time orientation strip
+      const [a, b] = tmapSpan(), W = 1000, H = 22, N = 80;
+      const bins = new Array(N).fill(0);
+      TMAP.signals.forEach(s => {
+        if (TMAP_OFF.has(s.kind)) return;
+        const i = Math.min(N-1, Math.max(0, Math.floor((s.t - a)/(b - a) * N)));
+        bins[i]++;
+      });
+      const max = Math.max(1, ...bins);
+      const bars = bins.map((c, i) => c ? `<rect x="${(i/N*W).toFixed(1)}" y="${(H-2 - (H-4)*Math.sqrt(c/max)).toFixed(1)}"
+        width="${(W/N-1).toFixed(1)}" height="${((H-2)-(H-2 - (H-4)*Math.sqrt(c/max))).toFixed(1)}"
+        fill="var(--accent)" fill-opacity="0.6"/>` : "").join("");
+      const cx = TMAP_FOCUS == null ? W : (TMAP_FOCUS - a)/(b - a) * W;
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" onclick="stripClick(event)"
+        style="height:22px;background:var(--panel2);border:1px solid var(--border);border-radius:5px;cursor:crosshair">
+        ${bars}<line x1="${cx.toFixed(1)}" y1="0" x2="${cx.toFixed(1)}" y2="${H}" stroke="var(--fg)" stroke-width="2"/></svg>`;
+    }
+    function stripClick(ev) {
+      const svg = ev.currentTarget, r = svg.getBoundingClientRect();
+      const v = Math.round((ev.clientX - r.left)/r.width * 1000);
+      $("tmap-slider").value = Math.min(1000, Math.max(0, v)); onTmapSlide();
+    }
+
+    // Real coastlines, only if the offline outline asset has been generated
+    // (scripts/build_world_outline.py). Never fabricated — absent -> graticule only.
+    function buildTmapCoast() {
+      if (!TMAP_OUTLINE || !TMAP_OUTLINE.rings) return "";
+      const paths = TMAP_OUTLINE.rings.map(ring => {
+        let d = "", prevLon = null;
+        ring.forEach(([lon, lat]) => {
+          const cmd = (prevLon == null || Math.abs(lon - prevLon) > 180) ? "M" : "L";  // break across the dateline
+          d += `${cmd}${lon2x(lon).toFixed(1)} ${lat2y(lat).toFixed(1)}`;
+          prevLon = lon;
+        });
+        return `<path d="${d}Z" fill="var(--panel3)" fill-opacity="0.5" stroke="var(--border)" stroke-width="0.3"/>`;
+      }).join("");
+      return paths;
+    }
+
+    function buildTmapSvg() {
+      const win = +$("tmap-window").value, focus = TMAP_FOCUS;
+      const labels = TMAP_VB.w < MAP_W * 0.55;     // semantic zoom: labels only when zoomed in
+      const coast = buildTmapCoast();
+      let grid = "";
+      for (let lon = -180; lon <= 180; lon += 30)
+        grid += `<line x1="${lon2x(lon)}" y1="0" x2="${lon2x(lon)}" y2="${MAP_H}" stroke="var(--border)" stroke-width="0.3"/>`;
+      for (let lat = -90; lat <= 90; lat += 30)
+        grid += `<line x1="0" y1="${lat2y(lat)}" x2="${MAP_W}" y2="${lat2y(lat)}" stroke="var(--border)" stroke-width="0.3"/>`;
+
+      _tmapVisible = TMAP.signals.filter(s =>
+        !TMAP_OFF.has(s.kind) && (win === 0 || focus == null || Math.abs(s.t - focus) <= win));
+      const dots = _tmapVisible.map((s, i) => {
+        const x = lon2x(s.lon).toFixed(1), y = lat2y(s.lat).toFixed(1);
+        const dist = focus == null ? 0 : Math.abs(s.t - focus);
+        const span = win || (tmapSpan()[1] - tmapSpan()[0]) || 1;
+        const op = Math.max(0.15, 1 - (dist/span) * 0.8);
+        const future = focus != null && s.t > focus + 0.001;
+        const mag = +s.magnitude || 0;
+        const r = (mag ? 1.8 + mag*0.7 : (s.confirmed ? 3 : 2.4)).toFixed(1);
+        const col = kindColor(s.kind);
+        const ring = future || !s.confirmed
+          ? `fill="none" stroke="${col}" stroke-width="1.1" stroke-dasharray="${future?'2 1.5':''}"`
+          : `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`;
+        const lab = labels ? `<text x="${x}" y="${(+y - +r - 1).toFixed(1)}" fill="var(--fg)"
+          font-size="3.4" text-anchor="middle" opacity="${op.toFixed(2)}">${esc((s.title||"").slice(0,42))}</text>` : "";
+        return `<g opacity="${op.toFixed(2)}" style="cursor:pointer" onclick="showTmapDetail(${i})">
+          <circle cx="${x}" cy="${y}" r="${r}" ${ring}><title>${esc(s.title)} — ${esc(fmtDate(s))}</title></circle>${lab}</g>`;
+      }).join("");
+
+      if (!TMAP.signals.length)
+        return `<div class="muted">No signals with both a place and a date yet. Curated anchors ship by default;
+          index a geocoded corpus, enable live hazards, or install the events agenda to add more.</div>`;
+      return `<svg id="oo-tmap" viewBox="0 0 ${MAP_W} ${MAP_H}" width="100%"
+        style="max-width:${MAP_W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab">
+        ${coast}${grid}${dots}</svg>`;
+    }
+
+    // The honest seed of "convergence": other signals close in BOTH place and time.
+    // It is co-occurrence only — never a claim of connection or cause. The reader judges.
+    const TMAP_NEAR_DEG = 15;                      // ~1500 km at the equator
+    function tmapNearby(s) {
+      const win = +$("tmap-window").value || 25;   // reuse the chosen time window (else ±25y)
+      const out = [];
+      _tmapVisible.forEach((o, idx) => {
+        if (o === s) return;
+        const dt = Math.abs(o.t - s.t);
+        const dlon = Math.abs(o.lon - s.lon), dlat = Math.abs(o.lat - s.lat);
+        if (dt <= win && dlon <= TMAP_NEAR_DEG && dlat <= TMAP_NEAR_DEG)
+          out.push({idx, o, score: dt/(win||1) + Math.hypot(dlon, dlat)/TMAP_NEAR_DEG});
+      });
+      return out.sort((a, b) => a.score - b.score).slice(0, 6);
+    }
+
+    // Close the space-time loop: jump to a corpus search for this place/subject.
+    function tmapFindCoverage(q) {
+      showTab("search");
+      const i = $("q"); if (i) i.value = q;
+      if (typeof doSearch === "function") doSearch();
+    }
+
+    function showTmapDetail(i) {
+      const s = _tmapVisible[i]; if (!s) return;
+      const url = s.url ? safeUrl(s.url) : null;
+      const cov = (s.place || s.title || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+      const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">≈ country</span>`
+                : s.geocode === "city" ? `<span class="pill" title="placed at a known city">city</span>` : "";
+      const conf = s.source === "corpus-mention" ? `<span class="pill warn" title="a date extracted from article text">mentioned · extracted</span>`
+                 : s.confirmed ? `<span class="pill ok">confirmed</span>` : `<span class="pill warn">unconfirmed / scheduled</span>`;
+      $("tmap-detail").innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="width:11px;height:11px;border-radius:50%;background:${kindColor(s.kind)};display:inline-block"></span>
+          <strong>${esc(s.title)}</strong>
+          <span class="pill">${esc(TMAP_KINDS[s.kind]?.l || s.kind)}</span> ${conf} ${geo}
+        </div>
+        <div class="muted" style="margin-top:5px;font-size:13px">
+          ${esc(fmtDate(s))}${s.place?` · ${esc(s.place)}`:""}${s.country?` (${esc(s.country.toUpperCase())})`:""}
+          · ${(+s.lat).toFixed(2)}, ${(+s.lon).toFixed(2)} · <span title="data source">${esc(s.source)}</span>
+        </div>
+        ${s.note?`<div class="hint" style="margin-top:5px">${esc(s.note)}</div>`:""}
+        <div class="row" style="margin-top:7px;gap:8px">
+          ${url?`<a class="tiny secondary" href="${url}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;align-self:center">Official / reference source ↗</a>`:""}
+          ${cov?`<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>`:""}
+        </div>
+        ${(() => {
+          const near = tmapNearby(s);
+          if (!near.length) return "";
+          const items = near.map(n => `<button class="tiny secondary" style="margin:2px 3px 0 0"
+            onclick="showTmapDetail(${n.idx})" title="${esc(fmtDate(n.o))}${n.o.place?' · '+esc(n.o.place):''}">
+            <span style="width:8px;height:8px;border-radius:50%;background:${kindColor(n.o.kind)};display:inline-block;margin-right:4px"></span>
+            ${esc((n.o.title||'').slice(0,38))} <span class="muted">${n.o.year}</span></button>`).join("");
+          return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
+            <div style="font-size:12px"><strong>Near in space &amp; time</strong>
+              <span class="warn" title="These signals are merely close in place and time within your current window.">— co-occurrence, not a connection or cause. You judge.</span></div>
+            <div style="margin-top:4px">${items}</div></div>`;
+        })()}
+      </div>`;
+    }
+
+    function renderTimemap() {
+      $("tmap-strip").innerHTML = buildTmapStrip();
+      const svg = buildTmapSvg();                  // sets _tmapVisible
+      const note = (TMAP.signals.length && !_tmapVisible.length)
+        ? `<div class="hint" style="margin-top:6px">No signals fall in this time window — widen the <b>Window</b> or move the slider.</div>` : "";
+      $("tmap-svg").innerHTML = svg + note;
+      applyTmapVB(); wireTmapDrag();
+    }
+
+    async function loadTimemap() {
+      if (!_tmapPrefsLoaded) { _tmapPrefsLoaded = true; tmapRestorePrefs(); }  // restore once, before reading controls
+      const hz = $("tmap-hazards") && $("tmap-hazards").checked;
+      const arts = $("tmap-articles") && $("tmap-articles").checked;
+      const ment = $("tmap-mentions") && $("tmap-mentions").checked;
+      tmapSavePrefs();
+      $("tmap-status").textContent = "Loading…";
+      if (TMAP_OUTLINE == null) {                 // best-effort, once: real coastlines if the asset exists
+        try { const o = await fetch("/static/world_outline.json"); TMAP_OUTLINE = o.ok ? await o.json() : false; }
+        catch { TMAP_OUTLINE = false; }            // absent -> graticule fallback, no error
+      }
+      try {
+        const d = await api(`/api/timemap?limit=4000${hz?"&hazards=true":""}${arts?"&articles=true":""}${ment?"&mentions=true":""}`);
+        TMAP = {signals: d.signals || [], range: d.range || null, caveat: d.caveat || ""};
+        const r = TMAP.range || {};
+        $("tmap-status").innerHTML = `${TMAP.signals.length} signals · ${r.min!=null?Math.floor(r.min):"?"}–${r.max!=null?Math.ceil(r.max):"?"}`
+          + ((d.failures && d.failures.length) ? ` · <span class="warn" title="${esc(d.failures.join('; '))}">${d.failures.length} source(s) unavailable</span>` : "");
+        $("tmap-caveat").textContent = TMAP.caveat;
+        if (TMAP_FOCUS == null || TMAP_FOCUS < tmapSpan()[0] || TMAP_FOCUS > tmapSpan()[1]) {
+          $("tmap-slider").value = 1000; TMAP_FOCUS = sliderToT(1000);   // start "now-ish" (latest)
+        }
+        $("tmap-focus-label").textContent = fmtYear(TMAP_FOCUS);
+        buildTmapLegend(); renderTimemap();
+      } catch (e) {
+        $("tmap-status").innerHTML = `<span class="err">Could not load: ${esc(e.message)}</span>`;
+      }
     }
 
     // -- Wikipedia change-tracking ------------------------------------------ //
@@ -4198,6 +4802,29 @@
     _pollActivity(); setInterval(() => { if (!document.hidden) _pollActivity(); }, 5000);
     // Dismiss the vitals popover on Escape or an outside click.
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && _vitalsOpen) toggleVitals(); });
+
+    // -- Easter egg (opt-in, documented, harmless) -------------------------- //
+    // Type the Konami code (↑↑↓↓←→←→ B A) to surface a random attributed journalism
+    // quote / sourced fun fact. Only fires on the deliberate sequence, never during a
+    // task, and never in evidence/exports — personality without intrusion.
+    (function () {
+      const seq = ["ArrowUp","ArrowUp","ArrowDown","ArrowDown","ArrowLeft","ArrowRight","ArrowLeft","ArrowRight","b","a"];
+      let pos = 0, alt = false;
+      document.addEventListener("keydown", (e) => {
+        const t = e.target && e.target.tagName;
+        if (t === "INPUT" || t === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
+        pos = (e.key.toLowerCase() === seq[pos].toLowerCase()) ? pos + 1 : 0;
+        if (pos !== seq.length) return;
+        pos = 0; alt = !alt;
+        api("/api/personality/random?kind=" + (alt ? "fact" : "quote")).then(r => {
+          const it = r.item; if (!it) return;
+          const msg = it.kind === "fact"
+            ? `${it.text}${it.source ? `  — ${it.source}` : ""}`
+            : `"${it.text}"  — ${it.author || "Unknown"}${it.attribution === "disputed" ? " (attribution disputed)" : ""}`;
+          toast(msg, "ok");
+        }).catch(() => {});
+      });
+    })();
     document.addEventListener("click", (e) => {
       if (!_vitalsOpen) return;
       const pop = $("vitals-pop"), chip = $("activity");

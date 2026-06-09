@@ -1,0 +1,283 @@
+# Open Omniscience — curated space-time anchors for the Temporal Map.
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# These are well-documented, public historical and scheduled events, each with a
+# REAL coordinate and date, used to seed the temporal map so the time-slider has
+# something honest to show before any corpus is indexed. They demonstrate the
+# axis the journalist actually works on: *space and time together*.
+#
+# Honesty rules for this file:
+#   * lat/lon are real geographic facts (degrees). No invented positions.
+#   * date is ISO (YYYY-MM-DD). Quote it (YAML reads 0079-10-24 oddly otherwise).
+#   * date_precision says how much of the date is firm: day | month | year.
+#   * confirmed: true only when the date is historically/officially fixed.
+#     Scheduled future events (Olympics, eclipses) are confirmed because they
+#     have an official/astronomical date; a `note` carries any caveat.
+#   * `note` carries genuine scholarly disagreement (e.g. Pompeii's exact day)
+#     — we surface the doubt, we don't paper over it.
+#
+# kinds (drive the map legend/colour): disaster, conflict, milestone, civic,
+#       space, science, climate, sport
+#
+# This is a SEED, not a claim of completeness. Absence here means "not curated",
+# never "did not happen".
+
+anchors:
+  - id: vesuvius-79
+    title: Eruption of Vesuvius buries Pompeii & Herculaneum
+    kind: disaster
+    date: "0079-10-24"
+    date_precision: year
+    confirmed: true
+    lat: 40.7497
+    lon: 14.4869
+    place: Pompeii, Italy
+    country: it
+    url: https://en.wikipedia.org/wiki/Eruption_of_Mount_Vesuvius_in_79_AD
+    note: Year is secure; the exact day is debated (an August vs October date).
+
+  - id: lisbon-quake-1755
+    title: Great Lisbon earthquake & tsunami
+    kind: disaster
+    date: "1755-11-01"
+    date_precision: day
+    confirmed: true
+    lat: 38.7223
+    lon: -9.1393
+    place: Lisbon, Portugal
+    country: pt
+    url: https://en.wikipedia.org/wiki/1755_Lisbon_earthquake
+
+  - id: krakatoa-1883
+    title: Eruption of Krakatoa
+    kind: disaster
+    date: "1883-08-27"
+    date_precision: day
+    confirmed: true
+    lat: -6.1020
+    lon: 105.4230
+    place: Sunda Strait, Indonesia
+    country: id
+    url: https://en.wikipedia.org/wiki/1883_eruption_of_Krakatoa
+
+  - id: wright-flight-1903
+    title: First powered flight (Wright brothers)
+    kind: milestone
+    date: "1903-12-17"
+    date_precision: day
+    confirmed: true
+    lat: 36.0140
+    lon: -75.6675
+    place: Kitty Hawk, North Carolina, USA
+    country: us
+    url: https://en.wikipedia.org/wiki/Wright_Flyer
+
+  - id: titanic-1912
+    title: Sinking of the RMS Titanic
+    kind: disaster
+    date: "1912-04-15"
+    date_precision: day
+    confirmed: true
+    lat: 41.7260
+    lon: -49.9469
+    place: North Atlantic Ocean
+    url: https://en.wikipedia.org/wiki/Titanic
+
+  - id: hiroshima-1945
+    title: Atomic bombing of Hiroshima
+    kind: conflict
+    date: "1945-08-06"
+    date_precision: day
+    confirmed: true
+    lat: 34.3853
+    lon: 132.4553
+    place: Hiroshima, Japan
+    country: jp
+    url: https://en.wikipedia.org/wiki/Atomic_bombings_of_Hiroshima_and_Nagasaki
+
+  - id: un-charter-1945
+    title: UN Charter enters into force
+    kind: civic
+    date: "1945-10-24"
+    date_precision: day
+    confirmed: true
+    lat: 37.7749
+    lon: -122.4194
+    place: San Francisco, USA (signed)
+    country: us
+    url: https://en.wikipedia.org/wiki/United_Nations_Charter
+    note: Signed in San Francisco 26 Jun 1945; entered into force 24 Oct 1945 (UN Day).
+
+  - id: sputnik-1957
+    title: Launch of Sputnik 1 (first artificial satellite)
+    kind: space
+    date: "1957-10-04"
+    date_precision: day
+    confirmed: true
+    lat: 45.9200
+    lon: 63.3420
+    place: Baikonur Cosmodrome, Kazakhstan
+    country: kz
+    url: https://en.wikipedia.org/wiki/Sputnik_1
+
+  - id: apollo11-launch-1969
+    title: Apollo 11 launch (first crewed Moon landing mission)
+    kind: space
+    date: "1969-07-16"
+    date_precision: day
+    confirmed: true
+    lat: 28.5729
+    lon: -80.6490
+    place: Kennedy Space Center, Florida, USA
+    country: us
+    url: https://en.wikipedia.org/wiki/Apollo_11
+    note: Launch site shown; the Moon landing itself (20 Jul 1969) is off-map.
+
+  - id: chernobyl-1986
+    title: Chernobyl nuclear disaster
+    kind: disaster
+    date: "1986-04-26"
+    date_precision: day
+    confirmed: true
+    lat: 51.3890
+    lon: 30.0990
+    place: Pripyat, Ukraine (then USSR)
+    country: ua
+    url: https://en.wikipedia.org/wiki/Chernobyl_disaster
+
+  - id: berlin-wall-1989
+    title: Fall of the Berlin Wall
+    kind: milestone
+    date: "1989-11-09"
+    date_precision: day
+    confirmed: true
+    lat: 52.5163
+    lon: 13.3777
+    place: Berlin, Germany
+    country: de
+    url: https://en.wikipedia.org/wiki/Fall_of_the_Berlin_Wall
+
+  - id: sept11-2001
+    title: September 11 attacks
+    kind: conflict
+    date: "2001-09-11"
+    date_precision: day
+    confirmed: true
+    lat: 40.7115
+    lon: -74.0134
+    place: World Trade Center, New York, USA
+    country: us
+    url: https://en.wikipedia.org/wiki/September_11_attacks
+
+  - id: indian-ocean-tsunami-2004
+    title: Indian Ocean earthquake & tsunami
+    kind: disaster
+    date: "2004-12-26"
+    date_precision: day
+    confirmed: true
+    lat: 3.3160
+    lon: 95.8540
+    place: Off Sumatra, Indian Ocean
+    country: id
+    url: https://en.wikipedia.org/wiki/2004_Indian_Ocean_earthquake_and_tsunami
+
+  - id: arab-spring-2010
+    title: Self-immolation of Mohamed Bouazizi (spark of the Arab Spring)
+    kind: conflict
+    date: "2010-12-17"
+    date_precision: day
+    confirmed: true
+    lat: 35.0382
+    lon: 9.4850
+    place: Sidi Bouzid, Tunisia
+    country: tn
+    url: https://en.wikipedia.org/wiki/Arab_Spring
+
+  - id: fukushima-2011
+    title: Tōhoku earthquake & Fukushima nuclear accident
+    kind: disaster
+    date: "2011-03-11"
+    date_precision: day
+    confirmed: true
+    lat: 37.4213
+    lon: 141.0328
+    place: Fukushima, Japan
+    country: jp
+    url: https://en.wikipedia.org/wiki/Fukushima_nuclear_accident
+
+  - id: paris-agreement-2015
+    title: Paris Agreement on climate change adopted
+    kind: climate
+    date: "2015-12-12"
+    date_precision: day
+    confirmed: true
+    lat: 48.8566
+    lon: 2.3522
+    place: Paris, France
+    country: fr
+    url: https://en.wikipedia.org/wiki/Paris_Agreement
+
+  - id: covid-who-pandemic-2020
+    title: WHO declares COVID-19 a pandemic
+    kind: science
+    date: "2020-03-11"
+    date_precision: day
+    confirmed: true
+    lat: 46.2270
+    lon: 6.1407
+    place: WHO HQ, Geneva, Switzerland
+    country: ch
+    url: https://en.wikipedia.org/wiki/COVID-19_pandemic
+    note: First cluster reported in Wuhan, China in Dec 2019; declaration shown here.
+
+  # --- Scheduled / astronomical future anchors (confirmed dates, with sources) ---
+  - id: milan-cortina-2026
+    title: Milan–Cortina Winter Olympics open
+    kind: sport
+    date: "2026-02-06"
+    date_precision: day
+    confirmed: true
+    lat: 45.4642
+    lon: 9.1900
+    place: Milan, Italy
+    country: it
+    url: https://en.wikipedia.org/wiki/2026_Winter_Olympics
+
+  - id: eclipse-2026-08-12
+    title: Total solar eclipse (path over Iceland & Spain)
+    kind: space
+    date: "2026-08-12"
+    date_precision: day
+    confirmed: true
+    lat: 40.4168
+    lon: -3.7038
+    place: Madrid region (within path), Spain
+    country: es
+    url: https://en.wikipedia.org/wiki/Solar_eclipse_of_August_12,_2026
+    note: Astronomical date is exact; coordinate marks one point on a wide path.
+
+  - id: eclipse-2027-08-02
+    title: Total solar eclipse (long totality over Egypt)
+    kind: space
+    date: "2027-08-02"
+    date_precision: day
+    confirmed: true
+    lat: 25.6872
+    lon: 32.6396
+    place: Luxor, Egypt (within path)
+    country: eg
+    url: https://en.wikipedia.org/wiki/Solar_eclipse_of_August_2,_2027
+    note: One of the longest land totalities of the century; date is astronomical.
+
+  - id: la-2028
+    title: Los Angeles Summer Olympics open
+    kind: sport
+    date: "2028-07-14"
+    date_precision: day
+    confirmed: true
+    lat: 34.0139
+    lon: -118.2880
+    place: Los Angeles, USA
+    country: us
+    url: https://en.wikipedia.org/wiki/2028_Summer_Olympics
+    note: Scheduled opening date per the official programme; subject to change.
