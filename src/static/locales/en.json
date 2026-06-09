@@ -100,5 +100,15 @@
   "Wipe everything now": "Wipe everything now",
   "Passphrase": "Passphrase",
   "Mode": "Mode",
-  "Restore (destructive)": "Restore (destructive)"
+  "Restore (destructive)": "Restore (destructive)",
+  "For journalists working under pressure. These tools are honest about their limits — read each note. Everything stays on this machine.": "For journalists working under pressure. These tools are honest about their limits — read each note. Everything stays on this machine.",
+  "An encrypted snapshot of the whole corpus (AES-256-GCM + scrypt). A lost or wrong passphrase means the file cannot be opened — there is no recovery. Keep the passphrase safe.": "An encrypted snapshot of the whole corpus (AES-256-GCM + scrypt). A lost or wrong passphrase means the file cannot be opened — there is no recovery. Keep the passphrase safe.",
+  "a strong, memorable passphrase": "a strong, memorable passphrase",
+  "Download encrypted backup (.ooenc)": "Download encrypted backup (.ooenc)",
+  "Restore from an encrypted backup": "Restore from an encrypted backup",
+  "(replaces the current corpus)": "(replaces the current corpus)",
+  "passphrase for this file": "passphrase for this file",
+  "Transparent mode names this tool in the User-Agent (polite, but identifiable). Protected mode sends a generic User-Agent and routes every fetch through a proxy you run.": "Transparent mode names this tool in the User-Agent (polite, but identifiable). Protected mode sends a generic User-Agent and routes every fetch through a proxy you run.",
+  "Transparent (default)": "Transparent (default)",
+  "Protected (generic UA + proxy)": "Protected (generic UA + proxy)"
 }
