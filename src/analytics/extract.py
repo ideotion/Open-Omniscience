@@ -61,6 +61,17 @@ _EXTRA_STOPWORD_TEXT = (
     "really quite rather pretty almost enough across upon onto unto whatever whoever "
     "into within without toward towards among amongst per via "
     "this that these those here there what which whose "
+    # Relative time + news-attribution fillers users flagged as noise
+    "since last next first second third ago today yesterday tomorrow soon "
+    "early late later recent recently latest current currently meanwhile amid "
+    "said says say told tells according reportedly however therefore thus hence "
+    "indeed instead although though whereas whilst despite "
+    # Contractions (ASCII; curly-apostrophe variants are added programmatically below)
+    "it's don't doesn't didn't won't can't cannot isn't aren't wasn't weren't "
+    "hasn't haven't hadn't couldn't wouldn't shouldn't i'm you're we're they're "
+    "i've you've we've they've i'll you'll that's there's what's let's he's she's "
+    "dont doesnt didnt wont cant isnt arent wasnt werent hasnt havent hadnt "
+    "couldnt wouldnt shouldnt youre theyre ive youve weve theyve thats theres whats lets "
     # Spanish
     "el la los las un una unos unas de del y o pero que como para por con sin "
     "es son fue era ser estar su sus lo le les nos se mas muy "
@@ -77,6 +88,11 @@ _EXTRA_STOPWORD_TEXT = (
     "de het een en of maar ook is zijn was niet met van te ik je wij zij "
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
+# News text often uses a curly apostrophe (’) — match those spellings of any
+# contraction too, so "don't" and "don’t" are both filtered without listing each twice.
+_EXTRA_STOPWORDS = _EXTRA_STOPWORDS | frozenset(
+    w.replace("'", "’") for w in _EXTRA_STOPWORDS if "'" in w
+)
 
 
 @lru_cache(maxsize=1)
