@@ -221,6 +221,13 @@
     .bi-name { font-weight:600; } .bi-meta { font-size:11px; }
     table.bi-res { width:100%; border-collapse:collapse; font-size:12px; }
     table.bi-res th, table.bi-res td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--border); }
+    /* World-law colourised diff */
+    .law-diff { font-family:var(--mono,ui-monospace,monospace); font-size:12px; line-height:1.5;
+      max-height:240px; overflow:auto; border:1px solid var(--border); border-radius:6px; margin-top:6px; }
+    .law-diff .dl { padding:0 10px; white-space:pre-wrap; word-break:break-word; }
+    .law-diff .dl.add { background:color-mix(in srgb, var(--ok) 16%, transparent); }
+    .law-diff .dl.del { background:color-mix(in srgb, var(--err) 16%, transparent); }
+    .law-diff .dl.ctx { color:var(--muted); }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -2021,6 +2028,17 @@
       } catch (e) { $("law-status").innerHTML = '<div class="muted">Status unavailable.</div>'; }
       loadLawChanges(); loadLawDocs();
     }
+    // Colourised unified diff (green added / red removed), bounded for the feed.
+    function renderDiff(diff, max = 400) {
+      if (!diff) return "";
+      const lines = diff.split("\n").slice(0, max);
+      const more = diff.split("\n").length > max ? `<div class="dl ctx">… (diff truncated)</div>` : "";
+      return `<div class="law-diff">` + lines.map(ln => {
+        const c = ln[0] === "+" ? "add" : (ln[0] === "-" ? "del" : "ctx");
+        return `<div class="dl ${c}">${esc(ln)}</div>`;
+      }).join("") + more + `</div>`;
+    }
+
     async function loadLawChanges() {
       const box = $("law-changes");
       const fo = $("law-flagged-only") ? $("law-flagged-only").checked : true;
@@ -2033,8 +2051,9 @@
             <span class="pill ${ch.flagged?'warn':''}">${ch.delta_bytes>0?'+':''}${ch.delta_bytes} bytes</span>
             ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(esc).join(', ')+'</span>':''}
             <div class="hint" style="margin-top:4px">${ch.observed_at?new Date(ch.observed_at).toLocaleString():''} ·
-              <a href="${esc(safeUrl(ch.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div>
-            ${ch.diff?`<pre style="white-space:pre-wrap;max-height:160px;overflow:auto;font-size:12px;margin-top:6px">${esc(ch.diff.slice(0,1500))}</pre>`:''}
+              <a href="/api/law/documents/${ch.document_id}/view" target="_blank" rel="noopener" title="offline stored copy + history">open reader</a> ·
+              <a class="muted" href="${esc(safeUrl(ch.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div>
+            ${renderDiff(ch.diff)}
           </div>`).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load changes.</div>'; }
     }
@@ -2047,7 +2066,8 @@
             `<tr><td>${esc(x.jurisdiction.toUpperCase())}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
               <td>${x.has_baseline?'<span class="pill ok">yes</span>':'<span class="pill">no</span>'}</td>
               <td>${x.revisions}${x.flagged?` (${x.flagged} flagged)`:''}</td>
-              <td><a href="${esc(safeUrl(x.official_url||x.url))}" target="_blank" rel="noopener noreferrer">official ↗</a></td></tr>`).join("") +
+              <td><a href="/api/law/documents/${x.id}/view" target="_blank" rel="noopener" title="offline stored copy + history">reader</a>
+                · <a class="muted" href="${esc(safeUrl(x.official_url||x.url))}" target="_blank" rel="noopener noreferrer">official ↗</a></td></tr>`).join("") +
           "</tbody>";
       } catch (e) { /* table optional */ }
     }
