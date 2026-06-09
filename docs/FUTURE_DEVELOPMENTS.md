@@ -99,3 +99,42 @@ commitment.
 - **i18n completeness** — route the remaining hard-coded UI strings (Settings/Safety,
   backup, network-mode, etc.) through the translation layer so a non-English locale is
   fully translated.
+
+---
+
+## Personality: easter eggs + a journalism quotes/fun-facts library
+
+**Idea.** Give the UI a little soul: a small, tasteful set of **easter eggs** plus a
+curated library of **famous journalistic quotes and verifiable fun facts** that surface
+in quiet corners of the interface (empty states, the loading/onboarding screens, an
+"about" flourish, the occasional console banner). The point is warmth and craft-pride —
+this is a tool made *by and for* people who believe in the work — without ever
+undermining the seriousness of what at-risk users are doing.
+
+**Why it fits.** Personality builds affinity and signals care. A well-placed line from
+a great reporter ("Comfort the afflicted and afflict the comfortable"; the
+[reporting credo of getting it *right*, not just first]) reinforces the mission every
+time the app is opened, and makes empty/loading states feel intentional rather than
+dead.
+
+**Same ethical bar (non-negotiable).**
+- **Quotes are sourced and attributed.** Each entry carries author + (where known)
+  publication/year; misattributed-but-famous lines are either omitted or flagged as
+  *attribution disputed* — we do not launder folklore as fact (that would be hypocritical
+  for a verification tool). Public-domain or clearly fair-use snippets only.
+- **Fun facts are *facts*** — verifiable, with a source — not "did you know" filler. If
+  we can't cite it, it doesn't ship. Same provenance discipline as everything else.
+- **Dismissible, off-switch, never intrusive.** A single setting disables all flourishes;
+  easter eggs never interrupt a task, fire during sensitive actions (panic, encrypted
+  backup, protected-mode fetch), or appear in evidence/export artifacts. Respect
+  reduced-motion. Nothing phones home — purely local, bundled content.
+- **No dark patterns.** Personality, not gamification: no streaks, badges, or nudges that
+  manipulate. Tasteful and rare beats cute and constant.
+
+**Sketch.** A bundled, inspectable `configs/quotes.yml` (and `fun_facts.yml`) — `{text,
+author, source, year, public_domain|fair_use, attribution: confirmed|disputed}` — read
+the same way as the other curated catalogs; the UI picks one at random for an empty/idle
+slot. Easter eggs live behind harmless triggers (a Konami-style key sequence, a long-press
+on the logo, a date like Press Freedom Day) and are documented in the code so they're
+reviewable, never hidden surprises in a security tool.
+
