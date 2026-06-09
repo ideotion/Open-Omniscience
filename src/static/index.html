@@ -181,6 +181,10 @@
       border:2px solid color-mix(in srgb,var(--fg) 22%,transparent); border-top-color:var(--accent);
       animation:oo-spin .7s linear infinite; }
     .activity.bg .spin { border-top-color:var(--ok); }
+    /* Fixed-width slot for the live fetch URL so the topbar never reflows as URLs change. */
+    .act-host { display:inline-block; width:160px; overflow:hidden; text-overflow:ellipsis;
+      white-space:nowrap; vertical-align:bottom; }
+    .act-host:empty { display:none; }
     @keyframes oo-spin { to { transform:rotate(360deg); } }
     /* Activity & vitals popover (opened from the chip). */
     .vitals-pop { position:fixed; top:52px; right:14px; z-index:60; width:264px;
@@ -479,7 +483,7 @@
         </div>
         <div class="spacer"></div>
         <div class="status-cluster" id="statusCluster">
-          <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click for details" tabindex="0" aria-expanded="false" aria-haspopup="dialog" style="cursor:pointer" onclick="toggleVitals()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleVitals();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span></span>
+          <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click for details" tabindex="0" aria-expanded="false" aria-haspopup="dialog" style="cursor:pointer" onclick="toggleVitals()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleVitals();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span><span id="activity-host" class="act-host"></span></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
         </div>
@@ -781,7 +785,6 @@
         <code>COUNT(*)</code> or on-disk byte size — nothing is estimated.</div>
       <div id="db-stats" class="stat-grid"><div class="muted">Loading…</div></div>
       <div id="db-file" class="hint" style="margin-top:10px"></div>
-      <button class="secondary" onclick="loadDbStats()">Refresh</button>
     </section>
 
     <section class="panel">
@@ -1459,10 +1462,12 @@
     let _inflight = 0, _bg = null, _spinTimer = null, _curHost = null;
     function _paintActivity() {
       const el = $("activity"); if (!el) return;
+      const host = $("activity-host");
       if (_bg) { el.hidden = false; el.classList.add("bg");
-        $("activity-label").textContent = _curHost ? (_bg + " " + _curHost) : _bg; }
-      else if (_inflight > 0) { el.hidden = false; el.classList.remove("bg"); $("activity-label").textContent = "Working…"; }
-      else { el.hidden = true; }
+        $("activity-label").textContent = _bg; host.textContent = _curHost || ""; }
+      else if (_inflight > 0) { el.hidden = false; el.classList.remove("bg");
+        $("activity-label").textContent = "Working…"; host.textContent = ""; }
+      else { el.hidden = true; host.textContent = ""; }
     }
     function _bumpInflight(d) {
       _inflight = Math.max(0, _inflight + d);

@@ -768,8 +768,8 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     )
 
     orig_html = (
-        f"<a class='ext src-link' href='{_html.escape(safe_src)}' rel='noopener noreferrer'>"
-        f"Open the original source ↗</a>"
+        "Original source: <a class='ext src-link' href='" + _html.escape(safe_src)
+        + f"' rel='noopener noreferrer'>{_html.escape(safe_src)}</a>"
         if safe_src else "<span class='muted'>No original (http/https) URL recorded.</span>"
     )
 
@@ -805,7 +805,7 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
   a {{ color: var(--accent); }}
   footer {{ margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line);
     font: 13px/1.6 system-ui,sans-serif; color: var(--mut); }}
-  .src-link {{ display:inline-block; margin-top:6px; font-weight:600; }}
+  .src-link {{ font-weight:500; word-break:break-all; }}
   .ext-note {{ font-size:12px; }}
 </style></head><body>
 <div class="wrap">
