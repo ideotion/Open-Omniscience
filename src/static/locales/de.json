@@ -100,5 +100,15 @@
   "Wipe everything now": "Jetzt alles löschen",
   "Passphrase": "Passphrase",
   "Mode": "Modus",
-  "Restore (destructive)": "Wiederherstellen (destruktiv)"
+  "Restore (destructive)": "Wiederherstellen (destruktiv)",
+  "For journalists working under pressure. These tools are honest about their limits — read each note. Everything stays on this machine.": "Für Journalisten, die unter Druck arbeiten. Diese Werkzeuge sind ehrlich über ihre Grenzen — lesen Sie jeden Hinweis. Alles bleibt auf diesem Gerät.",
+  "An encrypted snapshot of the whole corpus (AES-256-GCM + scrypt). A lost or wrong passphrase means the file cannot be opened — there is no recovery. Keep the passphrase safe.": "Ein verschlüsselter Schnappschuss des gesamten Korpus (AES-256-GCM + scrypt). Eine verlorene oder falsche Passphrase bedeutet, dass die Datei nicht geöffnet werden kann — es gibt keine Wiederherstellung. Bewahren Sie die Passphrase sicher auf.",
+  "a strong, memorable passphrase": "eine starke, einprägsame Passphrase",
+  "Download encrypted backup (.ooenc)": "Verschlüsselte Sicherung herunterladen (.ooenc)",
+  "Restore from an encrypted backup": "Aus einer verschlüsselten Sicherung wiederherstellen",
+  "(replaces the current corpus)": "(ersetzt den aktuellen Korpus)",
+  "passphrase for this file": "Passphrase für diese Datei",
+  "Transparent mode names this tool in the User-Agent (polite, but identifiable). Protected mode sends a generic User-Agent and routes every fetch through a proxy you run.": "Der transparente Modus nennt dieses Werkzeug im User-Agent (höflich, aber identifizierbar). Der geschützte Modus sendet einen generischen User-Agent und leitet jeden Abruf über einen von Ihnen betriebenen Proxy.",
+  "Transparent (default)": "Transparent (Standard)",
+  "Protected (generic UA + proxy)": "Geschützt (generischer UA + Proxy)"
 }

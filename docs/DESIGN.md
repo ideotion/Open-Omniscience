@@ -542,7 +542,7 @@ Wikipedia · Chain of custody · Settings.* Evaluated one by one for our persona
 | **Insights** | The visual showpiece — trends, associations, map. The "wow." | Was a quiet middle tab; under-sold. | **Keep & promote.** This is a headline feature; given prominence and polish. |
 | **Wikipedia** | Strong fit: "the world as it really is," offline knowledge, edit-war detection. | Two different things (live tracking vs heavy offline dumps) split across tabs confusingly. | **Keep.** Tracking stays here; heavy dumps stay in Settings, clearly cross-linked (already done in prior work). |
 | **Chain of custody** | The trust differentiator. This is what makes Elliot trust the output and Amara look professional. | Named in legalese; felt like a vault few would open. | **Keep, rename → "Evidence & custody," promote.** Part of the "what is this?!" moment. |
-| **Settings** | Needed. | Was a junk drawer (prefs + keyword filter + dumps + backup). | **Keep, restructure.** Plus a new live **Customize** drawer for look-and-feel so cosmetic tweaks don't require a tab trip. |
+| **Settings** | Needed. | Was a junk drawer (prefs + keyword filter + dumps + backup). | **Keep, restructure** into sections (Appearance · General · Wikipedia · Data & backup · Safety). *(0.07: the standalone Customize drawer was folded in as the **Appearance** section — one home for look-and-feel, less floating chrome.)* |
 
 #### New surfaces added
 
@@ -560,7 +560,7 @@ Wikipedia · Chain of custody · Settings.* Evaluated one by one for our persona
 The flat 9-tab strip becomes a **grouped sidebar** (collapsible to icons), ordered
 by how the work actually flows:
 
-- **Investigate** — Home · Search · Insights · Wikipedia · *Markets (advanced)*
+- **Investigate** — Home · Search · Insights · Temporal map · Wikipedia · *Markets (advanced)*
 - **Collect** — Collect · Sources · Library
 - **Trust** — Evidence & custody
 - **System** — Settings · Help
@@ -578,7 +578,8 @@ thinks ("I want to *find* something" / "I want to *gather*" / "I want to *prove*
   *dashboard template*.
 - **Command palette (Ctrl/⌘-K).** Type to jump anywhere or run any action or open
   any doc. Power for Daniel; a "what can I even do here?" map for Amara.
-- **Live Customize drawer.** Theme presets (Ink, Slate, Midnight, Paper, Sepia,
+- **Appearance controls** (Settings → Appearance; a live drawer through 0.06, folded
+  into Settings in 0.07). Theme presets (Ink, Slate, Midnight, Paper, Sepia,
   Terminal, High-contrast), accent swatches, density, font size, sidebar collapse,
   and **module visibility** — all instant, all local, all persistent.
 - **A Home that orients**, an onboarding that teaches, and empty states that guide.

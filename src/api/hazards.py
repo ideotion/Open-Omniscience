@@ -33,17 +33,19 @@ _CAVEAT = ("Live relay of official open hazard feeds (USGS, GDACS) — space-tim
            "reported, not everything that is happening; silence is not safety.")
 
 
-@router.get("")
-def list_hazards(
-    source: str = Query("all", description="usgs | gdacs | all"),
-    min_magnitude: float | None = Query(None, description="USGS: drop quakes below this magnitude"),
-    limit: int = Query(200, ge=1, le=1000),
-) -> dict:
-    """Recent hazards from the open feeds, newest first. Best-effort per source."""
+def fetch_hazards(source: str = "all",
+                  min_magnitude: float | None = None) -> tuple[list[dict], list[str]]:
+    """Fetch + parse the open hazard feeds. Returns ``(records, failures)``.
+
+    The reusable core of the relay — the route below wraps it, and the temporal map
+    (``/api/timemap?hazards=true``) layers its records onto the space-time axis.
+    Best-effort: one bad feed lands in ``failures``, never raises.
+    """
     from src.hazards.parse import PARSERS
 
     want = list(_FEEDS) if source == "all" else [s for s in (source,) if s in _FEEDS]
-    items, failures = [], []
+    items: list[dict] = []
+    failures: list[str] = []
     for key in want:
         try:
             fetched = _fetcher.fetch(_FEEDS[key], require_html=False)
@@ -52,8 +54,19 @@ def list_hazards(
                 rows = [r for r in rows if (r.get("magnitude") or 0) >= min_magnitude]
             items.extend(rows)
         except Exception as exc:  # noqa: BLE001 - one bad feed must not 500 the relay
-            failures.append({"source": key, "error": f"{type(exc).__name__}: {exc}"})
+            failures.append(f"{key}: {type(exc).__name__}: {exc}")
     items.sort(key=lambda h: (h.get("time") or ""), reverse=True)
+    return items, failures
+
+
+@router.get("")
+def list_hazards(
+    source: str = Query("all", description="usgs | gdacs | all"),
+    min_magnitude: float | None = Query(None, description="USGS: drop quakes below this magnitude"),
+    limit: int = Query(200, ge=1, le=1000),
+) -> dict:
+    """Recent hazards from the open feeds, newest first. Best-effort per source."""
+    items, failures = fetch_hazards(source=source, min_magnitude=min_magnitude)
     return {
         "count": len(items[:limit]),
         "caveat": _CAVEAT,

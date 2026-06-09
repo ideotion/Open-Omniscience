@@ -115,6 +115,76 @@ high-trust, mirrors the markets/law catalog pattern); add **B** as a corpus-deri
 layer that suggests events and unlocks the comparative-over-time view, kept honest with
 provenance + confidence + human-in-the-loop confirmation.
 
+### De-duplication across calendars — events as "event families"
+
+Subscribe to several calendars/feeds and the *same* real-world event arrives more than
+once (World Press Freedom Day is in both our `civic` and `un_days` calendars; an election
+appears in a national feed *and* an aggregator; two iCal sources carry the same summit).
+The elegant fix is **not a new mechanism — it's the one we already have for keywords**:
+treat duplicate events as an **event family** (auto-group, list members, user disposes).
+
+- **Fingerprint.** A stable key per event: `normalize(title) + when + country` (for movable
+  events, `normalize(title) + month + country`). `normalize` lowercases, strips
+  punctuation and parenthetical source-suffixes ("(UN)"). Within an iCal feed the UID is
+  authoritative; the fingerprint catches *cross-feed* duplicates the UID can't.
+- **Collapse to one, keep provenance.** Matching events merge into a single display row
+  that lists every calendar/feed it came from — *"World Press Freedom Day · also in: UN
+  Days, civic."* One entry, all sources preserved (and all official links).
+- **Disagreements are a signal, not noise.** If two sources give *different* dates for the
+  "same" event, we do **not** silently pick one — we surface the discrepancy
+  (*"date varies: 14 Jul (UN) / 15 Jul (gov)"*), exactly as the law tracker treats a moved
+  date as information. Honesty over tidiness.
+- **The user disposes** (mirrors keyword merge/split, so the mental model is identical): a
+  wrongly-merged pair can be **split** ("these are different"), a missed pair **merged**;
+  a "show duplicates" toggle expands the collapsed set. Auto-merge by fingerprint is the
+  default; overrides are stored and reversible.
+- **Source precedence** for the merged row's canonical fields: prefer the most authoritative
+  subscribed source (a confirmed official feed over an aggregator), but never drop the
+  others' links.
+
+This keeps the agenda readable as subscriptions multiply, reuses a proven pattern, and
+holds the line: we **surface and group, never fabricate or silently discard**.
+
+### Tagging every event — the faceting backbone (how a vast catalog stays digestible)
+
+Once the catalog scales (every country's national day, every UN "world day", elections,
+cultural/religious/scientific/tech events worldwide), a single `category` collapses. The
+answer is to give **every event a multi-dimensional tag set** — tags are simultaneously
+the **filter/group axis** and the **cross-link to the corpus**. Two kinds:
+
+**Structural facets — a controlled vocabulary (reliable filtering & grouping):**
+- **Type** — election · referendum · summit · observance ("world day") · national-day ·
+  independence · commemoration/anniversary · religious · cultural · scientific ·
+  tech-launch · conference · economic (central-bank · IPO · earnings) · sporting · legal
+  (ruling · regulation-effective-date).
+- **Geography** — `country` (ISO-3166) · region/continent · `global`.
+- **Scope & significance** — global · regional · national · local, plus a **tier**
+  (major/minor) so minor events collapse by default (density control).
+- **Recurrence** — one-off · annual-fixed · annual-movable · periodic.
+- **Confidence** — confirmed vs. expected (already modelled).
+- **Calendar/source** — which bundled or subscribed iCal calendar it came from.
+
+**Topical & entity tags — the cross-link layer:**
+- **Topics** (controlled-ish vocab) — press-freedom · human-rights · climate · security ·
+  finance · AI/tech · health · religion · space · sport …
+- **Linked entities** — countries, orgs, people → connect an event to Insights
+  entities/keywords, market tickers, tracked laws. This is what powers the correlation
+  ("did coverage / a price / a law change cluster around this event").
+
+**How tags deliver "selectable · groupable · filterable":**
+- **Filter** by any facet (multi-select); **group** by any dimension (month · country ·
+  type · topic · calendar).
+- **Saved filters = "smart calendars"** — subscribing to a *tag query* ("all elections in
+  Africa", "all press-freedom days worldwide", "central-bank decisions") is far more
+  powerful than per-calendar on/off toggles, and is the natural unit of subscription.
+- **Density** — collapse by tag/tier; **personal tags** let a user organise their own way.
+
+**Honesty for tags (same bar as everywhere).** Curated/bundled tags are authored;
+auto-derived tags (from the source calendar, the title, or article date-extraction) are
+**candidates carrying provenance + confidence**, human-confirmable — never silently
+asserted. The structural facets use a **controlled vocabulary** (prevents tag sprawl and
+keeps filtering reliable); free-form user tags stay in a separate, personal namespace.
+
 ---
 
 ## Other ideas captured this cycle (stubs)
@@ -180,4 +250,152 @@ the same way as the other curated catalogs; the UI picks one at random for an em
 slot. Easter eggs live behind harmless triggers (a Konami-style key sequence, a long-press
 on the logo, a date like Press Freedom Day) and are documented in the code so they're
 reviewable, never hidden surprises in a security tool.
+
+---
+
+## Space–time: the agenda as the anchoring layer for *all* information
+
+**The reframe.** The agenda is not "a list of upcoming events." It is the **time spine**
+of a deeper idea: *every signal the app holds is anchored in **time** (when) and **space**
+(where), and the meaning often lives in their **synchronicity**.* Tensions over oil →
+a war (a place, a timeline of escalation). Tensions over chips → Taiwan between China and
+the US (a strait, a sequence of moves). Climate → Arctic ice melt → new passages → a
+"useless" place becomes a pivotal chokepoint and a rare-earth frontier. These are not
+separate stories; they are **the same story read along time and across space**. An
+election is a *place* (a polity) + a *time* (the vote, the mandate). A war is a *geography*
+(borders, terrain, routes) + a *time* (emergence → casualties → tech adoption → settlement).
+The tool should let a journalist **anchor everything in space and time, then see what
+converges.**
+
+**The data is already space-time-stamped.** Keyword mentions carry `observed_on` +
+`country` + `city`; articles carry dates + source geography + extracted places; market
+series are dated; law changes carry `observed_at` + `jurisdiction`; events carry
+date/window + country/region + tags. What's missing is a **unifying read model** and the
+**views + detectors** that treat them as one fabric.
+
+### Layer 1 — a unifying "signal" model (when × where × what)
+A thin, read-only projection: every domain exposes a common shape —
+`Signal(domain, title, when[date|window], where[country/region/(lat,lon)], entities[],
+tags[], magnitude?, link)`. Articles, keyword spikes, market moves, law diffs, events all
+become Signals. No new storage of substance — just a uniform lens over what exists.
+
+### Layer 2 — the two spines made navigable
+- **Timeline (the agenda, generalised):** overlay events **+** keyword-trend spikes **+**
+  market moves **+** law changes on one time axis. The agenda becomes the backbone other
+  domains plot onto — "what is converging this quarter."
+- **Map + time slider:** the existing map gains a temporal control, so you scrub space
+  *through* time (the Arctic-route scenario is literally a map cell changing meaning over
+  years).
+- **A space-time cell** = (region × window). It is the unit of convergence.
+
+### Layer 3 — synchronicity / convergence detection (honest, not oracular)
+Scan for **space-time cells where several *independent* domains light up at once** — e.g.
+an upcoming OPEC date **+** a spike in "sanctions/oil" keywords **+** a crude-price move
+**+** a sanctions-law change, all in one region/window. That convergence is itself worth a
+human's eye. **It is reported as real co-occurrence (counts, dates, the actual signals) —
+never as causation or prediction.** Correlation ≠ causation is stated; sample sizes shown.
+
+### Layer 4 — "if-this-then-watch" early-signal rules (the forecasting ask, done honestly)
+A **user-defined, fully transparent rule engine** — an *attention director*, **not an
+oracle**. A rule is a conjunction of conditions over **real stored signals**:
+> *IF* `keyword "rare earth" rising in region X` *AND* `an upcoming "shipping/Arctic" event`
+> *AND* `a related law/market move` → **flag for attention** (the user's hypothesis "a new
+> route may be opening") — **never** an assertion that it will happen.
+
+Guardrails (this is forecasting-adjacent, so they are non-negotiable):
+- It surfaces **conditions that currently hold**, computed from real signals, and shows
+  **exactly which matched** (explainable, auditable) — it never states a future fact. The
+  "then" is *the user's labelled hypothesis*, presented as a prompt to investigate.
+- Rules are **user-owned, editable, reversible**; ship a few **example** rules, **off by
+  default**. No black-box scoring (the quarantined credibility/relationship analyzer in
+  `docs/HISTORY.md` is the cautionary tale: we surface structure, the human decides).
+
+### New Home scenarios (briefing producers) to automate the approach
+The Home "cards" engine is the natural home for this. New producers:
+- **"Converging now"** — space-time cells where ≥N independent domains are active, with the
+  contributing signals listed and linked.
+- **"On the horizon"** — an agenda event intersects your *tracked* keywords/region
+  ("COP in 12 days; your ‘climate’ coverage is rising 40% vs prior month — prepare").
+- **"Through time / anniversary lens"** — a past event recurs (an election cycle, a war's
+  onset) and may resurface; bridges the corpus's past to the agenda's forward view.
+- **"Your watch-rules fired"** — if-then matches, each showing the real matched conditions.
+
+### Build sequence (each honest and incremental)
+1. The **Signal** read-model + put events + keyword spikes + law changes + market moves on
+   one timeline (read-only).
+2. **Map + time slider.**
+3. **"Converging now" + "On the horizon"** Home producers (pure co-occurrence; explainable).
+4. The **watch-rule engine** (user-defined, transparent, off by default) + "rules fired".
+
+Depends on the events agenda (P0.5 ✓) and on the event↔keyword/region/market/law
+cross-links (events P2). This is the through-line that turns the separate verticals into
+one space-time instrument.
+
+---
+
+## Climate & weather events — a live geo-temporal data channel (+ an alert system)
+
+**The idea.** Surface **present-tense weather and natural-hazard events** — heatwaves,
+floods, cyclones, earthquakes, droughts, food-security/famine crises — *not* the
+climate-change debate. A super-heat-and-humidity wave hitting millions in India is a
+**fact at a place and time** that should sit right next to the coverage of it. This is the
+purest space-time channel of all (every datum is lat/lon + time), so it plugs straight into
+the substrate above — and there is **excellent open data**.
+
+**Why it fits.** Famines and crises are often driven by physical events; putting the
+**event** beside the **reporting** is real sense-making, and it makes the convergence view
+concrete: a hazard cell lights up *and* article volume rises there in the same window.
+
+**Open, space-time-stamped channels (a new `hazard`/`weather` source *type*, peculiar in
+its own way like financial/legal/events data):**
+- **Disasters & alerts** — **GDACS** (UN/EC global disaster alerts, severity-scored:
+  cyclones, floods, quakes, volcanoes), **USGS** earthquakes (GeoJSON, real-time),
+  **NASA EONET** (natural events).
+- **Weather & forecast** — **Open-Meteo** (free, no key: forecast + historical),
+  NOAA/NWS alerts (US), Copernicus/ECMWF (EU).
+- **Humanitarian / food security** — **ReliefWeb** (UN OCHA), **FEWS NET** (famine early
+  warning), WHO outbreak news.
+All fetched through the ethical path, provenanced (`source`, `official_url`, `as-of`), and
+imported idempotently — same discipline as the market/law/events catalogs.
+
+**Honest forecasting — and why it's allowed here.** We refuse to *predict geopolitics*;
+but **meteorology is genuinely skillful at 24–48 h**, so a short-horizon forecast is real
+information. The line we hold: the app **relays an *official* forecast with its issuer,
+issue-time and the provider's own horizon/uncertainty** ("NWS extreme-heat warning for
+region X, issued <ts>, valid through <ts>") — it **never generates its own meteorology**.
+Relaying a sourced forecast is honest; inventing one is not.
+
+**Correlate to the corpus.** A hazard/weather event becomes a `Signal` (when × where) → the
+timeline overlay, the map, the **"Converging now"** card, and a direct *"articles in this
+region around this event window"* link. Physical event and its coverage, side by side.
+
+### The alert system (the broader ask: "if there's a nuclear event we should know fast")
+A **local, severity-tiered alerting layer** that fires on **any** real trigger:
+- a **high-severity hazard-feed entry** (GDACS red, M≥7 quake, severe-weather warning);
+- a **tag-family** firing in the news/events (e.g. a `nuclear`/`radiological` family, or
+  `outbreak`, `coup`, `mass-casualty`) — exactly the "know quickly" case;
+- a **space-time convergence** or a **watch-rule** match (from the section above);
+- a **news-classification** hit (certain event types in freshly-ingested articles).
+
+Tiers: **info · watch · urgent**. Urgent surfaces prominently (Home banner + the activity
+area), watch collects quietly, info is logged.
+
+**Guardrails (non-negotiable, and especially here):**
+- **Local only — no external push service, ever.** Alerts render in-app (loopback), never
+  via a third-party notifier; pushing to an external service would leak the user's
+  interests and break the threat model.
+- **Explainable** — every alert cites the **real triggering signal(s)** (the feed entry,
+  the matched tag/keyword, the converging cells) with timestamps and links.
+- **User-owned** — which feeds, which tag-families, and the thresholds are all configurable
+  and dismissible; severity comes from the **source's** scoring (GDACS/USGS), not invented.
+  The `nuclear`/`radiological` family ships as a built-in **urgent** rule, on by default
+  but fully editable.
+- Honest about coverage: an alert means *"a source we watch reported this,"* never *"this
+  is everything happening"* — silence is not safety.
+
+**Build sequence.** (1) `hazard`/`weather` source type + GDACS + USGS importers → space-time
+`Signal`s on the map/timeline; (2) corpus correlation (event ↔ articles by region/window);
+(3) the **alert layer** (hazard-feed + tag-family + watch-rule + convergence triggers,
+local, tiered, explainable); (4) relay **official short-horizon forecasts** (Open-Meteo /
+NWS) with full provenance. Builds directly on the space-time substrate above.
 

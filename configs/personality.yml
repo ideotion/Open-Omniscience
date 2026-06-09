@@ -1,0 +1,33 @@
+# Open Omniscience — personality library (quotes + fun facts).
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# A little soul for quiet corners of the UI (empty states, an easter egg). Held to
+# the SAME bar as everything else (see docs/FUTURE_DEVELOPMENTS.md → Personality):
+#   * Quotes are ATTRIBUTED. Where a famous line's attribution is contested we say so
+#     (`attribution: disputed`) rather than launder folklore as fact — this is a
+#     verification tool, so it must hold itself to the standard it asks of others.
+#   * "Fun facts" are FACTS — verifiable, each with a `source` — never "did you know"
+#     filler. If we can't cite it, it doesn't ship.
+#   * Short, fair-use snippets only; everything is bundled & local (no network).
+
+quotes:
+- {text: "Comfort the afflicted and afflict the comfortable.", author: "Finley Peter Dunne", source: "as 'Mr. Dooley', 1902", attribution: confirmed}
+- {text: "Comment is free, but facts are sacred.", author: "C. P. Scott", source: "Manchester Guardian centenary essay, 1921", attribution: confirmed}
+- {text: "Freedom of the press is guaranteed only to those who own one.", author: "A. J. Liebling", source: "The New Yorker, 1960", attribution: confirmed}
+- {text: "The press was protected so that it could bare the secrets of government and inform the people.", author: "Justice Hugo Black", source: "New York Times Co. v. United States, 1971", attribution: confirmed}
+- {text: "If we don't believe in freedom of expression for people we despise, we don't believe in it at all.", author: "Noam Chomsky", source: null, attribution: confirmed}
+- {text: "A free press can be good or bad, but, most certainly, without freedom a press will never be anything but bad.", author: "Albert Camus", source: null, attribution: confirmed}
+- {text: "Journalism is printing what someone else does not want printed; everything else is public relations.", author: "Often attributed to George Orwell", source: null, attribution: disputed}
+- {text: "News is what somebody somewhere wants to suppress; all the rest is advertising.", author: "Often attributed to Lord Northcliffe", source: null, attribution: disputed}
+- {text: "Three hostile newspapers are more to be feared than a thousand bayonets.", author: "Attributed to Napoleon Bonaparte", source: null, attribution: disputed}
+- {text: "Get it first, but first get it right.", author: "Traditional newsroom adage", source: null, attribution: traditional}
+- {text: "Write without fear. Edit without mercy.", author: "Anonymous writing adage", source: null, attribution: traditional}
+- {text: "Whatever a patron desires to get published is advertising; whatever he wants to keep out of the paper is news.", author: "L. E. Edwardson", source: null, attribution: disputed}
+
+fun_facts:
+- {text: "The Guardian is owned by the Scott Trust, established in 1936 to secure the paper's editorial independence in perpetuity.", source: "The Guardian / Scott Trust"}
+- {text: "The Pulitzer Prizes have been awarded since 1917, endowed by the publisher Joseph Pulitzer.", source: "pulitzer.org"}
+- {text: "Reporters Without Borders (RSF) publishes an annual World Press Freedom Index ranking around 180 countries and territories.", source: "rsf.org"}
+- {text: "SecureDrop, an open-source whistleblower submission system used by many newsrooms, is maintained by the Freedom of the Press Foundation.", source: "freedom.press"}
+- {text: "The ICIJ's 2016 Panama Papers investigation was based on a leak of 11.5 million documents (~2.6 TB) and involved hundreds of journalists across dozens of countries.", source: "ICIJ (icij.org)"}
+- {text: "The phrase 'Fourth Estate' for the press is commonly traced to 18th–19th-century Britain; its exact origin (often credited to Edmund Burke) is itself debated.", source: "historical usage; attribution debated"}

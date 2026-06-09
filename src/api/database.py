@@ -42,6 +42,7 @@ _COUNTED_TABLES: dict[str, str] = {
     "external_sources": "external_sources",
     "article_links": "article_links",
     "article_analyses": "article_analyses",
+    "mentioned_dates": "article_mentioned_dates",
 }
 
 

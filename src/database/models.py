@@ -49,6 +49,7 @@ from sqlalchemy import (
     Table,
     Text,
     TypeDecorator,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -932,6 +933,43 @@ class ArticleLink(Base):
         return f"<ArticleLink(url='{self.url[:50]}...', classification='{self.classification}', article_id={self.article_id})>"
 
 
+class ArticleMentionedDate(Base):
+    """A calendar date *mentioned in* an article's text — an extracted, human-confirmable tag.
+
+    Provenance-first and honest about status: each row is a ``candidate`` produced by the
+    high-precision extractor (with the matched ``snippet`` and a ``confidence``), which the
+    user can ``confirm`` or ``reject``. The date is *when the story refers to*, not when the
+    article was published — so a 2024 piece on the 1945 bombing carries a 1945 tag.
+    """
+
+    __tablename__ = "article_mentioned_dates"
+
+    id = Column(Integer, primary_key=True)
+    # ondelete=CASCADE is defense-in-depth: the ORM relationship already cascades on
+    # session.delete(), this also covers any future bulk/raw delete of an article.
+    article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
+    mentioned_on = Column(Date, nullable=False)        # normalized; month precision -> day 1
+    precision = Column(String(10), nullable=False, default="day")   # 'day' | 'month'
+    snippet = Column(String(300))                       # provenance: the matched text
+    confidence = Column(Float)                          # extractor confidence in [0, 1]
+    extractor = Column(String(40), default="dateextract")
+    status = Column(String(12), nullable=False, default="candidate")  # candidate|confirmed|rejected
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    article = relationship("Article", back_populates="mentioned_dates")
+
+    __table_args__ = (
+        Index("ix_amd_article_id", "article_id"),
+        Index("ix_amd_mentioned_on", "mentioned_on"),
+        Index("ix_amd_status", "status"),
+        UniqueConstraint("article_id", "mentioned_on", "precision", name="uq_amd_article_date"),
+    )
+
+    def __repr__(self):
+        return (f"<ArticleMentionedDate(article_id={self.article_id}, "
+                f"on={self.mentioned_on}, precision='{self.precision}', status='{self.status}')>")
+
+
 class ArticleSourceRelationship(Base):
     """
     Represents the relationship between an article and its external sources.
@@ -1035,6 +1073,8 @@ class SourceCredibilityRule(Base):
 
 # Add relationships to existing Article model
 Article.links = relationship("ArticleLink", back_populates="article", cascade="all, delete-orphan")
+Article.mentioned_dates = relationship(
+    "ArticleMentionedDate", back_populates="article", cascade="all, delete-orphan")
 
 
 class ArticleAnalysis(Base):
@@ -1167,6 +1207,52 @@ class KeywordFamilyOverride(Base):
 
     def __repr__(self) -> str:
         return f"<KeywordFamilyOverride({self.normalized_term} -> {self.family_key})>"
+
+
+class KeywordSuperGroup(Base):
+    """A user-named umbrella above keyword *families* (a group-of-groups).
+
+    Where a family collapses surface variants of one entity (``Trump`` / ``Trump's`` /
+    ``Donald Trump``), a super-group lets the user gather several distinct families under
+    one theme for sorting, discovery and mind-map clustering — e.g. "Russia–Ukraine war"
+    over {Russia, Ukraine, Putin, Zelensky, sanctions}. It is pure user curation: we
+    never auto-assign without the user, and membership is by the family's canonical
+    *normalized term* (the stable key), so nothing in the keyword store is rewritten.
+    """
+
+    __tablename__ = "keyword_supergroups"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False, unique=True)
+    color = Column(String(16))                          # optional UI accent (hex)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    members = relationship("KeywordSuperGroupMember", back_populates="supergroup",
+                           cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<KeywordSuperGroup({self.name})>"
+
+
+class KeywordSuperGroupMember(Base):
+    """One family (by its canonical normalized term) assigned to a super-group."""
+
+    __tablename__ = "keyword_supergroup_members"
+
+    id = Column(Integer, primary_key=True)
+    supergroup_id = Column(Integer, ForeignKey("keyword_supergroups.id", ondelete="CASCADE"),
+                           nullable=False)
+    normalized_term = Column(String(255), nullable=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    supergroup = relationship("KeywordSuperGroup", back_populates="members")
+
+    __table_args__ = (
+        Index("ix_kwsg_member_unique", "supergroup_id", "normalized_term", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<KeywordSuperGroupMember(sg={self.supergroup_id} {self.normalized_term})>"
 
 
 class KeywordMention(Base):

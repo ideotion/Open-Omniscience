@@ -2,6 +2,37 @@
 
 > `0.05` is the repository's **default branch** — the mainline everything builds on.
 
+## 0.07 — space & time, and a calmer GUI
+
+The `0.07` cycle threads the separate verticals (news · insights · law · markets) onto a
+shared **space-time** spine and tidies the interface. *(This entry covers the space-time /
+GUI slice; other `0.07` work — events agenda, hazards relay, keyword super-groups,
+personality, i18n — ships in sibling pull requests.)* Nothing weakens the local-first,
+no-server, no-telemetry posture; every new surface states its limits.
+
+- **Temporal map (new tab).** Every locatable, datable signal on one zoomable
+  equirectangular world map under a **time slider** from antiquity to the near future:
+  curated historical/scheduled **anchors** (`configs/world_timeline.yml`), your **geocoded
+  corpus** (publication date), **dates mentioned in article text** (extracted), and opt-in
+  live **hazards**. Density strip + play, per-kind legend, semantic-zoom labels, persisted
+  layer/window prefs, click-for-detail with a **"Find coverage in your corpus"** cross-link
+  and a **"Near in space & time"** panel (co-occurrence, *never* cause). **Honest by
+  construction:** a pin needs *both* a coordinate and a date (no coordinate → no pin);
+  country-level pins flagged approximate; scholarly date doubt carried in the note.
+  Offline **coastlines** via `scripts/build_world_outline.py` (public-domain Natural Earth;
+  lat/lon graticule fallback — never fabricated). `GET /api/timemap` (+ `/range`).
+- **Article date-tags.** A high-precision extractor (`src/timemap/dateextract.py` — explicit
+  dates only; no bare years or relative phrases) turns the dates a story is *about* into
+  **per-article tags** in a dedicated table (`article_mentioned_dates`), each a **candidate
+  with its provenance snippet**, **confirmable/rejectable** in the offline article reader and
+  **filterable** across the corpus (`GET /api/article-dates/by-date`). `/api/article-dates/...`.
+- **Customize → Settings.** The floating "Customize" drawer becomes a first-class
+  **Settings → Appearance** section; Settings is reorganized into **Appearance · General ·
+  Wikipedia · Data & backup · Safety**. Both standalone Customize buttons removed to free the
+  chrome; the sidebar footer gains a **Settings** shortcut.
+- **Discoverability.** A Home **"See it in space & time"** scenario card and an Insights-map →
+  Temporal-map link.
+
 ## 0.06 — Phase B: safety, sense-making, accessibility & governance
 
 A second slice of the `0.06` work, organised around four themes from

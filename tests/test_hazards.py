@@ -68,5 +68,5 @@ def test_api_relays_and_is_best_effort(monkeypatch):
         body = c.get("/api/hazards?min_magnitude=5").json()
         # USGS parsed (M>=5 keeps only the 7.1); GDACS failure reported, not a 500.
         assert body["count"] == 1 and body["hazards"][0]["magnitude"] == 7.1
-        assert any(f["source"] == "gdacs" for f in body["failures"])
+        assert any("gdacs" in f for f in body["failures"])
         assert "silence is not safety" in body["caveat"].lower()
