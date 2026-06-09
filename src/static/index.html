@@ -170,6 +170,18 @@
     .dot.ok{ background:var(--ok); box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent); }
     .dot.err{ background:var(--err); box-shadow:0 0 0 3px color-mix(in srgb,var(--err) 22%,transparent); }
     .dot.warn{ background:var(--warn); }
+    /* Background-activity indicator (top bar): an honest "the app is doing something"
+       signal. The ring stays legible even when prefers-reduced-motion freezes the spin. */
+    .activity { display:inline-flex; align-items:center; gap:6px; padding:1px 9px;
+      border:1px solid var(--border); border-radius:999px; background:var(--panel2);
+      font-size:12px; color:var(--muted); white-space:nowrap; }
+    .activity[hidden] { display:none; }
+    .activity.bg { color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--border)); }
+    .activity .spin { width:11px; height:11px; border-radius:50%; flex:0 0 auto;
+      border:2px solid color-mix(in srgb,var(--fg) 22%,transparent); border-top-color:var(--accent);
+      animation:oo-spin .7s linear infinite; }
+    .activity.bg .spin { border-top-color:var(--ok); }
+    @keyframes oo-spin { to { transform:rotate(360deg); } }
 
     .stat-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:11px; }
     .stat { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:13px; }
@@ -387,6 +399,7 @@
         </div>
         <div class="spacer"></div>
         <div class="status-cluster" id="statusCluster">
+          <span id="activity" class="activity" hidden role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
         </div>
@@ -1261,14 +1274,53 @@
       setTimeout(() => n.remove(), 5000);
     }
 
+    // -- Background-activity indicator -------------------------------------- //
+    // Honest "the app is doing something" signal in the top bar. Two sources:
+    //   * in-flight requests -- every backend call goes through api(), so a counter
+    //     there lights a "Working…" spinner for ANY action, app-wide. Shown only
+    //     after a short delay so fast status polls don't flicker the chrome.
+    //   * background work -- a running scrape (scheduler status .active) shows a
+    //     persistent "Collecting…" chip. (A live byte/CPU vitals readout layers
+    //     onto this same element in a later increment.)
+    let _inflight = 0, _bg = null, _spinTimer = null;
+    function _paintActivity() {
+      const el = $("activity"); if (!el) return;
+      if (_bg) { el.hidden = false; el.classList.add("bg"); $("activity-label").textContent = _bg; }
+      else if (_inflight > 0) { el.hidden = false; el.classList.remove("bg"); $("activity-label").textContent = "Working…"; }
+      else { el.hidden = true; }
+    }
+    function _bumpInflight(d) {
+      _inflight = Math.max(0, _inflight + d);
+      if (_inflight > 0 && !_bg) {
+        if (!_spinTimer) _spinTimer = setTimeout(() => { _spinTimer = null; _paintActivity(); }, 350);
+      } else {
+        if (_spinTimer) { clearTimeout(_spinTimer); _spinTimer = null; }
+        _paintActivity();
+      }
+    }
+    function setBackgroundActivity(label) {
+      const next = label || null;
+      if (next === _bg) return;
+      _bg = next; _paintActivity();
+      if (!_bg) _bumpInflight(0);   // re-evaluate any still-pending in-flight spinner
+    }
+    async function _pollActivity() {
+      try { const s = await api("/api/scheduler/status");
+        setBackgroundActivity(s && s.active ? "Collecting…" : null);
+      } catch { /* transient: keep the last known state */ }
+    }
+
     async function api(path, opts={}) {
-      const res = await fetch(path, {
-        headers: {"Content-Type": "application/json"}, ...opts,
-      });
-      const text = await res.text();
-      let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-      if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
-      return data;
+      _bumpInflight(1);
+      try {
+        const res = await fetch(path, {
+          headers: {"Content-Type": "application/json"}, ...opts,
+        });
+        const text = await res.text();
+        let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+        if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
+        return data;
+      } finally { _bumpInflight(-1); }
     }
 
     // ===================================================================== //
@@ -2542,6 +2594,7 @@
     }
 
     function renderSchedStatus(st) {
+      setBackgroundActivity(st.active ? "Collecting…" : null);
       const pill = st.running
         ? (st.active ? '<span class="pill ok">running — scrape in progress</span>'
                      : '<span class="pill ok">running</span>')
@@ -3512,6 +3565,10 @@
       if (getUi().theme === "system") applyThemeAttr("system");
     });
     loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus();
+    // Keep the background-activity chip live app-wide (e.g. a scheduled scrape that
+    // the user didn't trigger from the current tab). Cheap loopback poll; paused
+    // while the tab is hidden.
+    _pollActivity(); setInterval(() => { if (!document.hidden) _pollActivity(); }, 5000);
     ensureDocList();   // so the command palette can offer docs before Help is opened
     // Honour a deep-link like /#sources on first load; otherwise land on Home.
     const initial = (location.hash || "#home").slice(1);
