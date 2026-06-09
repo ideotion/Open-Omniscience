@@ -255,3 +255,127 @@ def family_override_clear(normalized: str, db: Session = Depends(get_db)) -> dic
     deleted = db.query(KeywordFamilyOverride).filter_by(normalized_term=n).delete()
     db.commit()
     return {"cleared": n, "deleted": int(deleted)}
+
+
+# -- Keyword super-groups (a user-named group of families) -------------------- #
+
+class SuperGroupCreate(BaseModel):
+    name: str
+    color: str | None = None
+
+
+class SuperGroupMembers(BaseModel):
+    normalized: list[str]
+
+
+def _supergroup_totals(db: Session, members: set[str]) -> dict[str, dict]:
+    """Aggregate mentions/articles for each member family (by canonical normalized key)."""
+    from sqlalchemy import func
+
+    from src.analytics.families import canonical_key
+    from src.database.models import Keyword, KeywordMention
+
+    totals = {m: {"mentions": 0, "articles": 0} for m in members}
+    if not members:
+        return totals
+    rows = (
+        db.query(Keyword.normalized_term, func.sum(KeywordMention.count),
+                 func.count(func.distinct(KeywordMention.article_id)))
+        .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        .group_by(Keyword.id).all()
+    )
+    for norm, m, a in rows:
+        key = norm if norm in members else (canonical_key(norm) if canonical_key(norm) in members else None)
+        if key is not None:
+            totals[key]["mentions"] += int(m or 0)
+            totals[key]["articles"] = max(totals[key]["articles"], int(a or 0))
+    return totals
+
+
+def _get_supergroup(db: Session, sg_id: int):
+    from src.database.models import KeywordSuperGroup
+
+    sg = db.query(KeywordSuperGroup).filter_by(id=sg_id).first()
+    if sg is None:
+        raise HTTPException(status_code=404, detail=f"Super-group {sg_id} not found.")
+    return sg
+
+
+@router.get("/supergroups")
+def list_supergroups(db: Session = Depends(get_db)) -> dict:
+    """List super-groups with their member families + aggregate mentions/articles."""
+    from src.database.models import KeywordSuperGroup
+
+    sgs = db.query(KeywordSuperGroup).order_by(KeywordSuperGroup.name).all()
+    all_members = {m.normalized_term for sg in sgs for m in sg.members}
+    totals = _supergroup_totals(db, all_members)
+    out = []
+    for sg in sgs:
+        members = [{"normalized": m.normalized_term,
+                    "mentions": totals.get(m.normalized_term, {}).get("mentions", 0),
+                    "articles": totals.get(m.normalized_term, {}).get("articles", 0)}
+                   for m in sg.members]
+        members.sort(key=lambda x: -x["mentions"])
+        out.append({
+            "id": sg.id, "name": sg.name, "color": sg.color,
+            "members": members, "count": len(members),
+            "mentions": sum(x["mentions"] for x in members),
+        })
+    out.sort(key=lambda s: -s["mentions"])
+    return {"count": len(out), "supergroups": out}
+
+
+@router.post("/supergroups")
+def create_supergroup(body: SuperGroupCreate, db: Session = Depends(get_db)) -> dict:
+    """Create a named super-group (the umbrella; members are added separately)."""
+    from src.database.models import KeywordSuperGroup
+
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required.")
+    if db.query(KeywordSuperGroup).filter_by(name=name).first():
+        raise HTTPException(status_code=409, detail=f"A super-group named {name!r} already exists.")
+    sg = KeywordSuperGroup(name=name, color=(body.color or None))
+    db.add(sg)
+    db.commit()
+    return {"id": sg.id, "name": sg.name, "color": sg.color}
+
+
+@router.delete("/supergroups/{sg_id}")
+def delete_supergroup(sg_id: int, db: Session = Depends(get_db)) -> dict:
+    """Delete a super-group (its memberships cascade; keyword data is untouched)."""
+    sg = _get_supergroup(db, sg_id)
+    db.delete(sg)
+    db.commit()
+    return {"deleted": sg_id}
+
+
+@router.post("/supergroups/{sg_id}/members")
+def add_supergroup_members(sg_id: int, body: SuperGroupMembers, db: Session = Depends(get_db)) -> dict:
+    """Assign one or more families (by normalized term) to a super-group (idempotent)."""
+    from src.database.models import KeywordSuperGroupMember
+
+    sg = _get_supergroup(db, sg_id)
+    existing = {m.normalized_term for m in sg.members}
+    added = []
+    for raw in body.normalized:
+        n = _n(raw)
+        if n and n not in existing:
+            db.add(KeywordSuperGroupMember(supergroup_id=sg.id, normalized_term=n))
+            existing.add(n)
+            added.append(n)
+    db.commit()
+    return {"supergroup": sg.id, "added": added, "members": sorted(existing)}
+
+
+@router.delete("/supergroups/{sg_id}/members")
+def remove_supergroup_member(sg_id: int, normalized: str, db: Session = Depends(get_db)) -> dict:
+    """Remove one family from a super-group."""
+    from src.database.models import KeywordSuperGroupMember
+
+    _get_supergroup(db, sg_id)
+    n = _n(normalized)
+    deleted = (db.query(KeywordSuperGroupMember)
+               .filter_by(supergroup_id=sg_id, normalized_term=n).delete())
+    db.commit()
+    return {"supergroup": sg_id, "removed": n, "deleted": int(deleted)}

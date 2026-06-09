@@ -139,6 +139,9 @@ from src.api.timemap import router as timemap_router
 
 # Import article date-tag router (extracted, human-confirmable dates mentioned in text)
 from src.api.article_dates import router as article_dates_router
+
+# Import personality router (bundled, local quotes + fun facts — UI flourishes)
+from src.api.personality import router as personality_router
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -354,6 +357,7 @@ app.include_router(ingestion_router)
 
 # Include system router (live scraping URL + process vitals; loopback-only)
 app.include_router(system_router)
+app.include_router(personality_router)
 
 # Include temporal-map router (offline by default; hazards layer opt-in)
 app.include_router(timemap_router)

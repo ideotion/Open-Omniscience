@@ -28,12 +28,19 @@
   let observer = null, pending = false;
 
   // Translate only when the trimmed text exactly matches a known key
-  // (preserving surrounding whitespace). Unknown strings pass through (English).
+  // (preserving surrounding whitespace). Internal whitespace is normalised for the
+  // lookup, so a multi-line HTML paragraph matches a clean single-line JSON key (and
+  // markup indentation/wrapping need not be mirrored in the locale files).
+  // Unknown strings pass through (English).
   function tr(s) {
-    const k = (s || "").trim();
-    if (!k || map[k] == null) return s;
-    const i = s.indexOf(k);
-    return s.slice(0, i) + map[k] + s.slice(i + k.length);
+    if (!s) return s;
+    const lead = s.match(/^\s*/)[0];
+    const trail = s.match(/\s*$/)[0];
+    const core = s.slice(lead.length, s.length - trail.length);
+    if (!core) return s;
+    const k = core.replace(/\s+/g, " ");   // normalise internal whitespace for matching
+    if (map[k] == null) return s;
+    return lead + map[k] + trail;
   }
 
   function doText(n) {

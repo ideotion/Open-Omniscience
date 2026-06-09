@@ -257,6 +257,9 @@
     .fam-chip:hover { border-color:var(--err); color:var(--err); }
     .fam-ov { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px;
       padding:5px 8px; border-bottom:1px solid var(--border); }
+    .sg-card { border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:10px;
+      background:var(--panel2); }
+    .sg-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
     /* Corpus landscape (super-families by kind) */
     .ls-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-top:10px; }
     .ls-col { border:1px solid var(--border); border-radius:8px; padding:9px 11px; background:var(--panel2); }
@@ -1067,6 +1070,7 @@
         <button data-ins="trends" onclick="showInsightCat('trends')">Trends</button>
         <button data-ins="sources" onclick="showInsightCat('sources')">Sources</button>
         <button data-ins="families" onclick="showInsightCat('families')">Families</button>
+        <button data-ins="supergroups" onclick="showInsightCat('supergroups')">Groups</button>
         <button data-ins="map" onclick="showInsightCat('map')">Map</button>
       </nav>
     </section>
@@ -1141,6 +1145,22 @@
       </div>
       <div id="fam-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
       <div id="fam-overrides" style="margin-top:14px"></div>
+    </section>
+
+    <section class="panel ins-view" id="ins-supergroups" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families</span></h2>
+      <p class="hint" style="margin-top:0">Gather several families under one theme (e.g. <b>Russia–Ukraine war</b>
+        over Russia, Ukraine, Putin, sanctions…) for sorting and discovery. Pure curation — nothing in the
+        keyword store changes.</p>
+      <div class="row" style="align-items:center">
+        <div style="flex:2"><label for="sg-name">New super-group</label>
+          <input id="sg-name" placeholder="e.g. Russia–Ukraine war" onkeydown="if(event.key==='Enter')createSuperGroup()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="createSuperGroup()">Create</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadSuperGroups()">Refresh</button></div>
+        <span id="sg-status" class="hint"></span>
+      </div>
+      <datalist id="sg-family-options"></datalist>
+      <div id="sg-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
     </section>
 
     <section class="panel ins-view" id="ins-map" style="display:none">
@@ -3469,6 +3489,7 @@
         if (cat === "map") loadMap();
         if (cat === "sources") loadCitedSources();
         if (cat === "families") loadFamilies();
+        if (cat === "supergroups") loadSuperGroups();
       }
     }
 
@@ -3573,6 +3594,74 @@
         for (const n of members) await api("/api/insights/family/override?normalized=" + encodeURIComponent(n), {method: "DELETE"});
         toast("Override cleared."); loadFamilies();
       } catch (e) { toast("Reset failed: " + e.message, "err"); }
+    }
+
+    // -- Super-groups: groups of families ----------------------------------- //
+    async function loadSuperGroups() {
+      const box = $("sg-list");
+      box.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const [sgs, top] = await Promise.all([
+          api("/api/insights/supergroups"),
+          api("/api/insights/top?group=true&limit=200"),
+        ]);
+        $("sg-family-options").innerHTML = (top.terms || []).map(f =>
+          `<option value="${esc(f.normalized)}">${esc(f.term)} (${f.mentions})</option>`).join("");
+        box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
+          : '<div class="muted">No super-groups yet. Create one above, then add families to it.</div>';
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+    }
+
+    function sgCard(g) {
+      const chips = g.members.length ? g.members.map(m =>
+        `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
+           title="remove from this group">${esc(m.normalized)} <span class="muted">${m.mentions}</span> ✕</button>`).join("")
+        : '<span class="muted">No families yet — add one below.</span>';
+      return `<div class="sg-card">
+        <div class="sg-head"><b>${esc(g.name)}</b>
+          <span class="muted">· ${g.count} famil${g.count === 1 ? "y" : "ies"} · ${g.mentions} mentions</span>
+          <button class="ghost tiny" style="margin-left:auto" data-sg="${g.id}" data-name="${esc(g.name)}"
+            onclick="deleteSuperGroup(this)">delete</button></div>
+        <div class="fam-chips" style="margin-top:6px">${chips}</div>
+        <div class="row" style="margin-top:8px">
+          <div style="flex:2"><input list="sg-family-options" placeholder="add a family (type or pick)…"
+            data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddMember(this)"></div>
+          <div style="flex:0 0 auto;align-self:end"><button class="secondary"
+            onclick="sgAddMember(this.closest('.row').querySelector('input'))">Add</button></div>
+        </div></div>`;
+    }
+
+    async function createSuperGroup() {
+      const name = $("sg-name").value.trim();
+      if (!name) { toast("Name the super-group.", "err"); return; }
+      try {
+        await api("/api/insights/supergroups", {method: "POST", body: JSON.stringify({name})});
+        $("sg-name").value = ""; toast("Super-group created."); loadSuperGroups();
+      } catch (e) { toast("Create failed: " + e.message, "err"); }
+    }
+
+    async function sgAddMember(input) {
+      const sg = input.dataset.sg, norm = input.value.trim();
+      if (!norm) return;
+      try {
+        await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({normalized: [norm]})});
+        toast("Added."); loadSuperGroups();
+      } catch (e) { toast("Add failed: " + e.message, "err"); }
+    }
+
+    async function sgRemoveMember(btn) {
+      try {
+        await api(`/api/insights/supergroups/${btn.dataset.sg}/members?normalized=` + encodeURIComponent(btn.dataset.norm), {method: "DELETE"});
+        loadSuperGroups();
+      } catch (e) { toast("Remove failed: " + e.message, "err"); }
+    }
+
+    async function deleteSuperGroup(btn) {
+      if (!confirm(`Delete super-group "${btn.dataset.name}"? (keyword data is untouched)`)) return;
+      try {
+        await api(`/api/insights/supergroups/${btn.dataset.sg}`, {method: "DELETE"});
+        toast("Deleted."); loadSuperGroups();
+      } catch (e) { toast("Delete failed: " + e.message, "err"); }
     }
 
     // -- Most-cited sources (corpus-wide co-citation) ----------------------- //
@@ -4600,6 +4689,29 @@
     _pollActivity(); setInterval(() => { if (!document.hidden) _pollActivity(); }, 5000);
     // Dismiss the vitals popover on Escape or an outside click.
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && _vitalsOpen) toggleVitals(); });
+
+    // -- Easter egg (opt-in, documented, harmless) -------------------------- //
+    // Type the Konami code (↑↑↓↓←→←→ B A) to surface a random attributed journalism
+    // quote / sourced fun fact. Only fires on the deliberate sequence, never during a
+    // task, and never in evidence/exports — personality without intrusion.
+    (function () {
+      const seq = ["ArrowUp","ArrowUp","ArrowDown","ArrowDown","ArrowLeft","ArrowRight","ArrowLeft","ArrowRight","b","a"];
+      let pos = 0, alt = false;
+      document.addEventListener("keydown", (e) => {
+        const t = e.target && e.target.tagName;
+        if (t === "INPUT" || t === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
+        pos = (e.key.toLowerCase() === seq[pos].toLowerCase()) ? pos + 1 : 0;
+        if (pos !== seq.length) return;
+        pos = 0; alt = !alt;
+        api("/api/personality/random?kind=" + (alt ? "fact" : "quote")).then(r => {
+          const it = r.item; if (!it) return;
+          const msg = it.kind === "fact"
+            ? `${it.text}${it.source ? `  — ${it.source}` : ""}`
+            : `"${it.text}"  — ${it.author || "Unknown"}${it.attribution === "disputed" ? " (attribution disputed)" : ""}`;
+          toast(msg, "ok");
+        }).catch(() => {});
+      });
+    })();
     document.addEventListener("click", (e) => {
       if (!_vitalsOpen) return;
       const pop = $("vitals-pop"), chip = $("activity");
