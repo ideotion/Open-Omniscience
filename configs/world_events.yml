@@ -1,0 +1,39 @@
+# Open Omniscience — curated WORLD EVENTS agenda (P0, honest & offline).
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# A starter catalog of major *recurring* scheduled events, for the forward-looking
+# agenda (see docs/FUTURE_DEVELOPMENTS.md → Events agenda / world calendar). Held to
+# the project bar:
+#   * NOTHING fabricated. Fixed-date civic observances carry `confirmed: true` + their
+#     month/day (a real recurring date). Summits/meetings whose *exact* date moves each
+#     year carry `confirmed: false` + their typical month/cadence and link to the
+#     official source for the precise date — we describe the known cadence, we do NOT
+#     invent a specific year's date.
+#   * Every entry has an `official_url`. Offline & local; importing exact dates from
+#     official iCal/CSV feeds is the P1 step (a new `events` source type).
+# Fields: title, category (civic|political|economic|technology), region, cadence,
+#   month (1-12 or null), day (or null), confirmed, official_url, note.
+
+events:
+# --- Fixed-date civic observances (confirmed recurring dates) -------------- #
+- {title: "World Press Freedom Day", category: civic, region: global, cadence: annual, month: 5, day: 3, confirmed: true, official_url: "https://www.un.org/en/observances/press-freedom-day", note: "UNESCO/UN observance"}
+- {title: "International Day to End Impunity for Crimes against Journalists", category: civic, region: global, cadence: annual, month: 11, day: 2, confirmed: true, official_url: "https://www.un.org/en/observances/end-impunity-crimes-against-journalists"}
+- {title: "International Day for Universal Access to Information ('Right to Know')", category: civic, region: global, cadence: annual, month: 9, day: 28, confirmed: true, official_url: "https://www.un.org/en/observances/information-access-day"}
+- {title: "World Day Against Cyber Censorship", category: civic, region: global, cadence: annual, month: 3, day: 12, confirmed: true, official_url: "https://rsf.org/en"}
+- {title: "Human Rights Day", category: civic, region: global, cadence: annual, month: 12, day: 10, confirmed: true, official_url: "https://www.un.org/en/observances/human-rights-day"}
+# --- Political summits (recurring; exact dates from the official source) ---- #
+- {title: "World Economic Forum Annual Meeting (Davos)", category: political, region: global, cadence: annual, month: 1, day: null, confirmed: false, official_url: "https://www.weforum.org/events/", note: "typically mid-January"}
+- {title: "Munich Security Conference", category: political, region: europe, cadence: annual, month: 2, day: null, confirmed: false, official_url: "https://securityconference.org/en/", note: "typically February"}
+- {title: "UN General Assembly — general debate", category: political, region: global, cadence: annual, month: 9, day: null, confirmed: false, official_url: "https://www.un.org/en/ga/", note: "typically late September"}
+- {title: "UN Climate Change Conference (COP)", category: political, region: global, cadence: annual, month: 11, day: null, confirmed: false, official_url: "https://unfccc.int/", note: "typically Nov–Dec; host rotates"}
+- {title: "G20 Leaders' Summit", category: political, region: global, cadence: annual, month: null, day: null, confirmed: false, official_url: "https://www.g20.org/", note: "host & dates rotate yearly"}
+- {title: "G7 Summit", category: political, region: global, cadence: annual, month: null, day: null, confirmed: false, official_url: "https://www.g7.utoronto.ca/", note: "host & dates rotate yearly"}
+- {title: "Nobel Prize announcements", category: political, region: global, cadence: annual, month: 10, day: null, confirmed: false, official_url: "https://www.nobelprize.org/", note: "early October"}
+# --- Economic (central banks meet on published calendars) ------------------ #
+- {title: "US Federal Reserve FOMC meeting", category: economic, region: us, cadence: "~8 per year", month: null, day: null, confirmed: false, official_url: "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"}
+- {title: "ECB Governing Council monetary policy meeting", category: economic, region: europe, cadence: "~8 per year", month: null, day: null, confirmed: false, official_url: "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"}
+- {title: "OPEC / OPEC+ Ministerial Meeting", category: economic, region: global, cadence: periodic, month: null, day: null, confirmed: false, official_url: "https://www.opec.org/opec_web/en/"}
+# --- Technology conferences (recurring) ------------------------------------ #
+- {title: "CES (Consumer Electronics Show)", category: technology, region: us, cadence: annual, month: 1, day: null, confirmed: false, official_url: "https://www.ces.tech/", note: "early January, Las Vegas"}
+- {title: "Mobile World Congress (MWC)", category: technology, region: europe, cadence: annual, month: 3, day: null, confirmed: false, official_url: "https://www.mwcbarcelona.com/", note: "late Feb–March, Barcelona"}
+- {title: "Apple Worldwide Developers Conference (WWDC)", category: technology, region: us, cadence: annual, month: 6, day: null, confirmed: false, official_url: "https://developer.apple.com/wwdc/", note: "typically June"}
