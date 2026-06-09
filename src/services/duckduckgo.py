@@ -276,35 +276,50 @@ class DuckDuckGoSearch:
         return text
     
     @classmethod
-    def discover_rss_feeds(cls, url: str, timeout: int = 10) -> list[str]:
+    def discover_rss_feeds(cls, url: str, timeout: int = 10, fetcher=None) -> list[str]:
         """
         Discover RSS feeds for a given URL.
-        
+
         This method:
         1. Fetches the HTML content of the URL
         2. Looks for <link> tags with RSS/Atom types
         3. Looks for common RSS feed URL patterns
         4. Validates found feeds
-        
+
+        All HTTP fetches go through the shared :class:`~src.ingest.EthicalFetcher`
+        (finding ETH-01), so robots.txt is honoured fail-closed, internal/SSRF
+        targets are refused, and per-host rate limiting applies -- discovery is
+        held to the same ethical-scraping contract as ingestion. A refusal
+        (robots disallow, blocked target, fetch failure) yields no feeds rather
+        than a raw fallback.
+
         Args:
             url: The URL to search for RSS feeds
-            timeout: Request timeout in seconds
-        
+            timeout: Request timeout in seconds (informational; the fetcher owns
+                the real timeout)
+            fetcher: Optional EthicalFetcher (dependency-injected for tests);
+                one is built from the current safety settings if omitted.
+
         Returns:
             List of discovered RSS feed URLs
         """
-        cls._enforce_rate_limit()
-        
+        from src.ingest import FetchError
+
+        if fetcher is None:
+            from src.safety.fetcher import make_fetcher
+
+            fetcher = make_fetcher()
+
         feeds = []
-        
+
         try:
-            # Fetch the page
-            headers = {'User-Agent': cls.USER_AGENT}
-            response = requests.get(url, headers=headers, timeout=timeout)
-            response.raise_for_status()
-            
-            html = response.text
-            
+            # Fetch the page through the ethical fetch path (robots/SSRF/rate-limit).
+            try:
+                html = fetcher.fetch(url, require_html=True).content
+            except FetchError as e:
+                logger.info(f"Ethical fetch refused or failed for {url}: {e}")
+                return []
+
             # Method 1: Look for <link> tags with RSS/Atom types
             link_pattern = re.compile(
                 r'<link[^>]+(?:type=["\'](?:application\/(?:rss\+xml|atom\+xml)|text\/xml)["\']|' +
@@ -341,30 +356,28 @@ class DuckDuckGoSearch:
             for path in common_paths:
                 feed_url = cls._resolve_url(path, url)
                 if feed_url and feed_url not in feeds:
-                    # Quick check if URL exists
+                    # Probe the candidate path through the same ethical fetcher
+                    # (require_html=False since feeds are XML). A refusal/miss is
+                    # swallowed -- this is opportunistic discovery.
                     try:
-                        head_response = requests.head(feed_url, headers=headers, timeout=5, allow_redirects=True)
-                        if head_response.status_code == 200:
-                            content_type = head_response.headers.get('Content-Type', '')
-                            if 'xml' in content_type.lower() or 'rss' in content_type.lower() or 'atom' in content_type.lower():
-                                feeds.append(feed_url)
-                    except Exception:
+                        probe = fetcher.fetch(feed_url, require_html=False)
+                        ct = probe.content_type.lower()
+                        if 'xml' in ct or 'rss' in ct or 'atom' in ct or cls._is_xml_content(probe.content[:1024]):
+                            feeds.append(feed_url)
+                    except FetchError:
                         pass
-            
+
             logger.info(f"Discovered {len(feeds)} potential RSS feeds for {url}")
-            
+
             # Validate feeds
             valid_feeds = []
             for feed_url in feeds:
-                if cls._validate_rss_feed(feed_url, timeout=5):
+                if cls._validate_rss_feed(feed_url, fetcher=fetcher):
                     valid_feeds.append(feed_url)
                     logger.info(f"Valid RSS feed found: {feed_url}")
-            
+
             return valid_feeds
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to fetch {url} for RSS discovery: {e}")
-            return []
+
         except Exception as e:
             logger.error(f"Error discovering RSS feeds for {url}: {e}")
             return []
@@ -387,34 +400,40 @@ class DuckDuckGoSearch:
             return None
     
     @classmethod
-    def _validate_rss_feed(cls, url: str, timeout: int = 5) -> bool:
+    def _validate_rss_feed(cls, url: str, timeout: int = 5, fetcher=None) -> bool:
         """
         Validate if a URL points to a valid RSS/Atom feed.
-        
+
+        Fetches through the EthicalFetcher (ETH-01) with ``require_html=False``
+        since feeds are XML. A refusal or failure means "not a usable feed".
+
         Args:
             url: The URL to validate
-            timeout: Request timeout in seconds
-        
+            timeout: Request timeout in seconds (informational; fetcher owns it)
+            fetcher: Optional EthicalFetcher (built from safety settings if None)
+
         Returns:
             True if the URL is a valid RSS/Atom feed, False otherwise
         """
+        from src.ingest import FetchError
+
+        if fetcher is None:
+            from src.safety.fetcher import make_fetcher
+
+            fetcher = make_fetcher()
+
         try:
-            headers = {'User-Agent': cls.USER_AGENT}
-            response = requests.get(url, headers=headers, timeout=timeout, stream=True)
-            response.raise_for_status()
-            
-            # Check content type
-            content_type = response.headers.get('Content-Type', '')
+            result = fetcher.fetch(url, require_html=False)
+            content_type = result.content_type
             if 'xml' not in content_type.lower() and 'rss' not in content_type.lower() and 'atom' not in content_type.lower():
-                # Read a bit of content to check
-                content = response.content[:1024].decode('utf-8', errors='ignore')
-                if not cls._is_xml_content(content):
+                if not cls._is_xml_content(result.content[:1024]):
                     return False
-            
             return True
-            
+        except FetchError as e:
+            logger.debug(f"RSS feed validation refused/failed for {url}: {e}")
+            return False
         except Exception as e:
-            logger.debug(f"RSS feed validation failed for {url}: {e}")
+            logger.debug(f"RSS feed validation error for {url}: {e}")
             return False
     
     @classmethod
@@ -498,34 +517,43 @@ class DuckDuckGoSearch:
             return []
     
     @classmethod
-    def find_missing_rss_feeds(cls, sources: list[dict], timeout: int = 10) -> list[dict]:
+    def find_missing_rss_feeds(cls, sources: list[dict], timeout: int = 10, fetcher=None) -> list[dict]:
         """
         Find missing RSS feeds for a list of sources.
-        
+
+        A single EthicalFetcher is shared across the batch so per-host rate
+        limiting and the robots cache carry over between sources (ETH-01).
+
         Args:
             sources: List of source dictionaries with 'domain' and optionally 'url' keys
             timeout: Request timeout in seconds
-        
+            fetcher: Optional shared EthicalFetcher (built once if omitted)
+
         Returns:
             List of sources with discovered RSS feeds added
         """
+        if fetcher is None:
+            from src.safety.fetcher import make_fetcher
+
+            fetcher = make_fetcher()
+
         results = []
-        
+
         for source in sources:
             domain = source.get('domain', '')
             url = source.get('url', f"https://{domain}")
-            
+
             if not domain:
                 results.append(source)
                 continue
-            
+
             # Check if source already has RSS URL
             if source.get('rss_url'):
                 results.append(source)
                 continue
-            
-            # Try to discover RSS feeds
-            rss_urls = cls.discover_rss_feeds(url, timeout=timeout)
+
+            # Try to discover RSS feeds (shared fetcher = shared rate-limit state)
+            rss_urls = cls.discover_rss_feeds(url, timeout=timeout, fetcher=fetcher)
             
             # Update source
             updated_source = source.copy()

@@ -165,25 +165,37 @@ class TestDuckDuckGoSearch:
         url = DuckDuckGoSearch._resolve_url("path", "https://base.com/dir/")
         assert url == "https://base.com/dir/path"
     
-    @patch('services.duckduckgo.requests.get')
-    def test_validate_rss_feed_success(self, mock_get):
-        """Test RSS feed validation success."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.headers = {'Content-Type': 'application/rss+xml'}
-        mock_get.return_value = mock_response
-        
-        is_valid = DuckDuckGoSearch._validate_rss_feed("https://example.com/rss.xml")
+    def test_validate_rss_feed_success(self):
+        """Test RSS feed validation success (now via the EthicalFetcher; ETH-01)."""
+        from datetime import datetime, timezone
+
+        from src.ingest import FetchResult
+
+        class _Fetcher:
+            def fetch(self, url, *, require_html=True):
+                return FetchResult(
+                    requested_url=url, final_url=url, status_code=200,
+                    content='<?xml version="1.0"?><rss></rss>',
+                    content_type='application/rss+xml',
+                    fetched_at=datetime.now(timezone.utc),
+                )
+
+        is_valid = DuckDuckGoSearch._validate_rss_feed(
+            "https://example.com/rss.xml", fetcher=_Fetcher()
+        )
         assert is_valid is True
-    
-    @patch('services.duckduckgo.requests.get')
-    def test_validate_rss_feed_failure(self, mock_get):
-        """Test RSS feed validation failure."""
-        mock_response = MagicMock()
-        mock_response.status_code = 404
-        mock_get.return_value = mock_response
-        
-        is_valid = DuckDuckGoSearch._validate_rss_feed("https://example.com/not-found.xml")
+
+    def test_validate_rss_feed_failure(self):
+        """Test RSS feed validation failure: fetcher refusal => not a feed."""
+        from src.ingest import FetchFailed
+
+        class _Fetcher:
+            def fetch(self, url, *, require_html=True):
+                raise FetchFailed("HTTP 404")
+
+        is_valid = DuckDuckGoSearch._validate_rss_feed(
+            "https://example.com/not-found.xml", fetcher=_Fetcher()
+        )
         assert is_valid is False
     
     def test_is_xml_content(self):
