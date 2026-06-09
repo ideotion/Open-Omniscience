@@ -3221,29 +3221,96 @@
       </svg>`;
     }
 
-    function mindmapSvg(center, pairs) {
-      if (!pairs.length) return '<div class="muted">No strong associations yet.</div>';
-      const w = 680, h = 440, cx = w/2, cy = h/2, top = pairs.slice(0, 14);
-      const maxP = Math.max(...top.map(p => p.pmi), 0.1);
-      let edges = "", nodes = "";
+    // Interactive, force-directed mind-map: drag to pan, scroll to zoom, drag a node
+    // to pin it, click a node to recenter (re-query). Vanilla — a tiny spring layout
+    // over an SVG viewBox, no dependencies. Respects prefers-reduced-motion (settles
+    // synchronously, no animation). _mmRAF holds the running animation handle.
+    let _mmRAF = null;
+    function renderMindmap(center, pairs) {
+      if (_mmRAF) { cancelAnimationFrame(_mmRAF); _mmRAF = null; }
+      const host = $("ins-mindmap");
+      if (!pairs || !pairs.length) { host.innerHTML = '<div class="muted">No strong associations yet.</div>'; return; }
+      const W = 680, H = 460, top = pairs.slice(0, 20);
+      const maxCo = Math.max(...top.map(p => p.cooccur || 1), 1);
+      const maxP  = Math.max(...top.map(p => p.pmi || 0), 0.1);
+      const nodes = [{id:0, label:center, center:true, r:13, x:W/2, y:H/2, vx:0, vy:0, pinned:true}];
+      const edges = [];
       top.forEach((p, i) => {
-        const ang = (i / top.length) * 2 * Math.PI - Math.PI/2;
-        const r = 110 + 110 * (1 - Math.max(0, p.pmi) / maxP);   // stronger PMI -> closer
-        const x = cx + r * Math.cos(ang), y = cy + r * Math.sin(ang);
-        edges += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="${Math.max(1, Math.min(4, p.cooccur/2)).toFixed(1)}"></line>`;
-        const col = p.kind === "term" ? "var(--muted)" : "var(--accent)";
-        const fam = (p.variants > 1);
-        const badge = fam ? ` <tspan fill="var(--muted)">·${p.variants}</tspan>` : "";
-        const title = fam ? `<title>Family of ${p.variants}: ${esc((p.members||[]).join(", "))}</title>` : "";
-        nodes += `<g style="cursor:pointer" onclick='pickTerm(${JSON.stringify(p.term)})'>${title}
-          <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${fam ? 7.5 : 6}" fill="${col}"></circle>
-          <text x="${x.toFixed(1)}" y="${(y-9).toFixed(1)}" fill="var(--fg)" font-size="11" text-anchor="middle">${esc(p.term)}${badge} <tspan fill="var(--muted)">${p.pmi}</tspan></text></g>`;
+        const ang = (i / top.length) * 2 * Math.PI;
+        nodes.push({id:i+1, label:p.term, kind:p.kind, variants:p.variants||1, members:p.members||[],
+          pmi:p.pmi, cooccur:p.cooccur, r:6 + 5*Math.sqrt((p.cooccur||1)/maxCo),
+          x:W/2 + 150*Math.cos(ang) + (Math.random()-0.5)*40,
+          y:H/2 + 150*Math.sin(ang) + (Math.random()-0.5)*40, vx:0, vy:0, pinned:false});
+        edges.push({a:0, b:i+1, w:p.cooccur||1, len:70 + 130*(1 - Math.max(0,p.pmi)/maxP)});
       });
-      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
-        ${edges}${nodes}
-        <circle cx="${cx}" cy="${cy}" r="9" fill="var(--ok)"></circle>
-        <text x="${cx}" y="${(cy-13)}" fill="var(--fg)" font-size="13" text-anchor="middle" font-weight="600">${esc(center)}</text>
-      </svg><div class="hint">Edge width = co-occurrence; distance = PMI (closer is stronger). Click a node to recenter. <b>·N</b> = a family of N merged surface forms (hover to see them).</div>`;
+
+      host.innerHTML =
+        `<svg id="mm-svg" viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;touch-action:none;cursor:grab"><g id="mm-view"></g></svg>` +
+        `<div class="hint">Drag to pan · scroll to zoom · drag a node to pin · click a node to recenter. Edge width = co-occurrence; closer = stronger (PMI). <b>·N</b> = a family of N surface forms (hover). Association is not causation; PMI on small samples is noisy.</div>`;
+      const svg = $("mm-svg"), view = $("mm-view");
+
+      view.innerHTML =
+        edges.map(e => `<line class="mm-edge" data-e="${e.a}-${e.b}" stroke="var(--border)" stroke-width="${Math.max(1,Math.min(4,e.w/2)).toFixed(1)}"></line>`).join("") +
+        nodes.map(n => {
+          const col = n.center ? "var(--ok)" : (n.kind === "term" ? "var(--muted)" : "var(--accent)");
+          const fam = n.variants > 1;
+          const title = fam ? `<title>Family of ${n.variants}: ${esc((n.members||[]).join(", "))}</title>` : "";
+          const sub = n.center ? "" : (fam ? ` <tspan fill="var(--muted)">·${n.variants}</tspan>` : "") + ` <tspan fill="var(--muted)">${n.pmi}</tspan>`;
+          return `<g class="mm-node" data-id="${n.id}">${title}<circle r="${n.r.toFixed(1)}" fill="${col}"></circle>` +
+            `<text y="${(-n.r-4).toFixed(1)}" text-anchor="middle" font-size="11" fill="var(--fg)">${esc(n.label)}${sub}</text></g>`;
+        }).join("");
+
+      const nodeEls = nodes.map(n => view.querySelector(`.mm-node[data-id="${n.id}"]`));
+      const edgeEls = edges.map(e => view.querySelector(`.mm-edge[data-e="${e.a}-${e.b}"]`));
+      function paint() {
+        nodes.forEach((n, i) => nodeEls[i].setAttribute("transform", `translate(${n.x.toFixed(1)},${n.y.toFixed(1)})`));
+        edges.forEach((e, i) => { const a = nodes[e.a], b = nodes[e.b]; const el = edgeEls[i];
+          el.setAttribute("x1", a.x.toFixed(1)); el.setAttribute("y1", a.y.toFixed(1));
+          el.setAttribute("x2", b.x.toFixed(1)); el.setAttribute("y2", b.y.toFixed(1)); });
+      }
+      function step() {
+        for (let i = 0; i < nodes.length; i++) for (let j = i+1; j < nodes.length; j++) {
+          const a = nodes[i], b = nodes[j]; let dx = a.x-b.x, dy = a.y-b.y; let d2 = dx*dx+dy*dy || 0.01;
+          const f = 2800/d2, d = Math.sqrt(d2); const fx = dx/d*f, fy = dy/d*f;
+          a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+        }
+        edges.forEach(e => { const a = nodes[e.a], b = nodes[e.b]; let dx = b.x-a.x, dy = b.y-a.y;
+          const d = Math.sqrt(dx*dx+dy*dy) || 0.01; const f = (d-e.len)*0.02; const fx = dx/d*f, fy = dy/d*f;
+          a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy; });
+        nodes.forEach(n => { if (n.center) { n.x = W/2; n.y = H/2; n.vx = n.vy = 0; return; }
+          n.vx += (W/2-n.x)*0.0018; n.vy += (H/2-n.y)*0.0018;
+          if (n.pinned) { n.vx = n.vy = 0; } else { n.vx *= 0.85; n.vy *= 0.85; n.x += n.vx; n.y += n.vy; } });
+      }
+      const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) { for (let i = 0; i < 300; i++) step(); paint(); }
+      else { let f = 0; (function loop(){ step(); paint(); if (++f < 320) _mmRAF = requestAnimationFrame(loop); })(); }
+
+      // -- pan / zoom / node-drag over the viewBox -------------------------- //
+      let vb = {x:0, y:0, w:W, h:H};
+      const applyVB = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+      const ptVB = (e) => { const m = svg.getScreenCTM().inverse(); const p = svg.createSVGPoint();
+        p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(m); };
+      svg.addEventListener("wheel", (e) => { e.preventDefault(); const p = ptVB(e);
+        const s = Math.min(3, Math.max(0.34, vb.w*Math.exp(e.deltaY*0.0015)/W)) * W / vb.w;
+        vb.x = p.x - (p.x-vb.x)*s; vb.y = p.y - (p.y-vb.y)*s; vb.w *= s; vb.h *= s; applyVB(); }, {passive:false});
+      let drag = null;
+      svg.addEventListener("pointerdown", (e) => {
+        const g = e.target.closest && e.target.closest(".mm-node");
+        if (g) { const id = +g.dataset.id; drag = {type:"node", id, sx:e.clientX, sy:e.clientY, moved:false};
+          if (!nodes[id].center) nodes[id].pinned = true; }
+        else { const r = svg.getBoundingClientRect();
+          drag = {type:"pan", x0:vb.x, y0:vb.y, cx:e.clientX, cy:e.clientY, sx:vb.w/r.width, sy:vb.h/r.height}; }
+        svg.setPointerCapture(e.pointerId);
+      });
+      svg.addEventListener("pointermove", (e) => { if (!drag) return;
+        if (drag.type === "node") { const n = nodes[drag.id]; if (n.center) return; const p = ptVB(e);
+          n.x = p.x; n.y = p.y; if (Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy) > 4) drag.moved = true; paint(); }
+        else { vb.x = drag.x0 - (e.clientX-drag.cx)*drag.sx; vb.y = drag.y0 - (e.clientY-drag.cy)*drag.sy; applyVB(); }
+      });
+      svg.addEventListener("pointerup", (e) => {
+        if (drag && drag.type === "node" && !drag.moved && !nodes[drag.id].center) pickTerm(nodes[drag.id].label);
+        drag = null; try { svg.releasePointerCapture(e.pointerId); } catch (_e) {}
+      });
     }
 
     async function exploreTerm() {
@@ -3263,8 +3330,7 @@
           `<div style="margin-bottom:6px">Resolved to <strong>${esc(r.term)}</strong> ` +
           `<span class="pill">${esc(r.kind)}</span> · ${tr.total} mentions in ${tr.articles} articles</div>` +
           trendSvg(tr.points);
-        $("ins-mindmap").innerHTML = mindmapSvg(r.term, assoc.pairs) +
-          (assoc.caveat ? `<div class="hint">${esc(assoc.caveat)}</div>` : "");
+        renderMindmap(r.term, assoc.pairs);
         loadFraming(r.term);
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
