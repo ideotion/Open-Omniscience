@@ -180,3 +180,17 @@ def test_feeds_api_list_and_import(tmp_path, monkeypatch):
             assert prices["count"] == 2
     finally:
         app.dependency_overrides.clear()
+
+
+def test_import_feed_never_raises_on_non_fetcherror():
+    """A raw network error (not FetchError) is reported as a failed feed, never raised —
+    otherwise one bad feed 500s the whole import-all batch (regression)."""
+    from src.markets.csv_feeds import import_feed
+
+    class _Boom:
+        def fetch(self, *a, **k):
+            raise RuntimeError("Connection reset by peer")
+
+    res = import_feed(None, url="https://x.test/f.csv", symbol="SP500", fetcher=_Boom())
+    assert res.status == "fetch_failed"
+    assert "Connection reset" in (res.detail or "")

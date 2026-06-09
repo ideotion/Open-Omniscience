@@ -160,23 +160,38 @@ def import_feed(
     market: str | None = None,
     source: str | None = None,
 ) -> FeedImportResult:
-    """Fetch a CSV feed URL ethically and import it as a price series for ``symbol``."""
+    """Fetch a CSV feed URL ethically and import it as a price series for ``symbol``.
+
+    Never raises for a feed-level problem: a network error (reset/timeout/SSL/DNS),
+    a robots block, or a malformed file is returned as a failed ``FeedImportResult``
+    so a single bad feed can't 500 a batch import. Only ``FetchError`` was caught
+    before, which let raw network exceptions escape and crash the whole run.
+    """
     try:
         fetched = fetcher.fetch(url, require_html=False)
     except FetchError as exc:
         return FeedImportResult(symbol, "fetch_failed", detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 - any fetch failure is a feed problem, not a crash
+        return FeedImportResult(symbol, "fetch_failed", detail=f"{type(exc).__name__}: {exc}")
 
-    parsed = parse_series_csv(fetched.content, date_column=date_column, value_column=value_column)
+    try:
+        parsed = parse_series_csv(fetched.content, date_column=date_column, value_column=value_column)
+    except Exception as exc:  # noqa: BLE001 - a malformed feed must not abort the batch
+        return FeedImportResult(symbol, "parse_failed", detail=f"{type(exc).__name__}: {exc}")
     if not parsed.points:
         return FeedImportResult(
             symbol, "parse_failed", parse_errors=len(parsed.errors),
             detail="; ".join(parsed.errors[:3]) or "no usable rows in feed",
         )
 
-    res = import_points(
-        session, symbol=symbol, points=parsed.points, currency=currency,
-        unit=unit, market=market, source=source or f"csv-feed:{fetched.final_url}",
-    )
+    try:
+        res = import_points(
+            session, symbol=symbol, points=parsed.points, currency=currency,
+            unit=unit, market=market, source=source or f"csv-feed:{fetched.final_url}",
+        )
+    except Exception as exc:  # noqa: BLE001 - keep the session usable for the rest of the batch
+        session.rollback()
+        return FeedImportResult(symbol, "parse_failed", detail=f"store error: {type(exc).__name__}: {exc}")
     return FeedImportResult(
         symbol, "imported", imported=res["imported"],
         skipped_existing=res["skipped_existing"], received=res["received"],
