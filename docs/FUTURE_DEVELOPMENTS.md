@@ -261,3 +261,71 @@ Depends on the events agenda (P0.5 ✓) and on the event↔keyword/region/market
 cross-links (events P2). This is the through-line that turns the separate verticals into
 one space-time instrument.
 
+---
+
+## Climate & weather events — a live geo-temporal data channel (+ an alert system)
+
+**The idea.** Surface **present-tense weather and natural-hazard events** — heatwaves,
+floods, cyclones, earthquakes, droughts, food-security/famine crises — *not* the
+climate-change debate. A super-heat-and-humidity wave hitting millions in India is a
+**fact at a place and time** that should sit right next to the coverage of it. This is the
+purest space-time channel of all (every datum is lat/lon + time), so it plugs straight into
+the substrate above — and there is **excellent open data**.
+
+**Why it fits.** Famines and crises are often driven by physical events; putting the
+**event** beside the **reporting** is real sense-making, and it makes the convergence view
+concrete: a hazard cell lights up *and* article volume rises there in the same window.
+
+**Open, space-time-stamped channels (a new `hazard`/`weather` source *type*, peculiar in
+its own way like financial/legal/events data):**
+- **Disasters & alerts** — **GDACS** (UN/EC global disaster alerts, severity-scored:
+  cyclones, floods, quakes, volcanoes), **USGS** earthquakes (GeoJSON, real-time),
+  **NASA EONET** (natural events).
+- **Weather & forecast** — **Open-Meteo** (free, no key: forecast + historical),
+  NOAA/NWS alerts (US), Copernicus/ECMWF (EU).
+- **Humanitarian / food security** — **ReliefWeb** (UN OCHA), **FEWS NET** (famine early
+  warning), WHO outbreak news.
+All fetched through the ethical path, provenanced (`source`, `official_url`, `as-of`), and
+imported idempotently — same discipline as the market/law/events catalogs.
+
+**Honest forecasting — and why it's allowed here.** We refuse to *predict geopolitics*;
+but **meteorology is genuinely skillful at 24–48 h**, so a short-horizon forecast is real
+information. The line we hold: the app **relays an *official* forecast with its issuer,
+issue-time and the provider's own horizon/uncertainty** ("NWS extreme-heat warning for
+region X, issued <ts>, valid through <ts>") — it **never generates its own meteorology**.
+Relaying a sourced forecast is honest; inventing one is not.
+
+**Correlate to the corpus.** A hazard/weather event becomes a `Signal` (when × where) → the
+timeline overlay, the map, the **"Converging now"** card, and a direct *"articles in this
+region around this event window"* link. Physical event and its coverage, side by side.
+
+### The alert system (the broader ask: "if there's a nuclear event we should know fast")
+A **local, severity-tiered alerting layer** that fires on **any** real trigger:
+- a **high-severity hazard-feed entry** (GDACS red, M≥7 quake, severe-weather warning);
+- a **tag-family** firing in the news/events (e.g. a `nuclear`/`radiological` family, or
+  `outbreak`, `coup`, `mass-casualty`) — exactly the "know quickly" case;
+- a **space-time convergence** or a **watch-rule** match (from the section above);
+- a **news-classification** hit (certain event types in freshly-ingested articles).
+
+Tiers: **info · watch · urgent**. Urgent surfaces prominently (Home banner + the activity
+area), watch collects quietly, info is logged.
+
+**Guardrails (non-negotiable, and especially here):**
+- **Local only — no external push service, ever.** Alerts render in-app (loopback), never
+  via a third-party notifier; pushing to an external service would leak the user's
+  interests and break the threat model.
+- **Explainable** — every alert cites the **real triggering signal(s)** (the feed entry,
+  the matched tag/keyword, the converging cells) with timestamps and links.
+- **User-owned** — which feeds, which tag-families, and the thresholds are all configurable
+  and dismissible; severity comes from the **source's** scoring (GDACS/USGS), not invented.
+  The `nuclear`/`radiological` family ships as a built-in **urgent** rule, on by default
+  but fully editable.
+- Honest about coverage: an alert means *"a source we watch reported this,"* never *"this
+  is everything happening"* — silence is not safety.
+
+**Build sequence.** (1) `hazard`/`weather` source type + GDACS + USGS importers → space-time
+`Signal`s on the map/timeline; (2) corpus correlation (event ↔ articles by region/window);
+(3) the **alert layer** (hazard-feed + tag-family + watch-rule + convergence triggers,
+local, tiered, explainable); (4) relay **official short-horizon forecasts** (Open-Meteo /
+NWS) with full provenance. Builds directly on the space-time substrate above.
+
