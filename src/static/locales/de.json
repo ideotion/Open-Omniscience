@@ -1,5 +1,10 @@
 {
-  "_meta": { "name": "German", "native": "Deutsch", "dir": "ltr", "status": "complete" },
+  "_meta": {
+    "name": "German",
+    "native": "Deutsch",
+    "dir": "ltr",
+    "status": "complete"
+  },
   "World law": "Weltrecht",
   "Source integrity": "Quellenintegrität",
   "Briefing": "Briefing",
@@ -82,5 +87,18 @@
   "Track now": "Jetzt verfolgen",
   "Download": "Herunterladen",
   "Save preferences": "Einstellungen speichern",
-  "Local · Offline · Nothing leaves this machine": "Lokal · Offline · Nichts verlässt dieses Gerät"
+  "Local · Offline · Nothing leaves this machine": "Lokal · Offline · Nichts verlässt dieses Gerät",
+  "Skip to main content": "Zum Hauptinhalt springen",
+  "Open navigation menu": "Navigationsmenü öffnen",
+  "Open command palette": "Befehlspalette öffnen",
+  "Collapse sidebar": "Seitenleiste einklappen",
+  "Safety & at-risk use": "Sicherheit & gefährdete Nutzung",
+  "Encrypted backup": "Verschlüsseltes Backup",
+  "Network fetch mode": "Netzwerk-Abrufmodus",
+  "Panic wipe": "Notfall-Löschung",
+  "Save fetch mode": "Abrufmodus speichern",
+  "Wipe everything now": "Jetzt alles löschen",
+  "Passphrase": "Passphrase",
+  "Mode": "Modus",
+  "Restore (destructive)": "Wiederherstellen (destruktiv)"
 }

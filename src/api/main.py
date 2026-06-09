@@ -127,6 +127,9 @@ from src.api.wiki import router as wiki_router
 
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
+
+# Import safety router (at-risk-user safety: fetch-mode/proxy, encrypted backup, panic)
+from src.api.safety import router as safety_router
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -362,6 +365,9 @@ app.include_router(custody_router)
 
 # Include verification router
 app.include_router(verification_router)
+
+# Include safety router (encrypted backup, panic, protected-fetch settings)
+app.include_router(safety_router)
 
 # General health check endpoint
 @app.get("/api/health")
@@ -758,6 +764,8 @@ _DOCS: dict[str, dict[str, str]] = {
                    "blurb": "The fastest path from install to your first results."},
     "ethics": {"file": "ETHICS.md", "title": "Ethics, compliance & notices",
                "blurb": "The principles this tool upholds, plus licensing and attributions."},
+    "governance": {"file": "GOVERNANCE.md", "title": "Governance & acceptable use",
+                   "blurb": "What the tool is for, the dual-use red lines, and independence."},
     "security": {"file": "SECURITY.md", "title": "Security",
                  "blurb": "Threat model, local-first posture, and the security audit."},
     "design": {"file": "DESIGN.md", "title": "Design",
@@ -840,12 +848,60 @@ def main() -> None:
         sys.exit(run_doctor())
     if argv and argv[0] in ("-h", "--help", "help"):
         print(
-            "Usage: open-omniscience [serve|doctor]\n"
-            "  serve   (default) run the local web app at http://127.0.0.1:8000\n"
-            "  doctor  print a health-check report (Python, data, db, LLM, launcher)\n"
+            "Usage: open-omniscience [serve|doctor|panic] [--ephemeral]\n"
+            "  serve       (default) run the local web app at http://127.0.0.1:8000\n"
+            "  doctor      print a health-check report (Python, data, db, LLM, launcher)\n"
+            "  panic       irreversibly wipe the local data dir (asks to confirm)\n"
+            "  --ephemeral run against a throwaway temp data dir, wiped on exit\n"
         )
         return
+    if argv and argv[0] == "panic":
+        _panic_cli(force=("--yes" in argv or "-y" in argv))
+        return
+    if "--ephemeral" in argv or os.getenv("OO_EPHEMERAL") == "1":
+        _run_ephemeral([a for a in argv if a != "--ephemeral"])
+        return
     _serve()
+
+
+def _panic_cli(*, force: bool) -> None:
+    """Wipe the data dir from the CLI (confirmed unless --yes)."""
+    from src.paths import data_dir
+    from src.safety import panic_wipe
+
+    target = data_dir()
+    if not force:
+        ans = input(f"Irreversibly wipe ALL data under {target}? Type 'wipe' to confirm: ")
+        if ans.strip().lower() != "wipe":
+            print("Aborted.")
+            return
+    report = panic_wipe(confirm=True)
+    print(f"Wiped {report['files_wiped']}/{report['files_seen']} files under {report['data_dir']}.")
+    print(report["limit"])
+
+
+def _run_ephemeral(argv: list[str]) -> None:
+    """Run the app against a throwaway temp data dir, wiped on exit (leave-no-trace).
+
+    Runs in a child process so the DB engine binds to the temp dir; the parent wipes it
+    afterwards. Honest limit: this leaves no *application* trace; it cannot scrub OS-level
+    swap/temp artefacts — pair with an amnesic OS (Tails) for that.
+    """
+    import shutil
+    import subprocess
+    import sys
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix="oo-ephemeral-")
+    env = {**os.environ, "OO_DATA_DIR": tmp, "OO_EPHEMERAL": "0"}
+    print(f"Ephemeral mode: data in {tmp} (wiped on exit). Ctrl-C to stop.")
+    try:
+        subprocess.run([sys.executable, "-m", "src.api.main", *(argv or ["serve"])], env=env)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        print(f"Ephemeral data wiped: {tmp}")
 
 
 def _serve() -> None:

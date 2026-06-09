@@ -83,6 +83,26 @@ def test_readme_version_matches_package():
     )
 
 
+def test_red_lines_not_crossed():
+    """GOVERNANCE.md dual-use red lines, enforced as a tripwire: forbidden capabilities
+    (biometric recognition, private-individual tracking, central telemetry) must not appear
+    in live code. A test is a tripwire, not a proof — the real guarantee is culture + review.
+    """
+    forbidden = re.compile(
+        r"\b(face_recognition|facial_recognition|deepface|voice_recognition|speaker_id"
+        r"|gait_recognition|track_individual|surveil_person|telemetry_send|phone_home)\b",
+        re.IGNORECASE,
+    )
+    offenders = []
+    for p in _live_py_files():
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            if forbidden.search(line):
+                offenders.append(f"{p.relative_to(_ROOT)}:{i}")
+    assert not offenders, f"red-line capability present (see docs/GOVERNANCE.md): {offenders}"
+
+
 def test_in_app_docs_exist_on_disk():
     main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
     files = re.findall(r'"file":\s*"([^"]+)"', main)

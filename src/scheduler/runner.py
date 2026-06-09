@@ -266,16 +266,12 @@ class BackgroundScheduler:
             self._run_lock.release()
 
     def _default_run_once(self) -> dict:
-        import os
 
         from src.database.session import session_scope
-        from src.ingest import EthicalFetcher
+        from src.safety.fetcher import make_fetcher
 
         settings = self._settings_provider()
-        fetcher = EthicalFetcher(
-            min_interval_s=float(os.getenv("OO_FETCH_MIN_INTERVAL", "1.0")),
-            timeout=float(os.getenv("OO_FETCH_TIMEOUT", "30")),
-        )
+        fetcher = make_fetcher()
         with session_scope() as session:
             result = run_scrape_once(session, fetcher, settings)
             # Precompute + cache the Home briefing so it loads instantly. Best-effort:

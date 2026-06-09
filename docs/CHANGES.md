@@ -2,6 +2,38 @@
 
 > `0.05` is the repository's **default branch** — the mainline everything builds on.
 
+## 0.06 — Phase B: safety, sense-making, accessibility & governance
+
+A second slice of the `0.06` work, organised around four themes from
+[`NEXT_VERSION.md`](NEXT_VERSION.md). Each ships an honest Phase 1 today; none weakens the
+local-first, no-server, no-telemetry posture. See [`GOVERNANCE.md`](GOVERNANCE.md).
+
+- **At-risk-user safety (`src/safety/`).** New **Settings → Safety** panel and `/api/safety`
+  routes: a passphrase **encrypted backup/restore** (AES-256-GCM + scrypt — reuses the
+  audited crypto primitives; a wrong passphrase or tampered file fails *loudly*, never
+  silently); a **panic wipe** that overwrites-then-deletes the corpus, keys and caches
+  (honest about the SSD/copy-on-write limit — only full-disk encryption guarantees a true
+  wipe); and a **Protected fetch mode** that sends a generic User-Agent through a proxy you
+  run (e.g. Tor), labelled with its honest limit — *we cannot guarantee anonymity*. Also a
+  `panic` CLI and an `--ephemeral` run mode (RAM-only data dir, wiped on exit).
+- **Story lineage — "trace to the primal source" (`src/signals/lineage.py`).** For a
+  near-duplicate cluster echoed across many outlets, reconstruct the **primary → first
+  report → echoes** chain by publication time, detect **wire attribution** ("according to
+  Reuters", "(AFP)"), and surface the structure so original reporting is foregrounded over
+  derivative echoes. Honest bright line: *"earliest we saw" ≠ "the truth"* — it shows
+  structure; the human judges. New Home producers **Story lineage** and **Coverage advisor**
+  (surfaces geographic/linguistic skew in *your* collection — a suggestion, never a filter).
+- **Accessibility & i18n.** A keyboard **skip-to-content** link, ARIA landmarks/labels on
+  navigation and icon-only buttons, a polite **live region** for toasts, `aria-current` on
+  the active tab, and a keyboard-operable command palette. New chrome strings translated to
+  the complete locales (de/es/fr now 100%); `scripts/i18n_report.py` measures locale
+  coverage and can gate CI.
+- **Governance & acceptable use ([`GOVERNANCE.md`](GOVERNANCE.md)).** A statement of purpose
+  and explicit **dual-use red lines** (no individual tracking, no biometric ID, no
+  private-channel ingestion, no automated verdicts, no central server, no silent filtering —
+  *absent by construction, not configurable*), enforced by a **red-lines tripwire test** in
+  `tests/test_repo_invariants.py`.
+
 ## 0.06 — the intelligence layer (Phase A: the Home briefing)
 
 The first slice of the `0.06` "intelligence layer" — the **GUI spine**. The unifying

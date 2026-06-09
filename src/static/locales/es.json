@@ -1,5 +1,10 @@
 {
-  "_meta": { "name": "Spanish", "native": "Español", "dir": "ltr", "status": "complete" },
+  "_meta": {
+    "name": "Spanish",
+    "native": "Español",
+    "dir": "ltr",
+    "status": "complete"
+  },
   "World law": "Derecho mundial",
   "Source integrity": "Integridad de fuentes",
   "Briefing": "Resumen",
@@ -82,5 +87,18 @@
   "Track now": "Seguir ahora",
   "Download": "Descargar",
   "Save preferences": "Guardar preferencias",
-  "Local · Offline · Nothing leaves this machine": "Local · Sin conexión · Nada sale de esta máquina"
+  "Local · Offline · Nothing leaves this machine": "Local · Sin conexión · Nada sale de esta máquina",
+  "Skip to main content": "Saltar al contenido principal",
+  "Open navigation menu": "Abrir el menú de navegación",
+  "Open command palette": "Abrir la paleta de comandos",
+  "Collapse sidebar": "Contraer la barra lateral",
+  "Safety & at-risk use": "Seguridad y uso en riesgo",
+  "Encrypted backup": "Copia de seguridad cifrada",
+  "Network fetch mode": "Modo de recolección de red",
+  "Panic wipe": "Borrado de emergencia",
+  "Save fetch mode": "Guardar el modo de recolección",
+  "Wipe everything now": "Borrar todo ahora",
+  "Passphrase": "Frase de contraseña",
+  "Mode": "Modo",
+  "Restore (destructive)": "Restaurar (destructivo)"
 }

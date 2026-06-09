@@ -11,8 +11,6 @@ mirror, never legal advice — every record links back to its official source.
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -108,13 +106,10 @@ def law_track(
     db: Session = Depends(get_db),
 ) -> dict:
     """Fetch all watched legal documents now (through the ethical fetcher)."""
-    from src.ingest import EthicalFetcher
     from src.law.track import track_watched
+    from src.safety.fetcher import make_fetcher
 
-    fetcher = EthicalFetcher(
-        min_interval_s=float(os.getenv("OO_FETCH_MIN_INTERVAL", "1.0")),
-        timeout=float(os.getenv("OO_FETCH_TIMEOUT", "30")),
-    )
+    fetcher = make_fetcher()
     return track_watched(db, fetcher, limit_documents=limit)
 
 
