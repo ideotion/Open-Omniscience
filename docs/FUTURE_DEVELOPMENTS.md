@@ -115,6 +115,46 @@ high-trust, mirrors the markets/law catalog pattern); add **B** as a corpus-deri
 layer that suggests events and unlocks the comparative-over-time view, kept honest with
 provenance + confidence + human-in-the-loop confirmation.
 
+### Tagging every event — the faceting backbone (how a vast catalog stays digestible)
+
+Once the catalog scales (every country's national day, every UN "world day", elections,
+cultural/religious/scientific/tech events worldwide), a single `category` collapses. The
+answer is to give **every event a multi-dimensional tag set** — tags are simultaneously
+the **filter/group axis** and the **cross-link to the corpus**. Two kinds:
+
+**Structural facets — a controlled vocabulary (reliable filtering & grouping):**
+- **Type** — election · referendum · summit · observance ("world day") · national-day ·
+  independence · commemoration/anniversary · religious · cultural · scientific ·
+  tech-launch · conference · economic (central-bank · IPO · earnings) · sporting · legal
+  (ruling · regulation-effective-date).
+- **Geography** — `country` (ISO-3166) · region/continent · `global`.
+- **Scope & significance** — global · regional · national · local, plus a **tier**
+  (major/minor) so minor events collapse by default (density control).
+- **Recurrence** — one-off · annual-fixed · annual-movable · periodic.
+- **Confidence** — confirmed vs. expected (already modelled).
+- **Calendar/source** — which bundled or subscribed iCal calendar it came from.
+
+**Topical & entity tags — the cross-link layer:**
+- **Topics** (controlled-ish vocab) — press-freedom · human-rights · climate · security ·
+  finance · AI/tech · health · religion · space · sport …
+- **Linked entities** — countries, orgs, people → connect an event to Insights
+  entities/keywords, market tickers, tracked laws. This is what powers the correlation
+  ("did coverage / a price / a law change cluster around this event").
+
+**How tags deliver "selectable · groupable · filterable":**
+- **Filter** by any facet (multi-select); **group** by any dimension (month · country ·
+  type · topic · calendar).
+- **Saved filters = "smart calendars"** — subscribing to a *tag query* ("all elections in
+  Africa", "all press-freedom days worldwide", "central-bank decisions") is far more
+  powerful than per-calendar on/off toggles, and is the natural unit of subscription.
+- **Density** — collapse by tag/tier; **personal tags** let a user organise their own way.
+
+**Honesty for tags (same bar as everywhere).** Curated/bundled tags are authored;
+auto-derived tags (from the source calendar, the title, or article date-extraction) are
+**candidates carrying provenance + confidence**, human-confirmable — never silently
+asserted. The structural facets use a **controlled vocabulary** (prevents tag sprawl and
+keeps filtering reliable); free-form user tags stay in a separate, personal namespace.
+
 ---
 
 ## Other ideas captured this cycle (stubs)
