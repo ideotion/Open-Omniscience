@@ -7,17 +7,19 @@ Author: Ideotion
 License: GNU GPLv3
 """
 
-import pytest
 import os
-import tempfile
-from pathlib import Path
-import yaml
 
 # Add src to path for imports
 import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+import yaml
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from config import get_config, reset_config, get_database_url, get_sources_config_path
+from config import get_config, get_database_url, get_sources_config_path, reset_config
 
 
 @pytest.fixture

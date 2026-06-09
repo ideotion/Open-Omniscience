@@ -31,7 +31,6 @@ Author: Open Omniscience Team
 from fastapi import APIRouter, HTTPException, Query, Request
 
 # Import database models and session
-
 # Import services
 from src.services.keyword_extractor import keyword_extractor
 from src.services.text_processor import text_processor

@@ -9,7 +9,6 @@ HTTP layer is real (TestClient); the network is faked; the DB is isolated.
 from __future__ import annotations
 
 import pytest
-import requests
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

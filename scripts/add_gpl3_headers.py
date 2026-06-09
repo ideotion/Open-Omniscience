@@ -4,7 +4,6 @@ Script to add GPLv3 license headers to all Python files in the project.
 """
 
 import os
-import re
 from pathlib import Path
 
 # GPLv3 header for Python files
@@ -106,7 +105,7 @@ def has_gpl3_header(content, header):
 
 def add_header_to_file(filepath, header):
     """Add GPLv3 header to a file."""
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         content = f.read()
     
     # Check if file already has a header

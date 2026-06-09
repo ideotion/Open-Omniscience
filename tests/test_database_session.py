@@ -17,8 +17,8 @@ import sys
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import sessionmaker
 
-from src.database.models import Article, Base, Source
 from src.database import session as session_module
+from src.database.models import Article, Base, Source
 
 
 def _fresh_engine(tmp_path):

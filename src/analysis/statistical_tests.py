@@ -27,7 +27,7 @@ All functions are designed to work offline with 100% FOSS tools.
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import pandas as pd

@@ -28,11 +28,10 @@ including URL normalization, link text extraction, and position tracking.
 Author: Open Omniscience Team
 """
 
-import hashlib
 import logging
 import re
-from datetime import UTC, datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup

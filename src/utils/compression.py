@@ -40,18 +40,15 @@ Author: Ideotion
 
 import bz2
 import hashlib
-import json
 import logging
 import lzma
 import struct
 import time
 import zlib
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from io import BytesIO
 from pathlib import Path
-from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union
+from typing import Any, BinaryIO
 
 logger = logging.getLogger(__name__)
 

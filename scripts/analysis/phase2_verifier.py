@@ -4,20 +4,19 @@ Phase 2: Reference Verifier
 Verifies all extracted references against the filesystem and other sources.
 """
 
-import os
 import json
-import requests
-from pathlib import Path
-from typing import Dict, List, Set, Tuple
+import os
 from urllib.parse import urlparse
+
+import requests
 
 
 class ReferenceVerifier:
     def __init__(self, root_dir: str = '.', references_file: str = '/tmp/phase2_references.json'):
         self.root_dir = root_dir
         self.references_file = references_file
-        self.issues: List[Dict] = []
-        self.all_files: Set[str] = set()
+        self.issues: list[dict] = []
+        self.all_files: set[str] = set()
         
         # Collect all files in the repository
         self._collect_all_files()
@@ -68,7 +67,7 @@ class ReferenceVerifier:
         
         return False
 
-    def _check_url(self, url: str, timeout: int = 5) -> Tuple[bool, str]:
+    def _check_url(self, url: str, timeout: int = 5) -> tuple[bool, str]:
         """Check if a URL is reachable."""
         try:
             parsed = urlparse(url)
@@ -104,7 +103,7 @@ class ReferenceVerifier:
         except Exception as e:
             return False, f"Error: {str(e)}"
 
-    def _check_python_module(self, module: str) -> Tuple[bool, str]:
+    def _check_python_module(self, module: str) -> tuple[bool, str]:
         """Check if a Python module is importable."""
         try:
             __import__(module)
@@ -114,7 +113,7 @@ class ReferenceVerifier:
         except Exception as e:
             return False, f"Error: {str(e)}"
 
-    def _check_env_var(self, var: str, source_file: str = None) -> Tuple[bool, str]:
+    def _check_env_var(self, var: str, source_file: str = None) -> tuple[bool, str]:
         """Check if an environment variable is defined in .env files."""
         # Check common .env files
         env_files = [
@@ -127,7 +126,7 @@ class ReferenceVerifier:
         for env_file in env_files:
             if os.path.exists(env_file):
                 try:
-                    with open(env_file, 'r') as f:
+                    with open(env_file) as f:
                         for line in f:
                             line = line.strip()
                             if line and not line.startswith('#') and '=' in line:
@@ -142,7 +141,7 @@ class ReferenceVerifier:
     def verify_references(self):
         """Verify all references from the extracted JSON."""
         try:
-            with open(self.references_file, 'r') as f:
+            with open(self.references_file) as f:
                 references = json.load(f)
         except Exception as e:
             print(f"Error loading references: {e}")

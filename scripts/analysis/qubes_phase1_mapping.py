@@ -15,20 +15,19 @@ RULES:
 Output: Complete JSON map of all files with metadata for traceability
 """
 
-import os
+import argparse
 import hashlib
 import json
+import os
 import stat
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any, Optional
-import argparse
+from typing import Any
 
 
 class FileMapper:
     """Recursive file system mapper with exhaustive verification."""
     
-    def __init__(self, root_path: str, exclude_patterns: Optional[List[str]] = None):
+    def __init__(self, root_path: str, exclude_patterns: list[str] | None = None):
         """
         Initialize the file mapper.
         
@@ -38,7 +37,7 @@ class FileMapper:
         """
         self.root_path = os.path.abspath(root_path)
         self.exclude_patterns = exclude_patterns or ['.git', '__pycache__', '.pytest_cache', 'node_modules', '.venv', 'venv', '*.pyc', '*.swp', '*.swo']
-        self.file_map: Dict[str, Any] = {
+        self.file_map: dict[str, Any] = {
             'metadata': {
                 'start_time': datetime.now().isoformat(),
                 'root_path': self.root_path,
@@ -57,8 +56,8 @@ class FileMapper:
                 'smallest_file': {'path': '', 'size': float('inf')}
             }
         }
-        self.errors: List[Dict[str, Any]] = []
-        self.warnings: List[Dict[str, Any]] = []
+        self.errors: list[dict[str, Any]] = []
+        self.warnings: list[dict[str, Any]] = []
     
     def is_excluded(self, path: str) -> bool:
         """Check if a path should be excluded from mapping."""
@@ -122,7 +121,7 @@ class FileMapper:
             })
             return 'ERROR'
     
-    def get_file_stats(self, filepath: str) -> Dict[str, Any]:
+    def get_file_stats(self, filepath: str) -> dict[str, Any]:
         """Get comprehensive file statistics."""
         try:
             st = os.stat(filepath)
@@ -156,7 +155,7 @@ class FileMapper:
             size_bytes /= 1024.0
         return f"{size_bytes:.2f} PB"
     
-    def map_directory(self, dirpath: str) -> Dict[str, Any]:
+    def map_directory(self, dirpath: str) -> dict[str, Any]:
         """Recursively map a directory and all its contents."""
         dirpath = os.path.abspath(dirpath)
         
@@ -170,7 +169,7 @@ class FileMapper:
             })
             return {}
         
-        dir_info: Dict[str, Any] = {
+        dir_info: dict[str, Any] = {
             'path': dirpath,
             'relative_path': os.path.relpath(dirpath, self.root_path),
             'contents': {
@@ -218,7 +217,7 @@ class FileMapper:
         
         return dir_info
     
-    def map_file(self, filepath: str) -> Dict[str, Any]:
+    def map_file(self, filepath: str) -> dict[str, Any]:
         """Map a single file with all metadata."""
         filepath = os.path.abspath(filepath)
         relative_path = os.path.relpath(filepath, self.root_path)
@@ -229,7 +228,7 @@ class FileMapper:
         
         file_type = self.get_file_type(filepath)
         
-        file_info: Dict[str, Any] = {
+        file_info: dict[str, Any] = {
             'path': filepath,
             'relative_path': relative_path,
             'filename': os.path.basename(filepath),
@@ -261,14 +260,14 @@ class FileMapper:
         
         return file_info
     
-    def run(self) -> Dict[str, Any]:
+    def run(self) -> dict[str, Any]:
         """Run the complete mapping process."""
         print(f"\n{'='*80}")
-        print(f"PHASE 1: RECURSIVE CODEBASE MAPPING")
+        print("PHASE 1: RECURSIVE CODEBASE MAPPING")
         print(f"{'='*80}")
         print(f"Root Path: {self.root_path}")
         print(f"Start Time: {datetime.now().isoformat()}")
-        print(f"Branch: 0.02_Qubes")
+        print("Branch: 0.02_Qubes")
         print(f"{'='*80}\n")
         
         # Map the root directory
@@ -295,7 +294,7 @@ class FileMapper:
         
         # Print summary
         print(f"\n{'='*80}")
-        print(f"PHASE 1 SUMMARY")
+        print("PHASE 1 SUMMARY")
         print(f"{'='*80}")
         print(f"Total Directories: {self.file_map['stats']['total_directories']}")
         print(f"Total Files: {self.file_map['stats']['total_files']}")
@@ -379,9 +378,9 @@ def main():
     mapper.save_report(args.output)
     
     print(f"\n{'='*80}")
-    print(f"PHASE 1 COMPLETE")
+    print("PHASE 1 COMPLETE")
     print(f"{'='*80}")
-    print(f"Next Step: Proceed to PHASE 2 - Dependency & Link Verification")
+    print("Next Step: Proceed to PHASE 2 - Dependency & Link Verification")
     print(f"Command: python3 qubes_phase2_dependency_checker.py --input {args.output}")
     print(f"{'='*80}\n")
 

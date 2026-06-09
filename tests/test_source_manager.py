@@ -24,16 +24,16 @@ Tests for SourceManager class
 This module contains tests for the comprehensive source management functionality.
 """
 
-import pytest
 import sys
-import os
 from pathlib import Path
+
+import pytest
 
 # Add parent directories to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from database.models import Base, engine, Session, Source, SourceGroup, SourceMetadata
+from database.models import Base, Session, Source, SourceGroup, engine
 from database.source_manager import SourceManager
 
 
@@ -606,7 +606,7 @@ class TestImportExport:
         
         # Verify file exists and contains data
         import yaml
-        with open(yaml_path, 'r') as f:
+        with open(yaml_path) as f:
             data = yaml.safe_load(f)
         
         assert 'sources' in data

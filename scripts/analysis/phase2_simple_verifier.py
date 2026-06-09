@@ -4,18 +4,15 @@ Phase 2: Simple Reference Verifier
 Verifies file paths and imports without network checks.
 """
 
-import os
 import json
-import sys
-from pathlib import Path
-from typing import Dict, List, Set
+import os
 
 
 class SimpleVerifier:
     def __init__(self, root_dir: str = '.'):
         self.root_dir = root_dir
-        self.all_files: Set[str] = set()
-        self.issues: List[Dict] = []
+        self.all_files: set[str] = set()
+        self.issues: list[dict] = []
         
         # Collect all files
         self._collect_all_files()
@@ -86,7 +83,7 @@ class SimpleVerifier:
                     continue
                 
                 try:
-                    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    with open(filepath, encoding='utf-8', errors='ignore') as f:
                         content = f.read()
                     
                     # Find all string literals that look like file paths
@@ -192,7 +189,7 @@ class SimpleVerifier:
                 filepath = os.path.join(root, file)
                 
                 try:
-                    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    with open(filepath, encoding='utf-8', errors='ignore') as f:
                         content = f.read()
                     
                     import re

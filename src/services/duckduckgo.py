@@ -32,11 +32,8 @@ to discover new sources and identify RSS feeds. It includes:
 Author: Ideotion
 """
 
-import logging
 import re
 import time
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -599,20 +596,20 @@ if __name__ == "__main__":
     # Test search
     try:
         results = search("technology news", max_results=5)
-        print(f"\nSearch results for 'technology news':")
+        print("\nSearch results for 'technology news':")
         for i, result in enumerate(results, 1):
             print(f"{i}. {result.get('title', 'No title')} - {result.get('url', 'No URL')}")
         
         # Test RSS discovery
         if results:
-            print(f"\nDiscovering RSS feeds for first result...")
+            print("\nDiscovering RSS feeds for first result...")
             feeds = discover_rss_feeds(results[0]['url'])
             print(f"Found {len(feeds)} RSS feeds:")
             for feed in feeds:
                 print(f"  - {feed}")
         
         # Test source discovery
-        print(f"\nDiscovering sources for 'financial news'...")
+        print("\nDiscovering sources for 'financial news'...")
         sources = discover_sources_by_topic("financial news", max_sources=5)
         print(f"Found {len(sources)} sources:")
         for source in sources:

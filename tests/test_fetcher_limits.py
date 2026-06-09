@@ -23,7 +23,6 @@ import pytest
 import src.ingest as ingest_mod
 from src.ingest import BlockedTarget, EthicalFetcher, FetchFailed
 
-
 # --------------------------------------------------------------------------- #
 # Fake session that supports redirects (Location) and explicit headers/content.
 # --------------------------------------------------------------------------- #

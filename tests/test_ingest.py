@@ -22,7 +22,6 @@ from src.database.models import Article, Base, Source
 from src.ingest import EthicalFetcher, RobotsDisallowed, RobotsUnavailable
 from src.ingest.pipeline import IngestResult, ingest_source, ingest_url
 
-
 # --------------------------------------------------------------------------- #
 # Fake HTTP layer
 # --------------------------------------------------------------------------- #

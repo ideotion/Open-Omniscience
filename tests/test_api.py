@@ -7,14 +7,12 @@ Author: Ideotion
 License: GNU GPLv3
 """
 
+
 import pytest
-from pathlib import Path
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch, MagicMock
 
 from src.api.main import app
-from src.database.models import Base, engine, get_session, Article, Source
-from src.database.session import init_db
+from src.database.models import Article, Base, Source, engine, get_session
 
 
 @pytest.fixture

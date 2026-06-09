@@ -19,15 +19,13 @@ This focused version:
 4. Generates a concise report of actual issues
 """
 
-import os
-import re
-import json
-import ast
-import sys
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, List, Any, Optional, Set
 import argparse
+import ast
+import json
+import os
+import sys
+from datetime import datetime
+from typing import Any
 
 
 class FocusedDependencyChecker:
@@ -42,10 +40,10 @@ class FocusedDependencyChecker:
         """
         self.root_path = os.path.abspath(root_path)
         self.src_path = os.path.join(self.root_path, 'src')
-        self.all_python_files: List[str] = []
-        self.issues: List[Dict[str, Any]] = []
-        self.references: Dict[str, List[Dict[str, Any]]] = {}
-        self.stats: Dict[str, Any] = {
+        self.all_python_files: list[str] = []
+        self.issues: list[dict[str, Any]] = []
+        self.references: dict[str, list[dict[str, Any]]] = {}
+        self.stats: dict[str, Any] = {
             'total_files': 0,
             'total_references': 0,
             'verified_references': 0,
@@ -77,13 +75,13 @@ class FocusedDependencyChecker:
         
         self.all_python_files.sort()
     
-    def extract_imports_from_python(self, filepath: str) -> List[Dict[str, Any]]:
+    def extract_imports_from_python(self, filepath: str) -> list[dict[str, Any]]:
         """Extract all imports from a Python file."""
         references = []
         full_path = os.path.join(self.root_path, filepath)
         
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 content = f.read()
                 tree = ast.parse(content, filename=filepath)
             
@@ -134,7 +132,7 @@ class FocusedDependencyChecker:
         
         return references
     
-    def verify_import(self, ref: Dict[str, Any]) -> Dict[str, Any]:
+    def verify_import(self, ref: dict[str, Any]) -> dict[str, Any]:
         """Verify a single import reference."""
         result = {
             'reference': ref,
@@ -156,7 +154,7 @@ class FocusedDependencyChecker:
         
         return result
     
-    def _verify_module_import(self, module: str, ref: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    def _verify_module_import(self, module: str, ref: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         """Verify a module import (e.g., import numpy)."""
         if not module:
             result['message'] = 'Empty module name'
@@ -178,12 +176,11 @@ class FocusedDependencyChecker:
             'socket', 'ssl', 'asyncio', 'asyncore', 'concurrent',
             'threading', 'multiprocessing', 'subprocess', 'signal',
             'logging', 'traceback', 'linecache', 'tokenize', 'token',
-            'abc', 'typing', 'dataclasses', 'enum', 'functools',
-            'unittest', 'doctest', 'pdb', 'profile', 'pstats',
+            'abc', 'typing', 'dataclasses', 'enum', 'unittest', 'doctest', 'pdb', 'profile', 'pstats',
             'gc', 'inspect', 'dis', 'resource', 'sysconfig',
             'platform', 'webbrowser', 'tempfile', 'glob', 'fnmatch',
             'fileinput', 'filecmp', 'difflib', 'textwrap', 'unicodedata',
-            'string', 're', 'sre_compile', 'sre_parse', 'sre_constants',
+            'string', 'sre_compile', 'sre_parse', 'sre_constants',
             # Additional stdlib modules
             'urllib.parse', 'urllib.request', 'urllib.error', 'urllib.robotparser',
             'http.client', 'http.server', 'http.cookies', 'http.cookiejar',
@@ -197,11 +194,10 @@ class FocusedDependencyChecker:
             'runpy', 'builtins', '__main__', '__future__',
             'atexit', 'warnings', 'contextlib', 'contextvars',
             'copyreg', 'types', 'fpectl', 'pprint', 'reprlib',
-            'textwrap', 'stringprep', 'difflib',
-            'logging.handlers', 'logging.config',
+            'stringprep', 'logging.handlers', 'logging.config',
             'ctypes', 'ctypes.util',
             'mmap', 'codecs', 'encodings',
-            'io', 'abc', 'warnings',
+            'io', 'warnings',
             # Additional stdlib modules
             'sqlite3', 'shutil', 'sqlite3.dbapi2',
             # Qubes-specific additions
@@ -240,7 +236,7 @@ class FocusedDependencyChecker:
         
         return result
     
-    def _verify_from_import(self, module: str, symbol: str, level: int, ref: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    def _verify_from_import(self, module: str, symbol: str, level: int, ref: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         """Verify a from import (e.g., from src.database.models import Article)."""
         if not module:
             result['message'] = 'Empty module name'
@@ -262,12 +258,11 @@ class FocusedDependencyChecker:
             'socket', 'ssl', 'asyncio', 'asyncore', 'concurrent',
             'threading', 'multiprocessing', 'subprocess', 'signal',
             'logging', 'traceback', 'linecache', 'tokenize', 'token',
-            'abc', 'typing', 'dataclasses', 'enum', 'functools',
-            'unittest', 'doctest', 'pdb', 'profile', 'pstats',
+            'abc', 'typing', 'dataclasses', 'enum', 'unittest', 'doctest', 'pdb', 'profile', 'pstats',
             'gc', 'inspect', 'dis', 'resource', 'sysconfig',
             'platform', 'webbrowser', 'tempfile', 'glob', 'fnmatch',
             'fileinput', 'filecmp', 'difflib', 'textwrap', 'unicodedata',
-            'string', 're', 'sre_compile', 'sre_parse', 'sre_constants',
+            'string', 'sre_compile', 'sre_parse', 'sre_constants',
             'urllib.parse', 'urllib.request', 'urllib.error', 'urllib.robotparser',
             'http.client', 'http.server', 'http.cookies', 'http.cookiejar',
             'email', 'email.message', 'email.mime', 'email.parser',
@@ -280,8 +275,7 @@ class FocusedDependencyChecker:
             'runpy', 'builtins', '__main__', '__future__',
             'atexit', 'warnings', 'contextlib', 'contextvars',
             'copyreg', 'types', 'fpectl', 'pprint', 'reprlib',
-            'textwrap', 'stringprep', 'difflib',
-            'logging.handlers', 'logging.config',
+            'stringprep', 'logging.handlers', 'logging.config',
             'ctypes', 'ctypes.util',
             'mmap', 'codecs', 'encodings',
             'io', 'warnings',
@@ -333,7 +327,7 @@ class FocusedDependencyChecker:
         
         return result
     
-    def _verify_relative_import(self, module: str, ref: Dict[str, Any], result: Dict[str, Any], symbol: str = None) -> Dict[str, Any]:
+    def _verify_relative_import(self, module: str, ref: dict[str, Any], result: dict[str, Any], symbol: str = None) -> dict[str, Any]:
         """Verify a relative import."""
         file = ref.get('file', '')
         file_dir = os.path.dirname(os.path.join(self.root_path, file))
@@ -442,7 +436,7 @@ class FocusedDependencyChecker:
     def _check_symbol_in_module(self, module_path: str, symbol: str) -> bool:
         """Check if a symbol exists in a module file (definition or import)."""
         try:
-            with open(module_path, 'r', encoding='utf-8') as f:
+            with open(module_path, encoding='utf-8') as f:
                 content = f.read()
             
             # Parse the file and look for the symbol
@@ -461,11 +455,7 @@ class FocusedDependencyChecker:
                     if isinstance(node.target, ast.Name) and node.target.id == symbol:
                         return True
                 # Check for imports
-                elif isinstance(node, ast.Import):
-                    for alias in node.names:
-                        if alias.name == symbol or alias.asname == symbol:
-                            return True
-                elif isinstance(node, ast.ImportFrom):
+                elif isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom):
                     for alias in node.names:
                         if alias.name == symbol or alias.asname == symbol:
                             return True
@@ -474,10 +464,10 @@ class FocusedDependencyChecker:
         except Exception:
             return False
     
-    def run(self) -> Dict[str, Any]:
+    def run(self) -> dict[str, Any]:
         """Run the focused dependency verification."""
         print(f"\n{'='*80}")
-        print(f"PHASE 2: FOCUSED DEPENDENCY VERIFICATION (Python files in src/)")
+        print("PHASE 2: FOCUSED DEPENDENCY VERIFICATION (Python files in src/)")
         print(f"{'='*80}")
         print(f"Root Path: {self.root_path}")
         print(f"Python Files to Analyze: {len(self.all_python_files)}")
@@ -531,7 +521,7 @@ class FocusedDependencyChecker:
         
         # Print summary
         print(f"\n{'='*80}")
-        print(f"PHASE 2 FOCUSED SUMMARY")
+        print("PHASE 2 FOCUSED SUMMARY")
         print(f"{'='*80}")
         print(f"Total Python Files Analyzed: {len(self.all_python_files)}")
         print(f"Total Imports Extracted: {self.stats['total_references']}")
@@ -630,9 +620,9 @@ def main():
     checker.save_report(args.output)
     
     print(f"\n{'='*80}")
-    print(f"PHASE 2 FOCUSED COMPLETE")
+    print("PHASE 2 FOCUSED COMPLETE")
     print(f"{'='*80}")
-    print(f"Next Step: Proceed to PHASE 3 - Line-by-Line Code Analysis")
+    print("Next Step: Proceed to PHASE 3 - Line-by-Line Code Analysis")
     print(f"{'='*80}\n")
 
 

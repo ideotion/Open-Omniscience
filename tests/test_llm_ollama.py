@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.api.llm import get_llm_client
 from src.api.main import app
-from src.database.models import Article, ArticleAnalysis, Base, Source
+from src.database.models import Article, Base, Source
 from src.database.session import get_db
 from src.llm.ollama import LLMUnavailable, OllamaClient
 

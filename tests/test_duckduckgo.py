@@ -24,15 +24,17 @@ Tests for DuckDuckGo Search Module
 This module contains tests for the DuckDuckGo search functionality.
 """
 
-import pytest
 import sys
-import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Add parent directories to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent.parent / "src"))
+
+from datetime import UTC
 
 from services.duckduckgo import DuckDuckGoSearch
 
@@ -167,7 +169,7 @@ class TestDuckDuckGoSearch:
     
     def test_validate_rss_feed_success(self):
         """Test RSS feed validation success (now via the EthicalFetcher; ETH-01)."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from src.ingest import FetchResult
 
@@ -177,7 +179,7 @@ class TestDuckDuckGoSearch:
                     requested_url=url, final_url=url, status_code=200,
                     content='<?xml version="1.0"?><rss></rss>',
                     content_type='application/rss+xml',
-                    fetched_at=datetime.now(timezone.utc),
+                    fetched_at=datetime.now(UTC),
                 )
 
         is_valid = DuckDuckGoSearch._validate_rss_feed(

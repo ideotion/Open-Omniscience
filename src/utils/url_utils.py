@@ -34,8 +34,6 @@ Author: Ideotion
 
 import hashlib
 import logging
-from pathlib import Path
-from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlparse, urlunparse
 
 import requests

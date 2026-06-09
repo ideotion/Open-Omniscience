@@ -5,12 +5,10 @@ Runs linters (Pylint, Flake8), type checkers (mypy), and executes all tests with
 Identifies dead code, anti-patterns, and runtime issues.
 """
 
-import os
 import json
+import os
 import subprocess
-import sys
 from datetime import datetime
-from pathlib import Path
 
 REPO_ROOT = "/workspace/ideotion__Open-Omniscience"
 OUTPUT_FILE = "/workspace/ideotion__Open-Omniscience/PHASE4_REPORT.json"
@@ -170,7 +168,7 @@ def analyze_imports(filepath):
     """Analyze imports for unused ones."""
     try:
         import ast
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, encoding='utf-8') as f:
             content = f.read()
         
         tree = ast.parse(content, filename=filepath)
@@ -227,6 +225,7 @@ def check_circular_imports(repo_root):
     try:
         # This is a simplified check
         import ast
+
         import networkx as nx
         
         # Build import graph
@@ -241,7 +240,7 @@ def check_circular_imports(repo_root):
                     rel_path = os.path.relpath(filepath, repo_root)
                     
                     try:
-                        with open(filepath, 'r', encoding='utf-8') as f:
+                        with open(filepath, encoding='utf-8') as f:
                             content = f.read()
                         
                         tree = ast.parse(content, filename=filepath)
@@ -553,7 +552,7 @@ def main():
     with open(OUTPUT_FILE, 'w') as f:
         json.dump(report, f, indent=2, default=str)
     
-    print(f"\nPhase 4 Complete!")
+    print("\nPhase 4 Complete!")
     print(f"Files Analyzed: {total_files}")
     print(f"Total Issues: {total_issues}")
     print(f"Critical Issues: {len(report['critical_issues'])}")
@@ -564,7 +563,7 @@ def main():
     
     # Print test results
     test_results = report['test_results']
-    print(f"\n=== Test Results ===")
+    print("\n=== Test Results ===")
     print(f"Total Tests: {test_results.get('total_tests', 0)}")
     print(f"Passed: {test_results.get('passed', 0)}")
     print(f"Failed: {test_results.get('failed', 0)}")

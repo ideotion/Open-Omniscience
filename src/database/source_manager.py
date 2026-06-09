@@ -33,13 +33,11 @@ This module provides comprehensive source management functionality including:
 Author: Ideotion
 """
 
-import logging
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import yaml
-from sqlalchemy import and_, asc, desc, func, not_, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 # Import database models

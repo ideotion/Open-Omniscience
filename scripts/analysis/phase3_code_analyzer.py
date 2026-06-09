@@ -5,13 +5,11 @@ Validates syntax, scope, types, logic, error handling, security, performance, an
 for every line in every source file.
 """
 
-import os
 import ast
 import json
+import os
 import re
-import sys
 from datetime import datetime
-from pathlib import Path
 
 REPO_ROOT = "/workspace/ideotion__Open-Omniscience"
 OUTPUT_FILE = "/workspace/ideotion__Open-Omniscience/PHASE3_REPORT.json"
@@ -134,7 +132,7 @@ class CodeAnalyzer(ast.NodeVisitor):
                 'message': f"Function '{func_name}' is too long ({node.end_lineno - node.lineno} lines)",
                 'line': node.lineno,
                 'function': func_name,
-                'details': f"Consider breaking into smaller functions"
+                'details': "Consider breaking into smaller functions"
             })
         
         # Check number of parameters
@@ -146,7 +144,7 @@ class CodeAnalyzer(ast.NodeVisitor):
                 'message': f"Function '{func_name}' has too many parameters ({num_params})",
                 'line': node.lineno,
                 'function': func_name,
-                'details': f"Consider using keyword arguments or refactoring"
+                'details': "Consider using keyword arguments or refactoring"
             })
         
         # Check for *args and **kwargs
@@ -383,7 +381,7 @@ def analyze_file(filepath):
     }
     
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, encoding='utf-8') as f:
             content = f.read()
         
         # Parse with AST
@@ -633,7 +631,7 @@ def main():
     with open(OUTPUT_FILE, 'w') as f:
         json.dump(report, f, indent=2, default=str)
     
-    print(f"\nPhase 3 Complete!")
+    print("\nPhase 3 Complete!")
     print(f"Files Analyzed: {total_files}")
     print(f"Total Lines: {total_lines}")
     print(f"Total Functions: {total_functions}")

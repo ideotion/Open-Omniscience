@@ -33,16 +33,17 @@ Tests cover:
 Author: Ideotion
 """
 
-import pytest
 import sys
-import time
 import threading
+import time
 from pathlib import Path
+
+import pytest
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from utils.cache import SimpleCache, LRUCache, cached, lru_cached
+from utils.cache import LRUCache, SimpleCache, cached, lru_cached
 
 
 class TestSimpleCache:
@@ -362,7 +363,7 @@ class TestGlobalCacheInstances:
 
     def test_global_instances_exist(self):
         """Test that global cache instances are available."""
-        from utils.cache import article_cache, source_cache, query_cache
+        from utils.cache import article_cache, query_cache, source_cache
         
         assert isinstance(article_cache, LRUCache)
         assert isinstance(source_cache, LRUCache)
@@ -370,7 +371,7 @@ class TestGlobalCacheInstances:
     
     def test_global_instances_functional(self):
         """Test that global cache instances work."""
-        from utils.cache import article_cache, source_cache, query_cache
+        from utils.cache import article_cache, query_cache, source_cache
         
         article_cache.set("test_article", {"id": 1, "title": "Test"})
         assert article_cache.get("test_article") == {"id": 1, "title": "Test"}

@@ -30,7 +30,7 @@ License: MIT
 
 import hashlib
 import json
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional
 
 
 class MerkleNode:

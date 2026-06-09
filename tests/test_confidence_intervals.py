@@ -23,12 +23,13 @@ Tests for confidence_intervals.py module
 Pillar 2: Scientific Rigor - Phase 2.1
 """
 
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
+
 from src.analysis.confidence_intervals import (
-    ConfidenceIntervals,
     ConfidenceInterval,
+    ConfidenceIntervals,
     ConfidenceLevel,
 )
 

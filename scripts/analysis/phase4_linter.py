@@ -4,15 +4,14 @@ Phase 4: Custom Linter
 Performs static analysis similar to flake8/pylint without external dependencies.
 """
 
+import ast
 import os
 import re
-import ast
-from typing import Dict, List
 
 
 class CustomLinter:
     def __init__(self):
-        self.issues: List[Dict] = []
+        self.issues: list[dict] = []
         self.current_file: str = ""
 
     def lint_file(self, filepath: str):
@@ -20,7 +19,7 @@ class CustomLinter:
         self.current_file = filepath
         
         try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(filepath, encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             
             lines = content.split('\n')
@@ -45,7 +44,7 @@ class CustomLinter:
                 'severity': 'LOW'
             })
 
-    def _check_line_length(self, lines: List[str]):
+    def _check_line_length(self, lines: list[str]):
         """Check for lines exceeding 120 characters."""
         for i, line in enumerate(lines, 1):
             if len(line) > 120:
@@ -57,7 +56,7 @@ class CustomLinter:
                     'severity': 'LOW'
                 })
 
-    def _check_trailing_whitespace(self, lines: List[str]):
+    def _check_trailing_whitespace(self, lines: list[str]):
         """Check for trailing whitespace."""
         for i, line in enumerate(lines, 1):
             if line.rstrip() != line:
@@ -69,7 +68,7 @@ class CustomLinter:
                     'severity': 'LOW'
                 })
 
-    def _check_mixed_tabs_spaces(self, lines: List[str]):
+    def _check_mixed_tabs_spaces(self, lines: list[str]):
         """Check for mixed tabs and spaces."""
         for i, line in enumerate(lines, 1):
             if '\t' in line and '    ' in line:
@@ -81,7 +80,7 @@ class CustomLinter:
                     'severity': 'LOW'
                 })
 
-    def _check_encoding_declaration(self, lines: List[str]):
+    def _check_encoding_declaration(self, lines: list[str]):
         """Check for encoding declaration in Python files."""
         if len(lines) > 0:
             first_line = lines[0]
@@ -91,7 +90,7 @@ class CustomLinter:
                     # Encoding declaration is optional in Python 3
                     pass
 
-    def _check_shebang(self, lines: List[str]):
+    def _check_shebang(self, lines: list[str]):
         """Check for consistent shebang usage."""
         if len(lines) > 0:
             if lines[0].startswith('#!'):
@@ -168,10 +167,7 @@ class CustomLinter:
             # Get all imports
             imports = set()
             for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        imports.add(alias.name)
-                elif isinstance(node, ast.ImportFrom):
+                if isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom):
                     for alias in node.names:
                         imports.add(alias.name)
             

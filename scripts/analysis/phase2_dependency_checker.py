@@ -5,16 +5,12 @@ Extracts all references (imports, paths, URLs, configs) from every file,
 verifies their existence/compatibility, and builds a dependency graph.
 """
 
-import os
-import re
 import ast
 import json
-import yaml
-from pathlib import Path
+import os
+import re
 from datetime import datetime
 from urllib.parse import urlparse
-import subprocess
-import sys
 
 REPO_ROOT = "/workspace/ideotion__Open-Omniscience"
 OUTPUT_FILE = "/workspace/ideotion__Open-Omniscience/PHASE2_REPORT.json"
@@ -29,7 +25,7 @@ def extract_python_imports(filepath):
     }
     
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, encoding='utf-8') as f:
             content = f.read()
         
         tree = ast.parse(content, filename=filepath)
@@ -88,7 +84,7 @@ def extract_file_references(filepath):
     }
     
     try:
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(filepath, encoding='utf-8', errors='ignore') as f:
             content = f.read()
         
         # Extract file paths (quoted strings that look like paths)
@@ -553,7 +549,7 @@ def main():
     with open(OUTPUT_FILE, 'w') as f:
         json.dump(report, f, indent=2, default=str)
     
-    print(f"\nPhase 2 Complete!")
+    print("\nPhase 2 Complete!")
     print(f"Files Scanned: {total_files}")
     print(f"Imports Found: {total_imports}")
     print(f"References Found: {total_references}")

@@ -28,16 +28,15 @@ License: GNU GPLv3
 """
 
 import argparse
-import os
-import sys
-from pathlib import Path
-from datetime import datetime
-import logging
-import traceback
-from typing import List, Dict, Any, Optional, Tuple
 import email
-from email.header import decode_header
 import hashlib
+import logging
+import sys
+import traceback
+from datetime import datetime
+from email.header import decode_header
+from pathlib import Path
+from typing import Any
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -55,7 +54,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def parse_eml_file(file_path: Path) -> Optional[Dict[str, Any]]:
+def parse_eml_file(file_path: Path) -> dict[str, Any] | None:
     """
     Parse an .eml file and extract structured data.
     
@@ -173,7 +172,7 @@ def parse_eml_file(file_path: Path) -> Optional[Dict[str, Any]]:
                 plain_text = html_content
         
         # Calculate content hash for duplicate detection
-        content_for_hash = f"{subject}{from_header}{plain_text}".encode('utf-8')
+        content_for_hash = f"{subject}{from_header}{plain_text}".encode()
         content_hash = hashlib.sha256(content_for_hash).hexdigest()
         
         # Extract sender domain for source identification
@@ -323,7 +322,7 @@ def create_or_get_source(session, source_name: str, source_type: str = "email", 
         return None
 
 
-def create_article_from_email(session, email_data: Dict[str, Any], source: Any, **kwargs) -> Optional[Any]:
+def create_article_from_email(session, email_data: dict[str, Any], source: Any, **kwargs) -> Any | None:
     """
     Create an article from email data.
     
@@ -338,7 +337,6 @@ def create_article_from_email(session, email_data: Dict[str, Any], source: Any, 
     """
     try:
         from src.database.models import Article, ArticleLink
-        from src.services.text_processor import generate_content_hash
         
         # Generate article data
         article_data = {
@@ -395,7 +393,7 @@ def create_article_from_email(session, email_data: Dict[str, Any], source: Any, 
         return None
 
 
-def import_eml_file(file_path: Path, session, source_name: Optional[str] = None, **kwargs) -> Tuple[bool, Optional[str]]:
+def import_eml_file(file_path: Path, session, source_name: str | None = None, **kwargs) -> tuple[bool, str | None]:
     """
     Import a single .eml file.
     
@@ -457,7 +455,7 @@ def import_eml_file(file_path: Path, session, source_name: Optional[str] = None,
         return False, f"Failed to import {file_path.name}: {str(e)}"
 
 
-def import_eml_directory(directory_path: Path, session, **kwargs) -> Dict[str, Any]:
+def import_eml_directory(directory_path: Path, session, **kwargs) -> dict[str, Any]:
     """
     Import all .eml files from a directory.
     
@@ -586,8 +584,7 @@ Examples:
     
     # Initialize database session
     try:
-        from src.database.models import get_session, Base, engine
-        from src.database.models import Article, Source
+        from src.database.models import Article, Base, Source, engine, get_session
         
         # Create tables if they don't exist
         Base.metadata.create_all(engine)

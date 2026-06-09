@@ -25,18 +25,15 @@ Comprehensive test suite for the SHA-256 Merkle tree implementation
 used in Open-Omniscience Pillar 4 cryptographic provenance.
 """
 
-import unittest
 import hashlib
-import json
-from typing import List, Any
-
-import sys
 import os
+import sys
+import unittest
 
 # Add the src directory to the path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from crypto.merkle_tree import MerkleTree, MerkleNode, compute_merkle_root, verify_data_integrity
+from crypto.merkle_tree import MerkleNode, MerkleTree, compute_merkle_root, verify_data_integrity
 
 
 class TestMerkleNode(unittest.TestCase):

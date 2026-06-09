@@ -35,20 +35,17 @@ Options:
 """
 
 import argparse
-import os
-import sys
-import subprocess
-from typing import Any, Dict, List
 import platform
-import time
+import subprocess
+import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Any
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.llm.model_manager import ModelManager
 from src.llm.config import get_llm_config
+from src.llm.model_manager import ModelManager
 
 
 class OllamaInstaller:
@@ -68,7 +65,7 @@ class OllamaInstaller:
             return False
     
     @staticmethod
-    def get_install_command() -> Optional[List[str]]:
+    def get_install_command() -> list[str] | None:
         """Get the appropriate install command for the current platform"""
         system = platform.system().lower()
         
@@ -161,7 +158,7 @@ class LLMSetup:
             print(f"Failed to start Ollama: {str(e)}")
             return False
     
-    def download_default_models(self) -> Dict[str, bool]:
+    def download_default_models(self) -> dict[str, bool]:
         """Download all default models"""
         print("Downloading default models...")
         results = {}
@@ -179,7 +176,7 @@ class LLMSetup:
         
         return results
     
-    def download_specific_models(self, model_ids: List[str]) -> Dict[str, bool]:
+    def download_specific_models(self, model_ids: list[str]) -> dict[str, bool]:
         """Download specific models"""
         results = {}
         
@@ -195,7 +192,7 @@ class LLMSetup:
         
         return results
     
-    def verify_installation(self) -> Dict[str, Any]:
+    def verify_installation(self) -> dict[str, Any]:
         """Verify that everything is properly installed and configured"""
         print("Verifying LLM installation...")
         

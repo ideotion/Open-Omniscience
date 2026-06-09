@@ -4,11 +4,10 @@ Phase 1: Recursive Codebase Mapping
 Generates a comprehensive inventory of all files and directories in the repository.
 """
 
-import os
 import hashlib
-from pathlib import Path
-from datetime import datetime
 import json
+import os
+from datetime import datetime
 
 REPO_ROOT = "/workspace/ideotion__Open-Omniscience"
 OUTPUT_FILE = "/workspace/ideotion__Open-Omniscience/PHASE1_REPORT.json"
@@ -25,7 +24,7 @@ def get_file_info(filepath):
             while chunk := f.read(8192):
                 file_hash.update(chunk)
             sha256_hash = file_hash.hexdigest()
-    except (IOError, OSError):
+    except OSError:
         sha256_hash = "N/A"
     
     # Determine file type
@@ -86,7 +85,7 @@ def get_dir_info(dirpath):
             fpath = os.path.join(root, f)
             try:
                 total_size += os.path.getsize(fpath)
-            except (IOError, OSError):
+            except OSError:
                 pass
     
     return {
@@ -239,7 +238,7 @@ def main():
     with open(OUTPUT_FILE, 'w') as f:
         json.dump(inventory, f, indent=2, default=str)
     
-    print(f"\nPhase 1 Complete!")
+    print("\nPhase 1 Complete!")
     print(f"Total Files: {total_files}")
     print(f"Total Directories: {total_dirs}")
     print(f"Total Size: {format_size(total_size)}")

@@ -33,9 +33,9 @@ import hashlib
 import json
 import os
 import sqlite3
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from .merkle_tree import MerkleTree, compute_merkle_root
 

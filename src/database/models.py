@@ -29,11 +29,8 @@ Includes tables for sources and articles, with relationships and indexes.
 Author: Ideotion
 """
 
-import os
-from contextlib import contextmanager
-from datetime import UTC, datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -56,17 +53,15 @@ from sqlalchemy.orm import declarative_base, relationship
 # Engine, session lifecycle, and the FastAPI dependency live in session.py and
 # have NO import-time side effects (no create_all, no monitoring thread). They are
 # re-exported here because much existing code does
-# `from src.database.models import get_session` etc.
+# `from src.database.models import get_session` (and Session/SessionLocal) etc.
+# noqa: F401 on each -- these are intentional backward-compat re-exports, not
+# unused imports; without it `ruff --fix` strips them and breaks importers.
 from src.database.session import (  # noqa: E402
-    Session,
-    SessionLocal,
-    close_session,
-    dispose_engine,
+    Session,  # noqa: F401
+    SessionLocal,  # noqa: F401
     engine,
-    get_db,
     get_session,
     init_db,
-    session_scope,
 )
 
 # =============================================================================

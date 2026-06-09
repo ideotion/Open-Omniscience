@@ -10,7 +10,7 @@ page directly, bypassing every ethical-scraping guard.
 
 from __future__ import annotations
 
-import pytest
+from datetime import UTC
 
 from src.ingest import BlockedTarget, FetchResult, RobotsDisallowed
 from src.services.duckduckgo import DuckDuckGoSearch
@@ -43,7 +43,7 @@ class _RecordingFetcher:
 
 
 def _html(url: str, body: str) -> FetchResult:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     return FetchResult(
         requested_url=url,
@@ -51,7 +51,7 @@ def _html(url: str, body: str) -> FetchResult:
         status_code=200,
         content=body,
         content_type="text/html",
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
     )
 
 

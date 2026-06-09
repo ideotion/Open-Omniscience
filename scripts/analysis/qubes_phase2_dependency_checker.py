@@ -19,22 +19,19 @@ For each file, we:
 4. Flag broken references as CRITICAL bugs
 """
 
+import argparse
+import ast
+import json
 import os
 import re
-import json
-import ast
-import sys
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any, Optional, Set, Tuple
-import argparse
-import subprocess
+from typing import Any
 
 
 class DependencyChecker:
     """Exhaustive dependency and link verifier."""
     
-    def __init__(self, root_path: str, phase1_report: Optional[str] = None):
+    def __init__(self, root_path: str, phase1_report: str | None = None):
         """
         Initialize the dependency checker.
         
@@ -44,13 +41,13 @@ class DependencyChecker:
         """
         self.root_path = os.path.abspath(root_path)
         self.phase1_report = phase1_report
-        self.file_map: Dict[str, Any] = {}
-        self.all_files: List[str] = []
-        self.dependency_graph: Dict[str, Dict[str, Any]] = {}
-        self.issues: List[Dict[str, Any]] = []
-        self.references: Dict[str, List[Dict[str, Any]]] = {}
-        self.verified_refs: Dict[str, bool] = {}
-        self.stats: Dict[str, Any] = {
+        self.file_map: dict[str, Any] = {}
+        self.all_files: list[str] = []
+        self.dependency_graph: dict[str, dict[str, Any]] = {}
+        self.issues: list[dict[str, Any]] = []
+        self.references: dict[str, list[dict[str, Any]]] = {}
+        self.verified_refs: dict[str, bool] = {}
+        self.stats: dict[str, Any] = {
             'total_references': 0,
             'verified_references': 0,
             'broken_references': 0,
@@ -60,7 +57,7 @@ class DependencyChecker:
         
         # Load Phase 1 report if provided
         if phase1_report and os.path.exists(phase1_report):
-            with open(phase1_report, 'r') as f:
+            with open(phase1_report) as f:
                 self.file_map = json.load(f)
             self.all_files = list(self.file_map.get('files', {}).keys())
         else:
@@ -106,13 +103,13 @@ class DependencyChecker:
         }
         return type_map.get(ext, 'unknown')
     
-    def extract_references_from_python(self, filepath: str) -> List[Dict[str, Any]]:
+    def extract_references_from_python(self, filepath: str) -> list[dict[str, Any]]:
         """Extract all references from a Python file."""
         references = []
         full_path = os.path.join(self.root_path, filepath)
         
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 content = f.read()
                 tree = ast.parse(content, filename=filepath)
             
@@ -171,7 +168,7 @@ class DependencyChecker:
         
         return references
     
-    def _extract_string_references(self, string_val: str, filepath: str, line: int, references: List[Dict[str, Any]]) -> None:
+    def _extract_string_references(self, string_val: str, filepath: str, line: int, references: list[dict[str, Any]]) -> None:
         """Extract file path references from string literals."""
         # Skip empty strings
         if not string_val or len(string_val) < 2:
@@ -232,7 +229,7 @@ class DependencyChecker:
                 'category': 'config'
             })
     
-    def _extract_call_references(self, node: ast.Call, filepath: str, references: List[Dict[str, Any]]) -> None:
+    def _extract_call_references(self, node: ast.Call, filepath: str, references: list[dict[str, Any]]) -> None:
         """Extract references from function calls."""
         # Check for open() calls
         if isinstance(node.func, ast.Name) and node.func.id == 'open':
@@ -260,13 +257,13 @@ class DependencyChecker:
                         'category': 'module'
                     })
     
-    def extract_references_from_json(self, filepath: str) -> List[Dict[str, Any]]:
+    def extract_references_from_json(self, filepath: str) -> list[dict[str, Any]]:
         """Extract all references from a JSON file."""
         references = []
         full_path = os.path.join(self.root_path, filepath)
         
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 data = json.load(f)
             
             self._extract_json_references(data, filepath, references)
@@ -289,7 +286,7 @@ class DependencyChecker:
         
         return references
     
-    def _extract_json_references(self, data: Any, filepath: str, references: List[Dict[str, Any]], path: str = '') -> None:
+    def _extract_json_references(self, data: Any, filepath: str, references: list[dict[str, Any]], path: str = '') -> None:
         """Recursively extract references from JSON data."""
         if isinstance(data, dict):
             for key, value in data.items():
@@ -310,7 +307,7 @@ class DependencyChecker:
         elif isinstance(data, str):
             self._check_json_string_reference('', data, filepath, path, references)
     
-    def _check_json_string_reference(self, key: str, value: str, filepath: str, path: str, references: List[Dict[str, Any]]) -> None:
+    def _check_json_string_reference(self, key: str, value: str, filepath: str, path: str, references: list[dict[str, Any]]) -> None:
         """Check if a JSON string value is a reference."""
         # Skip empty strings
         if not value or len(value) < 2:
@@ -352,14 +349,14 @@ class DependencyChecker:
                 'category': 'module'
             })
     
-    def extract_references_from_yaml(self, filepath: str) -> List[Dict[str, Any]]:
+    def extract_references_from_yaml(self, filepath: str) -> list[dict[str, Any]]:
         """Extract all references from a YAML file."""
         references = []
         full_path = os.path.join(self.root_path, filepath)
         
         try:
             import yaml
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 data = yaml.safe_load(f)
             
             if data:
@@ -382,7 +379,7 @@ class DependencyChecker:
         
         return references
     
-    def _extract_yaml_references(self, data: Any, filepath: str, references: List[Dict[str, Any]], path: str = '') -> None:
+    def _extract_yaml_references(self, data: Any, filepath: str, references: list[dict[str, Any]], path: str = '') -> None:
         """Recursively extract references from YAML data."""
         if isinstance(data, dict):
             for key, value in data.items():
@@ -401,7 +398,7 @@ class DependencyChecker:
         elif isinstance(data, str):
             self._check_yaml_string_reference('', data, filepath, path, references)
     
-    def _check_yaml_string_reference(self, key: str, value: str, filepath: str, path: str, references: List[Dict[str, Any]]) -> None:
+    def _check_yaml_string_reference(self, key: str, value: str, filepath: str, path: str, references: list[dict[str, Any]]) -> None:
         """Check if a YAML string value is a reference."""
         if not value or len(value) < 2:
             return
@@ -430,13 +427,13 @@ class DependencyChecker:
                 'category': 'url'
             })
     
-    def extract_references_from_markdown(self, filepath: str) -> List[Dict[str, Any]]:
+    def extract_references_from_markdown(self, filepath: str) -> list[dict[str, Any]]:
         """Extract all references from a Markdown file."""
         references = []
         full_path = os.path.join(self.root_path, filepath)
         
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 content = f.read()
                 lines = content.split('\n')
             
@@ -475,13 +472,13 @@ class DependencyChecker:
         
         return references
     
-    def extract_references_from_shell(self, filepath: str) -> List[Dict[str, Any]]:
+    def extract_references_from_shell(self, filepath: str) -> list[dict[str, Any]]:
         """Extract all references from a shell script."""
         references = []
         full_path = os.path.join(self.root_path, filepath)
         
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 content = f.read()
                 lines = content.split('\n')
             
@@ -541,13 +538,13 @@ class DependencyChecker:
         
         return references
     
-    def extract_references_from_html(self, filepath: str) -> List[Dict[str, Any]]:
+    def extract_references_from_html(self, filepath: str) -> list[dict[str, Any]]:
         """Extract all references from an HTML file."""
         references = []
         full_path = os.path.join(self.root_path, filepath)
         
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 content = f.read()
             
             # Extract script src
@@ -600,13 +597,13 @@ class DependencyChecker:
         
         return references
     
-    def extract_references_from_text(self, filepath: str) -> List[Dict[str, Any]]:
+    def extract_references_from_text(self, filepath: str) -> list[dict[str, Any]]:
         """Extract references from text files."""
         references = []
         full_path = os.path.join(self.root_path, filepath)
         
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding='utf-8') as f:
                 content = f.read()
                 lines = content.split('\n')
             
@@ -626,7 +623,7 @@ class DependencyChecker:
         
         return references
     
-    def extract_references(self, filepath: str) -> List[Dict[str, Any]]:
+    def extract_references(self, filepath: str) -> list[dict[str, Any]]:
         """Extract all references from a file based on its type."""
         file_type = self.get_file_type(filepath)
         
@@ -645,7 +642,7 @@ class DependencyChecker:
         extractor = extractors.get(file_type, self.extract_references_from_text)
         return extractor(filepath)
     
-    def verify_reference(self, ref: Dict[str, Any]) -> Dict[str, Any]:
+    def verify_reference(self, ref: dict[str, Any]) -> dict[str, Any]:
         """Verify a single reference exists and is accessible."""
         result = {
             'reference': ref,
@@ -686,7 +683,7 @@ class DependencyChecker:
         
         return result
     
-    def _verify_file_reference(self, ref: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    def _verify_file_reference(self, ref: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         """Verify a file reference."""
         reference = ref.get('reference', '')
         file = ref.get('file', '')
@@ -728,7 +725,7 @@ class DependencyChecker:
         
         return result
     
-    def _verify_module_reference(self, ref: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    def _verify_module_reference(self, ref: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         """Verify a module reference."""
         reference = ref.get('reference', '')
         module = ref.get('module', '')
@@ -850,7 +847,7 @@ class DependencyChecker:
     def _check_symbol_in_module(self, module_path: str, symbol: str) -> bool:
         """Check if a symbol exists in a module file."""
         try:
-            with open(module_path, 'r', encoding='utf-8') as f:
+            with open(module_path, encoding='utf-8') as f:
                 content = f.read()
             
             # Parse the file and look for the symbol
@@ -870,7 +867,7 @@ class DependencyChecker:
         except Exception:
             return False
     
-    def _verify_url_reference(self, ref: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    def _verify_url_reference(self, ref: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         """Verify a URL reference."""
         reference = ref.get('reference', '')
         
@@ -887,7 +884,7 @@ class DependencyChecker:
         
         return result
     
-    def _verify_env_reference(self, ref: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    def _verify_env_reference(self, ref: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         """Verify an environment variable reference."""
         reference = ref.get('reference', '')
         
@@ -902,7 +899,7 @@ class DependencyChecker:
         for env_file in env_files:
             if os.path.exists(env_file):
                 try:
-                    with open(env_file, 'r') as f:
+                    with open(env_file) as f:
                         for line in f:
                             if line.startswith(reference + '='):
                                 result['verified'] = True
@@ -923,7 +920,7 @@ class DependencyChecker:
         
         return result
     
-    def _verify_config_reference(self, ref: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    def _verify_config_reference(self, ref: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         """Verify a configuration reference."""
         reference = ref.get('reference', '')
         
@@ -944,10 +941,10 @@ class DependencyChecker:
         
         return result
     
-    def run(self) -> Dict[str, Any]:
+    def run(self) -> dict[str, Any]:
         """Run the complete dependency verification process."""
         print(f"\n{'='*80}")
-        print(f"PHASE 2: DEPENDENCY & LINK VERIFICATION")
+        print("PHASE 2: DEPENDENCY & LINK VERIFICATION")
         print(f"{'='*80}")
         print(f"Root Path: {self.root_path}")
         print(f"Files to Analyze: {len(self.all_files)}")
@@ -1003,7 +1000,7 @@ class DependencyChecker:
         
         # Print summary
         print(f"\n{'='*80}")
-        print(f"PHASE 2 SUMMARY")
+        print("PHASE 2 SUMMARY")
         print(f"{'='*80}")
         print(f"Total Files Analyzed: {len(self.all_files)}")
         print(f"Total References Extracted: {self.stats['total_references']}")
@@ -1137,9 +1134,9 @@ def main():
     checker.save_report(args.output)
     
     print(f"\n{'='*80}")
-    print(f"PHASE 2 COMPLETE")
+    print("PHASE 2 COMPLETE")
     print(f"{'='*80}")
-    print(f"Next Step: Proceed to PHASE 3 - Line-by-Line Code Analysis")
+    print("Next Step: Proceed to PHASE 3 - Line-by-Line Code Analysis")
     print(f"Command: python3 qubes_phase3_code_analyzer.py --input {args.output}")
     print(f"{'='*80}\n")
 

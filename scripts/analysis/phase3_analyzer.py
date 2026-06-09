@@ -4,17 +4,15 @@ Phase 3: Line-by-Line Code Analyzer
 Performs static analysis on Python files to find potential issues.
 """
 
+import ast
 import os
 import re
-import ast
-from typing import Dict, List, Set, Tuple
-from pathlib import Path
 
 
 class CodeAnalyzer:
     def __init__(self, root_dir: str = '.'):
         self.root_dir = root_dir
-        self.issues: List[Dict] = []
+        self.issues: list[dict] = []
         self.current_file: str = ""
         self.current_line: int = 0
 
@@ -23,7 +21,7 @@ class CodeAnalyzer:
         self.current_file = filepath
         
         try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(filepath, encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             
             # Try to parse as AST
@@ -158,7 +156,7 @@ class CodeAnalyzer:
                     'severity': 'INFO'
                 })
 
-    def _check_import(self, module: str, line: int, lines: List[str]):
+    def _check_import(self, module: str, line: int, lines: list[str]):
         """Check import statement."""
         # Check for wildcard imports
         if module == '*':
@@ -171,7 +169,7 @@ class CodeAnalyzer:
                 'severity': 'LOW'
             })
 
-    def _check_from_import(self, module: str, name: str, level: int, line: int, lines: List[str]):
+    def _check_from_import(self, module: str, name: str, level: int, line: int, lines: list[str]):
         """Check from import statement."""
         # Check for wildcard imports
         if name == '*':
@@ -184,7 +182,7 @@ class CodeAnalyzer:
                 'severity': 'LOW'
             })
 
-    def _check_undefined_name(self, name: str, line: int, lines: List[str]):
+    def _check_undefined_name(self, name: str, line: int, lines: list[str]):
         """Check for undefined names."""
         # Skip common builtins
         builtins = {
@@ -203,7 +201,7 @@ class CodeAnalyzer:
             # For now, just flag it as a potential issue
             pass
 
-    def _check_function_call(self, node: ast.Call, lines: List[str]):
+    def _check_function_call(self, node: ast.Call, lines: list[str]):
         """Check function call for potential issues."""
         if isinstance(node.func, ast.Name):
             func_name = node.func.id
@@ -215,7 +213,7 @@ class CodeAnalyzer:
                     'line': node.lineno,
                     'column': node.col_offset,
                     'type': 'SECURITY',
-                    'message': f"Use of eval() is dangerous",
+                    'message': "Use of eval() is dangerous",
                     'severity': 'HIGH'
                 })
             
@@ -226,7 +224,7 @@ class CodeAnalyzer:
                     'line': node.lineno,
                     'column': node.col_offset,
                     'type': 'SECURITY',
-                    'message': f"Use of exec() is dangerous",
+                    'message': "Use of exec() is dangerous",
                     'severity': 'HIGH'
                 })
             
@@ -237,11 +235,11 @@ class CodeAnalyzer:
                     'line': node.lineno,
                     'column': node.col_offset,
                     'type': 'SECURITY',
-                    'message': f"Use of pickle.loads() is dangerous",
+                    'message': "Use of pickle.loads() is dangerous",
                     'severity': 'HIGH'
                 })
 
-    def _check_function_def(self, node: ast.FunctionDef, lines: List[str]):
+    def _check_function_def(self, node: ast.FunctionDef, lines: list[str]):
         """Check function definition for potential issues."""
         # Check for functions without docstrings
         if not ast.get_docstring(node):
@@ -265,7 +263,7 @@ class CodeAnalyzer:
                 'severity': 'LOW'
             })
 
-    def _check_class_def(self, node: ast.ClassDef, lines: List[str]):
+    def _check_class_def(self, node: ast.ClassDef, lines: list[str]):
         """Check class definition for potential issues."""
         # Check for classes without docstrings
         if not ast.get_docstring(node):

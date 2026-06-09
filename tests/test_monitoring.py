@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from src.ingest import EthicalFetcher, FetchFailed
+from src.ingest import EthicalFetcher
 from src.monitoring.anomaly import volume_anomalies
 from src.monitoring.health import HealthStatus, check_source
 

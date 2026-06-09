@@ -29,8 +29,6 @@ Author: Open Omniscience Team
 """
 
 import logging
-from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -60,15 +58,14 @@ class StopwordsManager:
         'very', 'too', 'so', 'just', 'only', 'also', 'here', 'there',
         'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each',
         'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor',
-        'about', 'above', 'after', 'again', 'against', 'all', 'and', 'any',
-        'as', 'at', 'because', 'been', 'before', 'being', 'below',
-        'between', 'both', 'but', 'by', 'can', 'during', 'each', 'for',
-        'from', 'if', 'in', 'into', 'is', 'it', 'its', 'of', 'off', 'on',
-        'once', 'only', 'or', 'other', 'ought', 'our', 'out', 'over',
-        'own', 'same', 'than', 'that', 'the', 'their', 'them', 'then',
-        'there', 'these', 'they', 'this', 'those', 'through', 'to',
-        'under', 'until', 'up', 'very', 'was', 'we', 'were', 'what',
-        'when', 'where', 'which', 'while', 'who', 'whom', 'why', 'with',
+        'about', 'above', 'after', 'again', 'against', 'and', 'as', 'at', 'because', 'before', 'below',
+        'between', 'but', 'by', 'during', 'for',
+        'from', 'if', 'in', 'into', 'of', 'off', 'on',
+        'once', 'or', 'ought', 'out', 'over',
+        'own', 'same', 'than', 'that', 'then',
+        'these', 'this', 'those', 'through', 'to',
+        'under', 'until', 'up', 'what',
+        'which', 'while', 'who', 'whom', 'with',
         's', 't', 'd', 'll', 're', 've', 'm', 'ma',
     }
     
@@ -96,8 +93,7 @@ class StopwordsManager:
             'ce', 'cet', 'cette', 'ces', 'mon', 'ton', 'son',
             'je', 'tu', 'il', 'elle', 'nous', 'vous', 'ils', 'elles',
             'suis', 'es', 'est', 'sommes', 'etes', 'sont',
-            'que', 'qui', 'quoi', 'dont', 'ou', 'et', 'mais', 'ou',
-            'avec', 'sans', 'sous', 'sur', 'de', 'par', 'pour',
+            'que', 'qui', 'quoi', 'dont', 'ou', 'et', 'mais', 'avec', 'sans', 'sous', 'sur', 'par', 'pour',
         },
     }
     

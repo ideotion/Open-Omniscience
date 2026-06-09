@@ -35,7 +35,7 @@ import threading
 import time
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, Dict, Optional, Tuple, TypeVar
+from typing import Any, TypeVar
 
 # Configure logging
 logger = logging.getLogger(__name__)

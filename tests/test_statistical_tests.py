@@ -23,15 +23,16 @@ Tests for statistical_tests.py module
 Pillar 2: Scientific Rigor - Phase 2.1
 """
 
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
+
 from src.analysis.statistical_tests import (
     StatisticalTests,
     TestResult,
+    one_way_anova,
     t_test_independent,
     t_test_paired,
-    one_way_anova,
 )
 
 

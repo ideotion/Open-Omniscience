@@ -34,7 +34,7 @@ class SignatureResult:
         self.message = message
         self.fingerprint = fingerprint
         self.key_id = key_id
-        from datetime import datetime, timezone
+        from datetime import datetime
         self.timestamp = datetime.now(UTC).isoformat()
 
 class GPGSigner:

@@ -28,9 +28,7 @@ Author: Open Omniscience Team
 """
 
 import logging
-import re
 from collections import Counter
-from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 

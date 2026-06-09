@@ -34,7 +34,7 @@ For inquiries, contact: open-omniscience@ideotion.com
 
 def update_file_content(filepath):
     """Update file content to replace MIT with GPLv3."""
-    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+    with open(filepath, encoding='utf-8', errors='ignore') as f:
         content = f.read()
     
     original_content = content

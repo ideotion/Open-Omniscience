@@ -36,27 +36,28 @@ Tests cover:
 Author: Ideotion
 """
 
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from utils.security import (
-    SecurityError,
-    sanitize_html,
-    escape_html,
-    validate_and_sanitize_filename,
-    safe_path_join,
-    sanitize_url,
-    validate_email,
-    validate_and_sanitize_search_query,
-    generate_secure_token,
-    hash_password,
-    verify_password,
-    get_security_headers,
     SECURITY_HEADERS,
+    SecurityError,
+    escape_html,
+    generate_secure_token,
+    get_security_headers,
+    hash_password,
+    safe_path_join,
+    sanitize_html,
+    sanitize_url,
+    validate_and_sanitize_filename,
+    validate_and_sanitize_search_query,
+    validate_email,
+    verify_password,
 )
 
 

@@ -57,11 +57,11 @@ from sqlalchemy.orm import Session
 # install still boots with the spine (ingest + search + export); they are included
 # below only when their dependencies are present.
 try:
-    from src.api.commodity import router as commodity_router
     from src.api.analysis import router as analysis_router
+    from src.api.commodity import router as commodity_router
+    from src.api.framing import router as framing_router
     from src.api.keyword_analysis import router as keyword_analysis_router
     from src.api.keyword_management import router as keyword_management_router
-    from src.api.framing import router as framing_router
     _ANALYSIS_AVAILABLE = True
 except ImportError:
     commodity_router = analysis_router = None
@@ -69,52 +69,33 @@ except ImportError:
     _ANALYSIS_AVAILABLE = False
 
 # Import ingestion router (ethical scrape -> extract -> store)
-from src.api.ingestion import router as ingestion_router
+# Import annotations router (signed, portable, web-of-trust source annotations)
+from src.api.annotations import router as annotations_router
 
-# Link-analysis router quarantined in v0.4: its services (credibility scorer,
-# source scraper, network analyzer) produced fabricated outputs (see docs/HISTORY.md).
-
-# Import LLM router (clean Ollama HTTP client; replaces the legacy routes.llm)
-from src.api.llm import router as llm_router
-
-# Import monitoring router (real source uptime + corpus anomalies)
-from src.api.monitoring import router as monitoring_router
-
-# Import reporting router (signed, tamper-evident evidence bundles)
-from src.api.reporting import router as reporting_router
-
-# Import custody router (append-only signed chain-of-custody log + anchoring)
-from src.api.custody import router as custody_router
-
-# Import source management router
-from src.api.source_management import router as source_management_router
-
-# Import database overview router (honest read-only corpus statistics + backup/restore)
-from src.api.database import router as database_router
-
-# Import application settings router (GUI-editable preferences)
-from src.api.settings import router as settings_router
-
-# Import scheduler router (in-app background ingester control surface)
-from src.api.scheduler import router as scheduler_router
-
-# Import markets router (per-source price-extraction rules + structured ingest)
-from src.api.markets import router as markets_router
-
-# Import source-catalog CSV import/export router
-from src.api.source_io import router as source_io_router
-
-# Import insights router (keyword & entity analytics)
-from src.api.insights import router as insights_router
+# Import article date-tag router (extracted, human-confirmable dates mentioned in text)
+from src.api.article_dates import router as article_dates_router
 
 # Import briefing router (the Home triage feed of honest "cards" + draft accumulator)
 from src.api.briefing import router as briefing_router
 
+# Import custody router (append-only signed chain-of-custody log + anchoring)
+from src.api.custody import router as custody_router
+
+# Import database overview router (honest read-only corpus statistics + backup/restore)
+from src.api.database import router as database_router
+
+# Import world-events agenda router (curated, offline calendar of major events)
+from src.api.events import router as events_router
+
+# Import hazards router (open natural-hazard/weather feeds, space-time relay)
+from src.api.hazards import router as hazards_router
+from src.api.ingestion import router as ingestion_router
+
+# Import insights router (keyword & entity analytics)
+from src.api.insights import router as insights_router
+
 # Import source-integrity router (no-composite profile + user-guided actor-collapse)
 from src.api.integrity import router as integrity_router
-
-# Import annotations router (signed, portable, web-of-trust source annotations)
-from src.api.annotations import router as annotations_router
 
 # Import world-law change-tracking router (statutes/gazettes/IP, baseline→diff→flag)
 from src.api.law import router as law_router
@@ -122,32 +103,49 @@ from src.api.law import router as law_router
 # Import link / co-citation analysis router (honest counts only)
 from src.api.link_analysis import router as link_analysis_router
 
-# Import Wikipedia change-tracking router
-from src.api.wiki import router as wiki_router
+# Link-analysis router quarantined in v0.4: its services (credibility scorer,
+# source scraper, network analyzer) produced fabricated outputs (see docs/HISTORY.md).
+# Import LLM router (clean Ollama HTTP client; replaces the legacy routes.llm)
+from src.api.llm import router as llm_router
 
-# Import verification router (honest image metadata/EXIF)
-from src.api.verification import router as verification_router
+# Import markets router (per-source price-extraction rules + structured ingest)
+from src.api.markets import router as markets_router
+
+# Import monitoring router (real source uptime + corpus anomalies)
+from src.api.monitoring import router as monitoring_router
+
+# Import personality router (bundled, local quotes + fun facts — UI flourishes)
+from src.api.personality import router as personality_router
+
+# Import reporting router (signed, tamper-evident evidence bundles)
+from src.api.reporting import router as reporting_router
 
 # Import safety router (at-risk-user safety: fetch-mode/proxy, encrypted backup, panic)
 from src.api.safety import router as safety_router
 
-# Import world-events agenda router (curated, offline calendar of major events)
-from src.api.events import router as events_router
+# Import scheduler router (in-app background ingester control surface)
+from src.api.scheduler import router as scheduler_router
+
+# Import application settings router (GUI-editable preferences)
+from src.api.settings import router as settings_router
+
+# Import source-catalog CSV import/export router
+from src.api.source_io import router as source_io_router
+
+# Import source management router
+from src.api.source_management import router as source_management_router
 
 # Import system router (loopback-only self-observation: live scraping + vitals)
 from src.api.system import router as system_router
 
-# Import hazards router (open natural-hazard/weather feeds, space-time relay)
-from src.api.hazards import router as hazards_router
-
 # Import temporal-map router (space-time signals on one zoomable map + time axis)
 from src.api.timemap import router as timemap_router
 
-# Import article date-tag router (extracted, human-confirmable dates mentioned in text)
-from src.api.article_dates import router as article_dates_router
+# Import verification router (honest image metadata/EXIF)
+from src.api.verification import router as verification_router
 
-# Import personality router (bundled, local quotes + fun facts — UI flourishes)
-from src.api.personality import router as personality_router
+# Import Wikipedia change-tracking router
+from src.api.wiki import router as wiki_router
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -245,6 +243,7 @@ app.mount("/metrics", metrics_app)
 
 # Rate limiter setup
 from src.api.ratelimit import limiter
+
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 

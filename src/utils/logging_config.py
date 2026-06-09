@@ -29,8 +29,7 @@ Author: Ideotion
 """
 
 import logging
-import os
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 

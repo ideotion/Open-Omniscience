@@ -37,7 +37,6 @@ import html
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
 
 # Configure logging
 logger = logging.getLogger(__name__)

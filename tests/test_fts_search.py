@@ -11,12 +11,11 @@ Two layers:
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from src.database.fts import SearchQueryError, build_match, ensure_fts, search_ids
 from src.database.models import Article, Base, Source
-
 
 # --------------------------------------------------------------------------- #
 # Pure translator

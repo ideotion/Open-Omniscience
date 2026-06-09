@@ -4,17 +4,15 @@ Phase 2: Reference Extractor
 Extracts all references from all files in the repository.
 """
 
+import json
 import os
 import re
-import json
-from pathlib import Path
-from typing import Dict, List, Set, Tuple
 
 
 class ReferenceExtractor:
     def __init__(self, root_dir: str = '.'):
         self.root_dir = root_dir
-        self.all_references: Dict[str, Dict[str, List[str]]] = {}
+        self.all_references: dict[str, dict[str, list[str]]] = {}
         self.file_types = {
             '.py': self._extract_python_refs,
             '.sh': self._extract_shell_refs,
@@ -37,7 +35,7 @@ class ReferenceExtractor:
             return path
         return os.path.normpath(os.path.join(self.root_dir, path))
 
-    def _extract_python_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_python_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract Python-specific references."""
         refs = {
             'imports': [],
@@ -82,7 +80,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def _extract_shell_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_shell_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract shell script references."""
         refs = {
             'commands': [],
@@ -113,7 +111,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def _extract_js_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_js_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract JavaScript references."""
         refs = {
             'imports': [],
@@ -144,7 +142,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def _extract_markdown_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_markdown_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract Markdown references."""
         refs = {
             'links': [],
@@ -172,7 +170,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def _extract_html_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_html_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract HTML references."""
         refs = {
             'scripts': [],
@@ -203,7 +201,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def _extract_css_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_css_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract CSS references."""
         refs = {
             'imports': [],
@@ -222,7 +220,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def _extract_json_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_json_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract JSON references."""
         refs = {
             'file_paths': [],
@@ -241,7 +239,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def _extract_yaml_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_yaml_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract YAML references."""
         refs = {
             'file_paths': [],
@@ -266,7 +264,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def _extract_text_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_text_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract text file references."""
         refs = {
             'urls': [],
@@ -285,7 +283,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def _extract_config_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_config_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract config file references."""
         refs = {
             'includes': [],
@@ -304,7 +302,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def _extract_makefile_refs(self, content: str, filepath: str) -> Dict[str, List[str]]:
+    def _extract_makefile_refs(self, content: str, filepath: str) -> dict[str, list[str]]:
         """Extract Makefile references."""
         refs = {
             'includes': [],
@@ -324,7 +322,7 @@ class ReferenceExtractor:
         
         return refs
 
-    def extract_all_references(self) -> Dict[str, Dict]:
+    def extract_all_references(self) -> dict[str, dict]:
         """Extract references from all files."""
         exclude_patterns = [
             '.git',
@@ -349,7 +347,7 @@ class ReferenceExtractor:
                     continue
                 
                 try:
-                    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    with open(filepath, encoding='utf-8', errors='ignore') as f:
                         content = f.read()
                     
                     ext = os.path.splitext(file)[1].lower()
@@ -379,7 +377,7 @@ if __name__ == '__main__':
     extractor.save_report('/tmp/phase2_references.json')
     
     print(f"Extracted references from {len(references)} files")
-    print(f"Report saved to /tmp/phase2_references.json")
+    print("Report saved to /tmp/phase2_references.json")
     
     # Print summary
     print("\n=== REFERENCE SUMMARY ===")

@@ -30,8 +30,6 @@ Author: Open Omniscience Team
 import html
 import re
 import unicodedata
-from collections import Counter
-from typing import Dict, List, Optional, Tuple
 
 
 class TextProcessor:
