@@ -1169,6 +1169,52 @@ class KeywordFamilyOverride(Base):
         return f"<KeywordFamilyOverride({self.normalized_term} -> {self.family_key})>"
 
 
+class KeywordSuperGroup(Base):
+    """A user-named umbrella above keyword *families* (a group-of-groups).
+
+    Where a family collapses surface variants of one entity (``Trump`` / ``Trump's`` /
+    ``Donald Trump``), a super-group lets the user gather several distinct families under
+    one theme for sorting, discovery and mind-map clustering — e.g. "Russia–Ukraine war"
+    over {Russia, Ukraine, Putin, Zelensky, sanctions}. It is pure user curation: we
+    never auto-assign without the user, and membership is by the family's canonical
+    *normalized term* (the stable key), so nothing in the keyword store is rewritten.
+    """
+
+    __tablename__ = "keyword_supergroups"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False, unique=True)
+    color = Column(String(16))                          # optional UI accent (hex)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    members = relationship("KeywordSuperGroupMember", back_populates="supergroup",
+                           cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<KeywordSuperGroup({self.name})>"
+
+
+class KeywordSuperGroupMember(Base):
+    """One family (by its canonical normalized term) assigned to a super-group."""
+
+    __tablename__ = "keyword_supergroup_members"
+
+    id = Column(Integer, primary_key=True)
+    supergroup_id = Column(Integer, ForeignKey("keyword_supergroups.id", ondelete="CASCADE"),
+                           nullable=False)
+    normalized_term = Column(String(255), nullable=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    supergroup = relationship("KeywordSuperGroup", back_populates="members")
+
+    __table_args__ = (
+        Index("ix_kwsg_member_unique", "supergroup_id", "normalized_term", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<KeywordSuperGroupMember(sg={self.supergroup_id} {self.normalized_term})>"
+
+
 class KeywordMention(Base):
     """One article's mention of a keyword/entity, with context + denormalised facets.
 
