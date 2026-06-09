@@ -75,3 +75,14 @@ def test_excluded_terms_hidden_in_top(tmp_path, monkeypatch):
     add_excluded("copper")
     assert not any(t["normalized"] == "copper" for t in q.top_terms(s, limit=20)["terms"])
     s.close()
+
+
+def test_stoplist_covers_flagged_function_words_and_contractions():
+    """User-flagged leaks (since/last/it's/don't) are filtered, incl. curly ’ spellings,
+    while genuine subject keywords are never hidden."""
+    sw = global_stopwords()
+    for w in ("since", "last", "it's", "don't", "said", "reportedly", "today", "meanwhile"):
+        assert w in sw, w
+    assert "it’s" in sw and "don’t" in sw          # curly-apostrophe variants
+    for keep in ("inflation", "russia", "sanctions", "election", "macron"):
+        assert keep not in sw, keep
