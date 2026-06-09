@@ -1,0 +1,46 @@
+%% Data model (core entities) — verified against src/database/models.py (Phase 1 audit).
+%% 26 tables total; grouped here by domain. UQ = unique constraint.
+erDiagram
+    SOURCE ||--o{ ARTICLE : "has (cascade delete)"
+    SOURCE ||--o| SOURCE_METADATA : "1:1 (robots, geo, crawl_delay)"
+    SOURCE }o--o{ SOURCE_GROUP : "membership"
+    ARTICLE ||--o{ ARTICLE_LINK : "extracted links"
+    ARTICLE ||--o{ ARTICLE_ANALYSIS : "LLM results + provenance"
+    ARTICLE ||--o{ ARTICLE_MENTIONED_DATE : "dates in text"
+    ARTICLE }o--o{ KEYWORD : "article_keywords assoc"
+    KEYWORD ||--o{ KEYWORD_MENTION : "per-article counts"
+    KEYWORD }o--|| KEYWORD_CATEGORY : "categorized"
+    KEYWORD_SUPERGROUP ||--o{ KEYWORD_SUPERGROUP_MEMBER : "families"
+    ARTICLE_LINK }o--o| EXTERNAL_SOURCE : "cited domain"
+    EXTERNAL_SOURCE ||--o{ SOURCE_ARTICLE : "their articles"
+    SOURCE ||--o{ MARKET_EXTRACTION_RULE : "price selectors"
+    WIKI_PAGE ||--o{ WIKI_REVISION : "delta-compressed edits"
+    LAW_DOCUMENT ||--o{ LAW_REVISION : "observed changes"
+
+    SOURCE {
+        string domain "UQ"
+        int rate_limit_ms "per-host politeness"
+        bool enabled
+        int priority
+    }
+    ARTICLE {
+        string url
+        string canonical_url "indexed, NOT unique"
+        string hash "UQ - SHA-256 content dedup"
+        text content "FTS5 external-content index"
+        datetime published_at
+        string language
+    }
+    ARTICLE_FTS {
+        virtual fts5 "SQLite-only; triggers keep in sync"
+    }
+    COMMODITY_PRICE {
+        string symbol
+        date observed_on
+        float price "only from verified selector/CSV"
+    }
+    ARTICLE_ANALYSIS {
+        string kind "summary|translation"
+        string model
+        string prompt_version
+    }
