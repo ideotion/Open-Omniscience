@@ -23,7 +23,9 @@
 # Application settings
 app:
   name: "Open Omniscience"
-  version: "0.03"
+  # The version is single-sourced from the installed package metadata
+  # (pyproject.toml) at runtime -- see src/config/settings.py:_package_version
+  # (finding BUG-03). Any value here is ignored on purpose to prevent drift.
   debug: false
   
 # Scraping settings

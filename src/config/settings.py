@@ -15,6 +15,24 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+
+def _package_version() -> str:
+    """Single source of truth for the app version (finding BUG-03).
+
+    Reads the installed package metadata (the same value /api/health reports and
+    pyproject declares) so the version can never drift from the literals that
+    previously lived here ("0.02") and in configs/settings.yaml ("0.03").
+    """
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            return version("open-omniscience")
+        except PackageNotFoundError:
+            return "0.0.0"
+    except Exception:
+        return "0.0.0"
+
 import yaml
 
 # Configure logging
@@ -55,10 +73,9 @@ class Config:
     cors_allow_credentials: bool = True
     cors_allow_methods: str = "GET,POST,PUT,DELETE,OPTIONS"
     cors_allow_headers: str = "Authorization,Content-Type,Accept,Origin,User-Agent"
-    secret_key: str | None = None
-    csrf_secret: str | None = None
-    jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    # (finding SEC-02) secret_key / csrf_secret / jwt_* removed: no code consumed
+    # them. CSRF is enforced by a loopback Origin/Referer check in the API
+    # middleware (src/api/main.py), not by a secret, and there is no auth system.
     
     # Logging configuration
     log_level: str = "INFO"
@@ -68,11 +85,17 @@ class Config:
     audit_enabled: bool = True
     audit_log_dir: str = "audit"
     
-    # LLM configuration
-    ollama_host: str = "0.0.0.0"
-    ollama_origins: str = "*"
-    ollama_base_url: str = "http://localhost:11434"
-    auto_download_models: bool = True
+    # LLM configuration.
+    # Secure-by-default (finding SEC-05): bind Ollama to loopback and scope its
+    # CORS to loopback rather than the old 0.0.0.0 / "*" which would expose the
+    # local LLM daemon to the network. These fields are currently informational
+    # (the running app reaches Ollama via OO_OLLAMA_URL); kept honest regardless.
+    ollama_host: str = "127.0.0.1"
+    ollama_origins: str = "http://127.0.0.1:11434"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    # No code path auto-downloads models (the API returns "run: ollama pull ..."
+    # when a model is missing); default False so the field cannot misrepresent it.
+    auto_download_models: bool = False
     download_default_models: bool = False
     llm_timeout: int = 120
     llm_max_tokens: int = 4096
@@ -80,7 +103,7 @@ class Config:
     
     # Application configuration
     app_name: str = "Open Omniscience"
-    app_version: str = "0.02"
+    app_version: str = field(default_factory=_package_version)
     app_debug: bool = False
     app_environment: str = "development"
     articles_per_page: int = 20
@@ -142,15 +165,8 @@ class Config:
             self.cors_origins = cors_origins
         if cors_credentials := os.getenv("CORS_ALLOW_CREDENTIALS"):
             self.cors_allow_credentials = cors_credentials.lower() == "true"
-        if secret_key := os.getenv("SECRET_KEY"):
-            self.secret_key = secret_key
-        if csrf_secret := os.getenv("CSRF_SECRET"):
-            self.csrf_secret = csrf_secret
-        if jwt_algorithm := os.getenv("JWT_ALGORITHM"):
-            self.jwt_algorithm = jwt_algorithm
-        if token_expire := os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"):
-            self.access_token_expire_minutes = int(token_expire)
-        
+        # (SEC-02) SECRET_KEY/CSRF_SECRET/JWT_* env reads removed: unused by any code.
+
         # Logging
         if log_level := os.getenv("LOG_LEVEL"):
             self.log_level = log_level
@@ -256,7 +272,9 @@ class Config:
             },
             "app": {
                 "name": "app_name",
-                "version": "app_version",
+                # version is intentionally NOT mapped: it is single-sourced from
+                # package metadata via _package_version() (finding BUG-03), so a
+                # stale literal in settings.yaml can no longer override it.
                 "debug": "app_debug",
                 "environment": "app_environment",
             },
