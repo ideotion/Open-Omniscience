@@ -31,6 +31,9 @@ def make_fetcher(**overrides) -> EthicalFetcher:
         "min_interval_s": float(os.getenv("OO_FETCH_MIN_INTERVAL", "1.0")),
         "timeout": float(os.getenv("OO_FETCH_TIMEOUT", "30")),
         "proxy": proxy,
+        # Bounded retry/backoff for transient failures (finding BUG-02).
+        "max_retries": int(os.getenv("OO_FETCH_MAX_RETRIES", "2")),
+        "retry_backoff_s": float(os.getenv("OO_FETCH_RETRY_BACKOFF", "0.5")),
     }
     params.update(overrides)
     return EthicalFetcher(**params)

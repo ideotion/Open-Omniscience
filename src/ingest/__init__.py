@@ -82,6 +82,9 @@ class BlockedTarget(FetchFailed):
 _ROBOTS_TTL = 3600.0
 # Bound on redirects followed (each hop is re-validated against the SSRF guard).
 _MAX_REDIRECTS = 5
+# HTTP statuses worth retrying (transient server-side / rate-limit signals). 4xx
+# client errors are deterministic and never retried (finding BUG-02).
+_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -117,12 +120,17 @@ class EthicalFetcher:
         respect_robots: bool = True,
         proxy: str | None = None,
         session: requests.Session | None = None,
+        max_retries: int = 2,
+        retry_backoff_s: float = 0.5,
     ):
         self.user_agent = user_agent
         self.min_interval_s = min_interval_s
         self.timeout = timeout
         self.max_bytes = max_bytes
         self.respect_robots = respect_robots
+        # Bounded retry/backoff for transient fetch failures (finding BUG-02).
+        self.max_retries = max(0, int(max_retries))
+        self.retry_backoff_s = max(0.0, float(retry_backoff_s))
         self.proxy = proxy or None
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
@@ -164,21 +172,39 @@ class EthicalFetcher:
 
         host_key = f"{parsed.scheme}://{parsed.netloc}"
 
+        # robots.txt is checked once (not per retry): a disallow/unavailable is a
+        # deliberate, non-transient refusal.
         if self.respect_robots:
             self._enforce_robots(url, host_key, parsed)
 
-        self._respect_rate_limit(parsed.netloc, host_key)
-
-        # Record the in-flight fetch so the UI can show a live "currently scraping
-        # <url>" readout + real scraping throughput. Best-effort; cleared on exit.
+        # Bounded retry with exponential backoff for *transient* failures only
+        # (network errors, 429, and 5xx) -- finding BUG-02. Deterministic refusals
+        # (4xx, non-HTML, robots/SSRF) are never retried. Per-host rate limiting is
+        # honoured before every attempt so retries stay polite.
         activity_monitor.fetch_started(url)
         try:
-            try:
-                response, final_url = self._http_get(url)
-            except requests.RequestException as exc:
-                raise FetchFailed(f"request error for {url}: {exc}") from exc
-            finally:
-                self._last_request[parsed.netloc] = self._now()
+            attempt = 0
+            while True:
+                self._respect_rate_limit(parsed.netloc, host_key)
+                transient: Exception | None = None
+                response = final_url = None
+                try:
+                    response, final_url = self._http_get(url)
+                except requests.RequestException as exc:
+                    transient = FetchFailed(f"request error for {url}: {exc}")
+                finally:
+                    self._last_request[parsed.netloc] = self._now()
+
+                if transient is None and response.status_code not in _RETRYABLE_STATUS:
+                    break  # got a definitive (success or non-retryable) response
+
+                if attempt >= self.max_retries:
+                    if transient is not None:
+                        raise transient
+                    break  # out of retries: fall through to handle the status below
+
+                attempt += 1
+                self._sleep(self.retry_backoff_s * (2 ** (attempt - 1)))
 
             if response.status_code != 200:
                 raise FetchFailed(f"HTTP {response.status_code} for {url}")
