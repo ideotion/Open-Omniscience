@@ -87,7 +87,11 @@ Before fearing loss from an archive-size change, run
    full URL (never hidden behind a label). Applies homogeneously to every
    section (articles, law documents, wiki diffs, market/commodity sources,
    events, hazards). Sweep carefully surface-by-surface; the external-link
-   confirm guard (#7) stays as the second layer.
+   confirm guard (#7) stays as the second layer. **FIRST TARGET (maintainer
+   repeat 2026-06-10): Home-card evidence links** — wiki-diff and law cards
+   deep-link externally when no local article exists; build the local
+   extraction popup (title + metadata + keywords + transparent full URL).
+   Mindmap layers ✓ shipped; settings duplicate ✓ removed (same day).
 
 7. **External links ALWAYS confirmed with a popup before opening** (ruled
    2026-06-10): delegated capture-phase `_externalLinkGuard` in BOTH UIs;

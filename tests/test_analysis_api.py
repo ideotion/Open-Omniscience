@@ -75,3 +75,21 @@ def test_too_small_sample_422(client):
     # min_length validation rejects a single-point sample
     r = client.post("/api/analysis/t-test/independent", json={"sample1": [1], "sample2": [2]})
     assert r.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+#  Layered keyword graph (maintainer-ruled 2026-06-10): 2 hops -> families ->
+#  super-groups. Shapes + honesty fields; level validation.
+# --------------------------------------------------------------------------- #
+def test_insights_graph_levels(client):
+    r = client.get("/api/insights/graph?level=nope")
+    assert r.status_code == 400
+    r = client.get("/api/insights/graph?level=keyword")
+    assert r.status_code == 400  # keyword level needs a term
+    for level in ("family", "supergroup"):
+        r = client.get(f"/api/insights/graph?level={level}")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["level"] == level
+        assert "nodes" in body and "edges" in body
+        assert "method" in body and "caveat" in body  # honesty carried per level

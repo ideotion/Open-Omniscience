@@ -260,5 +260,8 @@
   "Download network log (.json)": "Скачать сетевой журнал (.json)",
   "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "Сетевой журнал содержит каждый вердикт robots и доступности для источников, рыночных лент и календарей по умолчанию — поделитесь им, чтобы оптимизировать списки установки по умолчанию.",
   "Download debug bundle (.json)": "Скачать отладочный пакет (.json)",
-  "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "Отладочный пакет — полная картина для отчётов об ошибках: факты среды, история планировщика, каждый сетевой вердикт, что реально сделал каждый клик «Загрузить/Обновить», состояния отслеживания права/вики и скользящий журнал ошибок — пройдитесь по приложению, скачайте и поделитесь."
+  "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "Отладочный пакет — полная картина для отчётов об ошибках: факты среды, история планировщика, каждый сетевой вердикт, что реально сделал каждый клик «Загрузить/Обновить», состояния отслеживания права/вики и скользящий журнал ошибок — пройдитесь по приложению, скачайте и поделитесь.",
+  "Keywords": "Ключевые слова",
+  "Families": "Семейства",
+  "Super-groups": "Супергруппы"
 }

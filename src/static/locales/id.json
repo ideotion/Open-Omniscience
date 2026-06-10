@@ -260,5 +260,8 @@
   "Download network log (.json)": "Unduh log jaringan (.json)",
   "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "Log jaringan memuat setiap putusan robots dan keterjangkauan untuk sumber bawaan, umpan pasar, dan kalender — bagikan untuk membantu mengoptimalkan daftar instalasi bawaan.",
   "Download debug bundle (.json)": "Unduh bundel debug (.json)",
-  "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "Bundel debug adalah gambaran lengkap untuk laporan bug: fakta runtime, riwayat penjadwal, setiap putusan jaringan, apa yang benar-benar dilakukan tiap klik Muat/Segarkan, status pelacakan hukum/wiki, dan log kesalahan bergulir — telusuri aplikasi, lalu unduh dan bagikan."
+  "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "Bundel debug adalah gambaran lengkap untuk laporan bug: fakta runtime, riwayat penjadwal, setiap putusan jaringan, apa yang benar-benar dilakukan tiap klik Muat/Segarkan, status pelacakan hukum/wiki, dan log kesalahan bergulir — telusuri aplikasi, lalu unduh dan bagikan.",
+  "Keywords": "Kata kunci",
+  "Families": "Keluarga",
+  "Super-groups": "Supergrup"
 }
