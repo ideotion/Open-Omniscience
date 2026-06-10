@@ -14,6 +14,8 @@
 
 ## Events agenda / world calendar
 
+> **STATUS (reality check, 2026-06-10):** SHIPPED in 0.07 (PR #47: Agenda tab, subscribe/facet/group) and EXTENDED 2026-06-10: the 511-feed calendar directory in 268 duplicate-aware families with verify/import (`src/events/feeds.py`). Still open: view switcher (month/week/day/trimester/list), full Agenda translation — both in the CLAUDE.md queue.
+
 **Idea.** A curated, searchable **agenda of major scheduled world events** — the
 forward-looking complement to the corpus's record of what already happened. Examples:
 
@@ -217,6 +219,8 @@ commitment.
 
 ## Personality: easter eggs + a journalism quotes/fun-facts library
 
+> **STATUS (reality check, 2026-06-10):** SHIPPED in 0.07 (PR #46): configs/personality.yml, Konami easter egg.
+
 **Idea.** Give the UI a little soul: a small, tasteful set of **easter eggs** plus a
 curated library of **famous journalistic quotes and verifiable fun facts** that surface
 in quiet corners of the interface (empty states, the loading/onboarding screens, an
@@ -254,6 +258,8 @@ reviewable, never hidden surprises in a security tool.
 ---
 
 ## Training & onboarding — two tracks
+
+> **STATUS (reality check, 2026-06-10):** DESIGNED ONLY. Action plan: (1) first-run tour as a dismissible Home card sequence reusing Card.recipe deep-links; (2) contextual help notes per tab (i18n keys); (3) the supervised-training curriculum stays a doc. Parked behind the live-test queue; revisit for 0.0.9.
 
 Even an intuitive tool benefits from deliberate teaching: training is **another channel
 for communicating what the app is for and how to use it well** — and for at-risk users it
@@ -396,6 +402,8 @@ one space-time instrument.
 
 ## Climate & weather events — a live geo-temporal data channel (+ an alert system)
 
+> **STATUS (reality check, 2026-06-10):** PARTIAL: hazards relay SHIPPED in 0.07 (PR #52, USGS+GDACS, `/api/hazards`, map layer). The alert engine (layers 3–4) is PARKED for 0.0.9 by ruling.
+
 **The idea.** Surface **present-tense weather and natural-hazard events** — heatwaves,
 floods, cyclones, earthquakes, droughts, food-security/famine crises — *not* the
 climate-change debate. A super-heat-and-humidity wave hitting millions in India is a
@@ -462,6 +470,8 @@ NWS) with full provenance. Builds directly on the space-time substrate above.
 
 
 ## Automated background source identification & aggregation
+
+> **STATUS (reality check, 2026-06-10):** SHIPPED offline slice in 0.0.8 (RM-19: citation+catalog channels, transparent staging, budgets). The DuckDuckGo channel stays gated off-by-default pending the RM-03 gate UX proving out (ruling).
 
 **Idea.** The app should shoulder the work of *finding and maintaining sources* so the
 operator can focus on **content**, not plumbing. Today, growing the source list is manual
@@ -530,6 +540,8 @@ bandit/pip-audit), benchmarks recorded as gates (`scripts/benchmark_audit.py`).
 
 ## Ten space-time scenario cards — leveraging the map + timeline for honest journalism
 
+> **STATUS (reality check, 2026-06-10):** SHIPPED in 0.0.8 as the investigation-recipe producers + /investigate dashboard (RM-20, PR #61).
+
 The temporal map, mentioned-date tags, geocoded corpus, hazards relay, events agenda, law
 tracker and wiki tracker together form a **space-time substrate**. These cards sketch
 user-driven scenarios that substrate makes possible — candidates for future USE_CASES
@@ -597,6 +609,8 @@ Honesty: a density map of reporting, explicitly not a fraud meter.
 evidence bundle, and a way to pin a *region + window* the way articles pin to a briefing.
 
 ## LLM model catalog & Ollama delivery — open design discussion (maintainer-raised)
+
+> **STATUS (reality check, 2026-06-10):** RESOLVED + SHIPPED 2026-06-10: date-stamped freshness-tested catalog, Settings live picker, clearnet install notice; no bundling ever. Remaining: the offline LLM kit (RM-08) as a release artifact.
 
 **Problems observed (2026-06):** (1) the installer's suggested model list goes stale fast —
 operators were prompted to pull models that had long been superseded; (2) the Ollama
