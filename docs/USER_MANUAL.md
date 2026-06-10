@@ -1605,3 +1605,96 @@ challenges. It does not, and cannot, protect a human source's identity by itself
 and naive public‑chain anchoring can actively *harm* anonymity — so anchoring is
 opt‑in, defaults to offline, and ships with the warning above.
 
+
+---
+
+# What shipped in 0.0.8 — the roadmap cycle
+
+Everything below is available now, entirely from the browser UI. Each feature states its
+honest limit where it appears.
+
+## Investigation recipes (Home) and the `/investigate` dashboard
+
+The Home briefing now watches your own corpus for **space-time signals** and raises cards —
+all computed locally, never from the network:
+
+- **Promises due** — an article mentioned a date that was *in the future* when it was
+  published; that date has now arrived. Time to ask what actually happened.
+- **Edit-war burst** — a Wikipedia page you track is being edited at ≥3× its own recent
+  weekly rate; its public record is in motion.
+- **Region gone quiet** — a country that reliably produced articles for you (almost)
+  stopped. The caveat is built in: this measures *your corpus*, not the region — a dead
+  feed looks identical to real silence, so check the sources first.
+- **Source candidates await review** — see *Discovery candidates* below.
+
+Cards with an **"Open investigation ↗"** button open a dedicated dashboard **in a new
+browser tab** (the main app keeps working; open several at once). The dashboard
+auto-assembles the related panels — the original article with its provenance snippets, a
+pre-filled follow-up search, the stored revision list, coverage context — carries the
+card's caveat verbatim at the top, and ends with a **"Go deeper"** strip where every
+suggestion is a normal action with its parameters shown. The page's whole state lives in
+its URL: bookmark it, reopen it, share it between your own machines.
+
+Switch individual recipes off under **Settings → General → Investigation recipes on Home**.
+
+## Methods appendix (Search)
+
+**Search → Methods appendix** downloads a Markdown document recording *how* your current
+selection was produced: the app version, the verbatim Boolean query, result counts, corpus
+context, and one provenance row per article (title · source · published · URL · content
+SHA-256). It records selection only and asserts no conclusion — the analytical claims stay
+yours, checkable against the rows. Built for fact-check verdicts and peer review; pair it
+with a signed evidence bundle (Evidence & custody) when you need document + proof together.
+
+## Synthesize results (Search)
+
+**Search → Synthesize results** runs ONE local-model pass across your top results (at most
+20; the response says when it truncated) and returns shared facts, points of disagreement
+and open questions, citing member articles by number. The synthesis is stored with model +
+prompt-version provenance per member article, and the caveat travels with it: this is
+reading assistance over the listed members only — never a verdict. Requires Ollama, like
+the other LLM features; without it you get an honest "not reachable" message.
+
+## Versioned exports and the citation graph
+
+- Machine-readable exports now carry a stable contract (`oo-export-1`): JSON exports are
+  self-describing envelopes (schema, app version, generated-at, the exact query, count);
+  CSV columns are unchanged, with the same provenance as `X-OO-*` HTTP headers.
+- The **citation graph** — which external domains your stored articles cite, counts only,
+  no inferred credibility — exports as GraphML (`/api/links/export.graphml`) for
+  Gephi/yEd/NetworkX, or JSON.
+
+## Scheduler run log and the drop-folder export (Collect)
+
+Every scheduler run — success or failure — appends one line to a local, auditable run log
+(`scheduler_runs.jsonl`), so the corpus can answer "what ran while I was away?". Optionally,
+set a **Drop-folder export** path in the Collect scheduler card: each run then writes the
+new-articles delta as an envelope-JSON file into that local folder for your own pipeline to
+watch. Blank = off (the default); nothing new = no file.
+
+## Discovery candidates (Sources)
+
+The app now suggests sources on its own — **offline only**: domains your stored articles
+repeatedly cite, and packaged-catalog outlets for countries your corpus covers thinly.
+Suggestions are staged, never acted on: each carries its evidence in the **Discovery
+candidates** panel (Sources tab), runs are capped by the scheduler's discovery budget and
+recorded in the run log, and a Home card tells you when candidates await review.
+**Promote** creates a *disabled* source you still have to enable; **Dismiss** is remembered
+and never re-suggested. The DuckDuckGo-powered topic search remains separate, **off by
+default**, and gated behind Settings → Safety (see below).
+
+## External topic discovery is opt-in (Settings → Safety)
+
+*Discover by topic* is the one feature that contacts an external service: it sends your
+topic query to DuckDuckGo. It is now **disabled by default** and refuses with an honest
+message until you enable **Settings → Safety → External topic discovery** ("Your query
+leaves this machine"). Discovering RSS feeds for sources you added yourself stays on the
+local ethical-fetch path and is not affected.
+
+## Languages
+
+The interface now ships **complete translations in 12 languages** (English, العربية, বাংলা,
+Deutsch, Español, Français, हिन्दी, Bahasa Indonesia, 日本語, Português, Русский, 中文),
+including right-to-left layout for Arabic. Pick yours from the language selector; the
+translations are machine-generated first drafts — corrections are welcome contributions
+(see `docs/ARCHITECTURE.md` → Internationalisation).

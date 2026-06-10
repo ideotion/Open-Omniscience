@@ -585,3 +585,43 @@ Honesty: a density map of reporting, explicitly not a fraud meter.
 **Common requirements these cards surface** (feed into roadmap scoring): saved
 "investigation recipes" (parameterised queries over space-time), per-card export with the
 evidence bundle, and a way to pin a *region + window* the way articles pin to a briefing.
+
+## LLM model catalog & Ollama delivery — open design discussion (maintainer-raised)
+
+**Problems observed (2026-06):** (1) the installer's suggested model list goes stale fast —
+operators were prompted to pull models that had long been superseded; (2) the Ollama
+*download* path does not work over Tor, so protected-mode operators cannot fetch models the
+recommended way; (3) should the repo bundle Ollama and/or a minimal first-run model so the
+app needs no model download at all?
+
+**Options on the table (no decision yet — pros/cons honestly):**
+
+1. **Live catalog from the local Ollama** (`/api/tags` lists what is already installed;
+   Ollama also exposes search on its registry). In-app model picker: show *installed*
+   models always (purely local), and offer a "browse registry" step that is an explicit
+   external call (same gating pattern as topic discovery). Pair with a **hardware probe**
+   (RAM/VRAM via psutil — already a dependency) that annotates each model with "fits /
+   tight / won't fit" rather than choosing for the user. *Pro:* never stale, honest about
+   hardware. *Con:* the registry browse is an external call (must be opt-in + labelled).
+2. **Curated-but-dated fallback list**: keep a small static list *with its as-of date
+   printed* ("suggested as of 2026-06; check ollama.com for newer") so offline installs
+   still get a sane default without pretending freshness. Cheap, honest, complements (1).
+3. **Bundling Ollama in the repo:** *against* — it is a fast-moving native binary per
+   OS/arch (hundreds of MB), bundling makes us its de-facto security maintainer, and a
+   stale bundled server is worse than none. Better: the installer keeps offering the
+   official install with consent, and documents the offline path (download the binary +
+   model on a connected machine, transfer by USB — Ollama models are plain files in
+   `~/.ollama/models`, so this works today and suits air-gapped/Qubes use).
+4. **Bundling a minimal model:** *against* in-repo (even small models are 100s of MB and
+   licence terms vary), but a **wheelhouse-style "offline LLM kit"** — a documented,
+   checksummed download bundle (Ollama binary + one small model) produced per release as a
+   GitHub release artifact — could serve Tor/air-gapped operators without bloating the
+   repo. Fits RM-08 (offline packaging).
+5. **Tor note:** model *downloads* failing over Tor is an Ollama-registry limitation;
+   inference itself is loopback HTTP and unaffected. The offline kit (4) is the honest
+   answer for protected-mode operators.
+
+**Suggested sequence if adopted:** (2) date-stamp the static list now (one line, kills the
+"obsolete and doesn't say so" problem) → (1) installed-models picker + hardware annotation
+(local-only, no gate needed) → registry browse behind the external-lookup gate → (4) the
+offline kit as part of RM-08. Decision pending maintainer discussion.
