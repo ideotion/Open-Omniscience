@@ -1,10 +1,26 @@
 # CLAUDE.md — long-term session memory (maintainer-mandated)
 
-Read this first, every session. It exists because UI/UX work regressed between
-sessions (the Wikipedia language dropdown became a text input); the maintainer
-requires this never to happen again. **Critical invariants below are ALSO
-enforced by `tests/test_repo_invariants.py::test_ui_invariants` — extend that
-test whenever you add one here.**
+**THE PROTOCOL (meta-rule, maintainer-mandated):** this file is the single
+ledger of every maintainer ruling. (1) Read it in full before any work, every
+session. (2) Record every new ruling HERE in the same turn it is given —
+shipped things under invariants, pending things under the queue. (3) If the
+maintainer repeats feedback, that is a ledger failure: fix the gap AND the
+ledger. (4) Critical invariants are ALSO enforced by
+`tests/test_repo_invariants.py::test_ui_invariants` — extend that test whenever
+one is added here. It exists because work regressed between sessions (the
+Wikipedia dropdown became a text input) and the maintainer had to repeat
+earlier rulings.
+
+## Shipped rulings (do not regress; details in git history / docs)
+Eye logo everywhere · sidebar always visible (rail ≥601px) · constant top-bar
+footprints · persistent vitals strip, no version in chrome · network kill
+switch on Stop · source preflight + shareable JSONL log · wiki edition dropdown
+· local-first article links + related-by-keywords in the reader · Home never
+blank (fail-safe producers + explanatory empty state) · 12 complete locales ·
+date-stamped freshness-tested model catalog + live picker + clearnet notice ·
+external topic discovery off-by-default · all 0.0.8 features documented in
+USER_MANUAL · two launchers (Console/Desk) are INTENTIONAL (DESIGN.md
+dialectic) pending the maintainer's verdict after live use.
 
 ## Non-negotiables (project §0.5 + maintainer rulings)
 - Local-first, loopback-only; the ONLY external service call is the gated,
