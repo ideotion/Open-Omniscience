@@ -22,6 +22,15 @@ external topic discovery off-by-default · all 0.0.8 features documented in
 USER_MANUAL · two launchers (Console/Desk) are INTENTIONAL (DESIGN.md
 dialectic) pending the maintainer's verdict after live use.
 
+**Temporal map + Agenda are NOT lost** (maintainer feared this 2026-06).
+Both shipped in the 0.07 cycle and are alive on 0.08: world map + time
+slider + anchors + geocoded corpus + hazards layer = PRs #51/#52/#54
+(`src/timemap/`, `GET /api/timemap`); world-events calendar with
+subscribe/facet/group + event-family dedup = PRs #43/#47/#50/#53
+(`src/events/`, `configs/world_events.yml`). 23 dedicated tests pass.
+If the maintainer cannot see these tabs in a live install, suspect the
+hidden-tabs setting (Settings → Appearance), never assume lost code.
+
 ## Non-negotiables (project §0.5 + maintainer rulings)
 - Local-first, loopback-only; the ONLY external service call is the gated,
   off-by-default DuckDuckGo topic discovery. Producers/briefing/discovery NEVER
