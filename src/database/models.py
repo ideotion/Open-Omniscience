@@ -1349,6 +1349,40 @@ class KeywordMention(Base):
         return f"<KeywordMention(kw={self.keyword_id} art={self.article_id} x{self.count})>"
 
 
+class SourceCandidate(Base):
+    """A machine-suggested source awaiting the operator's decision (RM-19, WP5).
+
+    Discovery is transparent by construction: every candidate records WHICH
+    offline channel suggested it and the evidence (as JSON text), is clearly
+    distinct from curated sources, and does nothing until the operator promotes
+    it -- and even promotion creates a DISABLED Source the operator must enable.
+    Statuses: candidate -> promoted | dismissed.
+    """
+
+    __tablename__ = "source_candidates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    suggested_name: Mapped[str | None] = mapped_column(String(200))
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)  # citation | catalog
+    evidence: Mapped[str | None] = mapped_column(Text)  # JSON: the channel's reasoning
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="candidate")
+    first_seen: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+    last_seen: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("idx_source_candidate_status", "status"),
+        Index("idx_source_candidate_channel", "channel"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<SourceCandidate(domain={self.domain!r}, channel={self.channel!r}, status={self.status!r})>"
+
+
 class WikiPage(Base):
     """A tracked Wikipedia page in one language edition (e.g. en, fr, ar).
 

@@ -49,6 +49,94 @@ router = APIRouter(prefix="/api/sources", tags=["Source Management"])
 # Rate limiter
 from src.api.ratelimit import limiter
 
+# ==================== DISCOVERY CANDIDATES (WP5 / RM-19) ====================
+# Machine-suggested sources, staged for the operator's decision. Transparent by
+# construction: evidence travels with every candidate; promotion creates a
+# DISABLED Source the operator must still enable; dismissal is remembered.
+
+
+@router.get("/candidates", response_model=dict)
+@limiter.limit("100/hour")
+async def list_source_candidates(
+    request: Request,
+    status: str = Query("candidate", pattern="^(candidate|promoted|dismissed|all)$"),
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """List discovery candidates with their channel + evidence."""
+    import json as _json
+
+    from src.database.models import SourceCandidate
+
+    q = db.query(SourceCandidate)
+    if status != "all":
+        q = q.filter(SourceCandidate.status == status)
+    rows = q.order_by(SourceCandidate.first_seen.desc()).limit(limit).all()
+    return {
+        "count": len(rows),
+        "candidates": [
+            {
+                "id": c.id,
+                "domain": c.domain,
+                "suggested_name": c.suggested_name,
+                "channel": c.channel,
+                "evidence": _json.loads(c.evidence) if c.evidence else {},
+                "status": c.status,
+                "first_seen": c.first_seen.isoformat() if c.first_seen else None,
+            }
+            for c in rows
+        ],
+    }
+
+
+@router.post("/candidates/{candidate_id}/promote", response_model=dict)
+@limiter.limit("100/hour")
+async def promote_source_candidate(
+    request: Request, candidate_id: int, db: Session = Depends(get_db)
+):
+    """Promote a candidate into a DISABLED Source (the operator enables it)."""
+    from src.database.models import Source, SourceCandidate
+
+    cand = db.query(SourceCandidate).filter_by(id=candidate_id).first()
+    if cand is None:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    if cand.status != "candidate":
+        raise HTTPException(status_code=409, detail=f"Candidate is already {cand.status}")
+    existing = db.query(Source).filter(Source.domain == cand.domain).first()
+    if existing is None:
+        db.add(
+            Source(
+                name=cand.suggested_name or cand.domain,
+                domain=cand.domain,
+                enabled=False,  # the operator's deliberate act stays required
+                source_type="news",
+            )
+        )
+    cand.status = "promoted"
+    db.commit()
+    return {
+        "promoted": cand.domain,
+        "enabled": False,
+        "note": "Created disabled -- review and enable it in the source list.",
+    }
+
+
+@router.post("/candidates/{candidate_id}/dismiss", response_model=dict)
+@limiter.limit("100/hour")
+async def dismiss_source_candidate(
+    request: Request, candidate_id: int, db: Session = Depends(get_db)
+):
+    """Dismiss a candidate (remembered; the channels never re-suggest it)."""
+    from src.database.models import SourceCandidate
+
+    cand = db.query(SourceCandidate).filter_by(id=candidate_id).first()
+    if cand is None:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    cand.status = "dismissed"
+    db.commit()
+    return {"dismissed": cand.domain}
+
+
 # ==================== SOURCE ENDPOINTS ====================
 
 

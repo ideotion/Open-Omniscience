@@ -48,6 +48,11 @@ class SchedulerSettings:
     # (the default) -- no file is ever written unless the operator sets it.
     export_dir: str = ""
 
+    # Offline source-discovery budget per run (WP5/RM-19): how many candidates
+    # the citation/catalog channels may stage per scheduler run. 0 disables
+    # discovery entirely. Network channels do not exist here by design.
+    discovery_per_run: int = 10
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -118,6 +123,7 @@ def load_settings() -> SchedulerSettings:
         select_tags=_coerce_list(raw.get("select_tags")),
         select_source_types=_coerce_list(raw.get("select_source_types")),
         export_dir=str(raw.get("export_dir") or "").strip(),
+        discovery_per_run=_coerce_int(raw.get("discovery_per_run"), d.discovery_per_run, 0, 100),
     )
 
 
@@ -148,6 +154,7 @@ def save_settings(updates: dict) -> SchedulerSettings:
     if "export_dir" in updates and updates["export_dir"] is not None:
         current.export_dir = str(updates["export_dir"]).strip()
 
+    _ranged("discovery_per_run", 0, 100, "discovery_per_run")
     _ranged("interval_minutes", _MIN_INTERVAL, _MAX_INTERVAL, "interval_minutes")
     _ranged("max_sources_per_run", 1, 1000, "max_sources_per_run")
     _ranged("crawl_max_depth", 0, 6, "crawl_max_depth")
