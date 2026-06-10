@@ -150,17 +150,22 @@ def test_export_csv_matches_filter(client):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
     rows = list(csv.reader(io.StringIO(r.text)))
-    # header + 2 quantum articles
+    # header + 2 quantum articles; columns unchanged (the envelope is in headers)
     assert rows[0][0] == "ID"
     assert len(rows) == 1 + 2
+    assert r.headers["X-OO-Export-Schema"] == "oo-export-1"
+    assert "query=quantum" in r.headers["X-OO-Query"]
 
 
 def test_export_json_matches_filter(client):
     r = client.get("/api/articles/export", params={"format": "json", "source": "Beta Wire"})
     assert r.status_code == 200
     body = r.json()
-    assert len(body) == 1
-    assert body[0]["title"] == "Telecom"
+    # envelope (WP2/RM-15): provenance travels with the data
+    assert body["export_schema"] == "oo-export-1"
+    assert body["query"] == {"source": "Beta Wire"}
+    assert body["count"] == 1
+    assert body["articles"][0]["title"] == "Telecom"
 
 
 def test_export_rejects_bad_format(client):

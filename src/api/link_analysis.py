@@ -183,3 +183,95 @@ def articles_by_link(
                 }
             )
     return {"match": match, "count": total, "articles": articles}
+
+
+# --------------------------------------------------------------------------- #
+#  Provenance-preserving graph export (0.0.8 part 2, WP2 / RM-15)
+# --------------------------------------------------------------------------- #
+
+_GRAPH_CAVEAT = (
+    "Who-cites-whom citation graph: edges are real link counts from stored articles "
+    "to external registrable domains. Counts only; no inferred credibility, no scores."
+)
+
+
+def _citation_graph(db, *, min_citations: int = 1, max_nodes: int = 2000) -> dict:
+    """Build the article->domain citation graph from stored links (counts only)."""
+    pairs = db.query(ArticleLink.normalized_url, ArticleLink.article_id).distinct().all()
+    by_domain: dict[str, set[int]] = defaultdict(set)
+    for nu, aid in pairs:
+        dom = registrable_domain(nu)
+        if dom:
+            by_domain[dom].add(aid)
+    domains = {d: ids for d, ids in by_domain.items() if len(ids) >= min_citations}
+    # bound the export: keep the most-cited domains first
+    keep = sorted(domains, key=lambda d: -len(domains[d]))[:max_nodes]
+    article_ids = sorted({aid for d in keep for aid in domains[d]})[:max_nodes]
+    kept_articles = set(article_ids)
+    titles = dict(
+        db.query(Article.id, Article.title).filter(Article.id.in_(article_ids)).all()
+    )
+    nodes = [{"id": f"d:{d}", "kind": "domain", "label": d} for d in keep] + [
+        {"id": f"a:{aid}", "kind": "article", "label": titles.get(aid) or f"article {aid}"}
+        for aid in article_ids
+    ]
+    edges = [
+        {"source": f"a:{aid}", "target": f"d:{d}"}
+        for d in keep
+        for aid in sorted(domains[d])
+        if aid in kept_articles
+    ]
+    return {"caveat": _GRAPH_CAVEAT, "nodes": nodes, "edges": edges}
+
+
+@router.get("/export.json")
+def export_graph_json(
+    min_citations: int = Query(1, ge=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The citation graph as JSON, wrapped in the versioned export envelope."""
+    from src.utils.export_envelope import envelope
+
+    g = _citation_graph(db, min_citations=min_citations)
+    return envelope(
+        kind="citation-graph",
+        query={"min_citations": min_citations},
+        count=len(g["edges"]),
+        payload=g,
+    )
+
+
+@router.get("/export.graphml")
+def export_graph_graphml(
+    min_citations: int = Query(1, ge=1),
+    db: Session = Depends(get_db),
+):
+    """The citation graph as GraphML (stdlib XML; opens in Gephi/yEd/NetworkX)."""
+    import xml.etree.ElementTree as ET
+
+    from fastapi.responses import Response
+
+    g = _citation_graph(db, min_citations=min_citations)
+    NS = "http://graphml.graphdrawing.org/xmlns"
+    ET.register_namespace("", NS)
+    root = ET.Element(f"{{{NS}}}graphml")
+    root.append(ET.Comment(f" {_GRAPH_CAVEAT} "))
+    for key_id, attr in (("label", "label"), ("kind", "kind")):
+        k = ET.SubElement(root, f"{{{NS}}}key", id=key_id)
+        k.set("for", "node")
+        k.set("attr.name", attr)
+        k.set("attr.type", "string")
+    graph = ET.SubElement(root, f"{{{NS}}}graph", edgedefault="directed")
+    for n in g["nodes"]:
+        el = ET.SubElement(graph, f"{{{NS}}}node", id=n["id"])
+        for key_id in ("label", "kind"):
+            d = ET.SubElement(el, f"{{{NS}}}data", key=key_id)
+            d.text = str(n[key_id])
+    for i, e in enumerate(g["edges"]):
+        ET.SubElement(graph, f"{{{NS}}}edge", id=f"e{i}", source=e["source"], target=e["target"])
+    xml = ET.tostring(root, encoding="unicode", xml_declaration=True)
+    return Response(
+        content=xml,
+        media_type="application/graphml+xml",
+        headers={"Content-Disposition": "attachment; filename=citation-graph.graphml"},
+    )

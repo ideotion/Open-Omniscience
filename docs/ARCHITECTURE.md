@@ -422,3 +422,21 @@ behaviour should still be eyeballed in a browser.
 covers the high-traffic chrome), complete the stub locales (community), and polish
 RTL layout for `ar`/`ur`.
 
+
+## Export contract (versioned)
+
+Machine-readable exports carry a stable, self-describing contract (schema `oo-export-1`,
+0.0.8 part 2 / RM-15) so downstream pipelines never guess:
+
+- **JSON** (`/api/articles/export?format=json`, `/api/links/export.json`): an envelope —
+  `{export_schema, kind, app_version, generated_at, query, count, articles|data}`. The
+  `query` object is the verbatim generating selection; provenance travels with the data.
+- **CSV** (`/api/articles/export?format=csv`): the columns are unchanged (a comment line
+  would break naive readers); the same envelope rides as HTTP headers
+  (`X-OO-Export-Schema`, `X-OO-App-Version`, `X-OO-Generated-At`, `X-OO-Query`).
+- **Citation graph** (`/api/links/export.graphml`, `.json`): the who-cites-whom graph
+  (stored articles → external registrable domains). **Counts only — no inferred
+  credibility, no scores**; the caveat is embedded in the file itself. GraphML opens in
+  Gephi/yEd/NetworkX.
+
+Schema changes bump `oo-export-N`; existing fields are never silently repurposed.
