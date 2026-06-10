@@ -272,5 +272,6 @@
   "family": "семейство",
   "super-group": "супергруппа",
   "Font size = shared-article volume · distance = association strength.": "Размер шрифта = объём общих статей · расстояние = сила связи.",
-  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Перетаскивайте для панорамы · колесо — зум (далеко = уровень выше) · клик по слову — вглубь."
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Перетаскивайте для панорамы · колесо — зум (далеко = уровень выше) · клик по слову — вглубь.",
+  "Tabs opened from cards and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.": "Вкладки, открытые из карточек и читалок, имеют суффикс «· FOOS» — Free Open OmniScience, рабочее имя альфы."
 }

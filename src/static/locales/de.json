@@ -272,5 +272,6 @@
   "family": "Familie",
   "super-group": "Obergruppe",
   "Font size = shared-article volume · distance = association strength.": "Schriftgröße = gemeinsames Artikelvolumen · Abstand = Assoziationsstärke.",
-  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Ziehen zum Verschieben · Scrollen zum Zoomen (weit hinaus = eine Ebene hoch) · Wort anklicken zum Eintauchen."
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Ziehen zum Verschieben · Scrollen zum Zoomen (weit hinaus = eine Ebene hoch) · Wort anklicken zum Eintauchen.",
+  "Tabs opened from cards and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.": "Aus Karten und Lesern geöffnete Tabs tragen das Suffix „· FOOS“ — Free Open OmniScience, der Alpha-Arbeitsname."
 }

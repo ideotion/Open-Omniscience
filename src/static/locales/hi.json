@@ -272,5 +272,6 @@
   "family": "परिवार",
   "super-group": "सुपर-समूह",
   "Font size = shared-article volume · distance = association strength.": "फ़ॉन्ट आकार = साझा लेख मात्रा · दूरी = सहसंबंध शक्ति।",
-  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "खींचकर सरकाएँ · स्क्रॉल से ज़ूम (बहुत दूर = एक स्तर ऊपर) · गहराई हेतु शब्द पर क्लिक करें।"
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "खींचकर सरकाएँ · स्क्रॉल से ज़ूम (बहुत दूर = एक स्तर ऊपर) · गहराई हेतु शब्द पर क्लिक करें।",
+  "Tabs opened from cards and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.": "कार्ड व रीडर से खुले टैब में “· FOOS” प्रत्यय है — Free Open OmniScience, अल्फ़ा का कार्यकारी नाम।"
 }

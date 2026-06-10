@@ -118,6 +118,11 @@ Before fearing loss from an archive-size change, run
   repo is public): recurring self-improvement of the default lists; logs are
   local-only, shared only by the operator's click. Boot stays offline.
 
+- **Naming (maintainer 2026-06-10): app-opened browser tabs are suffixed
+  "· FOOS" = Free Open OmniScience** — the alpha working name, explained in
+  the Help tab + USER_MANUAL; a proper rename is expected later (keep the
+  suffix mechanism centralized enough to swap in one pass).
+
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`

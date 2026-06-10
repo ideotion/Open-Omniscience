@@ -272,5 +272,6 @@
   "family": "家族",
   "super-group": "超级组",
   "Font size = shared-article volume · distance = association strength.": "字号 = 共享文章数量 · 距离 = 关联强度。",
-  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "拖动平移 · 滚轮缩放（拉远即上升一层）· 点击词语深入。"
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "拖动平移 · 滚轮缩放（拉远即上升一层）· 点击词语深入。",
+  "Tabs opened from cards and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.": "从卡片和阅读器打开的标签页带有“· FOOS”后缀 — Free Open OmniScience，alpha 阶段的工作名称。"
 }

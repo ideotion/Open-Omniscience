@@ -982,7 +982,7 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
 
     doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{(title[:40] + "…") if len(title) > 40 else title} · OO</title><style>
+<title>{(title[:40] + "…") if len(title) > 40 else title} · FOOS</title><style>
   :root {{ color-scheme: light dark; --ink:#0b0d10; --paper:#0e1116; --fg:#e7e9ee; --mut:#8b93a1;
     --line:#222833; --accent:#5ea0ff; --card:#141923; --warn:#f0a23a; }}
   @media (prefers-color-scheme: light) {{ :root {{ --paper:#faf8f4; --fg:#1a1d22; --mut:#6b7280;

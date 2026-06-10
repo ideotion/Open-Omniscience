@@ -272,5 +272,6 @@
   "family": "familia",
   "super-group": "supergrupo",
   "Font size = shared-article volume · distance = association strength.": "Tamaño de fuente = volumen de artículos compartidos · distancia = fuerza de asociación.",
-  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Arrastre para mover · rueda para zoom (muy lejos = sube de nivel) · clic en una palabra para profundizar."
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Arrastre para mover · rueda para zoom (muy lejos = sube de nivel) · clic en una palabra para profundizar.",
+  "Tabs opened from cards and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.": "Las pestañas abiertas desde tarjetas y lectores llevan el sufijo «· FOOS» — Free Open OmniScience, el nombre provisional de la alfa."
 }

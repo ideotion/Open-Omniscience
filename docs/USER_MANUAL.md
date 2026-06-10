@@ -117,6 +117,11 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
   guides), searchable and fully offline. There's also a link to the raw API page at
   `/docs`.
 
+**A note on “FOOS”.** Browser tabs the app opens (card investigations, the
+local article reader) are suffixed **“· FOOS” — Free Open OmniScience**: short
+enough for narrow tab strips while keeping the app identifiable. It is the
+alpha working name; a proper rename may come later.
+
 **One icon, one interface.** The installer creates **one launcher** — **Open
 Omniscience** → `http://127.0.0.1:8000/` — a discoverable, customizable sidebar
 app that adapts smoothly to your window size (the sidebar retracts to an icon

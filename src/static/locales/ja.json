@@ -272,5 +272,6 @@
   "family": "ファミリー",
   "super-group": "スーパーグループ",
   "Font size = shared-article volume · distance = association strength.": "文字サイズ＝共有記事の量・距離＝関連の強さ。",
-  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "ドラッグで移動・スクロールでズーム（遠くまで引くと一段上へ）・単語をクリックで掘り下げ。"
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "ドラッグで移動・スクロールでズーム（遠くまで引くと一段上へ）・単語をクリックで掘り下げ。",
+  "Tabs opened from cards and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.": "カードやリーダーから開いたタブには「· FOOS」が付きます — Free Open OmniScience、アルファ版の仮称です。"
 }

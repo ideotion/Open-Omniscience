@@ -272,5 +272,6 @@
   "family": "famille",
   "super-group": "super-groupe",
   "Font size = shared-article volume · distance = association strength.": "Taille de police = volume d'articles partagés · distance = force d'association.",
-  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Glisser pour déplacer · molette pour zoomer (très loin = niveau supérieur) · cliquer un mot pour plonger."
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Glisser pour déplacer · molette pour zoomer (très loin = niveau supérieur) · cliquer un mot pour plonger.",
+  "Tabs opened from cards and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.": "Les onglets ouverts depuis les cartes et les lecteurs portent le suffixe « · FOOS » — Free Open OmniScience, le nom de travail de l'alpha."
 }
