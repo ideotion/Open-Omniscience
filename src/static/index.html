@@ -1389,7 +1389,7 @@
       <h2>Watch a page</h2>
       <div class="row">
         <div><label for="wiki-lang">Edition</label><select id="wiki-lang"><option value="en">English (en)</option></select></div>
-        <div style="flex:3"><label for="wiki-title">Article title</label><input id="wiki-title" placeholder="e.g. Climate change"></div>
+        <div style="flex:3"><label for="wiki-title">Article title or URL</label><input id="wiki-title" placeholder="e.g. Climate change — or paste https://en.wikipedia.org/wiki/…"></div>
         <div><label for="wiki-cat">Watchlist</label><input id="wiki-cat" placeholder="optional"></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="addWikiPage()">Add</button></div>
       </div>
@@ -4978,7 +4978,11 @@
         const t = $("wiki-pages");
         t.innerHTML = "<tr><th>Edition</th><th>Title</th><th>Watchlist</th><th>Checked</th><th>Edits</th><th>Flagged</th><th></th></tr>" +
           (d.pages.length ? d.pages.map(p => `<tr>
-            <td><strong>${esc(p.wiki)}</strong></td><td>${esc(p.title)}</td>
+            <td><strong>${esc(p.wiki)}</strong></td>
+            <td>${esc(p.title)}${p.missing
+                ? ' <span class="pill err" title="The wiki reports no page with this exact title — check the spelling, or paste the article URL.">page not found</span>'
+                : ""}${(p.wiki_categories || []).slice(0, 3).map(c =>
+                  ` <span class="pill" style="font-size:10px">${esc(c)}</span>`).join("")}</td>
             <td class="muted">${esc(p.category||"")}</td>
             <td class="muted" style="font-size:12px">${p.last_checked_at?esc(p.last_checked_at.slice(0,16).replace("T"," ")):"never"}</td>
             <td>${p.revisions}</td><td class="muted">${p.flagged}</td>

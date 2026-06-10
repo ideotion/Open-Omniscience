@@ -251,5 +251,9 @@
   "Currencies": "العملات",
   "Custom": "مخصص",
   "not enough points in this window": "نقاط غير كافية في هذه النافذة",
-  "Feeds that did not deliver:": "موجزات لم تسلم شيئًا:"
+  "Feeds that did not deliver:": "موجزات لم تسلم شيئًا:",
+  "Article title or URL": "عنوان المقال أو الرابط",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "مثل تغير المناخ — أو الصق https://ar.wikipedia.org/wiki/…",
+  "page not found": "الصفحة غير موجودة",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "لا يعرف الويكي صفحة بهذا العنوان بالضبط — تحقق من الإملاء أو الصق رابط المقال."
 }

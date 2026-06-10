@@ -251,5 +251,9 @@
   "Currencies": "通貨",
   "Custom": "カスタム",
   "not enough points in this window": "この期間のデータ点が不足",
-  "Feeds that did not deliver:": "データ未着のフィード："
+  "Feeds that did not deliver:": "データ未着のフィード：",
+  "Article title or URL": "記事タイトルまたはURL",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "例：気候変動 — または https://ja.wikipedia.org/wiki/… を貼り付け",
+  "page not found": "ページが見つかりません",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "このタイトルに完全一致するページはウィキにありません。綴りを確認するか、記事のURLを貼り付けてください。"
 }

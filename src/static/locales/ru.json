@@ -251,5 +251,9 @@
   "Currencies": "Валюты",
   "Custom": "Пользовательское",
   "not enough points in this window": "недостаточно точек в этом окне",
-  "Feeds that did not deliver:": "Каналы без данных:"
+  "Feeds that did not deliver:": "Каналы без данных:",
+  "Article title or URL": "Название статьи или URL",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "напр. Изменение климата — или вставьте https://ru.wikipedia.org/wiki/…",
+  "page not found": "страница не найдена",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "Вики не знает страницы с точно таким названием — проверьте написание или вставьте URL статьи."
 }

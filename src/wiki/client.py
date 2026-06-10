@@ -79,5 +79,8 @@ class WikiClient:
     def fetch_current_text(self, wiki: str, title: str) -> dict:
         return mw.parse_current_text(self._get(wiki, mw.build_current_text_params(title)))
 
+    def fetch_categories(self, wiki: str, title: str) -> list[str]:
+        return mw.parse_categories(self._get(wiki, mw.build_categories_params(title)))
+
     def fetch_compare(self, wiki: str, from_rev: int, to_rev: int) -> dict:
         return mw.parse_compare(self._get(wiki, mw.build_compare_params(from_rev, to_rev)))

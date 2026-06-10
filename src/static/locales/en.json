@@ -251,5 +251,9 @@
   "Currencies": "Currencies",
   "Custom": "Custom",
   "not enough points in this window": "not enough points in this window",
-  "Feeds that did not deliver:": "Feeds that did not deliver:"
+  "Feeds that did not deliver:": "Feeds that did not deliver:",
+  "Article title or URL": "Article title or URL",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…",
+  "page not found": "page not found",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "The wiki reports no page with this exact title — check the spelling, or paste the article URL."
 }

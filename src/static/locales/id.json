@@ -251,5 +251,9 @@
   "Currencies": "Mata uang",
   "Custom": "Kustom",
   "not enough points in this window": "titik tidak cukup pada jendela ini",
-  "Feeds that did not deliver:": "Umpan yang tidak mengirim:"
+  "Feeds that did not deliver:": "Umpan yang tidak mengirim:",
+  "Article title or URL": "Judul artikel atau URL",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "mis. Perubahan iklim — atau tempel https://id.wikipedia.org/wiki/…",
+  "page not found": "halaman tidak ditemukan",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "Wiki melaporkan tidak ada halaman dengan judul persis ini — periksa ejaan, atau tempel URL artikelnya."
 }

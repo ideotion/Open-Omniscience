@@ -1405,6 +1405,13 @@ class WikiPage(Base):
     baseline_text: Mapped[str | None] = mapped_column(CompressedText)  # one full snapshot; later versions = baseline + diffs
     last_revid: Mapped[int | None] = mapped_column(Integer)  # newest revid we have stored
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # The wiki's own verdict on the title (live test 2026-06-10): True = the page
+    # does not exist (typo / renamed / deleted) — surfaced loudly, never silent.
+    missing: Mapped[bool | None] = mapped_column(Boolean)
+    # The article's REAL Wikipedia categories (JSON list of strings) — fetched at
+    # baseline for classification/filtering; distinct from the operator's own
+    # `category` watchlist label above.
+    wiki_categories: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     revisions = relationship("WikiRevision", back_populates="page", cascade="all, delete-orphan")

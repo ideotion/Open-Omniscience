@@ -251,5 +251,9 @@
   "Currencies": "Divisas",
   "Custom": "Personalizado",
   "not enough points in this window": "no hay puntos suficientes en esta ventana",
-  "Feeds that did not deliver:": "Fuentes que no entregaron:"
+  "Feeds that did not deliver:": "Fuentes que no entregaron:",
+  "Article title or URL": "Título del artículo o URL",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "p. ej. Cambio climático — o pegue https://es.wikipedia.org/wiki/…",
+  "page not found": "página no encontrada",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "La wiki no informa de ninguna página con este título exacto — revise la ortografía o pegue la URL del artículo."
 }

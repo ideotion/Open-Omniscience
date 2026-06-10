@@ -251,5 +251,9 @@
   "Currencies": "মুদ্রা",
   "Custom": "কাস্টম",
   "not enough points in this window": "এই সময়সীমায় যথেষ্ট বিন্দু নেই",
-  "Feeds that did not deliver:": "যেসব ফিড কিছু দেয়নি:"
+  "Feeds that did not deliver:": "যেসব ফিড কিছু দেয়নি:",
+  "Article title or URL": "নিবন্ধের শিরোনাম বা URL",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "যেমন জলবায়ু পরিবর্তন — বা https://bn.wikipedia.org/wiki/… আটকান",
+  "page not found": "পৃষ্ঠা পাওয়া যায়নি",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "উইকি এই হুবহু শিরোনামের কোনো পৃষ্ঠা জানায় না — বানান পরীক্ষা করুন, বা নিবন্ধের URL আটকান।"
 }

@@ -251,5 +251,9 @@
   "Currencies": "Devises",
   "Custom": "Personnalisé",
   "not enough points in this window": "pas assez de points dans cette fenêtre",
-  "Feeds that did not deliver:": "Flux n'ayant rien livré :"
+  "Feeds that did not deliver:": "Flux n'ayant rien livré :",
+  "Article title or URL": "Titre d'article ou URL",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "p. ex. Réchauffement climatique — ou collez https://fr.wikipedia.org/wiki/…",
+  "page not found": "page introuvable",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "Le wiki ne connaît aucune page portant exactement ce titre — vérifiez l'orthographe, ou collez l'URL de l'article."
 }

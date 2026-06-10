@@ -251,5 +251,9 @@
   "Currencies": "Moedas",
   "Custom": "Personalizado",
   "not enough points in this window": "pontos insuficientes nesta janela",
-  "Feeds that did not deliver:": "Feeds que não entregaram:"
+  "Feeds that did not deliver:": "Feeds que não entregaram:",
+  "Article title or URL": "Título do artigo ou URL",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "p. ex. Mudança climática — ou cole https://pt.wikipedia.org/wiki/…",
+  "page not found": "página não encontrada",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "A wiki não reporta nenhuma página com este título exato — verifique a ortografia ou cole o URL do artigo."
 }

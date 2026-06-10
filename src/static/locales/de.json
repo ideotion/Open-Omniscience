@@ -251,5 +251,9 @@
   "Currencies": "Währungen",
   "Custom": "Benutzerdefiniert",
   "not enough points in this window": "zu wenige Punkte in diesem Fenster",
-  "Feeds that did not deliver:": "Feeds ohne Lieferung:"
+  "Feeds that did not deliver:": "Feeds ohne Lieferung:",
+  "Article title or URL": "Artikeltitel oder URL",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "z. B. Klimawandel — oder https://de.wikipedia.org/wiki/… einfügen",
+  "page not found": "Seite nicht gefunden",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "Das Wiki kennt keine Seite mit genau diesem Titel — Schreibweise prüfen oder die Artikel-URL einfügen."
 }

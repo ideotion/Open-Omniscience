@@ -251,5 +251,9 @@
   "Currencies": "货币",
   "Custom": "自定义",
   "not enough points in this window": "此窗口内数据点不足",
-  "Feeds that did not deliver:": "未交付数据的源："
+  "Feeds that did not deliver:": "未交付数据的源：",
+  "Article title or URL": "文章标题或网址",
+  "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "例如 气候变化 — 或粘贴 https://zh.wikipedia.org/wiki/…",
+  "page not found": "未找到页面",
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "维基报告不存在此确切标题的页面 — 请检查拼写，或粘贴文章网址。"
 }
