@@ -32,10 +32,15 @@ class _FakeOllama:
     def is_available(self) -> bool:
         return self._available
 
-    def list_installed(self) -> list[dict]:
+    def list_installed(self):
         if not self._available:
             raise LLMUnavailable("Ollama not reachable (fake)")
-        return [{"name": "llama3.2:3b", "size": 2_000_000_000}]
+        return ["llama3.2:3b"]
+
+    def list_installed_detailed(self):
+        if not self._available:
+            raise LLMUnavailable("Ollama not reachable (fake)")
+        return [{"tag": "llama3.2:3b", "size_gb": 2.0, "modified": "2026-06-01T00:00:00Z"}]
 
     def generate(self, prompt, *, model="llama3.2:3b", system=None, options=None):
         if not self._available:
@@ -181,3 +186,19 @@ def test_synthesize_requires_a_selection():
     _override(_FakeOllama())
     with TestClient(app) as client:
         assert client.post("/api/llm/synthesize", json={}).status_code == 400
+
+
+# --- model catalog honesty (0.0.8 part 2: model-list freshness + picker) ------ #
+
+
+def test_models_endpoint_carries_as_of_and_hardware_fit():
+    _override(_FakeOllama(available=True))
+    with TestClient(app) as client:
+        r = client.get("/api/llm/models")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["catalog_as_of"]  # the suggested list is date-stamped
+        assert body["installed"] and body["installed"][0]["tag"] == "llama3.2:3b"
+        # every catalog entry is annotated with a hardware-fit hint
+        assert all("fit" in m for m in body["catalog"])
+        assert {m["fit"] for m in body["catalog"]} <= {"fits", "tight", "too_large", "unknown"}

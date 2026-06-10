@@ -41,6 +41,7 @@ from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
     PlainTextResponse,
+    RedirectResponse,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
@@ -93,6 +94,7 @@ from src.api.hazards import router as hazards_router
 from src.api.ingestion import router as ingestion_router
 
 # Import insights router (keyword & entity analytics)
+from src.api.diagnostics import router as diagnostics_router
 from src.api.insights import router as insights_router
 
 # Import source-integrity router (no-composite profile + user-guided actor-collapse)
@@ -331,6 +333,8 @@ app.include_router(source_io_router)
 
 # Include insights router
 app.include_router(insights_router)
+# Diagnostics log (shareable, on-demand back-end syntheses — CLAUDE.md ruling)
+app.include_router(diagnostics_router)
 
 # Include briefing router (Home triage feed + newsletter draft)
 app.include_router(briefing_router)
@@ -932,6 +936,40 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
         "});})();</script>"
     )
 
+    # Related in your corpus: other articles sharing the most keywords with this
+    # one (maintainer feedback: read locally, then branch out by similarity --
+    # source-agnostic). Pure counting over the keyword association table; the
+    # number shown IS the method.
+    related_html = ""
+    try:
+        from src.database.models import article_keyword_association as aka
+
+        my_kw = [r[0] for r in db.query(aka.c.keyword_id).filter(aka.c.article_id == a.id)]
+        if my_kw:
+            rows = (
+                db.query(Article.id, Article.title, func.count(aka.c.keyword_id).label("shared"))
+                .join(aka, aka.c.article_id == Article.id)
+                .filter(aka.c.keyword_id.in_(my_kw), Article.id != a.id)
+                .group_by(Article.id, Article.title)
+                .order_by(func.count(aka.c.keyword_id).desc())
+                .limit(8)
+                .all()
+            )
+            if rows:
+                items = "".join(
+                    f'<li><a href="/api/articles/{rid}/view">{_html.escape(rtitle or "(untitled)")}</a>'
+                    f' <span class="muted">— {shared} shared keyword{"s" if shared != 1 else ""}</span></li>'
+                    for rid, rtitle, shared in rows
+                )
+                related_html = (
+                    '<section><h2>Related in your corpus</h2>'
+                    '<p class="muted">Ranked by shared extracted keywords — overlap counts, '
+                    "not a similarity score. All links stay local.</p>"
+                    f"<ul>{items}</ul></section>"
+                )
+    except Exception:  # noqa: BLE001 - related list is optional, never breaks the reader
+        logger.warning("related-articles block failed", exc_info=True)
+
     doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title><style>
@@ -970,6 +1008,7 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
 <div class="wrap">
   <div class="crumb"><span class="dot"></span> Open Omniscience · offline stored copy</div>
   <article><h1>{title}</h1><div class="meta">{meta_rows}</div>{paras}</article>
+  {related_html}
   {cites_html}
   {dates_section}
   <footer>
@@ -1118,21 +1157,17 @@ async def read_root():
         )
 
 
-# Alternative UI ("Desk") served alongside the default ("Console") so both can be
-# compared on the same backend/data — see docs/DESIGN.md. The installer
-# creates a second desktop icon that opens this route.
-@app.get("/desk", response_class=HTMLResponse)
+# The experimental "Desk" UI was retired (maintainer verdict 2026-06-10): ONE
+# interface — the Console (see docs/DESIGN.md). Old bookmarks and launchers
+# from earlier installs still hit this path, so redirect instead of 404ing.
+@app.get("/desk", include_in_schema=False)
 async def read_desk():
-    desk_path = Path(__file__).parent.parent / "static" / "desk.html"
-    if desk_path.exists():
-        return HTMLResponse(content=desk_path.read_text(encoding="utf-8"), status_code=200)
-    # Fall back to the default UI if the alternative isn't present.
-    return await read_root()
+    return RedirectResponse(url="/", status_code=308)
 
 
 # The investigation dashboard (0.0.8 WP9 / RM-20): a dedicated, URL-parameterised
 # view a Home recipe card opens in a NEW browser tab (?view=<recipe>&<params>).
-# Third page in the Console/Desk family: same server, same corpus, no CDN.
+# Second page alongside the Console: same server, same corpus, no CDN.
 @app.get("/investigate", response_class=HTMLResponse)
 async def read_investigate():
     page = Path(__file__).parent.parent / "static" / "investigate.html"

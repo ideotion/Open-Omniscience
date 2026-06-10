@@ -134,5 +134,13 @@
   "Loading…": "جارٍ التحميل…",
   "Caveat (from the card):": "تحفّظ (من البطاقة):",
   "Go deeper": "تعمّق أكثر",
-  "Back to the main app": "عودة إلى التطبيق الرئيسي"
+  "Back to the main app": "عودة إلى التطبيق الرئيسي",
+  "Temporal map": "الخريطة الزمنية",
+  "Agenda": "المفكرة",
+  "Open this external link in your browser?": "هل تريد فتح هذا الرابط الخارجي في متصفحك؟",
+  "This leaves the app and contacts an outside server.": "هذا يغادر التطبيق ويتصل بخادم خارجي.",
+  "Diagnostics log": "سجل التشخيص",
+  "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "خلاصة قابلة للمشاركة لكيفية رؤية التطبيق لمجموعتك — لتحسين الإصدار القادم. تُنشأ فقط عند النقر، وأنت وحدك تقرر من يحصل على الملف.",
+  "Download keyword log (.json)": "تنزيل سجل الكلمات المفتاحية (.json)",
+  "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "جميع الكلمات المفتاحية المجمعة بأعدادها الحقيقية، وعائلات الكلمات المحسوبة، وتصحيحات الدمج/الفصل الخاصة بك، والمجموعات العليا — بالضبط ما تحتاج تحسينات التجميع إلى رؤيته. أعداد وبُنى فقط، لا درجات أبدًا."
 }

@@ -134,5 +134,13 @@
   "Loading…": "Lädt…",
   "Caveat (from the card):": "Vorbehalt (aus der Karte):",
   "Go deeper": "Tiefer einsteigen",
-  "Back to the main app": "Zurück zur Haupt-App"
+  "Back to the main app": "Zurück zur Haupt-App",
+  "Temporal map": "Zeitkarte",
+  "Agenda": "Agenda",
+  "Open this external link in your browser?": "Diesen externen Link im Browser öffnen?",
+  "This leaves the app and contacts an outside server.": "Dies verlässt die App und kontaktiert einen externen Server.",
+  "Diagnostics log": "Diagnoseprotokoll",
+  "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "Eine teilbare Synthese davon, wie die App Ihr Korpus sieht — zur Verbesserung der nächsten Version. Wird nur auf Klick erzeugt, und nur Sie entscheiden, wer die Datei erhält.",
+  "Download keyword log (.json)": "Schlagwort-Protokoll herunterladen (.json)",
+  "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "Alle gesammelten Schlagwörter mit echten Zählungen, die berechneten Schlagwort-Familien, Ihre Zusammenführen/Trennen-Korrekturen und Obergruppen — genau das, was Gruppierungs-Verbesserungen sehen müssen. Nur Zählungen und Strukturen, niemals Bewertungen."
 }

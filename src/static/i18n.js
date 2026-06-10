@@ -106,7 +106,11 @@
     apply();  // also connects the observer
   }
 
-  window.OOI18N = { setLang, apply, current, init, get meta() { return meta; } };
+  // t(): string-level lookup for JS-built text (confirm dialogs, toasts) that
+  // the DOM observer cannot reach. Same fallback rule: unknown -> English.
+  function t(s) { return map[s] == null ? s : map[s]; }
+
+  window.OOI18N = { setLang, apply, current, init, t, get meta() { return meta; } };
   if (document.readyState !== "loading") init();
   else document.addEventListener("DOMContentLoaded", init);
 })();

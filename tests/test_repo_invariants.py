@@ -162,3 +162,58 @@ def test_no_print_in_library_code():
     assert not offenders, (
         f"print() in library code (use a module logger; MAINT-04): {offenders}"
     )
+
+
+def test_llm_catalog_freshness():
+    """The suggested model catalog goes stale fast (maintainer direction): this
+    fails once CATALOG_AS_OF is older than the freshness window, forcing each
+    cycle to re-verify the list against https://ollama.com/library or knowingly
+    bump the date. The live picker uses the operator's INSTALLED models; this
+    list is only the offline suggestion."""
+    from datetime import date
+
+    from src.llm.ollama import CATALOG_AS_OF
+
+    import re as _re
+    m = _re.fullmatch(r"(\d{4})-(\d{2})", CATALOG_AS_OF)
+    assert m, f"CATALOG_AS_OF must be 'YYYY-MM', got {CATALOG_AS_OF!r}"
+    y, mo = int(m.group(1)), int(m.group(2))
+    age_months = (date.today().year - y) * 12 + (date.today().month - mo)
+    assert age_months <= 9, (
+        f"LLM model catalog is {age_months} months old (CATALOG_AS_OF={CATALOG_AS_OF}). "
+        f"Re-verify src/llm/ollama.py:MODEL_CATALOG against https://ollama.com/library "
+        f"and bump CATALOG_AS_OF."
+    )
+
+
+def test_ui_invariants():
+    """Maintainer-ruled UI invariants (see CLAUDE.md). These regressed once
+    between sessions; now they fail CI instead of relying on memory."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # 1. Wikipedia edition picker is a dropdown, never a text input
+    assert '<select id="wiki-lang"' in html, "wiki-lang must be a <select> (CLAUDE.md #1)"
+    assert '<input id="wiki-lang"' not in html
+    # 3. constant top-bar footprints
+    assert ".act-host:empty { visibility:hidden; }" in html, "act-host slot must stay reserved"
+    assert "#llm { min-width" in html, "LLM pill needs a fixed footprint"
+    # 4. persistent vitals strip; no version in the chrome
+    assert 'id="vitals-mini"' in html, "the compact vitals strip must exist"
+    assert '<span id="version" hidden>' in html, "version stays out of the visible chrome"
+    # 2. sidebar: medium widths collapse to a rail, not off-canvas
+    assert "@media (max-width:860px) and (min-width:601px)" in html
+    # 5. the eye brand mark (grid-iris path is its fingerprint)
+    assert "C8 6.5, 24 6.5, 30 16" in html, "brand mark must be the ASCII-eye vector"
+    # 7. ONE interface (final verdict 2026-06-10): the Desk UI is retired —
+    #    desk.html must stay deleted and the installer must create one launcher.
+    assert not (_SRC / "static" / "desk.html").exists(), (
+        "Desk is retired (CLAUDE.md): never resurrect desk.html"
+    )
+    installer = (_ROOT / "install.sh").read_text(encoding="utf-8")
+    assert '_mk_desktop "$APP_NAME-desk"' not in installer, (
+        "single-launcher verdict: the installer must not create a Desk launcher"
+    )
+    # 8. external links ALWAYS confirmed via popup before opening (ruled
+    #    2026-06-10) — delegated capture-phase guard in the UI.
+    assert "_externalLinkGuard" in html, (
+        "index.html: the external-link confirmation guard must exist (CLAUDE.md)"
+    )

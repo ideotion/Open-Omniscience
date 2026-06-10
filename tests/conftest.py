@@ -51,3 +51,17 @@ if not ANALYSIS_AVAILABLE:
         "test_workflow_integration.py",
         "test_framing_keywords_api.py",
     ]
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clear_network_kill_switch():
+    """The kill switch is process-global by design (a real kill switch); tests
+    that hit /api/scheduler/stop would otherwise poison every later fetch test."""
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    yield
+    clear_kill_switch()

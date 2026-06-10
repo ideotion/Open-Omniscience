@@ -21,13 +21,61 @@ import httpx
 
 # Real, currently-existing Ollama tags suitable for CPU-only single-user use.
 # (The previous catalog -- gemma4:e2b, llama4, qwen3.5 -- was hallucinated.)
+#
+# HONESTY CONTRACT (maintainer direction, 0.0.8): this list goes stale fast.
+# CATALOG_AS_OF is shown wherever the catalog appears, and a repo-invariant test
+# (tests/test_repo_invariants.py) FAILS once it is older than the freshness
+# window -- so every release cycle is forced to re-verify it against
+# https://ollama.com/library or knowingly bump the date. `min_ram_gb` powers the
+# in-app hardware-fit annotation (it informs the operator's choice, never makes
+# it). Always prefer the operator's actually-installed models (live from
+# /api/tags) over this suggested list.
+CATALOG_AS_OF = "2026-06"
+# The Ollama server version this cycle was developed/tested against. We do NOT
+# pin or bundle Ollama (it moves fast and is a per-OS native binary); we attest
+# what we tested with, and `doctor` shows installed-vs-tested so a drift is
+# visible without us pretending to a freshness we can't guarantee.
+OLLAMA_TESTED_VERSION = "0.5.x"
 MODEL_CATALOG: list[dict] = [
-    {"tag": "llama3.2:3b", "size": "~2 GB", "note": "balanced default"},
-    {"tag": "gemma2:2b", "size": "~1.6 GB", "note": "small, fast"},
-    {"tag": "qwen2.5:3b", "size": "~2 GB", "note": "strong multilingual"},
-    {"tag": "phi3:mini", "size": "~2.3 GB", "note": "reasoning-leaning"},
+    {"tag": "llama3.2:1b", "size": "~1.3 GB", "min_ram_gb": 4, "note": "smallest; very low-spec"},
+    {"tag": "llama3.2:3b", "size": "~2 GB", "min_ram_gb": 8, "note": "balanced default"},
+    {"tag": "gemma2:2b", "size": "~1.6 GB", "min_ram_gb": 6, "note": "small, fast"},
+    {"tag": "qwen2.5:3b", "size": "~2 GB", "min_ram_gb": 8, "note": "strong multilingual"},
+    {"tag": "phi3:mini", "size": "~2.3 GB", "min_ram_gb": 8, "note": "reasoning-leaning"},
 ]
 DEFAULT_MODEL = os.getenv("OO_LLM_MODEL", "llama3.2:3b")
+
+
+def total_ram_gb() -> float | None:
+    """Total physical RAM in GB (for hardware-fit hints), or None if unknown."""
+    try:
+        import psutil
+
+        return round(psutil.virtual_memory().total / (1024**3), 1)
+    except Exception:  # noqa: BLE001 - a hint is optional, never fatal
+        return None
+
+
+def annotate_catalog(ram_gb: float | None = None) -> list[dict]:
+    """The catalog with a per-model hardware-fit hint based on total RAM.
+
+    'fits' / 'tight' / 'too_large' / 'unknown' -- advisory only. We never hide a
+    model or decide for the operator; we annotate so they can choose well.
+    """
+    ram = total_ram_gb() if ram_gb is None else ram_gb
+    out = []
+    for m in MODEL_CATALOG:
+        need = m.get("min_ram_gb")
+        if ram is None or need is None:
+            fit = "unknown"
+        elif ram >= need:
+            fit = "fits"
+        elif ram >= need * 0.75:
+            fit = "tight"
+        else:
+            fit = "too_large"
+        out.append({**m, "fit": fit})
+    return out
 
 
 class LLMError(Exception):
@@ -82,6 +130,31 @@ class OllamaClient:
             ) from exc
         data = resp.json()
         return [m["name"] for m in data.get("models", [])]
+
+    def list_installed_detailed(self) -> list[dict]:
+        """Installed models with sizes/dates as Ollama reports them (live, local).
+
+        This is the source of truth for the in-app picker: what the operator
+        ACTUALLY has, never a guessed catalog. Raises LLMUnavailable if down.
+        """
+        try:
+            resp = self._client.get("/api/tags")
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise LLMUnavailable(
+                f"Ollama not reachable at {self.base_url}: {exc}. Is the ollama service running?"
+            ) from exc
+        out = []
+        for m in resp.json().get("models", []):
+            size = m.get("size")
+            out.append(
+                {
+                    "tag": m.get("name"),
+                    "size_gb": round(size / (1024**3), 1) if isinstance(size, int) else None,
+                    "modified": m.get("modified_at"),
+                }
+            )
+        return out
 
     # -- generation -------------------------------------------------------- #
 

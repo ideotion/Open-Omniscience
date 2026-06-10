@@ -216,6 +216,17 @@ maybe_setup_ollama() {
     local extras="$1"
     case ",$extras," in *,llm,*) : ;; *) return 0 ;; esac
 
+    # Honest network notice (0.0.8): provisioning the LLM needs clearnet; using
+    # the app afterwards does not. Said once, up front, so an at-risk operator
+    # can decide when/where to do this step.
+    say ""
+    say "  ${DIM}Note: downloading Ollama and a model needs a DIRECT internet connection${RST}"
+    say "  ${DIM}— it will NOT work over Tor. This is a one-time provisioning step.${RST}"
+    say "  ${DIM}Afterwards the app runs fully offline: the LLM never touches the network,${RST}"
+    say "  ${DIM}and source collection can route through your proxy (Settings → Safety →${RST}"
+    say "  ${DIM}Protected mode). If this machine can't use clearnet, skip the LLM here and${RST}"
+    say "  ${DIM}provision on a connected machine, then copy ~/.ollama/models across (USB).${RST}"
+
     if command -v ollama >/dev/null 2>&1; then
         ok "Ollama is already installed ($(ollama --version 2>/dev/null | head -1))"
     else
@@ -248,7 +259,7 @@ maybe_setup_ollama() {
                 "llama3.2:1b"  "~1.3 GB  fast, low-RAM (good default)" \
                 "llama3.2:3b"  "~2.0 GB  better quality" \
                 "qwen2.5:0.5b" "~0.4 GB  tiny, fastest" \
-                "none"         "Skip for now" 3>&1 1>&2 2>&3) || model="none"
+                "none"         "Skip — pick from newer models in-app later" 3>&1 1>&2 2>&3) || model="none"
         else
             if ask_yn "Download a small default model now (llama3.2:1b, ~1.3 GB)?" y; then
                 model="llama3.2:1b"; else model="none"; fi
@@ -276,43 +287,38 @@ make_launcher() {
 
     chmod +x "$SRC_DIR/scripts/launch.sh" 2>/dev/null || true
 
-    # Two interfaces ship side by side -- "Console" (default) and "Desk" -- so we
-    # create TWO launchers. They share one server and the same data, so you can run
-    # both and compare them (see the "Console vs Desk" section in docs/DESIGN.md).
+    # ONE launcher, ONE interface (maintainer verdict 2026-06-10) — the
+    # experimental "Desk" UI was retired; see docs/DESIGN.md for the history.
     local os; os="$(uname -s)"
     if [ "$os" = "Darwin" ]; then
-        # macOS: two double-clickable .command files on the Desktop.
+        # macOS: a double-clickable .command file on the Desktop.
         mkdir -p "$HOME/Desktop"
         local cmd_console="$HOME/Desktop/Open Omniscience.command"
-        local cmd_desk="$HOME/Desktop/Open Omniscience — Desk.command"
         cat > "$cmd_console" <<EOF
 #!/usr/bin/env bash
 exec "$SRC_DIR/scripts/launch.sh" console
 EOF
-        cat > "$cmd_desk" <<EOF
-#!/usr/bin/env bash
-exec "$SRC_DIR/scripts/launch.sh" desk
-EOF
-        # An Uninstall icon next to the launchers (runs the confirmed --uninstall flow).
+        # An Uninstall icon next to the launcher (runs the confirmed --uninstall flow).
         local cmd_uninstall="$HOME/Desktop/Uninstall Open Omniscience.command"
         cat > "$cmd_uninstall" <<EOF
 #!/usr/bin/env bash
 exec "$SRC_DIR/install.sh" --uninstall
 EOF
-        chmod +x "$cmd_console" "$cmd_desk" "$cmd_uninstall"
-        ok "Created launchers: 'Open Omniscience', 'Open Omniscience — Desk', and 'Uninstall Open Omniscience' on your Desktop."
-        say "  ${BOLD}To start:${RST} double-click either app icon (run both to compare)."
+        chmod +x "$cmd_console" "$cmd_uninstall"
+        # Consolidation: remove the Desk launcher from older installs.
+        rm -f "$HOME/Desktop/Open Omniscience — Desk.command" 2>/dev/null || true
+        ok "Created launchers: 'Open Omniscience' and 'Uninstall Open Omniscience' on your Desktop."
+        say "  ${BOLD}To start:${RST} double-click the app icon."
         return 0
     fi
 
-    # Linux: two .desktop entries in the applications menu (+ copies on the Desktop).
+    # Linux: one .desktop entry in the applications menu (+ a copy on the Desktop).
     local apps="$HOME/.local/share/applications"
     mkdir -p "$apps"
     local desk; desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
     # PNG renders more reliably than SVG on minimal desktops (notably some Qubes
     # AppVMs); fall back to the SVG source if no PNG is present.
     local icon_console="$SRC_DIR/assets/icon.png";   [ -f "$icon_console" ] || icon_console="$SRC_DIR/assets/icon.svg"
-    local icon_desk="$SRC_DIR/assets/icon-desk.png"; [ -f "$icon_desk" ]    || icon_desk="$SRC_DIR/assets/icon-desk.svg"
 
     # $1=basename  $2=Name  $3=Comment  $4=launch variant  $5=icon
     _mk_desktop() {
@@ -337,8 +343,9 @@ EOF
             gio set "$desk/$1.desktop" metadata::trusted true 2>/dev/null || true
         fi
     }
-    _mk_desktop "$APP_NAME"      "Open Omniscience"        "Local-first intelligence platform for investigative journalism" "console" "$icon_console"
-    _mk_desktop "$APP_NAME-desk" "Open Omniscience — Desk" "Open Omniscience — the calm, content-first 'Desk' interface"     "desk"    "$icon_desk"
+    _mk_desktop "$APP_NAME" "Open Omniscience" "Local-first intelligence platform for investigative journalism" "console" "$icon_console"
+    # Desk was retired entirely: remove its launcher from older installs.
+    rm -f "$apps/$APP_NAME-desk.desktop" "$desk/$APP_NAME-desk.desktop" 2>/dev/null || true
 
     # An "Uninstall" entry alongside the launchers. It runs install.sh --uninstall in a
     # terminal (Terminal=true) so the existing confirmation prompts are shown; it removes
@@ -365,14 +372,11 @@ EOF
     fi
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" 2>/dev/null || true
 
-    ok "Created two launchers (Console + Desk) in your applications menu${desk:+ and on the Desktop}"
+    ok "Created the 'Open Omniscience' launcher in your applications menu${desk:+ and on the Desktop}"
     say ""
-    say "  ${BOLD}How to start the app:${RST}"
-    say "    • ${BOLD}Open Omniscience${RST} — the default (Console) interface, or"
-    say "    • ${BOLD}Open Omniscience — Desk${RST} — the alternative (Desk) interface."
+    say "  ${BOLD}How to start the app:${RST} double-click ${BOLD}Open Omniscience${RST}."
     say "    A terminal window opens, the app starts, and your browser opens to"
-    say "    ${BLU}http://127.0.0.1:8000${RST}. They share one server and the same data,"
-    say "    so you can open both and compare. Close that window to stop the app."
+    say "    ${BLU}http://127.0.0.1:8000${RST}. Close that window to stop the app."
 }
 
 # --------------------------------------------------------------------------- #

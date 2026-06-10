@@ -306,6 +306,16 @@ the second — and both are, above all, a way of communicating the project's eth
 
 ## Space–time: the agenda as the anchoring layer for *all* information
 
+> **STATUS (maintainer-ruled 2026-06-10):** layers 1–2 of this design shipped
+> in 0.07 (the Temporal map tab + the Agenda tab, `src/timemap/` +
+> `src/events/`). Layers 3–4 — **convergence detection** (space-time
+> co-occurrence, never causation) and the **user-defined "if-this-then-WATCH"
+> attention engine** (explainable, off by default, local-only alerts) — are
+> **parked for the 0.0.9 cycle**, alongside the other designed-only pieces:
+> event-family merge/split UI, saved-filter "smart calendars", offline vector
+> map, Wikipedia-as-a-source, two-hop keyword graphs, and the autonomous
+> onboarding track.
+
 **The reframe.** The agenda is not "a list of upcoming events." It is the **time spine**
 of a deeper idea: *every signal the app holds is anchored in **time** (when) and **space**
 (where), and the meaning often lives in their **synchronicity**.* Tensions over oil →
@@ -624,4 +634,83 @@ app needs no model download at all?
 **Suggested sequence if adopted:** (2) date-stamp the static list now (one line, kills the
 "obsolete and doesn't say so" problem) → (1) installed-models picker + hardware annotation
 (local-only, no gate needed) → registry browse behind the external-lookup gate → (4) the
-offline kit as part of RM-08. Decision pending maintainer discussion.
+offline kit as part of RM-08.
+
+### Decisions taken (0.0.8 maintainer discussion)
+
+1. **No bundling of Ollama/models in the repo** — GitHub rejects >100 MB files and git
+   history keeps them forever; a ~1 GB native binary per OS/arch would bloat every clone
+   permanently and make us its security maintainer. Settled: never.
+2. **Curated list, date-stamped + freshness-test-enforced** — `CATALOG_AS_OF` is shown
+   wherever the catalog appears; `test_llm_catalog_freshness` fails once it is >9 months
+   old, forcing each cycle to re-verify against ollama.com/library. **DONE.**
+3. **Live local picker** — `/api/llm/models` leads with the operator's *installed* models
+   (live from Ollama) and annotates the suggested list by hardware fit (RAM via psutil);
+   surfaced in Settings → Local models. Informs the choice, never makes it. **DONE.**
+4. **Ollama version: attest, don't chase** — `OLLAMA_TESTED_VERSION` + `doctor` shows
+   installed-vs-tested, an honest compatibility statement that never goes silently stale.
+   **DONE.**
+5. **Clearnet a stated prerequisite for model provisioning; Tor unsupported for that
+   step** — install.sh alerts up front, and notes the app runs fully offline afterwards
+   (sources via Protected-mode proxy; the LLM never networks again). Installing already
+   reveals the machine to PyPI/GitHub/Ollama regardless, so this concedes nothing new.
+   **DONE.**
+6. **Offline LLM kit (RM-08 sub-item, planned)** — a checksummed GitHub *release artifact*
+   (NOT repo content): Ollama binary + one small model, provisioned on a connected machine
+   and carried by USB to `~/.ollama/models`. The principled fallback for operators who can
+   never use clearnet on the work machine. Build with RM-08 packaging.
+
+
+## Settings → Diagnostics log: a shareable back-end synthesis (maintainer idea, 2026-06-10)
+
+> **STATUS:** the first slice SHIPPED same day (maintainer asked): Settings →
+> Data & backup → "Diagnostics log" → `GET /api/diagnostics/keywords` exports
+> keywords (real counts + hidden flag), computed families, merge/split
+> overrides and super-groups in the `oo-export-1` envelope — on demand only,
+> bounded, no scores. Future slices extend the same pattern to other agreed
+> back-end aspects.
+
+**The problem.** Keyword grouping "is still a bit messy", and improving it requires
+seeing the operator's real data — but the corpus is private and local by design.
+The maintainer cannot paste their whole database into a debugging session.
+
+**The idea.** A new Settings section that builds **shareable, human-readable
+exports of back-end state**, starting with keywords:
+
+- **Keyword log**: the full list of gathered keywords + their families and
+  supergroups (with counts and merge/split provenance), exported as a single
+  reviewable file. The maintainer hands this to the development assistant, who can
+  then propose grouping fixes adjusted to the *actual* vocabulary of the corpus —
+  instead of guessing from synthetic examples.
+- **Extending further (maintainer-stated):** the same log should grow into an
+  agreed set of synthesized snapshots of other important back-end aspects — the
+  maintainer↔assistant diagnostics channel. Precedent: `data/source_preflight.jsonl`
+  already plays this role for sources, and proved its worth in the first live test.
+
+**Honesty constraints**: exports contain only what the operator chooses to share,
+generated on demand (never automatic), clearly labelled with date + corpus size,
+and they synthesize — they never editorialise (counts and structures, not scores).
+
+## Hosting & mobile — the stance (maintainer-ruled 2026-06-10)
+
+The PR #37 memo ("hosting & mobile strategy", closed as a deliberation doc)
+analyzed five architectures and recommended the hard, aligned path. The
+maintainer has now **adopted that recommendation as the official stance**:
+
+> **Give away the software for free; never host the users' data.** No SaaS,
+> no central server, no accounts, no telemetry. The forward path for reach is
+> a PWA + one-click self-host (BYO-home tunnel as an option) — centralized
+> hosting would delete the governance red line and is rejected.
+
+Any future mobile/remote-access work must start from this ruling.
+
+## KEY POINT for 0.0.9 — de-US-centre the default source catalog (maintainer-flagged)
+
+The live test exposed it plainly: the packaged catalog is heavily US-centric (World
+coverage showed ~1,553 "US" sources vs hundreds elsewhere — partly inflated by a mixed
+country-encoding bug: rows stored as both "US" and "United States" must be normalised to
+ISO-2 storage with full-name display). For a *global* intelligence platform this is a
+credibility problem, not a cosmetic one. 0.0.9 must treat catalog balance as a first-class
+deliverable: per-region source targets, the Wikidata world-catalog generator run for
+under-covered countries, the coverage report as the acceptance metric, and the ISO-2
+normalisation migration. (Maintainer: "address that specifically with all our attention.")

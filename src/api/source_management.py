@@ -137,6 +137,31 @@ async def dismiss_source_candidate(
     return {"dismissed": cand.domain}
 
 
+@router.post("/preflight", response_model=dict)
+@limiter.limit("10/hour")
+async def run_source_preflight(
+    request: Request, limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db)
+):
+    """Test enabled sources NOW (reachability + robots.txt) and update their
+    scraper settings. Appends every verdict to data/source_preflight.jsonl --
+    hand that file back when reporting source issues."""
+    from src.monitoring.preflight import preflight_sources
+
+    summary = preflight_sources(db, limit=limit)
+    db.commit()
+    return summary
+
+
+@router.get("/preflight/log", response_model=dict)
+@limiter.limit("100/hour")
+async def source_preflight_log(request: Request, limit: int = Query(200, ge=1, le=1000)):
+    """Latest preflight verdict per domain (newest first), from the JSONL log."""
+    from src.monitoring.preflight import recent_results
+
+    rows = recent_results(limit=limit)
+    return {"count": len(rows), "results": rows}
+
+
 # ==================== SOURCE ENDPOINTS ====================
 
 

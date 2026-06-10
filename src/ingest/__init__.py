@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import threading
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -85,6 +86,25 @@ _MAX_REDIRECTS = 5
 # HTTP statuses worth retrying (transient server-side / rate-limit signals). 4xx
 # client errors are deterministic and never retried (finding BUG-02).
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
+# --- Global network kill switch (a §0.5 invariant; maintainer: "Stop must be a
+# kill switch"). Once set, EVERY new fetch attempt -- scheduler, manual ingest,
+# crawler, markets, law, discovery -- refuses immediately. The single request
+# already on the wire finishes (sockets aren't yanked mid-read), everything
+# after it stops. Cleared when the operator starts collecting again.
+_KILL = threading.Event()
+
+
+def activate_kill_switch() -> None:
+    _KILL.set()
+
+
+def clear_kill_switch() -> None:
+    _KILL.clear()
+
+
+def kill_switch_active() -> bool:
+    return _KILL.is_set()
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -164,6 +184,8 @@ class EthicalFetcher:
         ``require_html`` rejects non-HTML responses (used for article pages). Set it
         False to fetch feeds (RSS/Atom XML) through the same robots/rate-limit path.
         """
+        if _KILL.is_set():
+            raise FetchFailed("network kill switch is active -- collection stopped by operator")
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise FetchFailed(f"unsupported or malformed URL: {url!r}")
@@ -205,6 +227,9 @@ class EthicalFetcher:
 
                 attempt += 1
                 self._sleep(self.retry_backoff_s * (2 ** (attempt - 1)))
+
+            # the loop exits with either a definitive response or a raised error
+            assert response is not None and final_url is not None
 
             if response.status_code != 200:
                 raise FetchFailed(f"HTTP {response.status_code} for {url}")

@@ -117,14 +117,12 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
   guides), searchable and fully offline. There's also a link to the raw API page at
   `/docs`.
 
-**Two interfaces, same engine, same data.** The installer creates **two icons**:
-
-- **Open Omniscience** → *Console* at `http://127.0.0.1:8000/` — the default: a
-  discoverable, customizable sidebar app.
-- **Open Omniscience — Desk** → *Desk* at `/desk` — a calmer, content-first,
-  editorial alternative (no persistent sidebar; navigation via the Home launchpad
-  and ⌘K). The two are compared in [`DESIGN.md`](DESIGN.md); run both
-  and pick what fits you.
+**One icon, one interface.** The installer creates **one launcher** — **Open
+Omniscience** → `http://127.0.0.1:8000/` — a discoverable, customizable sidebar
+app that adapts smoothly to your window size (the sidebar retracts to an icon
+rail on narrower windows). An experimental second interface ("Desk") existed
+during earlier cycles and was retired in 0.0.8; its history is in
+[`DESIGN.md`](DESIGN.md).
 
 ---
 
@@ -160,9 +158,9 @@ The sidebar groups the tools by intent:
 - **System** — Settings · Help & docs
 
 A few names changed in 0.05 to be plainer (the controls are the same): **Ingest →
-Collect**, **Database → Library**, **Chain of custody → Evidence & custody**. In
-*Console* you can hide tools you don't use (Settings → Appearance → "Tools shown"); *Desk*
-reaches the same tools from its Home launchpad and ⌘K.
+Collect**, **Database → Library**, **Chain of custody → Evidence & custody**. You can
+hide tools you don't use (Settings → Appearance → "Tools shown"), and jump to any
+tool with the command palette (Ctrl/⌘-K).
 
 ### 3.0 Home
 
@@ -497,6 +495,12 @@ locally; no telemetry.
   uploaded file — but only after validating it's a genuine Open Omniscience
   database, and after snapshotting your current corpus to a `pre-restore-*.db`
   beside the database, so the operation is reversible.
+- **Diagnostics log:** **Download keyword log (.json)** exports how the app sees
+  your corpus's vocabulary — every gathered keyword with its real counts, the
+  computed keyword families, your merge/split corrections and super-groups —
+  so you can share it (only if and with whom you choose) to get keyword-grouping
+  improvements fitted to your *actual* data. Generated only when you click;
+  counts and structures only, never scores.
 - **Safety & at-risk use:** tools for journalists working under pressure, each
   labelled with its **honest limit**:
   - **Encrypted backup** — a passphrase-protected snapshot (AES-256-GCM + scrypt).

@@ -59,12 +59,20 @@ def scheduler_status() -> dict:
 @router.post("/start")
 def scheduler_start() -> dict:
     """Start the background ingestion loop (the first run begins immediately)."""
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
     started = get_scheduler().start()
     return {"started": started, **_status_payload()}
 
 
 @router.post("/stop")
 def scheduler_stop() -> dict:
+    # KILL SWITCH (§0.5): refuse every further fetch immediately, then stop the
+    # loop. The one in-flight request finishes; nothing else leaves the machine.
+    from src.ingest import activate_kill_switch
+
+    activate_kill_switch()
     """Stop the background ingestion loop."""
     stopped = get_scheduler().stop()
     return {"stopped": stopped, **_status_payload()}
@@ -72,6 +80,9 @@ def scheduler_stop() -> dict:
 
 @router.post("/run-now")
 def scheduler_run_now() -> dict:
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
     """Trigger one immediate run. Returns started=False if a run is already active."""
     started = get_scheduler().run_now()
     return {"started": started, **_status_payload()}

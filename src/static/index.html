@@ -189,7 +189,13 @@
     /* Fixed-width slot for the live fetch URL so the topbar never reflows as URLs change. */
     .act-host { display:inline-block; width:160px; overflow:hidden; text-overflow:ellipsis;
       white-space:nowrap; vertical-align:bottom; }
-    .act-host:empty { display:none; }
+    /* Reserve the slot even between fetches: an empty host must not collapse the
+       160px box, or everything to its right jumps per site (maintainer-reported). */
+    .act-host:empty { visibility:hidden; }
+    /* Top-bar status chips keep a CONSTANT footprint (maintainer feedback):
+       text changes (LLM — / LLM ✓ N) must not reflow their neighbours. */
+    #llm { min-width:96px; text-align:center; }
+    #health { min-width:110px; }
     @keyframes oo-spin { to { transform:rotate(360deg); } }
     /* Activity & vitals popover (opened from the chip). */
     .vitals-pop { position:fixed; top:52px; right:14px; z-index:60; width:264px;
@@ -422,7 +428,14 @@
     .prose hr { margin:1.6em 0; }
 
     /* ---- Responsive ------------------------------------------------- */
-    @media (max-width:860px) {
+    /* Medium widths: the left panel STAYS (icon rail with every tab) — maintainer
+       feedback: the tab list must remain visible, never vanish off-canvas. */
+    @media (max-width:860px) and (min-width:601px) {
+      .sidebar { --sidebar-w:66px; }
+      .brand .txt, .nav-group > .gl, .nav-item span, .nav-item .badge, .sb-foot .lbl { display:none; }
+      .nav-item { justify-content:center; padding:10px 0; }
+    }
+    @media (max-width:600px) {
       .sidebar { position:fixed; left:0; top:0; transform:translateX(-100%); transition:transform .2s ease; }
       body.nav-open .sidebar { transform:none; }
       body.nav-open .scrim { display:block; }
@@ -442,13 +455,16 @@
     <!-- ============================ SIDEBAR =========================== -->
     <aside class="sidebar" id="sidebar">
       <div class="brand">
+        <!-- The eye from assets/logo.txt, as vector: pointed-oval lid + #-grid iris -->
         <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <circle cx="16" cy="16" r="13" style="stroke:currentColor" stroke-width="2"/>
-          <circle cx="16" cy="16" r="5.5" style="fill:currentColor"/>
-          <circle cx="16" cy="16" r="2" style="fill:var(--bg2)"/>
-          <path d="M16 1.5v6M16 24.5v6M1.5 16h6M24.5 16h6" style="stroke:currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+          <path d="M2 16 C8 6.5, 24 6.5, 30 16 C24 25.5, 8 25.5, 2 16 Z"
+                style="stroke:currentColor" stroke-width="2" stroke-linejoin="round"/>
+          <path d="M11 12.5 H21 M11 16 H21 M11 19.5 H21 M13.4 10 V22 M16 10 V22 M18.6 10 V22"
+                style="stroke:currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M6.5 11.5 L4.6 9.9 M25.5 11.5 L27.4 9.9 M6.5 20.5 L4.6 22.1 M25.5 20.5 L27.4 22.1"
+                style="stroke:currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
         </svg>
-        <div class="txt"><b>Open Omniscience</b><span id="version">v—</span></div>
+        <div class="txt"><b>Open Omniscience</b><span id="version" hidden>v—</span></div>
       </div>
 
       <nav class="nav-groups" id="navGroups" aria-label="Primary">
@@ -507,6 +523,7 @@
         <div class="spacer"></div>
         <div class="status-cluster" id="statusCluster">
           <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click for details" tabindex="0" aria-expanded="false" aria-haspopup="dialog" style="cursor:pointer" onclick="toggleVitals()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleVitals();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span><span id="activity-host" class="act-host"></span></span>
+          <span id="vitals-mini" class="muted" title="Live process vitals — CPU · RAM · scrape throughput (click the activity chip for details)" style="font-size:11.5px;font-variant-numeric:tabular-nums;min-width:188px;text-align:right"></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
         </div>
@@ -1330,7 +1347,7 @@
     <section class="panel">
       <h2>Watch a page</h2>
       <div class="row">
-        <div><label for="wiki-lang">Edition</label><input id="wiki-lang" value="en" placeholder="en / fr / ar …"></div>
+        <div><label for="wiki-lang">Edition</label><select id="wiki-lang"><option value="en">English (en)</option></select></div>
         <div style="flex:3"><label for="wiki-title">Article title</label><input id="wiki-title" placeholder="e.g. Climate change"></div>
         <div><label for="wiki-cat">Watchlist</label><input id="wiki-cat" placeholder="optional"></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="addWikiPage()">Add</button></div>
@@ -1441,6 +1458,16 @@
     </section>
 
     <section class="panel">
+      <h2>Local models (Ollama)</h2>
+      <p class="muted" style="margin-top:0">The local language models power Summarize, Translate and
+        Synthesize. This shows what you actually have installed (live from Ollama) and a small
+        suggested list annotated for your hardware. Newer and better models appear constantly —
+        browse <a href="https://ollama.com/library" target="_blank" rel="noopener">ollama.com/library</a>
+        and <code>ollama pull &lt;tag&gt;</code> any of them.</p>
+      <div id="llm-models-box"><p class="muted">Checking Ollama…</p></div>
+    </section>
+
+    <section class="panel">
       <h2>Keyword filtering</h2>
       <p class="muted" style="margin-top:0">"Dumb" keywords (function words like <em>the, you, not, one</em>) are removed
         automatically by a built-in multilingual stoplist. Fine-tune below: exclude extra terms (one per line or
@@ -1508,6 +1535,15 @@
         <code>pre-restore-*.db</code> beside the database so the operation is reversible.
       </div>
       <div id="restore-result" class="hint"></div>
+    </section>
+
+    <section class="panel" id="diagnostics-panel">
+      <h2>Diagnostics log</h2>
+      <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords','_blank')">Download keyword log (.json)</button>
+      </div>
+      <div class="hint">All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.</div>
     </section>
     </div>
 
@@ -1688,6 +1724,24 @@
       if (!_bg) _bumpInflight(0);   // re-evaluate any still-pending in-flight spinner
       _ensureVitalsPoll();
     }
+    async function _pollVitalsMini() {
+      if (document.hidden) return;
+      const el = $("vitals-mini"); if (!el) return;
+      try {
+        const v = await api("/api/system/vitals");
+        const parts = [];
+        if (v.cpu_percent != null) parts.push(`CPU ${v.cpu_percent.toFixed(0)}%`);
+        if (v.rss_bytes != null) parts.push(`RAM ${(v.rss_bytes/1048576).toFixed(0)} MB`);
+        if (v.fetch_bytes_total != null) {
+          const d = v.fetch_bytes_total - (_vmLast || 0); _vmLast = v.fetch_bytes_total;
+          parts.push(`↓ ${(Math.max(0,d)/5120).toFixed(0)} KB/s`);
+        }
+        el.textContent = parts.join(" · ");
+      } catch { /* keep last reading */ }
+    }
+    let _vmLast = 0;
+    setInterval(_pollVitalsMini, 5000); _pollVitalsMini();
+
     async function _pollActivity() {
       try { const s = await api("/api/scheduler/status");
         setBackgroundActivity(s && s.active ? "Collecting…" : null);
@@ -2037,8 +2091,18 @@
       const gen = $("brief-generated");
       if (gen) gen.textContent = data.generated_at ? ("updated " + new Date(data.generated_at).toLocaleString()) : "";
       if (!data.buckets || !data.buckets.length) {
-        feed.innerHTML = '<div class="muted">No cards yet — collect some material (and let the scheduler run), '
-          + 'then refresh. The briefing surfaces what\'s rising, echoed, undertold or worth a second look.</div>';
+        feed.innerHTML = `<div class="card">
+          <h4>No cards yet — that's expected on a young corpus</h4>
+          <p class="sum">Cards are computed from YOUR collected material; an empty feed means the
+          signals haven't accumulated, never that the engine is gone. As the corpus grows you'll see:
+          <b>Rising now</b> (terms accelerating vs their own baseline), <b>Overtold/Undertold</b>,
+          <b>framing splits</b>, <b>promises due</b> (a mentioned future date arrives),
+          <b>edit-war bursts</b> on tracked Wikipedia pages, <b>regions gone quiet</b>,
+          and <b>source candidates</b> from offline discovery.</p>
+          <div class="acts">
+            <button class="secondary tiny" onclick="showTab('ingest')">Collect now</button>
+            <button class="secondary tiny" onclick="api('/api/briefing/refresh',{method:'POST'}).then(loadHome)">Recompute briefing</button>
+          </div></div>`;
         return;
       }
       const html = data.buckets.map(b => {
@@ -2591,6 +2655,39 @@
     let DEFAULT_LIMIT = 50;
     const _media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
 
+    async function loadLlmModels() {
+      const box = $("llm-models-box");
+      if (!box) return;
+      let d;
+      try { d = await api("/api/llm/models"); }
+      catch (e) { box.innerHTML = `<p class="muted">Model info unavailable: ${esc(e.message)}</p>`; return; }
+      if (!d.available) {
+        box.innerHTML = `<p class="muted">Ollama isn't running. Start it (or install it) to use
+          the LLM features; once running, your installed models appear here.</p>`;
+        return;
+      }
+      const FIT = {fits:["✓ fits","ok"], tight:["~ tight","warn"], too_large:["✗ too large","err"], unknown:["?","muted"]};
+      const ram = d.total_ram_gb ? `${d.total_ram_gb} GB RAM detected` : "RAM unknown";
+      const installed = (d.installed || []).length
+        ? "<table><tr><th>Installed model</th><th>Size</th><th>Updated</th></tr>" +
+          d.installed.map(m => `<tr><td><code>${esc(m.tag)}</code>${m.tag === d.default ? ' <span class="pill ok">default</span>' : ''}</td>` +
+            `<td>${m.size_gb != null ? m.size_gb + " GB" : ""}</td><td>${esc((m.modified || "").slice(0,10))}</td></tr>`).join("") + "</table>"
+        : '<p class="muted">No models installed yet — pull one below.</p>';
+      const cat = (d.catalog || []).map(m => {
+        const [lbl, cls] = FIT[m.fit] || FIT.unknown;
+        return `<tr><td><code>${esc(m.tag)}</code></td><td>${esc(m.size)}</td>` +
+          `<td class="${cls === 'ok' ? '' : cls}"><span class="pill ${cls === 'err' ? 'err' : (cls === 'warn' ? 'warn' : 'ok')}">${esc(lbl)}</span></td>` +
+          `<td class="muted">${esc(m.note)}</td>` +
+          `<td><code>ollama pull ${esc(m.tag)}</code></td></tr>`;
+      }).join("");
+      box.innerHTML = `<p class="muted">${esc(ram)}.</p>` + installed +
+        `<h3 style="margin:14px 0 4px">Suggested models <span class="muted" style="font-weight:400">(as of ${esc(d.catalog_as_of)} — newer likely exist)</span></h3>` +
+        `<table><tr><th>Model</th><th>Size</th><th>Your hardware</th><th>Note</th><th>To install</th></tr>${cat}</table>` +
+        `<div class="hint">Hardware fit is advisory — it informs your choice, it doesn't decide. Pull any model from
+         <a href="https://ollama.com/library" target="_blank" rel="noopener">the full library</a>; set the active one with
+         <code>OO_LLM_MODEL</code> or per request.</div>`;
+    }
+
     async function loadSettings() {
       try {
         const s = await api("/api/settings");
@@ -2607,6 +2704,7 @@
         }
         syncThemeSelect();
       } catch (e) { toast("Could not load settings: " + e.message, "err"); }
+      loadLlmModels();
       // Backup support is backend-dependent; reflect reality, never assume.
       try {
         const st = await api("/api/database/stats");
@@ -3277,13 +3375,29 @@
       $("crawl-fields").style.display = $("sch-mode").value === "crawl" ? "flex" : "none";
     }
 
+    // Timezone-proof: the backend reports UTC; the browser knows the operator's
+    // zone. Show a relative time ("in ~N min") and keep the exact local moment
+    // in the tooltip (maintainer ruling 2026-06-10: no naked zone-less clock).
+    function fmtRelative(iso) {
+      const d = new Date(iso); if (isNaN(d)) return "";
+      const mins = Math.round((d.getTime() - Date.now()) / 60000);
+      if (mins <= 0) return "any moment now";
+      if (mins < 60) return `in ~${mins} min`;
+      const h = Math.floor(mins / 60), m = mins % 60;
+      return `in ~${h} h${m ? ` ${m} min` : ""}`;
+    }
+    function fmtLocal(iso) {
+      const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString();
+    }
     function renderSchedStatus(st) {
       setBackgroundActivity(st.active ? "Collecting…" : null);
       const pill = st.running
         ? (st.active ? '<span class="pill ok">running — scrape in progress</span>'
                      : '<span class="pill ok">running</span>')
         : '<span class="pill">stopped</span>';
-      const next = st.next_run ? ` · next ~${esc(st.next_run.slice(0,16).replace("T"," "))}` : "";
+      const next = st.next_run
+        ? ` · <span title="${esc(fmtLocal(st.next_run))}">next ${esc(fmtRelative(st.next_run))}</span>`
+        : "";
       $("sched-status").innerHTML = pill + next;
       const r = st.last_result;
       $("sched-last").innerHTML = st.last_error
@@ -3291,7 +3405,7 @@
         : (r ? `Last run (${esc(r.mode)}): <strong>${r.articles_stored}</strong> stored` +
                (r.pages_fetched ? `, ${r.pages_fetched} pages fetched` : "") +
                `, ${r.sources_processed} source(s), ${esc(String(r.duration_s))}s ` +
-               `<span class="muted">at ${esc((r.finished_at||"").slice(0,19).replace("T"," "))}</span>`
+               `<span class="muted">at ${esc(fmtLocal(r.finished_at || ""))}</span>`
              : '<span class="muted">No run yet.</span>');
     }
 
@@ -4534,7 +4648,34 @@
     }
 
     // -- Wikipedia change-tracking ------------------------------------------ //
+    let _wikiLangsLoaded = false;
+    async function loadWikiLanguages() {
+      if (_wikiLangsLoaded) return;
+      try {
+        const d = await api("/api/wiki/languages");
+        const sel = $("wiki-lang"); if (!sel) return;
+        const cur = sel.value || "en";
+        sel.innerHTML = "";
+        (d.groups || []).forEach(g => {
+          const og = document.createElement("optgroup"); og.label = g.region || "";
+          (g.languages || []).forEach(l => {
+            const o = document.createElement("option");
+            o.value = l.code; o.textContent = `${l.name} (${l.code})`;
+            og.appendChild(o);
+          });
+          sel.appendChild(og);
+        });
+        if (!sel.children.length) (d.languages || []).forEach(l => {
+          const o = document.createElement("option");
+          o.value = l.code; o.textContent = `${l.name} (${l.code})`; sel.appendChild(o);
+        });
+        sel.value = cur; if (!sel.value) sel.value = "en";
+        _wikiLangsLoaded = true;
+      } catch (e) { /* keep the en default */ }
+    }
+
     async function loadWiki() {
+      loadWikiLanguages();
       try { renderWikiStatus(await api("/api/wiki/status")); }
       catch (e) { if (!_wikiStatusBuilt) $("wiki-status").textContent = "Status unavailable: " + e.message; }
       loadWikiPages(); loadWikiChanges();
@@ -5014,6 +5155,20 @@
       if (pop && !pop.contains(e.target) && chip && !chip.contains(e.target)) toggleVitals();
     });
     ensureDocList();   // so the command palette can offer docs before Help is opened
+    // -- External-link guard (maintainer ruling 2026-06-10): the app ALWAYS --- //
+    // asks before opening an external link. Capture-phase + delegated, so it
+    // covers every anchor — static or rendered later. Loopback links are exempt.
+    document.addEventListener("click", function _externalLinkGuard(e) {
+      const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+      if (!a || !/^https?:/i.test(a.href)) return;
+      let host = "";
+      try { host = new URL(a.href).hostname; } catch { return; }
+      if (host === "127.0.0.1" || host === "localhost" || host === location.hostname) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Open this external link in your browser?") + "\n\n" + a.href + "\n\n" +
+                   t("This leaves the app and contacts an outside server.")))
+        { e.preventDefault(); e.stopImmediatePropagation(); }
+    }, true);
     // Honour a deep-link like /#sources on first load; otherwise land on Home.
     const initial = (location.hash || "#home").slice(1);
     showTab(document.getElementById("tab-" + initial) ? initial : "home");

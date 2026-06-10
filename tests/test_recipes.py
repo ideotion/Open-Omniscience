@@ -218,4 +218,4 @@ def test_investigate_page_serves():
         r = client.get("/investigate?view=promise&article_id=1&date=2026-01-01")
         assert r.status_code == 200
         assert "Investigation" in r.text
-        assert "cdn." not in r.text  # dependency-free, like Console/Desk
+        assert "cdn." not in r.text  # dependency-free, like the Console

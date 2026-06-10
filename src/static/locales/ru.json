@@ -134,5 +134,13 @@
   "Loading…": "Загрузка…",
   "Caveat (from the card):": "Оговорка (из карточки):",
   "Go deeper": "Глубже",
-  "Back to the main app": "Назад в основное приложение"
+  "Back to the main app": "Назад в основное приложение",
+  "Temporal map": "Карта времени",
+  "Agenda": "Повестка",
+  "Open this external link in your browser?": "Открыть эту внешнюю ссылку в браузере?",
+  "This leaves the app and contacts an outside server.": "Вы покинете приложение и обратитесь к внешнему серверу.",
+  "Diagnostics log": "Журнал диагностики",
+  "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "Готовая к передаче сводка того, как приложение видит ваш корпус — для улучшения следующей версии. Создаётся только по вашему щелчку, и только вы решаете, кому передать файл.",
+  "Download keyword log (.json)": "Скачать журнал ключевых слов (.json)",
+  "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "Все собранные ключевые слова с реальными счётчиками, вычисленные семейства, ваши правки объединения/разделения и супергруппы — именно то, что нужно видеть для улучшения группировки. Только счётчики и структуры, никаких оценок."
 }
