@@ -19,8 +19,10 @@ switch on Stop · source preflight + shareable JSONL log · wiki edition dropdow
 blank (fail-safe producers + explanatory empty state) · 12 complete locales ·
 date-stamped freshness-tested model catalog + live picker + clearnet notice ·
 external topic discovery off-by-default · all 0.0.8 features documented in
-USER_MANUAL · two launchers (Console/Desk) are INTENTIONAL (DESIGN.md
-dialectic) pending the maintainer's verdict after live use.
+USER_MANUAL · **Console/Desk verdict (ruled 2026-06-10): consolidate to ONE
+desktop launcher (Console)**; Desk stays reachable in-app at `/desk` (toggle in
+Settings → Appearance), and must never silently lack tools — anything Desk
+doesn't embed must jump-link to the Console tab.
 
 **Temporal map + Agenda are NOT lost** (maintainer feared this 2026-06).
 Both shipped in the 0.07 cycle and are alive on 0.08: world map + time
@@ -28,8 +30,18 @@ slider + anchors + geocoded corpus + hazards layer = PRs #51/#52/#54
 (`src/timemap/`, `GET /api/timemap`); world-events calendar with
 subscribe/facet/group + event-family dedup = PRs #43/#47/#50/#53
 (`src/events/`, `configs/world_events.yml`). 23 dedicated tests pass.
-If the maintainer cannot see these tabs in a live install, suspect the
-hidden-tabs setting (Settings → Appearance), never assume lost code.
+Root cause of the live-test scare: the maintainer was in the **Desk** view,
+whose NAV lacked timemap/agenda/law/integrity — fixed with the consolidation.
+
+**The 3.8 MB → 2.3 MB download delta is NOT lost work** (investigated
+2026-06-10 at the maintainer's request, with timestamps): the drop is exactly
+PR #56 (audit cycle, merged 22:57 UTC 2026-06-09) deleting four NON-code files
+— three stale machine-generated audit reports in `docs/archive/` (QUBS JSON
+alone was 62.9 MB raw) + stale NEXT_VERSION.md. All feature code intact; the 6
+dead packages were RENAMED to `quarantine/dead_src/` (100% similarity), not
+deleted. Everything remains recoverable from git (`git show a006e3f:<path>`).
+Before fearing loss from an archive-size change, run
+`git diff --numstat <old> <new>` — sizes lie, diffs don't.
 
 ## Non-negotiables (project §0.5 + maintainer rulings)
 - Local-first, loopback-only; the ONLY external service call is the gated,
@@ -45,6 +57,9 @@ hidden-tabs setting (Settings → Appearance), never assume lost code.
 - No bundling of Ollama/models in the repo (GitHub 100 MB limit; decided
   2026-06). Model catalog must stay date-stamped (`CATALOG_AS_OF` + freshness
   test). Clearnet is a stated install prerequisite for model downloads.
+- **Hosting stance (ruled 2026-06-10, adopting the PR #37 memo):** give the
+  software away free; NEVER host the users' data. No SaaS, no central server,
+  no accounts, no telemetry — the forward path is PWA + one-click self-host.
 
 ## UI invariants (maintainer-ruled; do not regress)
 1. **Wikipedia edition picker is a `<select>` dropdown** (id `wiki-lang`), fed
@@ -110,3 +125,10 @@ hidden-tabs setting (Settings → Appearance), never assume lost code.
 - **Custody tab UX**: most users won't get it -- rename/explain/guided steps.
 - Offline LLM kit (RM-08 release artifact). DuckDuckGo discovery channel only
   after RM-03 gate UX proves out.
+- **Parked for 0.0.9 (ruled 2026-06-10):** space-time layers 3+4 from the
+  PR #51 design — convergence detection (space-time co-occurrence, never
+  causation) + the user-defined "if-this-then-WATCH" alert engine (explainable,
+  off by default, local-only). Also still designed-only from the docs PRs:
+  event-family merge/split UI (#53), saved-filter "smart calendars" (#50),
+  offline vector map, Wikipedia-as-a-source, two-hop keyword graphs (#43),
+  autonomous onboarding track (#49). All recorded in FUTURE_DEVELOPMENTS.

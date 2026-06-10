@@ -134,5 +134,11 @@
   "Loading…": "読み込み中…",
   "Caveat (from the card):": "注意（カードより）：",
   "Go deeper": "さらに深く",
-  "Back to the main app": "メインアプリへ戻る"
+  "Back to the main app": "メインアプリへ戻る",
+  "Temporal map": "時空マップ",
+  "Agenda": "アジェンダ",
+  "Console view": "コンソール表示",
+  "Desk view": "デスク表示",
+  "Open the Desk view →": "デスク表示を開く →",
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "同じアプリの、より静かでコンテンツ第一の表示 — 同じサーバー、同じデータ。一部のツール（時空マップ、アジェンダ、世界の法律、情報源の健全性）はこのコンソールで開きます。"
 }

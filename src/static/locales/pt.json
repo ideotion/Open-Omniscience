@@ -134,5 +134,11 @@
   "Loading…": "Carregando…",
   "Caveat (from the card):": "Ressalva (do cartão):",
   "Go deeper": "Aprofundar",
-  "Back to the main app": "Voltar ao aplicativo principal"
+  "Back to the main app": "Voltar ao aplicativo principal",
+  "Temporal map": "Mapa temporal",
+  "Agenda": "Agenda",
+  "Console view": "Vista Consola",
+  "Desk view": "Vista Mesa",
+  "Open the Desk view →": "Abrir a vista Mesa →",
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "Uma versão mais calma e centrada no conteúdo da mesma aplicação — mesmo servidor, mesmos dados. Algumas ferramentas (Mapa temporal, Agenda, Direito mundial, Integridade das fontes) abrem aqui, na Consola."
 }

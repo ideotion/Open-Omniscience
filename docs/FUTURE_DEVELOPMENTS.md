@@ -306,6 +306,16 @@ the second — and both are, above all, a way of communicating the project's eth
 
 ## Space–time: the agenda as the anchoring layer for *all* information
 
+> **STATUS (maintainer-ruled 2026-06-10):** layers 1–2 of this design shipped
+> in 0.07 (the Temporal map tab + the Agenda tab, `src/timemap/` +
+> `src/events/`). Layers 3–4 — **convergence detection** (space-time
+> co-occurrence, never causation) and the **user-defined "if-this-then-WATCH"
+> attention engine** (explainable, off by default, local-only alerts) — are
+> **parked for the 0.0.9 cycle**, alongside the other designed-only pieces:
+> event-family merge/split UI, saved-filter "smart calendars", offline vector
+> map, Wikipedia-as-a-source, two-hop keyword graphs, and the autonomous
+> onboarding track.
+
 **The reframe.** The agenda is not "a list of upcoming events." It is the **time spine**
 of a deeper idea: *every signal the app holds is anchored in **time** (when) and **space**
 (where), and the meaning often lives in their **synchronicity**.* Tensions over oil →
@@ -650,6 +660,19 @@ offline kit as part of RM-08.
    and carried by USB to `~/.ollama/models`. The principled fallback for operators who can
    never use clearnet on the work machine. Build with RM-08 packaging.
 
+
+## Hosting & mobile — the stance (maintainer-ruled 2026-06-10)
+
+The PR #37 memo ("hosting & mobile strategy", closed as a deliberation doc)
+analyzed five architectures and recommended the hard, aligned path. The
+maintainer has now **adopted that recommendation as the official stance**:
+
+> **Give away the software for free; never host the users' data.** No SaaS,
+> no central server, no accounts, no telemetry. The forward path for reach is
+> a PWA + one-click self-host (BYO-home tunnel as an option) — centralized
+> hosting would delete the governance red line and is rejected.
+
+Any future mobile/remote-access work must start from this ruling.
 
 ## KEY POINT for 0.0.9 — de-US-centre the default source catalog (maintainer-flagged)
 

@@ -134,5 +134,11 @@
   "Loading…": "Memuat…",
   "Caveat (from the card):": "Catatan (dari kartu):",
   "Go deeper": "Gali lebih dalam",
-  "Back to the main app": "Kembali ke aplikasi utama"
+  "Back to the main app": "Kembali ke aplikasi utama",
+  "Temporal map": "Peta temporal",
+  "Agenda": "Agenda",
+  "Console view": "Tampilan Konsol",
+  "Desk view": "Tampilan Meja",
+  "Open the Desk view →": "Buka tampilan Meja →",
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "Versi yang lebih tenang dan mengutamakan konten dari aplikasi yang sama — server sama, data sama. Beberapa alat (Peta temporal, Agenda, Hukum dunia, Integritas sumber) terbuka kembali di Konsol."
 }

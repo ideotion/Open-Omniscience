@@ -287,43 +287,39 @@ make_launcher() {
 
     chmod +x "$SRC_DIR/scripts/launch.sh" 2>/dev/null || true
 
-    # Two interfaces ship side by side -- "Console" (default) and "Desk" -- so we
-    # create TWO launchers. They share one server and the same data, so you can run
-    # both and compare them (see the "Console vs Desk" section in docs/DESIGN.md).
+    # ONE launcher (maintainer verdict 2026-06-10): the Console interface.
+    # The calmer "Desk" view stays available in-app at /desk (Settings →
+    # Appearance) — see the "Console vs Desk" section in docs/DESIGN.md.
     local os; os="$(uname -s)"
     if [ "$os" = "Darwin" ]; then
-        # macOS: two double-clickable .command files on the Desktop.
+        # macOS: a double-clickable .command file on the Desktop.
         mkdir -p "$HOME/Desktop"
         local cmd_console="$HOME/Desktop/Open Omniscience.command"
-        local cmd_desk="$HOME/Desktop/Open Omniscience — Desk.command"
         cat > "$cmd_console" <<EOF
 #!/usr/bin/env bash
 exec "$SRC_DIR/scripts/launch.sh" console
 EOF
-        cat > "$cmd_desk" <<EOF
-#!/usr/bin/env bash
-exec "$SRC_DIR/scripts/launch.sh" desk
-EOF
-        # An Uninstall icon next to the launchers (runs the confirmed --uninstall flow).
+        # An Uninstall icon next to the launcher (runs the confirmed --uninstall flow).
         local cmd_uninstall="$HOME/Desktop/Uninstall Open Omniscience.command"
         cat > "$cmd_uninstall" <<EOF
 #!/usr/bin/env bash
 exec "$SRC_DIR/install.sh" --uninstall
 EOF
-        chmod +x "$cmd_console" "$cmd_desk" "$cmd_uninstall"
-        ok "Created launchers: 'Open Omniscience', 'Open Omniscience — Desk', and 'Uninstall Open Omniscience' on your Desktop."
-        say "  ${BOLD}To start:${RST} double-click either app icon (run both to compare)."
+        chmod +x "$cmd_console" "$cmd_uninstall"
+        # Consolidation: remove the Desk launcher from older installs.
+        rm -f "$HOME/Desktop/Open Omniscience — Desk.command" 2>/dev/null || true
+        ok "Created launchers: 'Open Omniscience' and 'Uninstall Open Omniscience' on your Desktop."
+        say "  ${BOLD}To start:${RST} double-click the app icon."
         return 0
     fi
 
-    # Linux: two .desktop entries in the applications menu (+ copies on the Desktop).
+    # Linux: one .desktop entry in the applications menu (+ a copy on the Desktop).
     local apps="$HOME/.local/share/applications"
     mkdir -p "$apps"
     local desk; desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
     # PNG renders more reliably than SVG on minimal desktops (notably some Qubes
     # AppVMs); fall back to the SVG source if no PNG is present.
     local icon_console="$SRC_DIR/assets/icon.png";   [ -f "$icon_console" ] || icon_console="$SRC_DIR/assets/icon.svg"
-    local icon_desk="$SRC_DIR/assets/icon-desk.png"; [ -f "$icon_desk" ]    || icon_desk="$SRC_DIR/assets/icon-desk.svg"
 
     # $1=basename  $2=Name  $3=Comment  $4=launch variant  $5=icon
     _mk_desktop() {
@@ -348,8 +344,9 @@ EOF
             gio set "$desk/$1.desktop" metadata::trusted true 2>/dev/null || true
         fi
     }
-    _mk_desktop "$APP_NAME"      "Open Omniscience"        "Local-first intelligence platform for investigative journalism" "console" "$icon_console"
-    _mk_desktop "$APP_NAME-desk" "Open Omniscience — Desk" "Open Omniscience — the calm, content-first 'Desk' interface"     "desk"    "$icon_desk"
+    _mk_desktop "$APP_NAME" "Open Omniscience" "Local-first intelligence platform for investigative journalism" "console" "$icon_console"
+    # Consolidation: remove the Desk launcher from older installs (Desk lives in-app at /desk).
+    rm -f "$apps/$APP_NAME-desk.desktop" "$desk/$APP_NAME-desk.desktop" 2>/dev/null || true
 
     # An "Uninstall" entry alongside the launchers. It runs install.sh --uninstall in a
     # terminal (Terminal=true) so the existing confirmation prompts are shown; it removes
@@ -376,14 +373,12 @@ EOF
     fi
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" 2>/dev/null || true
 
-    ok "Created two launchers (Console + Desk) in your applications menu${desk:+ and on the Desktop}"
+    ok "Created the 'Open Omniscience' launcher in your applications menu${desk:+ and on the Desktop}"
     say ""
-    say "  ${BOLD}How to start the app:${RST}"
-    say "    • ${BOLD}Open Omniscience${RST} — the default (Console) interface, or"
-    say "    • ${BOLD}Open Omniscience — Desk${RST} — the alternative (Desk) interface."
+    say "  ${BOLD}How to start the app:${RST} double-click ${BOLD}Open Omniscience${RST}."
     say "    A terminal window opens, the app starts, and your browser opens to"
-    say "    ${BLU}http://127.0.0.1:8000${RST}. They share one server and the same data,"
-    say "    so you can open both and compare. Close that window to stop the app."
+    say "    ${BLU}http://127.0.0.1:8000${RST}. Close that window to stop the app."
+    say "    (The calmer 'Desk' view is available in-app: Settings → Appearance.)"
 }
 
 # --------------------------------------------------------------------------- #

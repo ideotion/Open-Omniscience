@@ -134,5 +134,11 @@
   "Loading…": "Loading…",
   "Caveat (from the card):": "Caveat (from the card):",
   "Go deeper": "Go deeper",
-  "Back to the main app": "Back to the main app"
+  "Back to the main app": "Back to the main app",
+  "Temporal map": "Temporal map",
+  "Agenda": "Agenda",
+  "Console view": "Console view",
+  "Desk view": "Desk view",
+  "Open the Desk view →": "Open the Desk view →",
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console."
 }

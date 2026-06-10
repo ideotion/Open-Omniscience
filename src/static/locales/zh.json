@@ -134,5 +134,11 @@
   "Loading…": "加载中…",
   "Caveat (from the card):": "注意事项（来自卡片）：",
   "Go deeper": "深入挖掘",
-  "Back to the main app": "返回主应用"
+  "Back to the main app": "返回主应用",
+  "Temporal map": "时空地图",
+  "Agenda": "日程",
+  "Console view": "控制台视图",
+  "Desk view": "书桌视图",
+  "Open the Desk view →": "打开书桌视图 →",
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "同一应用的更安静、以内容为先的视图 — 同一服务器、同一数据。部分工具（时空地图、日程、世界法律、信源诚信）会回到此控制台中打开。"
 }

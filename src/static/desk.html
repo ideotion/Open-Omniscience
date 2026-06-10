@@ -315,8 +315,11 @@
         <a href="#" onclick="showTab('indices');return false">Indices</a> ·
         <a href="#" onclick="showTab('markets');return false">Commodities</a> ·
         <a href="#" onclick="showTab('wiki');return false">Wikipedia</a> ·
+        <a href="/#timemap" title="Opens in the Console view">Temporal map</a> ·
+        <a href="/#agenda" title="Opens in the Console view">Agenda</a> ·
         <a href="#" onclick="showTab('settings');return false">Settings</a> ·
-        <a href="#" onclick="showTab('help');return false">Help</a></p>
+        <a href="#" onclick="showTab('help');return false">Help</a> ·
+        <a href="/" title="The full-toolset Console interface">Console view</a></p>
     </div>
 
     <!-- ============================ SEARCH ============================ -->
@@ -1056,6 +1059,11 @@
       {id:"home",     label:"Home",               grp:"Investigate"},
       {id:"search",   label:"Search",             grp:"Investigate"},
       {id:"insights", label:"Insights",           grp:"Investigate"},
+      // Desk embeds no panel for these four — never silently lack a tool
+      // (maintainer ruling 2026-06-10): jump to the Console at the right tab.
+      {id:"timemap",  label:"Temporal map",       grp:"Investigate", href:"/#timemap"},
+      {id:"agenda",   label:"Agenda",             grp:"Investigate", href:"/#agenda"},
+      {id:"law",      label:"World law",          grp:"Investigate", href:"/#law"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
       {id:"indices",  label:"Indices",            grp:"Investigate"},
       {id:"markets",  label:"Commodities",        grp:"Investigate"},
@@ -1063,8 +1071,10 @@
       {id:"sources",  label:"Sources",            grp:"Collect"},
       {id:"database", label:"Library",            grp:"Collect"},
       {id:"custody",  label:"Evidence & custody", grp:"Trust"},
+      {id:"integrity",label:"Source integrity",   grp:"Trust", href:"/#integrity"},
       {id:"settings", label:"Settings",           grp:"System"},
       {id:"help",     label:"Help & docs",        grp:"System"},
+      {id:"console",  label:"Console view",       grp:"System", href:"/"},
     ];
 
     const TAB_LOADERS = {
@@ -1113,7 +1123,9 @@
     // -- Jump / command overlay (Ctrl/Cmd-K, or the menu button) ------------ //
     let _palItems = [], _palFiltered = [], _palSel = 0;
     function palCommands() {
-      const pages = NAV.map(n => ({grp:"Go to", label:n.label, sub:n.grp, run:() => showTab(n.id)}));
+      const pages = NAV.map(n => ({grp:"Go to", label:n.label,
+        sub: n.href ? n.grp + " · opens in Console" : n.grp,
+        run: n.href ? (() => { location.href = n.href; }) : (() => showTab(n.id))}));
       const actions = [
         {grp:"Do", label:"Run a search", sub:"Search", run:() => { showTab("search"); setTimeout(() => $("q").focus(), 50); }},
         {grp:"Do", label:"Collect now (one scraper pass)", sub:"Collect", run:() => { showTab("ingest"); schedulerRunNow(); }},

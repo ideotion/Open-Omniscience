@@ -117,14 +117,14 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
   guides), searchable and fully offline. There's also a link to the raw API page at
   `/docs`.
 
-**Two interfaces, same engine, same data.** The installer creates **two icons**:
-
-- **Open Omniscience** → *Console* at `http://127.0.0.1:8000/` — the default: a
-  discoverable, customizable sidebar app.
-- **Open Omniscience — Desk** → *Desk* at `/desk` — a calmer, content-first,
-  editorial alternative (no persistent sidebar; navigation via the Home launchpad
-  and ⌘K). The two are compared in [`DESIGN.md`](DESIGN.md); run both
-  and pick what fits you.
+**One icon, two views, same engine, same data.** The installer creates **one
+launcher** — **Open Omniscience** → *Console* at `http://127.0.0.1:8000/`, the
+default discoverable, customizable sidebar app. A calmer, content-first
+alternative — the *Desk* view — lives in-app at `/desk` (open it from
+**Settings → Appearance → Desk view**; navigation via the Home launchpad and
+⌘K). Tools Desk doesn't embed (Temporal map, Agenda, World law, Source
+integrity) open back in the Console. The two views are compared in
+[`DESIGN.md`](DESIGN.md).
 
 ---
 

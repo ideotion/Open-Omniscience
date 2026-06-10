@@ -203,3 +203,13 @@ def test_ui_invariants():
     assert "@media (max-width:860px) and (min-width:601px)" in html
     # 5. the eye brand mark (grid-iris path is its fingerprint)
     assert "C8 6.5, 24 6.5, 30 16" in html, "brand mark must be the ASCII-eye vector"
+    # 7. Console/Desk consolidation (ruled 2026-06-10): ONE desktop launcher;
+    #    Desk is an in-app view that must never silently lack a tool — anything
+    #    it doesn't embed jump-links to the Console tab.
+    desk = (_SRC / "static" / "desk.html").read_text(encoding="utf-8")
+    for anchor in ("/#timemap", "/#agenda", "/#law", "/#integrity"):
+        assert anchor in desk, f"Desk must jump-link {anchor} to the Console (CLAUDE.md)"
+    installer = (_ROOT / "install.sh").read_text(encoding="utf-8")
+    assert '_mk_desktop "$APP_NAME-desk"' not in installer, (
+        "single-launcher verdict: the installer must not create a Desk launcher"
+    )

@@ -134,5 +134,11 @@
   "Loading…": "جارٍ التحميل…",
   "Caveat (from the card):": "تحفّظ (من البطاقة):",
   "Go deeper": "تعمّق أكثر",
-  "Back to the main app": "عودة إلى التطبيق الرئيسي"
+  "Back to the main app": "عودة إلى التطبيق الرئيسي",
+  "Temporal map": "الخريطة الزمنية",
+  "Agenda": "المفكرة",
+  "Console view": "عرض وحدة التحكم",
+  "Desk view": "عرض المكتب",
+  "Open the Desk view →": "افتح عرض المكتب ←",
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "نسخة أهدأ تركّز على المحتوى من التطبيق نفسه — الخادم نفسه والبيانات نفسها. بعض الأدوات (الخريطة الزمنية، المفكرة، القانون العالمي، نزاهة المصادر) تُفتح هنا في وحدة التحكم."
 }
