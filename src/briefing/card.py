@@ -113,6 +113,15 @@ class Card:
                       carries *parameters the user could have typed themselves* —
                       never embedded conclusions, never score-shaped keys
                       (enforced in ``__post_init__``).
+      * ``trigger`` — optional "Why am I seeing this?" audit trail (evidence-
+                      tiered cards, maintainer-ruled 2026-06-10):
+                      ``{"plain": str, "math": [{"label": str, "value": str}]}``.
+                      ``plain`` is ONE constant plain-language sentence per card
+                      type (no jargon, no embedded data — so the i18n engine can
+                      translate it exactly); each ``math`` row is a constant
+                      ``label`` (translated the same way) plus a ``value`` of
+                      numbers/symbols only (language-neutral). The exact
+                      arithmetic that fired the card, reproducible by hand.
     """
 
     type: str
@@ -129,6 +138,7 @@ class Card:
     created_at: str = ""
     dismissible: bool = True
     recipe: dict | None = None
+    trigger: dict | None = None
 
     def __post_init__(self) -> None:
         if self.bucket not in BUCKETS:
@@ -182,6 +192,7 @@ class Card:
             "created_at": self.created_at,
             "dismissible": self.dismissible,
             "recipe": self.recipe,
+            "trigger": self.trigger,
         }
 
 

@@ -28,6 +28,7 @@ For inquiries, contact: open-omniscience@ideotion.com
 import csv
 import io
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -86,6 +87,9 @@ from src.api.custody import router as custody_router
 # Import database overview router (honest read-only corpus statistics + backup/restore)
 from src.api.database import router as database_router
 
+# Import diagnostics router (shareable, on-demand back-end syntheses — CLAUDE.md)
+from src.api.diagnostics import router as diagnostics_router
+
 # Import world-events agenda router (curated, offline calendar of major events)
 from src.api.events import router as events_router
 
@@ -94,7 +98,6 @@ from src.api.hazards import router as hazards_router
 from src.api.ingestion import router as ingestion_router
 
 # Import insights router (keyword & entity analytics)
-from src.api.diagnostics import router as diagnostics_router
 from src.api.insights import router as insights_router
 
 # Import source-integrity router (no-composite profile + user-guided actor-collapse)
@@ -176,6 +179,13 @@ async def lifespan(app: FastAPI):
     best-effort so the API still starts on a brand-new/empty database.
     """
     init_db()
+    # Rolling WARNING+ error log (the debug bundle's heart) — best-effort.
+    try:
+        from src.monitoring.errorlog import install as _install_errorlog
+
+        _install_errorlog()
+    except Exception:  # noqa: BLE001 - logging must never block startup
+        logger.warning("could not install the error-log handler", exc_info=True)
     try:
         with session_scope() as session:
             ARTICLES_COUNT.set(session.query(Article).count())
@@ -972,7 +982,7 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
 
     doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title><style>
+<title>{(title[:40] + "…") if len(title) > 40 else title} · FOOS</title><style>
   :root {{ color-scheme: light dark; --ink:#0b0d10; --paper:#0e1116; --fg:#e7e9ee; --mut:#8b93a1;
     --line:#222833; --accent:#5ea0ff; --card:#141923; --warn:#f0a23a; }}
   @media (prefers-color-scheme: light) {{ :root {{ --paper:#faf8f4; --fg:#1a1d22; --mut:#6b7280;
@@ -1114,9 +1124,24 @@ _DOCS: dict[str, dict[str, str]] = {
 }
 _DOCS_DIR = Path(__file__).parent.parent.parent / "docs"
 
+# Translated documentation (maintainer-ruled 2026-06-10): community-perfectible
+# drafts live in docs/i18n/<lang>/<FILE>. English stays authoritative; a missing
+# translation falls back to English (same rule as the UI chrome). The lang code
+# is validated against this pattern so it can never traverse the filesystem.
+_LANG_RE = re.compile(r"^[a-z]{2}$")
+
+
+def _doc_path(meta: dict[str, str], lang: str | None) -> tuple[Path, str]:
+    """The on-disk file for a doc in the requested language ('' = English)."""
+    if lang and lang != "en" and _LANG_RE.fullmatch(lang):
+        candidate = _DOCS_DIR / "i18n" / lang / meta["file"]
+        if candidate.exists():
+            return candidate, lang
+    return _DOCS_DIR / meta["file"], "en"
+
 
 @app.get("/api/docs")
-async def list_docs() -> dict:
+async def list_docs(lang: str | None = None) -> dict:
     """List the in-app documentation available to the Help reader."""
     return {
         "docs": [
@@ -1125,22 +1150,31 @@ async def list_docs() -> dict:
                 "title": meta["title"],
                 "blurb": meta["blurb"],
                 "available": (_DOCS_DIR / meta["file"]).exists(),
+                "translated": _doc_path(meta, lang)[1] != "en" if lang else False,
             }
             for slug, meta in _DOCS.items()
         ]
     }
 
 
-@app.get("/api/docs/{slug}", response_class=PlainTextResponse)
-async def get_doc(slug: str) -> str:
-    """Return one whitelisted doc as raw Markdown (rendered client-side)."""
+@app.get("/api/docs/{slug}")
+async def get_doc(slug: str, lang: str | None = None) -> PlainTextResponse:
+    """Return one whitelisted doc as raw Markdown (rendered client-side).
+
+    ``?lang=fr`` serves ``docs/i18n/fr/<file>`` when a translation exists and
+    falls back to the English original otherwise; the ``X-OO-Doc-Lang`` header
+    states which one was actually served, so the reader can show an honest
+    "translated draft — English is authoritative" banner.
+    """
     meta = _DOCS.get(slug)
     if meta is None:
         raise HTTPException(status_code=404, detail=f"Unknown doc: {slug}")
-    path = _DOCS_DIR / meta["file"]
+    path, served_lang = _doc_path(meta, lang)
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Doc not found on disk: {meta['file']}")
-    return path.read_text(encoding="utf-8")
+    return PlainTextResponse(
+        path.read_text(encoding="utf-8"), headers={"X-OO-Doc-Lang": served_lang}
+    )
 
 
 # Root endpoint to serve index.html

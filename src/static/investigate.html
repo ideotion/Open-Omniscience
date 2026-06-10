@@ -204,7 +204,13 @@ async function viewQuietRegion() {
 
 // ------------------------------------------------------------------ boot --- //
 const VIEWS = { "promise": viewPromise, "edit-war": viewEditWar, "quiet-region": viewQuietRegion };
+// SHORT browser-tab titles per view (maintainer-ruled 2026-06-10): the tab
+// must say its intent at a glance, and stay short for narrow tab strips.
+const TAB_TITLES = { "promise": "Promise due", "edit-war": "Edit war", "quiet-region": "Quiet region" };
 (async () => {
+  // "FOOS" = Free Open OmniScience (alpha working name -- maintainer-ruled
+  // 2026-06-10; a proper rename may come later). Short, for narrow tab strips.
+  document.title = (TAB_TITLES[VIEW] || "Investigate") + " · FOOS";
   const main = document.getElementById("main");
   const fn = VIEWS[VIEW];
   if (!fn) {

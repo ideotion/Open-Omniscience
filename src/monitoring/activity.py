@@ -22,13 +22,21 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 
 @dataclass
 class _Current:
     url: str
     started_at: float  # epoch seconds (time.time)
+
+
+# Rolling per-host transfer samples (the maintainer asked for per-source rates).
+# These are the app's OWN responses — bytes ÷ time spent downloading them — so
+# attribution is exact; this is NOT an OS/per-process network counter.
+_MAX_SAMPLES = 400
 
 
 class ActivityMonitor:
@@ -41,6 +49,8 @@ class ActivityMonitor:
         self._fetches_total: int = 0
         self._last_url: str | None = None
         self._last_finished_at: float | None = None
+        # (ts, host, bytes, transfer_seconds) — bounded, oldest evicted.
+        self._samples: deque[tuple[float, str, int, float]] = deque(maxlen=_MAX_SAMPLES)
 
     def fetch_started(self, url: str) -> None:
         """Mark a fetch as in flight (replaces any previous current)."""
@@ -48,11 +58,50 @@ class ActivityMonitor:
             self._current = _Current(url=url, started_at=time.time())
 
     def fetch_bytes(self, n: int) -> None:
-        """Add ``n`` downloaded bytes to the cumulative total (ignored if <= 0)."""
+        """Add ``n`` downloaded bytes to the cumulative total (ignored if <= 0).
+
+        Called once per successful fetch with the body size; the in-flight record
+        gives us the host and the time spent, so a per-host sample is recorded too.
+        """
         if n is None or n <= 0:
             return
         with self._lock:
             self._bytes_total += int(n)
+            if self._current is not None:
+                host = urlparse(self._current.url).netloc or "?"
+                dur = max(1e-3, time.time() - self._current.started_at)
+                self._samples.append((time.time(), host, int(n), dur))
+
+    def per_host_rates(self, *, window_s: float = 120.0, top: int = 6) -> list[dict]:
+        """Recent per-host transfer rates from the app's own fetches.
+
+        Rate = bytes ÷ seconds spent on those requests (transfer speed while
+        actively downloading from that host) over the last ``window_s`` seconds.
+        Empty when nothing was fetched recently — never a fabricated number.
+        """
+        now = time.time()
+        agg: dict[str, list[float]] = {}  # host -> [bytes, seconds, fetches, last_ts]
+        with self._lock:
+            for ts, host, n, dur in self._samples:
+                if now - ts > window_s:
+                    continue
+                a = agg.setdefault(host, [0.0, 0.0, 0.0, 0.0])
+                a[0] += n
+                a[1] += dur
+                a[2] += 1
+                a[3] = max(a[3], ts)
+        out = [
+            {
+                "host": host,
+                "kbps": round(b / max(s, 1e-3) / 1024.0, 1),
+                "bytes": int(b),
+                "fetches": int(f),
+                "last_s_ago": round(max(0.0, now - last), 1),
+            }
+            for host, (b, s, f, last) in agg.items()
+        ]
+        out.sort(key=lambda r: float(r["last_s_ago"]))  # type: ignore[arg-type]
+        return out[:top]
 
     def fetch_finished(self) -> None:
         """Clear the in-flight fetch and bump the completed-fetch counter."""

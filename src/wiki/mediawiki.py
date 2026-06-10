@@ -139,11 +139,18 @@ def build_current_text_params(title: str) -> dict:
 
 
 def parse_current_text(payload: dict) -> dict:
-    """Parse a current-text response -> {revid, text, size, pageid, title} or {}."""
+    """Parse a current-text response -> {revid, text, size, pageid, title} or {}.
+
+    A title the wiki does not know returns ``{"missing": True, "title": ...}``
+    so the caller can SAY so — a typo must never become a silent, forever-
+    pending watch (live test 2026-06-10).
+    """
     pages = (payload or {}).get("query", {}).get("pages", [])
     if not pages:
         return {}
     pg = pages[0]
+    if pg.get("missing") or pg.get("invalid"):
+        return {"missing": True, "title": pg.get("title")}
     revs = pg.get("revisions", [])
     if not revs:
         return {}
@@ -156,6 +163,31 @@ def parse_current_text(payload: dict) -> dict:
         "pageid": pg.get("pageid"),
         "title": pg.get("title"),
     }
+
+
+def build_categories_params(title: str) -> dict:
+    """Params for an article's REAL Wikipedia categories (hidden ones excluded)."""
+    return {
+        "action": "query",
+        "prop": "categories",
+        "titles": title,
+        "clshow": "!hidden",
+        "cllimit": 50,
+        "format": "json",
+        "formatversion": 2,
+    }
+
+
+def parse_categories(payload: dict) -> list[str]:
+    """Category names without the namespace prefix, e.g. 'Constitutional law'."""
+    pages = (payload or {}).get("query", {}).get("pages", [])
+    if not pages:
+        return []
+    out = []
+    for c in pages[0].get("categories", []) or []:
+        name = str(c.get("title", ""))
+        out.append(name.split(":", 1)[1] if ":" in name else name)
+    return out
 
 
 def build_compare_params(from_rev: int, to_rev: int) -> dict:

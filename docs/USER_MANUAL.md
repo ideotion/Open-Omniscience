@@ -117,6 +117,11 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
   guides), searchable and fully offline. There's also a link to the raw API page at
   `/docs`.
 
+**A note on “FOOS”.** Browser tabs the app opens (card investigations, the
+local article reader) are suffixed **“· FOOS” — Free Open OmniScience**: short
+enough for narrow tab strips while keeping the app identifiable. It is the
+alpha working name; a proper rename may come later.
+
 **One icon, one interface.** The installer creates **one launcher** — **Open
 Omniscience** → `http://127.0.0.1:8000/` — a discoverable, customizable sidebar
 app that adapts smoothly to your window size (the sidebar retracts to an icon
@@ -495,6 +500,17 @@ locally; no telemetry.
   uploaded file — but only after validating it's a genuine Open Omniscience
   database, and after snapshotting your current corpus to a `pre-restore-*.db`
   beside the database, so the operation is reversible.
+- **Temporary field-test instrumentation (0.0.8 live-test cycle).** During this
+  cycle the app automatically exercises each network surface once *inside your
+  own collect passes* (calendar-feed verification in polite batches, the market
+  and index feed imports, one law track, one wiki track) and records every
+  outcome verbatim in `data/field_test.jsonl`, included in the debug bundle.
+  **Purpose:** recurring self-improvement of the default install's source,
+  feed and calendar lists from real verdicts — the maintainer reinstalls,
+  clicks through, and shares the bundle with development. **It is temporary**
+  and will be removed when the cycle ends. Nothing is ever transmitted by the
+  app: logs stay on this machine until *you* download and share them. Opt out
+  any time with `OO_FIELD_TEST=0`. Boot remains fully offline either way.
 - **Diagnostics log:** **Download keyword log (.json)** exports how the app sees
   your corpus's vocabulary — every gathered keyword with its real counts, the
   computed keyword families, your merge/split corrections and super-groups —

@@ -65,6 +65,25 @@ def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
     capped = len(rows) > _MAX_KEYWORDS
     rows = rows[:_MAX_KEYWORDS]
 
+    # Language signatures (maintainer-ruled 2026-06-10, the hand/main idea):
+    # per keyword, HOW MANY DISTINCT ARTICLES mention it per article language.
+    # This is the disambiguation evidence for trans-language grouping — "main"
+    # mentioned mostly in fr-articles is the French word (= hand), not the
+    # English adjective or the German river. Real counts, never a dictionary guess.
+    lang_rows = (
+        db.query(
+            KeywordMention.keyword_id,
+            Article.language,
+            func.count(func.distinct(KeywordMention.article_id)),
+        )
+        .join(Article, Article.id == KeywordMention.article_id)
+        .group_by(KeywordMention.keyword_id, Article.language)
+        .all()
+    )
+    lang_sig: dict[int, dict[str, int]] = {}
+    for kid, lang, n in lang_rows:
+        lang_sig.setdefault(kid, {})[lang or "?"] = int(n)
+
     # The stoplist verdict is part of the diagnosis: leaked function words the
     # operator hid are exactly what grouping fixes need to see — flag, not omit.
     is_hidden = q._hidden_predicate()
@@ -79,6 +98,7 @@ def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
             "first_seen": first.isoformat() if first else None,
             "last_seen": last.isoformat() if last else None,
             "hidden": bool(is_hidden(k.normalized_term)),
+            "language_signature": lang_sig.get(k.id, {}),
         }
         for k, m, a, first, last in rows
     ]
@@ -115,8 +135,10 @@ def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
         },
         "method": (
             f"All gathered keywords (top {_MAX_KEYWORDS} by total mentions) with real "
-            "counts; families computed by the live grouping logic incl. the user's "
-            "merge/split overrides; super-groups as curated. No scores, no inference."
+            "counts; language_signature = distinct articles per ARTICLE language "
+            "(the trans-language disambiguation evidence); families computed by the "
+            "live grouping logic incl. the user's merge/split overrides; super-groups "
+            "as curated. No scores, no inference."
         ),
         "keywords": keywords,
         "families": families,
@@ -129,6 +151,169 @@ def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
         kind="keyword-diagnostics", query={}, count=len(keywords), payload=payload
     )
     fname = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d')}.json"
+    return JSONResponse(
+        body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+
+@router.get("/network")
+def network_preflight_log() -> JSONResponse:
+    """The network-targets diagnostics log (maintainer↔developer channel):
+    source preflight verdicts + feed/calendar preflight verdicts + the full
+    calendar verdict store — everything needed to optimize the default
+    install's source/feed/calendar lists from REAL verdicts."""
+    from src.events.feeds import load_verdicts
+    from src.monitoring import feed_preflight
+    from src.monitoring.preflight import recent_results as source_results
+
+    payload = {
+        "sources": source_results(),
+        "feeds": feed_preflight.recent_results(),
+        "calendar_verdicts": load_verdicts(),
+        "method": (
+            "Verbatim verdict logs: data/source_preflight.jsonl + "
+            "data/feed_preflight.jsonl + the per-feed calendar checks. "
+            "Robots verdicts use the standard taxonomy (allowed/disallowed/"
+            "blocked/missing/unreachable); nothing is inferred."
+        ),
+    }
+    count = len(payload["sources"]) + len(payload["feeds"]) + len(payload["calendar_verdicts"])
+    body = envelope(kind="network-preflight", query={}, count=count, payload=payload)
+    fname = f"oo-network-preflight-{datetime.now().strftime('%Y%m%d')}.json"
+    return JSONResponse(
+        body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+
+@router.get("/debug-bundle")
+def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
+    """ONE downloadable bundle with everything a developer needs to diagnose a
+    live install remotely (maintainer-ruled 2026-06-10: "I'll click every
+    download/scrape/refresh button and send you the log"). Sections:
+
+    runtime · corpus shape · scheduler state + run history · every network
+    verdict (sources / market feeds / calendars) · per-click import outcomes ·
+    law + wiki tracking states · the rolling WARNING+ error log. Verbatim
+    records, no inference; generated only on click.
+    """
+    import json as _json
+    import platform
+    import sys as _sys
+
+    from src.events.feeds import load_imports, load_verdicts
+    from src.monitoring import feed_preflight
+    from src.monitoring.errorlog import recent_errors
+    from src.monitoring.field_test import recent_results as _field_test_results
+    from src.monitoring.preflight import recent_results as source_results
+    from src.paths import data_dir as _data_dir
+    from src.scheduler.runlog import recent_runs
+    from src.scheduler.runner import get_scheduler
+
+    # -- runtime ----------------------------------------------------------- #
+    def _has(mod: str) -> bool:
+        import importlib.util
+
+        return importlib.util.find_spec(mod) is not None
+
+    try:
+        from sqlalchemy import text as _text
+
+        schema_rev = db.execute(_text("SELECT version_num FROM alembic_version")).scalar()
+    except Exception:  # noqa: BLE001
+        schema_rev = None
+    llm: dict = {"available": False}
+    try:
+        from src.llm.ollama import OllamaClient
+
+        client = OllamaClient()
+        if client.is_available():
+            llm = {"available": True, "models": client.list_installed()}
+    except Exception as exc:  # noqa: BLE001 - loopback-only, best-effort
+        llm = {"available": False, "error": str(exc)[:200]}
+    from src.ingest import kill_switch_active
+
+    db_file = _data_dir() / "open_omniscience.db"
+    runtime = {
+        "python": _sys.version.split()[0],
+        "platform": platform.platform(),
+        "schema_revision": schema_rev,
+        "extras": {m: _has(m) for m in ("numpy", "scipy", "pandas", "zstandard", "lz4")},
+        "llm": llm,
+        "db_bytes": db_file.stat().st_size if db_file.exists() else None,
+        "kill_switch": kill_switch_active(),
+    }
+
+    # -- corpus shape ------------------------------------------------------ #
+    from src.database.models import CommodityPrice, LawDocument, WikiPage
+
+    corpus = {
+        "articles": int(db.query(func.count(Article.id)).scalar() or 0),
+        "sources": int(db.query(func.count(Source.id)).scalar() or 0),
+        "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
+        "price_points": int(db.query(func.count(CommodityPrice.id)).scalar() or 0),
+    }
+
+    # -- per-surface tracking states (real columns, verbatim) --------------- #
+    law_docs = [
+        {
+            "title": d.title,
+            "jurisdiction": d.jurisdiction,
+            "url": d.url,
+            "last_status": d.last_status,
+            "last_checked_at": d.last_checked_at.isoformat() if d.last_checked_at else None,
+        }
+        for d in db.query(LawDocument).order_by(LawDocument.jurisdiction, LawDocument.title).all()
+    ]
+    wiki_pages = [
+        {
+            "wiki": p.wiki,
+            "title": p.title,
+            "missing": p.missing,
+            "baseline": p.baseline_revid is not None,
+            "last_checked_at": p.last_checked_at.isoformat() if p.last_checked_at else None,
+        }
+        for p in db.query(WikiPage).order_by(WikiPage.wiki, WikiPage.title).all()
+    ]
+
+    # -- per-click import outcomes ----------------------------------------- #
+    imports_path = _data_dir() / "import_results.jsonl"
+    import_results = []
+    if imports_path.exists():
+        for ln in imports_path.read_text(encoding="utf-8").splitlines()[-50:]:
+            try:
+                import_results.append(_json.loads(ln))
+            except ValueError:
+                continue
+
+    payload = {
+        "runtime": runtime,
+        "corpus": corpus,
+        "scheduler": {"status": get_scheduler().status(), "recent_runs": recent_runs(30)},
+        "network": {
+            "sources": source_results(),
+            "feeds": feed_preflight.recent_results(),
+            "calendar_verdicts": load_verdicts(),
+        },
+        "imports": import_results,
+        "calendar_imports": {
+            k: {"events": len(v.get("events", {})), "imported_at": v.get("imported_at")}
+            for k, v in load_imports().items()
+        },
+        "law_documents": law_docs,
+        "wiki_pages": wiki_pages,
+        # TEMPORARY (0.0.8 live-test cycle): automated field-test outcomes —
+        # see src/monitoring/field_test.py for purpose + the OO_FIELD_TEST=0
+        # opt-out. Will be removed when the cycle ends.
+        "field_test": _field_test_results(),
+        "errors": recent_errors(300),
+        "method": (
+            "Verbatim runtime facts, tracking states, network verdicts, per-click "
+            "import outcomes and the rolling WARNING+ error log. Nothing inferred; "
+            "exported only on the operator's click."
+        ),
+    }
+    body = envelope(kind="debug-bundle", query={}, count=len(payload["errors"]), payload=payload)
+    fname = f"oo-debug-bundle-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
     return JSONResponse(
         body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
     )

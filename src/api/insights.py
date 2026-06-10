@@ -419,3 +419,21 @@ def remove_supergroup_member(sg_id: int, normalized: str, db: Session = Depends(
     )
     db.commit()
     return {"supergroup": sg_id, "removed": n, "deleted": int(deleted)}
+
+
+@router.get("/graph")
+def insights_graph(
+    level: str = Query("keyword", description="keyword | family | supergroup"),
+    term: str | None = Query(None, description="seed term (keyword level only)"),
+    hops: int = Query(2, ge=1, le=2),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The layered keyword graph (maintainer-ruled 2026-06-10): a keyword with
+    its relatives AND its relatives' relatives (two hops); zoom out to keyword
+    FAMILIES; zoom out again to curated SUPER-GROUPS. Every edge is real
+    article co-occurrence with the method stated per level."""
+    if level not in ("keyword", "family", "supergroup"):
+        raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")
+    if level == "keyword" and not (term or "").strip():
+        raise HTTPException(status_code=400, detail="keyword level needs ?term=")
+    return q.layered_graph(db, level=level, term=term, hops=hops)

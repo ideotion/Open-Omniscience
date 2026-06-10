@@ -226,6 +226,16 @@ def view_law_document(document_id: int, db: Session = Depends(get_db)):
     rev_items = []
     for r in revs:
         when = r.observed_at.strftime("%Y-%m-%d %H:%M") if r.observed_at else "—"
+        # The first capture is the BASELINE, not an amendment: a 0-byte row
+        # labelled as a change confused the live test — say what it is.
+        if not r.diff and not (r.delta_bytes or 0):
+            rev_items.append(
+                f"<details class='rev'><summary>{when} · baseline captured "
+                f"(the reference text — amendments are measured against it)</summary>"
+                f"<div class='diff'><div class='muted'>No change: this is the first "
+                f"snapshot.</div></div></details>"
+            )
+            continue
         delta = f"{'+' if (r.delta_bytes or 0) > 0 else ''}{r.delta_bytes or 0} bytes"
         flags = (
             f" · <span class='flag'>{_html.escape(r.flag_reasons or 'flagged')}</span>"

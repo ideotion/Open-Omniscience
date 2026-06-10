@@ -232,3 +232,62 @@ def test_wiki_client_parses_through_fake_session():
     c = WikiClient(session=Sess(), min_interval_s=0.0)
     revs = c.fetch_revisions("en", "T")
     assert revs[0]["revid"] == 9
+
+
+# --------------------------------------------------------------------------- #
+#  Typos, URLs and real Wikipedia categories (live-test asks, 2026-06-10)
+# --------------------------------------------------------------------------- #
+def test_missing_page_is_said_not_silent(db):
+    """A misspelled title must produce a LOUD 'missing' verdict, not a watch
+    that silently pends forever."""
+
+    class _MissingClient:
+        def fetch_current_text(self, wiki, title):
+            return {"missing": True, "title": title}
+
+    page = ensure_page(db, "en", "Climat chnage")
+    out = update_page(db, _MissingClient(), page)
+    assert out["missing"] is True
+    assert page.missing is True and page.baseline_revid is None
+
+
+def test_baseline_stores_real_wikipedia_categories(db):
+    import json
+
+    class _OkClient:
+        def fetch_current_text(self, wiki, title):
+            return {"revid": 10, "text": "Body.", "size": 5, "pageid": 7, "title": title}
+
+        def fetch_categories(self, wiki, title):
+            return ["Climate change", "Environmental issues"]
+
+    page = ensure_page(db, "en", "Climate change")
+    out = update_page(db, _OkClient(), page)
+    assert out["baseline"] is True and page.missing is False
+    assert json.loads(page.wiki_categories) == ["Climate change", "Environmental issues"]
+
+
+def test_parse_current_text_reports_missing():
+    from src.wiki.mediawiki import parse_current_text
+
+    payload = {"query": {"pages": [{"title": "Nope", "missing": True}]}}
+    assert parse_current_text(payload) == {"missing": True, "title": "Nope"}
+
+
+def test_parse_categories_strips_namespace():
+    from src.wiki.mediawiki import parse_categories
+
+    payload = {"query": {"pages": [{"categories": [
+        {"title": "Category:Constitutional law"}, {"title": "Catégorie:Droit"}]}]}}
+    assert parse_categories(payload) == ["Constitutional law", "Droit"]
+
+
+def test_add_page_accepts_full_wikipedia_url():
+    from src.api.wiki import _parse_title_or_url
+
+    assert _parse_title_or_url("en", "https://de.wikipedia.org/wiki/Grundgesetz") == (
+        "de", "Grundgesetz")
+    assert _parse_title_or_url("en", "fr.m.wikipedia.org/wiki/Libert%C3%A9_de_la_presse") == (
+        "fr", "Liberté de la presse")
+    # A plain title passes through untouched, with the chosen edition.
+    assert _parse_title_or_url("ja", "気候変動") == ("ja", "気候変動")

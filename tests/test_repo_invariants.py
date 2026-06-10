@@ -217,3 +217,7 @@ def test_ui_invariants():
     assert "_externalLinkGuard" in html, (
         "index.html: the external-link confirmation guard must exist (CLAUDE.md)"
     )
+    # 9. evidence-tiered cards (ruled 2026-06-10): the trigger audit trail —
+    #    plain words FIRST, the exact math beneath, both translatable.
+    assert "Why am I seeing this?" in html, "cards must explain themselves (CLAUDE.md)"
+    assert "The exact math" in html, "the equations render under the plain explanation"

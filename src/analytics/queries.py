@@ -260,6 +260,11 @@ def trending(
         "country": country,
         "kind": kind,
         "terms": out,
+        # Multiple-comparisons honesty (evidence-tiered cards): how many
+        # candidates were screened to surface these winners — with many terms
+        # scanned, some ratios will be high by chance (winner's curse).
+        "scanned": len(scored),
+        "keywords_with_recent_mentions": len(recent),
         "method": "recent volume vs prior-period rate (ratio, not a significance test)",
     }
 
@@ -507,3 +512,162 @@ def status(session) -> dict:
         "entities": int(entities),
         "mentions": int(mentions),
     }
+
+
+# --------------------------------------------------------------------------- #
+#  Layered keyword graph (maintainer-ruled 2026-06-10): keyword ↔ two-hop
+#  relatives → families → super-groups. Every edge is real article
+#  co-occurrence; every level states its method. Bounded by construction.
+# --------------------------------------------------------------------------- #
+def _article_set(session, normalized_terms: list[str], *, cap: int = 4000) -> set[int]:
+    """Distinct article ids mentioning ANY of the given normalized terms."""
+    if not normalized_terms:
+        return set()
+    rows = (
+        session.query(KeywordMention.article_id)
+        .join(Keyword, Keyword.id == KeywordMention.keyword_id)
+        .filter(Keyword.normalized_term.in_(normalized_terms))
+        .distinct()
+        .limit(cap)
+        .all()
+    )
+    return {a for (a,) in rows}
+
+
+def _overlap_edges(nodes: list[dict], sets: dict[str, set[int]], *, min_overlap: int = 2) -> list[dict]:
+    edges = []
+    ids = [n["id"] for n in nodes]
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            ov = len(sets.get(ids[i], set()) & sets.get(ids[j], set()))
+            if ov >= min_overlap:
+                edges.append({"a": ids[i], "b": ids[j], "weight": ov})
+    edges.sort(key=lambda e: -e["weight"])
+    return edges[: max(3 * len(nodes), 60)]  # keep the picture legible, not a hairball
+
+
+def layered_graph(
+    session,
+    *,
+    level: str = "keyword",
+    term: str | None = None,
+    hops: int = 2,
+    limit_nodes: int = 36,
+) -> dict:
+    """One zoom level of the keyword graph: keyword (≤2 hops) / family / supergroup."""
+    if level == "keyword":
+        if not term:
+            return {"level": level, "nodes": [], "edges": [], "error": "term required"}
+        base = associations(session, term, limit=12, group=True)
+        center = (base.get("resolved") or {}).get("term", term)
+        nodes = [{"id": center, "label": center, "kind": "keyword", "center": True, "size": 13}]
+        edges, seen = [], {center}
+        for p in base.get("pairs", []):
+            if p["term"] in seen:
+                continue
+            seen.add(p["term"])
+            nodes.append(
+                {
+                    "id": p["term"],
+                    "label": p["term"],
+                    "kind": "keyword",
+                    "size": p.get("cooccur", 1),
+                    "members": p.get("members", []),
+                    "pmi": p.get("pmi"),
+                }
+            )
+            edges.append({"a": center, "b": p["term"], "weight": p.get("cooccur", 1), "pmi": p.get("pmi")})
+        if hops >= 2:
+            for p in base.get("pairs", [])[:5]:  # relatives of the strongest relatives
+                second = associations(session, p["term"], limit=4, group=True)
+                for p2 in second.get("pairs", []):
+                    if len(nodes) >= limit_nodes:
+                        break
+                    if p2["term"] not in seen:
+                        seen.add(p2["term"])
+                        nodes.append(
+                            {
+                                "id": p2["term"],
+                                "label": p2["term"],
+                                "kind": "keyword",
+                                "hop": 2,
+                                "size": p2.get("cooccur", 1),
+                                "pmi": p2.get("pmi"),
+                            }
+                        )
+                    edges.append(
+                        {"a": p["term"], "b": p2["term"], "weight": p2.get("cooccur", 1), "pmi": p2.get("pmi")}
+                    )
+        return {
+            "level": level,
+            "term": center,
+            "nodes": nodes,
+            "edges": edges,
+            "method": "PMI/co-occurrence association, two hops (relatives, and their relatives)",
+            "caveat": "Association is not causation; PMI on small samples is noisy.",
+        }
+
+    if level == "family":
+        top = top_terms(session, limit=limit_nodes, group=True)
+        fams = top.get("terms", [])[:limit_nodes]
+        nodes, sets = [], {}
+        for f in fams:
+            members = [m.get("normalized") for m in f.get("members", []) if m.get("normalized")] or [
+                f.get("normalized")
+            ]
+            fid = f.get("normalized") or f.get("term")
+            nodes.append(
+                {
+                    "id": fid,
+                    "label": f.get("term"),
+                    "kind": "family",
+                    "size": f.get("mentions", 1),
+                    "members": [m.get("term") for m in f.get("members", [])][:8],
+                }
+            )
+            sets[fid] = _article_set(session, members[:3])
+        return {
+            "level": level,
+            "nodes": nodes,
+            "edges": _overlap_edges(nodes, sets),
+            "method": "shared-article overlap between keyword FAMILIES (top members each)",
+            "caveat": "Families group surface forms of one entity; overlap counts articles, not causation.",
+        }
+
+    if level == "supergroup":
+        from src.database.models import KeywordSuperGroup
+
+        sgs = session.query(KeywordSuperGroup).order_by(KeywordSuperGroup.name).all()
+        nodes, sets = [], {}
+        for sg in sgs:
+            members = [m.normalized_term for m in sg.members][:6]
+            sid = f"sg:{sg.id}"
+            nodes.append(
+                {
+                    "id": sid,
+                    "label": sg.name,
+                    "kind": "supergroup",
+                    "size": max(len(members), 1) * 5,
+                    "members": members,
+                }
+            )
+            sets[sid] = _article_set(session, members)
+        # Context: the top unassigned families, so super-groups sit in the landscape.
+        assigned = {m for n in nodes for m in n["members"]}
+        for f in top_terms(session, limit=10, group=True).get("terms", []):
+            fid = f.get("normalized") or f.get("term")
+            if fid in assigned or any(n["id"] == fid for n in nodes):
+                continue
+            nodes.append(
+                {"id": fid, "label": f.get("term"), "kind": "family", "size": f.get("mentions", 1)}
+            )
+            sets[fid] = _article_set(session, [fid])
+        return {
+            "level": level,
+            "nodes": nodes,
+            "edges": _overlap_edges(nodes, sets, min_overlap=1),
+            "method": "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context",
+            "caveat": "Super-groups are the user's own curation; overlap counts articles, not causation.",
+        }
+
+    return {"level": level, "nodes": [], "edges": [], "error": f"unknown level {level!r}"}

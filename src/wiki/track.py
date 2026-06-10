@@ -12,6 +12,7 @@ for unchanged pages, so cosmetic-edit redundancy is avoided by construction.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -65,11 +66,27 @@ def update_page(
     # First contact: store a single baseline snapshot and start tracking from here.
     if page.baseline_revid is None:
         cur = client.fetch_current_text(page.wiki, page.title)
+        if cur.get("missing"):
+            # A typo / renamed / deleted page must be SAID, not silently pending
+            # forever (live test 2026-06-10). The flag drives a loud UI badge.
+            page.missing = True
+            page.last_checked_at = now
+            session.commit()
+            return {"page": page.title, "new": 0, "flagged": 0, "missing": True}
         if cur.get("revid"):
+            page.missing = False
             page.baseline_revid = cur["revid"]
             page.baseline_text = cur.get("text") or ""
             page.last_revid = cur["revid"]
             page.pageid = cur.get("pageid")
+            # The article's real Wikipedia categories — for classification when
+            # the watchlist grows large. Best-effort: never blocks the baseline.
+            try:
+                cats = client.fetch_categories(page.wiki, page.title)
+                if cats:
+                    page.wiki_categories = json.dumps(cats[:50], ensure_ascii=False)
+            except Exception:  # noqa: BLE001
+                _LOG.warning("category fetch failed for %s", page.title, exc_info=True)
         page.last_checked_at = now
         session.commit()
         return {"page": page.title, "new": 0, "flagged": 0, "baseline": True}

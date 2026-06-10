@@ -14,6 +14,8 @@
 
 ## Events agenda / world calendar
 
+> **STATUS (reality check, 2026-06-10):** SHIPPED in 0.07 (PR #47: Agenda tab, subscribe/facet/group) and EXTENDED 2026-06-10: the 511-feed calendar directory in 268 duplicate-aware families with verify/import (`src/events/feeds.py`). Still open: view switcher (month/week/day/trimester/list), full Agenda translation — both in the CLAUDE.md queue.
+
 **Idea.** A curated, searchable **agenda of major scheduled world events** — the
 forward-looking complement to the corpus's record of what already happened. Examples:
 
@@ -217,6 +219,8 @@ commitment.
 
 ## Personality: easter eggs + a journalism quotes/fun-facts library
 
+> **STATUS (reality check, 2026-06-10):** SHIPPED in 0.07 (PR #46): configs/personality.yml, Konami easter egg.
+
 **Idea.** Give the UI a little soul: a small, tasteful set of **easter eggs** plus a
 curated library of **famous journalistic quotes and verifiable fun facts** that surface
 in quiet corners of the interface (empty states, the loading/onboarding screens, an
@@ -254,6 +258,8 @@ reviewable, never hidden surprises in a security tool.
 ---
 
 ## Training & onboarding — two tracks
+
+> **STATUS (reality check, 2026-06-10):** DESIGNED ONLY. Action plan: (1) first-run tour as a dismissible Home card sequence reusing Card.recipe deep-links; (2) contextual help notes per tab (i18n keys); (3) the supervised-training curriculum stays a doc. Parked behind the live-test queue; revisit for 0.0.9.
 
 Even an intuitive tool benefits from deliberate teaching: training is **another channel
 for communicating what the app is for and how to use it well** — and for at-risk users it
@@ -396,6 +402,8 @@ one space-time instrument.
 
 ## Climate & weather events — a live geo-temporal data channel (+ an alert system)
 
+> **STATUS (reality check, 2026-06-10):** PARTIAL: hazards relay SHIPPED in 0.07 (PR #52, USGS+GDACS, `/api/hazards`, map layer). The alert engine (layers 3–4) is PARKED for 0.0.9 by ruling.
+
 **The idea.** Surface **present-tense weather and natural-hazard events** — heatwaves,
 floods, cyclones, earthquakes, droughts, food-security/famine crises — *not* the
 climate-change debate. A super-heat-and-humidity wave hitting millions in India is a
@@ -463,6 +471,8 @@ NWS) with full provenance. Builds directly on the space-time substrate above.
 
 ## Automated background source identification & aggregation
 
+> **STATUS (reality check, 2026-06-10):** SHIPPED offline slice in 0.0.8 (RM-19: citation+catalog channels, transparent staging, budgets). The DuckDuckGo channel stays gated off-by-default pending the RM-03 gate UX proving out (ruling).
+
 **Idea.** The app should shoulder the work of *finding and maintaining sources* so the
 operator can focus on **content**, not plumbing. Today, growing the source list is manual
 (add a domain, discover its feed, tune it). The proposal: a **background source-discovery
@@ -529,6 +539,8 @@ bandit/pip-audit), benchmarks recorded as gates (`scripts/benchmark_audit.py`).
   lookup gate, WP1 of the 0.0.8 plan) — build the gate first.
 
 ## Ten space-time scenario cards — leveraging the map + timeline for honest journalism
+
+> **STATUS (reality check, 2026-06-10):** SHIPPED in 0.0.8 as the investigation-recipe producers + /investigate dashboard (RM-20, PR #61).
 
 The temporal map, mentioned-date tags, geocoded corpus, hazards relay, events agenda, law
 tracker and wiki tracker together form a **space-time substrate**. These cards sketch
@@ -598,6 +610,8 @@ evidence bundle, and a way to pin a *region + window* the way articles pin to a 
 
 ## LLM model catalog & Ollama delivery — open design discussion (maintainer-raised)
 
+> **STATUS (reality check, 2026-06-10):** RESOLVED + SHIPPED 2026-06-10: date-stamped freshness-tested catalog, Settings live picker, clearnet install notice; no bundling ever. Remaining: the offline LLM kit (RM-08) as a release artifact.
+
 **Problems observed (2026-06):** (1) the installer's suggested model list goes stale fast —
 operators were prompted to pull models that had long been superseded; (2) the Ollama
 *download* path does not work over Tor, so protected-mode operators cannot fetch models the
@@ -660,6 +674,104 @@ offline kit as part of RM-08.
    and carried by USB to `~/.ollama/models`. The principled fallback for operators who can
    never use clearnet on the work machine. Build with RM-08 packaging.
 
+
+## Evidence-tiered cards — the clinical-phases analogy (maintainer idea, 2026-06-10)
+
+**The maintainer's frame.** Clinical research matches the *claim* to the *sample
+the design can support*: Phase 1 (a few dozen volunteers) detects only large,
+obvious harms; Phase 2 (hundreds) estimates efficacy and sharpens safety;
+Phase 3 (thousands, multi-site, diverse populations) confirms effects, finds
+rare events and tests special populations. Apply that progressive,
+evidence-based discipline to the Home cards: a young corpus licenses only
+phase-1-class claims; richer corpora unlock sharper ones — and every card
+shows the math that triggered it.
+
+**Why the analogy fits (and where it must be corrected).** The 2026-06-10
+young-corpus work was already a crude two-tier version of this (lowered gates +
+"Early-corpus note"). The honest correction: a news corpus is an
+**observational, self-selected sample** (the operator chose the sources), not a
+randomized trial — so the toolbox is epidemiology's, not the RCT's, and no
+interval we compute describes *the world*; it describes *your corpus*. The diet
+and coverage-advisor cards exist precisely because the instrument is biased;
+the tier system must say so on every tier.
+
+**Design sketch (pending maintainer go):**
+
+1. **Corpus evidence tiers** computed from real dimensions (articles, distinct
+   sources, days of history, languages/countries): *early* / *developing* /
+   *established* (UI names; the clinical analogy lives in docs). Shown once in
+   the Home header ("Evidence tier: early — 142 articles, 6 sources, 9 days"),
+   and each card states which tier-gate admitted it.
+2. **Claim classes per tier.** Early: raw counts and obvious signals only
+   (stale feeds, single-source flags, big coverage skew) phrased as counts.
+   Developing: ratios and splits with uncertainty attached. Established:
+   cross-source generalisations, rare-event cards, per-country/language slices
+   (the "special populations" analogue).
+3. **Better math, honestly scoped:**
+   - **Wilson 95% intervals on proportions** (diet top-share, coverage share)
+     — closed-form, no scipy; the interval *width* communicates sample size
+     viscerally ("62% [48–74%]").
+   - **Rate-ratio intervals for trends** (Katz log method on recent-vs-prior
+     Poisson counts): "×3.0 [0.8–11] — too few mentions to distinguish from
+     noise" on a young corpus; the same ×3.0 with a tight interval later.
+   - **Scan-size disclosure on every screening card** (multiple-comparisons
+     honesty / winner's curse): "top 5 of 1,243 keywords scanned — some are
+     high by chance"; optionally Benjamini–Hochberg once p-values exist.
+   - **Power-style inversions** for silence: when a card does NOT fire, the
+     system can say what evidence would be needed ("framing-split needs ≥2
+     sources covering the term; you have 1") — the anti-fabrication twin:
+     show what's missing instead of inventing what isn't there.
+   - **Do not over-mathematize heuristics**: VADER tone and near-dup clusters
+     stay labelled heuristics; intervals only where the math is actually
+     defined (counts, proportions, rates). Dressing a heuristic in a CI would
+     fake rigor.
+4. **"Why am I seeing this?" — the trigger audit trail.** Producers attach a
+   structured `trigger` block to `signal`: inputs, thresholds, comparisons,
+   tier-gate, scan size, interval. The card (clicked/expanded) renders it
+   generically: "growth = 7 recent / 2.1 expected = ×3.3 ≥ 2.0 ✓ · recent 7 ≥
+   min 2 (early-tier gate) ✓ · scanned 1,243". Cards become *reproducible*:
+   same inputs, same verdict — the methods appendix (RM-07) is the protocol
+   they cite. No composite scores anywhere (CardSchemaError still enforces).
+5. **Smarter while user-centred (the DSMB principle).** The human stays the
+   monitoring board: cards remain invitations, never auto-actions. The user
+   picks their own evidence bar (per-bucket sensitivity: "show early hints" vs
+   "established-grade only") — informed by the tier label on every card.
+   Dismiss-with-reason (noisy / known / not relevant; local-only) may tune
+   per-type visibility via legible rules (mute/snooze), never an invisible
+   ranking model.
+6. **Self-improvement loop (ties into the diagnostics log):** a future
+   "card diagnostics" slice exports which cards fired with which trigger
+   values and what the operator did (read/dismissed+reason) — the app runs an
+   honest, local, observational study of its own card quality, and threshold
+   tuning becomes evidence-based instead of guessed.
+
+## Trans-language keyword equivalence — "hand" ↔ "main" (maintainer idea, 2026-06-10)
+
+> **STATUS:** groundwork SHIPPED same day — language signatures in the keyword
+> log + the curated `configs/keyword_equivalents.yml` ring format (3 seed
+> rings). The grouping layer lands after the maintainer's first log batch.
+
+**The idea.** Keywords across languages describe the same concepts: "hand" (en)
+= "main" (fr). Group them for trans-national analytics — WITHOUT the obvious
+trap: "main" is also an English adjective and a German river.
+
+**The disambiguation key (already in the data):** every mention links to an
+article whose language is known. A keyword's **language signature** = distinct
+articles per article language. "main" with signature {fr: 412, en: 3} IS the
+French word; the en:main keyword is a different node. Signatures now ship in
+the keyword diagnostics log, so equivalence proposals are grounded in the
+operator's real corpus, never a blind dictionary.
+
+**The corpus:** `configs/keyword_equivalents.yml` — language-qualified rings
+(`fr:main` ≠ `en:main`), human-reviewed, built batch-by-batch FROM the
+maintainer's keyword logs (the diagnostics channel working as designed), each
+polysemous member carrying its reasoning note.
+
+**Grouping (next slice):** trans-language families as an ADDITIVE display
+layer over per-language families — the ring shows per-language members and
+counts side by side, nothing averaged away; the user can split any ring (the
+same dispose rule as families). The local LLM may PROPOSE candidate rings
+from signatures + co-occurrence; a human (or the curated corpus) confirms.
 
 ## Settings → Diagnostics log: a shareable back-end synthesis (maintainer idea, 2026-06-10)
 

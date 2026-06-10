@@ -11,6 +11,9 @@ client (UA + maxlag + rate limit); ORES scores are optional and fail-open.
 
 from __future__ import annotations
 
+import re
+from urllib.parse import unquote
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -39,18 +42,42 @@ def _live_diff_url(wiki: str, revid: int) -> str:
 
 
 def _serialize_page(p: WikiPage, *, revs: int = 0, flagged: int = 0) -> dict:
+    import json as _json
+
+    try:
+        wiki_cats = _json.loads(p.wiki_categories) if p.wiki_categories else []
+    except ValueError:
+        wiki_cats = []
     return {
         "id": p.id,
         "wiki": p.wiki,
         "title": p.title,
         "category": p.category,
         "watched": p.watched,
+        "missing": p.missing,
+        "wiki_categories": wiki_cats,
         "baseline_revid": p.baseline_revid,
         "last_revid": p.last_revid,
         "last_checked_at": p.last_checked_at.isoformat() if p.last_checked_at else None,
         "revisions": revs,
         "flagged": flagged,
     }
+
+
+# Accept a full Wikipedia URL in the title box (live-test ask 2026-06-10):
+# https://de.wikipedia.org/wiki/Grundgesetz or de.m.wikipedia.org/wiki/...
+# -> (wiki='de', title='Grundgesetz'). Pure parsing, no network.
+_WIKI_URL_RE = re.compile(
+    r"^(?:https?://)?([a-z][a-z0-9-]{1,11})(?:\.m)?\.wikipedia\.org/wiki/([^?#]+)",
+    re.IGNORECASE,
+)
+
+
+def _parse_title_or_url(wiki: str, title: str) -> tuple[str, str]:
+    m = _WIKI_URL_RE.match(title.strip())
+    if m:
+        return m.group(1).lower(), unquote(m.group(2)).replace("_", " ").strip()
+    return wiki.strip(), title.strip()
 
 
 def _serialize_rev(r: WikiRevision, *, page: WikiPage | None = None) -> dict:
@@ -113,9 +140,15 @@ def list_pages(db: Session = Depends(get_db)) -> dict:
 def add_page(payload: AddPage, db: Session = Depends(get_db)) -> dict:
     from src.wiki.track import ensure_page
 
-    if not payload.wiki.strip() or not payload.title.strip():
+    wiki, title = _parse_title_or_url(payload.wiki, payload.title)
+    if not title:
         raise HTTPException(status_code=400, detail="wiki and title are required.")
-    page = ensure_page(db, payload.wiki, payload.title, category=payload.category)
+    if not wiki:
+        raise HTTPException(
+            status_code=400,
+            detail="wiki is required (or paste a full Wikipedia URL as the title).",
+        )
+    page = ensure_page(db, wiki, title, category=payload.category)
     return _serialize_page(page)
 
 
