@@ -274,6 +274,14 @@ Before fearing loss from an archive-size change, run
   `src/static/world_outline.json` — the map renders real coastlines out of
   the box, no download at install; invariant-tested. (The maintainer saw
   dots-only because the asset previously required a manual build step.)
+- **Trans-language keyword equivalence (maintainer 2026-06-10, groundwork
+  SHIPPED):** language signatures (distinct articles per ARTICLE language) now
+  ride every keyword in the diagnostics log — the disambiguation evidence for
+  hand/main rings; `configs/keyword_equivalents.yml` holds language-qualified
+  curated rings (fr:main ≠ en:main, reasoning notes). NEXT: build rings from
+  the maintainer's first log batch; then the additive trans-language family
+  layer (per-language counts always visible; user can split; LLM may propose,
+  never auto-merge). Design in FUTURE_DEVELOPMENTS.
 - **Keyword diagnostics log — SHIPPED first slice (2026-06-10, maintainer asked):**
   Settings → Data & backup → "Diagnostics log" downloads
   `GET /api/diagnostics/keywords` (oo-export-1 envelope: all keywords with real

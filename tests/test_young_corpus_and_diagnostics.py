@@ -191,3 +191,41 @@ def test_doc_translation_served_and_fallback(client):
     by_slug = {d["slug"]: d for d in docs}
     assert by_slug["quickstart"]["translated"] is True
     assert by_slug["security"]["translated"] is False
+
+
+def test_keyword_log_carries_language_signatures(client):
+    """Trans-language groundwork (maintainer 2026-06-10): each keyword's
+    language signature = distinct articles per ARTICLE language — the
+    disambiguation evidence for hand/main-style equivalence rings."""
+    from src.database.models import Keyword, KeywordMention, SessionLocal
+
+    s = SessionLocal()
+    try:
+        src = Source(name="Sig source", domain="sig.test")
+        s.add(src)
+        s.flush()
+        arts = []
+        for i, lang in enumerate(["fr", "fr", "en"]):
+            a = Article(
+                url=f"https://sig.test/{i}", canonical_url=f"https://sig.test/{i}",
+                source_id=src.id, title=f"Sig {i}", hash=f"sig-h{i}",
+                language=lang, content="La main / the hand.",
+                created_at=datetime.now(UTC),
+            )
+            s.add(a)
+            arts.append(a)
+        kw = Keyword(term="main", normalized_term="main-sig-test")
+        s.add(kw)
+        s.flush()
+        for a in arts:
+            s.add(KeywordMention(keyword_id=kw.id, article_id=a.id, count=1,
+                                 observed_on=datetime.now(UTC).date()))
+        s.commit()
+    finally:
+        s.close()
+
+    data = client.get("/api/diagnostics/keywords").json()["data"]
+    mine = next(k for k in data["keywords"] if k["normalized"] == "main-sig-test")
+    # The evidence, verbatim: 2 French articles, 1 English — never a guess.
+    assert mine["language_signature"] == {"fr": 2, "en": 1}
+    assert "language_signature" in data["method"] or "language" in data["method"]

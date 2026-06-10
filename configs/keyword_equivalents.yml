@@ -1,0 +1,26 @@
+# Trans-language keyword equivalents — the curated bridge for cross-language
+# analytics (maintainer-designed 2026-06-10; built FROM the keyword diagnostics
+# logs, batch by batch).
+#
+# THE RULES (honesty by construction):
+# - An equivalence is ALWAYS language-qualified: `fr:main` ≠ `en:main`. The
+#   French word for hand never captures the English adjective or the German
+#   river — the polysemy trap this corpus exists to avoid.
+# - Equivalents come from the operator's real keyword logs (language
+#   signatures = distinct-article counts per article language), reviewed by a
+#   human before landing here. Never a blind dictionary import.
+# - Grouping stays transparent: a trans-language family SHOWS its per-language
+#   members and counts; nothing is averaged away. The user can split any ring
+#   (the same dispose rule as keyword families).
+#
+# Format: one ring per concept; members are "<lang>:<normalized term>".
+# `note` records the disambiguation reasoning when a term is polysemous.
+rings:
+  - id: hand
+    members: ["en:hand", "fr:main", "de:hand", "es:mano", "pt:mão", "it:mano"]
+    note: "fr:main only — en:main (adjective/place) and de:Main (river) stay out."
+  - id: election
+    members: ["en:election", "fr:élection", "de:wahl", "es:elección", "pt:eleição", "id:pemilu"]
+    note: "de:wahl is also 'choice'; signature evidence should dominate before merging."
+  - id: war
+    members: ["en:war", "fr:guerre", "de:krieg", "es:guerra", "pt:guerra", "ru:война"]

@@ -65,6 +65,25 @@ def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
     capped = len(rows) > _MAX_KEYWORDS
     rows = rows[:_MAX_KEYWORDS]
 
+    # Language signatures (maintainer-ruled 2026-06-10, the hand/main idea):
+    # per keyword, HOW MANY DISTINCT ARTICLES mention it per article language.
+    # This is the disambiguation evidence for trans-language grouping — "main"
+    # mentioned mostly in fr-articles is the French word (= hand), not the
+    # English adjective or the German river. Real counts, never a dictionary guess.
+    lang_rows = (
+        db.query(
+            KeywordMention.keyword_id,
+            Article.language,
+            func.count(func.distinct(KeywordMention.article_id)),
+        )
+        .join(Article, Article.id == KeywordMention.article_id)
+        .group_by(KeywordMention.keyword_id, Article.language)
+        .all()
+    )
+    lang_sig: dict[int, dict[str, int]] = {}
+    for kid, lang, n in lang_rows:
+        lang_sig.setdefault(kid, {})[lang or "?"] = int(n)
+
     # The stoplist verdict is part of the diagnosis: leaked function words the
     # operator hid are exactly what grouping fixes need to see — flag, not omit.
     is_hidden = q._hidden_predicate()
@@ -79,6 +98,7 @@ def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
             "first_seen": first.isoformat() if first else None,
             "last_seen": last.isoformat() if last else None,
             "hidden": bool(is_hidden(k.normalized_term)),
+            "language_signature": lang_sig.get(k.id, {}),
         }
         for k, m, a, first, last in rows
     ]
@@ -115,8 +135,10 @@ def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
         },
         "method": (
             f"All gathered keywords (top {_MAX_KEYWORDS} by total mentions) with real "
-            "counts; families computed by the live grouping logic incl. the user's "
-            "merge/split overrides; super-groups as curated. No scores, no inference."
+            "counts; language_signature = distinct articles per ARTICLE language "
+            "(the trans-language disambiguation evidence); families computed by the "
+            "live grouping logic incl. the user's merge/split overrides; super-groups "
+            "as curated. No scores, no inference."
         ),
         "keywords": keywords,
         "families": families,

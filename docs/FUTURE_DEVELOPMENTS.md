@@ -745,6 +745,34 @@ the tier system must say so on every tier.
    honest, local, observational study of its own card quality, and threshold
    tuning becomes evidence-based instead of guessed.
 
+## Trans-language keyword equivalence — "hand" ↔ "main" (maintainer idea, 2026-06-10)
+
+> **STATUS:** groundwork SHIPPED same day — language signatures in the keyword
+> log + the curated `configs/keyword_equivalents.yml` ring format (3 seed
+> rings). The grouping layer lands after the maintainer's first log batch.
+
+**The idea.** Keywords across languages describe the same concepts: "hand" (en)
+= "main" (fr). Group them for trans-national analytics — WITHOUT the obvious
+trap: "main" is also an English adjective and a German river.
+
+**The disambiguation key (already in the data):** every mention links to an
+article whose language is known. A keyword's **language signature** = distinct
+articles per article language. "main" with signature {fr: 412, en: 3} IS the
+French word; the en:main keyword is a different node. Signatures now ship in
+the keyword diagnostics log, so equivalence proposals are grounded in the
+operator's real corpus, never a blind dictionary.
+
+**The corpus:** `configs/keyword_equivalents.yml` — language-qualified rings
+(`fr:main` ≠ `en:main`), human-reviewed, built batch-by-batch FROM the
+maintainer's keyword logs (the diagnostics channel working as designed), each
+polysemous member carrying its reasoning note.
+
+**Grouping (next slice):** trans-language families as an ADDITIVE display
+layer over per-language families — the ring shows per-language members and
+counts side by side, nothing averaged away; the user can split any ring (the
+same dispose rule as families). The local LLM may PROPOSE candidate rings
+from signatures + co-occurrence; a human (or the curated corpus) confirms.
+
 ## Settings → Diagnostics log: a shareable back-end synthesis (maintainer idea, 2026-06-10)
 
 > **STATUS:** the first slice SHIPPED same day (maintainer asked): Settings →
