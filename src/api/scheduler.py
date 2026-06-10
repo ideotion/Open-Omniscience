@@ -38,6 +38,8 @@ class SchedulerConfigUpdate(BaseModel):
     select_languages: list[str] | None = None
     select_tags: list[str] | None = None
     select_source_types: list[str] | None = None
+    # Opt-in drop-folder export (WP3/RM-06); empty string switches it off.
+    export_dir: str | None = None
 
 
 def _status_payload() -> dict:
@@ -137,3 +139,12 @@ def scheduler_update_config(update: SchedulerConfigUpdate) -> dict:
     except SchedulerSettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {**load_settings().to_dict(), "valid_modes": list(VALID_MODES)}
+
+
+@router.get("/runs")
+def scheduler_runs(limit: int = 20) -> dict:
+    """The most recent scheduler run reports (one auditable line per run)."""
+    from src.scheduler.runlog import recent_runs
+
+    runs = recent_runs(limit=limit)
+    return {"count": len(runs), "runs": runs}

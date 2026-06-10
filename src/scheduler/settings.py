@@ -43,6 +43,11 @@ class SchedulerSettings:
     select_tags: list[str] = field(default_factory=list)
     select_source_types: list[str] = field(default_factory=list)
 
+    # Opt-in drop-folder export (WP3/RM-06): after each run, the new-articles
+    # delta is written into this LOCAL folder (envelope JSON). Empty = off
+    # (the default) -- no file is ever written unless the operator sets it.
+    export_dir: str = ""
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -112,6 +117,7 @@ def load_settings() -> SchedulerSettings:
         select_languages=_coerce_list(raw.get("select_languages")),
         select_tags=_coerce_list(raw.get("select_tags")),
         select_source_types=_coerce_list(raw.get("select_source_types")),
+        export_dir=str(raw.get("export_dir") or "").strip(),
     )
 
 
@@ -138,6 +144,9 @@ def save_settings(updates: dict) -> SchedulerSettings:
             if not (lo <= v <= hi):
                 raise SchedulerSettingsError(f"{label} must be between {lo} and {hi}")
             setattr(current, key, v)
+
+    if "export_dir" in updates and updates["export_dir"] is not None:
+        current.export_dir = str(updates["export_dir"]).strip()
 
     _ranged("interval_minutes", _MIN_INTERVAL, _MAX_INTERVAL, "interval_minutes")
     _ranged("max_sources_per_run", 1, 1000, "max_sources_per_run")

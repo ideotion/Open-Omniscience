@@ -252,18 +252,33 @@ class BackgroundScheduler:
         if not self._run_lock.acquire(blocking=False):
             return
         self._active = True
+        started = datetime.now(UTC)
+        report: dict = {"started_at": started.isoformat(timespec="seconds")}
+        try:
+            report["mode"] = self._settings_provider().mode
+        except Exception:  # noqa: BLE001 - settings must not block a run
+            report["mode"] = "unknown"
         try:
             result = self._run_once_fn()
             with self._state_lock:
                 self._last_run = datetime.now(UTC)
                 self._last_result = result
                 self._last_error = None
+            report["ok"] = True
+            report["result"] = result
         except Exception as exc:  # noqa: BLE001 - record, never crash the thread
             _LOG.warning("scheduled scrape run failed", exc_info=True)
             with self._state_lock:
                 self._last_run = datetime.now(UTC)
                 self._last_error = str(exc)
+            report["ok"] = False
+            report["error"] = str(exc)
         finally:
+            report["finished_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+            # One auditable line per run (WP3/RM-06); best-effort by design.
+            from src.scheduler.runlog import record_run
+
+            record_run(report)
             self._active = False
             self._run_lock.release()
 
@@ -274,8 +289,23 @@ class BackgroundScheduler:
 
         settings = self._settings_provider()
         fetcher = make_fetcher()
+        run_started = datetime.now(UTC)
         with session_scope() as session:
             result = run_scrape_once(session, fetcher, settings)
+            # Opt-in drop-folder export (WP3/RM-06): write the new-articles
+            # delta into the operator's local folder. Best-effort; off when
+            # export_dir is empty (the default).
+            if settings.export_dir:
+                try:
+                    from src.scheduler.runlog import export_delta
+
+                    path = export_delta(
+                        session, started_at=run_started, export_dir=settings.export_dir
+                    )
+                    if path:
+                        result["delta_export"] = path
+                except Exception:  # noqa: BLE001 - never fail the scrape on export
+                    _LOG.warning("delta drop-folder export failed", exc_info=True)
             # Precompute + cache the Home briefing so it loads instantly. Best-effort:
             # a briefing failure must never fail the scrape that just succeeded.
             try:
