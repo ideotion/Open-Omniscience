@@ -263,5 +263,7 @@
   "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "حزمة التصحيح هي الصورة الكاملة لتقارير الأخطاء: حقائق التشغيل، تاريخ المجدول، كل أحكام الشبكة، ما فعله كل نقر تحميل/تحديث فعلاً، حالات تتبع القانون/الويكي وسجل الأخطاء المتجدد — تنقّل في التطبيق ثم نزّلها وشاركها.",
   "Keywords": "كلمات مفتاحية",
   "Families": "عائلات",
-  "Super-groups": "مجموعات عليا"
+  "Super-groups": "مجموعات عليا",
+  "Added to draft — click to open it.": "أضيف إلى المسودة — انقر لفتحها.",
+  "Click to open": "انقر للفتح"
 }

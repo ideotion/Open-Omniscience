@@ -263,5 +263,7 @@
   "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.",
   "Keywords": "Keywords",
   "Families": "Families",
-  "Super-groups": "Super-groups"
+  "Super-groups": "Super-groups",
+  "Added to draft — click to open it.": "Added to draft — click to open it.",
+  "Click to open": "Click to open"
 }

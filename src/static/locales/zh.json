@@ -263,5 +263,7 @@
   "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "调试包是错误报告的完整图景：运行时信息、调度器历史、每个网络判定、每次加载/刷新点击实际做了什么、法律/维基跟踪状态以及滚动错误日志 — 在应用中操作一遍后下载并分享。",
   "Keywords": "关键词",
   "Families": "家族",
-  "Super-groups": "超级组"
+  "Super-groups": "超级组",
+  "Added to draft — click to open it.": "已加入草稿 — 点击打开。",
+  "Click to open": "点击打开"
 }

@@ -1735,11 +1735,17 @@
       return cleaned;                                            // relative / same-origin
     };
 
-    function toast(msg, kind="ok") {
+    function toast(msg, kind="ok", onClick=null) {
       const n = document.createElement("div");
       n.className = "note " + kind; n.textContent = msg;
+      if (onClick) {  // a clickable toast acts as a shortcut to what it announces
+        n.style.cursor = "pointer";
+        n.title = "Click to open";
+        n.setAttribute("role", "button");
+        n.addEventListener("click", () => { try { onClick(); } finally { n.remove(); } });
+      }
       $("toast").appendChild(n);
-      setTimeout(() => n.remove(), 5000);
+      setTimeout(() => n.remove(), onClick ? 8000 : 5000);
     }
 
     // -- Background-activity indicator -------------------------------------- //
@@ -2306,7 +2312,8 @@
       try {
         const d = await api("/api/briefing/draft/add", {method:"POST", body: JSON.stringify({card})});
         updateDraftCount(d.items.length);
-        toast("Added to draft.");
+        // Clickable (maintainer-ruled 2026-06-10): the confirmation IS the way in.
+        toast("Added to draft — click to open it.", "ok", () => { showTab("home"); openDraft(); });
       } catch (e) { toast("Could not add to draft: " + e.message, "err"); }
     }
     async function refreshDraftCount() {

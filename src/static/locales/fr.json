@@ -263,5 +263,7 @@
   "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "Le paquet de débogage est le tableau complet pour les rapports de bogue : faits d'exécution, historique du planificateur, chaque verdict réseau, ce que chaque clic Charger/Actualiser a réellement fait, états de suivi droit/wiki et le journal d'erreurs glissant — parcourez l'application, puis téléchargez-le et partagez-le.",
   "Keywords": "Mots-clés",
   "Families": "Familles",
-  "Super-groups": "Super-groupes"
+  "Super-groups": "Super-groupes",
+  "Added to draft — click to open it.": "Ajouté au brouillon — cliquez pour l'ouvrir.",
+  "Click to open": "Cliquer pour ouvrir"
 }

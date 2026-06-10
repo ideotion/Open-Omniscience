@@ -263,5 +263,7 @@
   "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "Das Debug-Paket ist das Gesamtbild für Fehlerberichte: Laufzeitfakten, Zeitplaner-Historie, jedes Netzwerk-Urteil, was jeder Laden/Aktualisieren-Klick tatsächlich tat, Rechts-/Wiki-Verfolgungszustände und das rollierende Fehlerprotokoll — durchklicken, herunterladen, teilen.",
   "Keywords": "Schlagwörter",
   "Families": "Familien",
-  "Super-groups": "Obergruppen"
+  "Super-groups": "Obergruppen",
+  "Added to draft — click to open it.": "Zum Entwurf hinzugefügt — klicken zum Öffnen.",
+  "Click to open": "Klicken zum Öffnen"
 }

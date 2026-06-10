@@ -263,5 +263,7 @@
   "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "डीबग बंडल बग रिपोर्ट की पूरी तस्वीर है: रनटाइम तथ्य, शेड्यूलर इतिहास, हर नेटवर्क निर्णय, हर लोड/रीफ़्रेश क्लिक ने वास्तव में क्या किया, क़ानून/विकि ट्रैकिंग स्थितियाँ और चलता त्रुटि लॉग — ऐप में क्लिक करें, फिर डाउनलोड कर साझा करें।",
   "Keywords": "कीवर्ड",
   "Families": "परिवार",
-  "Super-groups": "सुपर-समूह"
+  "Super-groups": "सुपर-समूह",
+  "Added to draft — click to open it.": "ड्राफ़्ट में जुड़ा — खोलने हेतु क्लिक करें।",
+  "Click to open": "खोलने हेतु क्लिक करें"
 }

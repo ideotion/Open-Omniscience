@@ -263,5 +263,7 @@
   "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "Отладочный пакет — полная картина для отчётов об ошибках: факты среды, история планировщика, каждый сетевой вердикт, что реально сделал каждый клик «Загрузить/Обновить», состояния отслеживания права/вики и скользящий журнал ошибок — пройдитесь по приложению, скачайте и поделитесь.",
   "Keywords": "Ключевые слова",
   "Families": "Семейства",
-  "Super-groups": "Супергруппы"
+  "Super-groups": "Супергруппы",
+  "Added to draft — click to open it.": "Добавлено в черновик — нажмите, чтобы открыть.",
+  "Click to open": "Нажмите, чтобы открыть"
 }

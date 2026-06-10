@@ -263,5 +263,7 @@
   "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "El paquete de depuración es la imagen completa para informes de errores: datos de ejecución, historial del planificador, cada veredicto de red, lo que hizo realmente cada clic de Cargar/Actualizar, estados de seguimiento de derecho/wiki y el registro continuo de errores — recorra la aplicación, luego descárguelo y compártalo.",
   "Keywords": "Palabras clave",
   "Families": "Familias",
-  "Super-groups": "Supergrupos"
+  "Super-groups": "Supergrupos",
+  "Added to draft — click to open it.": "Añadido al borrador — haga clic para abrirlo.",
+  "Click to open": "Clic para abrir"
 }
