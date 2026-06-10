@@ -138,5 +138,9 @@
   "Temporal map": "Carte temporelle",
   "Agenda": "Agenda",
   "Open this external link in your browser?": "Ouvrir ce lien externe dans votre navigateur ?",
-  "This leaves the app and contacts an outside server.": "Vous quittez l'application et contactez un serveur extérieur."
+  "This leaves the app and contacts an outside server.": "Vous quittez l'application et contactez un serveur extérieur.",
+  "Diagnostics log": "Journal de diagnostic",
+  "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "Une synthèse partageable de la façon dont l'application voit votre corpus — pour améliorer la prochaine version. Générée uniquement quand vous cliquez, et vous seul décidez qui reçoit le fichier.",
+  "Download keyword log (.json)": "Télécharger le journal des mots-clés (.json)",
+  "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "Tous les mots-clés recueillis avec leurs comptes réels, les familles de mots-clés calculées, vos corrections fusion/scission et les super-groupes — exactement ce qu'il faut voir pour améliorer le regroupement. Des comptes et des structures, jamais de scores."
 }

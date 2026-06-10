@@ -663,6 +663,13 @@ offline kit as part of RM-08.
 
 ## Settings → Diagnostics log: a shareable back-end synthesis (maintainer idea, 2026-06-10)
 
+> **STATUS:** the first slice SHIPPED same day (maintainer asked): Settings →
+> Data & backup → "Diagnostics log" → `GET /api/diagnostics/keywords` exports
+> keywords (real counts + hidden flag), computed families, merge/split
+> overrides and super-groups in the `oo-export-1` envelope — on demand only,
+> bounded, no scores. Future slices extend the same pattern to other agreed
+> back-end aspects.
+
 **The problem.** Keyword grouping "is still a bit messy", and improving it requires
 seeing the operator's real data — but the corpus is private and local by design.
 The maintainer cannot paste their whole database into a debugging session.

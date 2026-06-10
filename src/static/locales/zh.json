@@ -138,5 +138,9 @@
   "Temporal map": "时空地图",
   "Agenda": "日程",
   "Open this external link in your browser?": "在浏览器中打开此外部链接？",
-  "This leaves the app and contacts an outside server.": "这将离开本应用并连接外部服务器。"
+  "This leaves the app and contacts an outside server.": "这将离开本应用并连接外部服务器。",
+  "Diagnostics log": "诊断日志",
+  "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "应用如何理解您语料库的可分享综述 — 用于改进下一版本。仅在您点击时生成，且只有您决定文件给谁。",
+  "Download keyword log (.json)": "下载关键词日志 (.json)",
+  "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "所有已收集的关键词及其真实计数、计算出的关键词家族、您的合并/拆分修正以及超级组 — 正是改进关键词分组所需要看到的内容。只有计数和结构，绝无评分。"
 }

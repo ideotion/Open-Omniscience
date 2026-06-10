@@ -1536,6 +1536,15 @@
       </div>
       <div id="restore-result" class="hint"></div>
     </section>
+
+    <section class="panel" id="diagnostics-panel">
+      <h2>Diagnostics log</h2>
+      <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords','_blank')">Download keyword log (.json)</button>
+      </div>
+      <div class="hint">All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.</div>
+    </section>
     </div>
 
     <div class="set-view" id="set-safety" style="display:none">

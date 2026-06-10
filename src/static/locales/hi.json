@@ -138,5 +138,9 @@
   "Temporal map": "कालिक मानचित्र",
   "Agenda": "कार्यसूची",
   "Open this external link in your browser?": "क्या इस बाहरी लिंक को आपके ब्राउज़र में खोलें?",
-  "This leaves the app and contacts an outside server.": "इससे आप ऐप से बाहर जाएँगे और एक बाहरी सर्वर से संपर्क होगा।"
+  "This leaves the app and contacts an outside server.": "इससे आप ऐप से बाहर जाएँगे और एक बाहरी सर्वर से संपर्क होगा।",
+  "Diagnostics log": "निदान लॉग",
+  "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "ऐप आपके कोष को कैसे देखता है इसका साझा करने योग्य सार — अगले संस्करण को बेहतर बनाने के लिए। केवल आपके क्लिक करने पर बनता है, और फ़ाइल किसे मिले यह केवल आप तय करते हैं।",
+  "Download keyword log (.json)": "कीवर्ड लॉग डाउनलोड करें (.json)",
+  "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "वास्तविक गणनाओं के साथ सभी एकत्रित कीवर्ड, गणना किए गए कीवर्ड परिवार, आपके विलय/विभाजन सुधार और सुपर-समूह — ठीक वही जो कीवर्ड समूहन सुधारों को देखना चाहिए। केवल गणनाएँ और संरचनाएँ, कभी अंक नहीं।"
 }

@@ -45,6 +45,29 @@ _FRAMING_ARTICLE_CAP = 40
 _DIET_DAYS = 30
 _STALE_DAYS = 7
 
+# --- Young-corpus adaptation (maintainer-flagged: cards must appear sooner) -- #
+# A fresh install has a tiny corpus for days; with mature-corpus minimums the
+# Home feed stays empty exactly when a new operator is judging the app. Below
+# this size the producers lower their volume gates AND say so on the card
+# (honest small-n caveat) — the numbers shown are always real counts.
+_YOUNG_CORPUS_ARTICLES = 200
+
+
+def _corpus_articles(session) -> int:
+    return int(session.query(func.count(Article.id)).scalar() or 0)
+
+
+def _is_young(session) -> bool:
+    return _corpus_articles(session) < _YOUNG_CORPUS_ARTICLES
+
+
+def _small_corpus_note(session) -> str:
+    total = _corpus_articles(session)
+    return (
+        f" Early-corpus note: only {total} article(s) collected so far — read this as a "
+        "first hint from a small sample, not an established pattern."
+    )
+
 
 def _articles_for_term(session, keyword_id: int, *, days: int, limit: int):
     """Recent ``(Article, source_name)`` rows mentioning a keyword, newest first."""
@@ -89,7 +112,9 @@ def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
 def rising_now(session) -> list[Card]:
     from src.analytics import queries as q
 
-    data = q.trending(session, limit=_MAX_RISING)
+    young = _is_young(session)
+    data = q.trending(session, limit=_MAX_RISING, min_recent=2 if young else 3)
+    note = _small_corpus_note(session) if young else ""
     cards: list[Card] = []
     for term in data.get("terms", []):
         kw = resolve_keyword(session, term["term"])
@@ -116,7 +141,7 @@ def rising_now(session) -> list[Card]:
                 ),
                 caveat=(
                     "A rising count reflects your source set, not the world; a ratio is not a "
-                    "significance test, and small samples are noisy."
+                    "significance test, and small samples are noisy." + note
                 ),
                 evidence=_evidence_from_articles(rows),
                 n=term["recent"],
@@ -137,7 +162,8 @@ def framing_split(session) -> list[Card]:
         _LOG.info("framing_split skipped: the [analysis] extra (VADER) is not installed.")
         return []
 
-    trending = q.trending(session, limit=3).get("terms", [])
+    young = _is_young(session)
+    trending = q.trending(session, limit=3, min_recent=2 if young else 3).get("terms", [])
     for term in trending:
         kw = resolve_keyword(session, term["term"])
         if kw is None:
@@ -400,8 +426,12 @@ def diet_self_audit(session) -> list[Card]:
         .all()
     )
     counts = {name or "(unknown)": int(c) for name, c in rows if c}
-    if sum(counts.values()) < 10 or len(counts) < 2:
+    total = sum(counts.values())
+    # Young-corpus gate: 5 articles over >=2 sources is enough to STATE the split
+    # honestly (it is a real count) — the small-n caveat says how early it is.
+    if total < 5 or len(counts) < 2:
         return []  # too little to say anything honest about a "diet"
+    note = _small_corpus_note(session) if total < 20 else ""
     result = concentration(counts, top_n=3)
     if result.top_share is None:
         return []
@@ -428,6 +458,7 @@ def diet_self_audit(session) -> list[Card]:
                 result.caveat
                 + " This groups by source, not owner: several sources may share one owner, so true "
                 "concentration may be higher. Selection is yours — this is a prompt, not a cap."
+                + note
             ),
             evidence=[
                 {"title": "Sources — manage your coverage", "url": "/#sources", "source": None}
@@ -645,7 +676,9 @@ def emotion_profile_card(session) -> list[Card]:
     from src.analytics import queries as q
     from src.awareness.emotion import emotion_profile
 
-    trending = q.trending(session, limit=1).get("terms", [])
+    trending = q.trending(
+        session, limit=1, min_recent=2 if _is_young(session) else 3
+    ).get("terms", [])
     if not trending:
         return []
     term = trending[0]
@@ -713,7 +746,9 @@ def ip_litigation_pulse(session) -> list[Card]:
     """Surface rising IP/legal terms in the news (a pulse, not a verdict)."""
     from src.analytics import queries as q
 
-    rising = q.trending(session, limit=50).get("terms", [])
+    rising = q.trending(
+        session, limit=50, min_recent=2 if _is_young(session) else 3
+    ).get("terms", [])
     hits = [t for t in rising if t["normalized"] in _IP_TERMS]
     if not hits:
         return []
@@ -1006,7 +1041,7 @@ def coverage_advisor(session) -> list[Card]:
             .all()
         )
         counts = {str(k): int(c) for k, c in rows if c}
-        if sum(counts.values()) < 10:
+        if sum(counts.values()) < 5:
             return None  # too little collected to say anything honest
         res = concentration(counts, top_n=1)
         if res.top_share is None or not res.shares:
@@ -1025,6 +1060,7 @@ def coverage_advisor(session) -> list[Card]:
         return []
     kind, label, share, n = flagged[0]
     pct = round(share * 100)
+    note = _small_corpus_note(session) if _is_young(session) else ""
     return [
         Card(
             type="coverage_advisor",
@@ -1046,7 +1082,7 @@ def coverage_advisor(session) -> list[Card]:
             caveat=(
                 "Selection is yours: this surfaces a coverage fact, it never filters or caps "
                 "anything. A skewed corpus skews every downstream signal — see your World "
-                "coverage view to balance it."
+                "coverage view to balance it." + note
             ),
             evidence=[{"title": "Sources — World coverage", "url": "/#sources", "source": None}],
             n=n,

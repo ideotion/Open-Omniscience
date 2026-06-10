@@ -138,5 +138,9 @@
   "Temporal map": "時空マップ",
   "Agenda": "アジェンダ",
   "Open this external link in your browser?": "この外部リンクをブラウザで開きますか？",
-  "This leaves the app and contacts an outside server.": "アプリを離れ、外部サーバーに接続します。"
+  "This leaves the app and contacts an outside server.": "アプリを離れ、外部サーバーに接続します。",
+  "Diagnostics log": "診断ログ",
+  "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "アプリがあなたのコーパスをどう見ているかの共有可能な要約 — 次バージョンの改善のため。クリックしたときのみ生成され、ファイルを誰に渡すかはあなただけが決めます。",
+  "Download keyword log (.json)": "キーワードログをダウンロード (.json)",
+  "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "実際のカウント付きの収集済み全キーワード、計算されたキーワードファミリー、あなたの統合/分割の修正、スーパーグループ — キーワードグループ化の改善に必要なものそのものです。カウントと構造のみで、スコアは一切ありません。"
 }

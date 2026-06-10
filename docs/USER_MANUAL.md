@@ -495,6 +495,12 @@ locally; no telemetry.
   uploaded file — but only after validating it's a genuine Open Omniscience
   database, and after snapshotting your current corpus to a `pre-restore-*.db`
   beside the database, so the operation is reversible.
+- **Diagnostics log:** **Download keyword log (.json)** exports how the app sees
+  your corpus's vocabulary — every gathered keyword with its real counts, the
+  computed keyword families, your merge/split corrections and super-groups —
+  so you can share it (only if and with whom you choose) to get keyword-grouping
+  improvements fitted to your *actual* data. Generated only when you click;
+  counts and structures only, never scores.
 - **Safety & at-risk use:** tools for journalists working under pressure, each
   labelled with its **honest limit**:
   - **Encrypted backup** — a passphrase-protected snapshot (AES-256-GCM + scrypt).

@@ -94,6 +94,7 @@ from src.api.hazards import router as hazards_router
 from src.api.ingestion import router as ingestion_router
 
 # Import insights router (keyword & entity analytics)
+from src.api.diagnostics import router as diagnostics_router
 from src.api.insights import router as insights_router
 
 # Import source-integrity router (no-composite profile + user-guided actor-collapse)
@@ -332,6 +333,8 @@ app.include_router(source_io_router)
 
 # Include insights router
 app.include_router(insights_router)
+# Diagnostics log (shareable, on-demand back-end syntheses — CLAUDE.md ruling)
+app.include_router(diagnostics_router)
 
 # Include briefing router (Home triage feed + newsletter draft)
 app.include_router(briefing_router)
