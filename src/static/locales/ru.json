@@ -265,5 +265,12 @@
   "Families": "Семейства",
   "Super-groups": "Супергруппы",
   "Added to draft — click to open it.": "Добавлено в черновик — нажмите, чтобы открыть.",
-  "Click to open": "Нажмите, чтобы открыть"
+  "Click to open": "Нажмите, чтобы открыть",
+  "seed term": "исходный термин",
+  "relative": "родственный",
+  "relative of a relative": "родственный родственного",
+  "family": "семейство",
+  "super-group": "супергруппа",
+  "Font size = shared-article volume · distance = association strength.": "Размер шрифта = объём общих статей · расстояние = сила связи.",
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Перетаскивайте для панорамы · колесо — зум (далеко = уровень выше) · клик по слову — вглубь."
 }

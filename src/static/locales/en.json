@@ -265,5 +265,12 @@
   "Families": "Families",
   "Super-groups": "Super-groups",
   "Added to draft — click to open it.": "Added to draft — click to open it.",
-  "Click to open": "Click to open"
+  "Click to open": "Click to open",
+  "seed term": "seed term",
+  "relative": "relative",
+  "relative of a relative": "relative of a relative",
+  "family": "family",
+  "super-group": "super-group",
+  "Font size = shared-article volume · distance = association strength.": "Font size = shared-article volume · distance = association strength.",
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in."
 }

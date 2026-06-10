@@ -4419,6 +4419,17 @@
         renderGraph(g);
       } catch (e) { $("ins-mindmap").innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
     }
+    function mmLegend(g) {
+      const sw = (c) => `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c};vertical-align:-1px"></span>`;
+      const items = [];
+      const kinds = new Set(g.nodes.map(n => n.center ? "center" : (n.hop === 2 ? "hop2" : n.kind)));
+      if (kinds.has("center")) items.push(`${sw("var(--ok)")} <span>seed term</span>`);
+      if (kinds.has("keyword")) items.push(`${sw("var(--accent)")} <span>relative</span>`);
+      if (kinds.has("hop2")) items.push(`${sw("var(--muted)")} <span>relative of a relative</span>`);
+      if (kinds.has("family")) items.push(`${sw("var(--warn)")} <span>family</span>`);
+      if (kinds.has("supergroup")) items.push(`${sw("var(--ok)")} <span>super-group</span>`);
+      return items.join(" &nbsp;·&nbsp; ");
+    }
     function renderGraph(g) {
       if (_mmRAF) { cancelAnimationFrame(_mmRAF); _mmRAF = null; }
       const host = $("ins-mindmap");
@@ -4444,7 +4455,8 @@
 
       host.innerHTML =
         `<svg id="mm-svg" viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;touch-action:none;cursor:grab"><g id="mm-view"></g></svg>` +
-        `<div class="hint">Drag to pan · scroll to zoom (far out goes up a level) · click a node to dive in. <b>Dot size = shared-article volume · distance = association strength · color = layer</b> (green centre/super-group, amber family, blue relative, grey relative-of-relative). ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
+        `<div class="hint" id="mm-legend">${mmLegend(g)}</div>` +
+        `<div class="hint">Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in. <b>Font size = shared-article volume · distance = association strength.</b> ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
       const svg = $("mm-svg"), view = $("mm-view");
 
       view.innerHTML =
@@ -4454,11 +4466,14 @@
             : n.kind === "supergroup" ? "var(--ok)"
             : n.kind === "family" ? "var(--warn)"
             : n.hop === 2 ? "var(--muted)" : "var(--accent)";
+          // No dots (maintainer-ruled 2026-06-10): the LABEL is the node, and
+          // FONT SIZE carries the shared-article volume the dot used to.
+          const fs = (n.center ? 17 : 9 + 9 * Math.sqrt((n.cooccur || 1) / maxSize)).toFixed(1);
           const fam = n.variants > 1;
           const title = fam ? `<title>Family of ${n.variants}: ${esc((n.members||[]).join(", "))}</title>` : "";
-          const sub = n.center ? "" : (fam ? ` <tspan fill="var(--muted)">·${n.variants}</tspan>` : "") + ` <tspan fill="var(--muted)">${n.pmi}</tspan>`;
-          return `<g class="mm-node" data-id="${n.id}">${title}<circle r="${n.r.toFixed(1)}" fill="${col}"></circle>` +
-            `<text y="${(-n.r-4).toFixed(1)}" text-anchor="middle" font-size="11" fill="var(--fg)">${esc(n.label)}${sub}</text></g>`;
+          const sub = n.center ? "" : (fam ? ` <tspan fill="var(--muted)" font-size="${(fs*0.65).toFixed(1)}">·${n.variants}</tspan>` : "");
+          return `<g class="mm-node" data-id="${n.id}" style="cursor:pointer">${title}` +
+            `<text text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="${n.center ? 700 : 500}" fill="${col}">${esc(n.label)}${sub}</text></g>`;
         }).join("");
 
       const nodeEls = nodes.map(n => view.querySelector(`.mm-node[data-id="${n.id}"]`));

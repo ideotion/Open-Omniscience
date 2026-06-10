@@ -265,5 +265,12 @@
   "Families": "পরিবার",
   "Super-groups": "সুপার-গ্রুপ",
   "Added to draft — click to open it.": "খসড়ায় যুক্ত — খুলতে ক্লিক করুন।",
-  "Click to open": "খুলতে ক্লিক করুন"
+  "Click to open": "খুলতে ক্লিক করুন",
+  "seed term": "মূল শব্দ",
+  "relative": "সম্পর্কিত",
+  "relative of a relative": "সম্পর্কিতের সম্পর্কিত",
+  "family": "পরিবার",
+  "super-group": "সুপার-গ্রুপ",
+  "Font size = shared-article volume · distance = association strength.": "হরফের আকার = ভাগ করা নিবন্ধের পরিমাণ · দূরত্ব = সম্পর্কের শক্তি।",
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "টেনে সরান · স্ক্রল করে জুম (অনেক দূরে = এক স্তর উপরে) · গভীরে যেতে শব্দে ক্লিক করুন।"
 }

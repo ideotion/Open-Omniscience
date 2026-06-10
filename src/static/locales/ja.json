@@ -265,5 +265,12 @@
   "Families": "ファミリー",
   "Super-groups": "スーパーグループ",
   "Added to draft — click to open it.": "下書きに追加しました — クリックで開きます。",
-  "Click to open": "クリックで開く"
+  "Click to open": "クリックで開く",
+  "seed term": "起点の語",
+  "relative": "関連語",
+  "relative of a relative": "関連語の関連語",
+  "family": "ファミリー",
+  "super-group": "スーパーグループ",
+  "Font size = shared-article volume · distance = association strength.": "文字サイズ＝共有記事の量・距離＝関連の強さ。",
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "ドラッグで移動・スクロールでズーム（遠くまで引くと一段上へ）・単語をクリックで掘り下げ。"
 }

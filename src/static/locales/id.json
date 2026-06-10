@@ -265,5 +265,12 @@
   "Families": "Keluarga",
   "Super-groups": "Supergrup",
   "Added to draft — click to open it.": "Ditambahkan ke draf — klik untuk membukanya.",
-  "Click to open": "Klik untuk membuka"
+  "Click to open": "Klik untuk membuka",
+  "seed term": "istilah awal",
+  "relative": "kerabat",
+  "relative of a relative": "kerabat dari kerabat",
+  "family": "keluarga",
+  "super-group": "supergrup",
+  "Font size = shared-article volume · distance = association strength.": "Ukuran huruf = volume artikel bersama · jarak = kekuatan asosiasi.",
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Seret untuk geser · gulir untuk zum (jauh = naik satu lapis) · klik kata untuk menyelam."
 }

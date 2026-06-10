@@ -265,5 +265,12 @@
   "Families": "Familias",
   "Super-groups": "Supergrupos",
   "Added to draft — click to open it.": "Añadido al borrador — haga clic para abrirlo.",
-  "Click to open": "Clic para abrir"
+  "Click to open": "Clic para abrir",
+  "seed term": "término inicial",
+  "relative": "relacionado",
+  "relative of a relative": "relacionado de un relacionado",
+  "family": "familia",
+  "super-group": "supergrupo",
+  "Font size = shared-article volume · distance = association strength.": "Tamaño de fuente = volumen de artículos compartidos · distancia = fuerza de asociación.",
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Arrastre para mover · rueda para zoom (muy lejos = sube de nivel) · clic en una palabra para profundizar."
 }

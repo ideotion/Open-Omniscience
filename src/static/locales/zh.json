@@ -265,5 +265,12 @@
   "Families": "家族",
   "Super-groups": "超级组",
   "Added to draft — click to open it.": "已加入草稿 — 点击打开。",
-  "Click to open": "点击打开"
+  "Click to open": "点击打开",
+  "seed term": "起始词",
+  "relative": "关联词",
+  "relative of a relative": "关联词的关联词",
+  "family": "家族",
+  "super-group": "超级组",
+  "Font size = shared-article volume · distance = association strength.": "字号 = 共享文章数量 · 距离 = 关联强度。",
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "拖动平移 · 滚轮缩放（拉远即上升一层）· 点击词语深入。"
 }

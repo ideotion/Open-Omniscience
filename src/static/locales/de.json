@@ -265,5 +265,12 @@
   "Families": "Familien",
   "Super-groups": "Obergruppen",
   "Added to draft — click to open it.": "Zum Entwurf hinzugefügt — klicken zum Öffnen.",
-  "Click to open": "Klicken zum Öffnen"
+  "Click to open": "Klicken zum Öffnen",
+  "seed term": "Ausgangsbegriff",
+  "relative": "verwandt",
+  "relative of a relative": "Verwandter eines Verwandten",
+  "family": "Familie",
+  "super-group": "Obergruppe",
+  "Font size = shared-article volume · distance = association strength.": "Schriftgröße = gemeinsames Artikelvolumen · Abstand = Assoziationsstärke.",
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "Ziehen zum Verschieben · Scrollen zum Zoomen (weit hinaus = eine Ebene hoch) · Wort anklicken zum Eintauchen."
 }

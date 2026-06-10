@@ -265,5 +265,12 @@
   "Families": "परिवार",
   "Super-groups": "सुपर-समूह",
   "Added to draft — click to open it.": "ड्राफ़्ट में जुड़ा — खोलने हेतु क्लिक करें।",
-  "Click to open": "खोलने हेतु क्लिक करें"
+  "Click to open": "खोलने हेतु क्लिक करें",
+  "seed term": "आरंभिक पद",
+  "relative": "संबंधी",
+  "relative of a relative": "संबंधी का संबंधी",
+  "family": "परिवार",
+  "super-group": "सुपर-समूह",
+  "Font size = shared-article volume · distance = association strength.": "फ़ॉन्ट आकार = साझा लेख मात्रा · दूरी = सहसंबंध शक्ति।",
+  "Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in.": "खींचकर सरकाएँ · स्क्रॉल से ज़ूम (बहुत दूर = एक स्तर ऊपर) · गहराई हेतु शब्द पर क्लिक करें।"
 }
