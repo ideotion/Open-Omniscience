@@ -1,6 +1,39 @@
 # Changelog
 
-> The repository’s **default branch is the active cycle branch** (currently `0.07`); each cycle branch `0.0N` produces release `0.0.N`.
+> The repository’s **default branch is the active cycle branch** (currently `0.08`); each cycle branch `0.0N` produces release `0.0.N`.
+
+## 0.08 part 2 — the sense-making horizon
+
+Part 2 of the `0.08` cycle (the whole roadmap push ships under `0.08` per maintainer
+direction; plan: [`docs/product/RELEASE_0.0.8_PLAN_PART2.md`](product/RELEASE_0.0.8_PLAN_PART2.md),
+WP1–WP5 all delivered):
+
+- **Methods appendix** (*Search → Methods appendix*): one click turns the current search
+  into a Markdown document carrying the app version, the **verbatim** query, and a
+  provenance row per article (source · date · URL · content SHA-256) — optionally with the
+  signed evidence bundle in the same response, so a fact-checker hands over document +
+  proof together. Records selection only; asserts no conclusion (and says so).
+- **Versioned export contract** (`oo-export-1`): JSON exports are self-describing envelopes
+  (schema, app version, generated-at, the exact generating query, count); CSV columns stay
+  byte-identical with the same provenance as `X-OO-*` headers. Plus a **citation-graph
+  export** (`/api/links/export.graphml` / `.json`): the who-cites-whom graph, counts only,
+  the no-inferred-credibility caveat embedded in the file; opens in Gephi/yEd/NetworkX.
+- **Scheduler accountability**: every run — success *and* failure — appends one auditable
+  line to `scheduler_runs.jsonl` (served by `/api/scheduler/runs`); an **opt-in drop-folder
+  export** writes each run's new-articles delta as envelope JSON into a local folder a
+  newsroom pipeline can watch (empty = off, the default).
+- **Corpus synthesis** (*Search → Synthesize results*): one local-model call across ≤ 20
+  articles — shared facts, disagreements, open questions, with numbered citations back to
+  the members; stored per member with model + prompt-version provenance; "assistance,
+  never a verdict" travels with the output.
+- **Offline source discovery** (RM-19, first increment): the app stages source
+  *candidates* from two network-free channels — domains your articles repeatedly cite, and
+  packaged-catalog outlets for thinly-covered countries. Transparent by construction:
+  every candidate carries its evidence, runs are budgeted (`discovery_per_run`) and logged,
+  a Home card announces what awaits review, and **promotion still creates a disabled
+  source you must enable**. The DuckDuckGo channel deliberately does not exist yet — it
+  ships only behind the external-lookup gate once this staging UX has proven itself.
+- New table `source_candidates` (migration `a9b8c7d6e5f4`); +33 tests across the part.
 
 ## 0.08 — executing the product roadmap: trust gates + investigation recipes
 

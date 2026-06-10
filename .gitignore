@@ -57,6 +57,7 @@ coverage.xml
 .venv-core/
 .venv-fresh/
 .venv-rel/
+.venv-rel2/
 env/
 venv/
 ENV/
