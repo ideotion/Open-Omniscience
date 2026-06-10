@@ -228,5 +228,18 @@
   "Every number comes straight from the downloaded file — nothing scraped or guessed.": "Every number comes straight from the downloaded file — nothing scraped or guessed.",
   "Load / refresh indices": "Load / refresh indices",
   "Indices": "Indices",
-  "Commodities": "Commodities"
+  "Commodities": "Commodities",
+  "Calendar directory": "Calendar directory",
+  "A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.": "A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.",
+  "When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.": "When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.",
+  "Kind": "Kind",
+  "Verify": "Verify",
+  "Import": "Import",
+  "not checked yet": "not checked yet",
+  "not an iCal file": "not an iCal file",
+  "unreachable": "unreachable",
+  "stale year": "stale year",
+  "Imported events": "Imported events",
+  "Imported.": "Imported.",
+  "Checked.": "Checked."
 }

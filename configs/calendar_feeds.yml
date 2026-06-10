@@ -1,0 +1,3418 @@
+# Calendar feed directory — bundled candidates for the Agenda (maintainer-
+# supplied aggregation, 2026-06-09; integrated 2026-06-10).
+#
+# HONESTY RULES:
+# - This file ships as a DIRECTORY of candidates: nothing here is fetched at
+#   boot (zero-network-boot is a non-negotiable). The operator verifies and
+#   imports feeds explicitly; verdicts are recorded per machine with a date.
+# - A 'family' groups feeds that describe the SAME thing from different
+#   providers (duplicates by design): the user sees the duplication and can
+#   open every source and its metadata. Imported events de-duplicate within
+#   a family by (normalized title + date) but every source stays listed.
+# - year_pinned feeds (WorldPublicHoliday) carry the year in the URL; the
+#   verifier flags them when the pinned year falls behind the current one.
+catalog_as_of: "2026-06"
+families:
+  - key: holidays-ad
+    name: 'Andorra — public holidays'
+    kind: holidays
+    country: AD
+    feeds:
+      - id: google-hol-ad
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ad.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ad
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AD&year=2026'
+        year_pinned: 2026
+  - key: holidays-ae
+    name: 'United Arab Emirates — public holidays'
+    kind: holidays
+    country: AE
+    feeds:
+      - id: google-hol-ae
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ae.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ae
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AE&year=2026'
+        year_pinned: 2026
+  - key: holidays-af
+    name: 'Afghanistan — public holidays'
+    kind: holidays
+    country: AF
+    feeds:
+      - id: google-hol-af
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.af.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-af
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AF&year=2026'
+        year_pinned: 2026
+  - key: holidays-ag
+    name: 'Antigua & Barbuda — public holidays'
+    kind: holidays
+    country: AG
+    feeds:
+      - id: google-hol-ag
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ag.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ag
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AG&year=2026'
+        year_pinned: 2026
+  - key: holidays-ai
+    name: 'Anguilla — public holidays'
+    kind: holidays
+    country: AI
+    feeds:
+      - id: google-hol-ai
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ai.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ai
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AI&year=2026'
+        year_pinned: 2026
+  - key: holidays-al
+    name: 'Albania — public holidays'
+    kind: holidays
+    country: AL
+    feeds:
+      - id: google-hol-al
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.al.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-al
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AL&year=2026'
+        year_pinned: 2026
+  - key: holidays-am
+    name: 'Armenia — public holidays'
+    kind: holidays
+    country: AM
+    feeds:
+      - id: google-hol-am
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.am.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-am
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AM&year=2026'
+        year_pinned: 2026
+  - key: holidays-an
+    name: 'Netherlands Antilles — public holidays'
+    kind: holidays
+    country: AN
+    feeds:
+      - id: wph-hol-an
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AN&year=2026'
+        year_pinned: 2026
+  - key: holidays-ao
+    name: 'Angola — public holidays'
+    kind: holidays
+    country: AO
+    feeds:
+      - id: google-hol-ao
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ao.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ao
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AO&year=2026'
+        year_pinned: 2026
+  - key: holidays-aq
+    name: 'Antarctica — public holidays'
+    kind: holidays
+    country: AQ
+    feeds:
+      - id: wph-hol-aq
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AQ&year=2026'
+        year_pinned: 2026
+  - key: holidays-ar
+    name: 'Argentina — public holidays'
+    kind: holidays
+    country: AR
+    feeds:
+      - id: google-hol-ar
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ar.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ar
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AR&year=2026'
+        year_pinned: 2026
+  - key: holidays-as
+    name: 'American Samoa — public holidays'
+    kind: holidays
+    country: AS
+    feeds:
+      - id: google-hol-as
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.as.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-as
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AS&year=2026'
+        year_pinned: 2026
+  - key: holidays-at
+    name: 'Austria — public holidays'
+    kind: holidays
+    country: AT
+    feeds:
+      - id: google-hol-at
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.austrian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-at
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AT&year=2026'
+        year_pinned: 2026
+  - key: holidays-au
+    name: 'Australia — public holidays'
+    kind: holidays
+    country: AU
+    feeds:
+      - id: google-hol-au
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.australian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-au
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AU&year=2026'
+        year_pinned: 2026
+  - key: holidays-aw
+    name: 'Aruba — public holidays'
+    kind: holidays
+    country: AW
+    feeds:
+      - id: google-hol-aw
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.aw.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-aw
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AW&year=2026'
+        year_pinned: 2026
+  - key: holidays-ax
+    name: 'Aland Islands — public holidays'
+    kind: holidays
+    country: AX
+    feeds:
+      - id: wph-hol-ax
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AX&year=2026'
+        year_pinned: 2026
+  - key: holidays-az
+    name: 'Azerbaijan — public holidays'
+    kind: holidays
+    country: AZ
+    feeds:
+      - id: google-hol-az
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.az.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-az
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=AZ&year=2026'
+        year_pinned: 2026
+  - key: holidays-ba
+    name: 'Bosnia & Herzegovina — public holidays'
+    kind: holidays
+    country: BA
+    feeds:
+      - id: google-hol-ba
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ba.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ba
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BA&year=2026'
+        year_pinned: 2026
+  - key: holidays-bb
+    name: 'Barbados — public holidays'
+    kind: holidays
+    country: BB
+    feeds:
+      - id: google-hol-bb
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bb.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bb
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BB&year=2026'
+        year_pinned: 2026
+  - key: holidays-bd
+    name: 'Bangladesh — public holidays'
+    kind: holidays
+    country: BD
+    feeds:
+      - id: google-hol-bd
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bd.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bd
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BD&year=2026'
+        year_pinned: 2026
+  - key: holidays-be
+    name: 'Belgium — public holidays'
+    kind: holidays
+    country: BE
+    feeds:
+      - id: google-hol-be
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.be.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-be
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BE&year=2026'
+        year_pinned: 2026
+  - key: holidays-bf
+    name: 'Burkina Faso — public holidays'
+    kind: holidays
+    country: BF
+    feeds:
+      - id: google-hol-bf
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bf.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bf
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BF&year=2026'
+        year_pinned: 2026
+  - key: holidays-bg
+    name: 'Bulgaria — public holidays'
+    kind: holidays
+    country: BG
+    feeds:
+      - id: google-hol-bg
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bulgarian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bg
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BG&year=2026'
+        year_pinned: 2026
+  - key: holidays-bh
+    name: 'Bahrain — public holidays'
+    kind: holidays
+    country: BH
+    feeds:
+      - id: google-hol-bh
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bh.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bh
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BH&year=2026'
+        year_pinned: 2026
+  - key: holidays-bi
+    name: 'Burundi — public holidays'
+    kind: holidays
+    country: BI
+    feeds:
+      - id: google-hol-bi
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bi.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bi
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BI&year=2026'
+        year_pinned: 2026
+  - key: holidays-bj
+    name: 'Benin — public holidays'
+    kind: holidays
+    country: BJ
+    feeds:
+      - id: google-hol-bj
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bj.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bj
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BJ&year=2026'
+        year_pinned: 2026
+  - key: holidays-bl
+    name: 'St. Barthélemy — public holidays'
+    kind: holidays
+    country: BL
+    feeds:
+      - id: google-hol-bl
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bl.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bl
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BL&year=2026'
+        year_pinned: 2026
+  - key: holidays-bm
+    name: 'Bermuda — public holidays'
+    kind: holidays
+    country: BM
+    feeds:
+      - id: google-hol-bm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BM&year=2026'
+        year_pinned: 2026
+  - key: holidays-bn
+    name: 'Brunei — public holidays'
+    kind: holidays
+    country: BN
+    feeds:
+      - id: google-hol-bn
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bn.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bn
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BN&year=2026'
+        year_pinned: 2026
+  - key: holidays-bo
+    name: 'Bolivia — public holidays'
+    kind: holidays
+    country: BO
+    feeds:
+      - id: google-hol-bo
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bo.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bo
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BO&year=2026'
+        year_pinned: 2026
+  - key: holidays-bq
+    name: 'Bonaire, Saint Eustatius and Saba — public holidays'
+    kind: holidays
+    country: BQ
+    feeds:
+      - id: wph-hol-bq
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BQ&year=2026'
+        year_pinned: 2026
+  - key: holidays-br
+    name: 'Brazil — public holidays'
+    kind: holidays
+    country: BR
+    feeds:
+      - id: google-hol-br
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.brazilian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-br
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BR&year=2026'
+        year_pinned: 2026
+  - key: holidays-bs
+    name: 'Bahamas — public holidays'
+    kind: holidays
+    country: BS
+    feeds:
+      - id: google-hol-bs
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bs.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bs
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BS&year=2026'
+        year_pinned: 2026
+  - key: holidays-bt
+    name: 'Bhutan — public holidays'
+    kind: holidays
+    country: BT
+    feeds:
+      - id: google-hol-bt
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bt.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bt
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BT&year=2026'
+        year_pinned: 2026
+  - key: holidays-bv
+    name: 'Bouvet Island — public holidays'
+    kind: holidays
+    country: BV
+    feeds:
+      - id: wph-hol-bv
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BV&year=2026'
+        year_pinned: 2026
+  - key: holidays-bw
+    name: 'Botswana — public holidays'
+    kind: holidays
+    country: BW
+    feeds:
+      - id: google-hol-bw
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bw.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bw
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BW&year=2026'
+        year_pinned: 2026
+  - key: holidays-by
+    name: 'Belarus — public holidays'
+    kind: holidays
+    country: BY
+    feeds:
+      - id: google-hol-by
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.by.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-by
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BY&year=2026'
+        year_pinned: 2026
+  - key: holidays-bz
+    name: 'Belize — public holidays'
+    kind: holidays
+    country: BZ
+    feeds:
+      - id: google-hol-bz
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.bz.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-bz
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=BZ&year=2026'
+        year_pinned: 2026
+  - key: holidays-ca
+    name: 'Canada — public holidays'
+    kind: holidays
+    country: CA
+    feeds:
+      - id: google-hol-ca
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.canadian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ca
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CA&year=2026'
+        year_pinned: 2026
+  - key: holidays-cc
+    name: 'Cocos Islands — public holidays'
+    kind: holidays
+    country: CC
+    feeds:
+      - id: wph-hol-cc
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CC&year=2026'
+        year_pinned: 2026
+  - key: holidays-cd
+    name: 'Congo - Kinshasa — public holidays'
+    kind: holidays
+    country: CD
+    feeds:
+      - id: google-hol-cd
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.cd.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cd
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CD&year=2026'
+        year_pinned: 2026
+  - key: holidays-cf
+    name: 'Central African Republic — public holidays'
+    kind: holidays
+    country: CF
+    feeds:
+      - id: google-hol-cf
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.cf.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cf
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CF&year=2026'
+        year_pinned: 2026
+  - key: holidays-cg
+    name: 'Congo - Brazzaville — public holidays'
+    kind: holidays
+    country: CG
+    feeds:
+      - id: google-hol-cg
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.cg.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cg
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CG&year=2026'
+        year_pinned: 2026
+  - key: holidays-ch
+    name: 'Switzerland — public holidays'
+    kind: holidays
+    country: CH
+    feeds:
+      - id: google-hol-ch
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ch.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ch
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CH&year=2026'
+        year_pinned: 2026
+  - key: holidays-ci
+    name: "Côte d'Ivoire — public holidays"
+    kind: holidays
+    country: CI
+    feeds:
+      - id: google-hol-ci
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ci.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ci
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CI&year=2026'
+        year_pinned: 2026
+  - key: holidays-ck
+    name: 'Cook Islands — public holidays'
+    kind: holidays
+    country: CK
+    feeds:
+      - id: google-hol-ck
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ck.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ck
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CK&year=2026'
+        year_pinned: 2026
+  - key: holidays-cl
+    name: 'Chile — public holidays'
+    kind: holidays
+    country: CL
+    feeds:
+      - id: google-hol-cl
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.cl.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cl
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CL&year=2026'
+        year_pinned: 2026
+  - key: holidays-cm
+    name: 'Cameroon — public holidays'
+    kind: holidays
+    country: CM
+    feeds:
+      - id: google-hol-cm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.cm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CM&year=2026'
+        year_pinned: 2026
+  - key: holidays-cn
+    name: 'China — public holidays'
+    kind: holidays
+    country: CN
+    feeds:
+      - id: google-hol-cn
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.china.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cn
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CN&year=2026'
+        year_pinned: 2026
+  - key: holidays-co
+    name: 'Colombia — public holidays'
+    kind: holidays
+    country: CO
+    feeds:
+      - id: google-hol-co
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.co.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-co
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CO&year=2026'
+        year_pinned: 2026
+  - key: holidays-cr
+    name: 'Costa Rica — public holidays'
+    kind: holidays
+    country: CR
+    feeds:
+      - id: google-hol-cr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.cr.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CR&year=2026'
+        year_pinned: 2026
+  - key: holidays-cs
+    name: 'Serbia and Montenegro — public holidays'
+    kind: holidays
+    country: CS
+    feeds:
+      - id: wph-hol-cs
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CS&year=2026'
+        year_pinned: 2026
+  - key: holidays-cu
+    name: 'Cuba — public holidays'
+    kind: holidays
+    country: CU
+    feeds:
+      - id: google-hol-cu
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.cu.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cu
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CU&year=2026'
+        year_pinned: 2026
+  - key: holidays-cv
+    name: 'Cape Verde — public holidays'
+    kind: holidays
+    country: CV
+    feeds:
+      - id: google-hol-cv
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.cv.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cv
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CV&year=2026'
+        year_pinned: 2026
+  - key: holidays-cw
+    name: 'Curaçao — public holidays'
+    kind: holidays
+    country: CW
+    feeds:
+      - id: google-hol-cw
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.cw.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cw
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CW&year=2026'
+        year_pinned: 2026
+  - key: holidays-cx
+    name: 'Christmas Island — public holidays'
+    kind: holidays
+    country: CX
+    feeds:
+      - id: wph-hol-cx
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CX&year=2026'
+        year_pinned: 2026
+  - key: holidays-cy
+    name: 'Cyprus — public holidays'
+    kind: holidays
+    country: CY
+    feeds:
+      - id: google-hol-cy
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.cy.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cy
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CY&year=2026'
+        year_pinned: 2026
+  - key: holidays-cz
+    name: 'Czechia — public holidays'
+    kind: holidays
+    country: CZ
+    feeds:
+      - id: google-hol-cz
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.czech.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-cz
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=CZ&year=2026'
+        year_pinned: 2026
+  - key: holidays-de
+    name: 'Germany — public holidays'
+    kind: holidays
+    country: DE
+    feeds:
+      - id: google-hol-de
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.german.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-de
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=DE&year=2026'
+        year_pinned: 2026
+  - key: holidays-dj
+    name: 'Djibouti — public holidays'
+    kind: holidays
+    country: DJ
+    feeds:
+      - id: google-hol-dj
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.dj.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-dj
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=DJ&year=2026'
+        year_pinned: 2026
+  - key: holidays-dk
+    name: 'Denmark — public holidays'
+    kind: holidays
+    country: DK
+    feeds:
+      - id: google-hol-dk
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.danish.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-dk
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=DK&year=2026'
+        year_pinned: 2026
+  - key: holidays-dm
+    name: 'Dominica — public holidays'
+    kind: holidays
+    country: DM
+    feeds:
+      - id: google-hol-dm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.dm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-dm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=DM&year=2026'
+        year_pinned: 2026
+  - key: holidays-do
+    name: 'Dominican Republic — public holidays'
+    kind: holidays
+    country: DO
+    feeds:
+      - id: google-hol-do
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.do.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-do
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=DO&year=2026'
+        year_pinned: 2026
+  - key: holidays-dz
+    name: 'Algeria — public holidays'
+    kind: holidays
+    country: DZ
+    feeds:
+      - id: google-hol-dz
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.dz.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-dz
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=DZ&year=2026'
+        year_pinned: 2026
+  - key: holidays-ec
+    name: 'Ecuador — public holidays'
+    kind: holidays
+    country: EC
+    feeds:
+      - id: google-hol-ec
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ec.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ec
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=EC&year=2026'
+        year_pinned: 2026
+  - key: holidays-ee
+    name: 'Estonia — public holidays'
+    kind: holidays
+    country: EE
+    feeds:
+      - id: google-hol-ee
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ee.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ee
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=EE&year=2026'
+        year_pinned: 2026
+  - key: holidays-eg
+    name: 'Egypt — public holidays'
+    kind: holidays
+    country: EG
+    feeds:
+      - id: google-hol-eg
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.eg.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-eg
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=EG&year=2026'
+        year_pinned: 2026
+  - key: holidays-eh
+    name: 'Western Sahara — public holidays'
+    kind: holidays
+    country: EH
+    feeds:
+      - id: wph-hol-eh
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=EH&year=2026'
+        year_pinned: 2026
+  - key: holidays-er
+    name: 'Eritrea — public holidays'
+    kind: holidays
+    country: ER
+    feeds:
+      - id: google-hol-er
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.er.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-er
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=ER&year=2026'
+        year_pinned: 2026
+  - key: holidays-es
+    name: 'Spain — public holidays'
+    kind: holidays
+    country: ES
+    feeds:
+      - id: google-hol-es
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.spain.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-es
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=ES&year=2026'
+        year_pinned: 2026
+  - key: holidays-et
+    name: 'Ethiopia — public holidays'
+    kind: holidays
+    country: ET
+    feeds:
+      - id: google-hol-et
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.et.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-et
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=ET&year=2026'
+        year_pinned: 2026
+  - key: holidays-fi
+    name: 'Finland — public holidays'
+    kind: holidays
+    country: FI
+    feeds:
+      - id: google-hol-fi
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.finnish.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-fi
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=FI&year=2026'
+        year_pinned: 2026
+  - key: holidays-fj
+    name: 'Fiji — public holidays'
+    kind: holidays
+    country: FJ
+    feeds:
+      - id: google-hol-fj
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.fj.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-fj
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=FJ&year=2026'
+        year_pinned: 2026
+  - key: holidays-fk
+    name: 'Falkland Islands — public holidays'
+    kind: holidays
+    country: FK
+    feeds:
+      - id: google-hol-fk
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.fk.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-fk
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=FK&year=2026'
+        year_pinned: 2026
+  - key: holidays-fm
+    name: 'Micronesia — public holidays'
+    kind: holidays
+    country: FM
+    feeds:
+      - id: google-hol-fm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.fm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-fm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=FM&year=2026'
+        year_pinned: 2026
+  - key: holidays-fo
+    name: 'Faroe Islands — public holidays'
+    kind: holidays
+    country: FO
+    feeds:
+      - id: google-hol-fo
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.fo.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-fo
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=FO&year=2026'
+        year_pinned: 2026
+  - key: holidays-fr
+    name: 'France — public holidays'
+    kind: holidays
+    country: FR
+    feeds:
+      - id: google-hol-fr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.french.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-fr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=FR&year=2026'
+        year_pinned: 2026
+  - key: holidays-ga
+    name: 'Gabon — public holidays'
+    kind: holidays
+    country: GA
+    feeds:
+      - id: google-hol-ga
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ga.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ga
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GA&year=2026'
+        year_pinned: 2026
+  - key: holidays-gb
+    name: 'United Kingdom — public holidays'
+    kind: holidays
+    country: GB
+    feeds:
+      - id: google-hol-gb
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.uk.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gb
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GB&year=2026'
+        year_pinned: 2026
+  - key: holidays-gd
+    name: 'Grenada — public holidays'
+    kind: holidays
+    country: GD
+    feeds:
+      - id: google-hol-gd
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gd.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gd
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GD&year=2026'
+        year_pinned: 2026
+  - key: holidays-ge
+    name: 'Georgia — public holidays'
+    kind: holidays
+    country: GE
+    feeds:
+      - id: google-hol-ge
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ge.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ge
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GE&year=2026'
+        year_pinned: 2026
+  - key: holidays-gf
+    name: 'French Guiana — public holidays'
+    kind: holidays
+    country: GF
+    feeds:
+      - id: google-hol-gf
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gf.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gf
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GF&year=2026'
+        year_pinned: 2026
+  - key: holidays-gg
+    name: 'Guernsey — public holidays'
+    kind: holidays
+    country: GG
+    feeds:
+      - id: google-hol-gg
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gg.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gg
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GG&year=2026'
+        year_pinned: 2026
+  - key: holidays-gh
+    name: 'Ghana — public holidays'
+    kind: holidays
+    country: GH
+    feeds:
+      - id: google-hol-gh
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gh.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gh
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GH&year=2026'
+        year_pinned: 2026
+  - key: holidays-gi
+    name: 'Gibraltar — public holidays'
+    kind: holidays
+    country: GI
+    feeds:
+      - id: google-hol-gi
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gi.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gi
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GI&year=2026'
+        year_pinned: 2026
+  - key: holidays-gl
+    name: 'Greenland — public holidays'
+    kind: holidays
+    country: GL
+    feeds:
+      - id: google-hol-gl
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gl.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gl
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GL&year=2026'
+        year_pinned: 2026
+  - key: holidays-gm
+    name: 'Gambia — public holidays'
+    kind: holidays
+    country: GM
+    feeds:
+      - id: google-hol-gm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GM&year=2026'
+        year_pinned: 2026
+  - key: holidays-gn
+    name: 'Guinea — public holidays'
+    kind: holidays
+    country: GN
+    feeds:
+      - id: google-hol-gn
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gn.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gn
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GN&year=2026'
+        year_pinned: 2026
+  - key: holidays-gp
+    name: 'Guadeloupe — public holidays'
+    kind: holidays
+    country: GP
+    feeds:
+      - id: google-hol-gp
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gp.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gp
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GP&year=2026'
+        year_pinned: 2026
+  - key: holidays-gq
+    name: 'Equatorial Guinea — public holidays'
+    kind: holidays
+    country: GQ
+    feeds:
+      - id: google-hol-gq
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gq.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gq
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GQ&year=2026'
+        year_pinned: 2026
+  - key: holidays-gr
+    name: 'Greece — public holidays'
+    kind: holidays
+    country: GR
+    feeds:
+      - id: google-hol-gr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.greek.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GR&year=2026'
+        year_pinned: 2026
+  - key: holidays-gs
+    name: 'South Georgia & South Sandwich Islands — public holidays'
+    kind: holidays
+    country: GS
+    feeds:
+      - id: wph-hol-gs
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GS&year=2026'
+        year_pinned: 2026
+  - key: holidays-gt
+    name: 'Guatemala — public holidays'
+    kind: holidays
+    country: GT
+    feeds:
+      - id: google-hol-gt
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gt.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gt
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GT&year=2026'
+        year_pinned: 2026
+  - key: holidays-gu
+    name: 'Guam — public holidays'
+    kind: holidays
+    country: GU
+    feeds:
+      - id: google-hol-gu
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gu.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gu
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GU&year=2026'
+        year_pinned: 2026
+  - key: holidays-gw
+    name: 'Guinea-Bissau — public holidays'
+    kind: holidays
+    country: GW
+    feeds:
+      - id: google-hol-gw
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gw.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gw
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GW&year=2026'
+        year_pinned: 2026
+  - key: holidays-gy
+    name: 'Guyana — public holidays'
+    kind: holidays
+    country: GY
+    feeds:
+      - id: google-hol-gy
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.gy.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-gy
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=GY&year=2026'
+        year_pinned: 2026
+  - key: holidays-hk
+    name: 'Hong Kong — public holidays'
+    kind: holidays
+    country: HK
+    feeds:
+      - id: google-hol-hk
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.hong_kong.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-hk
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=HK&year=2026'
+        year_pinned: 2026
+  - key: holidays-hm
+    name: 'Heard & McDonald Islands — public holidays'
+    kind: holidays
+    country: HM
+    feeds:
+      - id: wph-hol-hm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=HM&year=2026'
+        year_pinned: 2026
+  - key: holidays-hn
+    name: 'Honduras — public holidays'
+    kind: holidays
+    country: HN
+    feeds:
+      - id: google-hol-hn
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.hn.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-hn
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=HN&year=2026'
+        year_pinned: 2026
+  - key: holidays-hr
+    name: 'Croatia — public holidays'
+    kind: holidays
+    country: HR
+    feeds:
+      - id: google-hol-hr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.croatian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-hr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=HR&year=2026'
+        year_pinned: 2026
+  - key: holidays-ht
+    name: 'Haiti — public holidays'
+    kind: holidays
+    country: HT
+    feeds:
+      - id: google-hol-ht
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ht.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ht
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=HT&year=2026'
+        year_pinned: 2026
+  - key: holidays-hu
+    name: 'Hungary — public holidays'
+    kind: holidays
+    country: HU
+    feeds:
+      - id: google-hol-hu
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.hungarian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-hu
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=HU&year=2026'
+        year_pinned: 2026
+  - key: holidays-id
+    name: 'Indonesia — public holidays'
+    kind: holidays
+    country: ID
+    feeds:
+      - id: google-hol-id
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.indonesian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-id
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=ID&year=2026'
+        year_pinned: 2026
+  - key: holidays-ie
+    name: 'Ireland — public holidays'
+    kind: holidays
+    country: IE
+    feeds:
+      - id: google-hol-ie
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.irish.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ie
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=IE&year=2026'
+        year_pinned: 2026
+  - key: holidays-il
+    name: 'Israel — public holidays'
+    kind: holidays
+    country: IL
+    feeds:
+      - id: google-hol-il
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.jewish.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-il
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=IL&year=2026'
+        year_pinned: 2026
+  - key: holidays-im
+    name: 'Isle of Man — public holidays'
+    kind: holidays
+    country: IM
+    feeds:
+      - id: google-hol-im
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.im.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-im
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=IM&year=2026'
+        year_pinned: 2026
+  - key: holidays-in
+    name: 'India — public holidays'
+    kind: holidays
+    country: IN
+    feeds:
+      - id: google-hol-in
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.indian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-in
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=IN&year=2026'
+        year_pinned: 2026
+  - key: holidays-io
+    name: 'British Indian Ocean Territory — public holidays'
+    kind: holidays
+    country: IO
+    feeds:
+      - id: wph-hol-io
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=IO&year=2026'
+        year_pinned: 2026
+  - key: holidays-iq
+    name: 'Iraq — public holidays'
+    kind: holidays
+    country: IQ
+    feeds:
+      - id: google-hol-iq
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.iq.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-iq
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=IQ&year=2026'
+        year_pinned: 2026
+  - key: holidays-ir
+    name: 'Iran — public holidays'
+    kind: holidays
+    country: IR
+    feeds:
+      - id: google-hol-ir
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ir.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ir
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=IR&year=2026'
+        year_pinned: 2026
+  - key: holidays-is
+    name: 'Iceland — public holidays'
+    kind: holidays
+    country: IS
+    feeds:
+      - id: google-hol-is
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.is.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-is
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=IS&year=2026'
+        year_pinned: 2026
+  - key: holidays-it
+    name: 'Italy — public holidays'
+    kind: holidays
+    country: IT
+    feeds:
+      - id: google-hol-it
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.italian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-it
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=IT&year=2026'
+        year_pinned: 2026
+  - key: holidays-je
+    name: 'Jersey — public holidays'
+    kind: holidays
+    country: JE
+    feeds:
+      - id: google-hol-je
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.je.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-je
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=JE&year=2026'
+        year_pinned: 2026
+  - key: holidays-jm
+    name: 'Jamaica — public holidays'
+    kind: holidays
+    country: JM
+    feeds:
+      - id: google-hol-jm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.jm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-jm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=JM&year=2026'
+        year_pinned: 2026
+  - key: holidays-jo
+    name: 'Jordan — public holidays'
+    kind: holidays
+    country: JO
+    feeds:
+      - id: google-hol-jo
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.jo.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-jo
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=JO&year=2026'
+        year_pinned: 2026
+  - key: holidays-jp
+    name: 'Japan — public holidays'
+    kind: holidays
+    country: JP
+    feeds:
+      - id: google-hol-jp
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.japanese.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-jp
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=JP&year=2026'
+        year_pinned: 2026
+  - key: holidays-ke
+    name: 'Kenya — public holidays'
+    kind: holidays
+    country: KE
+    feeds:
+      - id: google-hol-ke
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ke.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ke
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KE&year=2026'
+        year_pinned: 2026
+  - key: holidays-kg
+    name: 'Kyrgyzstan — public holidays'
+    kind: holidays
+    country: KG
+    feeds:
+      - id: google-hol-kg
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.kg.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-kg
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KG&year=2026'
+        year_pinned: 2026
+  - key: holidays-kh
+    name: 'Cambodia — public holidays'
+    kind: holidays
+    country: KH
+    feeds:
+      - id: google-hol-kh
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.kh.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-kh
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KH&year=2026'
+        year_pinned: 2026
+  - key: holidays-ki
+    name: 'Kiribati — public holidays'
+    kind: holidays
+    country: KI
+    feeds:
+      - id: google-hol-ki
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ki.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ki
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KI&year=2026'
+        year_pinned: 2026
+  - key: holidays-km
+    name: 'Comoros — public holidays'
+    kind: holidays
+    country: KM
+    feeds:
+      - id: google-hol-km
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.km.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-km
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KM&year=2026'
+        year_pinned: 2026
+  - key: holidays-kn
+    name: 'St. Kitts & Nevis — public holidays'
+    kind: holidays
+    country: KN
+    feeds:
+      - id: google-hol-kn
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.kn.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-kn
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KN&year=2026'
+        year_pinned: 2026
+  - key: holidays-kp
+    name: 'North Korea — public holidays'
+    kind: holidays
+    country: KP
+    feeds:
+      - id: google-hol-kp
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.kp.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-kp
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KP&year=2026'
+        year_pinned: 2026
+  - key: holidays-kr
+    name: 'South Korea — public holidays'
+    kind: holidays
+    country: KR
+    feeds:
+      - id: google-hol-kr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.south_korea.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-kr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KR&year=2026'
+        year_pinned: 2026
+  - key: holidays-kw
+    name: 'Kuwait — public holidays'
+    kind: holidays
+    country: KW
+    feeds:
+      - id: google-hol-kw
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.kw.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-kw
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KW&year=2026'
+        year_pinned: 2026
+  - key: holidays-ky
+    name: 'Cayman Islands — public holidays'
+    kind: holidays
+    country: KY
+    feeds:
+      - id: google-hol-ky
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ky.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ky
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KY&year=2026'
+        year_pinned: 2026
+  - key: holidays-kz
+    name: 'Kazakhstan — public holidays'
+    kind: holidays
+    country: KZ
+    feeds:
+      - id: google-hol-kz
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.kz.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-kz
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=KZ&year=2026'
+        year_pinned: 2026
+  - key: holidays-la
+    name: 'Laos — public holidays'
+    kind: holidays
+    country: LA
+    feeds:
+      - id: google-hol-la
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.la.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-la
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LA&year=2026'
+        year_pinned: 2026
+  - key: holidays-lb
+    name: 'Lebanon — public holidays'
+    kind: holidays
+    country: LB
+    feeds:
+      - id: google-hol-lb
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.lb.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-lb
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LB&year=2026'
+        year_pinned: 2026
+  - key: holidays-lc
+    name: 'St. Lucia — public holidays'
+    kind: holidays
+    country: LC
+    feeds:
+      - id: google-hol-lc
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.lc.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-lc
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LC&year=2026'
+        year_pinned: 2026
+  - key: holidays-li
+    name: 'Liechtenstein — public holidays'
+    kind: holidays
+    country: LI
+    feeds:
+      - id: google-hol-li
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.li.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-li
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LI&year=2026'
+        year_pinned: 2026
+  - key: holidays-lk
+    name: 'Sri Lanka — public holidays'
+    kind: holidays
+    country: LK
+    feeds:
+      - id: google-hol-lk
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.lk.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-lk
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LK&year=2026'
+        year_pinned: 2026
+  - key: holidays-lr
+    name: 'Liberia — public holidays'
+    kind: holidays
+    country: LR
+    feeds:
+      - id: google-hol-lr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.lr.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-lr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LR&year=2026'
+        year_pinned: 2026
+  - key: holidays-ls
+    name: 'Lesotho — public holidays'
+    kind: holidays
+    country: LS
+    feeds:
+      - id: google-hol-ls
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ls.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ls
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LS&year=2026'
+        year_pinned: 2026
+  - key: holidays-lt
+    name: 'Lithuania — public holidays'
+    kind: holidays
+    country: LT
+    feeds:
+      - id: google-hol-lt
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.lithuanian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-lt
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LT&year=2026'
+        year_pinned: 2026
+  - key: holidays-lu
+    name: 'Luxembourg — public holidays'
+    kind: holidays
+    country: LU
+    feeds:
+      - id: google-hol-lu
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.lu.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-lu
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LU&year=2026'
+        year_pinned: 2026
+  - key: holidays-lv
+    name: 'Latvia — public holidays'
+    kind: holidays
+    country: LV
+    feeds:
+      - id: google-hol-lv
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.latvian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-lv
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LV&year=2026'
+        year_pinned: 2026
+  - key: holidays-ly
+    name: 'Libya — public holidays'
+    kind: holidays
+    country: LY
+    feeds:
+      - id: google-hol-ly
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ly.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ly
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=LY&year=2026'
+        year_pinned: 2026
+  - key: holidays-ma
+    name: 'Morocco — public holidays'
+    kind: holidays
+    country: MA
+    feeds:
+      - id: google-hol-ma
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ma.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ma
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MA&year=2026'
+        year_pinned: 2026
+  - key: holidays-mc
+    name: 'Monaco — public holidays'
+    kind: holidays
+    country: MC
+    feeds:
+      - id: google-hol-mc
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mc.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mc
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MC&year=2026'
+        year_pinned: 2026
+  - key: holidays-md
+    name: 'Moldova — public holidays'
+    kind: holidays
+    country: MD
+    feeds:
+      - id: google-hol-md
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.md.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-md
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MD&year=2026'
+        year_pinned: 2026
+  - key: holidays-me
+    name: 'Montenegro — public holidays'
+    kind: holidays
+    country: ME
+    feeds:
+      - id: google-hol-me
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.me.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-me
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=ME&year=2026'
+        year_pinned: 2026
+  - key: holidays-mf
+    name: 'St. Martin — public holidays'
+    kind: holidays
+    country: MF
+    feeds:
+      - id: google-hol-mf
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mf.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mf
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MF&year=2026'
+        year_pinned: 2026
+  - key: holidays-mg
+    name: 'Madagascar — public holidays'
+    kind: holidays
+    country: MG
+    feeds:
+      - id: google-hol-mg
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mg.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mg
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MG&year=2026'
+        year_pinned: 2026
+  - key: holidays-mh
+    name: 'Marshall Islands — public holidays'
+    kind: holidays
+    country: MH
+    feeds:
+      - id: google-hol-mh
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mh.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mh
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MH&year=2026'
+        year_pinned: 2026
+  - key: holidays-mk
+    name: 'North Macedonia — public holidays'
+    kind: holidays
+    country: MK
+    feeds:
+      - id: google-hol-mk
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mk.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mk
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MK&year=2026'
+        year_pinned: 2026
+  - key: holidays-ml
+    name: 'Mali — public holidays'
+    kind: holidays
+    country: ML
+    feeds:
+      - id: google-hol-ml
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ml.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ml
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=ML&year=2026'
+        year_pinned: 2026
+  - key: holidays-mm
+    name: 'Myanmar (Burma) — public holidays'
+    kind: holidays
+    country: MM
+    feeds:
+      - id: google-hol-mm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MM&year=2026'
+        year_pinned: 2026
+  - key: holidays-mn
+    name: 'Mongolia — public holidays'
+    kind: holidays
+    country: MN
+    feeds:
+      - id: google-hol-mn
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mn.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mn
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MN&year=2026'
+        year_pinned: 2026
+  - key: holidays-mo
+    name: 'Macao — public holidays'
+    kind: holidays
+    country: MO
+    feeds:
+      - id: google-hol-mo
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mo.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mo
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MO&year=2026'
+        year_pinned: 2026
+  - key: holidays-mp
+    name: 'Northern Mariana Islands — public holidays'
+    kind: holidays
+    country: MP
+    feeds:
+      - id: google-hol-mp
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mp.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mp
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MP&year=2026'
+        year_pinned: 2026
+  - key: holidays-mq
+    name: 'Martinique — public holidays'
+    kind: holidays
+    country: MQ
+    feeds:
+      - id: google-hol-mq
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mq.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mq
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MQ&year=2026'
+        year_pinned: 2026
+  - key: holidays-mr
+    name: 'Mauritania — public holidays'
+    kind: holidays
+    country: MR
+    feeds:
+      - id: google-hol-mr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mr.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MR&year=2026'
+        year_pinned: 2026
+  - key: holidays-ms
+    name: 'Montserrat — public holidays'
+    kind: holidays
+    country: MS
+    feeds:
+      - id: google-hol-ms
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ms.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ms
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MS&year=2026'
+        year_pinned: 2026
+  - key: holidays-mt
+    name: 'Malta — public holidays'
+    kind: holidays
+    country: MT
+    feeds:
+      - id: google-hol-mt
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mt.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mt
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MT&year=2026'
+        year_pinned: 2026
+  - key: holidays-mu
+    name: 'Mauritius — public holidays'
+    kind: holidays
+    country: MU
+    feeds:
+      - id: google-hol-mu
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mu.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mu
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MU&year=2026'
+        year_pinned: 2026
+  - key: holidays-mv
+    name: 'Maldives — public holidays'
+    kind: holidays
+    country: MV
+    feeds:
+      - id: google-hol-mv
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mv.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mv
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MV&year=2026'
+        year_pinned: 2026
+  - key: holidays-mw
+    name: 'Malawi — public holidays'
+    kind: holidays
+    country: MW
+    feeds:
+      - id: google-hol-mw
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mw.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mw
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MW&year=2026'
+        year_pinned: 2026
+  - key: holidays-mx
+    name: 'Mexico — public holidays'
+    kind: holidays
+    country: MX
+    feeds:
+      - id: google-hol-mx
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mexican.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mx
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MX&year=2026'
+        year_pinned: 2026
+  - key: holidays-my
+    name: 'Malaysia — public holidays'
+    kind: holidays
+    country: MY
+    feeds:
+      - id: google-hol-my
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.malaysia.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-my
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MY&year=2026'
+        year_pinned: 2026
+  - key: holidays-mz
+    name: 'Mozambique — public holidays'
+    kind: holidays
+    country: MZ
+    feeds:
+      - id: google-hol-mz
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.mz.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-mz
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=MZ&year=2026'
+        year_pinned: 2026
+  - key: holidays-na
+    name: 'Namibia — public holidays'
+    kind: holidays
+    country: NA
+    feeds:
+      - id: google-hol-na
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.na.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-na
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NA&year=2026'
+        year_pinned: 2026
+  - key: holidays-nc
+    name: 'New Caledonia — public holidays'
+    kind: holidays
+    country: NC
+    feeds:
+      - id: google-hol-nc
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.nc.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-nc
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NC&year=2026'
+        year_pinned: 2026
+  - key: holidays-ne
+    name: 'Niger — public holidays'
+    kind: holidays
+    country: NE
+    feeds:
+      - id: google-hol-ne
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ne.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ne
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NE&year=2026'
+        year_pinned: 2026
+  - key: holidays-nf
+    name: 'Norfolk Island — public holidays'
+    kind: holidays
+    country: NF
+    feeds:
+      - id: wph-hol-nf
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NF&year=2026'
+        year_pinned: 2026
+  - key: holidays-ng
+    name: 'Nigeria — public holidays'
+    kind: holidays
+    country: NG
+    feeds:
+      - id: google-hol-ng
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ng.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ng
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NG&year=2026'
+        year_pinned: 2026
+  - key: holidays-ni
+    name: 'Nicaragua — public holidays'
+    kind: holidays
+    country: NI
+    feeds:
+      - id: google-hol-ni
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ni.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ni
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NI&year=2026'
+        year_pinned: 2026
+  - key: holidays-nl
+    name: 'Netherlands — public holidays'
+    kind: holidays
+    country: NL
+    feeds:
+      - id: google-hol-nl
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.dutch.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-nl
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NL&year=2026'
+        year_pinned: 2026
+  - key: holidays-no
+    name: 'Norway — public holidays'
+    kind: holidays
+    country: NO
+    feeds:
+      - id: google-hol-no
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.norwegian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-no
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NO&year=2026'
+        year_pinned: 2026
+  - key: holidays-np
+    name: 'Nepal — public holidays'
+    kind: holidays
+    country: NP
+    feeds:
+      - id: google-hol-np
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.np.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-np
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NP&year=2026'
+        year_pinned: 2026
+  - key: holidays-nr
+    name: 'Nauru — public holidays'
+    kind: holidays
+    country: NR
+    feeds:
+      - id: google-hol-nr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.nr.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-nr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NR&year=2026'
+        year_pinned: 2026
+  - key: holidays-nu
+    name: 'Niue — public holidays'
+    kind: holidays
+    country: NU
+    feeds:
+      - id: wph-hol-nu
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NU&year=2026'
+        year_pinned: 2026
+  - key: holidays-nz
+    name: 'New Zealand — public holidays'
+    kind: holidays
+    country: NZ
+    feeds:
+      - id: google-hol-nz
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.new_zealand.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-nz
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=NZ&year=2026'
+        year_pinned: 2026
+  - key: holidays-om
+    name: 'Oman — public holidays'
+    kind: holidays
+    country: OM
+    feeds:
+      - id: google-hol-om
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.om.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-om
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=OM&year=2026'
+        year_pinned: 2026
+  - key: holidays-pa
+    name: 'Panama — public holidays'
+    kind: holidays
+    country: PA
+    feeds:
+      - id: google-hol-pa
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.pa.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-pa
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PA&year=2026'
+        year_pinned: 2026
+  - key: holidays-pe
+    name: 'Peru — public holidays'
+    kind: holidays
+    country: PE
+    feeds:
+      - id: google-hol-pe
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.pe.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-pe
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PE&year=2026'
+        year_pinned: 2026
+  - key: holidays-pf
+    name: 'French Polynesia — public holidays'
+    kind: holidays
+    country: PF
+    feeds:
+      - id: google-hol-pf
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.pf.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-pf
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PF&year=2026'
+        year_pinned: 2026
+  - key: holidays-pg
+    name: 'Papua New Guinea — public holidays'
+    kind: holidays
+    country: PG
+    feeds:
+      - id: google-hol-pg
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.pg.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-pg
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PG&year=2026'
+        year_pinned: 2026
+  - key: holidays-ph
+    name: 'Philippines — public holidays'
+    kind: holidays
+    country: PH
+    feeds:
+      - id: google-hol-ph
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.philippines.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ph
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PH&year=2026'
+        year_pinned: 2026
+  - key: holidays-pk
+    name: 'Pakistan — public holidays'
+    kind: holidays
+    country: PK
+    feeds:
+      - id: google-hol-pk
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.pk.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-pk
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PK&year=2026'
+        year_pinned: 2026
+  - key: holidays-pl
+    name: 'Poland — public holidays'
+    kind: holidays
+    country: PL
+    feeds:
+      - id: google-hol-pl
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.polish.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-pl
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PL&year=2026'
+        year_pinned: 2026
+  - key: holidays-pm
+    name: 'St. Pierre & Miquelon — public holidays'
+    kind: holidays
+    country: PM
+    feeds:
+      - id: google-hol-pm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.pm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-pm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PM&year=2026'
+        year_pinned: 2026
+  - key: holidays-pn
+    name: 'Pitcairn — public holidays'
+    kind: holidays
+    country: PN
+    feeds:
+      - id: wph-hol-pn
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PN&year=2026'
+        year_pinned: 2026
+  - key: holidays-pr
+    name: 'Puerto Rico — public holidays'
+    kind: holidays
+    country: PR
+    feeds:
+      - id: google-hol-pr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.pr.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-pr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PR&year=2026'
+        year_pinned: 2026
+  - key: holidays-ps
+    name: 'Palestinian Territory — public holidays'
+    kind: holidays
+    country: PS
+    feeds:
+      - id: wph-hol-ps
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PS&year=2026'
+        year_pinned: 2026
+  - key: holidays-pt
+    name: 'Portugal — public holidays'
+    kind: holidays
+    country: PT
+    feeds:
+      - id: google-hol-pt
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.portuguese.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-pt
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PT&year=2026'
+        year_pinned: 2026
+  - key: holidays-pw
+    name: 'Palau — public holidays'
+    kind: holidays
+    country: PW
+    feeds:
+      - id: google-hol-pw
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.pw.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-pw
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PW&year=2026'
+        year_pinned: 2026
+  - key: holidays-py
+    name: 'Paraguay — public holidays'
+    kind: holidays
+    country: PY
+    feeds:
+      - id: google-hol-py
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.py.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-py
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=PY&year=2026'
+        year_pinned: 2026
+  - key: holidays-qa
+    name: 'Qatar — public holidays'
+    kind: holidays
+    country: QA
+    feeds:
+      - id: google-hol-qa
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.qa.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-qa
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=QA&year=2026'
+        year_pinned: 2026
+  - key: holidays-re
+    name: 'Réunion — public holidays'
+    kind: holidays
+    country: RE
+    feeds:
+      - id: google-hol-re
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.re.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-re
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=RE&year=2026'
+        year_pinned: 2026
+  - key: holidays-ro
+    name: 'Romania — public holidays'
+    kind: holidays
+    country: RO
+    feeds:
+      - id: google-hol-ro
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.romanian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ro
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=RO&year=2026'
+        year_pinned: 2026
+  - key: holidays-rs
+    name: 'Serbia — public holidays'
+    kind: holidays
+    country: RS
+    feeds:
+      - id: google-hol-rs
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.rs.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-rs
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=RS&year=2026'
+        year_pinned: 2026
+  - key: holidays-ru
+    name: 'Russia — public holidays'
+    kind: holidays
+    country: RU
+    feeds:
+      - id: google-hol-ru
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.russian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ru
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=RU&year=2026'
+        year_pinned: 2026
+  - key: holidays-rw
+    name: 'Rwanda — public holidays'
+    kind: holidays
+    country: RW
+    feeds:
+      - id: google-hol-rw
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.rw.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-rw
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=RW&year=2026'
+        year_pinned: 2026
+  - key: holidays-sa
+    name: 'Saudi Arabia — public holidays'
+    kind: holidays
+    country: SA
+    feeds:
+      - id: google-hol-sa
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.saudiarabian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sa
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SA&year=2026'
+        year_pinned: 2026
+  - key: holidays-sb
+    name: 'Solomon Islands — public holidays'
+    kind: holidays
+    country: SB
+    feeds:
+      - id: google-hol-sb
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sb.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sb
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SB&year=2026'
+        year_pinned: 2026
+  - key: holidays-sc
+    name: 'Seychelles — public holidays'
+    kind: holidays
+    country: SC
+    feeds:
+      - id: google-hol-sc
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sc.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sc
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SC&year=2026'
+        year_pinned: 2026
+  - key: holidays-sd
+    name: 'Sudan — public holidays'
+    kind: holidays
+    country: SD
+    feeds:
+      - id: google-hol-sd
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sd.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sd
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SD&year=2026'
+        year_pinned: 2026
+  - key: holidays-se
+    name: 'Sweden — public holidays'
+    kind: holidays
+    country: SE
+    feeds:
+      - id: google-hol-se
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.swedish.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-se
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SE&year=2026'
+        year_pinned: 2026
+  - key: holidays-sg
+    name: 'Singapore — public holidays'
+    kind: holidays
+    country: SG
+    feeds:
+      - id: google-hol-sg
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.singapore.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sg
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SG&year=2026'
+        year_pinned: 2026
+  - key: holidays-sh
+    name: 'St. Helena — public holidays'
+    kind: holidays
+    country: SH
+    feeds:
+      - id: google-hol-sh
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sh.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sh
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SH&year=2026'
+        year_pinned: 2026
+  - key: holidays-si
+    name: 'Slovenia — public holidays'
+    kind: holidays
+    country: SI
+    feeds:
+      - id: google-hol-si
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.slovenian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-si
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SI&year=2026'
+        year_pinned: 2026
+  - key: holidays-sj
+    name: 'Svalbard and Jan Mayen — public holidays'
+    kind: holidays
+    country: SJ
+    feeds:
+      - id: wph-hol-sj
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SJ&year=2026'
+        year_pinned: 2026
+  - key: holidays-sk
+    name: 'Slovakia — public holidays'
+    kind: holidays
+    country: SK
+    feeds:
+      - id: google-hol-sk
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.slovak.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sk
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SK&year=2026'
+        year_pinned: 2026
+  - key: holidays-sl
+    name: 'Sierra Leone — public holidays'
+    kind: holidays
+    country: SL
+    feeds:
+      - id: google-hol-sl
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sl.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sl
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SL&year=2026'
+        year_pinned: 2026
+  - key: holidays-sm
+    name: 'San Marino — public holidays'
+    kind: holidays
+    country: SM
+    feeds:
+      - id: google-hol-sm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SM&year=2026'
+        year_pinned: 2026
+  - key: holidays-sn
+    name: 'Senegal — public holidays'
+    kind: holidays
+    country: SN
+    feeds:
+      - id: google-hol-sn
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sn.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sn
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SN&year=2026'
+        year_pinned: 2026
+  - key: holidays-so
+    name: 'Somalia — public holidays'
+    kind: holidays
+    country: SO
+    feeds:
+      - id: google-hol-so
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.so.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-so
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SO&year=2026'
+        year_pinned: 2026
+  - key: holidays-sr
+    name: 'Suriname — public holidays'
+    kind: holidays
+    country: SR
+    feeds:
+      - id: google-hol-sr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sr.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SR&year=2026'
+        year_pinned: 2026
+  - key: holidays-ss
+    name: 'South Sudan — public holidays'
+    kind: holidays
+    country: SS
+    feeds:
+      - id: google-hol-ss
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ss.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ss
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SS&year=2026'
+        year_pinned: 2026
+  - key: holidays-st
+    name: 'São Tomé & Príncipe — public holidays'
+    kind: holidays
+    country: ST
+    feeds:
+      - id: google-hol-st
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.st.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-st
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=ST&year=2026'
+        year_pinned: 2026
+  - key: holidays-sv
+    name: 'El Salvador — public holidays'
+    kind: holidays
+    country: SV
+    feeds:
+      - id: google-hol-sv
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sv.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sv
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SV&year=2026'
+        year_pinned: 2026
+  - key: holidays-sx
+    name: 'Sint Maarten — public holidays'
+    kind: holidays
+    country: SX
+    feeds:
+      - id: google-hol-sx
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sx.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sx
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SX&year=2026'
+        year_pinned: 2026
+  - key: holidays-sy
+    name: 'Syria — public holidays'
+    kind: holidays
+    country: SY
+    feeds:
+      - id: google-hol-sy
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sy.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sy
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SY&year=2026'
+        year_pinned: 2026
+  - key: holidays-sz
+    name: 'Eswatini — public holidays'
+    kind: holidays
+    country: SZ
+    feeds:
+      - id: google-hol-sz
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sz.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-sz
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=SZ&year=2026'
+        year_pinned: 2026
+  - key: holidays-tc
+    name: 'Turks & Caicos Islands — public holidays'
+    kind: holidays
+    country: TC
+    feeds:
+      - id: google-hol-tc
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.tc.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tc
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TC&year=2026'
+        year_pinned: 2026
+  - key: holidays-td
+    name: 'Chad — public holidays'
+    kind: holidays
+    country: TD
+    feeds:
+      - id: google-hol-td
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.td.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-td
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TD&year=2026'
+        year_pinned: 2026
+  - key: holidays-tf
+    name: 'French Southern Territories — public holidays'
+    kind: holidays
+    country: TF
+    feeds:
+      - id: wph-hol-tf
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TF&year=2026'
+        year_pinned: 2026
+  - key: holidays-tg
+    name: 'Togo — public holidays'
+    kind: holidays
+    country: TG
+    feeds:
+      - id: google-hol-tg
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.tg.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tg
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TG&year=2026'
+        year_pinned: 2026
+  - key: holidays-th
+    name: 'Thailand — public holidays'
+    kind: holidays
+    country: TH
+    feeds:
+      - id: google-hol-th
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.th.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-th
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TH&year=2026'
+        year_pinned: 2026
+  - key: holidays-tj
+    name: 'Tajikistan — public holidays'
+    kind: holidays
+    country: TJ
+    feeds:
+      - id: google-hol-tj
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.tj.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tj
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TJ&year=2026'
+        year_pinned: 2026
+  - key: holidays-tk
+    name: 'Tokelau — public holidays'
+    kind: holidays
+    country: TK
+    feeds:
+      - id: wph-hol-tk
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TK&year=2026'
+        year_pinned: 2026
+  - key: holidays-tl
+    name: 'Timor-Leste — public holidays'
+    kind: holidays
+    country: TL
+    feeds:
+      - id: google-hol-tl
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.tl.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tl
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TL&year=2026'
+        year_pinned: 2026
+  - key: holidays-tm
+    name: 'Turkmenistan — public holidays'
+    kind: holidays
+    country: TM
+    feeds:
+      - id: google-hol-tm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.tm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TM&year=2026'
+        year_pinned: 2026
+  - key: holidays-tn
+    name: 'Tunisia — public holidays'
+    kind: holidays
+    country: TN
+    feeds:
+      - id: google-hol-tn
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.tn.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tn
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TN&year=2026'
+        year_pinned: 2026
+  - key: holidays-to
+    name: 'Tonga — public holidays'
+    kind: holidays
+    country: TO
+    feeds:
+      - id: google-hol-to
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.to.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-to
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TO&year=2026'
+        year_pinned: 2026
+  - key: holidays-tr
+    name: 'Turkey — public holidays'
+    kind: holidays
+    country: TR
+    feeds:
+      - id: google-hol-tr
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.turkish.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tr
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TR&year=2026'
+        year_pinned: 2026
+  - key: holidays-tt
+    name: 'Trinidad & Tobago — public holidays'
+    kind: holidays
+    country: TT
+    feeds:
+      - id: google-hol-tt
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.tt.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tt
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TT&year=2026'
+        year_pinned: 2026
+  - key: holidays-tv
+    name: 'Tuvalu — public holidays'
+    kind: holidays
+    country: TV
+    feeds:
+      - id: google-hol-tv
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.tv.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tv
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TV&year=2026'
+        year_pinned: 2026
+  - key: holidays-tw
+    name: 'Taiwan — public holidays'
+    kind: holidays
+    country: TW
+    feeds:
+      - id: google-hol-tw
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.taiwan.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tw
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TW&year=2026'
+        year_pinned: 2026
+  - key: holidays-tz
+    name: 'Tanzania — public holidays'
+    kind: holidays
+    country: TZ
+    feeds:
+      - id: google-hol-tz
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.tz.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-tz
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=TZ&year=2026'
+        year_pinned: 2026
+  - key: holidays-ua
+    name: 'Ukraine — public holidays'
+    kind: holidays
+    country: UA
+    feeds:
+      - id: google-hol-ua
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ukrainian.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ua
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=UA&year=2026'
+        year_pinned: 2026
+  - key: holidays-ug
+    name: 'Uganda — public holidays'
+    kind: holidays
+    country: UG
+    feeds:
+      - id: google-hol-ug
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ug.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ug
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=UG&year=2026'
+        year_pinned: 2026
+  - key: holidays-um
+    name: 'United States Minor Outlying Islands — public holidays'
+    kind: holidays
+    country: UM
+    feeds:
+      - id: wph-hol-um
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=UM&year=2026'
+        year_pinned: 2026
+  - key: holidays-us
+    name: 'United States — public holidays'
+    kind: holidays
+    country: US
+    feeds:
+      - id: google-hol-us
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.usa.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-us
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=US&year=2026'
+        year_pinned: 2026
+  - key: holidays-uy
+    name: 'Uruguay — public holidays'
+    kind: holidays
+    country: UY
+    feeds:
+      - id: google-hol-uy
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.uy.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-uy
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=UY&year=2026'
+        year_pinned: 2026
+  - key: holidays-uz
+    name: 'Uzbekistan — public holidays'
+    kind: holidays
+    country: UZ
+    feeds:
+      - id: google-hol-uz
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.uz.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-uz
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=UZ&year=2026'
+        year_pinned: 2026
+  - key: holidays-va
+    name: 'Vatican City — public holidays'
+    kind: holidays
+    country: VA
+    feeds:
+      - id: google-hol-va
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.va.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-va
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=VA&year=2026'
+        year_pinned: 2026
+  - key: holidays-vc
+    name: 'St. Vincent & Grenadines — public holidays'
+    kind: holidays
+    country: VC
+    feeds:
+      - id: google-hol-vc
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.vc.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-vc
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=VC&year=2026'
+        year_pinned: 2026
+  - key: holidays-ve
+    name: 'Venezuela — public holidays'
+    kind: holidays
+    country: VE
+    feeds:
+      - id: google-hol-ve
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ve.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ve
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=VE&year=2026'
+        year_pinned: 2026
+  - key: holidays-vg
+    name: 'British Virgin Islands — public holidays'
+    kind: holidays
+    country: VG
+    feeds:
+      - id: google-hol-vg
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.vg.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-vg
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=VG&year=2026'
+        year_pinned: 2026
+  - key: holidays-vi
+    name: 'U.S. Virgin Islands — public holidays'
+    kind: holidays
+    country: VI
+    feeds:
+      - id: google-hol-vi
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.vi.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-vi
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=VI&year=2026'
+        year_pinned: 2026
+  - key: holidays-vn
+    name: 'Vietnam — public holidays'
+    kind: holidays
+    country: VN
+    feeds:
+      - id: google-hol-vn
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.vietnamese.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-vn
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=VN&year=2026'
+        year_pinned: 2026
+  - key: holidays-vu
+    name: 'Vanuatu — public holidays'
+    kind: holidays
+    country: VU
+    feeds:
+      - id: google-hol-vu
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.vu.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-vu
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=VU&year=2026'
+        year_pinned: 2026
+  - key: holidays-wf
+    name: 'Wallis & Futuna — public holidays'
+    kind: holidays
+    country: WF
+    feeds:
+      - id: google-hol-wf
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.wf.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-wf
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=WF&year=2026'
+        year_pinned: 2026
+  - key: holidays-ws
+    name: 'Samoa — public holidays'
+    kind: holidays
+    country: WS
+    feeds:
+      - id: google-hol-ws
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ws.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ws
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=WS&year=2026'
+        year_pinned: 2026
+  - key: holidays-xk
+    name: 'Kosovo — public holidays'
+    kind: holidays
+    country: XK
+    feeds:
+      - id: google-hol-xk
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.xk.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-xk
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=XK&year=2026'
+        year_pinned: 2026
+  - key: holidays-ye
+    name: 'Yemen — public holidays'
+    kind: holidays
+    country: YE
+    feeds:
+      - id: google-hol-ye
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.ye.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-ye
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=YE&year=2026'
+        year_pinned: 2026
+  - key: holidays-yt
+    name: 'Mayotte — public holidays'
+    kind: holidays
+    country: YT
+    feeds:
+      - id: google-hol-yt
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.yt.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-yt
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=YT&year=2026'
+        year_pinned: 2026
+  - key: holidays-za
+    name: 'South Africa — public holidays'
+    kind: holidays
+    country: ZA
+    feeds:
+      - id: google-hol-za
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.sa.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-za
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=ZA&year=2026'
+        year_pinned: 2026
+  - key: holidays-zm
+    name: 'Zambia — public holidays'
+    kind: holidays
+    country: ZM
+    feeds:
+      - id: google-hol-zm
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.zm.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-zm
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=ZM&year=2026'
+        year_pinned: 2026
+  - key: holidays-zw
+    name: 'Zimbabwe — public holidays'
+    kind: holidays
+    country: ZW
+    feeds:
+      - id: google-hol-zw
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.zw.official%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wph-hol-zw
+        provider: 'WorldPublicHoliday'
+        url: 'https://worldpublicholiday.com/calendar-feeds/feed.ics?country=ZW&year=2026'
+        year_pinned: 2026
+  - key: religion-christian
+    name: 'Christianity — religious calendar'
+    kind: religion
+    feeds:
+      - id: google-rel-christian
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.christian%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wcg-rel-catholic
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=2823'
+        note: 'Catholic liturgical year; download endpoint (no .ics filename)'
+      - id: wcg-rel-protestant
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=2926'
+        note: 'Protestant liturgical calendar; download endpoint'
+      - id: wcg-rel-coptic
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=88'
+        note: 'Coptic holidays; download endpoint'
+  - key: religion-orthodox
+    name: 'Orthodox Christianity — religious calendar'
+    kind: religion
+    feeds:
+      - id: google-rel-orthodox
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.orthodox_christianity%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wcg-rel-oriental-orthodox
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=3029'
+        note: 'Oriental Orthodoxy liturgical year; download endpoint'
+  - key: religion-jewish
+    name: 'Judaism — religious calendar'
+    kind: religion
+    feeds:
+      - id: google-rel-jewish
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.judaism%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wcg-rel-jewish-diaspora
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=217'
+        note: 'Diaspora variant; download endpoint'
+      - id: wcg-rel-jewish-israel
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=218'
+        note: 'Israel variant; download endpoint'
+  - key: religion-muslim
+    name: 'Islam — religious calendar'
+    kind: religion
+    feeds:
+      - id: google-rel-muslim
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.islamic%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: wcg-rel-sunni
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=216'
+        note: 'Sunni variant; download endpoint'
+      - id: wcg-rel-shia
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=215'
+        note: 'Shia variant; download endpoint'
+  - key: religion-hindu
+    name: 'Hinduism — religious calendar'
+    kind: religion
+    feeds:
+      - id: google-rel-hindu
+        provider: 'Google Calendar'
+        url: 'https://calendar.google.com/calendar/ical/en.hinduism%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        perpetual: true
+  - key: religion-sikh
+    name: 'Sikhism — religious calendar'
+    kind: religion
+    feeds:
+      - id: wcg-rel-sikh
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=9324'
+        note: 'download endpoint (no .ics filename)'
+  - key: religion-multifaith
+    name: 'Multi-faith observances — religious calendar'
+    kind: religion
+    feeds:
+      - id: wcg-rel-multifaith
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=36360'
+        note: 'download endpoint'
+  - key: religion-pagan
+    name: 'Pagan / Wicca — religious calendar'
+    kind: religion
+    feeds:
+      - id: wcg-rel-pagan
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=219'
+        note: 'download endpoint'
+  - key: un-days
+    name: 'UN International Days & Weeks'
+    kind: civic
+    feeds:
+      - id: gh-un-days
+        provider: 'civilianEU (GitHub mirror of un.org)'
+        url: 'https://raw.githubusercontent.com/civilianEU/un-international-days/master/un-international-days.ics'
+        perpetual: true
+      - id: wcg-un-observances
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=899'
+        note: 'download endpoint'
+  - key: elections
+    name: 'National elections worldwide'
+    kind: civic
+    feeds:
+      - id: wcg-elections
+        provider: 'webcal.guru (ElectionGuide.org)'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=22050'
+        note: 'download endpoint'
+  - key: independence-days
+    name: 'Independence days — all countries'
+    kind: civic
+    feeds:
+      - id: wcg-independence
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=898'
+        note: 'download endpoint'
+  - key: earth-overshoot
+    name: 'Earth Overshoot Days'
+    kind: civic
+    feeds:
+      - id: wcg-overshoot
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=35157'
+        note: 'download endpoint'
+  - key: eu-commission
+    name: 'European Commission holidays'
+    kind: civic
+    feeds:
+      - id: wcg-eu-commission
+        provider: 'webcal.guru'
+        url: 'https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=4473'
+        note: 'download endpoint'
+  - key: space-launches
+    name: 'Rocket launches worldwide'
+    kind: space
+    feeds:
+      - id: g-nextspaceflight
+        provider: 'Next Spaceflight (Google-hosted)'
+        url: 'https://calendar.google.com/calendar/ical/nextspaceflight.com_l328q9n2alm03mdukb05504c44%40group.calendar.google.com/public/basic.ics'
+        perpetual: true
+      - id: floern-launches
+        provider: 'Floern'
+        url: 'https://space.floern.com/launch.ics'
+        perpetual: true
+  - key: astronomy
+    name: 'Astronomy — eclipses, moons, solstices, meteor showers'
+    kind: science
+    feeds:
+      - id: cantonbecker-astro
+        provider: 'Canton Becker'
+        url: 'https://cantonbecker.com/astronomy-calendar/astrocal.ics'
+        perpetual: true
+      - id: monkeyness-moons
+        provider: 'Monkeyness'
+        url: 'http://pirate.monkeyness.com/calendars/Moons-Seasons.ics'
+        note: 'plain HTTP (not HTTPS); to ~2040'
+  - key: foss-events
+    name: 'Open-source conferences & meetups'
+    kind: community
+    feeds:
+      - id: ose-calendar
+        provider: 'Open-Source Events (GitHub Pages)'
+        url: 'https://jonamarkin.github.io/ose-calendar/events.ics'
+        perpetual: true
+
+# Providers that emit iCalendar but have no stable direct .ics URL (subscribe
+# pages, APIs, self-hostable generators). Not importable as-is; shown in the
+# directory so the operator can follow them. From the source list's Appendix C.
+directory_only:
+  - name: 'OpenHolidays API'
+    url: 'https://www.openholidaysapi.org/en/'
+    note: 'open data; iCal via accept: text/calendar; self-hostable'
+  - name: 'Hebcal'
+    url: 'https://www.hebcal.com/ical/'
+    note: 'open source (GPL); Jewish calendar feed builder'
+  - name: 'LiturgicalCalendar (litcal)'
+    url: 'https://litcal.johnromanodorazio.com/'
+    note: 'open source; Roman Catholic year; ICS via return_type=ICS'
+  - name: 'Nager.Date'
+    url: 'https://date.nager.at/'
+    note: 'open source (MIT); ~110 countries; JSON API'
+  - name: 'FOSDEM schedule'
+    url: 'https://fosdem.org/2026/schedule/'
+    note: 'per-track iCal exports; update the year each edition'
+  - name: 'CalendarLabs'
+    url: 'https://www.calendarlabs.com/ical-calendar'
+    note: 'religions incl. Buddhist & Sikh, sports, WHO/UN; JS subscribe pages'
+  - name: 'Office Holidays'
+    url: 'https://www.officeholidays.com/subscribe'
+    note: 'per-country feeds with regional detail'
+  - name: 'F1 calendar'
+    url: 'https://f1calendar.com/subscribe'
+    note: 'Formula 1 races'
+  - name: 'FIFA World Cup 2026 (matchesio)'
+    url: 'https://www.matchesio.com/competition/world-cup/'
+    note: 'ICS/CSV/JSON'
+  - name: 'RocketLaunch.Live'
+    url: 'https://www.rocketlaunch.live/'
+    note: 'build a filtered feed, then subscribe'

@@ -228,5 +228,18 @@
   "Every number comes straight from the downloaded file — nothing scraped or guessed.": "Setiap angka berasal langsung dari berkas yang diunduh — tidak ada yang dikerok atau ditebak.",
   "Load / refresh indices": "Muat / segarkan indeks",
   "Indices": "Indeks",
-  "Commodities": "Komoditas"
+  "Commodities": "Komoditas",
+  "Calendar directory": "Direktori kalender",
+  "A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.": "Direktori bawaan berisi ~500 umpan kalender publik (hari libur negara, agama, pemilu, hari PBB, antariksa, astronomi). Tidak ada yang diambil sebelum Anda mengeklik.",
+  "When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.": "Bila beberapa penyedia menerbitkan kalender yang sama, mereka dikelompokkan ke satu folder — Anda melihat duplikatnya dan dapat membandingkan setiap sumber.",
+  "Kind": "Jenis",
+  "Verify": "Verifikasi",
+  "Import": "Impor",
+  "not checked yet": "belum diperiksa",
+  "not an iCal file": "bukan berkas iCal",
+  "unreachable": "tak terjangkau",
+  "stale year": "tahun usang",
+  "Imported events": "Acara yang diimpor",
+  "Imported.": "Diimpor.",
+  "Checked.": "Diperiksa."
 }

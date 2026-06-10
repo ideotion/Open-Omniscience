@@ -228,5 +228,18 @@
   "Every number comes straight from the downloaded file — nothing scraped or guessed.": "Каждое число берётся прямо из загруженного файла — ничего не выскоблено и не угадано.",
   "Load / refresh indices": "Загрузить / обновить индексы",
   "Indices": "Индексы",
-  "Commodities": "Сырьё"
+  "Commodities": "Сырьё",
+  "Calendar directory": "Каталог календарей",
+  "A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.": "Встроенный каталог из ~500 публичных календарных лент (праздники стран, религии, выборы, дни ООН, космос, астрономия). Ничего не загружается, пока вы не нажмёте.",
+  "When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.": "Когда один и тот же календарь публикуют несколько провайдеров, они объединяются в одну папку — вы видите дубликат и можете сравнить каждый источник.",
+  "Kind": "Вид",
+  "Verify": "Проверить",
+  "Import": "Импорт",
+  "not checked yet": "ещё не проверено",
+  "not an iCal file": "не файл iCal",
+  "unreachable": "недоступен",
+  "stale year": "устаревший год",
+  "Imported events": "Импортированные события",
+  "Imported.": "Импортировано.",
+  "Checked.": "Проверено."
 }

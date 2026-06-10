@@ -228,5 +228,18 @@
   "Every number comes straight from the downloaded file — nothing scraped or guessed.": "すべての数値はダウンロードしたファイルから直接取得 — スクレイピングも推測もありません。",
   "Load / refresh indices": "指数を読み込み／更新",
   "Indices": "指数",
-  "Commodities": "商品"
+  "Commodities": "商品",
+  "Calendar directory": "カレンダーディレクトリ",
+  "A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.": "約500件の公開カレンダーフィード（各国の祝日、宗教、選挙、国連デー、宇宙、天文）を収録した内蔵ディレクトリ。クリックするまで何も取得しません。",
+  "When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.": "複数の提供元が同じカレンダーを公開している場合、1つのフォルダにまとめられます。重複が見え、各ソースを比較できます。",
+  "Kind": "種類",
+  "Verify": "検証",
+  "Import": "インポート",
+  "not checked yet": "未確認",
+  "not an iCal file": "iCalファイルではありません",
+  "unreachable": "到達不能",
+  "stale year": "年が古い",
+  "Imported events": "インポート済みイベント",
+  "Imported.": "インポートしました。",
+  "Checked.": "確認しました。"
 }

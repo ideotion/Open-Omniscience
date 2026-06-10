@@ -134,9 +134,12 @@ Before fearing loss from an archive-size change, run
   data exists (`keyword_supergroups`, families API); needs zoomable rendering +
   proper legend on the trend graph above it. (Maintainer expected this; treat
   as the next feature item.)
-- **World stock indices don't download** in live test — diagnose via
-  `data/source_preflight.jsonl` + the import response (suspect robots fail-closed
-  on fred/stooq or network posture); fix honestly, never bypass robots.
+- **World stock indices don't download** in live test — NARROWED 2026-06-10:
+  only Dow Jones + S&P 500 arrive (FRED partially OK); Nikkei (FRED) and ALL
+  Stooq-fed indices (DAX/FTSE/Hang Seng) fail. Suspect robots fail-closed on
+  stooq.com or a feed-format change. Fix = per-index verdicts shown in the
+  Indices UI (degrade loudly, like the feed directory) + honest diagnosis;
+  never bypass robots. Ask the maintainer for the import response if needed.
 - **Interactive charts** (maintainer, live test): commodity/markets graphs need
   zoom (wheel/drag) + discrete per-graph adjustable legends — "the user should
   feel closer to the data". Same treatment for the Insights trend graph.
@@ -175,6 +178,10 @@ Before fearing loss from an archive-size change, run
   evolution next to it). One shared smart formatter: sensible significant
   digits scaled to the magnitude (e.g. 3 654.0, 111.6, 13 483.8), unit-aware.
   Sweep every surface that prints numbers.
+  **PLUS (ruled same day): the entire app prioritizes scientific/SI metric
+  units** — never imperial (no pounds, inches, ounces, °F, miles). Where a
+  data source reports imperial, convert to SI for display and keep the
+  original in the provenance/metadata.
 - **Tag-driven corpora** (maintainer): multi-tag selection in Sources (selected
   tags change colour; AND-combination) and a "make this selection a corpus"
   flow -- per-corpus article counts, keyword trends, analyses.

@@ -228,5 +228,18 @@
   "Every number comes straight from the downloaded file — nothing scraped or guessed.": "Cada número vem diretamente do ficheiro descarregado — nada raspado nem adivinhado.",
   "Load / refresh indices": "Carregar / atualizar índices",
   "Indices": "Índices",
-  "Commodities": "Matérias-primas"
+  "Commodities": "Matérias-primas",
+  "Calendar directory": "Diretório de calendários",
+  "A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.": "Um diretório incluído de ~500 feeds públicos de calendários (feriados por país, religiões, eleições, dias da ONU, espaço, astronomia). Nada é descarregado até clicar.",
+  "When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.": "Quando vários fornecedores publicam o mesmo calendário, são agrupados numa pasta — vê o duplicado e pode comparar cada fonte.",
+  "Kind": "Tipo",
+  "Verify": "Verificar",
+  "Import": "Importar",
+  "not checked yet": "ainda não verificado",
+  "not an iCal file": "não é um ficheiro iCal",
+  "unreachable": "inacessível",
+  "stale year": "ano desatualizado",
+  "Imported events": "Eventos importados",
+  "Imported.": "Importado.",
+  "Checked.": "Verificado."
 }

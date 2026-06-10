@@ -5,12 +5,14 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Serves the curated events catalog. Fixed-date civic observances get a real
 ``next_occurrence``; movable summits carry ``confirmed: false`` and link to the
-official source for the precise date. No fabricated dates; no network.
+official source for the precise date. No fabricated dates. The catalog itself
+is offline; the ONLY network here is the operator-initiated feed verify/import
+below, which goes through the ethical fetcher (fail-closed, kill-switch aware).
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -58,3 +60,54 @@ def list_events(
         "caveat": _CAVEAT,
         "events": items,
     }
+
+
+# --------------------------------------------------------------------------- #
+#  Calendar feed directory (maintainer-supplied aggregation, 2026-06-10):
+#  bundled candidates -> explicit verify/import through the ethical fetcher.
+#  Families SHOW duplicate providers; nothing is fetched without a click.
+# --------------------------------------------------------------------------- #
+@router.get("/feeds")
+def feed_directory() -> dict:
+    """The bundled calendar-feed directory with per-feed verdicts and imports."""
+    from src.events.feeds import directory_status
+
+    return directory_status()
+
+
+@router.post("/feeds/{feed_id}/verify")
+def feed_verify(feed_id: str) -> dict:
+    """Fetch ONE feed now and record an honest verdict (operator-initiated)."""
+    from src.events.feeds import feed_by_id, verify_feed
+    from src.safety.fetcher import make_fetcher
+
+    if feed_by_id(feed_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown feed: {feed_id}")
+    return {"feed": feed_id, "verdict": verify_feed(make_fetcher(), feed_id)}
+
+
+@router.post("/feeds/{feed_id}/import")
+def feed_import(feed_id: str) -> dict:
+    """Fetch ONE feed and import its events under its family (deduplicated
+    within the family; every source stays listed)."""
+    from src.events.feeds import feed_by_id, import_feed
+    from src.safety.fetcher import make_fetcher
+
+    if feed_by_id(feed_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown feed: {feed_id}")
+    try:
+        return import_feed(make_fetcher(), feed_id)
+    except Exception as exc:  # noqa: BLE001 - surface the refusal honestly
+        raise HTTPException(status_code=502, detail=str(exc)[:300]) from exc
+
+
+@router.get("/imported")
+def imported_events(
+    family: str | None = Query(None, description="one family key, e.g. holidays-fr"),
+    frm: str | None = Query(None, alias="from", description="ISO date lower bound"),
+) -> dict:
+    """Events imported from verified feeds, soonest first (per-machine data)."""
+    from src.events.feeds import imported_agenda
+
+    items = imported_agenda(family=family, frm=frm)
+    return {"count": len(items), "events": items}

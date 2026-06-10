@@ -228,5 +228,18 @@
   "Every number comes straight from the downloaded file — nothing scraped or guessed.": "كل رقم يأتي مباشرة من الملف المنزل — لا كشط ولا تخمين.",
   "Load / refresh indices": "تحميل / تحديث المؤشرات",
   "Indices": "المؤشرات",
-  "Commodities": "السلع"
+  "Commodities": "السلع",
+  "Calendar directory": "دليل التقويمات",
+  "A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.": "دليل مدمج لنحو 500 تغذية تقويم عامة (عطلات البلدان، الأديان، الانتخابات، أيام الأمم المتحدة، الفضاء، الفلك). لا يُجلب شيء قبل نقرتك.",
+  "When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.": "عندما ينشر عدة مزودين التقويم نفسه، يُجمعون في مجلد واحد — ترى التكرار ويمكنك مقارنة كل مصدر.",
+  "Kind": "النوع",
+  "Verify": "تحقق",
+  "Import": "استيراد",
+  "not checked yet": "لم يُفحص بعد",
+  "not an iCal file": "ليس ملف iCal",
+  "unreachable": "تعذر الوصول",
+  "stale year": "سنة قديمة",
+  "Imported events": "أحداث مستوردة",
+  "Imported.": "تم الاستيراد.",
+  "Checked.": "تم الفحص."
 }

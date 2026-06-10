@@ -228,5 +228,18 @@
   "Every number comes straight from the downloaded file — nothing scraped or guessed.": "हर संख्या सीधे डाउनलोड की गई फ़ाइल से आती है — कुछ भी खुरचा या अनुमानित नहीं।",
   "Load / refresh indices": "सूचकांक लोड/ताज़ा करें",
   "Indices": "सूचकांक",
-  "Commodities": "जिंस"
+  "Commodities": "जिंस",
+  "Calendar directory": "कैलेंडर निर्देशिका",
+  "A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.": "लगभग 500 सार्वजनिक कैलेंडर फ़ीड की बंडल निर्देशिका (देशों की छुट्टियाँ, धर्म, चुनाव, संयुक्त राष्ट्र दिवस, अंतरिक्ष, खगोल)। आपके क्लिक से पहले कुछ नहीं लाया जाता।",
+  "When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.": "जब कई प्रदाता एक ही कैलेंडर प्रकाशित करते हैं, तो वे एक फ़ोल्डर में समूहित होते हैं — आप दोहराव देखते हैं और हर स्रोत की तुलना कर सकते हैं।",
+  "Kind": "प्रकार",
+  "Verify": "जाँचें",
+  "Import": "आयात",
+  "not checked yet": "अभी जाँचा नहीं",
+  "not an iCal file": "iCal फ़ाइल नहीं",
+  "unreachable": "पहुँच से बाहर",
+  "stale year": "पुराना वर्ष",
+  "Imported events": "आयातित घटनाएँ",
+  "Imported.": "आयात हुआ।",
+  "Checked.": "जाँच हुई।"
 }

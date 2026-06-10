@@ -1056,6 +1056,21 @@
       </div>
       <div id="agenda-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
     </section>
+
+    <!-- Calendar feed directory (bundled candidates; explicit verify/import) -->
+    <section class="panel" id="agenda-feeds">
+      <h2>Calendar directory</h2>
+      <p class="hint" style="margin-top:0"><span>A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.</span>
+        <span>When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.</span></p>
+      <div class="row">
+        <div><label for="feeddir-kind">Kind</label><select id="feeddir-kind" onchange="renderFeedDir()">
+          <option value="">all</option></select></div>
+        <div style="flex:1"><label for="feeddir-q">Filter</label><input id="feeddir-q" placeholder="type to filter (name or country)…" oninput="renderFeedDir()"></div>
+        <div id="feeddir-status" class="hint" style="align-self:end"></div>
+      </div>
+      <div id="feeddir-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="feeddir-imported" style="margin-top:12px"></div>
+    </section>
     </div>
 
     <!-- ============================ INDICES ========================== -->
@@ -2492,6 +2507,75 @@
         $("agenda-tag").innerHTML = '<option value="">all</option>' + fac.tags.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
         renderAgenda();
       } catch (e) { box.innerHTML = `<div class="muted">Could not load agenda: ${esc(e.message)}</div>`; }
+      loadFeedDir();   // the bundled directory (no network: it reads the catalog)
+    }
+
+    // -- Calendar feed directory: candidates -> explicit verify/import ------- //
+    // Families SHOW duplicate providers (one folder, every source listed with a
+    // transparent URL). Verify/import are operator clicks through the ethical
+    // fetcher -- the directory itself never touches the network.
+    let _feedDir = null;
+    async function loadFeedDir() {
+      try { _feedDir = await api("/api/events/feeds"); } catch { _feedDir = null; }
+      if (!_feedDir) { $("feeddir-list").innerHTML = '<div class="muted">Could not load this document.</div>'; return; }
+      const kinds = [...new Set(_feedDir.families.map(f => f.kind))].sort();
+      $("feeddir-kind").innerHTML = '<option value="">all</option>' +
+        kinds.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
+      renderFeedDir();
+      renderImported();
+    }
+    function _verdictChip(v, feed) {
+      if (!v) return '<span class="pill">not checked yet</span>';
+      if (v.status === "ok") {
+        const stale = v.stale_year ? ' <span class="pill warn">stale year</span>' : "";
+        return `<span class="pill ok">reachable · ${v.events}</span>${stale}`;
+      }
+      if (v.status === "not_ical") return '<span class="pill warn">not an iCal file</span>';
+      return `<span class="pill err" title="${esc(v.error || "")}">unreachable</span>`;
+    }
+    function renderFeedDir() {
+      if (!_feedDir) return;
+      const kind = $("feeddir-kind").value, q = ($("feeddir-q").value || "").toLowerCase();
+      let fams = _feedDir.families.filter(f =>
+        (!kind || f.kind === kind) &&
+        (!q || f.name.toLowerCase().includes(q) || (f.country || "").toLowerCase().includes(q)));
+      const total = fams.length;
+      fams = fams.slice(0, 40);
+      $("feeddir-status").textContent =
+        `${_feedDir.total_feeds} feeds · ${_feedDir.families.length} folders · ${_feedDir.checked} checked`;
+      $("feeddir-list").innerHTML = fams.map(f => {
+        const feeds = f.feeds.map(fd => `
+          <div class="vr">
+            <span>${esc(fd.provider)}${fd.year_pinned ? ` <span class="muted">· ${fd.year_pinned}</span>` : ""}</span>
+            <b>${_verdictChip(fd.verdict, fd)}
+              <button class="ghost tiny" onclick="feedAction('${esc(fd.id)}','verify')">Verify</button>
+              <button class="secondary tiny" onclick="feedAction('${esc(fd.id)}','import')">Import</button></b>
+          </div>
+          <div class="hint" style="word-break:break-all;margin:0 0 4px"><a href="${esc(fd.url)}" target="_blank" rel="noopener noreferrer">${esc(fd.url)}</a></div>`).join("");
+        return `<details class="cs-row" style="padding:6px 10px">
+          <summary style="cursor:pointer">${esc(f.name)}
+            ${f.duplicates ? `<span class="pill" title="Several providers publish this calendar — compare them below">${f.feeds.length} sources</span>` : ""}
+            ${f.imported_events ? `<span class="pill ok">${f.imported_events} imported</span>` : ""}
+            <span class="muted">· ${esc(f.kind)}${f.country ? " · " + esc(f.country) : ""}</span></summary>
+          ${feeds}</details>`;
+      }).join("") + (total > 40 ? `<div class="hint">+${total - 40} — type to filter</div>` : "");
+    }
+    async function feedAction(id, action) {
+      try {
+        await api(`/api/events/feeds/${encodeURIComponent(id)}/${action}`, {method: "POST"});
+        toast(action === "import" ? "Imported." : "Checked.", "ok");
+      } catch (e) { toast(e.message, "err"); }
+      loadFeedDir();
+    }
+    async function renderImported() {
+      let data; try { data = await api("/api/events/imported"); } catch { return; }
+      if (!data.count) { $("feeddir-imported").innerHTML = ""; return; }
+      const today = new Date().toISOString().slice(0, 10);
+      const next = data.events.filter(e => e.date >= today).slice(0, 30);
+      $("feeddir-imported").innerHTML = `<h3 style="margin-bottom:6px">Imported events</h3>` +
+        next.map(e => `<div class="vr"><span>${esc(e.date)} · ${esc(e.title)}</span>` +
+          `<b class="muted">${esc(e.family_name)}${e.sources.length > 1 ? ` · ${e.sources.length}×` : ""}</b></div>`).join("") +
+        `<div class="hint">${data.count} imported in total · duplicates within a folder are merged and list every provider; a date disagreement stays visible as two entries.</div>`;
     }
 
     function renderAgendaCals() {

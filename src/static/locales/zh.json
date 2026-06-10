@@ -228,5 +228,18 @@
   "Every number comes straight from the downloaded file — nothing scraped or guessed.": "每个数字都直接来自下载的文件 — 没有抓取或猜测。",
   "Load / refresh indices": "加载/刷新指数",
   "Indices": "指数",
-  "Commodities": "大宗商品"
+  "Commodities": "大宗商品",
+  "Calendar directory": "日历目录",
+  "A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.": "内置约 500 个公共日历源的目录（各国假日、宗教、选举、联合国纪念日、航天、天文）。在您点击之前不会获取任何内容。",
+  "When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.": "当多个提供方发布同一日历时，它们被归入同一文件夹 — 您能看到重复，并比较每个来源。",
+  "Kind": "类别",
+  "Verify": "验证",
+  "Import": "导入",
+  "not checked yet": "尚未检查",
+  "not an iCal file": "不是 iCal 文件",
+  "unreachable": "无法访问",
+  "stale year": "年份过期",
+  "Imported events": "已导入的事件",
+  "Imported.": "已导入。",
+  "Checked.": "已检查。"
 }
