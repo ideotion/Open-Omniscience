@@ -162,3 +162,25 @@ def test_no_print_in_library_code():
     assert not offenders, (
         f"print() in library code (use a module logger; MAINT-04): {offenders}"
     )
+
+
+def test_llm_catalog_freshness():
+    """The suggested model catalog goes stale fast (maintainer direction): this
+    fails once CATALOG_AS_OF is older than the freshness window, forcing each
+    cycle to re-verify the list against https://ollama.com/library or knowingly
+    bump the date. The live picker uses the operator's INSTALLED models; this
+    list is only the offline suggestion."""
+    from datetime import date
+
+    from src.llm.ollama import CATALOG_AS_OF
+
+    import re as _re
+    m = _re.fullmatch(r"(\d{4})-(\d{2})", CATALOG_AS_OF)
+    assert m, f"CATALOG_AS_OF must be 'YYYY-MM', got {CATALOG_AS_OF!r}"
+    y, mo = int(m.group(1)), int(m.group(2))
+    age_months = (date.today().year - y) * 12 + (date.today().month - mo)
+    assert age_months <= 9, (
+        f"LLM model catalog is {age_months} months old (CATALOG_AS_OF={CATALOG_AS_OF}). "
+        f"Re-verify src/llm/ollama.py:MODEL_CATALOG against https://ollama.com/library "
+        f"and bump CATALOG_AS_OF."
+    )

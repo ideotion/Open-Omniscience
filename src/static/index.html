@@ -1441,6 +1441,16 @@
     </section>
 
     <section class="panel">
+      <h2>Local models (Ollama)</h2>
+      <p class="muted" style="margin-top:0">The local language models power Summarize, Translate and
+        Synthesize. This shows what you actually have installed (live from Ollama) and a small
+        suggested list annotated for your hardware. Newer and better models appear constantly —
+        browse <a href="https://ollama.com/library" target="_blank" rel="noopener">ollama.com/library</a>
+        and <code>ollama pull &lt;tag&gt;</code> any of them.</p>
+      <div id="llm-models-box"><p class="muted">Checking Ollama…</p></div>
+    </section>
+
+    <section class="panel">
       <h2>Keyword filtering</h2>
       <p class="muted" style="margin-top:0">"Dumb" keywords (function words like <em>the, you, not, one</em>) are removed
         automatically by a built-in multilingual stoplist. Fine-tune below: exclude extra terms (one per line or
@@ -2591,6 +2601,39 @@
     let DEFAULT_LIMIT = 50;
     const _media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
 
+    async function loadLlmModels() {
+      const box = $("llm-models-box");
+      if (!box) return;
+      let d;
+      try { d = await api("/api/llm/models"); }
+      catch (e) { box.innerHTML = `<p class="muted">Model info unavailable: ${esc(e.message)}</p>`; return; }
+      if (!d.available) {
+        box.innerHTML = `<p class="muted">Ollama isn't running. Start it (or install it) to use
+          the LLM features; once running, your installed models appear here.</p>`;
+        return;
+      }
+      const FIT = {fits:["✓ fits","ok"], tight:["~ tight","warn"], too_large:["✗ too large","err"], unknown:["?","muted"]};
+      const ram = d.total_ram_gb ? `${d.total_ram_gb} GB RAM detected` : "RAM unknown";
+      const installed = (d.installed || []).length
+        ? "<table><tr><th>Installed model</th><th>Size</th><th>Updated</th></tr>" +
+          d.installed.map(m => `<tr><td><code>${esc(m.tag)}</code>${m.tag === d.default ? ' <span class="pill ok">default</span>' : ''}</td>` +
+            `<td>${m.size_gb != null ? m.size_gb + " GB" : ""}</td><td>${esc((m.modified || "").slice(0,10))}</td></tr>`).join("") + "</table>"
+        : '<p class="muted">No models installed yet — pull one below.</p>';
+      const cat = (d.catalog || []).map(m => {
+        const [lbl, cls] = FIT[m.fit] || FIT.unknown;
+        return `<tr><td><code>${esc(m.tag)}</code></td><td>${esc(m.size)}</td>` +
+          `<td class="${cls === 'ok' ? '' : cls}"><span class="pill ${cls === 'err' ? 'err' : (cls === 'warn' ? 'warn' : 'ok')}">${esc(lbl)}</span></td>` +
+          `<td class="muted">${esc(m.note)}</td>` +
+          `<td><code>ollama pull ${esc(m.tag)}</code></td></tr>`;
+      }).join("");
+      box.innerHTML = `<p class="muted">${esc(ram)}.</p>` + installed +
+        `<h3 style="margin:14px 0 4px">Suggested models <span class="muted" style="font-weight:400">(as of ${esc(d.catalog_as_of)} — newer likely exist)</span></h3>` +
+        `<table><tr><th>Model</th><th>Size</th><th>Your hardware</th><th>Note</th><th>To install</th></tr>${cat}</table>` +
+        `<div class="hint">Hardware fit is advisory — it informs your choice, it doesn't decide. Pull any model from
+         <a href="https://ollama.com/library" target="_blank" rel="noopener">the full library</a>; set the active one with
+         <code>OO_LLM_MODEL</code> or per request.</div>`;
+    }
+
     async function loadSettings() {
       try {
         const s = await api("/api/settings");
@@ -2607,6 +2650,7 @@
         }
         syncThemeSelect();
       } catch (e) { toast("Could not load settings: " + e.message, "err"); }
+      loadLlmModels();
       // Backup support is backend-dependent; reflect reality, never assume.
       try {
         const st = await api("/api/database/stats");

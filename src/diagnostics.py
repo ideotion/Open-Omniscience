@@ -126,19 +126,26 @@ def _check_components(r: _Report) -> None:
 
 def _check_ollama(r: _Report) -> None:
     try:
-        from src.llm.ollama import OllamaClient
+        from src.llm.ollama import CATALOG_AS_OF, OLLAMA_TESTED_VERSION, OllamaClient
 
         client = OllamaClient()
         if client.is_available():
             models = client.list_installed()
             client.close()
             if models:
-                r.line(OK, "Local LLM (Ollama)", f"running; models: {', '.join(models)}")
+                r.line(
+                    OK,
+                    "Local LLM (Ollama)",
+                    f"running; models: {', '.join(models)} "
+                    f"(tested with Ollama {OLLAMA_TESTED_VERSION}; pick models in-app -> "
+                    f"Settings -> Local models; suggestions as of {CATALOG_AS_OF})",
+                )
             else:
                 r.line(
                     WARN,
                     "Local LLM (Ollama)",
-                    "running but no models -- run: ollama pull llama3.2:1b",
+                    "running but no models -- pull one in-app (Settings -> Local models) "
+                    "or run: ollama pull llama3.2:1b",
                 )
         else:
             client.close()

@@ -216,6 +216,17 @@ maybe_setup_ollama() {
     local extras="$1"
     case ",$extras," in *,llm,*) : ;; *) return 0 ;; esac
 
+    # Honest network notice (0.0.8): provisioning the LLM needs clearnet; using
+    # the app afterwards does not. Said once, up front, so an at-risk operator
+    # can decide when/where to do this step.
+    say ""
+    say "  ${DIM}Note: downloading Ollama and a model needs a DIRECT internet connection${RST}"
+    say "  ${DIM}— it will NOT work over Tor. This is a one-time provisioning step.${RST}"
+    say "  ${DIM}Afterwards the app runs fully offline: the LLM never touches the network,${RST}"
+    say "  ${DIM}and source collection can route through your proxy (Settings → Safety →${RST}"
+    say "  ${DIM}Protected mode). If this machine can't use clearnet, skip the LLM here and${RST}"
+    say "  ${DIM}provision on a connected machine, then copy ~/.ollama/models across (USB).${RST}"
+
     if command -v ollama >/dev/null 2>&1; then
         ok "Ollama is already installed ($(ollama --version 2>/dev/null | head -1))"
     else
@@ -248,7 +259,7 @@ maybe_setup_ollama() {
                 "llama3.2:1b"  "~1.3 GB  fast, low-RAM (good default)" \
                 "llama3.2:3b"  "~2.0 GB  better quality" \
                 "qwen2.5:0.5b" "~0.4 GB  tiny, fastest" \
-                "none"         "Skip for now" 3>&1 1>&2 2>&3) || model="none"
+                "none"         "Skip — pick from newer models in-app later" 3>&1 1>&2 2>&3) || model="none"
         else
             if ask_yn "Download a small default model now (llama3.2:1b, ~1.3 GB)?" y; then
                 model="llama3.2:1b"; else model="none"; fi

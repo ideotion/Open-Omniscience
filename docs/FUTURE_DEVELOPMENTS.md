@@ -624,4 +624,28 @@ app needs no model download at all?
 **Suggested sequence if adopted:** (2) date-stamp the static list now (one line, kills the
 "obsolete and doesn't say so" problem) → (1) installed-models picker + hardware annotation
 (local-only, no gate needed) → registry browse behind the external-lookup gate → (4) the
-offline kit as part of RM-08. Decision pending maintainer discussion.
+offline kit as part of RM-08.
+
+### Decisions taken (0.0.8 maintainer discussion)
+
+1. **No bundling of Ollama/models in the repo** — GitHub rejects >100 MB files and git
+   history keeps them forever; a ~1 GB native binary per OS/arch would bloat every clone
+   permanently and make us its security maintainer. Settled: never.
+2. **Curated list, date-stamped + freshness-test-enforced** — `CATALOG_AS_OF` is shown
+   wherever the catalog appears; `test_llm_catalog_freshness` fails once it is >9 months
+   old, forcing each cycle to re-verify against ollama.com/library. **DONE.**
+3. **Live local picker** — `/api/llm/models` leads with the operator's *installed* models
+   (live from Ollama) and annotates the suggested list by hardware fit (RAM via psutil);
+   surfaced in Settings → Local models. Informs the choice, never makes it. **DONE.**
+4. **Ollama version: attest, don't chase** — `OLLAMA_TESTED_VERSION` + `doctor` shows
+   installed-vs-tested, an honest compatibility statement that never goes silently stale.
+   **DONE.**
+5. **Clearnet a stated prerequisite for model provisioning; Tor unsupported for that
+   step** — install.sh alerts up front, and notes the app runs fully offline afterwards
+   (sources via Protected-mode proxy; the LLM never networks again). Installing already
+   reveals the machine to PyPI/GitHub/Ollama regardless, so this concedes nothing new.
+   **DONE.**
+6. **Offline LLM kit (RM-08 sub-item, planned)** — a checksummed GitHub *release artifact*
+   (NOT repo content): Ollama binary + one small model, provisioned on a connected machine
+   and carried by USB to `~/.ollama/models`. The principled fallback for operators who can
+   never use clearnet on the work machine. Build with RM-08 packaging.

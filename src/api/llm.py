@@ -22,8 +22,8 @@ from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, ArticleAnalysis
 from src.database.session import get_db
 from src.llm.ollama import (
+    CATALOG_AS_OF,
     DEFAULT_MODEL,
-    MODEL_CATALOG,
     LLMError,
     LLMUnavailable,
     OllamaClient,
@@ -92,16 +92,25 @@ def llm_health(client: OllamaClient = Depends(get_llm_client)) -> dict:
 
 @router.get("/models")
 def llm_models(client: OllamaClient = Depends(get_llm_client)) -> dict:
-    """Recommended (real) model catalog plus what is actually installed."""
+    """What the operator actually has (live, local) + a suggested catalog.
+
+    The picker should lead with `installed` (truth from Ollama). `catalog` is a
+    hardware-annotated suggestion list with an honest `catalog_as_of` date --
+    it goes stale fast; newer models may exist at https://ollama.com/library.
+    """
+    from src.llm.ollama import annotate_catalog, total_ram_gb
+
     try:
-        installed = client.list_installed()
+        installed = client.list_installed_detailed()
         available = True
     except LLMUnavailable:
         installed, available = [], False
     return {
         "available": available,
         "default": DEFAULT_MODEL,
-        "catalog": MODEL_CATALOG,
+        "total_ram_gb": total_ram_gb(),
+        "catalog_as_of": CATALOG_AS_OF,
+        "catalog": annotate_catalog(),
         "installed": installed,
     }
 
