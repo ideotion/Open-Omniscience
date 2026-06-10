@@ -306,6 +306,16 @@ class BackgroundScheduler:
                         result["delta_export"] = path
                 except Exception:  # noqa: BLE001 - never fail the scrape on export
                     _LOG.warning("delta drop-folder export failed", exc_info=True)
+            # Offline source discovery (WP5/RM-19): budgeted, DB-only, and its
+            # outcome lands in the run report -- background, never hidden.
+            try:
+                from src.discovery import run_discovery
+
+                result["discovery"] = run_discovery(
+                    session, per_run=settings.discovery_per_run
+                )
+            except Exception:  # noqa: BLE001 - never fail the scrape on discovery
+                _LOG.warning("offline source discovery failed", exc_info=True)
             # Precompute + cache the Home briefing so it loads instantly. Best-effort:
             # a briefing failure must never fail the scrape that just succeeded.
             try:

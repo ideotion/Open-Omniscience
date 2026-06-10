@@ -310,8 +310,53 @@ def region_gone_quiet(session) -> list[Card]:
     return cards
 
 
+
+
+# --------------------------------------------------------------------------- #
+#  Source candidates awaiting review (WP5 / RM-19 -- transparency surface)
+# --------------------------------------------------------------------------- #
+
+
+def source_candidates_waiting(session) -> list[Card]:
+    """Surface machine-suggested source candidates so background discovery is
+    never hidden: one card saying how many await the operator's decision."""
+    if _disabled("source_candidates_waiting"):
+        return []
+    from src.database.models import SourceCandidate
+
+    n = session.query(SourceCandidate).filter_by(status="candidate").count()
+    if n == 0:
+        return []
+    return [
+        Card(
+            type="recipe_source_candidates",
+            title=f"{n} source candidate{'s' if n != 1 else ''} await your review",
+            summary=(
+                f"Offline discovery (citations in your corpus + the packaged catalog) "
+                f"staged {n} suggested source{'s' if n != 1 else ''}. Each carries its "
+                f"evidence; nothing is fetched or enabled until you decide."
+            ),
+            bucket="context",
+            signal={"metric": "candidates_waiting", "value": n},
+            method=(
+                "count of source_candidates rows in status 'candidate' (staged by the "
+                "offline citation/catalog channels under the scheduler's budget)"
+            ),
+            caveat=(
+                "A suggestion is not an endorsement: review each candidate's evidence "
+                "in Sources before promoting, and remember promotion still creates a "
+                "disabled source."
+            ),
+            evidence=[],
+            n=n,
+            key="source-candidates",
+        )
+    ]
+
+
 RECIPE_PRODUCERS: tuple[tuple[str, object], ...] = (
     ("promises_due", promises_due),
     ("edit_war_burst", edit_war_burst),
     ("region_gone_quiet", region_gone_quiet),
+    ("source_candidates_waiting", source_candidates_waiting),
 )

@@ -40,6 +40,8 @@ class SchedulerConfigUpdate(BaseModel):
     select_source_types: list[str] | None = None
     # Opt-in drop-folder export (WP3/RM-06); empty string switches it off.
     export_dir: str | None = None
+    # Offline discovery budget per run (WP5/RM-19); 0 disables.
+    discovery_per_run: int | None = None
 
 
 def _status_payload() -> dict:

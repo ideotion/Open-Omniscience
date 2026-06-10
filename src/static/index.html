@@ -754,6 +754,13 @@
 
     <!-- ===================== SOURCE MANAGEMENT ====================== -->
     <div class="tab-page" id="tab-sources">
+    <section class="panel" id="candidates-panel" style="display:none">
+      <h2>Discovery candidates <span class="muted" style="font-weight:400">(machine-suggested — nothing happens without you)</span></h2>
+      <p class="muted" style="margin-top:0">Found offline by the citation and catalog channels under your
+        scheduler budget. Each row shows its evidence. <strong>Promote</strong> creates a <em>disabled</em>
+        source you still have to enable; <strong>Dismiss</strong> is remembered and never re-suggested.</p>
+      <div id="candidates-list"></div>
+    </section>
     <section class="panel">
       <h2>Add a source</h2>
       <div class="row">
@@ -1806,7 +1813,7 @@
       wiki: loadWiki,
       law: loadLaw,
       agenda: loadAgenda,
-      sources: loadManagedSources,
+      sources: () => { loadManagedSources(); loadCandidates(); },
       database: () => { loadCoverage(); },   // stats handled by the live poller (startLive)
       custody: loadCustody,
       integrity: loadIntegrity,
@@ -4728,6 +4735,35 @@
             `<a href="/api/articles/${i}/view" target="_blank" rel="noopener">#${i}</a>`).join(" ")}</div>`;
       } catch (e) { toast("Synthesis failed: " + e.message, "err"); }
       finally { btn.disabled = false; btn.textContent = "Synthesize results"; }
+    }
+
+    async function loadCandidates() {
+      try {
+        const r = await api("/api/sources/candidates?status=candidate&limit=50");
+        const panel = $("candidates-panel"), list = $("candidates-list");
+        if (!panel || !list) return;
+        if (!r.count) { panel.style.display = "none"; return; }
+        panel.style.display = "";
+        list.innerHTML = "<table><tr><th>Domain</th><th>Channel</th><th>Evidence</th><th>First seen</th><th></th></tr>" +
+          r.candidates.map(c => {
+            const ev = c.channel === "citation"
+              ? `cited by ${esc(c.evidence.distinct_citing_articles)} of your articles`
+              : `catalog entry for ${esc((c.evidence.country || "").toUpperCase())} (you have ${esc(c.evidence.your_sources_there)} there)`;
+            return `<tr><td>${esc(c.domain)}</td><td>${esc(c.channel)}</td><td>${ev}</td>` +
+              `<td>${esc((c.first_seen || "").slice(0, 10))}</td>` +
+              `<td><button class="secondary tiny" onclick="candidateAct(${c.id}, 'promote')">Promote (disabled)</button> ` +
+              `<button class="ghost tiny" onclick="candidateAct(${c.id}, 'dismiss')">Dismiss</button></td></tr>`;
+          }).join("") + "</table>";
+      } catch (e) { /* candidates are optional surface; stay quiet */ }
+    }
+    async function candidateAct(id, action) {
+      try {
+        const r = await api(`/api/sources/candidates/${id}/${action}`, {method: "POST"});
+        toast(action === "promote"
+          ? `Promoted ${r.promoted} (created disabled — enable it below when ready).`
+          : `Dismissed ${r.dismissed}.`);
+        loadCandidates(); loadManagedSources();
+      } catch (e) { toast(`${action} failed: ` + e.message, "err"); }
     }
 
     async function exportMethods() {
