@@ -1522,6 +1522,23 @@
         run and trust the proxy yourself. SOCKS proxies need the optional <code>[safety]</code> extra.</div>
 
       <hr>
+      <h3 style="margin-bottom:6px">External topic discovery</h3>
+      <p class="muted" style="margin-top:0">The <em>one</em> feature that contacts an external
+        service: <strong>Sources → Discover by topic</strong> sends your topic query to
+        <strong>DuckDuckGo</strong> to find candidate outlets. <strong>Your query leaves this
+        machine.</strong> Off by default; everything else works without it. (Discovering RSS feeds
+        for sources you added yourself stays local-path and is not affected.)</p>
+      <div class="row">
+        <div style="flex:0 0 auto">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="discovery-external" onchange="saveDiscoveryExternal()">
+            Allow topic-discovery queries to DuckDuckGo
+          </label>
+        </div>
+      </div>
+      <div id="discovery-external-result" class="hint"></div>
+
+      <hr>
       <h3 style="margin-bottom:6px; color:var(--err)">Panic wipe</h3>
       <p class="muted" style="margin-top:0">Irreversibly deletes the corpus, keys and caches on this
         machine, then the app must be restarted. <strong>This cannot be undone.</strong>
@@ -2669,6 +2686,7 @@
         const s = await api("/api/safety/settings");
         if ($("fetch-mode")) $("fetch-mode").value = s.fetch_mode || "transparent";
         if ($("http-proxy")) $("http-proxy").value = s.http_proxy || "";
+        if ($("discovery-external")) $("discovery-external").checked = !!s.discovery_external_enabled;
         onFetchModeChange();
       } catch (e) { /* safety API unavailable -> leave defaults */ }
     }
@@ -2682,6 +2700,21 @@
         await api("/api/safety/settings", {method: "PUT", body: JSON.stringify(body)});
         toast("Fetch mode saved.");
       } catch (e) { toast("Save failed: " + e.message, "err"); }
+    }
+    async function saveDiscoveryExternal() {
+      // ETH-02/RM-03: the one external-service call is an explicit, knowing opt-in.
+      const on = $("discovery-external").checked;
+      try {
+        await api("/api/safety/settings",
+          {method: "PUT", body: JSON.stringify({discovery_external_enabled: on})});
+        $("discovery-external-result").textContent = on
+          ? "Enabled: topic-discovery queries will be sent to DuckDuckGo."
+          : "Disabled (the default): no topic query leaves this machine.";
+        toast(on ? "External topic discovery enabled." : "External topic discovery disabled.");
+      } catch (e) {
+        $("discovery-external").checked = !on;  // revert the visual state on failure
+        toast("Save failed: " + e.message, "err");
+      }
     }
     async function encryptedBackup() {
       const pass = $("enc-pass").value;

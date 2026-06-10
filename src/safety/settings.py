@@ -38,6 +38,12 @@ class SafetySettingsError(ValueError):
 class SafetySettings:
     fetch_mode: str = "transparent"
     http_proxy: str = ""  # e.g. socks5://127.0.0.1:9050 or http://127.0.0.1:8118
+    # The ONE external-service call in the app (audit finding ETH-02 / RM-03):
+    # topic discovery sends the user's query to DuckDuckGo. OFF by default --
+    # an at-risk operator must opt in knowingly; the UI states plainly that the
+    # query leaves the machine. RSS discovery of operator-added sources is NOT
+    # affected (it fetches those sites via the EthicalFetcher, no third party).
+    discovery_external_enabled: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -65,6 +71,8 @@ def load_settings() -> SafetySettings:
                 s.fetch_mode = mode
             if isinstance(raw.get("http_proxy"), str):
                 s.http_proxy = raw["http_proxy"].strip()
+            if isinstance(raw.get("discovery_external_enabled"), bool):
+                s.discovery_external_enabled = raw["discovery_external_enabled"]
         except Exception:  # noqa: BLE001 - a bad file must not break startup
             _LOG.warning("safety_settings.json unreadable; using defaults", exc_info=True)
     env_mode = os.getenv("OO_FETCH_MODE")
@@ -73,6 +81,9 @@ def load_settings() -> SafetySettings:
     env_proxy = os.getenv("OO_HTTP_PROXY")
     if env_proxy is not None:
         s.http_proxy = env_proxy.strip()
+    env_discovery = os.getenv("OO_DISCOVERY_EXTERNAL")
+    if env_discovery is not None:
+        s.discovery_external_enabled = env_discovery.strip().lower() in ("1", "true", "yes")
     return s
 
 
@@ -86,6 +97,8 @@ def save_settings(updates: dict) -> SafetySettings:
         current.fetch_mode = mode
     if "http_proxy" in updates and updates["http_proxy"] is not None:
         current.http_proxy = str(updates["http_proxy"]).strip()
+    if "discovery_external_enabled" in updates and updates["discovery_external_enabled"] is not None:
+        current.discovery_external_enabled = bool(updates["discovery_external_enabled"])
     if current.is_protected and not current.http_proxy:
         raise SafetySettingsError(
             "protected mode requires an http_proxy (e.g. socks5://127.0.0.1:9050)"
