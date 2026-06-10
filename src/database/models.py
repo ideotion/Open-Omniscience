@@ -29,7 +29,7 @@ Includes tables for sources and articles, with relationships and indexes.
 Author: Ideotion
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -48,7 +48,7 @@ from sqlalchemy import (
     TypeDecorator,
     UniqueConstraint,
 )
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # Engine, session lifecycle, and the FastAPI dependency live in session.py and
 # have NO import-time side effects (no create_all, no monitoring thread). They are
@@ -80,7 +80,7 @@ class CompressedText(TypeDecorator):
 
     Usage:
         class Article(Base):
-            content = Column(CompressedText)
+            content: Mapped[str | None] = mapped_column(CompressedText)
     """
 
     impl = LargeBinary
@@ -157,7 +157,7 @@ class CompressedJSON(TypeDecorator):
 
     Usage:
         class Article(Base):
-            metadata = Column(CompressedJSON)
+            metadata: Mapped[Any | None] = mapped_column(CompressedJSON)
     """
 
     impl = LargeBinary
@@ -222,8 +222,10 @@ class CompressedJSON(TypeDecorator):
 # Database Configuration Utilities
 # =============================================================================
 
-# Base class for declarative models
-Base = declarative_base()
+# Base class for declarative models (SQLAlchemy 2.0 style: a real class, so
+# mypy can type every model -- the dynamic declarative_base() was opaque to it).
+class Base(DeclarativeBase):
+    pass
 
 
 # Association table for many-to-many relationship between Source and SourceGroup
@@ -263,17 +265,17 @@ class SourceGroup(Base):
 
     __tablename__ = "source_groups"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False, unique=True)
-    description = Column(Text)
-    color = Column(String(20), default="#666666")
-    is_tag_based = Column(Boolean, default=False)
-    tag_pattern = Column(String(500))  # Comma-separated tags for auto-population
-    priority = Column(Integer, default=2)
-    rate_limit_ms = Column(Integer, default=2000)
-    enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    color: Mapped[str | None] = mapped_column(String(20), default="#666666")
+    is_tag_based: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    tag_pattern: Mapped[str | None] = mapped_column(String(500))  # Comma-separated tags for auto-population
+    priority: Mapped[int | None] = mapped_column(Integer, default=2)
+    rate_limit_ms: Mapped[int | None] = mapped_column(Integer, default=2000)
+    enabled: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -320,38 +322,38 @@ class SourceMetadata(Base):
 
     __tablename__ = "source_metadata"
 
-    id = Column(Integer, primary_key=True)
-    source_id = Column(Integer, ForeignKey("sources.id"), nullable=False, unique=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(Integer, ForeignKey("sources.id"), nullable=False, unique=True)
 
     # Geographic and language metadata
-    language = Column(String(20))
-    country = Column(String(2))
-    region = Column(String(100))
-    city = Column(String(100))
-    timezone = Column(String(50))
+    language: Mapped[str | None] = mapped_column(String(20))
+    country: Mapped[str | None] = mapped_column(String(2))
+    region: Mapped[str | None] = mapped_column(String(100))
+    city: Mapped[str | None] = mapped_column(String(100))
+    timezone: Mapped[str | None] = mapped_column(String(50))
 
     # Robots.txt and crawling metadata
-    robots_txt_url = Column(String(500))
-    robots_allowed = Column(Boolean, default=True)
-    crawl_delay = Column(Integer)  # In seconds
-    sitemap_url = Column(String(500))
+    robots_txt_url: Mapped[str | None] = mapped_column(String(500))
+    robots_allowed: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    crawl_delay: Mapped[int | None] = mapped_column(Integer)  # In seconds
+    sitemap_url: Mapped[str | None] = mapped_column(String(500))
 
     # Branding and contact
-    favicon_url = Column(String(500))
-    logo_url = Column(String(500))
-    contact_email = Column(String(255))
+    favicon_url: Mapped[str | None] = mapped_column(String(500))
+    logo_url: Mapped[str | None] = mapped_column(String(500))
+    contact_email: Mapped[str | None] = mapped_column(String(255))
 
     # Social media
-    social_twitter = Column(String(255))
-    social_facebook = Column(String(500))
-    social_linkedin = Column(String(500))
+    social_twitter: Mapped[str | None] = mapped_column(String(255))
+    social_facebook: Mapped[str | None] = mapped_column(String(500))
+    social_linkedin: Mapped[str | None] = mapped_column(String(500))
 
     # Popularity and ranking
-    alexa_rank = Column(Integer)
+    alexa_rank: Mapped[int | None] = mapped_column(Integer)
 
     # Timestamps and notes
-    last_checked = Column(DateTime)
-    notes = Column(Text)
+    last_checked: Mapped[datetime | None] = mapped_column(DateTime)
+    notes: Mapped[str | None] = mapped_column(Text)
 
     # Relationship to source
     source = relationship("Source", back_populates="source_metadata", uselist=False)
@@ -393,23 +395,23 @@ class Source(Base):
 
     __tablename__ = "sources"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False)
-    domain = Column(String(255), nullable=False, unique=True)
-    rss_url = Column(String(500))
-    rate_limit_ms = Column(Integer, default=2000)
-    enabled = Column(Boolean, default=True)
-    priority = Column(Integer, default=2)
-    tags = Column(String(500))  # Comma-separated tags
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    rss_url: Mapped[str | None] = mapped_column(String(500))
+    rate_limit_ms: Mapped[int | None] = mapped_column(Integer, default=2000)
+    enabled: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    priority: Mapped[int | None] = mapped_column(Integer, default=2)
+    tags: Mapped[str | None] = mapped_column(String(500))  # Comma-separated tags
 
     # Enhanced metadata fields
-    reliability_score = Column(Integer, default=5)  # 1-10 scale
-    language = Column(String(10), default="en")  # ISO 639-1 code
-    region = Column(String(50), default="global")
-    country = Column(String(2), default="US")  # ISO 3166-1 alpha-2
-    source_type = Column(String(50), default="news")  # news, financial, scientific, etc.
-    update_frequency = Column(Integer, default=60)  # minutes
-    cacheability = Column(Boolean, default=True)
+    reliability_score: Mapped[int | None] = mapped_column(Integer, default=5)  # 1-10 scale
+    language: Mapped[str | None] = mapped_column(String(10), default="en")  # ISO 639-1 code
+    region: Mapped[str | None] = mapped_column(String(50), default="global")
+    country: Mapped[str | None] = mapped_column(String(2), default="US")  # ISO 3166-1 alpha-2
+    source_type: Mapped[str | None] = mapped_column(String(50), default="news")  # news, financial, scientific, etc.
+    update_frequency: Mapped[int | None] = mapped_column(Integer, default=60)  # minutes
+    cacheability: Mapped[bool | None] = mapped_column(Boolean, default=True)
 
     # Relationship to articles
     articles = relationship("Article", back_populates="source", cascade="all, delete-orphan")
@@ -463,30 +465,30 @@ class Article(Base):
 
     __tablename__ = "articles"
 
-    id = Column(Integer, primary_key=True)
-    url = Column(String(1000), nullable=False)
-    canonical_url = Column(String(1000), nullable=False)
-    source_id = Column(Integer, ForeignKey("sources.id"), nullable=False)
-    title = Column(String(500))
-    content = Column(Text, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    canonical_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    source_id: Mapped[int] = mapped_column(Integer, ForeignKey("sources.id"), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(500))
+    content: Mapped[str] = mapped_column(Text, nullable=False)
     # Compressed version of content for storage optimization
-    compressed_content = Column(LargeBinary)
-    published_at = Column(DateTime)
-    language = Column(String(10))
-    hash = Column(String(64), nullable=False, unique=True)  # SHA-256 hash length is 64
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, onupdate=lambda: datetime.now(UTC))
+    compressed_content: Mapped[bytes | None] = mapped_column(LargeBinary)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime)
+    language: Mapped[str | None] = mapped_column(String(10))
+    hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)  # SHA-256 hash length is 64
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, onupdate=lambda: datetime.now(UTC))
 
     # Enhanced metadata fields
-    region = Column(String(50))  # Geographic region
-    country = Column(String(2))  # ISO 3166-1 alpha-2 country code
-    author = Column(String(255))  # Article author
-    word_count = Column(Integer)  # Number of words in the article
-    reading_time = Column(Integer)  # Estimated reading time in minutes
+    region: Mapped[str | None] = mapped_column(String(50))  # Geographic region
+    country: Mapped[str | None] = mapped_column(String(2))  # ISO 3166-1 alpha-2 country code
+    author: Mapped[str | None] = mapped_column(String(255))  # Article author
+    word_count: Mapped[int | None] = mapped_column(Integer)  # Number of words in the article
+    reading_time: Mapped[int | None] = mapped_column(Integer)  # Estimated reading time in minutes
 
     # Content analysis fields
-    sentiment_score = Column(Float)  # Sentiment analysis score (-1 to 1)
-    sentiment_label = Column(String(20))  # Sentiment label (positive, negative, neutral)
+    sentiment_score: Mapped[float | None] = mapped_column(Float)  # Sentiment analysis score (-1 to 1)
+    sentiment_label: Mapped[str | None] = mapped_column(String(20))  # Sentiment label (positive, negative, neutral)
 
     # Relationship to source
     source = relationship("Source", back_populates="articles")
@@ -598,14 +600,14 @@ class KeywordCategory(Base):
 
     __tablename__ = "keyword_categories"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False, unique=True)
-    description = Column(Text)
-    parent_id = Column(Integer, ForeignKey("keyword_categories.id"))
-    color = Column(String(20), default="#666666")
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("keyword_categories.id"))
+    color: Mapped[str | None] = mapped_column(String(20), default="#666666")
+    is_active: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -644,26 +646,26 @@ class Keyword(Base):
 
     __tablename__ = "keywords"
 
-    id = Column(Integer, primary_key=True)
-    term = Column(String(255), nullable=False)
-    normalized_term = Column(String(255), nullable=False)
-    language = Column(String(10), default="en")
-    frequency = Column(Integer, default=0)
-    category_id = Column(Integer, ForeignKey("keyword_categories.id"))
-    is_ngram = Column(Boolean, default=False)
-    ngram_size = Column(Integer, default=1)
-    is_entity = Column(Boolean, default=False)
-    entity_type = Column(String(50))
-    relevance_score = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    term: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_term: Mapped[str] = mapped_column(String(255), nullable=False)
+    language: Mapped[str | None] = mapped_column(String(10), default="en")
+    frequency: Mapped[int | None] = mapped_column(Integer, default=0)
+    category_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("keyword_categories.id"))
+    is_ngram: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    ngram_size: Mapped[int | None] = mapped_column(Integer, default=1)
+    is_entity: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    entity_type: Mapped[str | None] = mapped_column(String(50))
+    relevance_score: Mapped[float | None] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     # Provenance: which extractor labelled this term (e.g. "baseline", "spacy",
     # "llm:<model>"). An entity type is a *labelled-by-X assertion*, never ground
     # truth -- this records the X (PRODUCT_SYNTHESIS §8).
-    extractor = Column(String(40))
+    extractor: Mapped[str | None] = mapped_column(String(40))
 
     # Relationships
     category = relationship("KeywordCategory", back_populates="keywords")
@@ -703,13 +705,13 @@ class ArticleKeyword(Base):
 
     __tablename__ = "article_keywords"
 
-    article_id = Column(Integer, ForeignKey("articles.id"), primary_key=True)
-    keyword_id = Column(Integer, ForeignKey("keywords.id"), primary_key=True)
-    frequency = Column(Integer, default=1)
-    first_position = Column(Integer)
-    last_position = Column(Integer)
-    relevance_score = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    article_id: Mapped[int] = mapped_column(Integer, ForeignKey("articles.id"), primary_key=True)
+    keyword_id: Mapped[int] = mapped_column(Integer, ForeignKey("keywords.id"), primary_key=True)
+    frequency: Mapped[int | None] = mapped_column(Integer, default=1)
+    first_position: Mapped[int | None] = mapped_column(Integer)
+    last_position: Mapped[int | None] = mapped_column(Integer)
+    relevance_score: Mapped[float | None] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     def __repr__(self):
         return f"<ArticleKeyword(article_id={self.article_id}, keyword_id={self.keyword_id}, frequency={self.frequency})>"
@@ -735,16 +737,16 @@ class LinkClassificationRule(Base):
 
     __tablename__ = "link_classification_rules"
 
-    id = Column(Integer, primary_key=True)
-    rule_name = Column(String(100), nullable=False, unique=True)
-    pattern = Column(String(500), nullable=False)
-    classification_type = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    pattern: Mapped[str] = mapped_column(String(500), nullable=False)
+    classification_type: Mapped[str] = mapped_column(
         String(50), nullable=False
     )  # source, reference, ad, social, navigation, other
-    priority = Column(Integer, default=1)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    priority: Mapped[int | None] = mapped_column(Integer, default=1)
+    is_active: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -788,25 +790,25 @@ class ExternalSource(Base):
 
     __tablename__ = "external_sources"
 
-    id = Column(Integer, primary_key=True)
-    domain = Column(String(255), nullable=False, unique=True)
-    name = Column(String(200), nullable=False)
-    url = Column(String(500))
-    source_type = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    url: Mapped[str | None] = mapped_column(String(500))
+    source_type: Mapped[str | None] = mapped_column(
         String(50), default="unknown"
     )  # news, blog, academic, government, social, etc.
-    credibility_score = Column(Float, default=50.0)  # 0-100
-    political_bias = Column(Float, default=0.0)  # -100 (left) to 100 (right)
-    country = Column(String(2))
-    language = Column(String(10), default="en")
-    description = Column(Text)
-    founded_year = Column(Integer)
-    alexa_rank = Column(Integer)
-    social_media_followers = Column(Integer)
-    is_verified = Column(Boolean, default=False)
-    last_verified_at = Column(DateTime)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    credibility_score: Mapped[float | None] = mapped_column(Float, default=50.0)  # 0-100
+    political_bias: Mapped[float | None] = mapped_column(Float, default=0.0)  # -100 (left) to 100 (right)
+    country: Mapped[str | None] = mapped_column(String(2))
+    language: Mapped[str | None] = mapped_column(String(10), default="en")
+    description: Mapped[str | None] = mapped_column(Text)
+    founded_year: Mapped[int | None] = mapped_column(Integer)
+    alexa_rank: Mapped[int | None] = mapped_column(Integer)
+    social_media_followers: Mapped[int | None] = mapped_column(Integer)
+    is_verified: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -857,20 +859,20 @@ class SourceArticle(Base):
 
     __tablename__ = "source_articles"
 
-    id = Column(Integer, primary_key=True)
-    source_id = Column(Integer, ForeignKey("external_sources.id"), nullable=False)
-    url = Column(String(1000), nullable=False)
-    title = Column(String(500))
-    published_at = Column(DateTime)
-    author = Column(String(255))
-    summary = Column(Text)
-    content_hash = Column(String(64))  # SHA-256 hash
-    word_count = Column(Integer)
-    sentiment_score = Column(Float)
-    is_accessible = Column(Boolean, default=True)
-    last_accessed_at = Column(DateTime)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(Integer, ForeignKey("external_sources.id"), nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(500))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime)
+    author: Mapped[str | None] = mapped_column(String(255))
+    summary: Mapped[str | None] = mapped_column(Text)
+    content_hash: Mapped[str | None] = mapped_column(String(64))  # SHA-256 hash
+    word_count: Mapped[int | None] = mapped_column(Integer)
+    sentiment_score: Mapped[float | None] = mapped_column(Float)
+    is_accessible: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    last_accessed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -922,27 +924,27 @@ class ArticleLink(Base):
 
     __tablename__ = "article_links"
 
-    id = Column(Integer, primary_key=True)
-    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False)
-    url = Column(String(1000), nullable=False)
-    normalized_url = Column(String(1000), nullable=False)
-    link_text = Column(String(500))
-    position = Column(Integer)
-    link_type = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    article_id: Mapped[int] = mapped_column(Integer, ForeignKey("articles.id"), nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    normalized_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    link_text: Mapped[str | None] = mapped_column(String(500))
+    position: Mapped[int | None] = mapped_column(Integer)
+    link_type: Mapped[str | None] = mapped_column(
         String(50), default="external"
     )  # internal, external, image, script, stylesheet, etc.
-    classification = Column(
+    classification: Mapped[str | None] = mapped_column(
         String(50), default="other"
     )  # source, reference, ad, social, navigation, other
-    external_source_id = Column(Integer, ForeignKey("external_sources.id"))
-    source_article_id = Column(Integer, ForeignKey("source_articles.id"))
-    is_followable = Column(Boolean, default=True)
-    is_working = Column(Boolean, default=True)
-    last_checked_at = Column(DateTime)
-    redirect_url = Column(String(1000))
-    http_status = Column(Integer)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    external_source_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("external_sources.id"))
+    source_article_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("source_articles.id"))
+    is_followable: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    is_working: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    redirect_url: Mapped[str | None] = mapped_column(String(1000))
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -978,17 +980,17 @@ class ArticleMentionedDate(Base):
 
     __tablename__ = "article_mentioned_dates"
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # ondelete=CASCADE is defense-in-depth: the ORM relationship already cascades on
     # session.delete(), this also covers any future bulk/raw delete of an article.
-    article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
-    mentioned_on = Column(Date, nullable=False)  # normalized; month precision -> day 1
-    precision = Column(String(10), nullable=False, default="day")  # 'day' | 'month'
-    snippet = Column(String(300))  # provenance: the matched text
-    confidence = Column(Float)  # extractor confidence in [0, 1]
-    extractor = Column(String(40), default="dateextract")
-    status = Column(String(12), nullable=False, default="candidate")  # candidate|confirmed|rejected
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    article_id: Mapped[int] = mapped_column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
+    mentioned_on: Mapped[date] = mapped_column(Date, nullable=False)  # normalized; month precision -> day 1
+    precision: Mapped[str] = mapped_column(String(10), nullable=False, default="day")  # 'day' | 'month'
+    snippet: Mapped[str | None] = mapped_column(String(300))  # provenance: the matched text
+    confidence: Mapped[float | None] = mapped_column(Float)  # extractor confidence in [0, 1]
+    extractor: Mapped[str | None] = mapped_column(String(40), default="dateextract")
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="candidate")  # candidate|confirmed|rejected
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     article = relationship("Article", back_populates="mentioned_dates")
 
@@ -1034,20 +1036,20 @@ class ArticleSourceRelationship(Base):
 
     __tablename__ = "article_source_relationships"
 
-    id = Column(Integer, primary_key=True)
-    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False)
-    source_id = Column(Integer, ForeignKey("external_sources.id"), nullable=False)
-    source_article_id = Column(Integer, ForeignKey("source_articles.id"))
-    link_id = Column(Integer, ForeignKey("article_links.id"))
-    relationship_type = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    article_id: Mapped[int] = mapped_column(Integer, ForeignKey("articles.id"), nullable=False)
+    source_id: Mapped[int] = mapped_column(Integer, ForeignKey("external_sources.id"), nullable=False)
+    source_article_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("source_articles.id"))
+    link_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("article_links.id"))
+    relationship_type: Mapped[str | None] = mapped_column(
         String(50), default="reference"
     )  # citation, reference, source, mention, etc.
-    time_delta_days = Column(Float)  # Can be negative if article published before source
-    is_temporal_anomaly = Column(Boolean, default=False)
-    confidence_score = Column(Float, default=0.0)  # 0-1
-    notes = Column(Text)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    time_delta_days: Mapped[float | None] = mapped_column(Float)  # Can be negative if article published before source
+    is_temporal_anomaly: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    confidence_score: Mapped[float | None] = mapped_column(Float, default=0.0)  # 0-1
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -1091,20 +1093,20 @@ class SourceCredibilityRule(Base):
 
     __tablename__ = "source_credibility_rules"
 
-    id = Column(Integer, primary_key=True)
-    rule_name = Column(String(100), nullable=False, unique=True)
-    factor = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    factor: Mapped[str] = mapped_column(
         String(50), nullable=False
     )  # alexa_rank, social_followers, age, verification_status, etc.
-    weight = Column(Float, default=1.0)  # 0-1
-    min_value = Column(Float, default=0.0)
-    max_value = Column(Float, default=100.0)
-    is_inverse = Column(
+    weight: Mapped[float | None] = mapped_column(Float, default=1.0)  # 0-1
+    min_value: Mapped[float | None] = mapped_column(Float, default=0.0)
+    max_value: Mapped[float | None] = mapped_column(Float, default=100.0)
+    is_inverse: Mapped[bool | None] = mapped_column(
         Boolean, default=False
     )  # True for factors where higher = worse (e.g., alexa rank)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    is_active: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -1136,16 +1138,16 @@ class ArticleAnalysis(Base):
 
     __tablename__ = "article_analyses"
 
-    id = Column(Integer, primary_key=True)
-    article_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    article_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    kind = Column(String(50), nullable=False)  # summary | translation | entities | ...
-    result = Column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(String(50), nullable=False)  # summary | translation | entities | ...
+    result: Mapped[str] = mapped_column(Text, nullable=False)
     # provenance
-    model = Column(String(100), nullable=False)
-    prompt_version = Column(String(50), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     article = relationship("Article", backref="analyses")
 
@@ -1164,15 +1166,15 @@ class CommodityPrice(Base):
 
     __tablename__ = "commodity_prices"
 
-    id = Column(Integer, primary_key=True)
-    symbol = Column(String(32), nullable=False, index=True)  # e.g. "Nd", "Dy"
-    market = Column(String(100), nullable=True)  # e.g. "china_spot", "USGS"
-    observed_on = Column(Date, nullable=False, index=True)
-    price = Column(Float, nullable=False)
-    currency = Column(String(8), nullable=False, default="USD")
-    unit = Column(String(16), nullable=False, default="kg")  # mass unit (kg, t, lb, ozt, ...)
-    source = Column(String(255), nullable=True)  # provenance: where it came from
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)  # e.g. "Nd", "Dy"
+    market: Mapped[str | None] = mapped_column(String(100), nullable=True)  # e.g. "china_spot", "USGS"
+    observed_on: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
+    unit: Mapped[str] = mapped_column(String(16), nullable=False, default="kg")  # mass unit (kg, t, lb, ozt, ...)
+    source: Mapped[str | None] = mapped_column(String(255), nullable=True)  # provenance: where it came from
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (Index("ix_commodity_symbol_date", "symbol", "observed_on"),)
 
@@ -1195,26 +1197,26 @@ class MarketExtractionRule(Base):
 
     __tablename__ = "market_extraction_rules"
 
-    id = Column(Integer, primary_key=True)
-    source_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False, index=True
     )
     # Which Markets sub-view this instrument belongs to.
-    category = Column(String(20), nullable=False, default="commodity")  # financial|stock|commodity
-    symbol = Column(String(32), nullable=False, index=True)  # e.g. "Nd", "AAPL", "XAU"
-    label = Column(String(120))  # human name, e.g. "Neodymium spot"
-    url = Column(String(1000), nullable=False)  # the exact page to fetch
-    selector = Column(String(500), nullable=False)  # CSS selector locating the price
-    attribute = Column(String(100))  # optional: read this attr, not text
-    value_regex = Column(String(300))  # optional: capture-group regex for the number
-    currency = Column(String(8), nullable=False, default="USD")
-    unit = Column(String(16), nullable=False, default="kg")  # mass unit for commodities
-    market = Column(String(100))  # market label / provenance
-    enabled = Column(Boolean, default=True)
-    last_run_at = Column(DateTime)
-    last_status = Column(String(255))  # honest last outcome string
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    category: Mapped[str] = mapped_column(String(20), nullable=False, default="commodity")  # financial|stock|commodity
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)  # e.g. "Nd", "AAPL", "XAU"
+    label: Mapped[str | None] = mapped_column(String(120))  # human name, e.g. "Neodymium spot"
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)  # the exact page to fetch
+    selector: Mapped[str] = mapped_column(String(500), nullable=False)  # CSS selector locating the price
+    attribute: Mapped[str | None] = mapped_column(String(100))  # optional: read this attr, not text
+    value_regex: Mapped[str | None] = mapped_column(String(300))  # optional: capture-group regex for the number
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
+    unit: Mapped[str] = mapped_column(String(16), nullable=False, default="kg")  # mass unit for commodities
+    market: Mapped[str | None] = mapped_column(String(100))  # market label / provenance
+    enabled: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_status: Mapped[str | None] = mapped_column(String(255))  # honest last outcome string
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
@@ -1244,12 +1246,12 @@ class KeywordFamilyOverride(Base):
 
     __tablename__ = "keyword_family_overrides"
 
-    id = Column(Integer, primary_key=True)
-    normalized_term = Column(String(255), nullable=False, unique=True, index=True)
-    family_key = Column(String(255), nullable=False)  # forms sharing this key = one family
-    canonical_label = Column(String(255))  # preferred display label for the family
-    kind = Column(String(40))  # cached kind for display
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    normalized_term: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    family_key: Mapped[str] = mapped_column(String(255), nullable=False)  # forms sharing this key = one family
+    canonical_label: Mapped[str | None] = mapped_column(String(255))  # preferred display label for the family
+    kind: Mapped[str | None] = mapped_column(String(40))  # cached kind for display
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (Index("ix_kwfam_family_key", "family_key"),)
 
@@ -1270,10 +1272,10 @@ class KeywordSuperGroup(Base):
 
     __tablename__ = "keyword_supergroups"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(120), nullable=False, unique=True)
-    color = Column(String(16))  # optional UI accent (hex)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    color: Mapped[str | None] = mapped_column(String(16))  # optional UI accent (hex)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     members = relationship(
         "KeywordSuperGroupMember", back_populates="supergroup", cascade="all, delete-orphan"
@@ -1288,12 +1290,12 @@ class KeywordSuperGroupMember(Base):
 
     __tablename__ = "keyword_supergroup_members"
 
-    id = Column(Integer, primary_key=True)
-    supergroup_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    supergroup_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("keyword_supergroups.id", ondelete="CASCADE"), nullable=False
     )
-    normalized_term = Column(String(255), nullable=False, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    normalized_term: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     supergroup = relationship("KeywordSuperGroup", back_populates="members")
 
@@ -1321,16 +1323,16 @@ class KeywordMention(Base):
 
     __tablename__ = "keyword_mentions"
 
-    id = Column(Integer, primary_key=True)
-    keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
-    article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
-    count = Column(Integer, nullable=False, default=1)
-    first_offset = Column(Integer)  # char offset in Article.content
-    observed_on = Column(Date, index=True)  # denormalised article date (for trends)
-    country = Column(String(2))  # denormalised source country (for the map)
-    city = Column(String(120))  # denormalised source city, when known
-    extractor = Column(String(40))
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    keyword_id: Mapped[int] = mapped_column(Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False)
+    article_id: Mapped[int] = mapped_column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    first_offset: Mapped[int | None] = mapped_column(Integer)  # char offset in Article.content
+    observed_on: Mapped[date | None] = mapped_column(Date, index=True)  # denormalised article date (for trends)
+    country: Mapped[str | None] = mapped_column(String(2))  # denormalised source country (for the map)
+    city: Mapped[str | None] = mapped_column(String(120))  # denormalised source city, when known
+    extractor: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     keyword = relationship("Keyword")
     article = relationship("Article")
@@ -1359,17 +1361,17 @@ class WikiPage(Base):
 
     __tablename__ = "wiki_pages"
 
-    id = Column(Integer, primary_key=True)
-    wiki = Column(String(16), nullable=False)  # language edition code, e.g. "en"
-    title = Column(String(512), nullable=False)
-    pageid = Column(Integer)  # MediaWiki page id
-    watched = Column(Boolean, default=True)
-    category = Column(String(255))  # optional grouping (e.g. a watchlist name)
-    baseline_revid = Column(Integer)  # revid the baseline_text corresponds to
-    baseline_text = Column(CompressedText)  # one full snapshot; later versions = baseline + diffs
-    last_revid = Column(Integer)  # newest revid we have stored
-    last_checked_at = Column(DateTime)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    wiki: Mapped[str] = mapped_column(String(16), nullable=False)  # language edition code, e.g. "en"
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    pageid: Mapped[int | None] = mapped_column(Integer)  # MediaWiki page id
+    watched: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    category: Mapped[str | None] = mapped_column(String(255))  # optional grouping (e.g. a watchlist name)
+    baseline_revid: Mapped[int | None] = mapped_column(Integer)  # revid the baseline_text corresponds to
+    baseline_text: Mapped[str | None] = mapped_column(CompressedText)  # one full snapshot; later versions = baseline + diffs
+    last_revid: Mapped[int | None] = mapped_column(Integer)  # newest revid we have stored
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     revisions = relationship("WikiRevision", back_populates="page", cascade="all, delete-orphan")
 
@@ -1395,30 +1397,30 @@ class WikiRevision(Base):
 
     __tablename__ = "wiki_revisions"
 
-    id = Column(Integer, primary_key=True)
-    page_id = Column(Integer, ForeignKey("wiki_pages.id", ondelete="CASCADE"), nullable=False)
-    revid = Column(Integer, nullable=False)
-    parent_revid = Column(Integer)
-    timestamp = Column(DateTime, index=True)
-    editor = Column(String(255))
-    editor_anon = Column(Boolean, default=False)
-    comment = Column(Text)
-    size = Column(Integer)  # new article size in bytes
-    delta_bytes = Column(Integer)  # size - parent size (signed)
-    tags = Column(String(500))  # MediaWiki change tags, comma-separated
-    minor = Column(Boolean, default=False)
-    bot = Column(Boolean, default=False)
-    diff = Column(CompressedText)  # added/removed text for this edit
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    page_id: Mapped[int] = mapped_column(Integer, ForeignKey("wiki_pages.id", ondelete="CASCADE"), nullable=False)
+    revid: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_revid: Mapped[int | None] = mapped_column(Integer)
+    timestamp: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    editor: Mapped[str | None] = mapped_column(String(255))
+    editor_anon: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    comment: Mapped[str | None] = mapped_column(Text)
+    size: Mapped[int | None] = mapped_column(Integer)  # new article size in bytes
+    delta_bytes: Mapped[int | None] = mapped_column(Integer)  # size - parent size (signed)
+    tags: Mapped[str | None] = mapped_column(String(500))  # MediaWiki change tags, comma-separated
+    minor: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    bot: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    diff: Mapped[str | None] = mapped_column(CompressedText)  # added/removed text for this edit
 
     # ORES (Wikimedia) model scores -- attributed, optional enrichment.
-    ores_damaging = Column(Float)
-    ores_goodfaith = Column(Float)
-    ores_provenance = Column(String(80))
+    ores_damaging: Mapped[float | None] = mapped_column(Float)
+    ores_goodfaith: Mapped[float | None] = mapped_column(Float)
+    ores_provenance: Mapped[str | None] = mapped_column(String(80))
 
     # Honest large-edit detection computed at ingest.
-    flagged = Column(Boolean, default=False)
-    flag_reasons = Column(String(500))  # comma-separated reason codes
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    flagged: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    flag_reasons: Mapped[str | None] = mapped_column(String(500))  # comma-separated reason codes
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     page = relationship("WikiPage", back_populates="revisions")
 
@@ -1448,21 +1450,21 @@ class LawDocument(Base):
 
     __tablename__ = "law_documents"
 
-    id = Column(Integer, primary_key=True)
-    jurisdiction = Column(String(8), nullable=False)  # ISO-ish code: uk, eu, fr, us, int…
-    title = Column(String(512), nullable=False)
-    url = Column(String(1000), nullable=False)  # the page we fetch (consolidated text)
-    official_url = Column(String(1000))  # canonical official link (may equal url)
-    category = Column(String(40), default="legislation")  # legislation|gazette|ip|case-law
-    consolidated = Column(Boolean, default=False)  # point-in-time consolidation vs raw fetch
-    watched = Column(Boolean, default=True)
-    baseline_text = Column(CompressedText)  # one full snapshot; later = baseline + diffs
-    baseline_hash = Column(String(64))
-    last_hash = Column(String(64))  # content hash at last successful fetch
-    last_size = Column(Integer)
-    last_checked_at = Column(DateTime)
-    last_status = Column(String(255))  # honest last outcome (ok / fetch error / …)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    jurisdiction: Mapped[str] = mapped_column(String(8), nullable=False)  # ISO-ish code: uk, eu, fr, us, int…
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)  # the page we fetch (consolidated text)
+    official_url: Mapped[str | None] = mapped_column(String(1000))  # canonical official link (may equal url)
+    category: Mapped[str | None] = mapped_column(String(40), default="legislation")  # legislation|gazette|ip|case-law
+    consolidated: Mapped[bool | None] = mapped_column(Boolean, default=False)  # point-in-time consolidation vs raw fetch
+    watched: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    baseline_text: Mapped[str | None] = mapped_column(CompressedText)  # one full snapshot; later = baseline + diffs
+    baseline_hash: Mapped[str | None] = mapped_column(String(64))
+    last_hash: Mapped[str | None] = mapped_column(String(64))  # content hash at last successful fetch
+    last_size: Mapped[int | None] = mapped_column(Integer)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_status: Mapped[str | None] = mapped_column(String(255))  # honest last outcome (ok / fetch error / …)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     revisions = relationship("LawRevision", back_populates="document", cascade="all, delete-orphan")
 
@@ -1486,18 +1488,18 @@ class LawRevision(Base):
 
     __tablename__ = "law_revisions"
 
-    id = Column(Integer, primary_key=True)
-    document_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("law_documents.id", ondelete="CASCADE"), nullable=False
     )
-    observed_at = Column(DateTime, index=True)
-    content_hash = Column(String(64), nullable=False)
-    size = Column(Integer)
-    delta_bytes = Column(Integer)  # size - previous size (signed)
-    diff = Column(CompressedText)  # added/removed text for this change
-    flagged = Column(Boolean, default=False)
-    flag_reasons = Column(String(500))
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    size: Mapped[int | None] = mapped_column(Integer)
+    delta_bytes: Mapped[int | None] = mapped_column(Integer)  # size - previous size (signed)
+    diff: Mapped[str | None] = mapped_column(CompressedText)  # added/removed text for this change
+    flagged: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    flag_reasons: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     document = relationship("LawDocument", back_populates="revisions")
 

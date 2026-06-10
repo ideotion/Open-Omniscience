@@ -71,6 +71,22 @@ jobs:
       - name: Test (pytest)
         run: python -m pytest -q
 
+      # Type-check ratchet (0.0.8 WP7 / MAINT-03): the Mapped[] ORM migration cut
+      # mypy from 303 to 128 errors. The gate fails only if the count RISES above
+      # the baseline -- new code must not add type errors; tighten the number as
+      # the long tail is paid down (target: 0, then a plain blocking `mypy src/`).
+      - name: Type-check ratchet (mypy)
+        env:
+          MYPY_BASELINE: "128"
+        run: |
+          count=$(python -m mypy src/ 2>/dev/null | grep -c " error: " || true)
+          echo "mypy errors: $count (baseline: $MYPY_BASELINE)"
+          if [ "$count" -gt "$MYPY_BASELINE" ]; then
+            echo "::error::mypy error count rose above the baseline ($count > $MYPY_BASELINE)"
+            python -m mypy src/ | tail -40
+            exit 1
+          fi
+
       # Blocking security gates (v0.0.7 audit): both are clean today, so any
       # failure is a real regression or a freshly published CVE worth seeing.
       - name: SAST (bandit, medium+ severity)

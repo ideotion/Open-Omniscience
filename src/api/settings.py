@@ -27,6 +27,8 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 class SettingsUpdate(BaseModel):
     theme: str | None = None
     default_result_limit: int | None = None
+    # Investigation-recipe producers to switch off (0.0.8 WP8 / RM-20).
+    recipes_disabled: list[str] | None = None
 
 
 def _payload() -> dict:

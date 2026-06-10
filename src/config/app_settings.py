@@ -37,6 +37,14 @@ class AppSettings:
 
     theme: str = "system"
     default_result_limit: int = 50
+    # Investigation-recipe producers the operator switched off (0.0.8 WP8 /
+    # RM-20). All recipes are on by default; a name in this list makes that
+    # producer yield no cards.
+    recipes_disabled: list = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.recipes_disabled is None:
+            self.recipes_disabled = []
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -69,7 +77,13 @@ def load_settings() -> AppSettings:
     except (TypeError, ValueError):
         limit = defaults.default_result_limit
     limit = max(_MIN_LIMIT, min(_MAX_LIMIT, limit))
-    return AppSettings(theme=theme, default_result_limit=limit)
+    raw_disabled = raw.get("recipes_disabled", [])
+    recipes_disabled = (
+        [str(x) for x in raw_disabled] if isinstance(raw_disabled, list) else []
+    )
+    return AppSettings(
+        theme=theme, default_result_limit=limit, recipes_disabled=recipes_disabled
+    )
 
 
 def save_settings(updates: dict) -> AppSettings:
@@ -93,6 +107,11 @@ def save_settings(updates: dict) -> AppSettings:
                 f"default_result_limit must be between {_MIN_LIMIT} and {_MAX_LIMIT}"
             )
         current.default_result_limit = limit
+    if "recipes_disabled" in updates and updates["recipes_disabled"] is not None:
+        names = updates["recipes_disabled"]
+        if not isinstance(names, list) or not all(isinstance(x, str) for x in names):
+            raise AppSettingsError("recipes_disabled must be a list of producer names")
+        current.recipes_disabled = sorted(set(names))
 
     path = _settings_path()
     tmp = path.with_suffix(".json.tmp")
