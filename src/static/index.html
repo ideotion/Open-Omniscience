@@ -672,6 +672,12 @@
         <div><label for="sch-pages">Max pages / source</label>
           <input id="sch-pages" type="number" min="1" max="500" step="1"></div>
       </div>
+      <div class="row">
+        <div style="flex:2"><label for="sch-export-dir">Drop-folder export
+          <span class="muted">(optional; blank = off)</span></label>
+          <input id="sch-export-dir" placeholder="/path/on/this/machine — each run drops the new-articles delta as JSON">
+        </div>
+      </div>
 
       <h2 style="font-size:13px;margin:14px 0 4px">Which sources (rss / crawl modes)</h2>
       <div class="row">
@@ -3290,6 +3296,7 @@
       $("sch-langs").value = (c.select_languages || []).join(", ");
       $("sch-types").value = (c.select_source_types || []).join(", ");
       $("sch-tags").value = (c.select_tags || []).join(", ");
+      if ($("sch-export-dir")) $("sch-export-dir").value = c.export_dir || "";
       toggleCrawlFields();
     }
 
@@ -3352,6 +3359,7 @@
         select_languages: _csv("sch-langs"),
         select_source_types: _csv("sch-types"),
         select_tags: _csv("sch-tags"),
+        export_dir: $("sch-export-dir") ? $("sch-export-dir").value.trim() : "",
       };
       try { applySchedConfig(await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify(body)}));
         toast("Schedule saved."); previewTargets(); } catch (e) { toast("Save failed: " + e.message, "err"); }
