@@ -142,6 +142,14 @@ Before fearing loss from an archive-size change, run
   corpus header; on-demand only, bounded at 5000). Future slices: other agreed
   back-end syntheses (the maintainer↔assistant channel) — design in
   FUTURE_DEVELOPMENTS.
+- **Evidence-tiered cards (maintainer idea 2026-06-10, design recorded, NOT yet
+  ruled go):** clinical-phases analogy — corpus evidence tiers (early/
+  developing/established) gate claim classes; Wilson CIs on proportions,
+  Katz rate-ratio CIs on trends, scan-size disclosure (multiple comparisons),
+  power-style "what's missing" for silent cards, and a structured `trigger`
+  block per card rendering "Why am I seeing this?" with the actual numbers.
+  Human stays the DSMB: tier-labelled cards + user-chosen evidence bar; no
+  composite scores ever. Full design in FUTURE_DEVELOPMENTS.
 - **Parked for 0.0.9 (ruled 2026-06-10):** space-time layers 3+4 from the
   PR #51 design — convergence detection (space-time co-occurrence, never
   causation) + the user-defined "if-this-then-WATCH" alert engine (explainable,

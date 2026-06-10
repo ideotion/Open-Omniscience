@@ -661,6 +661,76 @@ offline kit as part of RM-08.
    never use clearnet on the work machine. Build with RM-08 packaging.
 
 
+## Evidence-tiered cards — the clinical-phases analogy (maintainer idea, 2026-06-10)
+
+**The maintainer's frame.** Clinical research matches the *claim* to the *sample
+the design can support*: Phase 1 (a few dozen volunteers) detects only large,
+obvious harms; Phase 2 (hundreds) estimates efficacy and sharpens safety;
+Phase 3 (thousands, multi-site, diverse populations) confirms effects, finds
+rare events and tests special populations. Apply that progressive,
+evidence-based discipline to the Home cards: a young corpus licenses only
+phase-1-class claims; richer corpora unlock sharper ones — and every card
+shows the math that triggered it.
+
+**Why the analogy fits (and where it must be corrected).** The 2026-06-10
+young-corpus work was already a crude two-tier version of this (lowered gates +
+"Early-corpus note"). The honest correction: a news corpus is an
+**observational, self-selected sample** (the operator chose the sources), not a
+randomized trial — so the toolbox is epidemiology's, not the RCT's, and no
+interval we compute describes *the world*; it describes *your corpus*. The diet
+and coverage-advisor cards exist precisely because the instrument is biased;
+the tier system must say so on every tier.
+
+**Design sketch (pending maintainer go):**
+
+1. **Corpus evidence tiers** computed from real dimensions (articles, distinct
+   sources, days of history, languages/countries): *early* / *developing* /
+   *established* (UI names; the clinical analogy lives in docs). Shown once in
+   the Home header ("Evidence tier: early — 142 articles, 6 sources, 9 days"),
+   and each card states which tier-gate admitted it.
+2. **Claim classes per tier.** Early: raw counts and obvious signals only
+   (stale feeds, single-source flags, big coverage skew) phrased as counts.
+   Developing: ratios and splits with uncertainty attached. Established:
+   cross-source generalisations, rare-event cards, per-country/language slices
+   (the "special populations" analogue).
+3. **Better math, honestly scoped:**
+   - **Wilson 95% intervals on proportions** (diet top-share, coverage share)
+     — closed-form, no scipy; the interval *width* communicates sample size
+     viscerally ("62% [48–74%]").
+   - **Rate-ratio intervals for trends** (Katz log method on recent-vs-prior
+     Poisson counts): "×3.0 [0.8–11] — too few mentions to distinguish from
+     noise" on a young corpus; the same ×3.0 with a tight interval later.
+   - **Scan-size disclosure on every screening card** (multiple-comparisons
+     honesty / winner's curse): "top 5 of 1,243 keywords scanned — some are
+     high by chance"; optionally Benjamini–Hochberg once p-values exist.
+   - **Power-style inversions** for silence: when a card does NOT fire, the
+     system can say what evidence would be needed ("framing-split needs ≥2
+     sources covering the term; you have 1") — the anti-fabrication twin:
+     show what's missing instead of inventing what isn't there.
+   - **Do not over-mathematize heuristics**: VADER tone and near-dup clusters
+     stay labelled heuristics; intervals only where the math is actually
+     defined (counts, proportions, rates). Dressing a heuristic in a CI would
+     fake rigor.
+4. **"Why am I seeing this?" — the trigger audit trail.** Producers attach a
+   structured `trigger` block to `signal`: inputs, thresholds, comparisons,
+   tier-gate, scan size, interval. The card (clicked/expanded) renders it
+   generically: "growth = 7 recent / 2.1 expected = ×3.3 ≥ 2.0 ✓ · recent 7 ≥
+   min 2 (early-tier gate) ✓ · scanned 1,243". Cards become *reproducible*:
+   same inputs, same verdict — the methods appendix (RM-07) is the protocol
+   they cite. No composite scores anywhere (CardSchemaError still enforces).
+5. **Smarter while user-centred (the DSMB principle).** The human stays the
+   monitoring board: cards remain invitations, never auto-actions. The user
+   picks their own evidence bar (per-bucket sensitivity: "show early hints" vs
+   "established-grade only") — informed by the tier label on every card.
+   Dismiss-with-reason (noisy / known / not relevant; local-only) may tune
+   per-type visibility via legible rules (mute/snooze), never an invisible
+   ranking model.
+6. **Self-improvement loop (ties into the diagnostics log):** a future
+   "card diagnostics" slice exports which cards fired with which trigger
+   values and what the operator did (read/dismissed+reason) — the app runs an
+   honest, local, observational study of its own card quality, and threshold
+   tuning becomes evidence-based instead of guessed.
+
 ## Settings → Diagnostics log: a shareable back-end synthesis (maintainer idea, 2026-06-10)
 
 > **STATUS:** the first slice SHIPPED same day (maintainer asked): Settings →
