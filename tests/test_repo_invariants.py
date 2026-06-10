@@ -121,3 +121,44 @@ def test_in_app_docs_exist_on_disk():
     docs_dir = _ROOT / "docs"
     missing = [f for f in files if not (docs_dir / f).exists()]
     assert not missing, f"in-app docs registered but missing on disk: {missing}"
+
+
+def test_no_print_in_library_code():
+    """Library code must use loggers, not print() (audit finding MAINT-04).
+
+    print() is legitimate ONLY as deliberate CLI/console output: under an
+    `if __name__ == "__main__"` demo guard, inside `def main()`, inside the
+    named CLI helper functions of src/api/main.py (panic/ephemeral/serve), or
+    in src/diagnostics.py (the `doctor` command, whose entire purpose is a
+    printed terminal report). Anything else is a regression.
+    """
+    import ast
+
+    CLI_MODULES = {"src/diagnostics.py"}
+    CLI_FUNCTIONS = {"main", "_panic_cli", "_run_ephemeral", "_serve"}
+
+    offenders: list[str] = []
+    for p in _live_py_files():
+        rel = str(p.relative_to(_ROOT))
+        if rel in CLI_MODULES or not rel.startswith("src/"):
+            continue
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        allowed_spans: list[tuple[int, int]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.If):
+                test_src = ast.unparse(node.test)
+                if "__name__" in test_src and "__main__" in test_src:
+                    allowed_spans.append((node.lineno, node.end_lineno or node.lineno))
+            elif isinstance(node, ast.FunctionDef) and node.name in CLI_FUNCTIONS:
+                allowed_spans.append((node.lineno, node.end_lineno or node.lineno))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "print"
+                and not any(a <= node.lineno <= b for a, b in allowed_spans)
+            ):
+                offenders.append(f"{rel}:{node.lineno}")
+    assert not offenders, (
+        f"print() in library code (use a module logger; MAINT-04): {offenders}"
+    )
