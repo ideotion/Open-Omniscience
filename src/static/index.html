@@ -633,6 +633,8 @@
         <button class="secondary" onclick="exportResults('json')">Export JSON</button>
         <button class="secondary" onclick="exportMethods()"
           title="A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.">Methods appendix</button>
+        <button class="secondary" onclick="synthesizeResults(this)"
+          title="One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.">Synthesize results</button>
         <button class="secondary" onclick="exportEvidence()" title="Signed, tamper-evident bundle">Export signed evidence</button>
       </div>
       <div id="search-meta" class="hint"></div>
@@ -4703,6 +4705,29 @@
     function exportResults(fmt) {
       const p = searchParams(); p.set("format", fmt);
       window.open("/api/articles/export?" + p.toString(), "_blank");
+    }
+
+    async function synthesizeResults(btn) {
+      // RM-12: one bounded synthesis call across the current results (max 20).
+      const q = $("q").value.trim();
+      if (!q) { toast("Run a search first.", "err"); return; }
+      btn.disabled = true; btn.textContent = "Synthesizing…";
+      try {
+        const r = await api("/api/llm/synthesize",
+          {method: "POST", body: JSON.stringify({query: q})});
+        let box = $("synth-result");
+        if (!box) {
+          box = document.createElement("div");
+          box.id = "synth-result"; box.className = "card";
+          $("results").parentNode.insertBefore(box, $("results"));
+        }
+        box.innerHTML = `<span class="chip">synthesis · ${esc(r.model)} · ` +
+          `${r.member_count} articles${r.truncated ? " (top 20 of more)" : ""}</span>` +
+          `<p style="white-space:pre-wrap">${esc(r.result)}</p>` +
+          `<div class="hint">${esc(r.caveat)} Members: ${r.member_ids.map(i =>
+            `<a href="/api/articles/${i}/view" target="_blank" rel="noopener">#${i}</a>`).join(" ")}</div>`;
+      } catch (e) { toast("Synthesis failed: " + e.message, "err"); }
+      finally { btn.disabled = false; btn.textContent = "Synthesize results"; }
     }
 
     async function exportMethods() {

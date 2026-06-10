@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, ArticleAnalysis
 from src.database.session import get_db
 from src.llm.ollama import (
@@ -211,4 +212,116 @@ def translate_article(
         "prompt_version": analysis.prompt_version,
         "result": result.text,
         "created_at": analysis.created_at.isoformat(),
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  Corpus-wide synthesis (0.0.8 part 2, WP4 / RM-12)
+# --------------------------------------------------------------------------- #
+
+SYNTHESIS_PROMPT_VERSION = "synthesis-v1"
+_SYNTHESIS_SYSTEM = (
+    "You are a careful research assistant for an investigative journalist. You will "
+    "receive excerpts from SEVERAL stored articles, each numbered. Write a factual, "
+    "neutral synthesis of what they collectively report: shared facts, points of "
+    "disagreement between articles, and open questions. Refer to articles by their "
+    "number, e.g. [3]. Do NOT add information that is not in the excerpts, do NOT "
+    "resolve disagreements yourself, and do NOT speculate."
+)
+_SYNTHESIS_MAX_ARTICLES = 20
+# Total prompt budget across all excerpts (keeps a small CPU model's context safe).
+_SYNTHESIS_BUDGET_CHARS = 24_000
+
+
+class SynthesizeRequest(BaseModel):
+    article_ids: list[int] | None = None
+    query: str | None = None
+    model: str | None = None
+
+
+@router.post("/synthesize")
+def synthesize_articles(
+    req: SynthesizeRequest,
+    db: Session = Depends(get_db),
+    client: OllamaClient = Depends(get_llm_client),
+) -> dict:
+    """Synthesize a bounded SET of stored articles with a local model.
+
+    Bounded fan-out by construction: at most {max} articles, one generation call,
+    a per-article excerpt budget. The response carries the member ids so the
+    output is always traceable to its inputs; the synthesis is stored per member
+    article (kind="synthesis") with model + prompt-version provenance. The
+    output is assistance, never a verdict -- it cites article numbers, and the
+    caveat travels in the response.
+    """
+    if req.article_ids and len(req.article_ids) > _SYNTHESIS_MAX_ARTICLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {_SYNTHESIS_MAX_ARTICLES} articles per synthesis "
+            f"(got {len(req.article_ids)}). Narrow the selection.",
+        )
+
+    truncated = False
+    if req.article_ids:
+        articles = db.query(Article).filter(Article.id.in_(req.article_ids)).all()
+    elif req.query:
+        try:
+            ids = search_ids(db, req.query) or []
+        except SearchQueryError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+        if len(ids) > _SYNTHESIS_MAX_ARTICLES:
+            ids, truncated = ids[:_SYNTHESIS_MAX_ARTICLES], True
+        articles = db.query(Article).filter(Article.id.in_(ids)).all()
+    else:
+        raise HTTPException(status_code=400, detail="Provide article_ids or query.")
+
+    articles = [a for a in articles if a.content]
+    if not articles:
+        raise HTTPException(status_code=404, detail="No matching articles with content.")
+
+    per_article = max(400, _SYNTHESIS_BUDGET_CHARS // len(articles))
+    parts = []
+    for i, a in enumerate(sorted(articles, key=lambda x: x.id), 1):
+        src = a.source.name if a.source else "unknown source"
+        pub = a.published_at.date().isoformat() if a.published_at else "undated"
+        parts.append(
+            f"[{i}] {a.title or '(untitled)'} ({src}, {pub})\n{a.content[:per_article]}"
+        )
+    prompt = "\n\n---\n\n".join(parts)
+    model = req.model or DEFAULT_MODEL
+
+    try:
+        result = client.generate(prompt, model=model, system=_SYNTHESIS_SYSTEM)
+    except LLMUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    member_ids = [a.id for a in sorted(articles, key=lambda x: x.id)]
+    for a in articles:
+        db.add(
+            ArticleAnalysis(
+                article_id=a.id,
+                kind="synthesis",
+                result=result.text,
+                model=result.model,
+                prompt_version=SYNTHESIS_PROMPT_VERSION,
+                created_at=datetime.now(UTC),
+            )
+        )
+    db.commit()
+
+    return {
+        "kind": "synthesis",
+        "model": result.model,
+        "prompt_version": SYNTHESIS_PROMPT_VERSION,
+        "member_ids": member_ids,
+        "member_count": len(member_ids),
+        "truncated": truncated,
+        "result": result.text,
+        "caveat": (
+            "A synthesis is reading assistance over the listed member articles only -- "
+            "it asserts nothing beyond them and may miss nuance; verify against the "
+            "stored copies before publication."
+        ),
     }

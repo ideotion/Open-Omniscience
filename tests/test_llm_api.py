@@ -127,3 +127,57 @@ def test_translate_includes_target_language_in_prompt():
         assert r.status_code == 200
         # the prompt the client received must carry the requested language
         assert any("French" in (p or "") + (s or "") for p, _m, s in fake.calls)
+
+
+# --- corpus synthesis (0.0.8 part 2, WP4 / RM-12) ----------------------------- #
+
+
+def test_synthesize_carries_member_provenance_and_stores_per_member():
+    fake = _FakeOllama()
+    _override(fake)
+    ids = [_seed_article() for _ in range(3)]
+    with TestClient(app) as client:
+        r = client.post("/api/llm/synthesize", json={"article_ids": ids})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["member_ids"] == sorted(ids)
+        assert body["member_count"] == 3
+        assert body["prompt_version"] == "synthesis-v1"
+        assert "never a verdict" in body["caveat"] or "asserts nothing" in body["caveat"]
+        # exactly ONE generation call (bounded fan-out by construction)
+        assert len(fake.calls) == 1
+        prompt = fake.calls[0][0]
+        assert "[1]" in prompt and "[3]" in prompt  # numbered excerpts
+    from src.database.models import ArticleAnalysis
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        stored = (
+            s.query(ArticleAnalysis)
+            .filter(ArticleAnalysis.kind == "synthesis",
+                    ArticleAnalysis.article_id.in_(ids))
+            .all()
+        )
+        assert len(stored) == 3  # provenance stored per member
+
+
+def test_synthesize_caps_explicit_ids_at_20():
+    _override(_FakeOllama())
+    with TestClient(app) as client:
+        r = client.post("/api/llm/synthesize", json={"article_ids": list(range(1, 22))})
+        assert r.status_code == 400
+        assert "At most 20" in r.json()["detail"]
+
+
+def test_synthesize_503_when_ollama_down():
+    _override(_FakeOllama(available=False))
+    art = _seed_article()
+    with TestClient(app) as client:
+        r = client.post("/api/llm/synthesize", json={"article_ids": [art]})
+        assert r.status_code == 503
+
+
+def test_synthesize_requires_a_selection():
+    _override(_FakeOllama())
+    with TestClient(app) as client:
+        assert client.post("/api/llm/synthesize", json={}).status_code == 400
