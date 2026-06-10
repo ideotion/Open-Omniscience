@@ -162,6 +162,13 @@ Before fearing loss from an archive-size change, run
   index inherits the corpus's at-rest posture (documented stance: full-disk
   encryption LUKS/Qubes/Tails; encrypted backups exist). True at-rest DB
   encryption (SQLCipher-class) = design with the backup redesign, not ad hoc.
+  **EXTENDED (maintainer 2026-06-10): once the advanced global search ships,
+  REMOVE the Search tab from the sidebar** — the top omnibar becomes the
+  single search entry, and its design must be careful, intuitive, elegant.
+  Sequencing rule (the Desk lesson): the Enter-popup must FIRST absorb every
+  Search-tab capability (boolean queries, source/date filters, result export,
+  signed-evidence export, LLM synthesize) — only then does the tab go. Never
+  silently lose a tool.
 - **Temporal map: logarithmic time scale (maintainer idea 2026-06-10):** event
   density grows toward the present, so a log-scaled axis (dense recent years,
   compressed antiquity) is the intuitive default — agreed in chat; offer
