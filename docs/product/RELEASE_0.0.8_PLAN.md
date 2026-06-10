@@ -1,7 +1,19 @@
 # Release plan — 0.0.8 ("trustworthy MVP, hardened")
 
 > Execution plan for the **Now** horizon of [ROADMAP.md](ROADMAP.md), written at the close of
-> the v0.0.7 audit (PR #56). **Status: PLANNED — execute after the audit PR merges**, on a
+> the v0.0.7 audit (PR #56).
+>
+> **STATUS: EXECUTED — all nine work packages delivered** (PRs #59, #60, #61 on branch
+> `0.08`), with one honest re-scope per WP noted in the commits: WP8's producer set was
+> swapped to the three recipes whose data already flows, and WP7's "<50 then blocking"
+> became a CI ratchet (mypy 303 → 128; the count can never rise). The audit findings
+> register closed at **29/29 FIXED**. Release verification (re-run at cycle close, fresh
+> venv): install clean, 225 routes boot, `/api/health` reports 0.0.8, full suite
+> **858 passed / 6 skipped**, core-only **754 / 6**, bandit **0**, pip-audit **clean**,
+> benchmarks within budget (recency p50 1.32 ms on the index; near-dup linear ~5 ms/doc).
+>
+> *(Original plan below, kept verbatim for the record. It said: execute after the audit PR
+> merges, on a*
 > fresh branch cut from the updated `0.07` (or the new `0.08` cycle branch per the project's
 > branch ⇒ version convention; bump `pyproject.toml` to `0.0.8` in the cycle's first commit).
 > Each work package is one reviewable commit-set with its own acceptance criteria; the audit's
