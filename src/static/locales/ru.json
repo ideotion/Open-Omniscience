@@ -140,5 +140,7 @@
   "Console view": "Вид «Консоль»",
   "Desk view": "Вид «Стол»",
   "Open the Desk view →": "Открыть вид «Стол» →",
-  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "Более спокойный, ориентированный на содержание взгляд на то же приложение — тот же сервер, те же данные. Некоторые инструменты (Карта времени, Повестка, Мировое право, Целостность источников) открываются здесь, в Консоли."
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "Более спокойный, ориентированный на содержание взгляд на то же приложение — тот же сервер, те же данные. Некоторые инструменты (Карта времени, Повестка, Мировое право, Целостность источников) открываются здесь, в Консоли.",
+  "Open this external link in your browser?": "Открыть эту внешнюю ссылку в браузере?",
+  "This leaves the app and contacts an outside server.": "Вы покинете приложение и обратитесь к внешнему серверу."
 }

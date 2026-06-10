@@ -661,6 +661,29 @@ offline kit as part of RM-08.
    never use clearnet on the work machine. Build with RM-08 packaging.
 
 
+## Settings → Diagnostics log: a shareable back-end synthesis (maintainer idea, 2026-06-10)
+
+**The problem.** Keyword grouping "is still a bit messy", and improving it requires
+seeing the operator's real data — but the corpus is private and local by design.
+The maintainer cannot paste their whole database into a debugging session.
+
+**The idea.** A new Settings section that builds **shareable, human-readable
+exports of back-end state**, starting with keywords:
+
+- **Keyword log**: the full list of gathered keywords + their families and
+  supergroups (with counts and merge/split provenance), exported as a single
+  reviewable file. The maintainer hands this to the development assistant, who can
+  then propose grouping fixes adjusted to the *actual* vocabulary of the corpus —
+  instead of guessing from synthetic examples.
+- **Extending further (maintainer-stated):** the same log should grow into an
+  agreed set of synthesized snapshots of other important back-end aspects — the
+  maintainer↔assistant diagnostics channel. Precedent: `data/source_preflight.jsonl`
+  already plays this role for sources, and proved its worth in the first live test.
+
+**Honesty constraints**: exports contain only what the operator chooses to share,
+generated on demand (never automatic), clearly labelled with date + corpus size,
+and they synthesize — they never editorialise (counts and structures, not scores).
+
 ## Hosting & mobile — the stance (maintainer-ruled 2026-06-10)
 
 The PR #37 memo ("hosting & mobile strategy", closed as a deliberation doc)

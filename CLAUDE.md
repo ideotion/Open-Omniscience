@@ -78,6 +78,10 @@ Before fearing loss from an archive-size change, run
    "source ↗" link. The reader shows "Related in your corpus" (shared-keyword
    overlap counts).
 
+7. **External links ALWAYS confirmed with a popup before opening** (ruled
+   2026-06-10): delegated capture-phase `_externalLinkGuard` in BOTH UIs;
+   loopback links exempt; message translated via `OOI18N.t`.
+
 - **Home must never go blank-and-silent**: producer registration is fail-safe
   (core first, recipe pack additive in try/except); zero cards renders the
   explanatory empty state with Collect/Recompute actions — never an empty div.
@@ -125,6 +129,13 @@ Before fearing loss from an archive-size change, run
 - **Custody tab UX**: most users won't get it -- rename/explain/guided steps.
 - Offline LLM kit (RM-08 release artifact). DuckDuckGo discovery channel only
   after RM-03 gate UX proves out.
+- **Keyword diagnostics log (maintainer idea, next version):** a new Settings
+  section that builds a shareable export of all gathered keywords + their
+  families/supergroups, so the maintainer can hand it to the assistant for
+  better-adjusted grouping fixes ("it's still a bit messy"). The idea extends
+  further: the same log should grow agreed synthesized snapshots of other
+  back-end aspects — a maintainer↔assistant diagnostics channel, like
+  `source_preflight.jsonl` was for sources. Design in FUTURE_DEVELOPMENTS.
 - **Parked for 0.0.9 (ruled 2026-06-10):** space-time layers 3+4 from the
   PR #51 design — convergence detection (space-time co-occurrence, never
   causation) + the user-defined "if-this-then-WATCH" alert engine (explainable,

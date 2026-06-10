@@ -140,5 +140,7 @@
   "Console view": "Console view",
   "Desk view": "Desk view",
   "Open the Desk view →": "Open the Desk view →",
-  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console."
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.",
+  "Open this external link in your browser?": "Open this external link in your browser?",
+  "This leaves the app and contacts an outside server.": "This leaves the app and contacts an outside server."
 }

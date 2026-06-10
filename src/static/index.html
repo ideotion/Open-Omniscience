@@ -5136,6 +5136,20 @@
       if (pop && !pop.contains(e.target) && chip && !chip.contains(e.target)) toggleVitals();
     });
     ensureDocList();   // so the command palette can offer docs before Help is opened
+    // -- External-link guard (maintainer ruling 2026-06-10): the app ALWAYS --- //
+    // asks before opening an external link. Capture-phase + delegated, so it
+    // covers every anchor — static or rendered later. Loopback links are exempt.
+    document.addEventListener("click", function _externalLinkGuard(e) {
+      const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+      if (!a || !/^https?:/i.test(a.href)) return;
+      let host = "";
+      try { host = new URL(a.href).hostname; } catch { return; }
+      if (host === "127.0.0.1" || host === "localhost" || host === location.hostname) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Open this external link in your browser?") + "\n\n" + a.href + "\n\n" +
+                   t("This leaves the app and contacts an outside server.")))
+        { e.preventDefault(); e.stopImmediatePropagation(); }
+    }, true);
     // Honour a deep-link like /#sources on first load; otherwise land on Home.
     const initial = (location.hash || "#home").slice(1);
     showTab(document.getElementById("tab-" + initial) ? initial : "home");

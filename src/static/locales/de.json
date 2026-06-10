@@ -140,5 +140,7 @@
   "Console view": "Konsolen-Ansicht",
   "Desk view": "Schreibtisch-Ansicht",
   "Open the Desk view →": "Schreibtisch-Ansicht öffnen →",
-  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "Eine ruhigere, inhaltsorientierte Sicht auf dieselbe App — gleicher Server, gleiche Daten. Einige Werkzeuge (Zeitkarte, Agenda, Weltrecht, Quellenintegrität) öffnen sich wieder hier in der Konsole."
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "Eine ruhigere, inhaltsorientierte Sicht auf dieselbe App — gleicher Server, gleiche Daten. Einige Werkzeuge (Zeitkarte, Agenda, Weltrecht, Quellenintegrität) öffnen sich wieder hier in der Konsole.",
+  "Open this external link in your browser?": "Diesen externen Link im Browser öffnen?",
+  "This leaves the app and contacts an outside server.": "Dies verlässt die App und kontaktiert einen externen Server."
 }

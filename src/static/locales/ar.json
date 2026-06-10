@@ -140,5 +140,7 @@
   "Console view": "عرض وحدة التحكم",
   "Desk view": "عرض المكتب",
   "Open the Desk view →": "افتح عرض المكتب ←",
-  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "نسخة أهدأ تركّز على المحتوى من التطبيق نفسه — الخادم نفسه والبيانات نفسها. بعض الأدوات (الخريطة الزمنية، المفكرة، القانون العالمي، نزاهة المصادر) تُفتح هنا في وحدة التحكم."
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "نسخة أهدأ تركّز على المحتوى من التطبيق نفسه — الخادم نفسه والبيانات نفسها. بعض الأدوات (الخريطة الزمنية، المفكرة، القانون العالمي، نزاهة المصادر) تُفتح هنا في وحدة التحكم.",
+  "Open this external link in your browser?": "هل تريد فتح هذا الرابط الخارجي في متصفحك؟",
+  "This leaves the app and contacts an outside server.": "هذا يغادر التطبيق ويتصل بخادم خارجي."
 }

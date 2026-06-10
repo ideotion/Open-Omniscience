@@ -213,3 +213,9 @@ def test_ui_invariants():
     assert '_mk_desktop "$APP_NAME-desk"' not in installer, (
         "single-launcher verdict: the installer must not create a Desk launcher"
     )
+    # 8. external links ALWAYS confirmed via popup before opening (ruled
+    #    2026-06-10) — delegated capture-phase guard present in BOTH UIs.
+    for name, doc in (("index.html", html), ("desk.html", desk)):
+        assert "_externalLinkGuard" in doc, (
+            f"{name}: the external-link confirmation guard must exist (CLAUDE.md)"
+        )

@@ -140,5 +140,7 @@
   "Console view": "Vista Consola",
   "Desk view": "Vista Escritorio",
   "Open the Desk view →": "Abrir la vista Escritorio →",
-  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "Una versión más serena y centrada en el contenido de la misma aplicación — mismo servidor, mismos datos. Algunas herramientas (Mapa temporal, Agenda, Derecho mundial, Integridad de fuentes) se abren aquí, en la Consola."
+  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "Una versión más serena y centrada en el contenido de la misma aplicación — mismo servidor, mismos datos. Algunas herramientas (Mapa temporal, Agenda, Derecho mundial, Integridad de fuentes) se abren aquí, en la Consola.",
+  "Open this external link in your browser?": "¿Abrir este enlace externo en su navegador?",
+  "This leaves the app and contacts an outside server.": "Esto sale de la aplicación y contacta con un servidor externo."
 }
