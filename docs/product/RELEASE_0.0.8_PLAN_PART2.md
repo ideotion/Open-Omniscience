@@ -1,5 +1,8 @@
 # Release plan — 0.0.8, part 2 ("the sense-making horizon")
 
+> **STATUS: EXECUTED — WP1–WP5 all delivered** (PRs #64/#65 WP1+WP2, #67 WP3, #68 WP4,
+> #69 WP5). Release verification at cycle close recorded in `docs/CHANGES.md` and below.
+>
 > Continuation of [`RELEASE_0.0.8_PLAN.md`](RELEASE_0.0.8_PLAN.md) — per the maintainer's
 > direction the whole roadmap push (RM-01–RM-19) ships under the `0.08` cycle. This part
 > covers the **Next** horizon's M-effort, high-RICE items; the XL centerpiece (**RM-05
