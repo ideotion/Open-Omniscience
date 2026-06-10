@@ -631,6 +631,8 @@
         <button onclick="doSearch()">Search</button>
         <button class="secondary" onclick="exportResults('csv')">Export CSV</button>
         <button class="secondary" onclick="exportResults('json')">Export JSON</button>
+        <button class="secondary" onclick="exportMethods()"
+          title="A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.">Methods appendix</button>
         <button class="secondary" onclick="exportEvidence()" title="Signed, tamper-evident bundle">Export signed evidence</button>
       </div>
       <div id="search-meta" class="hint"></div>
@@ -4693,6 +4695,23 @@
     function exportResults(fmt) {
       const p = searchParams(); p.set("format", fmt);
       window.open("/api/articles/export?" + p.toString(), "_blank");
+    }
+
+    async function exportMethods() {
+      // RM-07: the *how* behind the current search, as a downloadable document.
+      const q = $("q").value.trim();
+      if (!q) { toast("Run a search first — the appendix records the query.", "err"); return; }
+      try {
+        const r = await api("/api/reports/methods",
+          {method: "POST", body: JSON.stringify({query: q})});
+        const blob = new Blob([r.markdown], {type: "text/markdown"});
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "methods-appendix.md";
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(a.href);
+        toast(`Methods appendix downloaded (${r.article_count} articles).`);
+      } catch (e) { toast("Methods export failed: " + e.message, "err"); }
     }
 
     async function loadLlmHealth() {
