@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "open-omniscience"
-version = "0.0.9"
+version = "0.0.8"
 description = "Local-first, ethical intelligence platform for investigative journalists."
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }

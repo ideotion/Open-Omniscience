@@ -1,9 +1,10 @@
-# Release plan — 0.0.9 ("the sense-making horizon, part 1")
+# Release plan — 0.0.8, part 2 ("the sense-making horizon")
 
-> Execution plan for the first half of the **Next** horizon of [ROADMAP.md](ROADMAP.md)
-> (the horizon spans 0.0.9–0.1.0). Selection: the M-effort, high-RICE items ship in 0.0.9;
-> the XL centerpiece (**RM-05 semantic/NER search**) plus packaging (RM-08) and perf
-> niceties (RM-04) anchor 0.1.0 — the public-alpha gate — rather than being rushed here.
+> Continuation of [`RELEASE_0.0.8_PLAN.md`](RELEASE_0.0.8_PLAN.md) — per the maintainer's
+> direction the whole roadmap push (RM-01–RM-19) ships under the `0.08` cycle. This part
+> covers the **Next** horizon's M-effort, high-RICE items; the XL centerpiece (**RM-05
+> semantic/NER search**) plus packaging (RM-08) and perf niceties (RM-04) anchor the
+> following cycle — the public-alpha gate — rather than being rushed here.
 > Same discipline as 0.0.8: one reviewable work package at a time, acceptance criteria up
 > front, the Evidence Protocol throughout, every §0.5 invariant preserved.
 

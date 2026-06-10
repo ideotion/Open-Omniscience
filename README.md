@@ -5,28 +5,27 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.0.9 (pre-alpha — the `0.0.x` series; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md))
+**Version:** 0.0.8 (pre-alpha — the `0.0.x` series; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md))
 **License:** [GNU GPLv3](LICENSE)
 
 ---
 
-> **On the version number.** This is deliberately versioned **`0.0.9`**, not `0.9`. The
+> **On the version number.** This is deliberately versioned **`0.0.8`**, not `0.8`. The
 > software is young and still being proven; we **under-state** maturity on purpose
 > (honesty over hype). The `0.0.x` series is pre-alpha; only after it consolidates do we
 > move to a `0.1` **alpha**, then **beta**, then a `1.0` release. Development cycles are
-> named after the version they produce: branch `0.07 → 0.08 → 0.09` ⇒ `0.0.7 → 0.0.8 →
-> 0.0.9`. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+> named after the version they produce: branch `0.06 → 0.07 → 0.08` ⇒ `0.0.6 → 0.0.7 →
+> 0.0.8`. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
-## Status — v0.0.9: the sense-making horizon (reports, exports, discovery)
+## Status — v0.0.8: the product roadmap cycle (hardening, recipes, sense-making)
 
-> **`0.0.9` is the active cycle** (branch `0.09`). It builds on the shipped `0.0.8` —
-> investigation-recipe cards, the opt-in external-lookup gate, the typed ORM, 29/29 audit
-> findings closed — and opens the **Next horizon** of the product roadmap
-> ([`docs/product/ROADMAP.md`](docs/product/ROADMAP.md)): the report/methods generator,
-> provenance-preserving exports, scheduler polish, corpus-wide LLM synthesis, and the
-> offline channels of automated source discovery
-> ([`docs/product/RELEASE_0.0.9_PLAN.md`](docs/product/RELEASE_0.0.9_PLAN.md)). Feature notes
-> tagged `0.06`–`0.08` describe what shipped in those cycles and remain accurate.
+> **`0.0.8` is the active cycle** (branch `0.08`) and carries the whole product-roadmap
+> push: part 1 — trust hardening, the investigation-recipe cards, the typed ORM, all 29
+> audit findings closed — is merged; part 2 (the sense-making horizon: report/methods
+> generator, provenance-preserving exports, scheduler polish, corpus LLM synthesis, and
+> the offline channels of automated source discovery) is in progress
+> ([`docs/product/RELEASE_0.0.8_PLAN_PART2.md`](docs/product/RELEASE_0.0.8_PLAN_PART2.md)).
+> Feature notes tagged `0.06`/`0.07` describe what shipped in those cycles and remain accurate.
 
 This release rebuilds the project around a small, **genuinely working and tested**
 spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
