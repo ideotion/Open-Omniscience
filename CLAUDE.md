@@ -118,6 +118,14 @@ Before fearing loss from an archive-size change, run
   weekly, daily, trimester, and list. Also: the Agenda tab is currently NOT
   translated at all (part of the chrome-audit long tail — prioritize its
   strings in the next i18n batch, as done for Indices).
+- **Agenda depth (maintainer 2026-06-10): only 4 categories — "we should be
+  flooded; it's the point of datamining".** Expand `configs/world_events.yml`
+  massively: many more calendars (elections worldwide, summits, central banks,
+  parliaments, courts, UN observances, religious/civic holidays, fiscal dates,
+  major sport/science events…) + ship the designed iCal import (official feeds
+  → exact dates; PR #50's "next step"). Keep honesty: every entry sourced;
+  movable dates marked; subscribe-default stays off-flood (user opts into the
+  flood via subscriptions).
 - **i18n long tail (462 unkeyed chrome strings, audit-tracked):** maintainer
   keeps hitting untranslated surfaces live (Settings ✓ done, Indices ✓ done,
   Agenda ← next, plus fragments). Burn down per-tab each session via
