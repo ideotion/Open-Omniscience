@@ -286,9 +286,17 @@ Before fearing loss from an archive-size change, run
   ride every keyword in the diagnostics log — the disambiguation evidence for
   hand/main rings; `configs/keyword_equivalents.yml` holds language-qualified
   curated rings (fr:main ≠ en:main, reasoning notes). NEXT: build rings from
-  the maintainer's first log batch; then the additive trans-language family
-  layer (per-language counts always visible; user can split; LLM may propose,
-  never auto-merge). Design in FUTURE_DEVELOPMENTS.
+  the maintainer's first log batch; then the trans-language family layer.
+  **ELEVATED (maintainer 2026-06-10): rings feed the LIVE analytics, not just
+  display** — équivalents merge inside grouped trends/trending/associations/
+  graph levels, so fr:élections + en:elections count as ONE concept; the
+  cross-country recognition case ("country A discusses country B's
+  elections") is served by splitting a ring's trend per source country/
+  language (mentions carry both). Guards stay: only language-qualified
+  members merge, a keyword joins a ring only when its language signature
+  supports it (dominant-language threshold, else flagged ambiguous +
+  unmerged), per-language counts always visible, user can split any ring.
+  Design in FUTURE_DEVELOPMENTS.
 - **Keyword diagnostics log — SHIPPED first slice (2026-06-10, maintainer asked):**
   Settings → Data & backup → "Diagnostics log" downloads
   `GET /api/diagnostics/keywords` (oo-export-1 envelope: all keywords with real
