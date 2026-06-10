@@ -260,6 +260,11 @@ def trending(
         "country": country,
         "kind": kind,
         "terms": out,
+        # Multiple-comparisons honesty (evidence-tiered cards): how many
+        # candidates were screened to surface these winners — with many terms
+        # scanned, some ratios will be high by chance (winner's curse).
+        "scanned": len(scored),
+        "keywords_with_recent_mentions": len(recent),
         "method": "recent volume vs prior-period rate (ratio, not a significance test)",
     }
 

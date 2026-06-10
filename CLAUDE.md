@@ -116,6 +116,22 @@ Before fearing loss from an archive-size change, run
 - **Interactive charts** (maintainer, live test): commodity/markets graphs need
   zoom (wheel/drag) + discrete per-graph adjustable legends — "the user should
   feel closer to the data". Same treatment for the Insights trend graph.
+- **Commodities cards detail (maintainer 2026-06-10, NEXT UP):** initial cards'
+  graphs show only 5 points — they must render a detailed curve (then DROP the
+  "· 5 pts" suffix as useless); detailed both axes + a legend + very discrete
+  horizontal gridlines so curve-crossing X/Y points are identifiable.
+- **Collector: cumulative runs + progress (maintainer 2026-06-10):** allow one
+  Collect pass to CUMULATIVELY do RSS + recursive crawl + markets download +
+  wiki watched pages; a progress bar visible THROUGHOUT the UI (the top-bar
+  activity chip is the natural host). Maintainer also floated default-watching
+  the top-1000 Wikipedia pages in all languages, bundled — needs a design
+  answer first (network cost at first boot vs zero-network-boot non-negotiable;
+  likely ship the LIST bundled + one-click opt-in, never auto-fetch).
+- **Units/precision principle (maintainer-ruled 2026-06-10, apply APP-WIDE):**
+  never print raw float tails ("3654.015384615385 USD/t" with a two-digit
+  evolution next to it). One shared smart formatter: sensible significant
+  digits scaled to the magnitude (e.g. 3 654.0, 111.6, 13 483.8), unit-aware.
+  Sweep every surface that prints numbers.
 - **Tag-driven corpora** (maintainer): multi-tag selection in Sources (selected
   tags change colour; AND-combination) and a "make this selection a corpus"
   flow -- per-corpus article counts, keyword trends, analyses.
@@ -142,14 +158,31 @@ Before fearing loss from an archive-size change, run
   corpus header; on-demand only, bounded at 5000). Future slices: other agreed
   back-end syntheses (the maintainer↔assistant channel) — design in
   FUTURE_DEVELOPMENTS.
-- **Evidence-tiered cards (maintainer idea 2026-06-10, design recorded, NOT yet
-  ruled go):** clinical-phases analogy — corpus evidence tiers (early/
-  developing/established) gate claim classes; Wilson CIs on proportions,
-  Katz rate-ratio CIs on trends, scan-size disclosure (multiple comparisons),
-  power-style "what's missing" for silent cards, and a structured `trigger`
-  block per card rendering "Why am I seeing this?" with the actual numbers.
-  Human stays the DSMB: tier-labelled cards + user-chosen evidence bar; no
-  composite scores ever. Full design in FUTURE_DEVELOPMENTS.
+- **Evidence-tiered cards — RULED GO (2026-06-10); slice 1 SHIPPED same day.**
+  Maintainer requirements: every "Why am I seeing this?" leads with a PLAIN-
+  ENGLISH sentence for non-math readers, the exact equations beneath — and it
+  must be properly translated throughout the UI. Shipped: `Card.trigger`
+  ({plain, math:[{label,value}]}; plain + labels are CONSTANT strings so the
+  exact-match i18n engine translates them; values are numbers/symbols only),
+  `src/signals/intervals.py` (closed-form Wilson + Katz 95% CIs, no scipy),
+  trending() returns scan size, 7 producers instrumented (rising/diet/coverage/
+  capacity/stale/echo/lonely), `<details class="why">` rendering, invariant #9.
+  Remaining slices: instrument the other 9+recipe producers; corpus tier header
+  (early/developing/established); power-style "what's missing"; BH-FDR later.
+- **i18n chrome audit (maintainer live-test 2026-06-10, French paste):**
+  `scripts/i18n_report.py --audit-chrome` extracts every UI text node/attribute
+  and diffs vs en.json — the gap is now a NUMBER (was 503; 206 keys at 100%
+  ×12 after the priority batch; 473 in the long tail, many are fragments split
+  by inline markup). Keep translating in batches each session until ~0; never
+  add chrome without locale keys (ritual).
+- **Translated documentation (ruled 2026-06-10): SHIPPED infrastructure.**
+  `docs/i18n/<lang>/<FILE>.md` served by `/api/docs/{slug}?lang=` (validated,
+  no traversal; X-OO-Doc-Lang header), reader auto-requests the UI language and
+  shows the honest "machine-drafted — English is authoritative" banner;
+  `scripts/translate_docs.py` drafts all docs ×11 langs with the LOCAL Ollama
+  (chunked by headings, provenance banner, resumable). French QUICKSTART is a
+  hand-seeded full translation. TODO: run the drafting tool on a machine with
+  a model to fill the other languages/docs; users perfect via PRs.
 - **Parked for 0.0.9 (ruled 2026-06-10):** space-time layers 3+4 from the
   PR #51 design — convergence detection (space-time co-occurrence, never
   causation) + the user-defined "if-this-then-WATCH" alert engine (explainable,

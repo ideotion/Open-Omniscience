@@ -15,16 +15,77 @@ Usage:
     python scripts/i18n_report.py                 # human-readable table
     python scripts/i18n_report.py --json          # machine-readable
     python scripts/i18n_report.py --min 100       # exit 1 if a 'complete' locale < 100%
+    python scripts/i18n_report.py --audit-chrome  # UI strings NOT yet keyed in en.json
+
+``--audit-chrome`` (maintainer asked 2026-06-10, after a French live test showed
+untranslated Settings text) extracts every constant text node + placeholder/
+title/aria-label from the UI the same way the runtime engine sees them, and
+diffs against en.json — so "how much chrome is untranslatable" is a measurable
+number, not a feeling. Fragments split by inline markup are listed too (they
+need per-fragment keys or markup changes).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 _LOCALES = Path(__file__).resolve().parent.parent / "src" / "static" / "locales"
+_UI = Path(__file__).resolve().parent.parent / "src" / "static" / "index.html"
+
+
+class _ChromeExtractor(HTMLParser):
+    """Collect translatable chrome the way i18n.js does: whole text nodes
+    (whitespace-normalised) + placeholder/title/aria-label attributes."""
+
+    SKIP = {"script", "style", "code", "pre", "textarea", "svg", "path", "circle", "rect"}
+    ATTRS = ("placeholder", "title", "aria-label")
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[str] = []
+        self.texts: set[str] = set()
+
+    def handle_starttag(self, tag, attrs):
+        self.stack.append(tag)
+        for k, v in attrs:
+            if k in self.ATTRS and v:
+                self._add(v)
+
+    def handle_endtag(self, tag):
+        while self.stack and self.stack[-1] != tag:
+            self.stack.pop()
+        if self.stack:
+            self.stack.pop()
+
+    def handle_data(self, data):
+        if not any(t in self.SKIP for t in self.stack):
+            self._add(data)
+
+    def _add(self, s: str) -> None:
+        k = re.sub(r"\s+", " ", s).strip()
+        if len(k) < 3 or "${" in k:
+            return
+        if re.fullmatch(r"[\W\d_…→↗·—-]+", k):
+            return
+        self.texts.add(k)
+
+
+def audit_chrome() -> dict:
+    parser = _ChromeExtractor()
+    parser.feed(_UI.read_text(encoding="utf-8"))
+    en_keys = _keys(_load(_LOCALES / "en.json"))
+    missing = sorted(t for t in parser.texts if t not in en_keys)
+    return {
+        "ui_strings": len(parser.texts),
+        "keyed": len(parser.texts) - len(missing),
+        "missing_from_en": len(missing),
+        "missing": missing,
+    }
 
 
 def _load(path: Path) -> dict:
@@ -94,7 +155,25 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="fail (exit 1) if any locale declaring status:complete is below this %%",
     )
+    ap.add_argument(
+        "--audit-chrome",
+        action="store_true",
+        help="list UI chrome strings not yet keyed in en.json (untranslatable today)",
+    )
     args = ap.parse_args(argv)
+
+    if args.audit_chrome:
+        audit = audit_chrome()
+        if args.json:
+            print(json.dumps(audit, ensure_ascii=False, indent=2))
+        else:
+            print(
+                f"chrome audit — {audit['ui_strings']} UI strings, "
+                f"{audit['keyed']} keyed, {audit['missing_from_en']} untranslatable:\n"
+            )
+            for m in audit["missing"]:
+                print(f"  {m}")
+        return 0
 
     report = build_report()
     if args.json:

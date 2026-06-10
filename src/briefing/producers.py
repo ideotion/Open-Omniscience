@@ -69,6 +69,19 @@ def _small_corpus_note(session) -> str:
     )
 
 
+# --- "Why am I seeing this?" (evidence-tiered cards, ruled 2026-06-10) ------- #
+# Every trigger carries (a) ONE constant plain-language sentence per card type —
+# constant so the exact-match i18n engine translates it into all 12 languages —
+# and (b) math rows whose labels are constant (translated the same way) and
+# whose values are numbers/symbols only (language-neutral). The specifics (term,
+# source names) already live in the card title/summary; the plain sentence must
+# stay generic or translation breaks.
+
+
+def _trigger(plain: str, math_rows: list[tuple[str, str]]) -> dict:
+    return {"plain": plain, "math": [{"label": lb, "value": v} for lb, v in math_rows]}
+
+
 def _articles_for_term(session, keyword_id: int, *, days: int, limit: int):
     """Recent ``(Article, source_name)`` rows mentioning a keyword, newest first."""
     cutoff = date.today() - timedelta(days=days)
@@ -111,14 +124,40 @@ def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
 # --------------------------------------------------------------------------- #
 def rising_now(session) -> list[Card]:
     from src.analytics import queries as q
+    from src.signals.intervals import rate_ratio_interval
 
     young = _is_young(session)
-    data = q.trending(session, limit=_MAX_RISING, min_recent=2 if young else 3)
+    min_recent = 2 if young else 3
+    data = q.trending(session, limit=_MAX_RISING, min_recent=min_recent)
     note = _small_corpus_note(session) if young else ""
+    scanned = data.get("scanned", 0)
     cards: list[Card] = []
     for term in data.get("terms", []):
         kw = resolve_keyword(session, term["term"])
         rows = _articles_for_term(session, kw.id, days=14, limit=6) if kw else []
+        ci = rate_ratio_interval(
+            term["recent"], term["prior"], window_days=7, baseline_days=30
+        )
+        math_rows = [
+            ("Mentions in the last 7 days", str(term["recent"])),
+            ("Mentions in the 30 days before that", str(term["prior"])),
+            (
+                "Growth = recent rate ÷ earlier rate"
+                if term["prior"]
+                else "Brand-new term — no earlier mentions to compare against",
+                f"({term['recent']} ÷ 7) ÷ ({term['prior']} ÷ 30) = ×{term['growth']}"
+                if term["prior"]
+                else f"×{term['growth']}",
+            ),
+            (
+                "How sure can we be? (95% interval)"
+                if ci
+                else "Too few mentions for a confidence interval",
+                f"×{round(ci.low, 2)} – ×{round(ci.high, 2)}" if ci else "—",
+            ),
+            ("Minimum recent mentions required", f"≥ {min_recent} ✓"),
+            ("Terms scanned to pick the top few", f"{scanned} → {_MAX_RISING}"),
+        ]
         cards.append(
             Card(
                 type="rising",
@@ -134,7 +173,15 @@ def rising_now(session) -> list[Card]:
                     "recent": term["recent"],
                     "prior": term["prior"],
                     "kind": term["kind"],
+                    "ci95": [round(ci.low, 4), round(ci.high, 4)] if ci else None,
+                    "scanned": scanned,
                 },
+                trigger=_trigger(
+                    "This word or name suddenly appears much more often in the articles "
+                    "you collected than it did before. A jump like that usually means a "
+                    "story is moving.",
+                    math_rows,
+                ),
                 method=data.get(
                     "method",
                     "recent volume vs prior-period rate (a ratio, not a significance test)",
@@ -380,9 +427,20 @@ def stale_data(session) -> list[Card]:
     if not stale:
         return []
     sample = ", ".join(f"{r.label or r.symbol}" for r in stale[:5])
+    math_rows = [
+        ("Price feeds you have enabled", str(len(rules))),
+        ("Of which, silent or failing", str(len(stale))),
+        ("A feed counts as cold after this many days", f"> {_STALE_DAYS}"),
+    ]
     return [
         Card(
             type="stale_data",
+            trigger=_trigger(
+                "Some of the price feeds you rely on have stopped delivering fresh "
+                "numbers, or reported an error on their last run. The figures they "
+                "show may be out of date until they run again.",
+                math_rows,
+            ),
             title=f"{len(stale)} price feed(s) need attention",
             summary=(
                 f"{len(stale)} enabled extraction rule(s) are cold (>{_STALE_DAYS}d) or last "
@@ -437,9 +495,29 @@ def diet_self_audit(session) -> list[Card]:
         return []
     top_labels = ", ".join(s["label"] for s in result.shares[:3])
     pct = round(result.top_share * 100)
+    from src.signals.intervals import wilson_interval
+
+    top3_count = round(result.top_share * total)
+    ci = wilson_interval(top3_count, total)
+    math_rows = [
+        (f"Articles collected in the last {_DIET_DAYS} days", str(total)),
+        ("Of which, from your top 3 sources", str(top3_count)),
+        ("Top-3 share = top-3 articles ÷ all articles", f"{top3_count} ÷ {total} = {pct}%"),
+        (
+            "How sure can we be? (95% interval)",
+            f"{round(ci.low * 100)}% – {round(ci.high * 100)}%" if ci else "—",
+        ),
+        ("Minimum required: 5 articles across 2 sources", f"{total} · {len(counts)} ✓"),
+    ]
     return [
         Card(
             type="diet_self_audit",
+            trigger=_trigger(
+                "Most of what you've collected recently comes from just a few sources. "
+                "This card shows you that share, so you can decide whether your reading "
+                "mix is what you want it to be.",
+                math_rows,
+            ),
             title="Your reading diet leans on a few sources",
             summary=(
                 f"Over the last {_DIET_DAYS} days, the top 3 of {result.n} sources account for "
@@ -527,9 +605,24 @@ def echo_chamber(session) -> list[Card]:
                 else ". Apply a collapse to count it as one voice, or expand to inspect."
             )
         )
+        math_rows = [
+            ("Sources that published near-identical text", str(n)),
+            ("Stories they shared", str(actor.shared_stories)),
+            ("Minimum sources for this card", f"≥ {_ECHO_MIN_SOURCES} ✓"),
+            (
+                "Hours between the first and the median copy",
+                str(actor.median_span_hours) if actor.median_span_hours is not None else "—",
+            ),
+        ]
         cards.append(
             Card(
                 type="echo_chamber",
+                trigger=_trigger(
+                    "Several of your sources published almost exactly the same text on "
+                    "the same story. That can be a shared newswire — or coordination. "
+                    "Either way, those voices may count as one, not many.",
+                    math_rows,
+                ),
                 title=(
                     f"{n} sources moving in lockstep"
                     if not applied
@@ -581,6 +674,16 @@ def lonely_signal(session) -> list[Card]:
         cards.append(
             Card(
                 type="lonely_signal",
+                trigger=_trigger(
+                    "Only one of your sources carried this story, and nobody else "
+                    "repeated it. That can mean an exclusive worth a look — or just a "
+                    "minor item. The card makes no judgement; you decide.",
+                    [
+                        ("Sources that carried this story", "1"),
+                        ("Sources that repeated it (near-identical text)", "0"),
+                        ("Window scanned (days)", str(_ECHO_DAYS)),
+                    ],
+                ),
                 title=f"Single-source: “{story['title'][:80]}”",
                 summary=(
                     f"Only {story['sources'][0] if story['sources'] else 'one source'} carried this; "
@@ -637,9 +740,24 @@ def capacity_implausible(session) -> list[Card]:
     if not flagged:
         return []
     top = flagged[0]
+    math_rows = [
+        (f"Fastest source: articles per day (last {_CAPACITY_DAYS} days)", str(top["per_day"])),
+        ("Typical source in your corpus (median per day)", str(round(median, 2))),
+        ("Absolute floor before this card can appear", f"≥ {_CAPACITY_MIN_PER_DAY} ✓"),
+        (
+            "Must also be many times the typical rate",
+            f"{top['per_day']} ≥ {_CAPACITY_FACTOR:.0f} × {round(median, 2)} ✓",
+        ),
+    ]
     return [
         Card(
             type="capacity_implausible",
+            trigger=_trigger(
+                "One of your sources is publishing far faster than the others — so fast "
+                "that it's worth asking how. Big newsrooms and wire agencies can be this "
+                "fast legitimately; this card only raises the question.",
+                math_rows,
+            ),
             title=f"{len(flagged)} source(s) publishing unusually fast",
             summary=(
                 f"{top['source']} averaged ~{top['per_day']}/day over {_CAPACITY_DAYS}d — "
@@ -1061,9 +1179,38 @@ def coverage_advisor(session) -> list[Card]:
     kind, label, share, n = flagged[0]
     pct = round(share * 100)
     note = _small_corpus_note(session) if _is_young(session) else ""
+    from src.signals.intervals import wilson_interval
+
+    # Recompute the bucket totals for the audit trail (real counts, by design).
+    col = Source.country if kind == "country" else Source.language
+    rows2 = (
+        session.query(func.count(Article.id))
+        .join(Source, Article.source_id == Source.id)
+        .filter(Article.created_at >= cutoff, col.isnot(None))
+        .scalar()
+    )
+    total_arts = int(rows2 or 0)
+    top_count = round(share * total_arts)
+    ci = wilson_interval(top_count, total_arts) if total_arts else None
+    math_rows = [
+        (f"Articles collected in the last {_COVERAGE_DAYS} days", str(total_arts)),
+        ("Of which, from the single biggest origin", str(top_count)),
+        ("Its share = its articles ÷ all articles", f"{top_count} ÷ {total_arts} = {pct}%"),
+        (
+            "How sure can we be? (95% interval)",
+            f"{round(ci.low * 100)}% – {round(ci.high * 100)}%" if ci else "—",
+        ),
+        ("Threshold for this card: one origin at or above 60%", f"{pct}% ≥ 60% ✓"),
+    ]
     return [
         Card(
             type="coverage_advisor",
+            trigger=_trigger(
+                "More than half of your recent collection comes from one single country "
+                "or language. That can quietly narrow what you see — this card points it "
+                "out so you can balance your sources if you want to.",
+                math_rows,
+            ),
             title=f"Your recent collection leans on one {kind}",
             summary=(
                 f"~{pct}% of what you collected in {_COVERAGE_DAYS} days is from {kind} "

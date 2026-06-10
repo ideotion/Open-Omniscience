@@ -321,6 +321,15 @@
     .card .evid a:hover { text-decoration:underline; }
     .card .mc { font-size:11.5px; color:var(--muted); border-top:1px dashed var(--border); padding-top:7px; }
     .card .mc[hidden] { display:none; }
+    /* "Why am I seeing this?" — plain words first, the exact math beneath. */
+    .card .why { font-size:12px; border-top:1px dashed var(--border); padding-top:6px; }
+    .card .why summary { cursor:pointer; color:var(--accent); font-weight:600; }
+    .card .why-plain { margin:6px 0 4px; color:var(--fg-soft, var(--fg)); }
+    .card .why-mathlabel { font-size:11px; color:var(--muted); text-transform:uppercase;
+      letter-spacing:.04em; margin:6px 0 2px; }
+    .card .why-math { width:100%; border-collapse:collapse; }
+    .card .why-math td { padding:2px 4px; border-bottom:1px solid var(--border); color:var(--muted); }
+    .card .why-math td.why-val { font-family:var(--mono); white-space:nowrap; text-align:right; color:var(--fg); }
     .card .acts { display:flex; gap:7px; flex-wrap:wrap; margin-top:auto; padding-top:4px; }
     .card .acts button { margin-top:0; }
     .brief-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -2144,12 +2153,27 @@
         const qp = new URLSearchParams({view: c.recipe.view, ...(c.recipe.params || {})});
         recipeBtn = `<a class="btnlike tiny" href="/investigate?${qp.toString()}" target="_blank" rel="noopener" title="Opens a dedicated investigation view in a new tab">Open investigation ↗</a>`;
       }
+      // "Why am I seeing this?" (evidence-tiered cards): a plain-language sentence
+      // first, the exact arithmetic underneath. Labels and the plain sentence are
+      // CONSTANT English strings -> the i18n engine translates them; values are
+      // numbers/symbols only (language-neutral).
+      let whyBlock = "";
+      if (c.trigger && c.trigger.plain) {
+        const rows = (c.trigger.math || []).map(r =>
+          `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
+        whyBlock = `<details class="why">
+          <summary>Why am I seeing this?</summary>
+          <p class="why-plain">${esc(c.trigger.plain)}</p>
+          ${rows ? `<div class="why-mathlabel">The exact math</div><table class="why-math">${rows}</table>` : ""}
+        </details>`;
+      }
       return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}">
         <span class="chip">${esc(c.type.replace(/_/g,' '))}</span>
         <h4>${esc(c.title)}</h4>
         <p class="sum">${esc(c.summary)}</p>
         ${sigLine}
         ${evidBlock}
+        ${whyBlock}
         <div class="mc" hidden><b>Method:</b> ${esc(c.method)}<br><b>Caveat:</b> ${esc(c.caveat)}</div>
         <div class="acts">
           ${recipeBtn}
@@ -2553,7 +2577,20 @@
       document.querySelectorAll(".doc-link").forEach(b =>
         b.classList.toggle("active", b.getAttribute("onclick").includes("'" + slug + "'")));
       const prose = $("doc-prose"); prose.innerHTML = '<div class="muted">Loading…</div>';
-      try { _docRaw = await api("/api/docs/" + slug); prose.innerHTML = mdToHtml(_docRaw); prose.scrollIntoView({block:"nearest"}); }
+      try {
+        // Serve the reader's UI language when a translated draft exists; the
+        // X-OO-Doc-Lang header says what was ACTUALLY served (honest banner).
+        const lang = (window.OOI18N && OOI18N.current()) || "en";
+        const r = await fetch("/api/docs/" + slug + "?lang=" + encodeURIComponent(lang));
+        if (!r.ok) throw new Error(String(r.status));
+        _docRaw = await r.text();
+        const served = r.headers.get("X-OO-Doc-Lang") || "en";
+        const banner = (served !== "en")
+          ? `<div class="hint" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:10px">` +
+            `<span>Machine-drafted translation — the English original is authoritative. Found a better wording? Improve it on the project page.</span></div>`
+          : "";
+        prose.innerHTML = banner + mdToHtml(_docRaw); prose.scrollIntoView({block:"nearest"});
+      }
       catch (e) { prose.innerHTML = '<div class="muted">Could not load this document.</div>'; }
       const f = $("doc-find"); if (f && f.value) highlightProse(f.value);
     }

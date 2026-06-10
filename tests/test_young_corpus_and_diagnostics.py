@@ -167,3 +167,27 @@ def test_keyword_log_envelope_and_content(client):
     assert sg_mine and "zanzibar-diag" in sg_mine[0]["members"]
     # No composite scores anywhere in a keyword row (honesty by construction).
     assert all("score" not in k for k in data["keywords"])
+
+
+# --------------------------------------------------------------------------- #
+#  Translated docs: ?lang= serving + honest fallback (ruled 2026-06-10)
+# --------------------------------------------------------------------------- #
+def test_doc_translation_served_and_fallback(client):
+    # French Quickstart: a hand-seeded translation exists -> served, header says fr.
+    r = client.get("/api/docs/quickstart?lang=fr")
+    assert r.status_code == 200
+    assert r.headers["x-oo-doc-lang"] == "fr"
+    assert "Démarrage rapide" in r.text
+    # No German manual yet -> English fallback, honestly labelled.
+    r = client.get("/api/docs/quickstart?lang=de")
+    assert r.status_code == 200
+    assert r.headers["x-oo-doc-lang"] == "en"
+    # A path-shaped lang can never traverse: falls back to English, no error.
+    r = client.get("/api/docs/quickstart?lang=..%2F..")
+    assert r.status_code == 200
+    assert r.headers["x-oo-doc-lang"] == "en"
+    # The list endpoint reports which docs have a translation.
+    docs = client.get("/api/docs?lang=fr").json()["docs"]
+    by_slug = {d["slug"]: d for d in docs}
+    assert by_slug["quickstart"]["translated"] is True
+    assert by_slug["security"]["translated"] is False
