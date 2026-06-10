@@ -134,3 +134,22 @@ def test_debug_bundle_shape_and_error_capture():
         assert data["runtime"]["python"]
         assert "kill_switch" in data["runtime"]
         assert any("synthetic warning" in e["message"] for e in data["errors"])
+
+
+def test_field_test_runs_steps_and_is_optional(monkeypatch):
+    """TEMPORARY 0.0.8 instrumentation: steps record verbatim outcomes,
+    resumably; OO_FIELD_TEST=0 disables everything (documented opt-out)."""
+    from src.monitoring import field_test as ft
+
+    monkeypatch.setenv("OO_FIELD_TEST", "0")
+    assert ft.enabled() is False
+    assert ft.run_field_test(None, None) is None
+    assert ft.recent_results() == []
+
+    monkeypatch.setenv("OO_FIELD_TEST", "1")
+    out = ft.run_field_test(None, _Fetcher())  # session=None: law/wiki steps record their failure
+    assert out is not None and out["records"] >= 1
+    steps = {r["step"] for r in ft.recent_results()}
+    assert "calendars_batch" in steps  # the verbatim log IS the deliverable
+    cal = next(r for r in ft.recent_results() if r["step"] == "calendars_batch")
+    assert cal["ok"] and cal["result"]["checked_now"] > 0

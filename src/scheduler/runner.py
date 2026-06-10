@@ -394,6 +394,18 @@ class BackgroundScheduler:
                     _LOG.info("first-run feed preflight: %s", result_fpf)
             except Exception:  # noqa: BLE001
                 _LOG.warning("feed preflight failed", exc_info=True)
+            # TEMPORARY (0.0.8 live-test cycle): exercise every fetch surface
+            # once and log verbatim outcomes for the maintainer's debug bundle.
+            # Self-improvement instrumentation only; OO_FIELD_TEST=0 disables;
+            # see src/monitoring/field_test.py. Runs HERE (the operator's own
+            # collect pass), never at boot.
+            try:
+                from src.monitoring import field_test
+
+                if field_test.enabled():
+                    field_test.run_field_test(session, fetcher)
+            except Exception:  # noqa: BLE001
+                _LOG.warning("field-test instrumentation failed", exc_info=True)
             result = run_scrape_once(session, fetcher, settings)
             # Opt-in drop-folder export (WP3/RM-06): write the new-articles
             # delta into the operator's local folder. Best-effort; off when

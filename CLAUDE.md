@@ -108,6 +108,16 @@ Before fearing loss from an archive-size change, run
   Event-driven producers (wiki/law/echo/lineage/capacity) keep strict gates by
   design. Remaining for the remake: visual/UX treatment of the feed itself.
 
+- **TEMPORARY field-test mode (maintainer-ruled 2026-06-10; REMOVE when the
+  live-test cycle ends):** `src/monitoring/field_test.py` (default ON,
+  `OO_FIELD_TEST=0` opts out) auto-exercises every fetch surface inside the
+  operator's collect passes — calendar verification in 50-feed batches until
+  all 511 are checked, markets+indices import-all once, one law track, one
+  wiki track — verbatim outcomes in `data/field_test.jsonl`, included in the
+  debug bundle. Purpose (documented in the module + USER_MANUAL, because the
+  repo is public): recurring self-improvement of the default lists; logs are
+  local-only, shared only by the operator's click. Boot stays offline.
+
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`
@@ -221,6 +231,18 @@ Before fearing loss from an archive-size change, run
   button if data is live; country data must be stored ISO-2 and DISPLAYED as
   full names via one conversion (US=1553 vs "United States"=210 split shows
   mixed encodings today).
+- **SQLCipher at-rest encryption — RULED GO (maintainer 2026-06-10): next
+  MAJOR batch, do first in a fresh session (crypto deserves full attention,
+  not a session tail).** Design agreed in chat: sqlcipher3 driver + SQLAlchemy
+  engine key wiring (PRAGMA key on connect); passphrase asked ELEGANTLY in the
+  installer GUI (whiptail box + plain-prompt fallback, confirm twice, honest
+  'lost passphrase = lost corpus' warning, optional skip = plaintext with
+  stated risk); launcher prompts for the passphrase at start (env
+  OO_DB_PASSPHRASE for scripted runs); one-way migration tool for existing
+  plaintext DBs (sqlcipher_export, snapshot first, never destructive);
+  doctor attests encryption state; threat model documented (protects a
+  seized/off machine, NOT a compromised session). Design TOGETHER with the
+  backup redesign below — one coherent key story.
 - **Backup redesign** (maintainer, ruled): encryption is the DEFAULT flow
   (Download backup -> passphrase -> download; Browse -> passphrase -> restore);
   restore must be NON-DESTRUCTIVE (merge, never replace) with bit-level

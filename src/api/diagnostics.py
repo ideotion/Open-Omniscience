@@ -181,6 +181,7 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
     from src.events.feeds import load_imports, load_verdicts
     from src.monitoring import feed_preflight
     from src.monitoring.errorlog import recent_errors
+    from src.monitoring.field_test import recent_results as _field_test_results
     from src.monitoring.preflight import recent_results as source_results
     from src.paths import data_dir as _data_dir
     from src.scheduler.runlog import recent_runs
@@ -278,6 +279,10 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
         },
         "law_documents": law_docs,
         "wiki_pages": wiki_pages,
+        # TEMPORARY (0.0.8 live-test cycle): automated field-test outcomes —
+        # see src/monitoring/field_test.py for purpose + the OO_FIELD_TEST=0
+        # opt-out. Will be removed when the cycle ends.
+        "field_test": _field_test_results(),
         "errors": recent_errors(300),
         "method": (
             "Verbatim runtime facts, tracking states, network verdicts, per-click "
