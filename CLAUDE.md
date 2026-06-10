@@ -151,6 +151,14 @@ Before fearing loss from an archive-size change, run
   density grows toward the present, so a log-scaled axis (dense recent years,
   compressed antiquity) is the intuitive default — agreed in chat; offer
   linear/log toggle, keep the slider honest (labelled ticks, no hidden warp).
+- **Home cards → dedicated investigation GUIs (maintainer repeat 2026-06-10):**
+  partially live — RM-20's /investigate exists with 3 views (promise/edit-war/
+  quiet-region); whole-card click now opens it where a recipe exists; Home
+  bucket titles + card actions now translated (×12). REMAINING: a dedicated
+  /investigate view per card TYPE (rising→trend+associations+articles;
+  diet/coverage→sources; echo→integrity; law/wiki→reader) so EVERY card is
+  clickable; card TITLES are still server-built English (template-based
+  title translation needs a design — titles carry data values).
 - **Insights mindmap**: multi-layer zoom (keyword → family → supergroup) —
   data exists (`keyword_supergroups`, families API); needs zoomable rendering +
   proper legend on the trend graph above it. (Maintainer expected this; treat

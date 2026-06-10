@@ -2262,7 +2262,10 @@
           ${rows ? `<div class="why-mathlabel">The exact math</div><table class="why-math">${rows}</table>` : ""}
         </details>`;
       }
-      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}">
+      const cardOpen = (c.recipe && c.recipe.view)
+        ? ` style="cursor:pointer" title="Open the dedicated investigation view" onclick="if(!event.target.closest('button,a,details,summary'))window.open('/investigate?'+new URLSearchParams({view:'${esc(c.recipe.view)}', ...${esc(JSON.stringify(c.recipe.params||{}))}}).toString(),'_blank')"`
+        : "";
+      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}"${cardOpen}>
         <span class="chip">${esc(c.type.replace(/_/g,' '))}</span>
         <h4>${esc(c.title)}</h4>
         <p class="sum">${esc(c.summary)}</p>
