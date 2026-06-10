@@ -498,3 +498,90 @@ activity log; (2) offline channels (citation-promotion + catalog refresh) in the
 (3) the gated DuckDuckGo channel with per-query logging; (4) the budget controls in
 Settings; (5) optional auto-enable for high-confidence candidates (explicit opt-in).
 *(Roadmap slot: RM-19 in `docs/product/ROADMAP.md`; depends on RM-03.)*
+
+## Session handoff — notes from the v0.0.7 audit session (for the next session)
+
+**State at handoff.** The six-phase audit (PR #56) is merged into `0.07`: 24/29 findings
+fixed, suite green on both install profiles, CI hardened (core-only job + blocking
+bandit/pip-audit), benchmarks recorded as gates (`scripts/benchmark_audit.py`).
+
+**Where to pick up:**
+- **`docs/product/RELEASE_0.0.8_PLAN.md`** is the executable next step — WP1–WP6 on a fresh
+  branch; WP7 (`Mapped[]` ORM migration) as its own PR. Start with WP2/WP3 (zero-risk).
+- **Existing databases need `make migrate` once** (drops the 224 MB redundant index).
+- **Pending verification:** the Ollama model-catalog tags were not live-checked (registry
+  returned 403 from the audit environment) — verify `llama3.2:3b` / `gemma2:2b` /
+  `qwen2.5:3b` / `phi3:mini` from a normal network.
+- **Watch for:** the new weekly-CVE posture means pip-audit can legitimately fail CI on a
+  fresh advisory — that's the design, triage rather than mute. The deferred findings live in
+  `docs/audit/findings.csv` (5 DEFERRED) and `PARKED.md`.
+- **RM-19** (automated background source discovery, above) depends on RM-03 (the external-
+  lookup gate, WP1 of the 0.0.8 plan) — build the gate first.
+
+## Ten space-time scenario cards — leveraging the map + timeline for honest journalism
+
+The temporal map, mentioned-date tags, geocoded corpus, hazards relay, events agenda, law
+tracker and wiki tracker together form a **space-time substrate**. These cards sketch
+user-driven scenarios that substrate makes possible — candidates for future USE_CASES
+entries and UI "investigation recipes". Each keeps the house bar: surface signals with
+provenance, never verdicts; coverage-of-reports, never surveillance of people.
+
+**Card 1 — "The warnings existed" (disaster accountability).** After a flood appears on the
+hazards layer, rewind the timeline *at that location*: every stored article geocoded there
+from prior years mentioning dams, inspections, budget cuts, zoning. Output: a dated,
+sourced "what was known and when" dossier. Honesty: absence of coverage ≠ absence of
+warnings — the card says so.
+
+**Card 2 — Promises-due review (anniversary accountability).** Mentioned-date tags include
+*future* dates ("the bridge will reopen in March 2027"). When a promised date arrives, the
+card resurfaces the original story + location and asks: did follow-up coverage materialize?
+Output: a "promises due this month" desk list. Turns slow-news days into accountability.
+
+**Card 3 — Disputed chronology detector (conflict reporting).** For one event, different
+outlets often assert different dates/places. Cluster near-duplicate coverage, then surface
+where confirmed date-tags or geocodes *disagree* across sources. Output: a chronology with
+disputed points explicitly marked (claim A: outlet+date vs claim B). The disagreement is the
+journalism.
+
+**Card 4 — News-desert atlas.** Invert the World-coverage view over time: regions where the
+corpus consistently has zero or near-zero sources/coverage. Output: a desert map + trend
+("this province lost its last covered outlet in 2025"). Doubles as the targeting input for
+automated source discovery (RM-19). Honesty: it maps *this corpus's* blind spots, not the
+world's press.
+
+**Card 5 — Silent disasters.** Join the hazards feed (GDACS/USGS severity) against local
+coverage in the same space-time cell: significant events with *no* corpus coverage within
+N days. Output: an under-reported-events queue — assignments, not analytics. Honesty note
+built in: "a source we watch didn't report it" ≠ "nobody reported it".
+
+**Card 6 — Law-takes-effect watch.** The law tracker knows effective-dates; the map knows
+jurisdictions. When a tracked regulation enters into force, watch coverage in that
+jurisdiction for its subject keywords over the following window. Output: "the eviction law
+took effect on the 1st — here is reported reality since." Pairs legal text with ground
+coverage, honestly time-anchored.
+
+**Card 7 — Story-propagation tracer (press-freedom lens).** For one story cluster, plot
+*where* each subsequent report was published over time: local outbreak → national pickup →
+border-death. Output: a propagation timeline/map showing where stories stall. A
+press-freedom signal when local stories systematically fail to cross a border. Counts and
+timestamps only — no inferred intent.
+
+**Card 8 — Edit-war seismograph.** When a geolocated event spikes in the corpus, the wiki
+tracker watches the related Wikipedia pages in the same window: revision bursts, reverts,
+ORES-flagged edits. Output: a side-by-side "what happened vs how its public record was
+fought over" timeline. Documents narrative contestation with diffs as evidence.
+
+**Card 9 — Supply-chain ripple view.** A commodity price move (official CSV series) +
+geocoded coverage of the chain's known places (mines, ports, smelters) in the preceding
+window. Output: price chart over a strip-map of chain-located coverage, with the standing
+correlation caveat (coefficient + p-value + n, never causation).
+
+**Card 10 — Election-window integrity desk.** During an election period, a dedicated
+space-time lens: polling-place coverage by region over the voting timeline, official-results
+dates from the events agenda, and per-region report density before/after. Output: a
+region-hour record of *reported* irregularities with sources, exportable for observers.
+Honesty: a density map of reporting, explicitly not a fraud meter.
+
+**Common requirements these cards surface** (feed into roadmap scoring): saved
+"investigation recipes" (parameterised queries over space-time), per-card export with the
+evidence bundle, and a way to pin a *region + window* the way articles pin to a briefing.
