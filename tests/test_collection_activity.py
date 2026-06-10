@@ -1,0 +1,104 @@
+"""
+The collection-activity surface: per-host rates, run progress, plan preview.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+Maintainer-ruled (2026-06-10): the activity chip opens a detailed collection
+view — live progress (domains only), upcoming targets, an honest duration
+estimate with its method stated, and per-source transfer rates measured from
+the app's OWN responses (never OS-wide counters).
+"""
+
+from __future__ import annotations
+
+from src.monitoring.activity import ActivityMonitor
+from src.scheduler.runner import _progress_set, current_progress, plan_preview
+from src.scheduler.settings import SchedulerSettings
+
+
+# --------------------------------------------------------------------------- #
+#  Per-host transfer rates (app-attributed, honest)
+# --------------------------------------------------------------------------- #
+def test_per_host_rates_from_own_fetches():
+    m = ActivityMonitor()
+    m.fetch_started("https://alpha.test/feed.xml")
+    m.fetch_bytes(102400)  # 100 KB while alpha.test is in flight
+    m.fetch_finished()
+    m.fetch_started("https://beta.test/page")
+    m.fetch_bytes(51200)
+    m.fetch_finished()
+    rates = m.per_host_rates()
+    hosts = {r["host"] for r in rates}
+    assert hosts == {"alpha.test", "beta.test"}
+    alpha = next(r for r in rates if r["host"] == "alpha.test")
+    assert alpha["bytes"] == 102400 and alpha["fetches"] == 1 and alpha["kbps"] > 0
+
+
+def test_per_host_rates_empty_when_nothing_fetched():
+    assert ActivityMonitor().per_host_rates() == []  # never a fabricated number
+
+
+# --------------------------------------------------------------------------- #
+#  Run progress snapshot (module-level, one run at a time by design)
+# --------------------------------------------------------------------------- #
+def test_progress_set_and_clear():
+    _progress_set(_clear=True)
+    assert current_progress() is None
+    _progress_set(mode="rss", total=4, done=0, current=None, pages=0)
+    _progress_set(current="alpha.test", done=2, pages=7)
+    p = current_progress()
+    assert p == {"mode": "rss", "total": 4, "done": 2, "current": "alpha.test", "pages": 7}
+    _progress_set(_clear=True)
+    assert current_progress() is None
+
+
+# --------------------------------------------------------------------------- #
+#  Plan preview: targets are DOMAINS; the estimate states its method
+# --------------------------------------------------------------------------- #
+def test_plan_preview_targets_and_estimate(monkeypatch, tmp_path):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base, Source
+
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    for i in range(3):
+        s.add(
+            Source(
+                name=f"S{i}",
+                domain=f"s{i}.test",
+                rss_url=f"https://s{i}.test/feed.xml",
+                enabled=True,
+                rate_limit_ms=2000,
+            )
+        )
+    s.commit()
+
+    settings = SchedulerSettings(mode="rss", max_sources_per_run=10)
+    plan = plan_preview(s, settings, last_result={"sources_processed": 3, "pages_fetched": 6})
+    assert plan["planned_total"] == 3
+    assert plan["next_targets"] == ["s0.test", "s1.test", "s2.test"]  # domains, no URLs
+    assert all("/" not in t for t in plan["next_targets"])
+    # 3 sources x 2.0s median delay x 2 fetches each (6/3 from the last run) = 12s
+    assert plan["estimated_seconds"] == 12
+    assert "assumption" in plan["estimate_method"]  # honesty: stated, not promised
+
+
+def test_activity_endpoint_shape():
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as c:
+        r = c.get("/api/scheduler/activity")
+        assert r.status_code == 200
+        body = r.json()
+        for key in ("running", "active", "progress", "plan", "per_host_rates"):
+            assert key in body
+        assert "estimate_method" in body["plan"]

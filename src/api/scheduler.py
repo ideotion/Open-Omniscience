@@ -56,6 +56,17 @@ def scheduler_status() -> dict:
     return _status_payload()
 
 
+@router.get("/activity")
+def scheduler_activity(db: Session = Depends(get_db)) -> dict:
+    """The collection-activity panel (the top-bar chip's detail view): live run
+    progress (domains only), the next pass's targets + an honest duration
+    estimate (method stated), and per-host transfer rates measured from the
+    app's OWN fetches — never OS-wide counters."""
+    payload = get_scheduler().activity(db)
+    payload["valid_modes"] = list(VALID_MODES)
+    return payload
+
+
 @router.post("/start")
 def scheduler_start() -> dict:
     """Start the background ingestion loop (the first run begins immediately)."""

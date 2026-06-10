@@ -80,6 +80,14 @@ Before fearing loss from an archive-size change, run
    (`/api/articles/{id}/view`) first; the external original is a secondary
    "source ↗" link. The reader shows "Related in your corpus" (shared-keyword
    overlap counts).
+   **EXTENDED (ruled 2026-06-10, pending implementation): no bare "official
+   source ↗" shortcuts ANYWHERE.** Every such link opens a local popup page
+   first — the database extraction with all related metadata + keywords — and
+   THAT page carries a transparent outbound link whose visible text IS the
+   full URL (never hidden behind a label). Applies homogeneously to every
+   section (articles, law documents, wiki diffs, market/commodity sources,
+   events, hazards). Sweep carefully surface-by-surface; the external-link
+   confirm guard (#7) stays as the second layer.
 
 7. **External links ALWAYS confirmed with a popup before opening** (ruled
    2026-06-10): delegated capture-phase `_externalLinkGuard` in BOTH UIs;
@@ -106,6 +114,14 @@ Before fearing loss from an archive-size change, run
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 
 ## Open queue (when maintainer says proceed)
+- **Agenda views (maintainer 2026-06-10):** view switcher — monthly calendar,
+  weekly, daily, trimester, and list. Also: the Agenda tab is currently NOT
+  translated at all (part of the chrome-audit long tail — prioritize its
+  strings in the next i18n batch, as done for Indices).
+- **i18n long tail (462 unkeyed chrome strings, audit-tracked):** maintainer
+  keeps hitting untranslated surfaces live (Settings ✓ done, Indices ✓ done,
+  Agenda ← next, plus fragments). Burn down per-tab each session via
+  `scripts/i18n_report.py --audit-chrome`.
 - **Insights mindmap**: multi-layer zoom (keyword → family → supergroup) —
   data exists (`keyword_supergroups`, families API); needs zoomable rendering +
   proper legend on the trend graph above it. (Maintainer expected this; treat
@@ -127,6 +143,25 @@ Before fearing loss from an archive-size change, run
   the top-1000 Wikipedia pages in all languages, bundled — needs a design
   answer first (network cost at first boot vs zero-network-boot non-negotiable;
   likely ship the LIST bundled + one-click opt-in, never auto-fetch).
+- **Download manager + user arbitration (maintainer-ruled 2026-06-10, the
+  live-test "load indices while scraping" confusion):** every network task
+  (scrape pass, indices refresh, markets load, wiki track, offline-wiki dump)
+  must be a VISIBLE JOB. When a new fetch action is requested while another
+  runs, ASK the user: queue it / prioritize it / cancel the running one — never
+  silently swallow the click. A DEDICATED downloads view (own tab/popup, like
+  /investigate) shows: running job + progress, the queue (reorderable), done/
+  failed history; what downloads NOW and NEXT must always be obvious. The
+  activity panel (below) is the quick-glance surface; it links to the full view.
+- **Activity chip → Collection activity panel (maintainer-ruled 2026-06-10):**
+  clicking the top-bar "Collecting…" chip must open a DETAILED collection view,
+  not hardware vitals: live scrape progress (sources done/total, current host
+  as DOMAIN ONLY — never full URLs), schedule state + next run, upcoming
+  targets (domain chips), honest theoretical pass-time estimates (sources ×
+  politeness delays × last-run pages/source, method stated), and — now known
+  possible — discrete per-source ↓ rates measured from the fetcher's own
+  responses (bytes/duration per request; not OS counters). Hardware vitals
+  stay: the persistent #vitals-mini strip (invariant #4) + a compact row at
+  the panel's bottom. Beautiful, intuitive, no URL dumps.
 - **Units/precision principle (maintainer-ruled 2026-06-10, apply APP-WIDE):**
   never print raw float tails ("3654.015384615385 USD/t" with a two-digit
   evolution next to it). One shared smart formatter: sensible significant

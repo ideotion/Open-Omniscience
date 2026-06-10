@@ -198,10 +198,25 @@
     #health { min-width:110px; }
     @keyframes oo-spin { to { transform:rotate(360deg); } }
     /* Activity & vitals popover (opened from the chip). */
-    .vitals-pop { position:fixed; top:52px; right:14px; z-index:60; width:264px;
+    .vitals-pop { position:fixed; top:52px; right:14px; z-index:60; width:300px;
       background:var(--panel); border:1px solid var(--border); border-radius:10px;
-      box-shadow:0 10px 34px rgba(0,0,0,.38); padding:10px 12px; font-size:12px; }
+      box-shadow:0 10px 34px rgba(0,0,0,.38); padding:10px 12px; font-size:12px;
+      max-height:75vh; overflow:auto; }
     .vitals-pop[hidden] { display:none; }
+    /* Collection-activity panel pieces (progress bar, target chips, sections) */
+    .vitals-pop .vsect { margin:9px 0 2px; font-size:10.5px; font-weight:700;
+      letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+    .vitals-pop .vr-dim b { font-weight:500; color:var(--muted); }
+    .cap-bar { position:relative; height:16px; border:1px solid var(--border);
+      border-radius:8px; overflow:hidden; margin:6px 0 2px; background:var(--panel2); }
+    .cap-fill { position:absolute; inset:0 auto 0 0; background:var(--accent);
+      opacity:.35; transition:width .6s ease; }
+    .cap-txt { position:absolute; inset:0; display:flex; align-items:center;
+      justify-content:center; font-size:10.5px; font-variant-numeric:tabular-nums; }
+    .cap-chips { display:flex; flex-wrap:wrap; gap:4px; margin:5px 0 2px; }
+    .cap-chip { font-size:10.5px; border:1px solid var(--border); border-radius:99px;
+      padding:1px 8px; color:var(--fg-soft, var(--fg)); background:var(--panel2);
+      max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .vitals-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
     .vitals-pop .vr { display:flex; align-items:center; justify-content:space-between; gap:10px;
       padding:4px 0; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
@@ -542,8 +557,8 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></a>
       </header>
 
-      <div id="vitals-pop" class="vitals-pop" hidden role="dialog" aria-label="Activity and system vitals">
-        <div class="vitals-head"><b>Activity &amp; vitals</b>
+      <div id="vitals-pop" class="vitals-pop" hidden role="dialog" aria-label="Collection activity">
+        <div class="vitals-head"><b>Collection activity</b>
           <button class="icon-btn" style="width:24px;height:24px" onclick="toggleVitals()" aria-label="Close" title="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
         <div id="vitals-body"></div>
@@ -1047,9 +1062,11 @@
     <div class="tab-page" id="tab-indices">
     <section class="panel">
       <h2>World stock indices</h2>
-      <p class="muted" style="margin-top:0">Major stock-exchange indices from official, free sources
-        (FRED, Stooq) — <b>end-of-day</b> values, each labelled with its as-of date and source.
-        <b>Not real-time</b>; every number comes straight from the downloaded file — nothing scraped or guessed.</p>
+      <!-- Whole-sentence nodes (no mid-sentence inline splits) so the exact-match
+           i18n engine can translate each one cleanly in every word order. -->
+      <p class="muted" style="margin-top:0"><span>Major stock-exchange indices from official, free sources (FRED, Stooq) — end-of-day values, each labelled with its as-of date and source.</span>
+        <b>Not real-time.</b>
+        <span>Every number comes straight from the downloaded file — nothing scraped or guessed.</span></p>
       <div class="row">
         <div style="flex:0 0 auto"><button onclick="loadIndicesData(this)">Load / refresh indices</button></div>
         <div id="idx-status" class="hint" style="align-self:center"></div>
@@ -1758,11 +1775,12 @@
     }
 
     // -- Live vitals (CPU/RAM/disk + real, app-attributed scraping throughput) -- //
-    // Polls /api/system/vitals only while a scrape is active OR the popover is open,
-    // so an idle app makes no extra requests. Rates are derived by diffing two
-    // snapshots (the endpoint returns cumulative counters -- never a guessed
-    // instantaneous value). The current-fetch URL is shown truncated and live.
-    let _vitalsTimer = null, _vitalsOpen = false, _vitalsPrev = null;
+    // Polls /api/system/vitals (and, when the panel is open or a scrape is live,
+    // /api/scheduler/activity) only while needed, so an idle app makes no extra
+    // requests. Rates are derived by diffing two snapshots (cumulative counters --
+    // never a guessed instantaneous value). Hosts are shown as DOMAINS, never
+    // full URLs (maintainer-ruled 2026-06-10).
+    let _vitalsTimer = null, _vitalsOpen = false, _vitalsPrev = null, _actData = null;
     function _shortUrl(u) {
       if (!u) return "";
       const s = String(u).replace(/^https?:\/\//i, "").replace(/^www\./i, "");
@@ -1793,27 +1811,74 @@
     async function _pollVitals() {
       let v; try { v = await api("/api/system/vitals"); } catch { return; }
       const cur = v.scraping && v.scraping.current_fetch;
-      if (_bg) { _curHost = cur ? _shortUrl(cur.url) : null; _paintActivity(); }
+      if (_vitalsOpen || _bg) {
+        try { _actData = await api("/api/scheduler/activity"); } catch { _actData = null; }
+      }
+      if (_bg) {
+        const pg = _actData && _actData.progress;
+        _curHost = pg && pg.current ? pg.current : (cur ? _shortUrl(cur.url) : null);
+        if (pg && pg.total) {
+          $("activity-label").textContent = `Collecting ${Math.min(pg.done + 1, pg.total)}/${pg.total}…`;
+        }
+        _paintActivity();
+      }
       if (_vitalsOpen) _renderVitals(v);
       _vitalsPrev = v;
     }
+    function _fmtDur(s) {
+      if (s == null) return "—";
+      if (s < 90) return `~${Math.max(1, Math.round(s))} s`;
+      return `~${Math.round(s / 60)} min`;
+    }
     function _renderVitals(v) {
-      const p = v.process || {}, sc = v.scraping || {}, cur = sc.current_fetch;
+      const p = v.process || {}, sc = v.scraping || {};
       const dl = _rateBytes(v, _vitalsPrev, x => x.scraping && x.scraping.bytes_total);
-      const wr = _rateBytes(v, _vitalsPrev, x => x.process && x.process.io_write_bytes);
-      const rd = _rateBytes(v, _vitalsPrev, x => x.process && x.process.io_read_bytes);
+      const a = _actData || {};
+      const pg = a.progress, plan = a.plan || {}, rates = a.per_host_rates || [];
       const row = (k, val) => `<div class="vr"><span>${k}</span><b>${val}</b></div>`;
-      $("vitals-body").innerHTML =
-        row("Now fetching", cur ? esc(_shortUrl(cur.url)) : '<span class="muted">idle</span>') +
-        row("Scraping ↓", dl == null ? "—" : _fmtBytes(dl) + "/s") +
-        row("Downloaded", _fmtBytes(sc.bytes_total) + ` <span class="muted">· ${sc.fetches_total||0} fetches</span>`) +
+      const sect = (t) => `<div class="vsect">${t}</div>`;
+      // -- Now: live run progress (domains only, a real bar) ---------------- //
+      let nowHtml;
+      if (pg && pg.total) {
+        const pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
+        nowHtml =
+          row("Now collecting", `${esc(pg.current || "…")} <span class="muted">· ${pg.mode}</span>`) +
+          `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">` +
+          `<div class="cap-fill" style="width:${pct}%"></div><span class="cap-txt">${pg.done}/${pg.total} · ${pct}%</span></div>` +
+          (pg.pages ? row("Pages this run", String(pg.pages)) : "");
+      } else {
+        const nr = a.next_run ? new Date(a.next_run) : null;
+        const mins = nr ? Math.max(0, Math.round((nr - Date.now()) / 60000)) : null;
+        nowHtml = row("Now collecting", a.running
+          ? `<span class="muted">idle</span>${mins != null ? ` · <span title="${esc(nr.toLocaleString())}">⏱ ${mins} min</span>` : ""}`
+          : '<span class="muted">scheduler stopped</span>');
+      }
+      // -- Next pass: targets as domain chips + the honest estimate --------- //
+      const chips = (plan.next_targets || []).map(d => `<span class="cap-chip">${esc(d)}</span>`).join("");
+      const extra = Math.max(0, (plan.planned_total || 0) - (plan.next_targets || []).length);
+      const planHtml = (plan.planned_total || plan.estimated_seconds != null) ?
+        sect("Next pass") +
+        row("Targets", `${plan.planned_total || 0} <span class="muted">· ${esc(plan.mode || "")}</span>`) +
+        (chips ? `<div class="cap-chips">${chips}${extra ? `<span class="cap-chip muted">+${extra}</span>` : ""}</div>` : "") +
+        (plan.estimated_seconds != null
+          ? row("Estimated duration", `${_fmtDur(plan.estimated_seconds)}`) +
+            `<div class="vnote">${esc(plan.estimate_method || "")}</div>`
+          : "") : "";
+      // -- Per-source rates: the app's OWN fetches, discrete ---------------- //
+      const rateHtml = rates.length
+        ? sect("Per-source download rate") +
+          rates.map(r => `<div class="vr vr-dim"><span>${esc(r.host)}</span>` +
+            `<b>${r.kbps} KB/s <span class="muted">· ${_fmtBytes(r.bytes)} · ${r.fetches}×</span></b></div>`).join("") +
+          '<div class="vnote">Measured from this app’s own responses (bytes ÷ transfer time) — not a system network counter.</div>'
+        : "";
+      // -- System: the hardware row, compact -------------------------------- //
+      const sysHtml = sect("System") +
         row("CPU", p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
         row("Memory", _fmtBytes(p.rss_bytes)) +
-        row("Disk", (rd == null && wr == null) ? "—"
-              : `↓${rd==null?"—":_fmtBytes(rd)+"/s"} ↑${wr==null?"—":_fmtBytes(wr)+"/s"}`);
-      $("vitals-note").innerHTML = v.network_system_wide
-        ? '<div class="vnote">Network counters are system-wide (can\'t be attributed per-app); the scraping figure above is measured at our own fetcher.</div>'
-        : '';
+        row("Scraping ↓", (dl == null ? "—" : _fmtBytes(dl) + "/s") +
+            ` <span class="muted">· total ${_fmtBytes(sc.bytes_total)} · ${sc.fetches_total||0}×</span>`);
+      $("vitals-body").innerHTML = nowHtml + planHtml + rateHtml + sysHtml;
+      $("vitals-note").innerHTML = "";
     }
     function toggleVitals() {
       const pop = $("vitals-pop"); if (!pop) return;

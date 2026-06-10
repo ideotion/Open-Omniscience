@@ -49,6 +49,73 @@ def select_sources(session, settings: SchedulerSettings):
     return q.order_by(Source.priority.asc(), Source.id.asc())
 
 
+# --- Live run progress (maintainer-ruled 2026-06-10: the activity chip opens -- #
+# a detailed collection view). One thread scrapes at a time (the run lock), so a
+# module-level, lock-guarded snapshot is enough. Domains only — never full URLs.
+_PROGRESS_LOCK = threading.Lock()
+_PROGRESS: dict | None = None
+
+
+def _progress_set(**fields) -> None:
+    global _PROGRESS
+    with _PROGRESS_LOCK:
+        if fields.get("_clear"):
+            _PROGRESS = None
+        elif _PROGRESS is None:
+            _PROGRESS = dict(fields)
+        else:
+            _PROGRESS.update(fields)
+
+
+def current_progress() -> dict | None:
+    """A point-in-time copy of the in-flight run's progress (None when idle)."""
+    with _PROGRESS_LOCK:
+        return dict(_PROGRESS) if _PROGRESS else None
+
+
+def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | None) -> dict:
+    """What the NEXT pass would do, with an honest duration estimate.
+
+    The estimate is stated arithmetic, not a promise: planned sources × the
+    per-source politeness delay × the expected fetches per source (taken from
+    the last run's real pages/source when known, else 1 feed fetch each).
+    """
+    targets: list[str] = []
+    total = 0
+    if settings.mode in ("rss", "crawl"):
+        rows = select_sources(session, settings).limit(settings.max_sources_per_run).all()
+        total = len(rows)
+        targets = [r.domain for r in rows[:8]]
+        delays = [max((r.rate_limit_ms or 1000) / 1000.0, 1.0) for r in rows] or [1.0]
+        median_delay = sorted(delays)[len(delays) // 2]
+        per_source = 1.0
+        if last_result and last_result.get("sources_processed"):
+            per_source = max(
+                1.0,
+                (last_result.get("pages_fetched") or 0) / last_result["sources_processed"],
+            )
+        if settings.mode == "crawl":
+            per_source = max(per_source, min(settings.crawl_max_pages, 5))
+        est = round(total * median_delay * per_source)
+        method = (
+            f"{total} source(s) × ~{median_delay:.1f}s politeness delay × "
+            f"~{per_source:.1f} fetch(es) each (from the last run) — an assumption, "
+            "not a promise; robots crawl-delays can stretch it."
+        )
+    else:
+        # wiki / law / markets iterate watched items, not sources.
+        total = settings.max_sources_per_run
+        est = None
+        method = "item-mode pass (wiki/law/markets): duration depends on the remote service."
+    return {
+        "mode": settings.mode,
+        "planned_total": total,
+        "next_targets": targets,
+        "estimated_seconds": est,
+        "estimate_method": method,
+    }
+
+
 def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     """Run one ingestion pass over enabled sources and return an aggregated tally.
 
@@ -138,30 +205,42 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
 
     sources = select_sources(session, settings).limit(settings.max_sources_per_run).all()
 
-    for source in sources:
-        try:
-            if settings.mode == "crawl":
-                report = crawl_source(
-                    session,
-                    source,
-                    fetcher=fetcher,
-                    config=CrawlConfig(
-                        max_depth=settings.crawl_max_depth,
-                        max_pages=settings.crawl_max_pages,
-                    ),
-                )
-                _add(report.tally)
-                pages_fetched += report.pages_fetched
-                sources_processed += 1
-            else:  # rss
-                if not source.rss_url:
-                    continue
-                tally = ingest_source(session, source, fetcher=fetcher)
-                _add(tally)
-                sources_processed += 1
-        except Exception:  # noqa: BLE001 - one bad source must not abort the batch
-            _LOG.warning("scrape run: source %r failed", source.domain, exc_info=True)
-            agg["errors"] = agg.get("errors", 0) + 1
+    _progress_set(
+        mode=settings.mode,
+        total=len(sources),
+        done=0,
+        current=None,
+        pages=0,
+        started_at=started.isoformat(),
+    )
+    try:
+        for idx, source in enumerate(sources):
+            _progress_set(current=source.domain, done=idx, pages=pages_fetched)
+            try:
+                if settings.mode == "crawl":
+                    report = crawl_source(
+                        session,
+                        source,
+                        fetcher=fetcher,
+                        config=CrawlConfig(
+                            max_depth=settings.crawl_max_depth,
+                            max_pages=settings.crawl_max_pages,
+                        ),
+                    )
+                    _add(report.tally)
+                    pages_fetched += report.pages_fetched
+                    sources_processed += 1
+                else:  # rss
+                    if not source.rss_url:
+                        continue
+                    tally = ingest_source(session, source, fetcher=fetcher)
+                    _add(tally)
+                    sources_processed += 1
+            except Exception:  # noqa: BLE001 - one bad source must not abort the batch
+                _LOG.warning("scrape run: source %r failed", source.domain, exc_info=True)
+                agg["errors"] = agg.get("errors", 0) + 1
+    finally:
+        _progress_set(_clear=True)
 
     finished = datetime.now(UTC)
     return {
@@ -352,7 +431,20 @@ class BackgroundScheduler:
                 "last_result": self._last_result,
                 "last_error": self._last_error,
                 "settings": s.to_dict(),
+                "progress": current_progress(),
             }
+
+    def activity(self, session) -> dict:
+        """The collection-activity panel's payload: status + plan + transfer rates."""
+        from src.monitoring.activity import activity_monitor
+
+        with self._state_lock:
+            last = self._last_result
+        return {
+            **self.status(),
+            "plan": plan_preview(session, self._settings_provider(), last_result=last),
+            "per_host_rates": activity_monitor.per_host_rates(),
+        }
 
 
 # Process-wide singleton (created lazily; no thread starts at import).
