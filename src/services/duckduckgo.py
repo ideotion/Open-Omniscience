@@ -230,8 +230,8 @@ class DuckDuckGoSearch:
             from urllib.parse import unquote
 
             url = unquote(url)
-        except Exception:
-            pass
+        except (ValueError, UnicodeError) as e:  # malformed encoding: keep the raw URL
+            logger.debug(f"URL unquote failed, keeping raw form: {e}")
 
         # Validate URL
         try:
@@ -239,7 +239,8 @@ class DuckDuckGoSearch:
             if not parsed.scheme or not parsed.netloc:
                 return None
             return url
-        except Exception:
+        except ValueError as e:  # e.g. invalid IPv6 literal in netloc
+            logger.debug(f"URL validation failed for {url!r}: {e}")
             return None
 
     @classmethod
@@ -252,7 +253,8 @@ class DuckDuckGoSearch:
             if domain.startswith("www."):
                 domain = domain[4:]
             return domain
-        except Exception:
+        except ValueError as e:  # malformed URL
+            logger.debug(f"domain extraction failed for {url!r}: {e}")
             return ""
 
     @classmethod
@@ -398,8 +400,8 @@ class DuckDuckGoSearch:
 
             return valid_feeds
 
-        except Exception as e:
-            logger.error(f"Error discovering RSS feeds for {url}: {e}")
+        except Exception:  # last resort: degrade gracefully, but never opaquely
+            logger.exception(f"Unexpected error discovering RSS feeds for {url}")
             return []
 
     @classmethod
@@ -418,7 +420,8 @@ class DuckDuckGoSearch:
                 f"{parsed_base.scheme}://{parsed_base.netloc}{parsed_base.path}", path
             )
             return resolved
-        except Exception:
+        except ValueError as e:  # urlparse/urljoin on malformed input
+            logger.debug(f"URL resolve failed for {path!r} on {base_url!r}: {e}")
             return None
 
     @classmethod
@@ -539,8 +542,8 @@ class DuckDuckGoSearch:
             logger.info(f"Discovered {len(sources)} sources for topic: {topic}")
             return sources
 
-        except Exception as e:
-            logger.error(f"Failed to discover sources for topic {topic}: {e}")
+        except Exception:  # last resort: degrade gracefully, but never opaquely
+            logger.exception(f"Unexpected error discovering sources for topic {topic!r}")
             return []
 
     @classmethod
