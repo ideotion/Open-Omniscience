@@ -255,5 +255,10 @@
   "Article title or URL": "記事タイトルまたはURL",
   "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "例：気候変動 — または https://ja.wikipedia.org/wiki/… を貼り付け",
   "page not found": "ページが見つかりません",
-  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "このタイトルに完全一致するページはウィキにありません。綴りを確認するか、記事のURLを貼り付けてください。"
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "このタイトルに完全一致するページはウィキにありません。綴りを確認するか、記事のURLを貼り付けてください。",
+  "Verify next 25": "次の25件を検証",
+  "Download network log (.json)": "ネットワークログをダウンロード (.json)",
+  "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "ネットワークログには、既定の情報源・市場フィード・カレンダーのすべてのrobotsおよび到達性の判定が含まれます。共有すると既定インストールのリスト最適化に役立ちます。",
+  "Download debug bundle (.json)": "デバッグバンドルをダウンロード (.json)",
+  "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "デバッグバンドルはバグ報告のための全体像です：実行環境の事実、スケジューラ履歴、すべてのネットワーク判定、各読み込み／更新クリックが実際に行ったこと、法律／ウィキ追跡状態、ローリングエラーログ。アプリを一通り操作してからダウンロードして共有してください。"
 }

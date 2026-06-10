@@ -382,6 +382,18 @@ class BackgroundScheduler:
                     _LOG.info("first-run source preflight: %s", result_pf)
             except Exception:  # noqa: BLE001
                 _LOG.warning("source preflight failed", exc_info=True)
+            # Same contract for the NON-source targets (maintainer-ruled
+            # 2026-06-10): robots per feed host + a per-provider sample of the
+            # bundled calendar/market feeds, appended to the shareable
+            # data/feed_preflight.jsonl. Once, here — never at boot.
+            try:
+                from src.monitoring import feed_preflight
+
+                if not feed_preflight.has_run_before():
+                    result_fpf = feed_preflight.run_feed_preflight(fetcher)
+                    _LOG.info("first-run feed preflight: %s", result_fpf)
+            except Exception:  # noqa: BLE001
+                _LOG.warning("feed preflight failed", exc_info=True)
             result = run_scrape_once(session, fetcher, settings)
             # Opt-in drop-folder export (WP3/RM-06): write the new-articles
             # delta into the operator's local folder. Best-effort; off when

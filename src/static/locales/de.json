@@ -255,5 +255,10 @@
   "Article title or URL": "Artikeltitel oder URL",
   "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "z. B. Klimawandel — oder https://de.wikipedia.org/wiki/… einfügen",
   "page not found": "Seite nicht gefunden",
-  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "Das Wiki kennt keine Seite mit genau diesem Titel — Schreibweise prüfen oder die Artikel-URL einfügen."
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "Das Wiki kennt keine Seite mit genau diesem Titel — Schreibweise prüfen oder die Artikel-URL einfügen.",
+  "Verify next 25": "Nächste 25 prüfen",
+  "Download network log (.json)": "Netzwerkprotokoll herunterladen (.json)",
+  "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "Das Netzwerkprotokoll enthält jedes robots- und Erreichbarkeits-Urteil für die Standardquellen, Markt-Feeds und Kalender — teilen Sie es, um die Listen der Standardinstallation zu optimieren.",
+  "Download debug bundle (.json)": "Debug-Paket herunterladen (.json)",
+  "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "Das Debug-Paket ist das Gesamtbild für Fehlerberichte: Laufzeitfakten, Zeitplaner-Historie, jedes Netzwerk-Urteil, was jeder Laden/Aktualisieren-Klick tatsächlich tat, Rechts-/Wiki-Verfolgungszustände und das rollierende Fehlerprotokoll — durchklicken, herunterladen, teilen."
 }

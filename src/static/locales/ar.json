@@ -255,5 +255,10 @@
   "Article title or URL": "عنوان المقال أو الرابط",
   "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "مثل تغير المناخ — أو الصق https://ar.wikipedia.org/wiki/…",
   "page not found": "الصفحة غير موجودة",
-  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "لا يعرف الويكي صفحة بهذا العنوان بالضبط — تحقق من الإملاء أو الصق رابط المقال."
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "لا يعرف الويكي صفحة بهذا العنوان بالضبط — تحقق من الإملاء أو الصق رابط المقال.",
+  "Verify next 25": "تحقق من الـ25 التالية",
+  "Download network log (.json)": "تنزيل سجل الشبكة (.json)",
+  "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "يحوي سجل الشبكة كل أحكام robots وقابلية الوصول للمصادر الافتراضية وموجزات السوق والتقويمات — شاركه للمساعدة في تحسين قوائم التثبيت الافتراضي.",
+  "Download debug bundle (.json)": "تنزيل حزمة التصحيح (.json)",
+  "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "حزمة التصحيح هي الصورة الكاملة لتقارير الأخطاء: حقائق التشغيل، تاريخ المجدول، كل أحكام الشبكة، ما فعله كل نقر تحميل/تحديث فعلاً، حالات تتبع القانون/الويكي وسجل الأخطاء المتجدد — تنقّل في التطبيق ثم نزّلها وشاركها."
 }

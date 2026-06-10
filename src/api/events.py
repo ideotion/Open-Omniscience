@@ -111,3 +111,27 @@ def imported_events(
 
     items = imported_agenda(family=family, frm=frm)
     return {"count": len(items), "events": items}
+
+
+@router.post("/feeds/verify-batch")
+def feed_verify_batch(limit: int = Query(25, ge=1, le=100)) -> dict:
+    """Verify the next ``limit`` UNCHECKED feeds (operator-initiated, bounded).
+
+    Repeating clicks walk the whole directory politely; verdicts accumulate in
+    the per-machine store and the shareable network diagnostics log."""
+    from src.events.feeds import load_families, load_verdicts, verify_feed
+    from src.safety.fetcher import make_fetcher
+
+    verdicts = load_verdicts()
+    pending = [
+        fd["id"]
+        for fam in load_families()
+        for fd in fam["feeds"]
+        if fd["id"] not in verdicts
+    ][:limit]
+    fetcher = make_fetcher()
+    out = {fid: verify_feed(fetcher, fid) for fid in pending}
+    ok = sum(1 for v in out.values() if v.get("status") == "ok")
+    return {"checked": len(out), "ok": ok, "remaining_unchecked": max(
+        0, sum(len(f["feeds"]) for f in load_families()) - len(load_verdicts())
+    ), "verdicts": out}

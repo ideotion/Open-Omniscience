@@ -179,6 +179,13 @@ async def lifespan(app: FastAPI):
     best-effort so the API still starts on a brand-new/empty database.
     """
     init_db()
+    # Rolling WARNING+ error log (the debug bundle's heart) — best-effort.
+    try:
+        from src.monitoring.errorlog import install as _install_errorlog
+
+        _install_errorlog()
+    except Exception:  # noqa: BLE001 - logging must never block startup
+        logger.warning("could not install the error-log handler", exc_info=True)
     try:
         with session_scope() as session:
             ARTICLES_COUNT.set(session.query(Article).count())

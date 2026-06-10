@@ -1066,6 +1066,7 @@
         <div><label for="feeddir-kind">Kind</label><select id="feeddir-kind" onchange="renderFeedDir()">
           <option value="">all</option></select></div>
         <div style="flex:1"><label for="feeddir-q">Filter</label><input id="feeddir-q" placeholder="type to filter (name or country)…" oninput="renderFeedDir()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="verifyFeedBatch(this)">Verify next 25</button></div>
         <div id="feeddir-status" class="hint" style="align-self:end"></div>
       </div>
       <div id="feeddir-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
@@ -1583,8 +1584,12 @@
       <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
       <div class="row" style="margin-top:6px">
         <button class="secondary" onclick="window.open('/api/diagnostics/keywords','_blank')">Download keyword log (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/network','_blank')">Download network log (.json)</button>
+        <button onclick="window.open('/api/diagnostics/debug-bundle','_blank')">Download debug bundle (.json)</button>
       </div>
+      <div class="hint">The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.</div>
       <div class="hint">All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.</div>
+      <div class="hint">The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.</div>
     </section>
     </div>
 
@@ -2566,6 +2571,14 @@
         toast(action === "import" ? "Imported." : "Checked.", "ok");
       } catch (e) { toast(e.message, "err"); }
       loadFeedDir();
+    }
+    async function verifyFeedBatch(btn) {
+      btn.disabled = true;
+      try {
+        const r = await api("/api/events/feeds/verify-batch?limit=25", {method: "POST"});
+        toast(`Checked ${r.checked} — ${r.ok} reachable · ${r.remaining_unchecked} left`, "ok");
+      } catch (e) { toast(e.message, "err"); }
+      finally { btn.disabled = false; loadFeedDir(); }
     }
     async function renderImported() {
       let data; try { data = await api("/api/events/imported"); } catch { return; }

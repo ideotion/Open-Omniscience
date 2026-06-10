@@ -143,6 +143,10 @@ Before fearing loss from an archive-size change, run
   index inherits the corpus's at-rest posture (documented stance: full-disk
   encryption LUKS/Qubes/Tails; encrypted backups exist). True at-rest DB
   encryption (SQLCipher-class) = design with the backup redesign, not ad hoc.
+- **Temporal map: logarithmic time scale (maintainer idea 2026-06-10):** event
+  density grows toward the present, so a log-scaled axis (dense recent years,
+  compressed antiquity) is the intuitive default — agreed in chat; offer
+  linear/log toggle, keep the slider honest (labelled ticks, no hidden warp).
 - **Insights mindmap**: multi-layer zoom (keyword → family → supergroup) —
   data exists (`keyword_supergroups`, families API); needs zoomable rendering +
   proper legend on the trend graph above it. (Maintainer expected this; treat
@@ -214,6 +218,23 @@ Before fearing loss from an archive-size change, run
 - **Custody tab UX**: most users won't get it -- rename/explain/guided steps.
 - Offline LLM kit (RM-08 release artifact). DuckDuckGo discovery channel only
   after RM-03 gate UX proves out.
+- **Diagnostics channel — THREE logs shipped (2026-06-10):** Settings → Data &
+  backup offers (1) the keyword log, (2) the NETWORK log (`/api/diagnostics/
+  network`: every robots + reachability verdict for default sources, market
+  feeds and calendar feeds — `data/feed_preflight.jsonl` is written ONCE
+  before the first scrape, robots per distinct host + 3-feeds-per-provider
+  sample; full coverage via the Agenda directory's "Verify next 25"), and
+  (3) the DEBUG BUNDLE (`/api/diagnostics/debug-bundle`: runtime facts,
+  corpus shape, scheduler history, network verdicts, per-click import
+  outcomes from `data/import_results.jsonl`, law/wiki tracking states, and
+  the rolling WARNING+ error log `data/app_errors.jsonl` installed at app
+  startup, self-healing). Maintainer's protocol: click through the app, send
+  the bundle. NEVER auto-transmitted; on-click only.
+- **Temporal map is PRECONFIGURED (shipped 2026-06-10):** the public-domain
+  Natural Earth coastline outline (64 KB, 121 rings) is now BUNDLED as
+  `src/static/world_outline.json` — the map renders real coastlines out of
+  the box, no download at install; invariant-tested. (The maintainer saw
+  dots-only because the asset previously required a manual build step.)
 - **Keyword diagnostics log — SHIPPED first slice (2026-06-10, maintainer asked):**
   Settings → Data & backup → "Diagnostics log" downloads
   `GET /api/diagnostics/keywords` (oo-export-1 envelope: all keywords with real

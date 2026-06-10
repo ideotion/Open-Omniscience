@@ -255,5 +255,10 @@
   "Article title or URL": "लेख शीर्षक या URL",
   "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "जैसे जलवायु परिवर्तन — या https://hi.wikipedia.org/wiki/… चिपकाएँ",
   "page not found": "पृष्ठ नहीं मिला",
-  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "विकि इस सटीक शीर्षक का कोई पृष्ठ नहीं बताता — वर्तनी जाँचें, या लेख का URL चिपकाएँ।"
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "विकि इस सटीक शीर्षक का कोई पृष्ठ नहीं बताता — वर्तनी जाँचें, या लेख का URL चिपकाएँ।",
+  "Verify next 25": "अगले 25 जाँचें",
+  "Download network log (.json)": "नेटवर्क लॉग डाउनलोड करें (.json)",
+  "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "नेटवर्क लॉग में डिफ़ॉल्ट स्रोतों, बाज़ार फ़ीड और कैलेंडर के सभी robots व पहुँच-निर्णय हैं — डिफ़ॉल्ट इंस्टॉल की सूचियाँ बेहतर करने हेतु इसे साझा करें।",
+  "Download debug bundle (.json)": "डीबग बंडल डाउनलोड करें (.json)",
+  "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "डीबग बंडल बग रिपोर्ट की पूरी तस्वीर है: रनटाइम तथ्य, शेड्यूलर इतिहास, हर नेटवर्क निर्णय, हर लोड/रीफ़्रेश क्लिक ने वास्तव में क्या किया, क़ानून/विकि ट्रैकिंग स्थितियाँ और चलता त्रुटि लॉग — ऐप में क्लिक करें, फिर डाउनलोड कर साझा करें।"
 }

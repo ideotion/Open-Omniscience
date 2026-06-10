@@ -255,5 +255,10 @@
   "Article title or URL": "Article title or URL",
   "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…",
   "page not found": "page not found",
-  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "The wiki reports no page with this exact title — check the spelling, or paste the article URL."
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "The wiki reports no page with this exact title — check the spelling, or paste the article URL.",
+  "Verify next 25": "Verify next 25",
+  "Download network log (.json)": "Download network log (.json)",
+  "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.",
+  "Download debug bundle (.json)": "Download debug bundle (.json)",
+  "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it."
 }

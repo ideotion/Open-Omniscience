@@ -255,5 +255,10 @@
   "Article title or URL": "文章标题或网址",
   "e.g. Climate change — or paste https://en.wikipedia.org/wiki/…": "例如 气候变化 — 或粘贴 https://zh.wikipedia.org/wiki/…",
   "page not found": "未找到页面",
-  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "维基报告不存在此确切标题的页面 — 请检查拼写，或粘贴文章网址。"
+  "The wiki reports no page with this exact title — check the spelling, or paste the article URL.": "维基报告不存在此确切标题的页面 — 请检查拼写，或粘贴文章网址。",
+  "Verify next 25": "验证接下来的 25 个",
+  "Download network log (.json)": "下载网络日志 (.json)",
+  "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "网络日志包含默认来源、行情源和日历源的每一个 robots 与可达性判定 — 分享它有助于优化默认安装的列表。",
+  "Download debug bundle (.json)": "下载调试包 (.json)",
+  "The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.": "调试包是错误报告的完整图景：运行时信息、调度器历史、每个网络判定、每次加载/刷新点击实际做了什么、法律/维基跟踪状态以及滚动错误日志 — 在应用中操作一遍后下载并分享。"
 }

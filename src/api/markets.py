@@ -298,12 +298,36 @@ def import_all_feeds(category: str | None = None, db: Session = Depends(get_db))
                     "detail": f"{type(exc).__name__}: {exc}",
                 }
             )
-    return {
+    summary = {
         "feeds": len(results),
         "points_imported": imported,
         "failed": failed,
         "results": results,
     }
+    # Persist the outcome for the debug bundle (maintainer-ruled 2026-06-10):
+    # what every Load/Refresh click actually did, with per-feed verdicts.
+    try:
+        import json as _json
+        from datetime import UTC as _UTC
+        from datetime import datetime as _dt
+
+        from src.paths import data_dir as _data_dir
+
+        with (_data_dir() / "import_results.jsonl").open("a", encoding="utf-8") as f:
+            f.write(
+                _json.dumps(
+                    {
+                        "at": _dt.now(_UTC).isoformat(timespec="seconds"),
+                        "kind": category or "commodity",
+                        **summary,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    except Exception:  # noqa: BLE001 - logging must never fail the import
+        pass
+    return summary
 
 
 @router.get("/series")
@@ -417,7 +441,7 @@ def market_board(
             }
         )
     # Cards with data first (by name), empty catalog entries after.
-    cards.sort(key=lambda c: (c["latest"] is None, (c["name"] or "").lower()))
+    cards.sort(key=lambda c: (c["latest"] is None, str(c["name"] or "").lower()))
     return {
         "category": category,
         "count": len(cards),
