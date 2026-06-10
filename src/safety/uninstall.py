@@ -66,7 +66,8 @@ def _desktop_dir() -> Path:
 
 
 def _launcher_paths() -> list[Path]:
-    """Every launcher install.sh may have created (Console + Desk + Uninstall), all OSes."""
+    """Every launcher install.sh may have created, all OSes (incl. the retired
+    Desk launcher from older installs, so uninstall cleans those up too)."""
     apps = Path.home() / ".local" / "share" / "applications"
     desk = _desktop_dir()
     mac = Path.home() / "Desktop"

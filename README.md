@@ -52,9 +52,7 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   accent, density, text size, layout, which tools show), a **Library** panel (real row counts + on-disk size),
   inline **source management** (enable/disable, priority, delete), and a
   **World coverage** view (countries covered vs not, sources + topic keywords per
-  country). *(The interface described here is the current **default** (`0.05`); see
-  [`docs/DESIGN.md`](docs/DESIGN.md) and the Console/Desk
-  comparison in [`docs/DESIGN.md`](docs/DESIGN.md).)*
+  country). *(See [`docs/DESIGN.md`](docs/DESIGN.md) for the interface's design history.)*
 - ✅ **Settings**: theme (system/dark/light) and a SQLite **backup/restore**
   — consistent online-backup download, and a *validated*, snapshotted restore
   (refuses anything that isn't a genuine Open Omniscience database).

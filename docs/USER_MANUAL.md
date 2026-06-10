@@ -117,13 +117,11 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
   guides), searchable and fully offline. There's also a link to the raw API page at
   `/docs`.
 
-**One icon, two views, same engine, same data.** The installer creates **one
-launcher** — **Open Omniscience** → *Console* at `http://127.0.0.1:8000/`, the
-default discoverable, customizable sidebar app. A calmer, content-first
-alternative — the *Desk* view — lives in-app at `/desk` (open it from
-**Settings → Appearance → Desk view**; navigation via the Home launchpad and
-⌘K). Tools Desk doesn't embed (Temporal map, Agenda, World law, Source
-integrity) open back in the Console. The two views are compared in
+**One icon, one interface.** The installer creates **one launcher** — **Open
+Omniscience** → `http://127.0.0.1:8000/` — a discoverable, customizable sidebar
+app that adapts smoothly to your window size (the sidebar retracts to an icon
+rail on narrower windows). An experimental second interface ("Desk") existed
+during earlier cycles and was retired in 0.0.8; its history is in
 [`DESIGN.md`](DESIGN.md).
 
 ---
@@ -160,9 +158,9 @@ The sidebar groups the tools by intent:
 - **System** — Settings · Help & docs
 
 A few names changed in 0.05 to be plainer (the controls are the same): **Ingest →
-Collect**, **Database → Library**, **Chain of custody → Evidence & custody**. In
-*Console* you can hide tools you don't use (Settings → Appearance → "Tools shown"); *Desk*
-reaches the same tools from its Home launchpad and ⌘K.
+Collect**, **Database → Library**, **Chain of custody → Evidence & custody**. You can
+hide tools you don't use (Settings → Appearance → "Tools shown"), and jump to any
+tool with the command palette (Ctrl/⌘-K).
 
 ### 3.0 Home
 

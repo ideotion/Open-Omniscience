@@ -137,10 +137,6 @@
   "Back to the main app": "মূল অ্যাপে ফিরুন",
   "Temporal map": "কালিক মানচিত্র",
   "Agenda": "কর্মসূচি",
-  "Console view": "কনসোল ভিউ",
-  "Desk view": "ডেস্ক ভিউ",
-  "Open the Desk view →": "ডেস্ক ভিউ খুলুন →",
-  "A calmer, content-first take on the same app — same server, same data. Some tools (Temporal map, Agenda, World law, Source integrity) open back here in the Console.": "একই অ্যাপের একটি শান্ত, বিষয়বস্তু-কেন্দ্রিক রূপ — একই সার্ভার, একই ডেটা। কিছু সরঞ্জাম (কালিক মানচিত্র, কর্মসূচি, বিশ্ব আইন, সূত্রের সততা) এখানেই কনসোলে খোলে।",
   "Open this external link in your browser?": "এই বাহ্যিক লিঙ্কটি কি আপনার ব্রাউজারে খুলবেন?",
   "This leaves the app and contacts an outside server.": "এতে আপনি অ্যাপ ছেড়ে একটি বাইরের সার্ভারের সাথে সংযুক্ত হবেন।"
 }

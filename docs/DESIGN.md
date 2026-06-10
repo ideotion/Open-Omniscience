@@ -802,12 +802,14 @@ that leans on Desk's *values fit* and Console's *discoverability*:
 But that's a hypothesis. Run both, score them against §4, and tell me where reality
 diverges from my bet — then I'll fold the verdict into a single 0.06.
 
-> **VERDICT (maintainer, 2026-06-10, after live use):** consolidate to **one
-> desktop launcher — the Console** (`/`). Two icons confused more than they
-> helped, and Desk's reduced toolset made shipped features (Temporal map,
-> Agenda) look lost. Desk survives as an **in-app view** at `/desk` (linked
-> from Settings → Appearance); any tool Desk does not embed must jump-link to
-> the Console tab — it must never be silently absent.
+> **FINAL VERDICT (maintainer, 2026-06-10, after live use):** the dialectic is
+> resolved — **Desk is retired entirely. One interface: the Console** (`/`).
+> Two icons confused more than they helped; Desk's reduced toolset made
+> shipped features (Temporal map, Agenda) look lost; and the Console already
+> adapts smoothly to window size (the sidebar retracts to an icon rail). The
+> `desk.html` file was removed (it lives in git history); `/desk` now
+> redirects to `/`. Desk's best ideas — the task-framed home, ⌘K, editorial
+> calm — should be folded into the Console over time, per §6 above.
 
 ---
 

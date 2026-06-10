@@ -1398,12 +1398,6 @@
       <div class="seg"><div class="sl">Sidebar</div><div class="seg-toggle" id="dr-sidebar"></div></div>
       <div class="seg"><div class="sl">Tools shown in the sidebar</div>
         <div class="modlist" id="dr-modules"></div></div>
-      <div class="seg"><div class="sl">Desk view</div>
-        <p class="hint" style="margin:0 0 6px">A calmer, content-first take on the same app —
-          same server, same data. Some tools (Temporal map, Agenda, World law, Source
-          integrity) open back here in the Console.</p>
-        <a class="secondary" href="/desk" style="display:inline-block;text-decoration:none;
-          padding:6px 12px;border:1px solid var(--border);border-radius:8px">Open the Desk view →</a></div>
       <div class="seg"><button class="secondary" onclick="resetUi()">Reset appearance to defaults</button></div>
     </section>
     </div>
@@ -3372,13 +3366,29 @@
       $("crawl-fields").style.display = $("sch-mode").value === "crawl" ? "flex" : "none";
     }
 
+    // Timezone-proof: the backend reports UTC; the browser knows the operator's
+    // zone. Show a relative time ("in ~N min") and keep the exact local moment
+    // in the tooltip (maintainer ruling 2026-06-10: no naked zone-less clock).
+    function fmtRelative(iso) {
+      const d = new Date(iso); if (isNaN(d)) return "";
+      const mins = Math.round((d.getTime() - Date.now()) / 60000);
+      if (mins <= 0) return "any moment now";
+      if (mins < 60) return `in ~${mins} min`;
+      const h = Math.floor(mins / 60), m = mins % 60;
+      return `in ~${h} h${m ? ` ${m} min` : ""}`;
+    }
+    function fmtLocal(iso) {
+      const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString();
+    }
     function renderSchedStatus(st) {
       setBackgroundActivity(st.active ? "Collecting…" : null);
       const pill = st.running
         ? (st.active ? '<span class="pill ok">running — scrape in progress</span>'
                      : '<span class="pill ok">running</span>')
         : '<span class="pill">stopped</span>';
-      const next = st.next_run ? ` · next ~${esc(st.next_run.slice(0,16).replace("T"," "))}` : "";
+      const next = st.next_run
+        ? ` · <span title="${esc(fmtLocal(st.next_run))}">next ${esc(fmtRelative(st.next_run))}</span>`
+        : "";
       $("sched-status").innerHTML = pill + next;
       const r = st.last_result;
       $("sched-last").innerHTML = st.last_error
@@ -3386,7 +3396,7 @@
         : (r ? `Last run (${esc(r.mode)}): <strong>${r.articles_stored}</strong> stored` +
                (r.pages_fetched ? `, ${r.pages_fetched} pages fetched` : "") +
                `, ${r.sources_processed} source(s), ${esc(String(r.duration_s))}s ` +
-               `<span class="muted">at ${esc((r.finished_at||"").slice(0,19).replace("T"," "))}</span>`
+               `<span class="muted">at ${esc(fmtLocal(r.finished_at || ""))}</span>`
              : '<span class="muted">No run yet.</span>');
     }
 

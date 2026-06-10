@@ -19,10 +19,13 @@ switch on Stop · source preflight + shareable JSONL log · wiki edition dropdow
 blank (fail-safe producers + explanatory empty state) · 12 complete locales ·
 date-stamped freshness-tested model catalog + live picker + clearnet notice ·
 external topic discovery off-by-default · all 0.0.8 features documented in
-USER_MANUAL · **Console/Desk verdict (ruled 2026-06-10): consolidate to ONE
-desktop launcher (Console)**; Desk stays reachable in-app at `/desk` (toggle in
-Settings → Appearance), and must never silently lack tools — anything Desk
-doesn't embed must jump-link to the Console tab.
+USER_MANUAL · **Console/Desk FINAL verdict (ruled 2026-06-10, superseding the
+same-day consolidation ruling): Desk is RETIRED ENTIRELY — one interface, the
+Console, which is the default and adapts to window size (sidebar → icon rail).**
+`desk.html` deleted (git history keeps it); `/desk` 308-redirects to `/`;
+`launch.sh` opens `/` for any argument; the installer makes one launcher and
+removes old Desk icons. Fold Desk's best ideas (task-framed home, ⌘K, calm)
+into the Console over time — never resurrect a second chrome.
 
 **Temporal map + Agenda are NOT lost** (maintainer feared this 2026-06).
 Both shipped in the 0.07 cycle and are alive on 0.08: world map + time
@@ -31,7 +34,7 @@ slider + anchors + geocoded corpus + hazards layer = PRs #51/#52/#54
 subscribe/facet/group + event-family dedup = PRs #43/#47/#50/#53
 (`src/events/`, `configs/world_events.yml`). 23 dedicated tests pass.
 Root cause of the live-test scare: the maintainer was in the **Desk** view,
-whose NAV lacked timemap/agenda/law/integrity — fixed with the consolidation.
+whose NAV lacked timemap/agenda/law/integrity — Desk is now retired entirely.
 
 **The 3.8 MB → 2.3 MB download delta is NOT lost work** (investigated
 2026-06-10 at the maintainer's request, with timestamps): the drop is exactly

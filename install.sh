@@ -287,9 +287,8 @@ make_launcher() {
 
     chmod +x "$SRC_DIR/scripts/launch.sh" 2>/dev/null || true
 
-    # ONE launcher (maintainer verdict 2026-06-10): the Console interface.
-    # The calmer "Desk" view stays available in-app at /desk (Settings →
-    # Appearance) — see the "Console vs Desk" section in docs/DESIGN.md.
+    # ONE launcher, ONE interface (maintainer verdict 2026-06-10) — the
+    # experimental "Desk" UI was retired; see docs/DESIGN.md for the history.
     local os; os="$(uname -s)"
     if [ "$os" = "Darwin" ]; then
         # macOS: a double-clickable .command file on the Desktop.
@@ -345,7 +344,7 @@ EOF
         fi
     }
     _mk_desktop "$APP_NAME" "Open Omniscience" "Local-first intelligence platform for investigative journalism" "console" "$icon_console"
-    # Consolidation: remove the Desk launcher from older installs (Desk lives in-app at /desk).
+    # Desk was retired entirely: remove its launcher from older installs.
     rm -f "$apps/$APP_NAME-desk.desktop" "$desk/$APP_NAME-desk.desktop" 2>/dev/null || true
 
     # An "Uninstall" entry alongside the launchers. It runs install.sh --uninstall in a
@@ -378,7 +377,6 @@ EOF
     say "  ${BOLD}How to start the app:${RST} double-click ${BOLD}Open Omniscience${RST}."
     say "    A terminal window opens, the app starts, and your browser opens to"
     say "    ${BLU}http://127.0.0.1:8000${RST}. Close that window to stop the app."
-    say "    (The calmer 'Desk' view is available in-app: Settings → Appearance.)"
 }
 
 # --------------------------------------------------------------------------- #

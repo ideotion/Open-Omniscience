@@ -7,24 +7,14 @@
 # your browser. Designed for non-technical users: it prints a clear banner and a
 # single instruction -- close this window to stop the app.
 #
-# Usage: launch.sh [console|desk]
-#   console  (default)  -> opens the default interface at  /
-#   desk                -> opens the alternative interface at  /desk
-#
-# Both interfaces are served by the SAME backend on the SAME data. If a server is
-# already running (e.g. you launched the other icon first), this just opens your
-# browser at the chosen interface instead of starting a second one -- so you can
-# run Console and Desk side by side and compare them.
+# Usage: launch.sh [console]
+#   There is ONE interface (maintainer verdict 2026-06-10). Any argument --
+#   including "desk" from an old launcher icon -- opens the app at /.
+#   If a server is already running, this just opens your browser.
 
 set -euo pipefail
 
-# Which interface to open.
-VARIANT="${1:-console}"
-case "$VARIANT" in
-    desk)    UI_PATH="/desk"; UI_NAME="Desk" ;;
-    console) UI_PATH="/";     UI_NAME="Console" ;;
-    *)       UI_PATH="/";     UI_NAME="Console" ;;
-esac
+UI_PATH="/"; UI_NAME="Console"
 
 # Repo root = the directory above this script (scripts/ -> repo).
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -41,11 +31,10 @@ open_browser() {
     fi
 }
 
-# If a server is already healthy (the other icon started it), just open the
-# browser at the requested interface and exit -- do not start a second one, so
-# Console and Desk can run side by side on the same data.
+# If a server is already healthy, just open the browser and exit -- never
+# start a second one.
 if curl -fsS "${BASE}/api/health" >/dev/null 2>&1; then
-    echo "Open Omniscience is already running -- opening the ${UI_NAME} interface."
+    echo "Open Omniscience is already running -- opening it in your browser."
     open_browser "$URL"
     exit 0
 fi
@@ -62,13 +51,10 @@ bold=$'\033[1m'; blu=$'\033[36m'; rst=$'\033[0m'
 [ -f "$DIR/assets/logo.txt" ] && { printf '\n%s' "$blu$bold"; cat "$DIR/assets/logo.txt"; printf '%s' "$rst"; }
 cat <<EOF
 
-${bold}${blu}Open Omniscience${rst} (${UI_NAME} interface) is starting...
+${bold}${blu}Open Omniscience${rst} is starting...
 
   Your browser will open at: ${bold}${URL}${rst}
   ${bold}To stop the app:${rst} close this window (or press Ctrl-C).
-
-  Tip: the ${bold}Console${rst} and ${bold}Desk${rst} interfaces share this one server and the
-  same data. Launch the other icon to open both side by side.
 
 EOF
 

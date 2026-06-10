@@ -41,6 +41,7 @@ from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
     PlainTextResponse,
+    RedirectResponse,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
@@ -1153,21 +1154,17 @@ async def read_root():
         )
 
 
-# Alternative UI ("Desk") served alongside the default ("Console") so both can be
-# compared on the same backend/data — see docs/DESIGN.md. The installer
-# creates a second desktop icon that opens this route.
-@app.get("/desk", response_class=HTMLResponse)
+# The experimental "Desk" UI was retired (maintainer verdict 2026-06-10): ONE
+# interface — the Console (see docs/DESIGN.md). Old bookmarks and launchers
+# from earlier installs still hit this path, so redirect instead of 404ing.
+@app.get("/desk", include_in_schema=False)
 async def read_desk():
-    desk_path = Path(__file__).parent.parent / "static" / "desk.html"
-    if desk_path.exists():
-        return HTMLResponse(content=desk_path.read_text(encoding="utf-8"), status_code=200)
-    # Fall back to the default UI if the alternative isn't present.
-    return await read_root()
+    return RedirectResponse(url="/", status_code=308)
 
 
 # The investigation dashboard (0.0.8 WP9 / RM-20): a dedicated, URL-parameterised
 # view a Home recipe card opens in a NEW browser tab (?view=<recipe>&<params>).
-# Third page in the Console/Desk family: same server, same corpus, no CDN.
+# Second page alongside the Console: same server, same corpus, no CDN.
 @app.get("/investigate", response_class=HTMLResponse)
 async def read_investigate():
     page = Path(__file__).parent.parent / "static" / "investigate.html"
