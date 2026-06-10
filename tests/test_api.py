@@ -165,8 +165,7 @@ class TestSourcesEndpoint:
         response = test_client.get("/api/sources")
 
         assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
+        assert isinstance(response.json(), list)
 
 
 class TestExportEndpoint:
@@ -188,7 +187,11 @@ class TestExportEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        # versioned export contract (WP2/RM-15): a self-describing envelope
+        assert data["export_schema"] == "oo-export-1"
+        assert data["kind"] == "articles"
+        assert isinstance(data["articles"], list)
+        assert data["count"] == len(data["articles"])
 
     def test_export_invalid_format(self, test_client):
         """Test export with invalid format."""

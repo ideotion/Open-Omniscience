@@ -86,3 +86,43 @@ def test_top_cited_and_articles_by_link(tmp_path):
             assert c.get("/api/links/articles-by-link").status_code == 400  # needs url or domain
     finally:
         app.dependency_overrides.clear()
+
+
+# --- citation-graph export (0.0.8 part 2, WP2 / RM-15) ------------------------ #
+
+
+def test_graph_json_export_envelope_and_counts(tmp_path):
+    app = _client(tmp_path)
+    try:
+        with TestClient(app) as c:
+            r = c.get("/api/links/export.json")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["export_schema"] == "oo-export-1"
+            assert body["kind"] == "citation-graph"
+            g = body["data"]
+            assert "no inferred credibility" in g["caveat"]
+            assert {n["kind"] for n in g["nodes"]} <= {"article", "domain"}
+            # fixture: 2 domains (reuters.com, apnews.com), 3 citing edges
+            assert {n["label"] for n in g["nodes"] if n["kind"] == "domain"} == {
+                "reuters.com", "apnews.com"}
+            assert body["count"] == len(g["edges"]) == 3
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_graphml_export_parses_and_matches_json(tmp_path):
+    import xml.etree.ElementTree as ET
+
+    app = _client(tmp_path)
+    try:
+        with TestClient(app) as c:
+            j = c.get("/api/links/export.json").json()["data"]
+            r = c.get("/api/links/export.graphml")
+            assert r.status_code == 200
+            root = ET.fromstring(r.text)
+            ns = {"g": "http://graphml.graphdrawing.org/xmlns"}
+            assert len(root.findall(".//g:node", ns)) == len(j["nodes"])
+            assert len(root.findall(".//g:edge", ns)) == len(j["edges"])
+    finally:
+        app.dependency_overrides.clear()

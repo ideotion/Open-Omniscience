@@ -720,28 +720,50 @@ async def export_articles(
                     _c(a.hash or ""),
                 ]
             )
+        from src.utils.export_envelope import envelope_headers
+
         return StreamingResponse(
             iter([stream.getvalue()]),
             media_type="text/csv",
-            headers={"Content-Disposition": "attachment; filename=articles.csv"},
+            headers={
+                "Content-Disposition": "attachment; filename=articles.csv",
+                # Versioned export contract (WP2/RM-15): provenance travels as
+                # headers so the CSV body stays plain columns.
+                **envelope_headers(
+                    kind="articles",
+                    query={"query": query, "source": source, "start_date": start_date,
+                           "end_date": end_date, "language": language, "tags": tags},
+                ),
+            },
         )
 
-    # format == "json" (validated above)
+    # format == "json" (validated above). Versioned envelope (WP2/RM-15): the
+    # list moves under "articles" inside a self-describing wrapper -- schema,
+    # app version, generated-at, and the exact generating query.
+    from src.utils.export_envelope import envelope
+
+    rows = [
+        {
+            "id": a.id,
+            "title": a.title,
+            "url": a.url,
+            "canonical_url": a.canonical_url,
+            "source": a.source.name if a.source else "Unknown",
+            "published_at": a.published_at.isoformat() if a.published_at else None,
+            "language": a.language,
+            "content": a.content,
+            "hash": a.hash,
+        }
+        for a in articles
+    ]
     return JSONResponse(
-        content=[
-            {
-                "id": a.id,
-                "title": a.title,
-                "url": a.url,
-                "canonical_url": a.canonical_url,
-                "source": a.source.name if a.source else "Unknown",
-                "published_at": a.published_at.isoformat() if a.published_at else None,
-                "language": a.language,
-                "content": a.content,
-                "hash": a.hash,
-            }
-            for a in articles
-        ]
+        content=envelope(
+            kind="articles",
+            query={"query": query, "source": source, "start_date": start_date,
+                   "end_date": end_date, "language": language, "tags": tags},
+            count=len(rows),
+            payload=rows,
+        )
     )
 
 

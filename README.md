@@ -17,14 +17,15 @@
 > named after the version they produce: branch `0.06 → 0.07 → 0.08` ⇒ `0.0.6 → 0.0.7 →
 > 0.0.8`. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
-## Status — v0.0.8: executing the product roadmap (hardening + investigation recipes)
+## Status — v0.0.8: the product roadmap cycle (hardening, recipes, sense-making)
 
-> **`0.0.8` is the active cycle** (branch `0.08`). It builds on the **audited `0.0.7` core**
-> described below — which works and is tested (see [`docs/audit/`](docs/audit/)) — and executes
-> the product roadmap ([`docs/product/ROADMAP.md`](docs/product/ROADMAP.md)): trust hardening
-> (the external-lookup gate, weekly security audits) and the **investigation-recipe cards**
-> ([`docs/product/RELEASE_0.0.8_PLAN.md`](docs/product/RELEASE_0.0.8_PLAN.md)). Feature notes
-> tagged `0.06`/`0.07` describe what shipped in those cycles and remain accurate.
+> **`0.0.8` is the active cycle** (branch `0.08`) and carries the whole product-roadmap
+> push: part 1 — trust hardening, the investigation-recipe cards, the typed ORM, all 29
+> audit findings closed — is merged; part 2 (the sense-making horizon: report/methods
+> generator, provenance-preserving exports, scheduler polish, corpus LLM synthesis, and
+> the offline channels of automated source discovery) is in progress
+> ([`docs/product/RELEASE_0.0.8_PLAN_PART2.md`](docs/product/RELEASE_0.0.8_PLAN_PART2.md)).
+> Feature notes tagged `0.06`/`0.07` describe what shipped in those cycles and remain accurate.
 
 This release rebuilds the project around a small, **genuinely working and tested**
 spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
