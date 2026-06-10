@@ -68,6 +68,12 @@ test whenever you add one here.**
   button if data is live; country data must be stored ISO-2 and DISPLAYED as
   full names via one conversion (US=1553 vs "United States"=210 split shows
   mixed encodings today).
+- **Backup redesign** (maintainer, ruled): encryption is the DEFAULT flow
+  (Download backup -> passphrase -> download; Browse -> passphrase -> restore);
+  restore must be NON-DESTRUCTIVE (merge, never replace) with bit-level
+  duplicate detection (byte/hash comparison, no offline DB tweaking), and each
+  article carries content hash + an authentication hash (second integrity
+  level proving no tampering). Big feature -- design before code.
 - **Custody tab UX**: most users won't get it -- rename/explain/guided steps.
 - Offline LLM kit (RM-08 release artifact). DuckDuckGo discovery channel only
   after RM-03 gate UX proves out.
