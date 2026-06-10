@@ -2,6 +2,43 @@
 
 > The repository’s **default branch is the active cycle branch** (currently `0.07`); each cycle branch `0.0N` produces release `0.0.N`.
 
+## 0.08 — executing the product roadmap: trust gates + investigation recipes
+
+The `0.08` cycle executed the post-audit product roadmap
+([`docs/product/RELEASE_0.0.8_PLAN.md`](product/RELEASE_0.0.8_PLAN.md), WP1–WP9 all
+delivered) and closed **every remaining audit finding — the register reads 29/29 FIXED**.
+
+- **Investigation recipes (the headline).** The Home briefing gains three space-time
+  scenario cards, computed entirely from your own corpus (producers never touch the
+  network): **Promises due** (an article mentioned a date that was *in the future* when
+  published — it has now arrived), **Edit-war burst** (a tracked Wikipedia page editing at
+  ≥3× its own prior weekly rate), and **Region gone quiet** (a usually-covered country
+  stopped arriving — honestly caveated as a fact about *your corpus*, not the region).
+  Each card carries an **"Open investigation ↗"** button that opens a dedicated dashboard
+  (`/investigate`) **in a new browser tab** — related panels auto-assembled from existing
+  APIs, the card's caveat verbatim at the top, and a "Go deeper" strip where every
+  suggestion is a manual action with its parameters shown. Fully URL-parameterised:
+  shareable, re-openable, several investigations in parallel while the main UI stays free.
+  The card schema guard extends to recipes: score/verdict-shaped parameters are
+  mechanically rejected. Per-recipe switches live in **Settings → General**.
+- **The one external call is now opt-in.** *Discover by topic* (the only feature that
+  contacts a third-party service — it sends your topic query to DuckDuckGo) is **disabled
+  by default** and refuses with an honest message until enabled in **Settings → Safety →
+  External topic discovery** ("Your query leaves this machine"); `OO_DISCOVERY_EXTERNAL=1`
+  for headless use. RSS discovery of your own sources stays local-path and ungated.
+- **Weekly security cadence.** CI runs bandit + pip-audit every Monday on a schedule, so a
+  freshly published CVE surfaces without waiting for a push.
+- **`Mapped[]` ORM migration.** All 296 columns across the 26 models moved to SQLAlchemy
+  2.0 typed mappings with **zero schema drift, proven** (byte-identical before/after schema
+  dumps, committed as evidence). mypy fell 303 → 128 errors, and CI gained a **type-check
+  ratchet**: the error count can never rise again.
+- **Test depth.** +42 tests: the politeness-delay arithmetic (fake clock), endpoint
+  coverage for the last untested routers (reporting — including evidence-bundle **tamper
+  detection** — LLM HTTP layer, framing, keyword management), the discovery gate, the
+  recipes, and a new repo invariant: **no `print()` in library code** (CLI surfaces
+  allowlisted), enforced forever.
+- Suites at cycle close: **858 passed / 6 skipped** (full) and **754 / 6** (core-only).
+
 ## 0.07 — full audit cycle (hardening, truth-up, performance)
 
 A six-phase, evidence-driven audit of the whole repository (baseline → architecture →
