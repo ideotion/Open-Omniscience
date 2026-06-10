@@ -2082,8 +2082,18 @@
       const gen = $("brief-generated");
       if (gen) gen.textContent = data.generated_at ? ("updated " + new Date(data.generated_at).toLocaleString()) : "";
       if (!data.buckets || !data.buckets.length) {
-        feed.innerHTML = '<div class="muted">No cards yet — collect some material (and let the scheduler run), '
-          + 'then refresh. The briefing surfaces what\'s rising, echoed, undertold or worth a second look.</div>';
+        feed.innerHTML = `<div class="card">
+          <h4>No cards yet — that's expected on a young corpus</h4>
+          <p class="sum">Cards are computed from YOUR collected material; an empty feed means the
+          signals haven't accumulated, never that the engine is gone. As the corpus grows you'll see:
+          <b>Rising now</b> (terms accelerating vs their own baseline), <b>Overtold/Undertold</b>,
+          <b>framing splits</b>, <b>promises due</b> (a mentioned future date arrives),
+          <b>edit-war bursts</b> on tracked Wikipedia pages, <b>regions gone quiet</b>,
+          and <b>source candidates</b> from offline discovery.</p>
+          <div class="acts">
+            <button class="secondary tiny" onclick="showTab('ingest')">Collect now</button>
+            <button class="secondary tiny" onclick="api('/api/briefing/refresh',{method:'POST'}).then(loadHome)">Recompute briefing</button>
+          </div></div>`;
         return;
       }
       const html = data.buckets.map(b => {

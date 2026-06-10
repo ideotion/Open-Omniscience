@@ -38,6 +38,14 @@ test whenever you add one here.**
    "source ↗" link. The reader shows "Related in your corpus" (shared-keyword
    overlap counts).
 
+- **Home must never go blank-and-silent**: producer registration is fail-safe
+  (core first, recipe pack additive in try/except); zero cards renders the
+  explanatory empty state with Collect/Recompute actions — never an empty div.
+- **Maintainer flag (live test): comprehensive Home-cards remake wanted** —
+  treat the card feed as a flagship surface; audit every producer's trigger
+  thresholds against a young corpus so early-day operators see cards sooner
+  (e.g. lower minimums with honest small-n caveats).
+
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`

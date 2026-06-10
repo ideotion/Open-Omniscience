@@ -1076,13 +1076,26 @@ _DEFAULT_PRODUCERS = (
 
 
 def register_default_producers() -> None:
-    """Register the Briefing v0 producers (idempotent)."""
-    from src.briefing.recipes import RECIPE_PRODUCERS
+    """Register the Briefing v0 producers (idempotent).
+
+    FAIL-SAFE BY ORDER (CLAUDE.md: Home must never go blank): the core
+    producers register FIRST; the recipe pack is additive and any problem in it
+    must never cost the operator the whole briefing.
+    """
     from src.briefing.registry import register
 
     for name, producer in _DEFAULT_PRODUCERS:
         register(name, producer)
-    # Investigation-recipe producers (0.0.8 WP8 / RM-20) -- space-time scenario
-    # cards with a one-click /investigate deep-link.
-    for name, producer in RECIPE_PRODUCERS:
-        register(name, producer)
+    try:
+        # Investigation-recipe producers (0.0.8 WP8 / RM-20) -- space-time
+        # scenario cards with a one-click /investigate deep-link.
+        from src.briefing.recipes import RECIPE_PRODUCERS
+
+        for name, producer in RECIPE_PRODUCERS:
+            register(name, producer)
+    except Exception:  # noqa: BLE001 - additive pack must not kill the core feed
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "recipe producers failed to register; core briefing continues", exc_info=True
+        )
