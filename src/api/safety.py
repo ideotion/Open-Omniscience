@@ -31,6 +31,10 @@ _PROXY_NOTE = (
 class SettingsUpdate(BaseModel):
     fetch_mode: str | None = None
     http_proxy: str | None = None
+    # ETH-02/RM-03: opt-in for the one external-service call in the app
+    # (DuckDuckGo topic discovery). Off by default; the UI states plainly that
+    # the query leaves the machine.
+    discovery_external_enabled: bool | None = None
 
 
 class PassphraseBody(BaseModel):

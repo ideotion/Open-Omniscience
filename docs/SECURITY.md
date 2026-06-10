@@ -12,12 +12,14 @@ Open Omniscience v0.0.7 targets a **single local user** on a **Qubes OS Debian A
   confirmed, the URL is not fetched), per-host rate-limited, identifying User-Agent.
   As of the v0.0.7 audit (finding ETH-01) this includes RSS-feed **discovery** —
   it fetches through the same ethical fetcher, with the same guards.
-- **One documented exception** (audit finding ETH-02): *Sources → Discover by topic*
-  sends your topic query to **DuckDuckGo** (an external service) to find candidate
-  outlets. It is strictly **user-triggered** — never part of ingestion, the scheduler,
-  or any default path — and nothing else in the app calls out to third-party services.
-  If your threat model forbids any third-party query, simply don't use that button;
-  everything else works without it. (The browser-rendered `/docs` Swagger page also
+- **One documented exception, now opt-in** (audit finding ETH-02, gated in 0.0.8 per
+  RM-03): *Discover by topic* sends your topic query to **DuckDuckGo** (an external
+  service) to find candidate outlets. It is **disabled by default** — the endpoint
+  refuses with an honest message until you knowingly enable it in **Settings → Safety →
+  External topic discovery**, which states plainly that the query leaves your machine
+  (`OO_DISCOVERY_EXTERNAL=1` for headless use). It is strictly user-triggered — never
+  part of ingestion, the scheduler, or any default path — and nothing else in the app
+  calls out to third-party services. (The browser-rendered `/docs` Swagger page also
   references a CDN for its own assets; the app itself never fetches it.)
 
 ## Data integrity / chain of custody
