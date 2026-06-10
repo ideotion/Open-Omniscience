@@ -104,7 +104,8 @@ def export_methods(req: MethodsRequest, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="No matching articles.")
 
     corpus_total = db.query(func.count(Article.id)).scalar() or 0
-    lo, hi = db.query(func.min(Article.published_at), func.max(Article.published_at)).first()
+    row = db.query(func.min(Article.published_at), func.max(Article.published_at)).first()
+    lo, hi = row if row is not None else (None, None)
     markdown = build_methods_markdown(
         articles,
         query=req.query,
