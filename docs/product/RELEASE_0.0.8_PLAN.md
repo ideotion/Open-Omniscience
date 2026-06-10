@@ -113,6 +113,76 @@ migration is the prerequisite for a blocking mypy CI gate (RM-01).
 **Acceptance:** `alembic check` clean; schema dump identical; full suite green on both
 profiles; mypy < 50 errors and blocking in CI.
 
+## WP8 — RM-20 phase 1: investigation recipes on Home cards (M)
+
+**Motivation:** the ten space-time scenarios (`docs/FUTURE_DEVELOPMENTS.md`) mapped onto the
+existing briefing engine (`USE_CASES.md` §"From scenarios to Home-screen cards"). Maintainer
+decision: committed for 0.0.8.
+
+**Changes**
+- `Card` gains an optional `recipe: dict | None` — `{"view": "<recipe-id>", "params": {...}}`
+  (e.g. `{"view": "silent-disaster", "params": {"lat": .., "lon": .., "window": [t0, t1],
+  "event_id": ..}}`). The schema guard (`CardSchemaError`) is extended: a recipe may carry
+  *parameters*, never embedded conclusions or composite scores.
+- First **3 producers** (prove the pattern before scaling to all ten — pick the three whose
+  data already flows): *promises due* (mentioned future dates arriving), *silent disasters*
+  (hazards event × zero corpus coverage), *law takes effect* (tracked effective-dates).
+  Each follows the house contract: one measured signal + method + caveat + evidence + n.
+- Home UI: cards with a recipe render an **"Open investigation ↗"** button with
+  `target="_blank"` → `/investigate?...` (WP9), so the main UI stays put and several
+  investigations can run in parallel tabs — explicitly per the maintainer's design intent.
+- Settings → a **Recipes** card: which producers are active (all default-on, individually
+  off-switchable, like the existing card types).
+
+**Acceptance:** producer unit tests (condition fires / doesn't fire on seeded data); schema
+guard test (a recipe carrying a "score" raises); cards appear and dismiss like existing ones;
+suite green.
+
+## WP9 — RM-20 phase 2: the `/investigate` dashboard (L)
+
+**Motivation:** a deep-link into a generic tab loses the card's narrative. Each recipe opens
+a dedicated, card-adjusted dashboard — modern, user-oriented, with everything related
+auto-assembled and honest "go deeper" suggestions. **Opens in a new browser tab/window** so
+the main UI keeps working (multi-tab is already the app's model: `/` and `/desk` share one
+server and one corpus; `/investigate` is the third page in that family).
+
+**Architecture (follows the house pattern exactly)**
+- One new route `GET /investigate` serving one new static page
+  (`src/static/investigate.html`) — same dependency-free rules as Console/Desk: no CDN, no
+  framework, shared design tokens (themes/accent/density from Settings → Appearance apply).
+- The page reads `?view=<recipe-id>&<params>` and composes **panels**, each of which is a
+  view over an *existing* API (nothing new server-side beyond the recipe manifest):
+  `timemap` window · article list (search API, pre-filtered) · timeline density strip ·
+  near-dup cluster view · wiki revision burst · law diff · price chart + correlation ·
+  custody/evidence actions.
+- A small client-side **recipe manifest** declares each dashboard:
+  `{panels: [{type, api, params}...], suggestions: [...]}` — adding a recipe = adding a
+  manifest entry + (usually) a producer, no new page.
+
+**Per-recipe composition (the three from WP8):**
+| Recipe | Auto-assembled panels | Suggestions strip |
+|---|---|---|
+| Promises due | the original article (reader) · the promised-date tag with snippet · search results for topic+place since the promise · timeline strip of coverage | "Search variants of the promise wording" · "Add follow-up set to briefing" · "Log original to custody" |
+| Silent disaster | map window on the event cell · the hazard feed entry (source's severity, linked) · "0 matching articles" panel with the exact query used · nearest covered events for contrast | "Widen the window ±N days" · "Search neighbouring regions" · "Add the region's outlets from the catalog" (ties into RM-19 later) |
+| Law takes effect | the law diff (baseline → current) · jurisdiction map window · coverage list for the law's keywords since the date · density before/after strip | "Correlate with related market series" · "Track sibling regulations" · "Export the coverage set" |
+
+**The suggestions strip — rules (this is where honesty lives or dies):**
+- A suggestion is always **an action the user could perform manually in the main UI** (a
+  pre-filled search, a correlation run, an export, a briefing add) — never an automated
+  conclusion. Clicking one *shows the parameters before running*.
+- Analytics suggestions only ever invoke **real methods that exist** (the scipy endpoints,
+  near-dup, correlation) and render with their method + caveat + n, like everywhere else.
+- The dashboard is **read-only by default**; the only mutating actions are the explicit,
+  labelled ones (briefing add, custody log, export) — the same loopback-CSRF-protected
+  endpoints as the main UI.
+- Every dashboard carries the parent card's caveat verbatim at the top. No panel may
+  synthesize a composite verdict from the others.
+
+**Acceptance:** `/investigate` renders each WP8 recipe from a URL alone (shareable/
+re-openable — parameters fully in the query string, no hidden state); works in a second
+browser tab while the main UI is in use; JS parses (the existing console-JS check); panel
+APIs are the existing tested ones; a UI smoke test per recipe; suite green.
+
 ---
 
 ## Sequencing & release
@@ -120,8 +190,10 @@ profiles; mypy < 50 errors and blocking in CI.
 1. WP2 (cadence) and WP3 (timing test) first — zero-risk, immediate value.
 2. WP1 (DDG gate) — the release's headline trust improvement.
 3. WP4–WP6 in any order.
-4. WP7 as the cycle's second, standalone PR.
-5. Release checklist = the audit's release-readiness checklist
+4. **WP8 → WP9** (investigation recipes, then the `/investigate` dashboard) — the release's
+   headline *user-facing* feature; WP9 starts only when WP8's three producers are green.
+5. WP7 as the cycle's second, standalone PR.
+6. Release checklist = the audit's release-readiness checklist
    (`docs/audit/05_DOCS_AND_RELEASE.md` §7) re-run, plus: benchmarks re-run
    (`scripts/benchmark_audit.py` — budgets in ROADMAP §4), `CHANGES.md` 0.0.8 section,
    version bump verified via `/api/health`.

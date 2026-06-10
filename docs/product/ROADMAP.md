@@ -30,6 +30,7 @@
 | RM-17 | capability | Pluggable source/analysis connector architecture | Community-extensible without forking | RM-01 | XL | Plugins must declare network use; sandbox review |
 | RM-18 | UX | UI internationalisation completion (i18n scaffold exists) | Reach non-English newsrooms | — | M | Bundled locales, no web fonts/CDN |
 | RM-19 | capability | Automated background source identification & aggregation: a discovery agent (corpus citation-promotion + Wikidata catalog refresh offline; DuckDuckGo channel behind the RM-03 gate) feeding a visible **candidates** staging state, with a full activity log and a user-set resource budget in Settings (see `docs/FUTURE_DEVELOPMENTS.md`) | Coverage grows without operator plumbing effort — focus on content, not source wrangling (all personas; esp. 1,2,4) | RM-03 | L | **Transparency non-negotiable:** background ≠ hidden — every query/candidate visible & logged; external channel opt-in and individually toggleable; candidates verified real (the `fabricated_sources.md` lesson) before promotion; budgeted, never resource-greedy |
+| RM-20 | capability | **Investigation recipes + the `/investigate` dashboard** (committed for 0.0.8, WP8/WP9 of `RELEASE_0.0.8_PLAN.md`): the ten space-time scenarios become Home-screen cards (a producer per scenario; `recipe` field on `Card`) whose "Open investigation ↗" button opens a **dedicated, card-adjusted dashboard in a new browser tab** — all related information auto-assembled (map window, article set, diffs, charts via existing APIs) plus a suggestions strip for deeper analyses. Main UI stays free; several investigations can run in parallel tabs. Active recipes are a Settings choice | One-click investigations: the app does the legwork and presents it coherently, the user keeps the judgement (all personas) | — | M+L | Reuses the producer/registry/`Card` engine incl. the `CardSchemaError` no-composite-score guard; dashboards are URL-parameterised views over existing tested APIs (no CDN/framework, same as `/` and `/desk`); suggestions are pre-filled actions the user could do manually, invoking only real methods with method+caveat+n — automates gathering, never the verdict |
 
 ## 2. Prioritisation (RICE)
 
@@ -56,6 +57,7 @@ Impact 1–3, Confidence 0.5–1.0, Effort in person-weeks (S=1, M=3, L=6, XL=12
 | RM-16 | 2 | 2 | 0.6 | 6 | **0.4** | Later |
 | RM-14 | 3 | 3 | 0.5 | 12 | **0.4** | Later |
 | RM-19 | 4 | 3 | 0.6 | 6 | **1.2** | Next |
+| RM-20 | 5 | 3 | 0.7 | 3 | **3.5** | Now/Next |
 | RM-17 | 2 | 2 | 0.5 | 12 | **0.17** | Later |
 
 ## 3. Horizons
@@ -66,8 +68,10 @@ Ship the honestly-scoped functional MVP (ingest → dedup → store → search �
 with the trust surface tightened. **RM-03** (gate the DuckDuckGo call), **RM-10** (standing
 audit cadence — builds on the bandit/pip-audit CI gates this audit added), **RM-02** (close the
 endpoint test gaps), **RM-09** (lite mode), and start **RM-01** (begin the `Mapped[]` migration).
-Exit: the audit's 5 deferred findings closed or formally accepted; CI fully blocking on
-lint+types.
+**RM-20** (investigation-recipe cards) scores highest of the new items (RICE 3.5) and is a
+strong early candidate — it reuses the existing card engine and is the most visible payoff of
+the space-time substrate for end users. Exit: the audit's 5 deferred findings closed or
+formally accepted; CI fully blocking on lint+types.
 
 ### Next — 1–2 releases (0.0.9–0.1.0): "deeper sense-making"
 The capabilities the scenarios most want: **RM-05** (semantic/NER search — the #1 cross-scenario
