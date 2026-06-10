@@ -241,5 +241,15 @@
   "stale year": "veraltetes Jahr",
   "Imported events": "Importierte Ereignisse",
   "Imported.": "Importiert.",
-  "Checked.": "Geprüft."
+  "Checked.": "Geprüft.",
+  "Energy": "Energie",
+  "Strategic & nuclear": "Strategisch & nuklear",
+  "Base metals": "Basismetalle",
+  "Precious metals": "Edelmetalle",
+  "Construction materials": "Baustoffe",
+  "Agriculture & cereals": "Landwirtschaft & Getreide",
+  "Currencies": "Währungen",
+  "Custom": "Benutzerdefiniert",
+  "not enough points in this window": "zu wenige Punkte in diesem Fenster",
+  "Feeds that did not deliver:": "Feeds ohne Lieferung:"
 }

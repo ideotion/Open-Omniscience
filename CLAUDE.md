@@ -130,6 +130,19 @@ Before fearing loss from an archive-size change, run
   keeps hitting untranslated surfaces live (Settings ✓ done, Indices ✓ done,
   Agenda ← next, plus fragments). Burn down per-tab each session via
   `scripts/i18n_report.py --audit-chrome`.
+- **Global search rework (maintainer 2026-06-10, design agreed in chat):** the
+  ⌘K palette must become a FULL app-wide search or go — maintainer prefers
+  keep+extend: instant ("Apple-like", index-backed, never scan-on-type),
+  federated over corpus articles (FTS5 — already indexed), keywords/families,
+  sources, events, docs full-text, AND the UI itself (tabs, settings labels,
+  actions, notices — a generated registry, not the current ~20 static items).
+  UX: top-10 grouped balloon while typing; Enter opens a full search popup
+  with per-type facets. SECURITY stance (answered honestly): a UI/menu index
+  holds nothing sensitive; corpus content already lives in FTS5 INSIDE the
+  same SQLite file — encrypting only the new index would be theater. The
+  index inherits the corpus's at-rest posture (documented stance: full-disk
+  encryption LUKS/Qubes/Tails; encrypted backups exist). True at-rest DB
+  encryption (SQLCipher-class) = design with the backup redesign, not ad hoc.
 - **Insights mindmap**: multi-layer zoom (keyword → family → supergroup) —
   data exists (`keyword_supergroups`, families API); needs zoomable rendering +
   proper legend on the trend graph above it. (Maintainer expected this; treat

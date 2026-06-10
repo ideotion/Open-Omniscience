@@ -203,8 +203,8 @@
       box-shadow:0 10px 34px rgba(0,0,0,.38); padding:10px 12px; font-size:12px;
       max-height:75vh; overflow:auto; }
     .vitals-pop[hidden] { display:none; }
-    /* Collection-activity panel pieces (progress bar, target chips, sections) */
-    .vitals-pop .vsect { margin:9px 0 2px; font-size:10.5px; font-weight:700;
+    /* Section micro-headers (activity panel, the grouped Commodities board…) */
+    .vsect { margin:9px 0 2px; font-size:10.5px; font-weight:700;
       letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
     .vitals-pop .vr-dim b { font-weight:500; color:var(--muted); }
     .cap-bar { position:relative; height:16px; border:1px solid var(--border);
@@ -3730,6 +3730,13 @@
       try {
         const r = await api("/api/markets/feeds/import-all?category=index", {method: "POST"});
         st.textContent = `Imported ${r.points_imported} point(s) across ${r.feeds} feed(s)${r.failed ? `, ${r.failed} failed` : ""}.`;
+        // Degrade loudly (maintainer hit "only Dow + S&P arrive"): name each
+        // failing feed and the exact refusal, instead of a silent count.
+        const bad = (r.results || []).filter(x => x.status !== "imported");
+        $("idx-note").innerHTML = bad.length
+          ? `<b>Feeds that did not deliver:</b> ` + bad.map(x =>
+              `${esc(x.key || x.symbol)} <span class="muted">(${esc(x.detail || x.status)})</span>`).join(" · ")
+          : "";
         await loadIndicesBoard();
         toast("Indices updated.");
       } catch (e) { st.textContent = ""; toast("Load failed: " + e.message, "err"); }
@@ -3766,39 +3773,91 @@
       return points.filter(p => p.observed_on >= cutoff);
     }
 
-    function dashChartSvg(points) {
-      if (points.length < 2) return `<div class="muted" style="padding:18px 0;font-size:12px">not enough points in this window</div>`;
-      const w = 300, h = 86, pad = 6;
-      const ys = points.map(p => p.price), minY = Math.min(...ys), maxY = Math.max(...ys), span = (maxY - minY) || 1;
-      const X = i => pad + (w - 2*pad) * (i/(points.length-1));
-      const Y = v => h - pad - (h - 2*pad) * ((v - minY)/span);
-      const line = points.map((p, i) => `${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(" ");
-      const up = points[points.length-1].price >= points[0].price;
-      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block">
-        <polyline fill="none" stroke="${up?'var(--ok)':'var(--err)'}" stroke-width="2" points="${line}"></polyline></svg>`;
+    // Smart number formatting (maintainer-ruled, app-wide): significant digits
+    // scaled to the magnitude — never a raw float tail like 3654.015384615385.
+    // Thin-space thousands grouping (locale-neutral, SI style).
+    function fmtNum(v, maxDec) {
+      if (v == null || !isFinite(v)) return "—";
+      const a = Math.abs(v);
+      const dec = maxDec != null ? maxDec : (a >= 1000 ? 1 : a >= 100 ? 1 : a >= 1 ? 2 : 3);
+      const s = v.toFixed(dec).replace(/\.?0+$/, m => m.includes(".") ? "" : m);
+      const [int, frac] = s.split(".");
+      const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+      return frac ? `${grouped}.${frac}` : grouped;
     }
 
+    // Detailed per-card chart (maintainer-ruled): the full curve in the window,
+    // labelled axes, and DISCRETE horizontal gridlines so a curve crossing can
+    // be read off in X and Y. Monthly series fall back to the full history when
+    // the window holds too few points for a curve — stated on the card.
+    function dashChartSvg(points, unit) {
+      if (points.length < 2) return `<div class="muted" style="padding:18px 0;font-size:12px">not enough points in this window</div>`;
+      const w = 300, h = 120, padL = 44, padR = 8, padT = 8, padB = 18;
+      const ys = points.map(p => p.price), minY = Math.min(...ys), maxY = Math.max(...ys), span = (maxY - minY) || 1;
+      const X = i => padL + (w - padL - padR) * (i/(points.length-1));
+      const Y = v => padT + (h - padT - padB) * (1 - (v - minY)/span);
+      const line = points.map((p, i) => `${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(" ");
+      const up = points[points.length-1].price >= points[0].price;
+      // 3 discrete horizontal gridlines at min / mid / max, each labelled.
+      const grid = [minY, minY + span/2, maxY].map(v =>
+        `<line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${w-padR}" y2="${Y(v).toFixed(1)}"
+           stroke="var(--border)" stroke-dasharray="2 4" stroke-width="0.6"></line>
+         <text x="${padL-4}" y="${(Y(v)+3).toFixed(1)}" text-anchor="end" font-size="8.5"
+           fill="var(--muted)">${fmtNum(v)}</text>`).join("");
+      // X ticks: first / middle / last dates (YYYY-MM).
+      const xticks = [0, Math.floor((points.length-1)/2), points.length-1].map(i =>
+        `<text x="${X(i).toFixed(1)}" y="${h-5}" text-anchor="${i===0?'start':i===points.length-1?'end':'middle'}"
+           font-size="8.5" fill="var(--muted)">${esc(points[i].observed_on.slice(0,7))}</text>`).join("");
+      const endDot = `<circle cx="${X(points.length-1).toFixed(1)}" cy="${Y(points[points.length-1].price).toFixed(1)}"
+           r="2.4" fill="${up?'var(--ok)':'var(--err)'}"></circle>`;
+      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block" role="img">
+        ${grid}
+        <polyline fill="none" stroke="${up?'var(--ok)':'var(--err)'}" stroke-width="1.6" points="${line}"></polyline>
+        ${endDot}${xticks}</svg>
+        <div class="hint" style="display:flex;justify-content:space-between;margin-top:2px">
+          <span><span style="display:inline-block;width:14px;height:0;border-top:2px solid ${up?'var(--ok)':'var(--err)'};vertical-align:middle"></span>
+            ${esc(unit || "")}</span><span>${points[0].observed_on} → ${points[points.length-1].observed_on}</span></div>`;
+    }
+
+    // Category display order + labels for the grouped Commodities board.
+    const MKT_CATS = [
+      ["energy", "Energy"], ["strategic", "Strategic & nuclear"], ["metals", "Base metals"],
+      ["precious", "Precious metals"], ["construction", "Construction materials"],
+      ["agriculture", "Agriculture & cereals"], ["fx", "Currencies"], ["custom", "Custom"],
+    ];
     function renderDashboard() {
       if (!MKT_SERIES.length) return;
       const days = Number($("mkt-scale").value);
-      $("mkt-dashboard").innerHTML = MKT_SERIES.map(s => {
-        const all = MKT_PRICES[s.symbol] || [];
-        const pts = windowPrices(all, days);
-        const last = pts.length ? pts[pts.length-1] : (all.length ? all[all.length-1] : null);
-        const first = pts.length ? pts[0] : null;
-        let change = "";
-        if (first && last && first.price) {
-          const pct = (last.price - first.price) / first.price * 100;
-          change = `<span class="pill ${pct>=0?'ok':'err'}">${pct>=0?'+':''}${pct.toFixed(1)}%</span>`;
-        }
-        const lv = last ? `${last.price} <span class="muted">${esc(last.currency)}/${esc(last.unit)}</span>` : '—';
-        return `<div class="stat" style="cursor:pointer" title="open detail + correlation"
-            onclick="chartSymbol(${esc(JSON.stringify(s.symbol))}, ${esc(JSON.stringify(last?last.unit:''))})">
-          <div style="display:flex;justify-content:space-between;align-items:baseline">
-            <strong>${esc(s.symbol)}</strong> ${change}</div>
-          <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv} · ${pts.length} pts</div>
-          ${dashChartSvg(pts)}</div>`;
-      }).join("");
+      // Indices are NOT commodities (maintainer-ruled): they live in the
+      // Indices tab; the board shows everything else, grouped by category.
+      const series = MKT_SERIES.filter(s => s.category !== "index");
+      const byCat = {};
+      for (const s of series) (byCat[s.category] || (byCat[s.category] = [])).push(s);
+      $("mkt-dashboard").innerHTML = MKT_CATS.filter(([k]) => byCat[k]).map(([k, label]) =>
+        `<div class="vsect" style="grid-column:1/-1">${esc(label)}</div>` +
+        byCat[k].map(s => {
+          const all = MKT_PRICES[s.symbol] || [];
+          let pts = windowPrices(all, days), windowNote = "";
+          if (pts.length < 2 && all.length >= 2) {
+            pts = all;   // sparse (monthly) series: show the full curve, say so
+            windowNote = ` <span class="muted">· full history (sparse series)</span>`;
+          }
+          const last = pts.length ? pts[pts.length-1] : (all.length ? all[all.length-1] : null);
+          const first = pts.length ? pts[0] : null;
+          let change = "";
+          if (first && last && first.price) {
+            const pct = (last.price - first.price) / first.price * 100;
+            change = `<span class="pill ${pct>=0?'ok':'err'}">${pct>=0?'+':''}${pct.toFixed(1)}%</span>`;
+          }
+          const lv = last ? `${fmtNum(last.price)} <span class="muted">${esc(last.currency)}/${esc(last.unit)}</span>` : '—';
+          return `<div class="stat" style="cursor:pointer" title="open detail + correlation"
+              onclick="chartSymbol(${esc(JSON.stringify(s.symbol))}, ${esc(JSON.stringify(last?last.unit:''))})">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <strong title="${esc(s.name || s.symbol)}">${esc(s.symbol)}</strong> ${change}</div>
+            <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv}${windowNote}</div>
+            ${dashChartSvg(pts, last ? `${last.currency}/${last.unit}` : "")}</div>`;
+        }).join("")
+      ).join("");
     }
 
     async function loadMarketData(btn) {

@@ -241,5 +241,15 @@
   "stale year": "年份过期",
   "Imported events": "已导入的事件",
   "Imported.": "已导入。",
-  "Checked.": "已检查。"
+  "Checked.": "已检查。",
+  "Energy": "能源",
+  "Strategic & nuclear": "战略与核能",
+  "Base metals": "基本金属",
+  "Precious metals": "贵金属",
+  "Construction materials": "建筑材料",
+  "Agriculture & cereals": "农业与谷物",
+  "Currencies": "货币",
+  "Custom": "自定义",
+  "not enough points in this window": "此窗口内数据点不足",
+  "Feeds that did not deliver:": "未交付数据的源："
 }

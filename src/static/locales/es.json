@@ -241,5 +241,15 @@
   "stale year": "año caducado",
   "Imported events": "Eventos importados",
   "Imported.": "Importado.",
-  "Checked.": "Comprobado."
+  "Checked.": "Comprobado.",
+  "Energy": "Energía",
+  "Strategic & nuclear": "Estratégico y nuclear",
+  "Base metals": "Metales básicos",
+  "Precious metals": "Metales preciosos",
+  "Construction materials": "Materiales de construcción",
+  "Agriculture & cereals": "Agricultura y cereales",
+  "Currencies": "Divisas",
+  "Custom": "Personalizado",
+  "not enough points in this window": "no hay puntos suficientes en esta ventana",
+  "Feeds that did not deliver:": "Fuentes que no entregaron:"
 }

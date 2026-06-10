@@ -241,5 +241,15 @@
   "stale year": "পুরনো বছর",
   "Imported events": "আমদানি করা ঘটনা",
   "Imported.": "আমদানি হয়েছে।",
-  "Checked.": "যাচাই হয়েছে।"
+  "Checked.": "যাচাই হয়েছে।",
+  "Energy": "শক্তি",
+  "Strategic & nuclear": "কৌশলগত ও পারমাণবিক",
+  "Base metals": "মৌলিক ধাতু",
+  "Precious metals": "মূল্যবান ধাতু",
+  "Construction materials": "নির্মাণ সামগ্রী",
+  "Agriculture & cereals": "কৃষি ও শস্য",
+  "Currencies": "মুদ্রা",
+  "Custom": "কাস্টম",
+  "not enough points in this window": "এই সময়সীমায় যথেষ্ট বিন্দু নেই",
+  "Feeds that did not deliver:": "যেসব ফিড কিছু দেয়নি:"
 }

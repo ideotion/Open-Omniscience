@@ -241,5 +241,15 @@
   "stale year": "année périmée",
   "Imported events": "Événements importés",
   "Imported.": "Importé.",
-  "Checked.": "Vérifié."
+  "Checked.": "Vérifié.",
+  "Energy": "Énergie",
+  "Strategic & nuclear": "Stratégique & nucléaire",
+  "Base metals": "Métaux de base",
+  "Precious metals": "Métaux précieux",
+  "Construction materials": "Matériaux de construction",
+  "Agriculture & cereals": "Agriculture & céréales",
+  "Currencies": "Devises",
+  "Custom": "Personnalisé",
+  "not enough points in this window": "pas assez de points dans cette fenêtre",
+  "Feeds that did not deliver:": "Flux n'ayant rien livré :"
 }

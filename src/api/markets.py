@@ -308,8 +308,19 @@ def import_all_feeds(category: str | None = None, db: Session = Depends(get_db))
 
 @router.get("/series")
 def list_series(db: Session = Depends(get_db)) -> dict:
-    """Distinct stored price symbols with their latest point — drives the dashboard."""
+    """Distinct stored price symbols with their latest point — drives the dashboard.
+
+    Each series carries its catalog ``category`` (energy/metals/agriculture/…)
+    so the Commodities board can group graphs and EXCLUDE ``index`` symbols
+    (maintainer-ruled: the S&P 500 is an index, not a commodity — it belongs to
+    the Indices tab). A symbol not in any catalog is ``custom``.
+    """
     from sqlalchemy import func
+
+    from src.markets.feed_catalog import load_feeds, load_index_feeds
+
+    meta = {f.symbol: (f.category, f.name) for f in load_feeds()}
+    meta.update({f.symbol: ("index", f.name) for f in load_index_feeds()})
 
     rows = (
         db.query(
@@ -328,9 +339,12 @@ def list_series(db: Session = Depends(get_db)) -> dict:
             .order_by(CommodityPrice.observed_on.desc())
             .first()
         )
+        cat, disp = meta.get(symbol, ("custom", symbol))
         out.append(
             {
                 "symbol": symbol,
+                "category": cat,
+                "name": disp,
                 "points": int(n),
                 "latest": {
                     "observed_on": latest.observed_on.isoformat(),

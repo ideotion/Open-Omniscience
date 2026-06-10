@@ -241,5 +241,15 @@
   "stale year": "устаревший год",
   "Imported events": "Импортированные события",
   "Imported.": "Импортировано.",
-  "Checked.": "Проверено."
+  "Checked.": "Проверено.",
+  "Energy": "Энергия",
+  "Strategic & nuclear": "Стратегическое и ядерное",
+  "Base metals": "Базовые металлы",
+  "Precious metals": "Драгоценные металлы",
+  "Construction materials": "Стройматериалы",
+  "Agriculture & cereals": "Сельское хозяйство и зерновые",
+  "Currencies": "Валюты",
+  "Custom": "Пользовательское",
+  "not enough points in this window": "недостаточно точек в этом окне",
+  "Feeds that did not deliver:": "Каналы без данных:"
 }

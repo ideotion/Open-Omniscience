@@ -28,7 +28,7 @@ feeds:
   - key: wti_crude
     name: "Crude Oil — WTI (Cushing, daily)"
     symbol: WTI
-    category: commodity
+    category: energy
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO"
     currency: USD
     unit: barrel
@@ -36,7 +36,7 @@ feeds:
   - key: brent_crude
     name: "Crude Oil — Brent (Europe, daily)"
     symbol: BRENT
-    category: commodity
+    category: energy
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU"
     currency: USD
     unit: barrel
@@ -44,7 +44,7 @@ feeds:
   - key: natural_gas
     name: "Natural Gas — Henry Hub (daily)"
     symbol: NATGAS
-    category: commodity
+    category: energy
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DHHNGSP"
     currency: USD
     unit: mmbtu
@@ -54,7 +54,7 @@ feeds:
   - key: copper
     name: "Copper (World Bank, monthly)"
     symbol: COPPER
-    category: commodity
+    category: metals
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCOPPUSDM"
     currency: USD
     unit: t
@@ -62,7 +62,7 @@ feeds:
   - key: aluminum
     name: "Aluminum (World Bank, monthly)"
     symbol: ALUMINUM
-    category: commodity
+    category: metals
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PALUMUSDM"
     currency: USD
     unit: t
@@ -70,7 +70,7 @@ feeds:
   - key: nickel
     name: "Nickel (World Bank, monthly)"
     symbol: NICKEL
-    category: commodity
+    category: metals
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PNICKUSDM"
     currency: USD
     unit: t
@@ -78,7 +78,7 @@ feeds:
   - key: zinc
     name: "Zinc (World Bank, monthly)"
     symbol: ZINC
-    category: commodity
+    category: metals
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PZINCUSDM"
     currency: USD
     unit: t
@@ -86,7 +86,7 @@ feeds:
   - key: iron_ore
     name: "Iron Ore (World Bank, monthly)"
     symbol: IRON_ORE
-    category: commodity
+    category: metals
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PIORECRUSDM"
     currency: USD
     unit: t
@@ -94,7 +94,7 @@ feeds:
   - key: tin
     name: "Tin (World Bank, monthly)"
     symbol: TIN
-    category: commodity
+    category: metals
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PTINUSDM"
     currency: USD
     unit: t
@@ -102,7 +102,7 @@ feeds:
   - key: lead
     name: "Lead (World Bank, monthly)"
     symbol: LEAD
-    category: commodity
+    category: metals
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PLEADUSDM"
     currency: USD
     unit: t
@@ -112,7 +112,7 @@ feeds:
   - key: gold
     name: "Gold (LBMA PM fix, daily)"
     symbol: GOLD
-    category: commodity
+    category: precious
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=GOLDPMGBD228NLBM"
     currency: USD
     unit: ozt
@@ -120,8 +120,152 @@ feeds:
   - key: eur_usd
     name: "EUR/USD exchange rate (daily)"
     symbol: EURUSD
-    category: financial
+    category: fx
     url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXUSEU"
     currency: USD
     unit: per-EUR
     market: FRED
+
+  # --- Energy: gas, LNG, coal (World Bank Pink Sheet, monthly, via FRED) ---- #
+  - key: natural_gas_eu
+    name: "Natural Gas — Europe (World Bank, monthly)"
+    symbol: NATGAS_EU
+    category: energy
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PNGASEUUSDM"
+    currency: USD
+    unit: mmbtu
+    market: world-bank
+  - key: lng_asia
+    name: "Liquefied Natural Gas — Asia (World Bank, monthly)"
+    symbol: LNG_ASIA
+    category: energy
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PNGASJPUSDM"
+    currency: USD
+    unit: mmbtu
+    market: world-bank
+  - key: coal_australia
+    name: "Coal — Australia (World Bank, monthly)"
+    symbol: COAL
+    category: energy
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCOALAUUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+
+  # --- Strategic & nuclear ------------------------------------------------- #
+  # Rare-earth element prices (Nd, Dy, Pr...) have NO free, no-API-key official
+  # series: producers publish via paywalled assessors (Asian Metal, Argus).
+  # Honesty rule: we do not relay scraped or guessed numbers — add a custom
+  # extraction rule pointing at a source you have the right to read.
+  - key: uranium
+    name: "Uranium (World Bank, monthly)"
+    symbol: URANIUM
+    category: strategic
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PURANUSDM"
+    currency: USD
+    unit: lb
+    market: world-bank
+
+  # --- Precious metals (daily, via FRED) ----------------------------------- #
+  - key: silver
+    name: "Silver (LBMA fix, daily)"
+    symbol: SILVER
+    category: precious
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SLVPRUSD"
+    currency: USD
+    unit: ozt
+    market: LBMA/FRED
+
+  # --- Agriculture & cereals (World Bank Pink Sheet, monthly, via FRED) ----- #
+  - key: corn
+    name: "Corn / Maize (World Bank, monthly)"
+    symbol: CORN
+    category: agriculture
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PMAIZMTUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+  - key: wheat
+    name: "Wheat (World Bank, monthly)"
+    symbol: WHEAT
+    category: agriculture
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PWHEAMTUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+  - key: rice
+    name: "Rice — Thailand 5% (World Bank, monthly)"
+    symbol: RICE
+    category: agriculture
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PRICENPQUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+  - key: soybeans
+    name: "Soybeans (World Bank, monthly)"
+    symbol: SOYBEANS
+    category: agriculture
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PSOYBUSDM"
+    currency: USD
+    unit: t
+    market: world-bank
+  - key: sugar
+    name: "Sugar — world (World Bank, monthly)"
+    symbol: SUGAR
+    category: agriculture
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PSUGAISAUSDM"
+    currency: USD
+    unit: kg
+    market: world-bank
+  - key: coffee
+    name: "Coffee — Arabica (World Bank, monthly)"
+    symbol: COFFEE
+    category: agriculture
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCOFFOTMUSDM"
+    currency: USD
+    unit: kg
+    market: world-bank
+  - key: cocoa
+    name: "Cocoa (World Bank, monthly)"
+    symbol: COCOA
+    category: agriculture
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCOCOUSDM"
+    currency: USD
+    unit: kg
+    market: world-bank
+  - key: cotton
+    name: "Cotton — A index (World Bank, monthly)"
+    symbol: COTTON
+    category: agriculture
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCOTTINDUSDM"
+    currency: USD
+    unit: kg
+    market: world-bank
+  - key: rubber
+    name: "Rubber (World Bank, monthly)"
+    symbol: RUBBER
+    category: agriculture
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PRUBBUSDM"
+    currency: USD
+    unit: kg
+    market: world-bank
+
+  # --- Construction materials (World Bank Pink Sheet, monthly, via FRED) ---- #
+  # Sand has NO free official global series (regional, traded locally) — the
+  # honest path is a custom extraction rule on a source of your choice.
+  - key: soft_logs
+    name: "Soft Logs — timber (World Bank, monthly)"
+    symbol: LOGS
+    category: construction
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PLOGSKUSDM"
+    currency: USD
+    unit: m3
+    market: world-bank
+  - key: sawnwood
+    name: "Sawnwood — hard, Malaysia (World Bank, monthly)"
+    symbol: SAWNWOOD
+    category: construction
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PSAWMUSDM"
+    currency: USD
+    unit: m3
+    market: world-bank

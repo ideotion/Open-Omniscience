@@ -241,5 +241,15 @@
   "stale year": "年が古い",
   "Imported events": "インポート済みイベント",
   "Imported.": "インポートしました。",
-  "Checked.": "確認しました。"
+  "Checked.": "確認しました。",
+  "Energy": "エネルギー",
+  "Strategic & nuclear": "戦略・核",
+  "Base metals": "ベースメタル",
+  "Precious metals": "貴金属",
+  "Construction materials": "建設資材",
+  "Agriculture & cereals": "農業・穀物",
+  "Currencies": "通貨",
+  "Custom": "カスタム",
+  "not enough points in this window": "この期間のデータ点が不足",
+  "Feeds that did not deliver:": "データ未着のフィード："
 }

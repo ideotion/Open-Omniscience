@@ -241,5 +241,15 @@
   "stale year": "سنة قديمة",
   "Imported events": "أحداث مستوردة",
   "Imported.": "تم الاستيراد.",
-  "Checked.": "تم الفحص."
+  "Checked.": "تم الفحص.",
+  "Energy": "الطاقة",
+  "Strategic & nuclear": "استراتيجي ونووي",
+  "Base metals": "معادن أساسية",
+  "Precious metals": "معادن ثمينة",
+  "Construction materials": "مواد البناء",
+  "Agriculture & cereals": "الزراعة والحبوب",
+  "Currencies": "العملات",
+  "Custom": "مخصص",
+  "not enough points in this window": "نقاط غير كافية في هذه النافذة",
+  "Feeds that did not deliver:": "موجزات لم تسلم شيئًا:"
 }
