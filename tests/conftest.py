@@ -49,4 +49,5 @@ if not ANALYSIS_AVAILABLE:
         "test_analysis_api.py",
         "test_csv_feeds.py",
         "test_workflow_integration.py",
+        "test_framing_keywords_api.py",
     ]

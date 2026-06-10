@@ -843,11 +843,28 @@ async def discover_sources_by_topic(
     """
     Discover new sources for a specific topic.
 
+    This is the ONE feature that contacts an external service (DuckDuckGo) —
+    the topic query leaves the machine. Gated OFF by default behind
+    Settings → Safety → "External topic discovery" (audit finding ETH-02 /
+    roadmap RM-03); refuses honestly when disabled.
+
     Parameters:
     - topic: The topic to search for
     - max_sources: Maximum number of sources to return
     - region: Region code for localized results
     """
+    from src.safety.settings import load_settings as load_safety_settings
+
+    if not load_safety_settings().discovery_external_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "External topic discovery is disabled (the default). It sends your "
+                "topic query to DuckDuckGo, an external service. Enable it knowingly "
+                "in Settings → Safety → External topic discovery."
+            ),
+        )
+
     logger.info(f"Discover sources by topic: {topic}")
 
     with SourceManager(session=db) as manager:

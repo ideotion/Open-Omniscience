@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<!--
+  Open Omniscience — the /investigate dashboard (0.0.8 WP9 / RM-20).
+  Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+  A dedicated, card-adjusted investigation view that a Home recipe card opens in
+  a NEW browser tab. Third page in the Console/Desk family: same loopback server,
+  same corpus, deliberately dependency-free (no CDN, no framework, no web fonts).
+
+  Contract (docs/product/RELEASE_0.0.8_PLAN.md WP9):
+  - the whole state lives in the URL (?view=<recipe>&<params>) — shareable,
+    re-openable, no hidden state;
+  - every panel is a read-only view over an EXISTING tested API;
+  - the suggestions strip offers only actions the user could do manually in the
+    main UI, with their parameters visible — never an automated conclusion;
+  - the parent card's caveat is carried verbatim at the top.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Investigate — Open Omniscience</title>
+<style>
+  :root {
+    --bg:#f6f7f9; --panel:#ffffff; --panel2:#eef0f3; --fg:#1c2127; --fg-soft:#5c6670;
+    --border:#d8dde3; --accent:#2563eb; --warn:#b45309; --err:#b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#11151a; --panel:#1a2028; --panel2:#232b35; --fg:#e6e9ed;
+            --fg-soft:#9aa4ae; --border:#2e3742; --accent:#5b8def; --warn:#d97706; --err:#ef4444; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding:14px 22px; border-bottom:1px solid var(--border); background:var(--panel);
+           display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; }
+  header .crumb { color:var(--fg-soft); font-size:13px; }
+  main { max-width:1100px; margin:0 auto; padding:18px 22px 60px; }
+  .caveat { border:1px solid var(--warn); border-radius:10px; padding:10px 14px; margin:14px 0;
+            background:color-mix(in srgb, var(--warn) 8%, var(--panel)); font-size:14px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:12px;
+           padding:16px 18px; margin:14px 0; }
+  .panel h2 { margin:0 0 8px; font-size:15px; }
+  .panel .src { color:var(--fg-soft); font-size:12px; margin-top:8px; }
+  .muted { color:var(--fg-soft); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  a { color:var(--accent); }
+  .suggest { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; }
+  .suggest a { display:inline-block; border:1px solid var(--border); border-radius:8px;
+               padding:7px 12px; text-decoration:none; background:var(--panel2); color:var(--fg);
+               font-size:13px; }
+  .suggest a:hover { border-color:var(--accent); }
+  .suggest .what { display:block; color:var(--fg-soft); font-size:11px; }
+  .num { font-size:26px; font-weight:700; }
+  .err { color:var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="ttl">Investigation</h1>
+  <span class="crumb">Open Omniscience · opened from a Home card · <a href="/" target="_blank" rel="noopener">main app ↗</a></span>
+</header>
+<main id="main"><p class="muted">Loading…</p></main>
+
+<script>
+"use strict";
+const Q = new URLSearchParams(location.search);
+const VIEW = Q.get("view") || "";
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`${path} -> HTTP ${r.status}`);
+  return r.json();
+}
+const panel = (title, bodyHtml, srcNote) =>
+  `<section class="panel"><h2>${esc(title)}</h2>${bodyHtml}` +
+  (srcNote ? `<div class="src">data: ${esc(srcNote)}</div>` : "") + `</section>`;
+// A suggestion is an action the user could do manually, parameters visible.
+const suggestion = (label, href, what) =>
+  `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}<span class="what">${esc(what)}</span></a>`;
+const caveatBlock = text =>
+  `<div class="caveat"><b>Caveat (from the card):</b> ${esc(text)}</div>`;
+
+// ---------------------------------------------------------------- promise --- //
+async function viewPromise() {
+  const articleId = Q.get("article_id"), date = Q.get("date"), title = Q.get("title") || "";
+  document.getElementById("ttl").textContent = `Promise due — ${date}`;
+  let html = caveatBlock(
+    "A mentioned future date is not always a promise (it may be a citation or a schedule " +
+    "note) — read the snippet; candidate tags are unconfirmed extractions.");
+
+  // Panel 1: the original article + its date tags (provenance snippets).
+  let tagsHtml = '<p class="muted">No date tags found.</p>';
+  try {
+    const tags = await api(`/api/article-dates/article/${articleId}`);
+    const list = tags.tags || tags.dates || tags.items || (Array.isArray(tags) ? tags : []);
+    if (list.length) {
+      tagsHtml = "<table><tr><th>Date</th><th>Status</th><th>Snippet (provenance)</th></tr>" +
+        list.map(t => `<tr><td>${esc(t.mentioned_on || t.date)}</td><td>${esc(t.status)}</td>` +
+                      `<td>${esc(t.snippet || "")}</td></tr>`).join("") + "</table>";
+    }
+  } catch (e) { tagsHtml = `<p class="err">${esc(e.message)}</p>`; }
+  html += panel("The original article",
+    `<p><a href="/api/articles/${esc(articleId)}/view" target="_blank" rel="noopener">` +
+    `${esc(title) || "Open the stored copy"}</a> <span class="muted">(offline stored copy)</span></p>` +
+    tagsHtml, `/api/article-dates/article/${esc(articleId)}`);
+
+  // Panel 2: coverage since the promised date, seeded by the article's title words.
+  const terms = title.split(/\s+/).filter(w => w.length > 3).slice(0, 4).join(" ");
+  let follow = '<p class="muted">No stored coverage on these terms since the promised date.</p>';
+  try {
+    const r = await api(`/api/articles?query=${encodeURIComponent(terms)}` +
+                        `&start_date=${encodeURIComponent(date)}&limit=10`);
+    if ((r.results || []).length) {
+      follow = "<table><tr><th>Published</th><th>Title</th><th>Source</th></tr>" +
+        r.results.map(a => `<tr><td>${esc((a.published_at || "").slice(0,10))}</td>` +
+          `<td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">${esc(a.title)}</a></td>` +
+          `<td>${esc(a.source || "")}</td></tr>`).join("") + "</table>";
+    }
+  } catch (e) { follow = `<p class="err">${esc(e.message)}</p>`; }
+  html += panel(`Coverage since ${date} (query: “${terms}”)`, follow,
+    "Boolean FTS search over your corpus, pre-filled — edit it in the main app");
+
+  html += panel("Go deeper (each opens the main app with the parameters shown)",
+    `<div class="suggest">
+       ${suggestion("Search variants", "/#search", `your query: ${terms}`)}
+       ${suggestion("Open the Temporal map", "/#timemap", `window around ${date}`)}
+       ${suggestion("Add to briefing draft", "/#home", "pin the original + follow-ups")}
+       ${suggestion("Log to custody", "/#custody", `article ${articleId}: signed, hash-chained entry`)}
+     </div>`);
+  return html;
+}
+
+// --------------------------------------------------------------- edit-war --- //
+async function viewEditWar() {
+  const pageId = Q.get("page_id"), title = Q.get("title") || "", wiki = Q.get("wiki") || "";
+  document.getElementById("ttl").textContent = `Edit burst — ${wiki}:${title}`;
+  let html = caveatBlock(
+    "A burst measures editing activity, not wrongdoing — releases, vandalism cleanup and " +
+    "genuine news all cause bursts. Read the diffs.");
+
+  let changes = '<p class="muted">No flagged tracked edits stored for this wiki.</p>';
+  try {
+    const r = await api(`/api/wiki/changes?flagged_only=false&wiki=${encodeURIComponent(wiki)}&limit=100`);
+    const rows = (r.changes || r.items || []).filter(c =>
+      String(c.page_id ?? "") === String(pageId) || (c.title === title));
+    if (rows.length) {
+      changes = "<table><tr><th>When</th><th>Editor</th><th>Δ bytes</th><th>Comment</th><th>Flags</th></tr>" +
+        rows.slice(0, 40).map(c => `<tr><td>${esc((c.timestamp || "").slice(0,16))}</td>` +
+          `<td>${esc(c.editor || "")}${c.editor_anon ? " (anon)" : ""}</td>` +
+          `<td>${esc(c.delta_bytes ?? "")}</td><td>${esc((c.comment || "").slice(0,80))}</td>` +
+          `<td>${esc(c.flag_reasons || (c.flagged ? "flagged" : ""))}</td></tr>`).join("") + "</table>";
+    }
+  } catch (e) { changes = `<p class="err">${esc(e.message)}</p>`; }
+  html += panel("Stored revisions of this page (window of the burst)", changes,
+    `/api/wiki/changes — your locally tracked copy, with per-edit provenance`);
+
+  html += panel("Go deeper",
+    `<div class="suggest">
+       ${suggestion("Open the Wikipedia tab", "/#wiki", `page: ${wiki}:${title} — diffs & baselines`)}
+       ${suggestion("Search your corpus", "/#search", `query: "${title}" — is news driving the burst?`)}
+       ${suggestion("Open the Temporal map", "/#timemap", "the burst window in context")}
+     </div>`);
+  return html;
+}
+
+// ----------------------------------------------------------- quiet-region --- //
+async function viewQuietRegion() {
+  const country = Q.get("country") || "", recent = Q.get("recent_7d"),
+        priorW = Q.get("prior_weekly");
+  document.getElementById("ttl").textContent = `Region gone quiet — ${country}`;
+  let html = caveatBlock(
+    "This measures YOUR corpus, not the region: a dead feed or a source outage looks " +
+    "identical to real silence. Check the sources first.");
+
+  html += panel("The signal",
+    `<span class="num">${esc(recent)}</span> articles in the last 7 days
+     <span class="muted">(prior weekly rate ≈ ${esc(priorW)})</span>`,
+    "stored-article counts per country — collection volume, nothing else");
+
+  let cov = '<p class="muted">Coverage summary unavailable.</p>';
+  try {
+    const r = await api("/api/database/coverage");
+    const thin = (r.thin || []).map(esc).join(", ");
+    const missing = (r.missing || []).length;
+    cov = `<p>Catalog-wide: <b>${esc(r.covered ?? "?")}</b> countries covered, ` +
+          `<b>${missing}</b> with no source at all.` +
+          (thin ? ` Thin coverage: ${thin}.` : "") + `</p>`;
+  } catch (e) { cov = `<p class="err">${esc(e.message)}</p>`; }
+  html += panel("Where this fits in your overall coverage", cov, "/api/database/coverage");
+
+  html += panel("Go deeper",
+    `<div class="suggest">
+       ${suggestion("Check the sources", "/#sources", `filter: ${country} — enabled? last fetch ok?`)}
+       ${suggestion("Scrape now", "/#ingest", "run the scheduler once and watch the live activity")}
+       ${suggestion("World coverage view", "/#database", "the country map of your catalog")}
+       ${suggestion("Add sources from the catalog", "/#sources", `catalog candidates for ${country}`)}
+     </div>`);
+  return html;
+}
+
+// ------------------------------------------------------------------ boot --- //
+const VIEWS = { "promise": viewPromise, "edit-war": viewEditWar, "quiet-region": viewQuietRegion };
+(async () => {
+  const main = document.getElementById("main");
+  const fn = VIEWS[VIEW];
+  if (!fn) {
+    main.innerHTML = `<div class="panel"><h2>Unknown investigation view</h2>
+      <p>“${esc(VIEW)}” is not a known recipe. Known: ${Object.keys(VIEWS).map(esc).join(", ")}.</p>
+      <p><a href="/">Back to the main app</a></p></div>`;
+    return;
+  }
+  try { main.innerHTML = await fn(); }
+  catch (e) { main.innerHTML = `<div class="panel"><h2 class="err">Could not load</h2><p>${esc(e.message)}</p></div>`; }
+})();
+</script>
+</body>
+</html>

@@ -153,6 +153,11 @@
     button.danger:hover { background:color-mix(in srgb, var(--err) 14%, transparent); filter:none; }
     button.tiny { padding:3px 9px; margin-top:0; font-size:12px; font-weight:500; }
     button.ghost { background:transparent; color:var(--fg-soft); }
+    /* anchor styled as a primary action button (used by recipe "Open investigation") */
+    a.btnlike { display:inline-block; background:var(--accent); color:var(--accent-fg, #fff);
+      border-radius:8px; text-decoration:none; cursor:pointer; }
+    a.btnlike.tiny { padding:3px 9px; font-size:12px; font-weight:600; }
+    a.btnlike:hover { filter:brightness(1.08); }
 
     table { width:100%; border-collapse:collapse; font-size:14px; }
     th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--border-soft); vertical-align:top; }
@@ -1398,6 +1403,22 @@
           <input id="set-limit" type="number" min="1" max="1000" step="1">
         </div>
       </div>
+
+      <h3 style="margin-bottom:6px">Investigation recipes on Home</h3>
+      <p class="muted" style="margin-top:0">Space-time scenario cards that watch your own corpus
+        (all local, no network) and offer a one-click investigation view. Untick to switch one off.</p>
+      <div class="row" id="recipes-toggles">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" class="recipe-toggle" value="promises_due" checked> Promises due
+          <span class="muted">(a mentioned future date has arrived)</span></label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" class="recipe-toggle" value="edit_war_burst" checked> Edit-war burst
+          <span class="muted">(a tracked Wikipedia page is churning)</span></label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" class="recipe-toggle" value="region_gone_quiet" checked> Region gone quiet
+          <span class="muted">(a usually-covered country stopped arriving)</span></label>
+      </div>
+
       <button onclick="saveSettings()">Save preferences</button>
       <div class="hint">Stored locally in <code>app_settings.json</code> under the data directory — no telemetry, nothing leaves the machine.</div>
     </section>
@@ -1520,6 +1541,23 @@
       </div>
       <div class="hint" style="color:var(--warn)">Protected mode cannot guarantee anonymity — you must
         run and trust the proxy yourself. SOCKS proxies need the optional <code>[safety]</code> extra.</div>
+
+      <hr>
+      <h3 style="margin-bottom:6px">External topic discovery</h3>
+      <p class="muted" style="margin-top:0">The <em>one</em> feature that contacts an external
+        service: <strong>Sources → Discover by topic</strong> sends your topic query to
+        <strong>DuckDuckGo</strong> to find candidate outlets. <strong>Your query leaves this
+        machine.</strong> Off by default; everything else works without it. (Discovering RSS feeds
+        for sources you added yourself stays local-path and is not affected.)</p>
+      <div class="row">
+        <div style="flex:0 0 auto">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="discovery-external" onchange="saveDiscoveryExternal()">
+            Allow topic-discovery queries to DuckDuckGo
+          </label>
+        </div>
+      </div>
+      <div id="discovery-external-result" class="hint"></div>
 
       <hr>
       <h3 style="margin-bottom:6px; color:var(--err)">Panic wipe</h3>
@@ -2018,6 +2056,13 @@
           ? `<button class="secondary tiny" onclick="cardCollapse('${esc(sig.signature)}', false)">Expand (revert)</button>`
           : `<button class="secondary tiny" onclick="cardCollapse('${esc(sig.signature)}', true)" title="Count this coordinated network as one voice (reversible, stays flagged)">Collapse to one actor</button>`;
       }
+      // Investigation recipe (0.0.8 WP8/RM-20): opens /investigate in a NEW tab,
+      // fully URL-parameterised (shareable, no hidden state), main UI stays put.
+      let recipeBtn = "";
+      if (c.recipe && c.recipe.view) {
+        const qp = new URLSearchParams({view: c.recipe.view, ...(c.recipe.params || {})});
+        recipeBtn = `<a class="btnlike tiny" href="/investigate?${qp.toString()}" target="_blank" rel="noopener" title="Opens a dedicated investigation view in a new tab">Open investigation ↗</a>`;
+      }
       return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}">
         <span class="chip">${esc(c.type.replace(/_/g,' '))}</span>
         <h4>${esc(c.title)}</h4>
@@ -2026,6 +2071,7 @@
         ${evidBlock}
         <div class="mc" hidden><b>Method:</b> ${esc(c.method)}<br><b>Caveat:</b> ${esc(c.caveat)}</div>
         <div class="acts">
+          ${recipeBtn}
           <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
           ${collapseBtn}
           ${dismiss}
@@ -2533,6 +2579,10 @@
         const s = await api("/api/settings");
         $("set-limit").value = s.default_result_limit;
         DEFAULT_LIMIT = s.default_result_limit;
+        const disabled = new Set(s.recipes_disabled || []);
+        document.querySelectorAll(".recipe-toggle").forEach(cb => {
+          cb.checked = !disabled.has(cb.value);
+        });
         // The local "Customize" theme is authoritative; on first ever run, seed it
         // from the server preference so existing users keep their dark/light choice.
         if (!localStorage.getItem(UI_KEY)) {
@@ -2628,6 +2678,8 @@
       const body = {
         theme: $("set-theme").value,
         default_result_limit: Number($("set-limit").value),
+        recipes_disabled: Array.from(document.querySelectorAll(".recipe-toggle"))
+          .filter(cb => !cb.checked).map(cb => cb.value),
       };
       try {
         const s = await api("/api/settings", {method: "PUT", body: JSON.stringify(body)});
@@ -2669,6 +2721,7 @@
         const s = await api("/api/safety/settings");
         if ($("fetch-mode")) $("fetch-mode").value = s.fetch_mode || "transparent";
         if ($("http-proxy")) $("http-proxy").value = s.http_proxy || "";
+        if ($("discovery-external")) $("discovery-external").checked = !!s.discovery_external_enabled;
         onFetchModeChange();
       } catch (e) { /* safety API unavailable -> leave defaults */ }
     }
@@ -2682,6 +2735,21 @@
         await api("/api/safety/settings", {method: "PUT", body: JSON.stringify(body)});
         toast("Fetch mode saved.");
       } catch (e) { toast("Save failed: " + e.message, "err"); }
+    }
+    async function saveDiscoveryExternal() {
+      // ETH-02/RM-03: the one external-service call is an explicit, knowing opt-in.
+      const on = $("discovery-external").checked;
+      try {
+        await api("/api/safety/settings",
+          {method: "PUT", body: JSON.stringify({discovery_external_enabled: on})});
+        $("discovery-external-result").textContent = on
+          ? "Enabled: topic-discovery queries will be sent to DuckDuckGo."
+          : "Disabled (the default): no topic query leaves this machine.";
+        toast(on ? "External topic discovery enabled." : "External topic discovery disabled.");
+      } catch (e) {
+        $("discovery-external").checked = !on;  // revert the visual state on failure
+        toast("Save failed: " + e.message, "err");
+      }
     }
     async function encryptedBackup() {
       const pass = $("enc-pass").value;

@@ -106,6 +106,13 @@ class Card:
       * ``key``     — a within-type identity (e.g. the keyword) used to build ``id``.
       * ``id``      — stable id for pin/dismiss (hash of type+key).
       * ``dismissible`` — whether the user can dismiss it (default True).
+      * ``recipe``  — optional one-click investigation (0.0.8 WP8 / RM-20):
+                      ``{"view": "<recipe-id>", "params": {...}}``, rendered by
+                      the Home UI as an "Open investigation" button that opens
+                      ``/investigate`` in a NEW browser tab, pre-filled. A recipe
+                      carries *parameters the user could have typed themselves* —
+                      never embedded conclusions, never score-shaped keys
+                      (enforced in ``__post_init__``).
     """
 
     type: str
@@ -121,15 +128,44 @@ class Card:
     id: str = ""
     created_at: str = ""
     dismissible: bool = True
+    recipe: dict | None = None
 
     def __post_init__(self) -> None:
         if self.bucket not in BUCKETS:
             raise ValueError(f"unknown bucket {self.bucket!r}; use one of {BUCKETS}")
+        if self.recipe is not None:
+            self._validate_recipe(self.recipe)
         if not self.created_at:
             self.created_at = datetime.now(UTC).isoformat()
         if not self.id:
             basis = f"{self.type}|{self.key or self.title}".encode()
             self.id = hashlib.sha256(basis).hexdigest()[:16]
+
+    @staticmethod
+    def _validate_recipe(recipe: dict) -> None:
+        """A recipe is {view, params} with flat JSON-scalar params; the same
+        no-composite-score ban as card fields applies to param names (a recipe
+        parameterises a view the user could open themselves — it must never
+        smuggle a conclusion)."""
+        if "view" not in recipe or set(recipe.keys()) - {"view", "params"}:
+            raise CardSchemaError("recipe must be {'view': str, 'params': dict}")
+        if not isinstance(recipe["view"], str) or not recipe["view"]:
+            raise CardSchemaError("recipe.view must be a non-empty string")
+        params = recipe.get("params", {})
+        if not isinstance(params, dict):
+            raise CardSchemaError("recipe.params must be a dict")
+        for k, v in params.items():
+            name = str(k).lower()
+            if name in _BANNED_FIELD_NAMES or any(
+                frag in name for frag in _BANNED_FIELD_FRAGMENTS
+            ):
+                raise CardSchemaError(
+                    f"recipe param {k!r}: score/verdict-shaped names are forbidden"
+                )
+            if v is not None and not isinstance(v, (str, int, float, bool)):
+                raise CardSchemaError(
+                    f"recipe param {k!r} must be a JSON scalar (got {type(v).__name__})"
+                )
 
     def to_dict(self) -> dict:
         return {
@@ -145,6 +181,7 @@ class Card:
             "n": self.n,
             "created_at": self.created_at,
             "dismissible": self.dismissible,
+            "recipe": self.recipe,
         }
 
 
