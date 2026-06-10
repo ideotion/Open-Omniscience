@@ -649,3 +649,15 @@ offline kit as part of RM-08.
    (NOT repo content): Ollama binary + one small model, provisioned on a connected machine
    and carried by USB to `~/.ollama/models`. The principled fallback for operators who can
    never use clearnet on the work machine. Build with RM-08 packaging.
+
+
+## KEY POINT for 0.0.9 — de-US-centre the default source catalog (maintainer-flagged)
+
+The live test exposed it plainly: the packaged catalog is heavily US-centric (World
+coverage showed ~1,553 "US" sources vs hundreds elsewhere — partly inflated by a mixed
+country-encoding bug: rows stored as both "US" and "United States" must be normalised to
+ISO-2 storage with full-name display). For a *global* intelligence platform this is a
+credibility problem, not a cosmetic one. 0.0.9 must treat catalog balance as a first-class
+deliverable: per-region source targets, the Wikidata world-catalog generator run for
+under-covered countries, the coverage report as the acceptance metric, and the ISO-2
+normalisation migration. (Maintainer: "address that specifically with all our attention.")

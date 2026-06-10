@@ -291,6 +291,18 @@ class BackgroundScheduler:
         fetcher = make_fetcher()
         run_started = datetime.now(UTC)
         with session_scope() as session:
+            # First-ever scrape: preflight the enabled sources once (reachability +
+            # robots verdicts -> per-source settings + a shareable JSONL log). Done
+            # here, not at app boot: boot must stay offline; this run is already
+            # going to the network. Best-effort -- never blocks the scrape.
+            try:
+                from src.monitoring.preflight import has_run_before, preflight_sources
+
+                if not has_run_before():
+                    result_pf = preflight_sources(session, fetcher)
+                    _LOG.info("first-run source preflight: %s", result_pf)
+            except Exception:  # noqa: BLE001
+                _LOG.warning("source preflight failed", exc_info=True)
             result = run_scrape_once(session, fetcher, settings)
             # Opt-in drop-folder export (WP3/RM-06): write the new-articles
             # delta into the operator's local folder. Best-effort; off when

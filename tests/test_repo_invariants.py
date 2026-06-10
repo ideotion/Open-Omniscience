@@ -184,3 +184,22 @@ def test_llm_catalog_freshness():
         f"Re-verify src/llm/ollama.py:MODEL_CATALOG against https://ollama.com/library "
         f"and bump CATALOG_AS_OF."
     )
+
+
+def test_ui_invariants():
+    """Maintainer-ruled UI invariants (see CLAUDE.md). These regressed once
+    between sessions; now they fail CI instead of relying on memory."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # 1. Wikipedia edition picker is a dropdown, never a text input
+    assert '<select id="wiki-lang"' in html, "wiki-lang must be a <select> (CLAUDE.md #1)"
+    assert '<input id="wiki-lang"' not in html
+    # 3. constant top-bar footprints
+    assert ".act-host:empty { visibility:hidden; }" in html, "act-host slot must stay reserved"
+    assert "#llm { min-width" in html, "LLM pill needs a fixed footprint"
+    # 4. persistent vitals strip; no version in the chrome
+    assert 'id="vitals-mini"' in html, "the compact vitals strip must exist"
+    assert '<span id="version" hidden>' in html, "version stays out of the visible chrome"
+    # 2. sidebar: medium widths collapse to a rail, not off-canvas
+    assert "@media (max-width:860px) and (min-width:601px)" in html
+    # 5. the eye brand mark (grid-iris path is its fingerprint)
+    assert "C8 6.5, 24 6.5, 30 16" in html, "brand mark must be the ASCII-eye vector"

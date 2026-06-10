@@ -145,3 +145,24 @@ def test_hostname_resolving_to_metadata_ip_is_blocked(monkeypatch):
     f = EthicalFetcher(min_interval_s=0.0)
     with pytest.raises(BlockedTarget):
         f.fetch("https://metadata.example/")
+
+
+# --- the global network kill switch (§0.5; maintainer live-test feedback) ----- #
+
+
+def test_kill_switch_refuses_new_fetches_immediately():
+    from src.ingest import activate_kill_switch, clear_kill_switch, kill_switch_active
+
+    sess = _Session()
+    f = _fetcher(sess)
+    try:
+        activate_kill_switch()
+        assert kill_switch_active()
+        with pytest.raises(FetchFailed, match="kill switch"):
+            f.fetch("https://example.com/a")
+    finally:
+        clear_kill_switch()
+    # cleared => the fetch path works again (a 404 refusal proves the request
+    # actually went through the normal pipeline, not the kill gate)
+    with pytest.raises(FetchFailed, match="HTTP 404"):
+        f.fetch("https://example.com/a")

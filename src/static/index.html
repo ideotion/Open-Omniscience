@@ -189,7 +189,13 @@
     /* Fixed-width slot for the live fetch URL so the topbar never reflows as URLs change. */
     .act-host { display:inline-block; width:160px; overflow:hidden; text-overflow:ellipsis;
       white-space:nowrap; vertical-align:bottom; }
-    .act-host:empty { display:none; }
+    /* Reserve the slot even between fetches: an empty host must not collapse the
+       160px box, or everything to its right jumps per site (maintainer-reported). */
+    .act-host:empty { visibility:hidden; }
+    /* Top-bar status chips keep a CONSTANT footprint (maintainer feedback):
+       text changes (LLM — / LLM ✓ N) must not reflow their neighbours. */
+    #llm { min-width:96px; text-align:center; }
+    #health { min-width:110px; }
     @keyframes oo-spin { to { transform:rotate(360deg); } }
     /* Activity & vitals popover (opened from the chip). */
     .vitals-pop { position:fixed; top:52px; right:14px; z-index:60; width:264px;
@@ -422,7 +428,14 @@
     .prose hr { margin:1.6em 0; }
 
     /* ---- Responsive ------------------------------------------------- */
-    @media (max-width:860px) {
+    /* Medium widths: the left panel STAYS (icon rail with every tab) — maintainer
+       feedback: the tab list must remain visible, never vanish off-canvas. */
+    @media (max-width:860px) and (min-width:601px) {
+      .sidebar { --sidebar-w:66px; }
+      .brand .txt, .nav-group > .gl, .nav-item span, .nav-item .badge, .sb-foot .lbl { display:none; }
+      .nav-item { justify-content:center; padding:10px 0; }
+    }
+    @media (max-width:600px) {
       .sidebar { position:fixed; left:0; top:0; transform:translateX(-100%); transition:transform .2s ease; }
       body.nav-open .sidebar { transform:none; }
       body.nav-open .scrim { display:block; }
@@ -442,13 +455,16 @@
     <!-- ============================ SIDEBAR =========================== -->
     <aside class="sidebar" id="sidebar">
       <div class="brand">
+        <!-- The eye from assets/logo.txt, as vector: pointed-oval lid + #-grid iris -->
         <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <circle cx="16" cy="16" r="13" style="stroke:currentColor" stroke-width="2"/>
-          <circle cx="16" cy="16" r="5.5" style="fill:currentColor"/>
-          <circle cx="16" cy="16" r="2" style="fill:var(--bg2)"/>
-          <path d="M16 1.5v6M16 24.5v6M1.5 16h6M24.5 16h6" style="stroke:currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+          <path d="M2 16 C8 6.5, 24 6.5, 30 16 C24 25.5, 8 25.5, 2 16 Z"
+                style="stroke:currentColor" stroke-width="2" stroke-linejoin="round"/>
+          <path d="M11 12.5 H21 M11 16 H21 M11 19.5 H21 M13.4 10 V22 M16 10 V22 M18.6 10 V22"
+                style="stroke:currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M6.5 11.5 L4.6 9.9 M25.5 11.5 L27.4 9.9 M6.5 20.5 L4.6 22.1 M25.5 20.5 L27.4 22.1"
+                style="stroke:currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
         </svg>
-        <div class="txt"><b>Open Omniscience</b><span id="version">v—</span></div>
+        <div class="txt"><b>Open Omniscience</b><span id="version" hidden>v—</span></div>
       </div>
 
       <nav class="nav-groups" id="navGroups" aria-label="Primary">
@@ -507,6 +523,7 @@
         <div class="spacer"></div>
         <div class="status-cluster" id="statusCluster">
           <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click for details" tabindex="0" aria-expanded="false" aria-haspopup="dialog" style="cursor:pointer" onclick="toggleVitals()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleVitals();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span><span id="activity-host" class="act-host"></span></span>
+          <span id="vitals-mini" class="muted" title="Live process vitals — CPU · RAM · scrape throughput (click the activity chip for details)" style="font-size:11.5px;font-variant-numeric:tabular-nums;min-width:188px;text-align:right"></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
         </div>
@@ -1330,7 +1347,7 @@
     <section class="panel">
       <h2>Watch a page</h2>
       <div class="row">
-        <div><label for="wiki-lang">Edition</label><input id="wiki-lang" value="en" placeholder="en / fr / ar …"></div>
+        <div><label for="wiki-lang">Edition</label><select id="wiki-lang"><option value="en">English (en)</option></select></div>
         <div style="flex:3"><label for="wiki-title">Article title</label><input id="wiki-title" placeholder="e.g. Climate change"></div>
         <div><label for="wiki-cat">Watchlist</label><input id="wiki-cat" placeholder="optional"></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="addWikiPage()">Add</button></div>
@@ -1698,6 +1715,24 @@
       if (!_bg) _bumpInflight(0);   // re-evaluate any still-pending in-flight spinner
       _ensureVitalsPoll();
     }
+    async function _pollVitalsMini() {
+      if (document.hidden) return;
+      const el = $("vitals-mini"); if (!el) return;
+      try {
+        const v = await api("/api/system/vitals");
+        const parts = [];
+        if (v.cpu_percent != null) parts.push(`CPU ${v.cpu_percent.toFixed(0)}%`);
+        if (v.rss_bytes != null) parts.push(`RAM ${(v.rss_bytes/1048576).toFixed(0)} MB`);
+        if (v.fetch_bytes_total != null) {
+          const d = v.fetch_bytes_total - (_vmLast || 0); _vmLast = v.fetch_bytes_total;
+          parts.push(`↓ ${(Math.max(0,d)/5120).toFixed(0)} KB/s`);
+        }
+        el.textContent = parts.join(" · ");
+      } catch { /* keep last reading */ }
+    }
+    let _vmLast = 0;
+    setInterval(_pollVitalsMini, 5000); _pollVitalsMini();
+
     async function _pollActivity() {
       try { const s = await api("/api/scheduler/status");
         setBackgroundActivity(s && s.active ? "Collecting…" : null);
@@ -4578,7 +4613,34 @@
     }
 
     // -- Wikipedia change-tracking ------------------------------------------ //
+    let _wikiLangsLoaded = false;
+    async function loadWikiLanguages() {
+      if (_wikiLangsLoaded) return;
+      try {
+        const d = await api("/api/wiki/languages");
+        const sel = $("wiki-lang"); if (!sel) return;
+        const cur = sel.value || "en";
+        sel.innerHTML = "";
+        (d.groups || []).forEach(g => {
+          const og = document.createElement("optgroup"); og.label = g.region || "";
+          (g.languages || []).forEach(l => {
+            const o = document.createElement("option");
+            o.value = l.code; o.textContent = `${l.name} (${l.code})`;
+            og.appendChild(o);
+          });
+          sel.appendChild(og);
+        });
+        if (!sel.children.length) (d.languages || []).forEach(l => {
+          const o = document.createElement("option");
+          o.value = l.code; o.textContent = `${l.name} (${l.code})`; sel.appendChild(o);
+        });
+        sel.value = cur; if (!sel.value) sel.value = "en";
+        _wikiLangsLoaded = true;
+      } catch (e) { /* keep the en default */ }
+    }
+
     async function loadWiki() {
+      loadWikiLanguages();
       try { renderWikiStatus(await api("/api/wiki/status")); }
       catch (e) { if (!_wikiStatusBuilt) $("wiki-status").textContent = "Status unavailable: " + e.message; }
       loadWikiPages(); loadWikiChanges();

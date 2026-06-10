@@ -932,6 +932,40 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
         "});})();</script>"
     )
 
+    # Related in your corpus: other articles sharing the most keywords with this
+    # one (maintainer feedback: read locally, then branch out by similarity --
+    # source-agnostic). Pure counting over the keyword association table; the
+    # number shown IS the method.
+    related_html = ""
+    try:
+        from src.database.models import article_keyword_association as aka
+
+        my_kw = [r[0] for r in db.query(aka.c.keyword_id).filter(aka.c.article_id == a.id)]
+        if my_kw:
+            rows = (
+                db.query(Article.id, Article.title, func.count(aka.c.keyword_id).label("shared"))
+                .join(aka, aka.c.article_id == Article.id)
+                .filter(aka.c.keyword_id.in_(my_kw), Article.id != a.id)
+                .group_by(Article.id, Article.title)
+                .order_by(func.count(aka.c.keyword_id).desc())
+                .limit(8)
+                .all()
+            )
+            if rows:
+                items = "".join(
+                    f'<li><a href="/api/articles/{rid}/view">{_html.escape(rtitle or "(untitled)")}</a>'
+                    f' <span class="muted">— {shared} shared keyword{"s" if shared != 1 else ""}</span></li>'
+                    for rid, rtitle, shared in rows
+                )
+                related_html = (
+                    '<section><h2>Related in your corpus</h2>'
+                    '<p class="muted">Ranked by shared extracted keywords — overlap counts, '
+                    "not a similarity score. All links stay local.</p>"
+                    f"<ul>{items}</ul></section>"
+                )
+    except Exception:  # noqa: BLE001 - related list is optional, never breaks the reader
+        logger.warning("related-articles block failed", exc_info=True)
+
     doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title><style>
@@ -970,6 +1004,7 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
 <div class="wrap">
   <div class="crumb"><span class="dot"></span> Open Omniscience · offline stored copy</div>
   <article><h1>{title}</h1><div class="meta">{meta_rows}</div>{paras}</article>
+  {related_html}
   {cites_html}
   {dates_section}
   <footer>
