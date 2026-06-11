@@ -286,18 +286,36 @@ like a webcam light". The honest layering this becomes:
    the machine's LOCAL interface IPs. We never fetch a public-IP echo
    before consent — that would itself be a network call while "offline";
    the popup says the public IP is whatever the ISP/VPN exposes.
-3. **OS layer (opt-in, privileged, never silent):** for operators who want
-   driver-level cuts: Linux `rfkill block` (radio/driver level — the
-   closest software analog to a hardware switch; does not cover wired),
-   `nmcli networking off` / link-down for wired, or a firewall drop rule.
-   Offered only with documented, explicit setup (sudoers entry the operator
-   installs themselves); per-platform honesty about what each cuts.
-4. **The real physical-grade switch is architectural:** on Qubes (the
-   reference platform) detaching the NetVM removes the NIC from the AppVM
-   entirely — documented as THE hard guarantee. A userspace app can never
-   equal a hardware-wired webcam light, because software below it can be
-   compromised; we say so wherever the switch is explained (same
-   threat-model honesty as the at-rest encryption).
+3. **OS layer (opt-in, privileged, never silent) — INTERFACE-AGNOSTIC
+   (maintainer correction 2026-06-11):** we hold no dom0/hypervisor
+   privileges from inside an AppVM/DispVM — NetVM-detach is not ours to
+   perform, and Qubes must not be special-cased. The cut operates on the
+   interfaces the app's OWN environment exposes — the same enumeration the
+   consent popup lists as local IPs — and works identically whatever
+   stands behind them (a NetVM's virtual NIC, a direct router, a VPN
+   tunnel):
+   - **firewall drop-all** (nftables/iptables table added/removed by the
+     helper): blocks **both directions, inbound included** — the precise
+     answer to "we shouldn't receive packets either" — and re-enables
+     cleanly without link flapping;
+   - **`ip link set <iface> down`** for every non-loopback interface
+     (takes VPN tun devices down with the rest);
+   - `rfkill` demoted to a bare-metal *radio* bonus (virtual NICs have no
+     radios);
+   - Windows (`netsh interface set interface … disable` /
+     `Disable-NetAdapter`) and macOS (`networksetup` / `ifconfig down`)
+     equivalents behind the **one helper** (`oo-netcut`), per the
+     universal-portability mandate.
+   Elevation is explicit and narrowly scoped: a single operator-installed
+   sudoers line for the helper, documented, never silent; where elevation
+   is unavailable the button honestly shows app-level scope only.
+4. **Honest limits, always stated:** we control the interfaces OUR
+   environment exposes; whatever sits beneath (host OS, NetVM, router,
+   VPN server) may remain online — the button names the layer it
+   controls. A userspace app can never equal a hardware-wired webcam
+   light, because software below it can be compromised; we say so
+   wherever the switch is explained (same threat-model honesty as the
+   at-rest encryption).
 
 ---
 

@@ -310,14 +310,25 @@ Before fearing loss from an archive-size change, run
   indices, wiki, dumps) FIRST shows one consent popup: warning + the
   machine's LOCAL interface IPs (NEVER fetch a public-IP echo pre-consent —
   that is itself a network call; wording stays honest about what the public
-  IP is). Kill-switch reliability (honest answer RECORDED): app-level can
-  be airtight (every socket through the one guarded factory + tests); an
-  OPT-IN privileged OS layer can go driver-deep (Linux rfkill for radios,
-  link-down/nmcli for wired, firewall rule; documented sudo setup, never
-  silent); Qubes NetVM-detach documented as the real physical-grade switch;
+  IP is). Kill-switch reliability (honest answer RECORDED; **CORRECTED by
+  the maintainer same day — we have NO dom0 privileges from inside an
+  AppVM/DispVM, NetVM-detach is NOT ours to do; don't focus on Qubes**):
+  app-level can be airtight (every socket through the one guarded factory
+  + tests); the OPT-IN privileged OS layer must be INTERFACE-AGNOSTIC,
+  operating on whatever interfaces the app's OWN environment sees (same
+  enumeration as the consent popup's local-IP list) regardless of what
+  stands behind them — NetVM virtual NIC, direct router, VPN tun:
+  (a) firewall drop-all (nftables/iptables) blocking BOTH directions incl.
+  inbound, (b) `ip link down` on every non-loopback interface, (c) rfkill
+  demoted to a bare-metal radio bonus (no radios in VMs); Windows netsh /
+  macOS networksetup equivalents behind ONE helper (oo-netcut) per the
+  portability mandate; elevation explicit + narrowly scoped (one
+  operator-installed sudoers line, never silent). Honesty: we control OUR
+  environment's interfaces — layers beneath (host/NetVM/router) may stay
+  online, the button names the layer it controls;
   a userspace app can NEVER equal a hardware webcam light and we never
-  claim it — the button says which layer it controls. Inbound packets are
-  an OS matter: we bind loopback-only and hold no sockets when off —
+  claim it. Inbound packets at app level: we bind loopback-only and hold
+  no sockets when off — machine-wide inbound needs the firewall layer —
   stated, not oversold.
   (2) AGENDA/TEMPORAL: the "Mexico independence 2026" sighting = imported
   ICS feeds store year-pinned INSTANCES (bundled world_events.yml is
