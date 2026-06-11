@@ -225,6 +225,11 @@
     .vitals-pop .vr b { font-variant-numeric:tabular-nums; font-weight:600; max-width:160px;
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .vitals-pop .vnote { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.35; }
+    /* Enlarged mind-map / cloud (maintainer: enlargeable, weight-true) */
+    .mm-big { position:fixed; inset:4vh 4vw; z-index:140; background:var(--panel);
+      border:1px solid var(--border); border-radius:12px; padding:12px; overflow:auto;
+      box-shadow:0 18px 60px rgba(0,0,0,.5); }
+    .mm-big svg { max-width:none !important; }
     /* Indices board */
     .idx-board { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; margin-top:14px; }
     .idx-card { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
@@ -1212,10 +1217,25 @@
       <h2 style="margin:14px 0 6px;font-size:13px">Associated keywords (mind-map)</h2>
       <!-- Layered zoom (maintainer-ruled): keyword + relatives-of-relatives →
            families → super-groups. Buttons switch; zooming far out goes up a level. -->
-      <div class="seg-toggle" id="mm-levels" style="margin-bottom:6px">
-        <button class="active" data-level="keyword" onclick="mmLevel('keyword')">Keywords</button>
-        <button data-level="family" onclick="mmLevel('family')">Families</button>
-        <button data-level="supergroup" onclick="mmLevel('supergroup')">Super-groups</button>
+      <div class="row" style="gap:8px;align-items:end;margin-bottom:6px">
+        <div class="seg-toggle" id="mm-levels">
+          <button class="active" data-level="keyword" onclick="mmLevel('keyword')">Keywords</button>
+          <button data-level="family" onclick="mmLevel('family')">Families</button>
+          <button data-level="supergroup" onclick="mmLevel('supergroup')">Super-groups</button>
+        </div>
+        <div class="seg-toggle" id="mm-views">
+          <button class="active" data-view="map" onclick="mmView('map')">Mind-map</button>
+          <button data-view="cloud" onclick="mmView('cloud')">Word cloud</button>
+        </div>
+        <div><label for="mm-window">Period</label><select id="mm-window" onchange="mmWindowChange()">
+          <option value="">all time</option><option value="7">last week</option>
+          <option value="30">last month</option><option value="365">last year</option>
+          <option value="custom">custom…</option></select></div>
+        <div id="mm-custom" style="display:none"><label for="mm-start">From / to</label>
+          <span style="white-space:nowrap"><input type="date" id="mm-start" onchange="mmReload()" style="width:auto">
+          <input type="date" id="mm-end" onchange="mmReload()" style="width:auto"></span></div>
+        <div><label for="mm-size">Text size</label><input type="range" id="mm-size" min="70" max="180" value="100" oninput="mmReload()" style="width:90px"></div>
+        <div style="flex:0 0 auto"><button class="secondary tiny" id="mm-expand" onclick="mmExpand()" title="Enlarge the chart">⛶ Enlarge</button></div>
       </div>
       <div id="ins-mindmap"></div>
       <h2 style="margin:14px 0 6px;font-size:13px">How outlets frame this <span class="muted">(VADER tone)</span></h2>
@@ -1342,16 +1362,28 @@
           <option value="25" selected>± 25 yrs</option>
           <option value="5">± 5 yrs</option>
           <option value="1">± 1 yr</option>
+          <option value="0.17">± 2 months</option>
+          <option value="0.085">± 1 month</option>
+          <option value="0.02">± 1 week</option>
         </select></div>
+        <div><label for="tmap-date">Focus date</label>
+          <input type="date" id="tmap-date" onchange="onTmapDate()" style="width:auto"></div>
         <div style="flex:0 0 auto;align-self:end">
           <button class="tiny secondary" id="tmap-play" onclick="toggleTmapPlay()" title="Sweep time forward">▶ play</button>
+          <select id="tmap-speed" class="tiny" title="Play speed" style="width:auto">
+            <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+            <option value="2">2×</option><option value="4">4×</option></select>
         </div>
+      </div>
+      <div class="row" style="margin-top:6px;align-items:end;gap:8px">
+        <div><label for="tmap-span-a">Time span — from / to</label>
+          <span style="white-space:nowrap">
+            <input type="date" id="tmap-span-a" onchange="onTmapSpanChange()" style="width:auto">
+            <input type="date" id="tmap-span-b" onchange="onTmapSpanChange()" style="width:auto"></span></div>
+        <div class="hint" style="align-self:center">Set both to re-map the whole slider onto that period (e.g. the last two months) — play then sweeps only it. Clear to return to all recorded time.</div>
       </div>
 
       <div class="row" style="margin-top:8px;align-items:center;gap:8px">
-        <button class="tiny secondary" onclick="zoomTmap(0.7)">＋ zoom</button>
-        <button class="tiny secondary" onclick="zoomTmap(1.4)">－ zoom</button>
-        <button class="tiny secondary" onclick="resetTmap()">reset view</button>
         <label class="tiny" style="display:inline-flex;align-items:center;gap:5px;margin-left:6px">
           <input type="checkbox" id="tmap-articles" onchange="loadTimemap()"> my corpus</label>
         <label class="tiny" style="display:inline-flex;align-items:center;gap:5px"
@@ -1365,7 +1397,16 @@
 
       <div id="tmap-legend" class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap"></div>
 
-      <div id="tmap-svg" style="margin-top:6px"></div>
+      <div id="tmap-wrap" style="position:relative;margin-top:6px">
+        <div id="tmap-svg"></div>
+        <!-- Controls live INSIDE the map (the Google-Maps lesson, maintainer-ruled) -->
+        <div style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
+          <button class="tiny secondary" onclick="zoomTmap(0.7)" title="Zoom in">＋</button>
+          <button class="tiny secondary" onclick="zoomTmap(1.4)" title="Zoom out">－</button>
+          <button class="tiny secondary" onclick="resetTmap()" title="Reset view">⟲</button>
+          <button class="tiny secondary" id="tmap-expand" onclick="tmapExpand()" title="Enlarge the map">⛶</button>
+        </div>
+      </div>
       <div id="tmap-detail" style="margin-top:8px"></div>
       <div id="tmap-caveat" class="hint" style="margin-top:8px"></div>
     </section>
@@ -1550,7 +1591,7 @@
           <label for="dump-lang">Language edition</label>
           <input id="dump-lang-filter" placeholder="Type to filter (name, autonym or code)…"
                  oninput="renderWikiLanguages()" style="margin-bottom:6px">
-          <select id="dump-lang" size="8"><option value="en">Loading editions…</option></select>
+          <select id="dump-lang" size="8" multiple title="Ctrl/⌘-click to select several editions"><option value="en">Loading editions…</option></select>
         </div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="probeDump()">Estimate size</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
@@ -2935,7 +2976,7 @@
           .forEach(b => { b.disabled = !st.backup_supported; });
       } catch (e) { $("backup-status").textContent = "Backup status unavailable: " + e.message; }
       loadKeywordFilter();
-      loadWikiLanguages();
+      loadDumpLanguages();
       loadWikiDumps();
       loadFetchMode();
     }
@@ -2943,7 +2984,10 @@
     // -- Wikipedia offline baselines (lives in Settings) -------------------- //
     const _TIER_LABEL = {huge: "very large", large: "large", medium: "medium", small: "smaller"};
     let _wikiLangGroups = [];   // [{region, languages:[...]}], cached after fetch
-    async function loadWikiLanguages() {
+    // NOTE: named loadDumpLanguages — a second loadWikiLanguages (the Wikipedia
+    // tab's edition picker) is declared later and would override this one (the
+    // exact bug behind "the download page can't show the languages").
+    async function loadDumpLanguages() {
       const sel = $("dump-lang");
       if (!sel) return;
       try {
@@ -4393,30 +4437,62 @@
     // to pin it, click a node to recenter (re-query). Vanilla — a tiny spring layout
     // over an SVG viewBox, no dependencies. Respects prefers-reduced-motion (settles
     // synchronously, no animation). _mmRAF holds the running animation handle.
-    let _mmRAF = null, _mmLevel = "keyword", _mmTerm = null;
+    let _mmRAF = null, _mmLevel = "keyword", _mmTerm = null, _mmViewMode = "map", _mmGraph = null;
+    function _mmWindowQS() {
+      const w = $("mm-window").value;
+      if (w === "custom") {
+        const a = $("mm-start").value, b = $("mm-end").value;
+        return (a ? `&start=${a}` : "") + (b ? `&end=${b}` : "");
+      }
+      return w ? `&days=${w}` : "";
+    }
+    function mmWindowChange() {
+      $("mm-custom").style.display = $("mm-window").value === "custom" ? "" : "none";
+      mmReload();
+    }
+    function mmView(v) {
+      _mmViewMode = v;
+      document.querySelectorAll("#mm-views button").forEach(b =>
+        b.classList.toggle("active", b.dataset.view === v));
+      if (_mmGraph) renderGraph(_mmGraph);
+    }
+    function mmExpand() {
+      const host = $("ins-mindmap");
+      host.classList.toggle("mm-big");
+      $("mm-expand").textContent = host.classList.contains("mm-big") ? "⛶ Reduce" : "⛶ Enlarge";
+      if (_mmGraph) renderGraph(_mmGraph);
+    }
+    function mmReload() {
+      if (_mmLevel === "keyword" && !_mmTerm) { if (_mmGraph) renderGraph(_mmGraph); return; }
+      mmLevel(_mmLevel);
+    }
     async function mmLevel(level) {
       _mmLevel = level;
       document.querySelectorAll("#mm-levels button").forEach(b =>
         b.classList.toggle("active", b.dataset.level === level));
+      const host = $("ins-mindmap");
       if (level === "keyword") {
-        if (_mmTerm) pickTerm(_mmTerm);
-        else $("ins-mindmap").innerHTML = '<div class="muted">Pick a keyword above to see its relatives (two hops).</div>';
+        if (!_mmTerm) { host.innerHTML = '<div class="muted">Pick a keyword above to see its relatives (two hops).</div>'; return; }
+        host.innerHTML = '<div class="muted">Loading…</div>';
+        try {
+          const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(_mmTerm)}&hops=2${_mmWindowQS()}`);
+          renderGraph(g);
+        } catch (e) { host.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
         return;
       }
-      const host = $("ins-mindmap");
       host.innerHTML = '<div class="muted">Loading…</div>';
       try {
-        const g = await api(`/api/insights/graph?level=${level}`);
+        const g = await api(`/api/insights/graph?level=${level}${_mmWindowQS()}`);
         renderGraph(g);
       } catch (e) { host.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
     }
-    // Adapter: the keyword view now also comes from the layered endpoint (2 hops).
+    // Adapter: the keyword view comes from the layered endpoint (2 hops + window).
     async function renderMindmap(center, _pairs) {
       _mmTerm = center; _mmLevel = "keyword";
       document.querySelectorAll("#mm-levels button").forEach(b =>
         b.classList.toggle("active", b.dataset.level === "keyword"));
       try {
-        const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(center)}&hops=2`);
+        const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(center)}&hops=2${_mmWindowQS()}`);
         renderGraph(g);
       } catch (e) { $("ins-mindmap").innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
     }
@@ -4432,110 +4508,138 @@
       return items.join(" &nbsp;·&nbsp; ");
     }
     function renderGraph(g) {
+      _mmGraph = g;
       if (_mmRAF) { cancelAnimationFrame(_mmRAF); _mmRAF = null; }
       const host = $("ins-mindmap");
       if (!g.nodes || g.nodes.length < 2) { host.innerHTML = '<div class="muted">No strong associations yet.</div>'; return; }
-      const W = 680, H = 460;
+      const big = host.classList.contains("mm-big");
+      const W = big ? 1200 : 680, H = big ? 760 : 460;
+      const scale = (Number($("mm-size").value) || 100) / 100;
       const maxSize = Math.max(...g.nodes.map(n => n.size || 1), 1);
-      const idx = {};
-      const nodes = g.nodes.slice(0, 48).map((n, i) => {
-        idx[n.id] = i;
-        const ang = (i / Math.min(g.nodes.length, 48)) * 2 * Math.PI;
-        return {id:i, key:n.id, label:n.label, kind:n.kind, center:!!n.center, hop:n.hop||1,
-          variants:(n.members||[]).length || 1, members:n.members||[], pmi:n.pmi, cooccur:n.size,
-          r:(n.center ? 13 : 6 + 6*Math.sqrt((n.size||1)/maxSize)),
-          x:W/2 + (n.center ? 0 : 170*Math.cos(ang) + (Math.random()-0.5)*40),
-          y:H/2 + (n.center ? 0 : 170*Math.sin(ang) + (Math.random()-0.5)*40),
-          vx:0, vy:0, pinned:!!n.center};
-      });
-      const maxW = Math.max(...g.edges.map(e => e.weight || 1), 1);
-      const edges = g.edges
-        .filter(e => idx[e.a] != null && idx[e.b] != null)
-        .map(e => ({a:idx[e.a], b:idx[e.b], w:e.weight||1,
-                    len:70 + 130*(1 - (e.weight||1)/maxW)}));
+      const fsOf = (n) => ((n.center ? 17 : 9 + 9 * Math.sqrt((n.size || 1) / maxSize)) * scale);
+
+      // ---- layout: mind-map rules (center → arms → ALWAYS outward) -------- //
+      const nodes = g.nodes.slice(0, 60).map(n => ({...n, fs: fsOf(n)}));
+      const byId = {}; nodes.forEach(n => byId[n.id] = n);
+      let treeEdges = [];
+      if (_mmViewMode === "cloud") {
+        // Word cloud: weight-ordered spiral from the centre, no edges.
+        const sorted = [...nodes].sort((a, b) => (b.size || 1) - (a.size || 1));
+        sorted.forEach((n, i) => {
+          const ang = i * 2.39996, r = 16 * Math.sqrt(i);   // golden-angle spiral
+          n.x = W / 2 + r * Math.cos(ang) * 1.6;
+          n.y = H / 2 + r * Math.sin(ang);
+        });
+      } else if (g.level === "keyword") {
+        const center = nodes.find(n => n.center) || nodes[0];
+        center.x = W / 2; center.y = H / 2;
+        const arms = nodes.filter(n => !n.center && n.hop !== 2);
+        const leaves = nodes.filter(n => n.hop === 2);
+        const parentOf = {};
+        for (const e of g.edges) {
+          if (byId[e.b] && byId[e.b].hop === 2 && byId[e.a] && !byId[e.a].center) {
+            if (!(e.b in parentOf) || e.weight > parentOf[e.b].w) parentOf[e.b] = {p: e.a, w: e.weight};
+          }
+        }
+        const R1 = Math.min(W, H) * 0.30, R2 = Math.min(W, H) * 0.46;
+        arms.forEach((n, i) => {
+          n.ang = (i / arms.length) * 2 * Math.PI - Math.PI / 2;
+          n.x = W / 2 + R1 * Math.cos(n.ang); n.y = H / 2 + R1 * Math.sin(n.ang);
+          treeEdges.push({a: center, b: n, w: 2});
+        });
+        const kids = {};
+        leaves.forEach(n => {
+          const p = byId[(parentOf[n.id] || {}).p] || arms[0];
+          (kids[p.id] = kids[p.id] || []).push(n);
+          n._p = p;
+        });
+        for (const pid in kids) {
+          const p = byId[pid], ks = kids[pid];
+          const span = (2 * Math.PI / Math.max(arms.length, 1)) * 0.8;
+          ks.forEach((n, j) => {
+            const a = p.ang + span * ((j + 1) / (ks.length + 1) - 0.5);
+            n.x = W / 2 + R2 * Math.cos(a); n.y = H / 2 + R2 * Math.sin(a);
+            treeEdges.push({a: p, b: n, w: 1});
+          });
+        }
+      } else {
+        // family / super-group: concentric rings by weight rank (outward =
+        // lighter), each node linked only to its single strongest neighbour.
+        const sorted = [...nodes].sort((a, b) => (b.size || 1) - (a.size || 1));
+        sorted.forEach((n, i) => {
+          if (i === 0) { n.x = W / 2; n.y = H / 2; return; }
+          const ring = i <= 8 ? 1 : i <= 24 ? 2 : 3;
+          const start = ring === 1 ? 0 : ring === 2 ? 8 : 24;
+          const count = ring === 1 ? Math.min(8, sorted.length - 1) : ring === 2 ? Math.min(16, sorted.length - 9) : sorted.length - 25;
+          const ang = ((i - start) / Math.max(count, 1)) * 2 * Math.PI - Math.PI / 2 + ring * 0.3;
+          const R = Math.min(W, H) * (0.16 + 0.15 * ring);
+          n.x = W / 2 + R * Math.cos(ang) * 1.25; n.y = H / 2 + R * Math.sin(ang);
+        });
+        const best = {};
+        for (const e of g.edges) {
+          if (!byId[e.a] || !byId[e.b]) continue;
+          if (!(e.a in best) || e.weight > best[e.a].w) best[e.a] = {o: e.b, w: e.weight};
+          if (!(e.b in best) || e.weight > best[e.b].w) best[e.b] = {o: e.a, w: e.weight};
+        }
+        const seen = new Set();
+        for (const id in best) {
+          const key = [id, best[id].o].sort().join("|");
+          if (!seen.has(key)) { seen.add(key); treeEdges.push({a: byId[id], b: byId[best[id].o], w: best[id].w}); }
+        }
+      }
 
       host.innerHTML =
-        `<svg id="mm-svg" viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;touch-action:none;cursor:grab"><g id="mm-view"></g></svg>` +
         `<div class="hint" id="mm-legend">${mmLegend(g)}</div>` +
-        `<div class="hint">Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in. <b>Font size = shared-article volume · distance = association strength.</b> ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
+        `<svg id="mm-svg" viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;touch-action:none;cursor:grab"><g id="mm-view"></g></svg>` +
+        `<div class="hint">Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in. <b>Font size = shared-article volume.</b> ${_mmViewMode === "map" ? "Branches grow outward from the centre; each leaf hangs off its strongest relative." : "Cloud view: weight-ordered, no links."} ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
       const svg = $("mm-svg"), view = $("mm-view");
-
+      const maxW = Math.max(...treeEdges.map(e => e.w || 1), 1);
       view.innerHTML =
-        edges.map(e => `<line class="mm-edge" data-e="${e.a}-${e.b}" stroke="var(--border)" stroke-width="${Math.max(1,Math.min(4,e.w/2)).toFixed(1)}"></line>`).join("") +
-        nodes.map(n => {
+        treeEdges.map(e => `<line stroke="var(--border)" stroke-width="${(0.8 + 2.2 * (e.w || 1) / maxW).toFixed(1)}"
+            x1="${e.a.x.toFixed(1)}" y1="${e.a.y.toFixed(1)}" x2="${e.b.x.toFixed(1)}" y2="${e.b.y.toFixed(1)}"></line>`).join("") +
+        nodes.map((n, i) => {
           const col = n.center ? "var(--ok)"
             : n.kind === "supergroup" ? "var(--ok)"
             : n.kind === "family" ? "var(--warn)"
             : n.hop === 2 ? "var(--muted)" : "var(--accent)";
-          // No dots (maintainer-ruled 2026-06-10): the LABEL is the node, and
-          // FONT SIZE carries the shared-article volume the dot used to.
-          const fs = (n.center ? 17 : 9 + 9 * Math.sqrt((n.cooccur || 1) / maxSize)).toFixed(1);
-          const fam = n.variants > 1;
-          const title = fam ? `<title>Family of ${n.variants}: ${esc((n.members||[]).join(", "))}</title>` : "";
-          const sub = n.center ? "" : (fam ? ` <tspan fill="var(--muted)" font-size="${(fs*0.65).toFixed(1)}">·${n.variants}</tspan>` : "");
-          return `<g class="mm-node" data-id="${n.id}" style="cursor:pointer">${title}` +
-            `<text text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="${n.center ? 700 : 500}" fill="${col}">${esc(n.label)}${sub}</text></g>`;
+          const fam = (n.members || []).length > 1;
+          const title = fam ? `<title>${esc((n.members || []).join(", "))}</title>` : "";
+          return `<g class="mm-node" data-i="${i}" style="cursor:pointer" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">${title}` +
+            `<text text-anchor="middle" dominant-baseline="central" font-size="${n.fs.toFixed(1)}" font-weight="${n.center ? 700 : 500}" fill="${col}">${esc(n.label)}</text></g>`;
         }).join("");
 
-      const nodeEls = nodes.map(n => view.querySelector(`.mm-node[data-id="${n.id}"]`));
-      const edgeEls = edges.map(e => view.querySelector(`.mm-edge[data-e="${e.a}-${e.b}"]`));
-      function paint() {
-        nodes.forEach((n, i) => nodeEls[i].setAttribute("transform", `translate(${n.x.toFixed(1)},${n.y.toFixed(1)})`));
-        edges.forEach((e, i) => { const a = nodes[e.a], b = nodes[e.b]; const el = edgeEls[i];
-          el.setAttribute("x1", a.x.toFixed(1)); el.setAttribute("y1", a.y.toFixed(1));
-          el.setAttribute("x2", b.x.toFixed(1)); el.setAttribute("y2", b.y.toFixed(1)); });
-      }
-      function step() {
-        for (let i = 0; i < nodes.length; i++) for (let j = i+1; j < nodes.length; j++) {
-          const a = nodes[i], b = nodes[j]; let dx = a.x-b.x, dy = a.y-b.y; let d2 = dx*dx+dy*dy || 0.01;
-          const f = 2800/d2, d = Math.sqrt(d2); const fx = dx/d*f, fy = dy/d*f;
-          a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
-        }
-        edges.forEach(e => { const a = nodes[e.a], b = nodes[e.b]; let dx = b.x-a.x, dy = b.y-a.y;
-          const d = Math.sqrt(dx*dx+dy*dy) || 0.01; const f = (d-e.len)*0.02; const fx = dx/d*f, fy = dy/d*f;
-          a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy; });
-        nodes.forEach(n => { if (n.center) { n.x = W/2; n.y = H/2; n.vx = n.vy = 0; return; }
-          n.vx += (W/2-n.x)*0.0018; n.vy += (H/2-n.y)*0.0018;
-          if (n.pinned) { n.vx = n.vy = 0; } else { n.vx *= 0.85; n.vy *= 0.85; n.x += n.vx; n.y += n.vy; } });
-      }
-      const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduce) { for (let i = 0; i < 300; i++) step(); paint(); }
-      else { let f = 0; (function loop(){ step(); paint(); if (++f < 320) _mmRAF = requestAnimationFrame(loop); })(); }
-
-      // -- pan / zoom / node-drag over the viewBox -------------------------- //
-      let vb = {x:0, y:0, w:W, h:H};
+      // -- pan / zoom (level-up on far zoom-out) + click-to-dive ------------- //
+      let vb = {x: 0, y: 0, w: W, h: H};
       const applyVB = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-      const ptVB = (e) => { const m = svg.getScreenCTM().inverse(); const p = svg.createSVGPoint();
-        p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(m); };
+      const ptVB = (e) => { const m2 = svg.getScreenCTM().inverse(); const p = svg.createSVGPoint();
+        p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(m2); };
       svg.addEventListener("wheel", (e) => { e.preventDefault(); const p = ptVB(e);
-        const s = Math.min(3, Math.max(0.34, vb.w*Math.exp(e.deltaY*0.0015)/W)) * W / vb.w;
-        vb.x = p.x - (p.x-vb.x)*s; vb.y = p.y - (p.y-vb.y)*s; vb.w *= s; vb.h *= s; applyVB();
-        // Zooming far out = going up one interpretation layer (keyword → family → super-group).
+        const sc = Math.min(3, Math.max(0.34, vb.w * Math.exp(e.deltaY * 0.0015) / W)) * W / vb.w;
+        vb.x = p.x - (p.x - vb.x) * sc; vb.y = p.y - (p.y - vb.y) * sc; vb.w *= sc; vb.h *= sc; applyVB();
         if (vb.w / W >= 2.7) {
           if (_mmLevel === "keyword") mmLevel("family");
           else if (_mmLevel === "family") mmLevel("supergroup");
         }
-      }, {passive:false});
+      }, {passive: false});
       let drag = null;
       svg.addEventListener("pointerdown", (e) => {
-        const g = e.target.closest && e.target.closest(".mm-node");
-        if (g) { const id = +g.dataset.id; drag = {type:"node", id, sx:e.clientX, sy:e.clientY, moved:false};
-          if (!nodes[id].center) nodes[id].pinned = true; }
+        const gEl = e.target.closest && e.target.closest(".mm-node");
+        if (gEl) drag = {type: "node", i: +gEl.dataset.i, sx: e.clientX, sy: e.clientY, moved: false};
         else { const r = svg.getBoundingClientRect();
-          drag = {type:"pan", x0:vb.x, y0:vb.y, cx:e.clientX, cy:e.clientY, sx:vb.w/r.width, sy:vb.h/r.height}; }
+          drag = {type: "pan", x0: vb.x, y0: vb.y, cx: e.clientX, cy: e.clientY, sx: vb.w / r.width, sy: vb.h / r.height}; }
         svg.setPointerCapture(e.pointerId);
       });
       svg.addEventListener("pointermove", (e) => { if (!drag) return;
-        if (drag.type === "node") { const n = nodes[drag.id]; if (n.center) return; const p = ptVB(e);
-          n.x = p.x; n.y = p.y; if (Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy) > 4) drag.moved = true; paint(); }
-        else { vb.x = drag.x0 - (e.clientX-drag.cx)*drag.sx; vb.y = drag.y0 - (e.clientY-drag.cy)*drag.sy; applyVB(); }
+        if (drag.type === "node") { if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 4) drag.moved = true; }
+        else { vb.x = drag.x0 - (e.clientX - drag.cx) * drag.sx; vb.y = drag.y0 - (e.clientY - drag.cy) * drag.sy; applyVB(); }
       });
       svg.addEventListener("pointerup", (e) => {
-        if (drag && drag.type === "node" && !drag.moved && !nodes[drag.id].center) {
-          const n = nodes[drag.id];
-          // Dive DOWN a layer: super-group → its families view; family/keyword → that term's two-hop view.
-          if (n.kind === "supergroup") mmLevel("family");
-          else { $("ins-term").value = n.label; pickTerm(n.label); }
+        if (drag && drag.type === "node" && !drag.moved) {
+          const n = nodes[drag.i];
+          if (!n.center) {
+            if (n.kind === "supergroup") mmLevel("family");
+            else { $("ins-term").value = n.label; pickTerm(n.label); }
+          }
         }
         drag = null; try { svg.releasePointerCapture(e.pointerId); } catch (_e) {}
       });
@@ -4733,6 +4837,23 @@
       const svg = document.getElementById("oo-tmap");
       if (svg) svg.setAttribute("viewBox", `${TMAP_VB.x} ${TMAP_VB.y} ${TMAP_VB.w} ${TMAP_VB.h}`);
     }
+    function wireTmapWheel() {                     // Google-Maps-style wheel zoom
+      const svg = document.getElementById("oo-tmap");
+      if (!svg || svg._wheelWired) return;
+      svg._wheelWired = true;
+      svg.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const m = svg.getScreenCTM().inverse(); const p = svg.createSVGPoint();
+        p.x = e.clientX; p.y = e.clientY; const q = p.matrixTransform(m);
+        const f = Math.exp(e.deltaY * 0.0015);
+        const w = Math.min(MAP_W, Math.max(MAP_W * 0.03, TMAP_VB.w * f));
+        const sc = w / TMAP_VB.w;
+        TMAP_VB.x = q.x - (q.x - TMAP_VB.x) * sc;
+        TMAP_VB.y = q.y - (q.y - TMAP_VB.y) * sc;
+        TMAP_VB.w = w; TMAP_VB.h *= sc;
+        applyTmapVB(); renderTimemap();
+      }, {passive: false});
+    }
     function zoomTmap(f) {
       const cx = TMAP_VB.x + TMAP_VB.w/2, cy = TMAP_VB.y + TMAP_VB.h/2;
       TMAP_VB.w = Math.min(MAP_W, Math.max(30, TMAP_VB.w * f));
@@ -4766,7 +4887,35 @@
       }
     }
 
+    let TMAP_SPAN_OVERRIDE = null;                 // [a,b] fractional years (user-set)
+    function dateToT(iso) {                        // YYYY-MM-DD -> fractional year
+      const d = new Date(iso + "T00:00:00Z");
+      if (isNaN(d)) return null;
+      const y = d.getUTCFullYear(), start = Date.UTC(y, 0, 1);
+      return y + (d.getTime() - start) / (Date.UTC(y + 1, 0, 1) - start);
+    }
+    function tToDate(t) {                          // fractional year -> YYYY-MM-DD
+      const y = Math.floor(t), start = Date.UTC(y, 0, 1);
+      const ms = start + (t - y) * (Date.UTC(y + 1, 0, 1) - start);
+      return new Date(ms).toISOString().slice(0, 10);
+    }
+    function onTmapSpanChange() {                  // re-map the slider onto a period
+      const a = $("tmap-span-a").value, b = $("tmap-span-b").value;
+      TMAP_SPAN_OVERRIDE = (a && b && a < b) ? [dateToT(a), dateToT(b)] : null;
+      $("tmap-slider").value = 1000; onTmapSlide(); buildTmapStrip();
+    }
+    function onTmapDate() {                        // precise manual focus
+      const t = dateToT($("tmap-date").value);
+      if (t == null) return;
+      $("tmap-slider").value = tToSlider(t); onTmapSlide();
+    }
+    function tmapExpand() {
+      $("tmap-wrap").classList.toggle("mm-big");
+      $("tmap-expand").textContent = $("tmap-wrap").classList.contains("mm-big") ? "🗗" : "⛶";
+      renderTimemap();
+    }
     function tmapSpan() {                          // [min,max] fractional years, padded
+      if (TMAP_SPAN_OVERRIDE) return TMAP_SPAN_OVERRIDE;
       const r = TMAP.range || {};
       if (r.min == null) return [2000, 2030];
       const pad = Math.max(1, (r.max - r.min) * 0.02);
@@ -4778,6 +4927,7 @@
     function onTmapSlide() {
       TMAP_FOCUS = sliderToT(+$("tmap-slider").value);
       $("tmap-focus-label").textContent = fmtYear(TMAP_FOCUS);
+      if (TMAP_FOCUS > 1583 && TMAP_FOCUS < 9999) $("tmap-date").value = tToDate(TMAP_FOCUS);
       renderTimemap();
     }
 
@@ -4805,7 +4955,8 @@
       if (_tmapPlay) { stopTmapPlay(); return; }
       const btn = $("tmap-play"); if (btn) btn.textContent = "❚❚ pause";
       _tmapPlay = setInterval(() => {
-        const s = $("tmap-slider"); let v = +s.value + 6;
+        const speed = Number($("tmap-speed").value) || 1;   // user-tweakable sweep speed
+        const s = $("tmap-slider"); let v = +s.value + 6 * speed;
         if (v >= 1000) { v = 1000; stopTmapPlay(); }
         s.value = v; onTmapSlide();
       }, 120);
@@ -4872,11 +5023,14 @@
         const r = (mag ? 1.8 + mag*0.7 : (s.confirmed ? 3 : 2.4)).toFixed(1);
         const col = kindColor(s.kind);
         const ring = future || !s.confirmed
-          ? `fill="none" stroke="${col}" stroke-width="1.1" stroke-dasharray="${future?'2 1.5':''}"`
+          // fill="transparent" (not "none"): the whole disc stays a hit target —
+          // hollow rings were clickable only on their 1px edge (live test 2026-06-11).
+          ? `fill="transparent" stroke="${col}" stroke-width="1.1" stroke-dasharray="${future?'2 1.5':''}"`
           : `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`;
         const lab = labels ? `<text x="${x}" y="${(+y - +r - 1).toFixed(1)}" fill="var(--fg)"
           font-size="3.4" text-anchor="middle" opacity="${op.toFixed(2)}">${esc((s.title||"").slice(0,42))}</text>` : "";
         return `<g opacity="${op.toFixed(2)}" style="cursor:pointer" onclick="showTmapDetail(${i})">
+          <circle cx="${x}" cy="${y}" r="${(+r + 3.5).toFixed(1)}" fill="transparent" stroke="none"></circle>
           <circle cx="${x}" cy="${y}" r="${r}" ${ring}><title>${esc(s.title)} — ${esc(fmtDate(s))}</title></circle>${lab}</g>`;
       }).join("");
 
@@ -4955,7 +5109,7 @@
       const note = (TMAP.signals.length && !_tmapVisible.length)
         ? `<div class="hint" style="margin-top:6px">No signals fall in this time window — widen the <b>Window</b> or move the slider.</div>` : "";
       $("tmap-svg").innerHTML = svg + note;
-      applyTmapVB(); wireTmapDrag();
+      applyTmapVB(); wireTmapDrag(); wireTmapWheel();
     }
 
     async function loadTimemap() {
@@ -5038,8 +5192,11 @@
       } catch (e) { /* dumps optional */ }
     }
 
+    function dumpSelected() {                      // multi-select (maintainer 2026-06-11)
+      return [...$("dump-lang").selectedOptions].map(o => o.value).filter(Boolean);
+    }
     async function probeDump() {
-      const w = $("dump-lang").value.trim() || "en";
+      const w = dumpSelected()[0] || "en";
       $("dump-estimate").textContent = "Checking size…";
       try {
         const d = await api(`/api/wiki/dumps/probe?wiki=${encodeURIComponent(w)}`);
@@ -5048,7 +5205,13 @@
     }
 
     async function startDump(wiki) {
-      const w = wiki || $("dump-lang").value.trim() || "en";
+      // Several selected editions download sequentially (one polite queue).
+      const picks = wiki ? [wiki] : dumpSelected();
+      if (picks.length > 1) {
+        for (const code of picks) await startDump(code);
+        return;
+      }
+      const w = picks[0] || "en";
       if (!wiki && !confirm(`Download the ${w} current-text dump? This can be very large (tens of GB for big editions).`)) return;
       try { await api("/api/wiki/dumps/start", {method:"POST", body: JSON.stringify({wiki: w})});
         toast("Download started."); loadWikiDumps();

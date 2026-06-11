@@ -140,6 +140,31 @@ Before fearing loss from an archive-size change, run
   arbitration item (queued, unchanged); preflight covers 50 sources/run —
   batch it like calendars (queued).
 
+- **LIVE-TEST BATCH 2026-06-11 — all five items SHIPPED same day:**
+  (1) Mind-maps follow MIND-MAP RULES now (maintainer-stated): centre → arms →
+  always outward; deterministic radial tree, leaves hang off their strongest
+  relative, no cross-tangle; family/supergroup levels use weight-ranked rings.
+  The cloud stayed as a SECOND VIEW (golden-angle spiral, weight-ordered).
+  Both have the date-spectrum control (all time/week/month/year/custom from-to
+  threaded down to windowed PMI — method says "within the selected window"),
+  ⛶ Enlarge (generic .mm-big) and a text-size slider (uniform multiplier:
+  font size keeps meaning weight). (2) Super-groups ship PRE-CREATED:
+  configs/keyword_supergroups.yml (8 groups drafted from field log #1,
+  members verified present), idempotent startup seed, user edits always win.
+  (3) Keyword log cap is PER LANGUAGE (5000) — maintainer: a global cap
+  anglicises the export; corpus header reports exported_per_language +
+  capped_languages. (4) Temporal map usability: precise Focus-date input,
+  Time-span from/to REMAPPING the slider (play sweeps only that period),
+  play speed 0.5–4×, ±2-months/±1-month/±1-week windows, pins now have fat
+  transparent hit discs (fill=none was edge-only clickable), wheel zoom,
+  in-map overlay controls (the Google-Maps "inside the map" principle —
+  apply to future map-like surfaces), ⛶ Enlarge. (5) Settings → Wikipedia
+  dumps language list never loaded: DUPLICATE loadWikiLanguages definition
+  (the later tab-picker one overwrote the Settings one) → renamed
+  loadDumpLanguages; the editions select is now MULTI-select and Download
+  queues all picked editions sequentially. Lesson: duplicate top-level JS
+  function names silently override — grep before declaring.
+
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`

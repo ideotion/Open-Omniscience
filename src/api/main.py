@@ -186,6 +186,15 @@ async def lifespan(app: FastAPI):
         _install_errorlog()
     except Exception:  # noqa: BLE001 - logging must never block startup
         logger.warning("could not install the error-log handler", exc_info=True)
+    # Bundled initial super-groups (maintainer-ruled 2026-06-11): created only
+    # where missing; the user's own curation always wins. Offline, best-effort.
+    try:
+        from src.analytics.supergroup_seed import seed_supergroups
+
+        with session_scope() as _s:
+            seed_supergroups(_s)
+    except Exception:  # noqa: BLE001 - seeding must never block startup
+        logger.warning("super-group seeding failed", exc_info=True)
     try:
         with session_scope() as session:
             ARTICLES_COUNT.set(session.query(Article).count())

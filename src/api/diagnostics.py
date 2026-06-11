@@ -39,8 +39,13 @@ from src.utils.export_envelope import envelope
 
 router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
 
-# Bounded scan: more than enough vocabulary to diagnose grouping, never unbounded.
-_MAX_KEYWORDS = 5000
+# Bounded scan — PER LANGUAGE (maintainer-ruled 2026-06-11): a single global
+# mentions-ranked cap structurally anglicised the export (English keywords
+# crowded out every other language, excluding them from the equivalence/family
+# analysis). Each keyword counts against the quota of its DOMINANT signature
+# language, so French/German/… vocabularies are exported in full alongside
+# English. Bounded per language, biased against none.
+_MAX_KEYWORDS_PER_LANG = 5000
 
 
 @router.get("/keywords")
@@ -59,11 +64,8 @@ def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
         .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
         .group_by(Keyword.id)
         .order_by(func.coalesce(func.sum(KeywordMention.count), 0).desc())
-        .limit(_MAX_KEYWORDS + 1)
         .all()
     )
-    capped = len(rows) > _MAX_KEYWORDS
-    rows = rows[:_MAX_KEYWORDS]
 
     # Language signatures (maintainer-ruled 2026-06-10, the hand/main idea):
     # per keyword, HOW MANY DISTINCT ARTICLES mention it per article language.
@@ -83,6 +85,24 @@ def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
     lang_sig: dict[int, dict[str, int]] = {}
     for kid, lang, n in lang_rows:
         lang_sig.setdefault(kid, {})[lang or "?"] = int(n)
+
+    # Per-language quota (rows are mentions-ordered, so each language keeps its
+    # own top-5000). Dominant language = the signature's argmax, else the
+    # keyword's stored language, else "?".
+    per_lang_taken: dict[str, int] = {}
+    capped_langs: set[str] = set()
+    quota_rows = []
+    for row in rows:
+        k = row[0]
+        sig = lang_sig.get(k.id, {})
+        dom = max(sig, key=lambda lang: sig[lang]) if sig else (k.language or "?")
+        taken = per_lang_taken.get(dom, 0)
+        if taken >= _MAX_KEYWORDS_PER_LANG:
+            capped_langs.add(dom)
+            continue
+        per_lang_taken[dom] = taken + 1
+        quota_rows.append(row)
+    rows = quota_rows
 
     # The stoplist verdict is part of the diagnosis: leaked function words the
     # operator hid are exactly what grouping fixes need to see — flag, not omit.
@@ -131,10 +151,12 @@ def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
             "sources": int(db.query(func.count(Source.id)).scalar() or 0),
             "keywords_total": int(db.query(func.count(Keyword.id)).scalar() or 0),
             "keywords_exported": len(keywords),
-            "capped": capped,
+            "exported_per_language": per_lang_taken,
+            "capped_languages": sorted(capped_langs),
         },
         "method": (
-            f"All gathered keywords (top {_MAX_KEYWORDS} by total mentions) with real "
+            f"All gathered keywords (top {_MAX_KEYWORDS_PER_LANG} PER dominant signature "
+            "language — a global cap would anglicise the export) with real "
             "counts; language_signature = distinct articles per ARTICLE language "
             "(the trans-language disambiguation evidence); families computed by the "
             "live grouping logic incl. the user's merge/split overrides; super-groups "

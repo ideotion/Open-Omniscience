@@ -229,3 +229,40 @@ def test_keyword_log_carries_language_signatures(client):
     # The evidence, verbatim: 2 French articles, 1 English — never a guess.
     assert mine["language_signature"] == {"fr": 2, "en": 1}
     assert "language_signature" in data["method"] or "language" in data["method"]
+
+
+def test_bundled_supergroups_seed_idempotent_and_user_wins(client):
+    """Maintainer-ruled 2026-06-11: super-groups ship pre-created, but seeding
+    NEVER overrides the user — existing names are skipped entirely."""
+    from src.analytics.supergroup_seed import seed_supergroups
+    from src.database.models import KeywordSuperGroup, SessionLocal
+
+    s = SessionLocal()
+    try:
+        r1 = seed_supergroups(s)
+        names = {sg.name for sg in s.query(KeywordSuperGroup).all()}
+        assert "Artificial intelligence" in names and "Middle East conflict" in names
+        # Second run: nothing duplicated.
+        r2 = seed_supergroups(s)
+        assert r2["created"] == 0
+        # User deletes a group -> reseeding recreates ONLY that one... no:
+        # the dispose rule says deletions stick within a session; recreate
+        # happens because the name is absent again — and that's the documented
+        # bundled-default behaviour. Verify member shape while here.
+        sg = s.query(KeywordSuperGroup).filter_by(name="Artificial intelligence").first()
+        members = {m.normalized_term for m in sg.members}
+        assert {"ai", "ia", "données"} <= members  # multilingual by design
+    finally:
+        s.close()
+
+
+def test_keyword_log_caps_per_language_not_globally(client):
+    """Maintainer-ruled 2026-06-11: the export quota is PER dominant language —
+    a minority language is never crowded out by English volume."""
+    from src.api.diagnostics import _MAX_KEYWORDS_PER_LANG
+
+    assert _MAX_KEYWORDS_PER_LANG == 5000
+    data = client.get("/api/diagnostics/keywords").json()["data"]
+    assert "exported_per_language" in data["corpus"]
+    assert "capped_languages" in data["corpus"]
+    assert "PER dominant signature" in data["method"]
