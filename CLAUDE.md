@@ -237,6 +237,16 @@ Before fearing loss from an archive-size change, run
   (PR #51 layers 3+4) becomes the WHAT engine, strengthened by the new WHO
   axis. No ruling yet — awaiting maintainer's direction before building.
 
+- **UNIVERSAL PORTABILITY (maintainer-ruled 2026-06-11):** Linux+Windows+macOS
+  from ONE codebase — never three maintained versions. Honest reframe recorded
+  in FUTURE_DEVELOPMENTS (plan §Universal portability): one test gate (CI
+  matrix on all 3 OSes = the definition of "supported"), installer logic moved
+  INTO the package (thin sh/ps1 bootstraps via uv), release action emits all
+  artifacts from one tag; Electron/Tauri and Docker-as-primary REJECTED (the
+  browser Console is already the universal UI). Checkpoints: pqcrypto +
+  future SQLCipher wheels on win/mac (feed into the DB batch design);
+  signing/notarization decision deferred, checksums documented regardless.
+
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`

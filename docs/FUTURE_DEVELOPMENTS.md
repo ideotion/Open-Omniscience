@@ -340,6 +340,58 @@ structural items from the audit: format-string support for composite strings
 
 ---
 
+## Universal portability — Linux + Windows + macOS from ONE codebase (maintainer-ruled 2026-06-11)
+
+**The ask:** available to all Linux, Windows and Apple users WITHOUT maintaining
+three versions — a universal installer, a universal interface, and every fix
+covering all supported OSes at once.
+
+**Achievable? Yes — and the architecture already did the hardest part.** The
+Console is a browser UI (universal on every OS today); the backend is Python
+3.13 + FastAPI + SQLite (cross-platform by construction); the data directory is
+already centralised (`src.paths`); assets/fonts are bundled. The honest
+reframe of "universal installer": executable formats differ per OS — no project
+escapes that — so the deliverable is **one codebase, one test gate, one release
+action that emits all three installers automatically**. A bug fixed once is
+fixed everywhere *by construction*, because CI proves the same code on all
+three before any release exists.
+
+**What is actually OS-specific today (audited 2026-06-11):** `install.sh` /
+`launch.sh` (bash + whiptail), Linux `.desktop` launcher creation
+(`src/diagnostics.py`, `src/safety/uninstall.py`), and two native-wheel
+checkpoints to verify per-OS: `pqcrypto` (the optional PQC extra — Ed25519-only
+fallback already degrades honestly) and the future SQLCipher driver (factor
+this into the database batch's design!). Ollama exists on all three OSes; its
+install path differs and the installer must adapt.
+
+**The plan (phased, each honest and testable):**
+- **P0 — CI matrix is the keystone.** Run the full suite on
+  ubuntu + windows + macos runners. *The rule: an OS is "supported" when the
+  suite is green there — no claim before that.* Fix what the matrix exposes
+  (path separators, file-locking on Windows SQLite, signal handling). Cheap,
+  do first; it converts "should work" into measured truth.
+- **P1 — single-source installer.** Move the installer's LOGIC into the package
+  itself (a `setup`/`doctor`-style Python command, written ONCE), leaving only
+  two thin bootstraps whose sole job is "get Python, run the package installer":
+  `install.sh` (POSIX) and `install.ps1` (Windows) — both wrapping `uv`
+  (a single static binary per OS that provisions Python itself). The launcher
+  layer becomes one Python module emitting `.desktop` (Linux) / Start-menu
+  shortcut (Windows) / `.app` stub (macOS).
+- **P2 — release automation.** A GitHub Actions release matrix builds and
+  checksums per-OS artifacts from one tag. Honesty checkpoint: unsigned apps
+  trigger Gatekeeper/SmartScreen warnings; Apple notarization and Windows
+  signing cost money and identity — decide explicitly later, and document the
+  checksum-verification path either way (this audience verifies hashes).
+- **P3 — the PWA layer** (per the hosting stance) for interface install UX on
+  every OS, the server still strictly local.
+
+**Rejected paths, with reasons:** an Electron/Tauri wrapper (the UI is already
+universal; a native shell per OS is exactly the triple maintenance the ruling
+refuses); Docker as the primary path (wrong audience; fine as an extra);
+bundling Python/runtimes in the repo (the 100 MB rule — release artifacts only).
+
+---
+
 ## Hosting & mobile — the standing stance (ruled 2026-06-10)
 
 > **Give away the software for free; never host the users' data.** No SaaS, no
