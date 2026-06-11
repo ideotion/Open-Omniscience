@@ -90,8 +90,8 @@ pytest -q                            # full suite should be green
 open-omniscience                     # serves http://127.0.0.1:8000
 ```
 
-On first launch the app **auto-seeds a worldwide catalog (~2,100+ sources across news,
-markets, the political-spectrum set and official law/IP portals)** so you
+On first launch the app **auto-seeds a worldwide catalog (~3,180 unique domains
+across news, markets, the political-spectrum set and official law/IP portals)** so you
 have something to ingest immediately, initialises the SQLite database and FTS
 index, and (if enabled) starts the background scheduler.
 
@@ -300,13 +300,21 @@ sources reach.
 
 - **Database stats:** live, animated counts (articles, sources, unique domains,
   …), plus the backend and the **on-disk size and path** of the database. Every
-  figure is a real count or byte size — nothing estimated. **Refresh** re-reads.
+  figure is a real count or byte size — nothing estimated.
 - **World coverage:** how many countries your source catalog reaches, scored
   against ISO 3166 — `covered/total countries`, `coverage %`, count *not* covered,
-  and count "thin" (below threshold). The table lists each country with its source
-  count and **topic-keyword pills** (from source tags). **Click a country code or a
+  and count "thin" (below threshold). Countries are stored as lowercase ISO-2
+  codes and **displayed by their full names** (one conversion layer,
+  `src/catalog/countries.py`). A **Regional balance** block compares each
+  continent's sources and covered countries against the working floors in
+  `configs/catalog_targets.yml` (clearly labelled aspirations, drafted from the
+  real catalog shape), plus a top-country **concentration guard** — the 0.0.9
+  de-US-centring metric. The table lists each country with its region, source
+  count and **topic-keyword pills** (from source tags). **Click a country or a
   keyword** to jump to Sources filtered to exactly those sources. A gap report
-  lists the countries with no source yet.
+  names the countries with no source yet. The panel refreshes live (no Refresh
+  button needed); the same metric is available offline via
+  `python scripts/catalog_coverage_report.py`.
 
 ### 3.5 Markets
 

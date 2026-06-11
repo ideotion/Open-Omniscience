@@ -62,7 +62,11 @@ Impact 1–3, Confidence 0.5–1.0, Effort in person-weeks (S=1, M=3, L=6, XL=12
 
 ## 3. Horizons
 
-### Now — next release (0.0.8): "trustworthy MVP, hardened"
+> **STATUS (2026-06-11):** the 0.0.8 horizon below **shipped in full** (parts 1+2 +
+> the live-test hardening batches); the active cycle is now `0.09`, working the
+> "deeper sense-making" horizon. The 0.0.8 section is kept as the record.
+
+### Shipped — the 0.0.8 release: "trustworthy MVP, hardened" *(was "Now")*
 *(Executable work-package plan: [RELEASE_0.0.8_PLAN.md](RELEASE_0.0.8_PLAN.md).)*
 Ship the honestly-scoped functional MVP (ingest → dedup → store → search → export, reliably)
 with the trust surface tightened. **RM-03** (gate the DuckDuckGo call), **RM-10** (standing
@@ -73,7 +77,7 @@ strong early candidate — it reuses the existing card engine and is the most vi
 the space-time substrate for end users. Exit: the audit's 5 deferred findings closed or
 formally accepted; CI fully blocking on lint+types.
 
-### Next — 1–2 releases (0.0.9–0.1.0): "deeper sense-making"
+### Now — this cycle and the next (0.0.9–0.1.0): "deeper sense-making"
 The capabilities the scenarios most want: **RM-05** (semantic/NER search — the #1 cross-scenario
 gap), **RM-07** + **RM-15** (report generator + richer provenance-preserving exports),
 **RM-06** (scheduler/integration polish), **RM-12** (corpus-wide LLM synthesis), **RM-08**

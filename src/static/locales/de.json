@@ -300,5 +300,18 @@
   "▶ Online": "▶ Online",
   "⏸ Offline": "⏸ Offline",
   "Back online — network requests allowed again.": "Wieder online — Netzwerkanfragen sind wieder erlaubt.",
-  "Offline — every new network request is refused. One in-flight request may finish.": "Offline — jede neue Netzwerkanfrage wird verweigert. Eine bereits laufende Anfrage kann noch enden."
+  "Offline — every new network request is refused. One in-flight request may finish.": "Offline — jede neue Netzwerkanfrage wird verweigert. Eine bereits laufende Anfrage kann noch enden.",
+  "Regional balance": "Regionale Balance",
+  "(floors are working targets from configs/catalog_targets.yml)": "(Schwellen sind Arbeitsziele aus configs/catalog_targets.yml)",
+  "Sources / floor": "Quellen / Schwelle",
+  "Countries / floor": "Länder / Schwelle",
+  "below floor": "unter der Schwelle",
+  "Region": "Region",
+  "Country": "Land",
+  "Enabled": "Aktiviert",
+  "Topic keywords (source tags)": "Themen-Schlagwörter (Quellen-Tags)",
+  "filter countries by name, code or topic…": "Länder nach Name, Code oder Thema filtern…",
+  "Click a country or a topic keyword": "Klicken Sie auf ein Land oder ein Schlagwort",
+  "No matching countries.": "Keine passenden Länder.",
+  "every listed country has at least one source": "jedes gelistete Land hat mindestens eine Quelle"
 }

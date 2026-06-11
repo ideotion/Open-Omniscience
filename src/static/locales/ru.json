@@ -300,5 +300,18 @@
   "▶ Online": "▶ Онлайн",
   "⏸ Offline": "⏸ Офлайн",
   "Back online — network requests allowed again.": "Снова онлайн — сетевые запросы снова разрешены.",
-  "Offline — every new network request is refused. One in-flight request may finish.": "Офлайн — каждый новый сетевой запрос отклоняется. Один уже выполняющийся запрос может завершиться."
+  "Offline — every new network request is refused. One in-flight request may finish.": "Офлайн — каждый новый сетевой запрос отклоняется. Один уже выполняющийся запрос может завершиться.",
+  "Regional balance": "Региональный баланс",
+  "(floors are working targets from configs/catalog_targets.yml)": "(пороги — рабочие цели из configs/catalog_targets.yml)",
+  "Sources / floor": "Источники / порог",
+  "Countries / floor": "Страны / порог",
+  "below floor": "ниже порога",
+  "Region": "Регион",
+  "Country": "Страна",
+  "Enabled": "Включено",
+  "Topic keywords (source tags)": "Тематические ключевые слова (теги источников)",
+  "filter countries by name, code or topic…": "фильтр стран по названию, коду или теме…",
+  "Click a country or a topic keyword": "Нажмите на страну или ключевое слово",
+  "No matching countries.": "Нет подходящих стран.",
+  "every listed country has at least one source": "у каждой страны в списке есть хотя бы один источник"
 }

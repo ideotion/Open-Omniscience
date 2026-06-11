@@ -408,7 +408,9 @@ class Source(Base):
     reliability_score: Mapped[int | None] = mapped_column(Integer, default=5)  # 1-10 scale
     language: Mapped[str | None] = mapped_column(String(10), default="en")  # ISO 639-1 code
     region: Mapped[str | None] = mapped_column(String(50), default="global")
-    country: Mapped[str | None] = mapped_column(String(2), default="US")  # ISO 3166-1 alpha-2
+    # No default: a country is set from the catalog, the ccTLD, or the user —
+    # never assumed. (The old default="US" fabricated a US bias; 0.09 fix.)
+    country: Mapped[str | None] = mapped_column(String(2))  # ISO 3166-1 alpha-2, lowercase
     source_type: Mapped[str | None] = mapped_column(String(50), default="news")  # news, financial, scientific, etc.
     update_frequency: Mapped[int | None] = mapped_column(Integer, default=60)  # minutes
     cacheability: Mapped[bool | None] = mapped_column(Boolean, default=True)
@@ -797,7 +799,10 @@ class ExternalSource(Base):
     source_type: Mapped[str | None] = mapped_column(
         String(50), default="unknown"
     )  # news, blog, academic, government, social, etc.
-    credibility_score: Mapped[float | None] = mapped_column(Float, default=50.0)  # 0-100
+    # No default: an unmeasured source has NO score (the old default=50.0 asserted
+    # "medium credibility" for every unknown — fabricated data; audit 0.0.9). The
+    # link-analysis API exposes counts only, never this field.
+    credibility_score: Mapped[float | None] = mapped_column(Float)  # 0-100, unused today
     political_bias: Mapped[float | None] = mapped_column(Float, default=0.0)  # -100 (left) to 100 (right)
     country: Mapped[str | None] = mapped_column(String(2))
     language: Mapped[str | None] = mapped_column(String(10), default="en")

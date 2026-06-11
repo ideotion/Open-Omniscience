@@ -19,85 +19,85 @@
 
 sources:
 # ---- Europe -------------------------------------------------------------------
-- {name: "UK Legislation (legislation.gov.uk)", domain: legislation.gov.uk, country: GB, language: en, source_type: legal, tags: [law, legislation, official, point-in-time]}
-- {name: "EUR-Lex (European Union law)", domain: eur-lex.europa.eu, country: EU, language: en, source_type: legal, tags: [law, legislation, official, eli, akoma-ntoso]}
-- {name: "EU Court of Justice (CURIA)", domain: curia.europa.eu, country: EU, language: en, source_type: legal, tags: [law, case-law, official]}
-- {name: "Légifrance (France)", domain: legifrance.gouv.fr, country: FR, language: fr, source_type: legal, tags: [law, legislation, gazette, official]}
-- {name: "Gesetze im Internet (Germany)", domain: gesetze-im-internet.de, country: DE, language: de, source_type: legal, tags: [law, legislation, official]}
-- {name: "Boletín Oficial del Estado (Spain)", domain: boe.es, country: ES, language: es, source_type: legal, tags: [law, gazette, official]}
-- {name: "Gazzetta Ufficiale (Italy)", domain: gazzettaufficiale.it, country: IT, language: it, source_type: legal, tags: [law, gazette, official]}
-- {name: "Wetten.overheid.nl (Netherlands)", domain: wetten.overheid.nl, country: NL, language: nl, source_type: legal, tags: [law, legislation, official]}
-- {name: "Belgian Official Journal (eJustice)", domain: ejustice.just.fgov.be, country: BE, language: nl, source_type: legal, tags: [law, gazette, official]}
-- {name: "Fedlex (Switzerland)", domain: fedlex.admin.ch, country: CH, language: de, source_type: legal, tags: [law, legislation, official]}
-- {name: "RIS (Austria)", domain: ris.bka.gv.at, country: AT, language: de, source_type: legal, tags: [law, legislation, official]}
-- {name: "Diário da República (Portugal)", domain: dre.pt, country: PT, language: pt, source_type: legal, tags: [law, gazette, official]}
-- {name: "Riksdagen (Sweden)", domain: riksdagen.se, country: SE, language: sv, source_type: legal, tags: [law, legislation, official]}
-- {name: "Lovdata (Norway)", domain: lovdata.no, country: "NO", language: nb, source_type: legal, tags: [law, legislation, official]}
-- {name: "Retsinformation (Denmark)", domain: retsinformation.dk, country: DK, language: da, source_type: legal, tags: [law, legislation, official]}
-- {name: "Finlex (Finland)", domain: finlex.fi, country: FI, language: fi, source_type: legal, tags: [law, legislation, official]}
-- {name: "Dziennik Ustaw (Poland)", domain: dziennikustaw.gov.pl, country: PL, language: pl, source_type: legal, tags: [law, gazette, official]}
-- {name: "Pravo.gov.ru (Russia)", domain: pravo.gov.ru, country: RU, language: ru, source_type: legal, tags: [law, gazette, official]}
-- {name: "Mevzuat (Turkey)", domain: mevzuat.gov.tr, country: TR, language: tr, source_type: legal, tags: [law, legislation, official]}
-- {name: "Irish Statute Book", domain: irishstatutebook.ie, country: IE, language: en, source_type: legal, tags: [law, legislation, official]}
+- {name: "UK Legislation (legislation.gov.uk)", domain: legislation.gov.uk, country: gb, language: en, source_type: legal, tags: [law, legislation, official, point-in-time]}
+- {name: "EUR-Lex (European Union law)", domain: eur-lex.europa.eu, country: eu, language: en, source_type: legal, tags: [law, legislation, official, eli, akoma-ntoso]}
+- {name: "EU Court of Justice (CURIA)", domain: curia.europa.eu, country: eu, language: en, source_type: legal, tags: [law, case-law, official]}
+- {name: "Légifrance (France)", domain: legifrance.gouv.fr, country: fr, language: fr, source_type: legal, tags: [law, legislation, gazette, official]}
+- {name: "Gesetze im Internet (Germany)", domain: gesetze-im-internet.de, country: de, language: de, source_type: legal, tags: [law, legislation, official]}
+- {name: "Boletín Oficial del Estado (Spain)", domain: boe.es, country: es, language: es, source_type: legal, tags: [law, gazette, official]}
+- {name: "Gazzetta Ufficiale (Italy)", domain: gazzettaufficiale.it, country: it, language: it, source_type: legal, tags: [law, gazette, official]}
+- {name: "Wetten.overheid.nl (Netherlands)", domain: wetten.overheid.nl, country: nl, language: nl, source_type: legal, tags: [law, legislation, official]}
+- {name: "Belgian Official Journal (eJustice)", domain: ejustice.just.fgov.be, country: be, language: nl, source_type: legal, tags: [law, gazette, official]}
+- {name: "Fedlex (Switzerland)", domain: fedlex.admin.ch, country: ch, language: de, source_type: legal, tags: [law, legislation, official]}
+- {name: "RIS (Austria)", domain: ris.bka.gv.at, country: at, language: de, source_type: legal, tags: [law, legislation, official]}
+- {name: "Diário da República (Portugal)", domain: dre.pt, country: pt, language: pt, source_type: legal, tags: [law, gazette, official]}
+- {name: "Riksdagen (Sweden)", domain: riksdagen.se, country: se, language: sv, source_type: legal, tags: [law, legislation, official]}
+- {name: "Lovdata (Norway)", domain: lovdata.no, country: 'no', language: nb, source_type: legal, tags: [law, legislation, official]}
+- {name: "Retsinformation (Denmark)", domain: retsinformation.dk, country: dk, language: da, source_type: legal, tags: [law, legislation, official]}
+- {name: "Finlex (Finland)", domain: finlex.fi, country: fi, language: fi, source_type: legal, tags: [law, legislation, official]}
+- {name: "Dziennik Ustaw (Poland)", domain: dziennikustaw.gov.pl, country: pl, language: pl, source_type: legal, tags: [law, gazette, official]}
+- {name: "Pravo.gov.ru (Russia)", domain: pravo.gov.ru, country: ru, language: ru, source_type: legal, tags: [law, gazette, official]}
+- {name: "Mevzuat (Turkey)", domain: mevzuat.gov.tr, country: tr, language: tr, source_type: legal, tags: [law, legislation, official]}
+- {name: "Irish Statute Book", domain: irishstatutebook.ie, country: ie, language: en, source_type: legal, tags: [law, legislation, official]}
 # ---- Americas -----------------------------------------------------------------
-- {name: "US GovInfo (GPO)", domain: govinfo.gov, country: US, language: en, source_type: legal, tags: [law, legislation, gazette, official]}
-- {name: "US Congress (congress.gov)", domain: congress.gov, country: US, language: en, source_type: legal, tags: [law, legislation, official]}
-- {name: "US Federal Register", domain: federalregister.gov, country: US, language: en, source_type: legal, tags: [law, gazette, official]}
-- {name: "US SEC EDGAR (filings)", domain: sec.gov, country: US, language: en, source_type: legal, tags: [filings, corporate, official]}
-- {name: "CourtListener (US case law)", domain: courtlistener.com, country: US, language: en, source_type: legal, tags: [case-law, dockets, open]}
-- {name: "Justice Laws (Canada)", domain: laws-lois.justice.gc.ca, country: CA, language: en, source_type: legal, tags: [law, legislation, official]}
-- {name: "Planalto (Brazil)", domain: planalto.gov.br, country: BR, language: pt, source_type: legal, tags: [law, legislation, official]}
-- {name: "InfoLEG (Argentina)", domain: infoleg.gob.ar, country: AR, language: es, source_type: legal, tags: [law, legislation, official]}
-- {name: "Ley Chile (Chile)", domain: leychile.cl, country: CL, language: es, source_type: legal, tags: [law, legislation, official]}
-- {name: "Cámara de Diputados (Mexico)", domain: diputados.gob.mx, country: MX, language: es, source_type: legal, tags: [law, legislation, official]}
+- {name: "US GovInfo (GPO)", domain: govinfo.gov, country: us, language: en, source_type: legal, tags: [law, legislation, gazette, official]}
+- {name: "US Congress (congress.gov)", domain: congress.gov, country: us, language: en, source_type: legal, tags: [law, legislation, official]}
+- {name: "US Federal Register", domain: federalregister.gov, country: us, language: en, source_type: legal, tags: [law, gazette, official]}
+- {name: "US SEC EDGAR (filings)", domain: sec.gov, country: us, language: en, source_type: legal, tags: [filings, corporate, official]}
+- {name: "CourtListener (US case law)", domain: courtlistener.com, country: us, language: en, source_type: legal, tags: [case-law, dockets, open]}
+- {name: "Justice Laws (Canada)", domain: laws-lois.justice.gc.ca, country: ca, language: en, source_type: legal, tags: [law, legislation, official]}
+- {name: "Planalto (Brazil)", domain: planalto.gov.br, country: br, language: pt, source_type: legal, tags: [law, legislation, official]}
+- {name: "InfoLEG (Argentina)", domain: infoleg.gob.ar, country: ar, language: es, source_type: legal, tags: [law, legislation, official]}
+- {name: "Ley Chile (Chile)", domain: leychile.cl, country: cl, language: es, source_type: legal, tags: [law, legislation, official]}
+- {name: "Cámara de Diputados (Mexico)", domain: diputados.gob.mx, country: mx, language: es, source_type: legal, tags: [law, legislation, official]}
 # ---- Asia-Pacific -------------------------------------------------------------
-- {name: "e-Gov Laws (Japan)", domain: elaws.e-gov.go.jp, country: JP, language: ja, source_type: legal, tags: [law, legislation, official]}
-- {name: "Korea Law (law.go.kr)", domain: law.go.kr, country: KR, language: ko, source_type: legal, tags: [law, legislation, official]}
-- {name: "NPC (China)", domain: npc.gov.cn, country: CN, language: zh, source_type: legal, tags: [law, legislation, official]}
-- {name: "India Code", domain: indiacode.nic.in, country: IN, language: en, source_type: legal, tags: [law, legislation, official]}
-- {name: "Singapore Statutes Online", domain: sso.agc.gov.sg, country: SG, language: en, source_type: legal, tags: [law, legislation, official]}
-- {name: "Federal Register of Legislation (Australia)", domain: legislation.gov.au, country: AU, language: en, source_type: legal, tags: [law, legislation, official]}
-- {name: "NZ Legislation", domain: legislation.govt.nz, country: NZ, language: en, source_type: legal, tags: [law, legislation, official]}
-- {name: "Official Gazette (Philippines)", domain: officialgazette.gov.ph, country: PH, language: en, source_type: legal, tags: [law, gazette, official]}
+- {name: "e-Gov Laws (Japan)", domain: elaws.e-gov.go.jp, country: jp, language: ja, source_type: legal, tags: [law, legislation, official]}
+- {name: "Korea Law (law.go.kr)", domain: law.go.kr, country: kr, language: ko, source_type: legal, tags: [law, legislation, official]}
+- {name: "NPC (China)", domain: npc.gov.cn, country: cn, language: zh, source_type: legal, tags: [law, legislation, official]}
+- {name: "India Code", domain: indiacode.nic.in, country: in, language: en, source_type: legal, tags: [law, legislation, official]}
+- {name: "Singapore Statutes Online", domain: sso.agc.gov.sg, country: sg, language: en, source_type: legal, tags: [law, legislation, official]}
+- {name: "Federal Register of Legislation (Australia)", domain: legislation.gov.au, country: au, language: en, source_type: legal, tags: [law, legislation, official]}
+- {name: "NZ Legislation", domain: legislation.govt.nz, country: nz, language: en, source_type: legal, tags: [law, legislation, official]}
+- {name: "Official Gazette (Philippines)", domain: officialgazette.gov.ph, country: ph, language: en, source_type: legal, tags: [law, gazette, official]}
 # ---- Africa & Middle East -----------------------------------------------------
-- {name: "Kenya Law", domain: kenyalaw.org, country: KE, language: en, source_type: legal, tags: [law, legislation, case-law, official]}
-- {name: "South Africa Government (gov.za)", domain: gov.za, country: ZA, language: en, source_type: legal, tags: [law, gazette, official]}
-- {name: "Knesset (Israel)", domain: knesset.gov.il, country: IL, language: he, source_type: legal, tags: [law, legislation, official]}
+- {name: "Kenya Law", domain: kenyalaw.org, country: ke, language: en, source_type: legal, tags: [law, legislation, case-law, official]}
+- {name: "South Africa Government (gov.za)", domain: gov.za, country: za, language: en, source_type: legal, tags: [law, gazette, official]}
+- {name: "Knesset (Israel)", domain: knesset.gov.il, country: il, language: he, source_type: legal, tags: [law, legislation, official]}
 # ---- IP offices ---------------------------------------------------------------
-- {name: "WIPO Lex (world IP laws & treaties)", domain: wipolex.wipo.int, country: INT, language: en, source_type: ip, tags: [ip, treaties, legislation, official]}
-- {name: "WIPO", domain: wipo.int, country: INT, language: en, source_type: ip, tags: [ip, patents, trademarks, official]}
-- {name: "USPTO (US Patent & Trademark Office)", domain: uspto.gov, country: US, language: en, source_type: ip, tags: [ip, patents, trademarks, official]}
-- {name: "European Patent Office (EPO)", domain: epo.org, country: EU, language: en, source_type: ip, tags: [ip, patents, official]}
-- {name: "EUIPO (EU trademarks & designs)", domain: euipo.europa.eu, country: EU, language: en, source_type: ip, tags: [ip, trademarks, designs, official]}
-- {name: "UK IPO", domain: gov.uk, country: GB, language: en, source_type: ip, tags: [ip, patents, trademarks, official]}
-- {name: "INPI (France IP)", domain: inpi.fr, country: FR, language: fr, source_type: ip, tags: [ip, patents, trademarks, official]}
-- {name: "JPO (Japan Patent Office)", domain: jpo.go.jp, country: JP, language: ja, source_type: ip, tags: [ip, patents, official]}
-- {name: "CNIPA (China IP)", domain: cnipa.gov.cn, country: CN, language: zh, source_type: ip, tags: [ip, patents, official]}
-- {name: "KIPO (Korea IP)", domain: kipo.go.kr, country: KR, language: ko, source_type: ip, tags: [ip, patents, official]}
+- {name: "WIPO Lex (world IP laws & treaties)", domain: wipolex.wipo.int, country: int, language: en, source_type: ip, tags: [ip, treaties, legislation, official]}
+- {name: "WIPO", domain: wipo.int, country: int, language: en, source_type: ip, tags: [ip, patents, trademarks, official]}
+- {name: "USPTO (US Patent & Trademark Office)", domain: uspto.gov, country: us, language: en, source_type: ip, tags: [ip, patents, trademarks, official]}
+- {name: "European Patent Office (EPO)", domain: epo.org, country: eu, language: en, source_type: ip, tags: [ip, patents, official]}
+- {name: "EUIPO (EU trademarks & designs)", domain: euipo.europa.eu, country: eu, language: en, source_type: ip, tags: [ip, trademarks, designs, official]}
+- {name: "UK IPO", domain: gov.uk, country: gb, language: en, source_type: ip, tags: [ip, patents, trademarks, official]}
+- {name: "INPI (France IP)", domain: inpi.fr, country: fr, language: fr, source_type: ip, tags: [ip, patents, trademarks, official]}
+- {name: "JPO (Japan Patent Office)", domain: jpo.go.jp, country: jp, language: ja, source_type: ip, tags: [ip, patents, official]}
+- {name: "CNIPA (China IP)", domain: cnipa.gov.cn, country: cn, language: zh, source_type: ip, tags: [ip, patents, official]}
+- {name: "KIPO (Korea IP)", domain: kipo.go.kr, country: kr, language: ko, source_type: ip, tags: [ip, patents, official]}
 
 # Curated, stable, well-known consolidated-law documents to TRACK FOR CHANGE.
 # These are famous, durable instruments on official point-in-time / consolidated
 # portals. A fetch error (e.g. a moved page) degrades loudly — never fabricated.
 documents:
-- {jurisdiction: uk, title: "Human Rights Act 1998 (consolidated)", category: legislation, consolidated: true, country: GB, language: en, url: "https://www.legislation.gov.uk/ukpga/1998/42/contents", official_url: "https://www.legislation.gov.uk/ukpga/1998/42"}
-- {jurisdiction: uk, title: "Data Protection Act 2018 (consolidated)", category: legislation, consolidated: true, country: GB, language: en, url: "https://www.legislation.gov.uk/ukpga/2018/12/contents", official_url: "https://www.legislation.gov.uk/ukpga/2018/12"}
-- {jurisdiction: eu, title: "GDPR — Regulation (EU) 2016/679 (consolidated)", category: legislation, consolidated: true, country: EU, language: en, url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02016R0679-20160504", official_url: "https://eur-lex.europa.eu/eli/reg/2016/679/oj"}
-- {jurisdiction: eu, title: "Digital Services Act — Regulation (EU) 2022/2065", category: legislation, consolidated: false, country: EU, language: en, url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022R2065", official_url: "https://eur-lex.europa.eu/eli/reg/2022/2065/oj"}
-- {jurisdiction: us, title: "US Constitution (govinfo)", category: legislation, consolidated: true, country: US, language: en, url: "https://www.govinfo.gov/content/pkg/CDOC-110hdoc50/html/CDOC-110hdoc50.htm", official_url: "https://www.govinfo.gov/app/collection/CDOC"}
-- {jurisdiction: fr, title: "Déclaration des Droits de l'Homme — Légifrance", category: legislation, consolidated: true, country: FR, language: fr, url: "https://www.legifrance.gouv.fr/contenu/menu/droit-national-en-vigueur/constitution/declaration-des-droits-de-l-homme-et-du-citoyen-de-1789", official_url: "https://www.legifrance.gouv.fr"}
-- {jurisdiction: int, title: "WIPO Lex — overview", category: ip, consolidated: false, country: INT, language: en, url: "https://www.wipo.int/wipolex/en/", official_url: "https://www.wipo.int/wipolex/en/"}
+- {jurisdiction: uk, title: "Human Rights Act 1998 (consolidated)", category: legislation, consolidated: true, country: gb, language: en, url: "https://www.legislation.gov.uk/ukpga/1998/42/contents", official_url: "https://www.legislation.gov.uk/ukpga/1998/42"}
+- {jurisdiction: uk, title: "Data Protection Act 2018 (consolidated)", category: legislation, consolidated: true, country: gb, language: en, url: "https://www.legislation.gov.uk/ukpga/2018/12/contents", official_url: "https://www.legislation.gov.uk/ukpga/2018/12"}
+- {jurisdiction: eu, title: "GDPR — Regulation (EU) 2016/679 (consolidated)", category: legislation, consolidated: true, country: eu, language: en, url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02016R0679-20160504", official_url: "https://eur-lex.europa.eu/eli/reg/2016/679/oj"}
+- {jurisdiction: eu, title: "Digital Services Act — Regulation (EU) 2022/2065", category: legislation, consolidated: false, country: eu, language: en, url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022R2065", official_url: "https://eur-lex.europa.eu/eli/reg/2022/2065/oj"}
+- {jurisdiction: us, title: "US Constitution (govinfo)", category: legislation, consolidated: true, country: us, language: en, url: "https://www.govinfo.gov/content/pkg/CDOC-110hdoc50/html/CDOC-110hdoc50.htm", official_url: "https://www.govinfo.gov/app/collection/CDOC"}
+- {jurisdiction: fr, title: "Déclaration des Droits de l'Homme — Légifrance", category: legislation, consolidated: true, country: fr, language: fr, url: "https://www.legifrance.gouv.fr/contenu/menu/droit-national-en-vigueur/constitution/declaration-des-droits-de-l-homme-et-du-citoyen-de-1789", official_url: "https://www.legifrance.gouv.fr"}
+- {jurisdiction: int, title: "WIPO Lex — overview", category: ip, consolidated: false, country: int, language: en, url: "https://www.wipo.int/wipolex/en/", official_url: "https://www.wipo.int/wipolex/en/"}
 # --- Expanded coverage (best-known official URLs; a bad one fails loudly on track, never fabricates) ---
-- {jurisdiction: uk, title: "Equality Act 2010 (consolidated)", category: legislation, consolidated: true, country: GB, language: en, url: "https://www.legislation.gov.uk/ukpga/2010/15/contents", official_url: "https://www.legislation.gov.uk/ukpga/2010/15"}
-- {jurisdiction: uk, title: "Freedom of Information Act 2000 (consolidated)", category: legislation, consolidated: true, country: GB, language: en, url: "https://www.legislation.gov.uk/ukpga/2000/36/contents", official_url: "https://www.legislation.gov.uk/ukpga/2000/36"}
-- {jurisdiction: uk, title: "Investigatory Powers Act 2016 (consolidated)", category: legislation, consolidated: true, country: GB, language: en, url: "https://www.legislation.gov.uk/ukpga/2016/25/contents", official_url: "https://www.legislation.gov.uk/ukpga/2016/25"}
-- {jurisdiction: eu, title: "AI Act — Regulation (EU) 2024/1689", category: legislation, consolidated: false, country: EU, language: en, url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689", official_url: "https://eur-lex.europa.eu/eli/reg/2024/1689/oj"}
-- {jurisdiction: eu, title: "Charter of Fundamental Rights of the EU", category: legislation, consolidated: true, country: EU, language: en, url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:12012P/TXT", official_url: "https://eur-lex.europa.eu/eli/treaty/char_2012/oj"}
+- {jurisdiction: uk, title: "Equality Act 2010 (consolidated)", category: legislation, consolidated: true, country: gb, language: en, url: "https://www.legislation.gov.uk/ukpga/2010/15/contents", official_url: "https://www.legislation.gov.uk/ukpga/2010/15"}
+- {jurisdiction: uk, title: "Freedom of Information Act 2000 (consolidated)", category: legislation, consolidated: true, country: gb, language: en, url: "https://www.legislation.gov.uk/ukpga/2000/36/contents", official_url: "https://www.legislation.gov.uk/ukpga/2000/36"}
+- {jurisdiction: uk, title: "Investigatory Powers Act 2016 (consolidated)", category: legislation, consolidated: true, country: gb, language: en, url: "https://www.legislation.gov.uk/ukpga/2016/25/contents", official_url: "https://www.legislation.gov.uk/ukpga/2016/25"}
+- {jurisdiction: eu, title: "AI Act — Regulation (EU) 2024/1689", category: legislation, consolidated: false, country: eu, language: en, url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689", official_url: "https://eur-lex.europa.eu/eli/reg/2024/1689/oj"}
+- {jurisdiction: eu, title: "Charter of Fundamental Rights of the EU", category: legislation, consolidated: true, country: eu, language: en, url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:12012P/TXT", official_url: "https://eur-lex.europa.eu/eli/treaty/char_2012/oj"}
 # gesetze-im-internet.de: the /<act>/ page is a TABLE OF CONTENTS (per-article
 # links + site chrome) -- tracking it captures navigation, not law (live-test
 # bug 2026-06-10). Track the single-page "Gesamtausgabe" HTML instead; the
 # human-facing official_url stays on the TOC. Wrong doc-id => fails loudly.
-- {jurisdiction: de, title: "Grundgesetz (Basic Law) — consolidated", category: legislation, consolidated: true, country: DE, language: de, url: "https://www.gesetze-im-internet.de/gg/BJNR000010949.html", official_url: "https://www.gesetze-im-internet.de/gg/"}
-- {jurisdiction: de, title: "Bundesdatenschutzgesetz (BDSG 2018)", category: legislation, consolidated: true, country: DE, language: de, url: "https://www.gesetze-im-internet.de/bdsg_2018/BJNR209710017.html", official_url: "https://www.gesetze-im-internet.de/bdsg_2018/"}
-- {jurisdiction: ca, title: "Canadian Charter of Rights and Freedoms", category: legislation, consolidated: true, country: CA, language: en, url: "https://laws-lois.justice.gc.ca/eng/const/page-12.html", official_url: "https://laws-lois.justice.gc.ca/eng/const/"}
-- {jurisdiction: ca, title: "Privacy Act (R.S.C., 1985, c. P-21)", category: legislation, consolidated: true, country: CA, language: en, url: "https://laws-lois.justice.gc.ca/eng/acts/P-21/", official_url: "https://laws-lois.justice.gc.ca/eng/acts/P-21/"}
-- {jurisdiction: int, title: "Universal Declaration of Human Rights (UN)", category: legislation, consolidated: true, country: INT, language: en, url: "https://www.un.org/en/about-us/universal-declaration-of-human-rights", official_url: "https://www.un.org/en/about-us/universal-declaration-of-human-rights"}
+- {jurisdiction: de, title: "Grundgesetz (Basic Law) — consolidated", category: legislation, consolidated: true, country: de, language: de, url: "https://www.gesetze-im-internet.de/gg/BJNR000010949.html", official_url: "https://www.gesetze-im-internet.de/gg/"}
+- {jurisdiction: de, title: "Bundesdatenschutzgesetz (BDSG 2018)", category: legislation, consolidated: true, country: de, language: de, url: "https://www.gesetze-im-internet.de/bdsg_2018/BJNR209710017.html", official_url: "https://www.gesetze-im-internet.de/bdsg_2018/"}
+- {jurisdiction: ca, title: "Canadian Charter of Rights and Freedoms", category: legislation, consolidated: true, country: ca, language: en, url: "https://laws-lois.justice.gc.ca/eng/const/page-12.html", official_url: "https://laws-lois.justice.gc.ca/eng/const/"}
+- {jurisdiction: ca, title: "Privacy Act (R.S.C., 1985, c. P-21)", category: legislation, consolidated: true, country: ca, language: en, url: "https://laws-lois.justice.gc.ca/eng/acts/P-21/", official_url: "https://laws-lois.justice.gc.ca/eng/acts/P-21/"}
+- {jurisdiction: int, title: "Universal Declaration of Human Rights (UN)", category: legislation, consolidated: true, country: int, language: en, url: "https://www.un.org/en/about-us/universal-declaration-of-human-rights", official_url: "https://www.un.org/en/about-us/universal-declaration-of-human-rights"}

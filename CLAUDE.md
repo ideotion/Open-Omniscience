@@ -55,8 +55,11 @@ Before fearing loss from an archive-size change, run
   activate/clear_kill_switch — the Collect Stop button trips it).
 - Honesty by construction: no composite trust/quality scores (CardSchemaError
   enforces); every signal carries method + caveat + n; degrade loudly.
-- Whole roadmap ships under cycle branch `0.08` ⇒ release 0.0.8 (maintainer:
-  do NOT open 0.09 until told). Version single-sourced from pyproject.
+- **The 0.09 cycle is OPEN (maintainer opened it 2026-06-11 by retitling the
+  default branch to `0.09`)** ⇒ release 0.0.9; the 0.0.8 roadmap shipped in
+  full under `0.08`. Version single-sourced from pyproject (bumped to 0.0.9
+  same day: pyproject + README header + src/__init__ + CHANGES/CONTRIBUTING
+  cycle references — historical `0.0.8` feature tags stay).
 - No bundling of Ollama/models in the repo (GitHub 100 MB limit; decided
   2026-06). Model catalog must stay date-stamped (`CATALOG_AS_OF` + freshness
   test). Clearnet is a stated install prerequisite for model downloads.
@@ -234,16 +237,64 @@ Before fearing loss from an archive-size change, run
   (PR #51 layers 3+4) becomes the WHAT engine, strengthened by the new WHO
   axis. No ruling yet — awaiting maintainer's direction before building.
 
+- **UNIVERSAL PORTABILITY (maintainer-ruled 2026-06-11):** Linux+Windows+macOS
+  from ONE codebase — never three maintained versions. Honest reframe recorded
+  in FUTURE_DEVELOPMENTS (plan §Universal portability): one test gate (CI
+  matrix on all 3 OSes = the definition of "supported"), installer logic moved
+  INTO the package (thin sh/ps1 bootstraps via uv), release action emits all
+  artifacts from one tag; Electron/Tauri and Docker-as-primary REJECTED (the
+  browser Console is already the universal UI). Checkpoints: pqcrypto +
+  future SQLCipher wheels on win/mac (feed into the DB batch design);
+  signing/notarization decision deferred, checksums documented regardless.
+
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`
   block after UI edits; locale files must stay 100% (scripts/i18n_report.py)
   when adding chrome strings (12 languages, Arabic is RTL).
 - Maintainer merges PRs fast: after `git push`, if the output says
-  "[new branch]", the previous PR was merged — open a NEW PR onto `0.08`.
+  "[new branch]", the previous PR was merged — open a NEW PR onto `0.09`
+  (the active cycle branch since 2026-06-11; was `0.08`).
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 
 ## Open queue (when maintainer says proceed)
+- **FULL AUDIT (maintainer-ruled 2026-06-11) — DELIVERED same day:**
+  `docs/audit/06_FULL_AUDIT_0_0_9.md` (5 domains + a self-critique section,
+  every critical hand-re-verified; agent false-positives recorded as a lesson).
+  Fixed in the same PR: esc() now escapes apostrophes (3 single-quoted onclick
+  sites took scraped keyword terms — attribute-injection class), ETHICS.md's
+  factually false "SOFTWARE NOT FUNCTIONAL" banners (×3) + present-tense
+  HTTrack fork claim corrected, async_db.py dead module quarantined (carried
+  the US default), resolve_redirects() raw-requests helper removed,
+  ExternalSource.credibility_score=50 default removed + stored 50s NULLed
+  (migration phase D), scripts/README rewritten (documented a nonexistent
+  debug_install.sh + curl|bash from branch 0.03), source counts trued up
+  (~3,200 / ~3,180 unique), tmap caveat fallback. REMEDIATION QUEUE lives in
+  the report (top: qualify the "stays on this machine" claim ×12 locales;
+  mind-map/framing caveat fallbacks; reliability_score=5 + language="en"
+  defaults removal; inline-onclick retirement; a11y batch; ETHICS tense
+  rewrite; U3 needs a RULING: caveats visible by default vs calm UI).
+- **0.09 OPENING ORDER (maintainer "Good, proceed" 2026-06-11, on the
+  recommended sequencing):** start with de-US-centring the source catalog
+  (the KEY POINT below — ISO-2 normalisation migration + one conversion
+  layer + coverage report as acceptance metric + per-region targets);
+  SQLCipher+backup stays reserved for its own fresh session per the standing
+  ruling; convergence/watch-rules follows as the cycle flagship.
+  **FIRST BATCH SHIPPED same day** — root cause of "US=1553" was a silent
+  `Source.country` default="US" (fabricated data, removed; real catalog US
+  share ~14%); one conversion layer src/catalog/countries.py (249 codes +
+  names + aliases + continents, lowercase ISO-2 storage, full-name display);
+  migration a3b4c5d6e7f8 (canonicalise 5 tables + clear default-suspect US
+  via catalog/ccTLD re-derivation + REBUILD keyword_mentions.country — the
+  old `[:2].lower()` truncation had corrupted map geography: "china"→ch=
+  Switzerland, "germany"→ge=Georgia); catalogs rewritten canonical (1,750
+  values) + drift-rejecting test; configs/catalog_targets.yml floors +
+  Library "Regional balance" + concentration guard + scripts/
+  catalog_coverage_report.py = the acceptance metric; #library anchor
+  (legacy #database aliased), coverage Refresh button retired (live poll);
+  ?country= filters accept full names. REMAINING: the Wikidata generator
+  run for the 73 named gaps (network step, maintainer's machine) + raising
+  the located share (49% of domains carry no country).
 - **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11 — "I did NOT
   have a chance to see the calendar format"): NOT BUILT YET, the tab only has
   the list.** Build the switcher: list / week / month / trimester / semester /
@@ -296,10 +347,9 @@ Before fearing loss from an archive-size change, run
   diet/coverage→sources; echo→integrity; law/wiki→reader) so EVERY card is
   clickable; card TITLES are still server-built English (template-based
   title translation needs a design — titles carry data values).
-- **Insights mindmap**: multi-layer zoom (keyword → family → supergroup) —
-  data exists (`keyword_supergroups`, families API); needs zoomable rendering +
-  proper legend on the trend graph above it. (Maintainer expected this; treat
-  as the next feature item.)
+- **Insights mindmap — multi-layer zoom SHIPPED (2026-06-11 live-test batch:
+  radial tree, scroll-out goes up a level, supergroup rings).** Remaining bit
+  folded into Interactive charts below: the proper legend on the trend graph.
 - **World stock indices don't download** in live test — NARROWED 2026-06-10:
   only Dow Jones + S&P 500 arrive (FRED partially OK); Nikkei (FRED) and ALL
   Stooq-fed indices (DAX/FTSE/Hang Seng) fail. Suspect robots fail-closed on
@@ -371,14 +421,29 @@ Before fearing loss from an archive-size change, run
 - **Commodities depth**: 1-month windows say "not enough points" (fix window/
   interpolation honesty); S&P500 is an INDEX not a commodity (reclassify);
   expand feeds: rare earths, oil, natural gas, LNG, sand, corn/cereals, sugar.
-- **Library tab**: anchor should be #library not #database; drop the Refresh
-  button if data is live; country data must be stored ISO-2 and DISPLAYED as
-  full names via one conversion (US=1553 vs "United States"=210 split shows
-  mixed encodings today).
-- **SQLCipher at-rest encryption — RULED GO (maintainer 2026-06-10): next
-  MAJOR batch, do first in a fresh session (crypto deserves full attention,
-  not a session tail).** Design agreed in chat: sqlcipher3 driver + SQLAlchemy
-  engine key wiring (PRAGMA key on connect); passphrase asked ELEGANTLY in the
+- **Library tab — DONE 2026-06-11 (the de-US-centring first batch):** #library
+  anchor (legacy #database aliased in showTab), Refresh button retired (the
+  coverage panel now live-polls), country stored lowercase ISO-2 + displayed
+  as full names via the one conversion layer. The US=1553 split was mostly
+  the fabricated default="US" — see the 0.09 opening-order entry above.
+- **SQLCipher at-rest encryption — RULED GO (maintainer 2026-06-10); REFINED
+  2026-06-11 ("not just on export, locally"): the LOCAL working DB file is
+  encrypted BY DEFAULT. UI SIMPLIFIED by ruling (same day, pre-merge of #75):
+  app start asks for THE passphrase — one stable secret "like a user ID" —
+  and unlocks storage; first launch shows a plain note: unique, remembered,
+  NO recovery/decryption alternative (supersedes the recovery-key rider).
+  Maintainer rationale recorded: the DB is reconstitutable from the web's
+  corpus, no personal data beyond scraped+deduced material. CONTINGENCY: that
+  premise EXPIRES when newsletters ship (mailbox content is personal,
+  non-reconstitutable) — revisit no-recovery BEFORE the newsletter scraper.
+  HONESTY GATE: the prompt ships WITH the crypto, never before (a lock over a
+  plaintext file = fabricated security).** Plaintext opt-out for special
+  setups; existing DBs get a one-way encrypt tool (snapshot first, consent,
+  never silent); sqlcipher3 wheels verified on all 3 OSes first (portability
+  checkpoint). Next MAJOR batch, fresh session (crypto deserves full
+  attention, not a session tail). Design agreed in chat: sqlcipher3 driver +
+  SQLAlchemy engine key wiring (PRAGMA key on connect); passphrase asked
+  ELEGANTLY in the
   installer GUI (whiptail box + plain-prompt fallback, confirm twice, honest
   'lost passphrase = lost corpus' warning, optional skip = plaintext with
   stated risk); launcher prompts for the passphrase at start (env
@@ -387,12 +452,33 @@ Before fearing loss from an archive-size change, run
   doctor attests encryption state; threat model documented (protects a
   seized/off machine, NOT a compromised session). Design TOGETHER with the
   backup redesign below — one coherent key story.
+- **DATABASE RELIABILITY MANDATE (maintainer-ruled 2026-06-11) — ELEVATES and
+  BROADENS the backup redesign; blocks the newsletter scraper:** "like the
+  backup/restore function of an OS. If it's not entirely reliable, it should
+  not exist, and I'd like it to exist." Requirements: backups carry EVERYTHING
+  (articles, keywords+mentions+families/overrides, wiki snapshots, newsletters,
+  financial/commodity series, law, events, custody, annotations, settings —
+  "It is not the case currently": side files + per-domain merge coverage are
+  the gap); import = merge-only with dedup that CANNOT corrupt (work on a
+  copy, atomic swap, dry-run preview, post-merge verification); export both
+  encrypted (default) and plaintext; provenance safeguards on merged rows.
+  Design TOGETHER with SQLCipher (standing ruling, fresh session). The
+  NEWSLETTER SCRAPER comes only after this is solid (maintainer sequencing).
+  Full requirements recorded in FUTURE_DEVELOPMENTS.
 - **Backup redesign** (maintainer, ruled): encryption is the DEFAULT flow
   (Download backup -> passphrase -> download; Browse -> passphrase -> restore);
   restore must be NON-DESTRUCTIVE (merge, never replace) with bit-level
   duplicate detection (byte/hash comparison, no offline DB tweaking), and each
   article carries content hash + an authentication hash (second integrity
   level proving no tampering). Big feature -- design before code.
+- **When×Where×Who anchoring (maintainer question 2026-06-11, answered
+  honestly):** extractors exist but run AT READ TIME in the reader only —
+  nothing persists event-dates/places/entities or anchors them to keywords
+  (mentions carry article+time+SOURCE-place only). The development (recorded
+  in FUTURE_DEVELOPMENTS): run extractors at ingest + backfill, persist with
+  snippet provenance, anchor per article / per mention (event-place feeds the
+  map) / per entity (corpus-wide WHO layer) — the substrate the convergence
+  flagship needs. Deduced stays labelled deduced.
 - **Custody tab UX**: most users won't get it -- rename/explain/guided steps.
 - Offline LLM kit (RM-08 release artifact). DuckDuckGo discovery channel only
   after RM-03 gate UX proves out.

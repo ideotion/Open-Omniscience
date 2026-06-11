@@ -300,5 +300,18 @@
   "▶ Online": "▶ 在线",
   "⏸ Offline": "⏸ 离线",
   "Back online — network requests allowed again.": "已恢复在线 — 再次允许网络请求。",
-  "Offline — every new network request is refused. One in-flight request may finish.": "离线 — 拒绝所有新的网络请求。已在途的一个请求可能会完成。"
+  "Offline — every new network request is refused. One in-flight request may finish.": "离线 — 拒绝所有新的网络请求。已在途的一个请求可能会完成。",
+  "Regional balance": "区域平衡",
+  "(floors are working targets from configs/catalog_targets.yml)": "（下限为 configs/catalog_targets.yml 中的工作目标）",
+  "Sources / floor": "来源 / 下限",
+  "Countries / floor": "国家 / 下限",
+  "below floor": "低于下限",
+  "Region": "区域",
+  "Country": "国家",
+  "Enabled": "已启用",
+  "Topic keywords (source tags)": "主题关键词（来源标签）",
+  "filter countries by name, code or topic…": "按名称、代码或主题筛选国家…",
+  "Click a country or a topic keyword": "点击国家或主题关键词",
+  "No matching countries.": "没有匹配的国家。",
+  "every listed country has at least one source": "列出的每个国家至少有一个来源"
 }

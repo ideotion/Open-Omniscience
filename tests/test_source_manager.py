@@ -505,7 +505,8 @@ class TestMetadataOperations:
 
         assert metadata.source_id == sample_sources[0].id
         assert metadata.language == "en"
-        assert metadata.country == "GB"
+        # country canonicalised to lowercase ISO-2 (the one conversion layer, 0.09)
+        assert metadata.country == "gb"
         assert metadata.city == "London"
         assert metadata.robots_allowed is True
         assert metadata.alexa_rank == 100
@@ -518,7 +519,7 @@ class TestMetadataOperations:
         metadata = source_manager.get_metadata(sample_sources[0].id)
         assert metadata is not None
         assert metadata.language == "en"
-        assert metadata.country == "GB"
+        assert metadata.country == "gb"
 
     def test_update_metadata(self, source_manager, sample_sources):
         """Test updating metadata for a source."""
@@ -554,12 +555,14 @@ class TestMetadataOperations:
         source_manager.create_metadata(sample_sources[1].id, country="US")
         source_manager.create_metadata(sample_sources[2].id, country="GB")
 
-        # Get sources by country
+        # Get sources by country — any-case code or full name (one conversion layer)
         gb_sources = source_manager.get_sources_by_country("GB")
         assert len(gb_sources) == 2
 
         us_sources = source_manager.get_sources_by_country("US")
         assert len(us_sources) == 1
+
+        assert len(source_manager.get_sources_by_country("United Kingdom")) == 2
 
     def test_get_sources_by_language(self, source_manager, sample_sources):
         """Test getting sources by language."""

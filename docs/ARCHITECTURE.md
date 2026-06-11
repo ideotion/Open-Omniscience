@@ -368,18 +368,18 @@ contribution** (this is precisely how open-source widens access).
   `OOI18N.apply()` after it renders.
 - Each locale carries `_meta` (`name`, `native`, `dir`, `status`).
 
-#### Integrating it (Phase 2 — the next step, needs a browser check)
+#### Integrating it (Phase 2 — shipped; Desk has since been retired)
 
-Two lines in `index.html` and `desk.html`, then a language picker:
+Two lines in `index.html` (and, before its 2026-06-10 retirement, `desk.html`),
+then a language picker:
 
 ```html
 <script src="/static/i18n.js"></script>
 <!-- after first render and on each view change: --> OOI18N.apply();
 ```
 
-Add a **Language** selector to Customize (Console) / the theme area (Desk) calling
-`OOI18N.setLang(code)`. Persist alongside the other local UI prefs. (Deliberately not
-wired in this commit so the working UI isn't changed blind — see Status.)
+The **Language** selector lives in Settings and calls `OOI18N.setLang(code)`,
+persisted alongside the other local UI prefs.
 
 ---
 
@@ -411,9 +411,9 @@ Docs are long and translation quality matters more than for short UI strings, so
 languages, and complete reference translations for **en/fr/es/de**; the rest are
 selectable stubs (English fallback).
 
-**Phase 2 (done — pending a real browser pass):** `i18n.js` is included in both
-`index.html` and `desk.html`; a **Language** picker (`#oo-lang-select`) is in
-Settings and auto-wired; dynamically-rendered chrome is translated automatically by
+**Phase 2 (done — pending a real browser pass):** `i18n.js` is included in
+`index.html` (and was in `desk.html` until Desk's 2026-06-10 retirement); a
+**Language** picker (`#oo-lang-select`) is in Settings and auto-wired; dynamically-rendered chrome is translated automatically by
 a debounced `MutationObserver` (no scattered `apply()` calls); switching to English
 restores originals; RTL via `<html dir>`. Structure/syntax are validated, but
 behaviour should still be eyeballed in a browser.

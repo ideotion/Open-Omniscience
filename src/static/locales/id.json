@@ -300,5 +300,18 @@
   "▶ Online": "▶ Daring",
   "⏸ Offline": "⏸ Luring",
   "Back online — network requests allowed again.": "Kembali daring — permintaan jaringan diizinkan lagi.",
-  "Offline — every new network request is refused. One in-flight request may finish.": "Luring — setiap permintaan jaringan baru ditolak. Satu permintaan yang sedang berjalan bisa selesai."
+  "Offline — every new network request is refused. One in-flight request may finish.": "Luring — setiap permintaan jaringan baru ditolak. Satu permintaan yang sedang berjalan bisa selesai.",
+  "Regional balance": "Keseimbangan regional",
+  "(floors are working targets from configs/catalog_targets.yml)": "(ambang adalah target kerja dari configs/catalog_targets.yml)",
+  "Sources / floor": "Sumber / ambang",
+  "Countries / floor": "Negara / ambang",
+  "below floor": "di bawah ambang",
+  "Region": "Wilayah",
+  "Country": "Negara",
+  "Enabled": "Aktif",
+  "Topic keywords (source tags)": "Kata kunci topik (tag sumber)",
+  "filter countries by name, code or topic…": "saring negara berdasarkan nama, kode, atau topik…",
+  "Click a country or a topic keyword": "Klik sebuah negara atau kata kunci topik",
+  "No matching countries.": "Tidak ada negara yang cocok.",
+  "every listed country has at least one source": "setiap negara yang terdaftar memiliki setidaknya satu sumber"
 }

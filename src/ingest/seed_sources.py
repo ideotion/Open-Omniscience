@@ -4,7 +4,7 @@ Seed the source list from the curated catalog so a fresh install is preconfigure
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-The catalog (``configs/sources.yml``, ~1900 public-interest outlets with rich
+The catalog (``configs/sources.yml``, ~3,200 public-interest outlets with rich
 metadata) is loaded into the database at install time, alongside the worldwide
 markets catalog, a curated political-spectrum catalog (``sources_spectrum.yml``),
 and -- once a maintainer generates it -- the Wikidata world catalog
@@ -22,6 +22,7 @@ import yaml
 from sqlalchemy.orm import Session
 
 from src.catalog.cctld import infer_country, infer_language
+from src.catalog.countries import normalize_country
 from src.database.models import Source
 
 # The full curated catalog shipped with the project.
@@ -96,6 +97,13 @@ def _to_source_kwargs(s: dict) -> dict:
     for field in _PASSTHROUGH_FIELDS:
         if s.get(field) is not None:
             kwargs[field] = s[field]
+    # Canonicalise to lowercase ISO-2 (one conversion layer, 0.09): full names,
+    # slugs and any-case codes all normalise; an unrecognisable value is dropped
+    # (never stored as junk) so the ccTLD fallback gets its chance instead.
+    if kwargs.get("country"):
+        kwargs["country"] = normalize_country(str(kwargs["country"]))
+        if kwargs["country"] is None:
+            del kwargs["country"]
     if not kwargs.get("country"):
         c = infer_country(s["domain"])
         if c:
@@ -111,7 +119,7 @@ def seed_sources(session: Session, sources: list[dict]) -> dict[str, int]:
     """Create Source rows for any domain not already present. Idempotent.
 
     Deduplicates both against the existing DB and within the input list, then bulk
-    inserts in a single commit (efficient for the full ~1900-entry catalog).
+    inserts in a single commit (efficient for the full ~3,200-entry catalog).
     """
     existing = {d for (d,) in session.query(Source.domain).all()}
     to_add = []

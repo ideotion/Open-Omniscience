@@ -60,7 +60,8 @@ def test_seed_maps_rich_fields_and_tags_list(tmp_path):
     one = s.query(Source).filter_by(domain="one.example").one()
     assert one.tags == "a,b"  # list joined to CSV
     assert one.reliability_score == 9  # rich field mapped
-    assert one.language == "en" and one.country == "US"
+    # country canonicalised to lowercase ISO-2 (the one conversion layer, 0.09)
+    assert one.language == "en" and one.country == "us"
     two = s.query(Source).filter_by(domain="two.example").one()
     assert two.tags == "single"  # scalar tag preserved
     s.close()

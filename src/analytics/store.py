@@ -72,8 +72,12 @@ def index_article(
 
     observed = article.published_at or article.created_at
     observed_on = observed.date() if observed else None
-    cc = country or article.country or ""
-    cc = cc[:2].lower() if cc else None
+    # Canonical lowercase ISO-2 via the one conversion layer (0.09). The old
+    # `cc[:2].lower()` truncation corrupted legacy full-name values into wrong
+    # codes ("china" -> "ch" = Switzerland); unrecognisable input is now None.
+    from src.catalog.countries import normalize_country
+
+    cc = normalize_country(country or article.country)
 
     # Idempotent re-index: drop this article's existing mentions first.
     session.query(KeywordMention).filter_by(article_id=article.id).delete()

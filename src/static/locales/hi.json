@@ -300,5 +300,18 @@
   "▶ Online": "▶ ऑनलाइन",
   "⏸ Offline": "⏸ ऑफ़लाइन",
   "Back online — network requests allowed again.": "फिर ऑनलाइन — नेटवर्क अनुरोध पुनः अनुमत।",
-  "Offline — every new network request is refused. One in-flight request may finish.": "ऑफ़लाइन — हर नया नेटवर्क अनुरोध अस्वीकृत। पहले से चल रहा एक अनुरोध पूरा हो सकता है।"
+  "Offline — every new network request is refused. One in-flight request may finish.": "ऑफ़लाइन — हर नया नेटवर्क अनुरोध अस्वीकृत। पहले से चल रहा एक अनुरोध पूरा हो सकता है।",
+  "Regional balance": "क्षेत्रीय संतुलन",
+  "(floors are working targets from configs/catalog_targets.yml)": "(सीमाएँ configs/catalog_targets.yml के कार्य-लक्ष्य हैं)",
+  "Sources / floor": "स्रोत / सीमा",
+  "Countries / floor": "देश / सीमा",
+  "below floor": "सीमा से नीचे",
+  "Region": "क्षेत्र",
+  "Country": "देश",
+  "Enabled": "सक्रिय",
+  "Topic keywords (source tags)": "विषय कीवर्ड (स्रोत टैग)",
+  "filter countries by name, code or topic…": "नाम, कोड या विषय से देश छाँटें…",
+  "Click a country or a topic keyword": "किसी देश या विषय कीवर्ड पर क्लिक करें",
+  "No matching countries.": "कोई मेल खाता देश नहीं।",
+  "every listed country has at least one source": "सूचीबद्ध हर देश के पास कम से कम एक स्रोत है"
 }

@@ -22,7 +22,7 @@ For inquiries, contact: open-omniscience@ideotion.com
 """
 Unit Tests for Open Omniscience URL Utilities
 
-Tests for canonicalize_url, resolve_redirects, and generate_content_hash functions.
+Tests for canonicalize_url and generate_content_hash functions.
 
 Author: Ideotion
 """

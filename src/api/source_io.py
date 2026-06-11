@@ -36,6 +36,15 @@ _SORTABLE = {"name", "domain", "source_type", "country", "language", "priority",
 _MAX_IMPORT_BYTES = 64 * 1024 * 1024
 
 
+def _display_name(country: str | None) -> str | None:
+    """Full name for a stored code (None stays None; junk comes back as-is)."""
+    if not country:
+        return None
+    from src.catalog.countries import country_display_name
+
+    return country_display_name(country)
+
+
 def _source_to_row(s: Source) -> dict:
     return {
         "name": s.name,
@@ -84,7 +93,12 @@ def list_sources(
             | func.lower(Source.domain).like(func.lower(like))
         )
     if country:
-        filters.append(func.lower(Source.country) == country.strip().lower())
+        # Forgiving filter through the one conversion layer: ?country=France,
+        # ?country=FR and ?country=fr all match the canonical stored code.
+        from src.catalog.countries import normalize_country
+
+        cc = normalize_country(country) or country.strip().lower()
+        filters.append(func.lower(Source.country) == cc)
     if language:
         filters.append(func.lower(Source.language) == language.strip().lower())
     if source_type:
@@ -122,6 +136,7 @@ def list_sources(
                 "priority": s.priority,
                 "source_type": s.source_type,
                 "country": s.country,
+                "country_name": _display_name(s.country),
                 "language": s.language,
                 "article_count": int(n),
                 "tags": [t.strip() for t in (s.tags or "").split(",") if t.strip()],

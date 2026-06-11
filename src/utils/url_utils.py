@@ -36,7 +36,6 @@ import hashlib
 import logging
 from urllib.parse import parse_qs, urlparse, urlunparse
 
-import requests
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -188,37 +187,10 @@ def canonicalize_url(url: str) -> str:
         return url
 
 
-def resolve_redirects(url: str, max_redirects: int = 5) -> str:
-    """
-    Resolve all redirects for a URL to get the final destination.
-
-    Args:
-        url: The URL to resolve.
-        max_redirects: Maximum number of redirects to follow.
-
-    Returns:
-        The final URL after all redirects.
-    """
-    if not url:
-        return url
-
-    try:
-        # Ensure URL starts with http:// or https://
-        if not url.startswith(("http://", "https://")):
-            url = f"https://{url}"
-
-        headers = {"User-Agent": "OpenOmniscience/1.0"}
-        response = requests.head(
-            url, allow_redirects=True, timeout=10, headers=headers, max_redirects=max_redirects
-        )
-        return response.url
-
-    except requests.exceptions.TooManyRedirects:
-        logger.warning(f"Too many redirects for URL: {url}")
-        return url
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error resolving redirects for {url}: {e}")
-        return url
+# NOTE (audit 0.0.9): a resolve_redirects() helper used to live here, making raw
+# requests.head() calls. It was never called anywhere — and the single-fetch-path
+# rule means any future redirect resolution must go through the EthicalFetcher,
+# never a bare requests call. Removed rather than kept as an attractive nuisance.
 
 
 def generate_content_hash(content: str) -> str:
