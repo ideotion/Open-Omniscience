@@ -285,6 +285,24 @@ Before fearing loss from an archive-size change, run
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 
 ## Open queue (when maintainer says proceed)
+- **V0.1 ALPHA RC MANDATE (maintainer-ruled 2026-06-11, session close):
+  "absolutely everything" from this ledger + FUTURE_DEVELOPMENTS built into
+  0.09 before the V0.1 alpha official release candidate; Windows+macOS
+  installs TESTED; docs↔app reciprocity both directions; security
+  impeccable; ethics reflected in the software; UX guaranteed.** HONEST
+  ANSWER RECORDED: NO — not everything is implemented; the complete
+  CHECKABLE inventory is now `docs/product/RELEASE_0.1_RC_GATE.md` (every
+  item: status ✅/🔶/⬜ + acceptance check + RC-BLOCKING/SHOULD/POST + the
+  recommended order; honest estimate: 8–12 further dedicated sessions for
+  the BLOCKING set — an estimate, not a promise; the file is updated every
+  session and V0.1 tags ONLY when every RC-BLOCKING row is ✅). SHIPPED
+  same turn: the 3-OS CI matrix (win/mac OBSERVATION lanes,
+  continue-on-error until green then graduate to REQUIRED — "the matrix IS
+  the definition of supported") + a BLOCKING sqlcipher3 smoke job on all
+  three OSes (gate zero now EXECUTES on real win/mac runners, closing the
+  wheel-inspection caveat before PR-E) + POSIX-only torture mechanisms
+  skipif'd on win32 with honest reasons (the guarantees stay fully tested
+  on POSIX).
 - **FULL AUDIT (maintainer-ruled 2026-06-11) — DELIVERED same day:**
   `docs/audit/06_FULL_AUDIT_0_0_9.md` (5 domains + a self-critique section,
   every critical hand-re-verified; agent false-positives recorded as a lesson).

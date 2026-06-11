@@ -136,6 +136,11 @@ def test_t9_custody_verified_not_trusted(corpora):
 # --------------------------------------------------------------------------- #
 #  T1 + T7: interruption -- the live DB must be byte-identical afterwards
 # --------------------------------------------------------------------------- #
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="SIGKILL-based crash injection is POSIX-only; the swap/staging "
+    "guarantees themselves are platform-neutral and fully exercised on POSIX",
+)
 @pytest.mark.parametrize("kill_at", ["_merge_wiki", "swap"])
 def test_t1_t7_kill_leaves_live_db_untouched(corpora, kill_at):
     a, art = corpora["A"], corpora["artifact"]
@@ -149,6 +154,10 @@ def test_t1_t7_kill_leaves_live_db_untouched(corpora, kill_at):
     assert leftovers, "expected an orphaned staging dir from the killed run"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="depends on the SIGKILL scenario above leaving an orphaned staging dir",
+)
 def test_staging_janitor_reclaims_orphans(corpora):
     a = corpora["A"]
     env = dict(os.environ, OO_DATA_DIR=str(a), OO_NO_SCHEDULER="1")
