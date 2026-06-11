@@ -799,7 +799,10 @@ class ExternalSource(Base):
     source_type: Mapped[str | None] = mapped_column(
         String(50), default="unknown"
     )  # news, blog, academic, government, social, etc.
-    credibility_score: Mapped[float | None] = mapped_column(Float, default=50.0)  # 0-100
+    # No default: an unmeasured source has NO score (the old default=50.0 asserted
+    # "medium credibility" for every unknown — fabricated data; audit 0.0.9). The
+    # link-analysis API exposes counts only, never this field.
+    credibility_score: Mapped[float | None] = mapped_column(Float)  # 0-100, unused today
     political_bias: Mapped[float | None] = mapped_column(Float, default=0.0)  # -100 (left) to 100 (right)
     country: Mapped[str | None] = mapped_column(String(2))
     language: Mapped[str | None] = mapped_column(String(10), default="en")

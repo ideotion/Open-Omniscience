@@ -112,8 +112,9 @@ alembic upgrade head
 ## C. The end-to-end loop (UI or API)
 
 > **Sources are preconfigured.** On first launch (or during `install.sh --appvm`)
-> the curated catalog in `configs/sources.yml` (~1,900 public-interest outlets,
-> ~1,780 unique) is seeded automatically — so you can start ingesting immediately.
+> the curated catalogs (`configs/sources.yml` ~3,200 public-interest outlets, plus
+> the markets, political-spectrum and law/IP catalogs — ~3,180 unique domains in
+> all) are seeded automatically — so you can start ingesting immediately.
 > Re-seeding is idempotent. Disable auto-seed with `OO_AUTOSEED=0`; re-seed
 > manually with `python scripts/seed_sources.py` or `POST /api/sources/seed-defaults`.
 > Feed URLs/robots policies change over time; the ethical fetcher refuses anything

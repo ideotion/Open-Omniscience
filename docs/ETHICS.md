@@ -1,14 +1,16 @@
 # Ethical Guidelines for Open Omniscience
 
-**⚠️ EARLY CONCEPT RELEASE - SOFTWARE NOT FUNCTIONAL ⚠️**
+> **Status (0.0.9 audit, 2026-06):** the software is a working, tested pre-alpha
+> (see the repo README for what works today). Early releases carried a
+> "not functional" banner here; that stopped being true and was removed —
+> these guidelines are **in force now**, not a future reference.
+> *Historical note:* the very first concept releases (pre-0.0.4) started from
+> the HTTrack website copier; the current codebase is a complete rewrite and
+> shares no code with it.
 
-**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
+This document outlines the **ethical principles, compliance requirements, and best practices** for using and contributing to Open Omniscience. Adherence to these guidelines is **mandatory** for all users and developers.
 
-> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The software **does not work** and requires **extensive debugging and development** before it can be used. These ethical guidelines are provided for **future reference** when the project becomes functional.
-
-This document outlines the **intended ethical principles, compliance requirements, and best practices** for using and contributing to Open Omniscience **when it becomes functional**. Adherence to these guidelines will be **mandatory** for all users and developers.
-
-Open Omniscience is intended to align with the **Munich Charter**, a foundational set of principles for journalists adopted in 1971. These principles are integrated below to guide the ethical use of this platform **when it becomes operational**.
+Open Omniscience aligns with the **Munich Charter**, a foundational set of principles for journalists adopted in 1971. These principles are integrated below to guide the ethical use of this platform.
 
 ---
 
@@ -285,13 +287,8 @@ The legal and attribution companion to the ethical principles above.
 
 ## GPLv3 Compliance Guide
 
-**⚠️ EARLY CONCEPT RELEASE - SOFTWARE NOT FUNCTIONAL ⚠️**
-
-**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
-
-> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The software **does not work** and requires **extensive debugging and development** before it can be used. This compliance guide is provided for **future reference** when the project becomes functional.
-
-This document outlines the **intended compliance** of Open Omniscience with the GNU General Public License Version 3 (GPLv3) **when it becomes functional**.
+This section outlines the compliance of Open Omniscience with the GNU General
+Public License Version 3 (GPLv3). It applies to the working software as shipped.
 
 ---
 
@@ -442,13 +439,10 @@ If you have questions or concerns about GPLv3 compliance:
 
 ## Third-Party Notices and Attributions
 
-**⚠️ EARLY CONCEPT RELEASE - SOFTWARE NOT FUNCTIONAL ⚠️**
-
-**Originally Forked From:** [HTTrack](https://www.httrack.com/) - This project was initially a fork of HTTrack website copier
-
-> ⚠️ **IMPORTANT NOTICE**: Open Omniscience is currently in an **early concept release** that is **completely unusable**. The software **does not work** and requires **extensive debugging and development** before it can be used. The third-party dependencies listed below are part of the intended design for when the project becomes functional.
-
-This file contains notices and attributions for third-party software and libraries **intended to be used** by Open Omniscience **when it becomes functional**.
+This section contains notices and attributions for third-party software and
+libraries used by Open Omniscience. (*Historical note:* the pre-0.0.4 concept
+releases started from HTTrack; the current codebase is a complete rewrite and
+no HTTrack code remains.)
 
 ---
 

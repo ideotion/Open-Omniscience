@@ -90,8 +90,8 @@ pytest -q                            # full suite should be green
 open-omniscience                     # serves http://127.0.0.1:8000
 ```
 
-On first launch the app **auto-seeds a worldwide catalog (~2,100+ sources across news,
-markets, the political-spectrum set and official law/IP portals)** so you
+On first launch the app **auto-seeds a worldwide catalog (~3,180 unique domains
+across news, markets, the political-spectrum set and official law/IP portals)** so you
 have something to ingest immediately, initialises the SQLite database and FTS
 index, and (if enabled) starts the background scheduler.
 

@@ -248,12 +248,22 @@ Before fearing loss from an archive-size change, run
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 
 ## Open queue (when maintainer says proceed)
-- **FULL AUDIT (maintainer-ruled 2026-06-11, after the catalog batch):** a very
-  thorough audit of (1) code + its documentation, (2) the UI and its user-facing
-  text/notices, (3) ALL 12 translations, (4) GUI bugs + optimisations — explicitly
-  asked: be critical of own thinking patterns, self-contradictory about choices,
-  and hold the project's ethical/scientific standards throughout. IN PROGRESS
-  this session; deliver as a docs/audit/ report in the house style.
+- **FULL AUDIT (maintainer-ruled 2026-06-11) — DELIVERED same day:**
+  `docs/audit/06_FULL_AUDIT_0_0_9.md` (5 domains + a self-critique section,
+  every critical hand-re-verified; agent false-positives recorded as a lesson).
+  Fixed in the same PR: esc() now escapes apostrophes (3 single-quoted onclick
+  sites took scraped keyword terms — attribute-injection class), ETHICS.md's
+  factually false "SOFTWARE NOT FUNCTIONAL" banners (×3) + present-tense
+  HTTrack fork claim corrected, async_db.py dead module quarantined (carried
+  the US default), resolve_redirects() raw-requests helper removed,
+  ExternalSource.credibility_score=50 default removed + stored 50s NULLed
+  (migration phase D), scripts/README rewritten (documented a nonexistent
+  debug_install.sh + curl|bash from branch 0.03), source counts trued up
+  (~3,200 / ~3,180 unique), tmap caveat fallback. REMEDIATION QUEUE lives in
+  the report (top: qualify the "stays on this machine" claim ×12 locales;
+  mind-map/framing caveat fallbacks; reliability_score=5 + language="en"
+  defaults removal; inline-onclick retirement; a11y batch; ETHICS tense
+  rewrite; U3 needs a RULING: caveats visible by default vs calm UI).
 - **0.09 OPENING ORDER (maintainer "Good, proceed" 2026-06-11, on the
   recommended sequencing):** start with de-US-centring the source catalog
   (the KEY POINT below — ISO-2 normalisation migration + one conversion

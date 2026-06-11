@@ -167,6 +167,13 @@ def upgrade() -> None:
         )
     )
 
+    # --- Phase D: clear the fabricated neutral credibility (audit 0.0.9) ----
+    # ExternalSource.credibility_score had default=50.0 — every unknown source
+    # was asserted "medium-credible". Nothing ever computed or displayed the
+    # field (the link-analysis API is counts-only by design), so every stored
+    # 50.0 is the default, not a measurement. Unknown is honestly NULL.
+    op.execute(text("UPDATE external_sources SET credibility_score = NULL WHERE credibility_score = 50.0"))
+
 
 def downgrade() -> None:
     # One-way by design: the previous state was a defect (mixed encodings, a

@@ -1813,8 +1813,10 @@
   <script src="/static/i18n.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
-    const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g,
-      c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])));
+    // Escapes ' too: data reaches single-quoted attributes (onclick='…'), where
+    // an apostrophe in scraped content would otherwise break out (audit 0.0.9).
+    const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
+      c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])));
     // Render an ingested URL as a link only if it is plain http(s) — esc() does NOT
     // neutralize a javascript:/data: scheme, which would execute on click (S-005).
     const safeUrl = (u) => {
@@ -4817,8 +4819,8 @@
       if (!terms.length) return '<div class="muted">Nothing yet — index the corpus.</div>';
       return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
         <button class="tiny danger" title="exclude this keyword" style="margin:0;padding:0 6px"
-          onclick='excludeKeyword(${JSON.stringify(t.term)})'>✕</button>
-        <a href="#" onclick='pickTerm(${JSON.stringify(t.term)});return false'>${esc(t.term)}</a>
+          onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
+        <a href="#" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
         <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
 
@@ -4909,7 +4911,7 @@
         const rowsFor = (areas, label) => areas.length
           ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
               `<tr><td><strong>${esc(a.code||a.name)}</strong>${a.country&&a.name?` <span class="muted">${esc(a.country)}</span>`:""}</td><td>` +
-              a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${JSON.stringify(t.term)})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
+              a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
               `</td></tr>`).join("")
           : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
         $("map-svg").innerHTML = buildMapSvg(d.cities || []);
@@ -5269,7 +5271,9 @@
         const r = TMAP.range || {};
         $("tmap-status").innerHTML = `${TMAP.signals.length} signals · ${r.min!=null?Math.floor(r.min):"?"}–${r.max!=null?Math.ceil(r.max):"?"}`
           + ((d.failures && d.failures.length) ? ` · <span class="warn" title="${esc(d.failures.join('; '))}">${d.failures.length} source(s) unavailable</span>` : "");
-        $("tmap-caveat").textContent = TMAP.caveat;
+        // Fallback so the honest framing never silently disappears (audit 0.0.9).
+        $("tmap-caveat").textContent = TMAP.caveat ||
+          "Signals are placed where their source/extracted location says; co-occurrence in space and time is not causation.";
         if (TMAP_FOCUS == null || TMAP_FOCUS < tmapSpan()[0] || TMAP_FOCUS > tmapSpan()[1]) {
           $("tmap-slider").value = 1000; TMAP_FOCUS = sliderToT(1000);   // start "now-ish" (latest)
         }

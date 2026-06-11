@@ -52,7 +52,6 @@ from .url_utils import (
     get_domain_from_url,
     is_equivalent_domain,
     normalize_domain,
-    resolve_redirects,
 )
 
 __all__ = [
@@ -74,7 +73,6 @@ __all__ = [
     "normalize_domain",
     "is_equivalent_domain",
     "canonicalize_url",
-    "resolve_redirects",
     "generate_content_hash",
     "get_domain_from_url",
     "get_base_url",
