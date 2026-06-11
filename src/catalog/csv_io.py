@@ -17,6 +17,7 @@ from __future__ import annotations
 import csv
 import io
 
+from src.catalog.countries import normalize_country
 from src.catalog.normalize import registrable_domain
 
 # The defined column set (export order). Only name + domain are required on import.
@@ -127,9 +128,15 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
             val = (rec.get(opt) or "").strip()
             if val:
                 out[opt] = val.lower() if opt in ("country", "language") else val
-        # country must be a 2-letter code if present.
-        if "country" in out and len(out["country"]) != 2:
-            out.pop("country")
+        # Country: canonical lowercase ISO-2 via the one conversion layer —
+        # accepts codes, full names and slugs; unrecognisable values are dropped
+        # (never stored as junk).
+        if "country" in out:
+            cc = normalize_country(out["country"])
+            if cc:
+                out["country"] = cc
+            else:
+                out.pop("country")
 
         bad = False
         for field, (lo, hi) in _INT_FIELDS.items():

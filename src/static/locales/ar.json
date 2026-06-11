@@ -300,5 +300,18 @@
   "▶ Online": "▶ متصل",
   "⏸ Offline": "⏸ غير متصل",
   "Back online — network requests allowed again.": "عاد الاتصال — طلبات الشبكة مسموحة من جديد.",
-  "Offline — every new network request is refused. One in-flight request may finish.": "غير متصل — كل طلب شبكة جديد مرفوض. قد يكتمل طلب واحد جارٍ بالفعل."
+  "Offline — every new network request is refused. One in-flight request may finish.": "غير متصل — كل طلب شبكة جديد مرفوض. قد يكتمل طلب واحد جارٍ بالفعل.",
+  "Regional balance": "التوازن الإقليمي",
+  "(floors are working targets from configs/catalog_targets.yml)": "(الحدود أهداف عمل من configs/catalog_targets.yml)",
+  "Sources / floor": "المصادر / الحد",
+  "Countries / floor": "البلدان / الحد",
+  "below floor": "دون الحد",
+  "Region": "المنطقة",
+  "Country": "البلد",
+  "Enabled": "مفعّلة",
+  "Topic keywords (source tags)": "كلمات مفتاحية موضوعية (وسوم المصادر)",
+  "filter countries by name, code or topic…": "تصفية البلدان حسب الاسم أو الرمز أو الموضوع…",
+  "Click a country or a topic keyword": "انقر على بلد أو كلمة مفتاحية",
+  "No matching countries.": "لا توجد بلدان مطابقة.",
+  "every listed country has at least one source": "كل بلد مدرج لديه مصدر واحد على الأقل"
 }

@@ -300,5 +300,18 @@
   "▶ Online": "▶ オンライン",
   "⏸ Offline": "⏸ オフライン",
   "Back online — network requests allowed again.": "オンラインに復帰 — ネットワーク要求が再び許可されました。",
-  "Offline — every new network request is refused. One in-flight request may finish.": "オフライン — 新規のネットワーク要求はすべて拒否されます。実行中の1件は完了する場合があります。"
+  "Offline — every new network request is refused. One in-flight request may finish.": "オフライン — 新規のネットワーク要求はすべて拒否されます。実行中の1件は完了する場合があります。",
+  "Regional balance": "地域バランス",
+  "(floors are working targets from configs/catalog_targets.yml)": "（下限は configs/catalog_targets.yml の作業目標です）",
+  "Sources / floor": "ソース / 下限",
+  "Countries / floor": "国 / 下限",
+  "below floor": "下限未満",
+  "Region": "地域",
+  "Country": "国",
+  "Enabled": "有効",
+  "Topic keywords (source tags)": "トピックキーワード（ソースのタグ）",
+  "filter countries by name, code or topic…": "名前・コード・トピックで国を絞り込む…",
+  "Click a country or a topic keyword": "国またはトピックキーワードをクリック",
+  "No matching countries.": "一致する国はありません。",
+  "every listed country has at least one source": "掲載されている各国に少なくとも1つのソースがあります"
 }

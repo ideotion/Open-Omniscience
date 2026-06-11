@@ -25,7 +25,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: US
+  country: us
   rss_url: http://rss.cnn.com/rss/edition.rss
 - name: MSNBC
   domain: msnbc.com
@@ -41,7 +41,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: US
+  country: us
 - name: The Atlantic
   domain: theatlantic.com
   enabled: true
@@ -56,7 +56,7 @@ sources:
   - culture
   - lean-center-left
   - news
-  country: US
+  country: us
   rss_url: https://www.theatlantic.com/feed/all/
 - name: Vox
   domain: vox.com
@@ -71,7 +71,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: US
+  country: us
   rss_url: https://www.vox.com/rss/index.xml
 - name: Newsmax
   domain: newsmax.com
@@ -86,7 +86,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: US
+  country: us
 - name: Foreign Policy
   domain: foreignpolicy.com
   enabled: true
@@ -101,7 +101,7 @@ sources:
   - world
   - lean-center
   - news
-  country: US
+  country: us
 - name: Foreign Affairs
   domain: foreignaffairs.com
   enabled: true
@@ -116,7 +116,7 @@ sources:
   - world
   - lean-center
   - news
-  country: US
+  country: us
 - name: The Daily Telegraph
   domain: telegraph.co.uk
   enabled: true
@@ -131,7 +131,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: GB
+  country: gb
   rss_url: https://www.telegraph.co.uk/rss.xml
 - name: The Times
   domain: thetimes.co.uk
@@ -147,7 +147,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: GB
+  country: gb
 - name: Daily Mail
   domain: dailymail.co.uk
   enabled: true
@@ -161,7 +161,7 @@ sources:
   - tabloid
   - lean-right
   - news
-  country: GB
+  country: gb
   rss_url: https://www.dailymail.co.uk/articles.rss
 - name: Daily Mirror
   domain: mirror.co.uk
@@ -176,7 +176,7 @@ sources:
   - tabloid
   - lean-center-left
   - news
-  country: GB
+  country: gb
 - name: The Spectator
   domain: spectator.co.uk
   enabled: true
@@ -190,7 +190,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: GB
+  country: gb
 - name: New Statesman
   domain: newstatesman.com
   enabled: true
@@ -204,7 +204,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: GB
+  country: gb
 - name: Sky News
   domain: news.sky.com
   enabled: true
@@ -219,7 +219,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: GB
+  country: gb
   rss_url: http://feeds.skynews.com/feeds/rss/world.xml
 - name: Channel 4 News
   domain: channel4.com
@@ -235,7 +235,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: GB
+  country: gb
 - name: The Irish Times
   domain: irishtimes.com
   enabled: true
@@ -250,7 +250,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: IE
+  country: ie
 - name: RTÉ
   domain: rte.ie
   enabled: true
@@ -265,7 +265,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: IE
+  country: ie
   rss_url: https://www.rte.ie/news/rss/news-headlines.xml
 - name: Irish Independent
   domain: independent.ie
@@ -281,7 +281,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: IE
+  country: ie
 - name: CBC News
   domain: cbc.ca
   enabled: true
@@ -296,7 +296,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: CA
+  country: ca
   rss_url: https://www.cbc.ca/cmlink/rss-topstories
 - name: National Post
   domain: nationalpost.com
@@ -312,7 +312,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: CA
+  country: ca
 - name: CTV News
   domain: ctvnews.ca
   enabled: true
@@ -327,7 +327,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: CA
+  country: ca
 - name: Radio-Canada
   domain: ici.radio-canada.ca
   enabled: true
@@ -342,7 +342,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: CA
+  country: ca
 - name: La Presse
   domain: lapresse.ca
   enabled: true
@@ -357,7 +357,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: CA
+  country: ca
 - name: Le Devoir
   domain: ledevoir.com
   enabled: true
@@ -372,7 +372,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: CA
+  country: ca
 - name: The Tyee
   domain: thetyee.ca
   enabled: true
@@ -386,7 +386,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: CA
+  country: ca
 - name: The Age
   domain: theage.com.au
   enabled: true
@@ -401,7 +401,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: AU
+  country: au
 - name: news.com.au
   domain: news.com.au
   enabled: true
@@ -416,7 +416,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: AU
+  country: au
 - name: Sky News Australia
   domain: skynews.com.au
   enabled: true
@@ -431,7 +431,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: AU
+  country: au
 - name: Crikey
   domain: crikey.com.au
   enabled: true
@@ -445,7 +445,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: AU
+  country: au
 - name: RNZ
   domain: rnz.co.nz
   enabled: true
@@ -460,7 +460,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: NZ
+  country: nz
   rss_url: https://www.rnz.co.nz/rss/national.xml
 - name: Stuff
   domain: stuff.co.nz
@@ -476,7 +476,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: NZ
+  country: nz
 - name: Mediapart
   domain: mediapart.fr
   enabled: true
@@ -490,7 +490,7 @@ sources:
   - investigative
   - lean-left
   - news
-  country: FR
+  country: fr
 - name: L'Humanité
   domain: humanite.fr
   enabled: true
@@ -504,7 +504,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: FR
+  country: fr
 - name: RFI
   domain: rfi.fr
   enabled: true
@@ -519,7 +519,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: FR
+  country: fr
 - name: L'Obs
   domain: nouvelobs.com
   enabled: true
@@ -534,7 +534,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: FR
+  country: fr
 - name: La Croix
   domain: la-croix.com
   enabled: true
@@ -548,7 +548,7 @@ sources:
   - religion
   - lean-center
   - news
-  country: FR
+  country: fr
 - name: Valeurs Actuelles
   domain: valeursactuelles.com
   enabled: true
@@ -562,7 +562,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: FR
+  country: fr
 - name: Marianne
   domain: marianne.net
   enabled: true
@@ -576,7 +576,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: FR
+  country: fr
 - name: Jeune Afrique
   domain: jeuneafrique.com
   enabled: true
@@ -590,7 +590,7 @@ sources:
   - africa
   - lean-center
   - news
-  country: FR
+  country: fr
 - name: Die Zeit
   domain: zeit.de
   enabled: true
@@ -605,7 +605,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: DE
+  country: de
 - name: Süddeutsche Zeitung
   domain: sueddeutsche.de
   enabled: true
@@ -620,7 +620,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: DE
+  country: de
 - name: Frankfurter Allgemeine Zeitung
   domain: faz.net
   enabled: true
@@ -635,7 +635,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: DE
+  country: de
 - name: Die Welt
   domain: welt.de
   enabled: true
@@ -650,7 +650,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: DE
+  country: de
 - name: taz
   domain: taz.de
   enabled: true
@@ -665,7 +665,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: DE
+  country: de
 - name: Bild
   domain: bild.de
   enabled: true
@@ -679,7 +679,7 @@ sources:
   - tabloid
   - lean-right
   - news
-  country: DE
+  country: de
 - name: Tagesschau (ARD)
   domain: tagesschau.de
   enabled: true
@@ -694,7 +694,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: DE
+  country: de
   rss_url: https://www.tagesschau.de/xml/rss2/
 - name: Focus
   domain: focus.de
@@ -710,7 +710,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: DE
+  country: de
 - name: Junge Freiheit
   domain: jungefreiheit.de
   enabled: true
@@ -724,7 +724,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: DE
+  country: de
 - name: nd (neues deutschland)
   domain: nd-aktuell.de
   enabled: true
@@ -738,7 +738,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: DE
+  country: de
 - name: Der Standard
   domain: derstandard.at
   enabled: true
@@ -753,7 +753,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: AT
+  country: at
 - name: Die Presse
   domain: diepresse.com
   enabled: true
@@ -768,7 +768,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: AT
+  country: at
 - name: Kronen Zeitung
   domain: krone.at
   enabled: true
@@ -782,7 +782,7 @@ sources:
   - tabloid
   - lean-right
   - news
-  country: AT
+  country: at
 - name: ORF
   domain: orf.at
   enabled: true
@@ -797,7 +797,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: AT
+  country: at
 - name: Neue Zürcher Zeitung
   domain: nzz.ch
   enabled: true
@@ -812,7 +812,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: CH
+  country: ch
 - name: Tages-Anzeiger
   domain: tagesanzeiger.ch
   enabled: true
@@ -827,7 +827,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: CH
+  country: ch
 - name: SRF
   domain: srf.ch
   enabled: true
@@ -842,7 +842,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: CH
+  country: ch
 - name: Corriere della Sera
   domain: corriere.it
   enabled: true
@@ -857,7 +857,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: IT
+  country: it
 - name: La Stampa
   domain: lastampa.it
   enabled: true
@@ -872,7 +872,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: IT
+  country: it
 - name: Il Sole 24 Ore
   domain: ilsole24ore.com
   enabled: true
@@ -886,7 +886,7 @@ sources:
   - business
   - lean-center
   - news
-  country: IT
+  country: it
 - name: Il Fatto Quotidiano
   domain: ilfattoquotidiano.it
   enabled: true
@@ -901,7 +901,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: IT
+  country: it
 - name: Il Giornale
   domain: ilgiornale.it
   enabled: true
@@ -916,7 +916,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: IT
+  country: it
 - name: Libero
   domain: liberoquotidiano.it
   enabled: true
@@ -931,7 +931,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: IT
+  country: it
 - name: il manifesto
   domain: ilmanifesto.it
   enabled: true
@@ -945,7 +945,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: IT
+  country: it
 - name: Avvenire
   domain: avvenire.it
   enabled: true
@@ -959,7 +959,7 @@ sources:
   - religion
   - lean-center
   - news
-  country: IT
+  country: it
 - name: Rai News
   domain: rainews.it
   enabled: true
@@ -974,7 +974,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: IT
+  country: it
 - name: El Confidencial
   domain: elconfidencial.com
   enabled: true
@@ -988,7 +988,7 @@ sources:
   - investigative
   - lean-center
   - news
-  country: ES
+  country: es
 - name: eldiario.es
   domain: eldiario.es
   enabled: true
@@ -1003,7 +1003,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: ES
+  country: es
 - name: Público
   domain: publico.es
   enabled: true
@@ -1018,7 +1018,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: ES
+  country: es
 - name: La Razón
   domain: larazon.es
   enabled: true
@@ -1033,7 +1033,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: ES
+  country: es
 - name: Público (Portugal)
   domain: publico.pt
   enabled: true
@@ -1048,7 +1048,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: PT
+  country: pt
 - name: Expresso
   domain: expresso.pt
   enabled: true
@@ -1063,7 +1063,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PT
+  country: pt
 - name: Diário de Notícias
   domain: dn.pt
   enabled: true
@@ -1078,7 +1078,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PT
+  country: pt
 - name: RTP
   domain: rtp.pt
   enabled: true
@@ -1093,7 +1093,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: PT
+  country: pt
 - name: NOS
   domain: nos.nl
   enabled: true
@@ -1108,7 +1108,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: NL
+  country: nl
 - name: de Volkskrant
   domain: volkskrant.nl
   enabled: true
@@ -1123,7 +1123,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: NL
+  country: nl
 - name: De Telegraaf
   domain: telegraaf.nl
   enabled: true
@@ -1138,7 +1138,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: NL
+  country: nl
 - name: De Standaard
   domain: standaard.be
   enabled: true
@@ -1153,7 +1153,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: BE
+  country: be
 - name: La Libre Belgique
   domain: lalibre.be
   enabled: true
@@ -1168,7 +1168,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: BE
+  country: be
 - name: De Morgen
   domain: demorgen.be
   enabled: true
@@ -1183,7 +1183,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: BE
+  country: be
 - name: VRT NWS
   domain: vrt.be
   enabled: true
@@ -1198,7 +1198,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: BE
+  country: be
 - name: POLITICO Europe
   domain: politico.eu
   enabled: true
@@ -1213,7 +1213,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: BE
+  country: be
 - name: EUobserver
   domain: euobserver.com
   enabled: true
@@ -1228,7 +1228,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: BE
+  country: be
 - name: Svenska Dagbladet
   domain: svd.se
   enabled: true
@@ -1243,7 +1243,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: SE
+  country: se
 - name: Aftonbladet
   domain: aftonbladet.se
   enabled: true
@@ -1257,7 +1257,7 @@ sources:
   - tabloid
   - lean-center-left
   - news
-  country: SE
+  country: se
 - name: Expressen
   domain: expressen.se
   enabled: true
@@ -1271,7 +1271,7 @@ sources:
   - tabloid
   - lean-center-right
   - news
-  country: SE
+  country: se
 - name: Sveriges Radio
   domain: sverigesradio.se
   enabled: true
@@ -1286,7 +1286,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: SE
+  country: se
 - name: Aftenposten
   domain: aftenposten.no
   enabled: true
@@ -1301,7 +1301,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: 'NO'
+  country: 'no'
 - name: VG
   domain: vg.no
   enabled: true
@@ -1315,7 +1315,7 @@ sources:
   - tabloid
   - lean-center
   - news
-  country: 'NO'
+  country: 'no'
 - name: Dagbladet
   domain: dagbladet.no
   enabled: true
@@ -1329,7 +1329,7 @@ sources:
   - tabloid
   - lean-center-left
   - news
-  country: 'NO'
+  country: 'no'
 - name: NRK
   domain: nrk.no
   enabled: true
@@ -1344,7 +1344,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: 'NO'
+  country: 'no'
 - name: Politiken
   domain: politiken.dk
   enabled: true
@@ -1359,7 +1359,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: DK
+  country: dk
 - name: Jyllands-Posten
   domain: jyllands-posten.dk
   enabled: true
@@ -1374,7 +1374,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: DK
+  country: dk
 - name: Berlingske
   domain: berlingske.dk
   enabled: true
@@ -1389,7 +1389,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: DK
+  country: dk
 - name: DR
   domain: dr.dk
   enabled: true
@@ -1404,7 +1404,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: DK
+  country: dk
 - name: Dagbladet Information
   domain: information.dk
   enabled: true
@@ -1419,7 +1419,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: DK
+  country: dk
 - name: Helsingin Sanomat
   domain: hs.fi
   enabled: true
@@ -1434,7 +1434,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: FI
+  country: fi
 - name: Yle
   domain: yle.fi
   enabled: true
@@ -1449,7 +1449,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: FI
+  country: fi
 - name: RÚV
   domain: ruv.is
   enabled: true
@@ -1464,7 +1464,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: IS
+  country: is
 - name: Morgunblaðið
   domain: mbl.is
   enabled: true
@@ -1479,7 +1479,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: IS
+  country: is
 - name: Gazeta Wyborcza
   domain: wyborcza.pl
   enabled: true
@@ -1494,7 +1494,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: PL
+  country: pl
 - name: Rzeczpospolita
   domain: rp.pl
   enabled: true
@@ -1509,7 +1509,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: PL
+  country: pl
 - name: Onet
   domain: onet.pl
   enabled: true
@@ -1524,7 +1524,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PL
+  country: pl
 - name: TVP Info
   domain: tvp.info
   enabled: true
@@ -1539,7 +1539,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: PL
+  country: pl
 - name: wPolityce
   domain: wpolityce.pl
   enabled: true
@@ -1553,7 +1553,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: PL
+  country: pl
 - name: Notes from Poland
   domain: notesfrompoland.com
   enabled: true
@@ -1568,7 +1568,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PL
+  country: pl
 - name: iDNES.cz
   domain: idnes.cz
   enabled: true
@@ -1583,7 +1583,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: CZ
+  country: cz
 - name: Deník N
   domain: denikn.cz
   enabled: true
@@ -1598,7 +1598,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: CZ
+  country: cz
 - name: Czech Radio (iROZHLAS)
   domain: irozhlas.cz
   enabled: true
@@ -1613,7 +1613,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: CZ
+  country: cz
 - name: Index.hu
   domain: index.hu
   enabled: true
@@ -1628,7 +1628,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: HU
+  country: hu
 - name: Magyar Nemzet
   domain: magyarnemzet.hu
   enabled: true
@@ -1642,7 +1642,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: HU
+  country: hu
 - name: '444'
   domain: 444.hu
   enabled: true
@@ -1657,7 +1657,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: HU
+  country: hu
 - name: Adevărul
   domain: adevarul.ro
   enabled: true
@@ -1672,7 +1672,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: RO
+  country: ro
 - name: Digi24
   domain: digi24.ro
   enabled: true
@@ -1687,7 +1687,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: RO
+  country: ro
 - name: G4Media
   domain: g4media.ro
   enabled: true
@@ -1701,7 +1701,7 @@ sources:
   - investigative
   - lean-center
   - news
-  country: RO
+  country: ro
 - name: Kathimerini
   domain: kathimerini.gr
   enabled: true
@@ -1716,7 +1716,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: GR
+  country: gr
 - name: To Vima
   domain: tovima.gr
   enabled: true
@@ -1731,7 +1731,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: GR
+  country: gr
 - name: Efimerida ton Syntakton
   domain: efsyn.gr
   enabled: true
@@ -1746,7 +1746,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: GR
+  country: gr
 - name: ERT
   domain: ert.gr
   enabled: true
@@ -1761,7 +1761,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: GR
+  country: gr
 - name: Balkan Insight (BIRN)
   domain: balkaninsight.com
   enabled: true
@@ -1776,7 +1776,7 @@ sources:
   - balkans
   - lean-center
   - news
-  country: RS
+  country: rs
 - name: Ukrainska Pravda
   domain: pravda.com.ua
   enabled: true
@@ -1791,7 +1791,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: UA
+  country: ua
 - name: The Kyiv Independent
   domain: kyivindependent.com
   enabled: true
@@ -1806,7 +1806,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: UA
+  country: ua
 - name: Kyiv Post
   domain: kyivpost.com
   enabled: true
@@ -1821,7 +1821,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: UA
+  country: ua
 - name: Sputnik
   domain: sputnikglobe.com
   enabled: true
@@ -1836,7 +1836,7 @@ sources:
   - politics
   - state-media
   - news
-  country: RU
+  country: ru
 - name: Novaya Gazeta Europe
   domain: novayagazeta.eu
   enabled: true
@@ -1850,7 +1850,7 @@ sources:
   - independent
   - lean-left
   - news
-  country: RU
+  country: ru
 - name: Hürriyet
   domain: hurriyet.com.tr
   enabled: true
@@ -1865,7 +1865,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: TR
+  country: tr
 - name: Sabah
   domain: sabah.com.tr
   enabled: true
@@ -1879,7 +1879,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: TR
+  country: tr
 - name: Daily Sabah
   domain: dailysabah.com
   enabled: true
@@ -1893,7 +1893,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: TR
+  country: tr
 - name: Cumhuriyet
   domain: cumhuriyet.com.tr
   enabled: true
@@ -1908,7 +1908,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: TR
+  country: tr
 - name: Sözcü
   domain: sozcu.com.tr
   enabled: true
@@ -1923,7 +1923,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: TR
+  country: tr
 - name: TRT World
   domain: trtworld.com
   enabled: true
@@ -1938,7 +1938,7 @@ sources:
   - politics
   - state-media
   - news
-  country: TR
+  country: tr
 - name: Gazete Duvar
   domain: gazeteduvar.com.tr
   enabled: true
@@ -1953,7 +1953,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: TR
+  country: tr
 - name: Bianet
   domain: bianet.org
   enabled: true
@@ -1967,7 +1967,7 @@ sources:
   - rights
   - lean-left
   - news
-  country: TR
+  country: tr
 - name: Haaretz
   domain: haaretz.com
   enabled: true
@@ -1982,7 +1982,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: IL
+  country: il
 - name: The Times of Israel
   domain: timesofisrael.com
   enabled: true
@@ -1997,7 +1997,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: IL
+  country: il
 - name: The Jerusalem Post
   domain: jpost.com
   enabled: true
@@ -2012,7 +2012,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: IL
+  country: il
 - name: Ynetnews
   domain: ynetnews.com
   enabled: true
@@ -2027,7 +2027,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: IL
+  country: il
 - name: Israel Hayom
   domain: israelhayom.com
   enabled: true
@@ -2042,7 +2042,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: IL
+  country: il
 - name: i24NEWS
   domain: i24news.tv
   enabled: true
@@ -2057,7 +2057,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: IL
+  country: il
 - name: Ma'an News Agency
   domain: maannews.net
   enabled: true
@@ -2072,7 +2072,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PS
+  country: ps
 - name: WAFA
   domain: wafa.ps
   enabled: true
@@ -2087,7 +2087,7 @@ sources:
   - politics
   - state-media
   - news
-  country: PS
+  country: ps
 - name: Al Arabiya
   domain: alarabiya.net
   enabled: true
@@ -2102,7 +2102,7 @@ sources:
   - politics
   - state-media
   - news
-  country: SA
+  country: sa
 - name: Asharq Al-Awsat
   domain: aawsat.com
   enabled: true
@@ -2117,7 +2117,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: SA
+  country: sa
 - name: Gulf News
   domain: gulfnews.com
   enabled: true
@@ -2132,7 +2132,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: AE
+  country: ae
 - name: Khaleej Times
   domain: khaleejtimes.com
   enabled: true
@@ -2147,7 +2147,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: AE
+  country: ae
 - name: Ahram Online
   domain: english.ahram.org.eg
   enabled: true
@@ -2162,7 +2162,7 @@ sources:
   - politics
   - state-media
   - news
-  country: EG
+  country: eg
 - name: Mada Masr
   domain: madamasr.com
   enabled: true
@@ -2177,7 +2177,7 @@ sources:
   - independent
   - lean-left
   - news
-  country: EG
+  country: eg
 - name: Egypt Independent
   domain: egyptindependent.com
   enabled: true
@@ -2192,7 +2192,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: EG
+  country: eg
 - name: Tehran Times
   domain: tehrantimes.com
   enabled: true
@@ -2207,7 +2207,7 @@ sources:
   - politics
   - state-media
   - news
-  country: IR
+  country: ir
 - name: IRNA
   domain: irna.ir
   enabled: true
@@ -2223,7 +2223,7 @@ sources:
   - state-media
   - wire-agency
   - news
-  country: IR
+  country: ir
 - name: L'Orient-Le Jour
   domain: lorientlejour.com
   enabled: true
@@ -2238,7 +2238,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: LB
+  country: lb
 - name: Al Akhbar
   domain: al-akhbar.com
   enabled: true
@@ -2252,7 +2252,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: LB
+  country: lb
 - name: Rudaw
   domain: rudaw.net
   enabled: true
@@ -2266,7 +2266,7 @@ sources:
   - kurdish
   - lean-center
   - news
-  country: IQ
+  country: iq
 - name: The Jordan Times
   domain: jordantimes.com
   enabled: true
@@ -2281,7 +2281,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: JO
+  country: jo
 - name: Enab Baladi
   domain: enabbaladi.net
   enabled: true
@@ -2295,7 +2295,7 @@ sources:
   - independent
   - lean-center
   - news
-  country: SY
+  country: sy
 - name: SANA
   domain: sana.sy
   enabled: true
@@ -2311,7 +2311,7 @@ sources:
   - state-media
   - wire-agency
   - news
-  country: SY
+  country: sy
 - name: Republic World
   domain: republicworld.com
   enabled: true
@@ -2325,7 +2325,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: IN
+  country: in
 - name: OpIndia
   domain: opindia.com
   enabled: true
@@ -2339,7 +2339,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: IN
+  country: in
 - name: Swarajya
   domain: swarajyamag.com
   enabled: true
@@ -2353,7 +2353,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: IN
+  country: in
 - name: The Print
   domain: theprint.in
   enabled: true
@@ -2368,7 +2368,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: IN
+  country: in
 - name: Press Trust of India
   domain: ptinews.com
   enabled: true
@@ -2383,7 +2383,7 @@ sources:
   - politics
   - wire-agency
   - news
-  country: IN
+  country: in
 - name: Dawn
   domain: dawn.com
   enabled: true
@@ -2398,7 +2398,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PK
+  country: pk
   rss_url: https://www.dawn.com/feeds/home
 - name: The Express Tribune
   domain: tribune.com.pk
@@ -2414,7 +2414,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PK
+  country: pk
 - name: The News International
   domain: thenews.com.pk
   enabled: true
@@ -2429,7 +2429,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PK
+  country: pk
 - name: Geo News
   domain: geo.tv
   enabled: true
@@ -2444,7 +2444,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PK
+  country: pk
 - name: The Daily Star
   domain: thedailystar.net
   enabled: true
@@ -2459,7 +2459,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: BD
+  country: bd
 - name: Prothom Alo
   domain: prothomalo.com
   enabled: true
@@ -2474,7 +2474,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: BD
+  country: bd
 - name: Dhaka Tribune
   domain: dhakatribune.com
   enabled: true
@@ -2489,7 +2489,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: BD
+  country: bd
 - name: Daily Mirror (Sri Lanka)
   domain: dailymirror.lk
   enabled: true
@@ -2504,7 +2504,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: LK
+  country: lk
 - name: The Kathmandu Post
   domain: kathmandupost.com
   enabled: true
@@ -2519,7 +2519,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: NP
+  country: np
 - name: Hong Kong Free Press
   domain: hongkongfp.com
   enabled: true
@@ -2533,7 +2533,7 @@ sources:
   - independent
   - lean-center
   - news
-  country: HK
+  country: hk
 - name: Taipei Times
   domain: taipeitimes.com
   enabled: true
@@ -2548,7 +2548,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: TW
+  country: tw
 - name: Focus Taiwan (CNA)
   domain: focustaiwan.tw
   enabled: true
@@ -2563,7 +2563,7 @@ sources:
   - politics
   - wire-agency
   - news
-  country: TW
+  country: tw
 - name: United Daily News
   domain: udn.com
   enabled: true
@@ -2578,7 +2578,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: TW
+  country: tw
 - name: Nikkei
   domain: nikkei.com
   enabled: true
@@ -2592,7 +2592,7 @@ sources:
   - business
   - lean-center
   - news
-  country: JP
+  country: jp
 - name: The Sankei Shimbun
   domain: sankei.com
   enabled: true
@@ -2607,7 +2607,7 @@ sources:
   - politics
   - lean-right
   - news
-  country: JP
+  country: jp
 - name: The Korea Times
   domain: koreatimes.co.kr
   enabled: true
@@ -2622,7 +2622,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: KR
+  country: kr
 - name: The Chosun Ilbo
   domain: chosun.com
   enabled: true
@@ -2637,7 +2637,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: KR
+  country: kr
 - name: Korea JoongAng Daily
   domain: koreajoongangdaily.joins.com
   enabled: true
@@ -2652,7 +2652,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: KR
+  country: kr
 - name: The Hankyoreh
   domain: hani.co.kr
   enabled: true
@@ -2667,7 +2667,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: KR
+  country: kr
 - name: NK News
   domain: nknews.org
   enabled: true
@@ -2681,7 +2681,7 @@ sources:
   - analysis
   - lean-center
   - news
-  country: KR
+  country: kr
 - name: Kompas
   domain: kompas.com
   enabled: true
@@ -2696,7 +2696,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: ID
+  country: id
 - name: Tempo
   domain: tempo.co
   enabled: true
@@ -2710,7 +2710,7 @@ sources:
   - investigative
   - lean-center-left
   - news
-  country: ID
+  country: id
 - name: The Star (Malaysia)
   domain: thestar.com.my
   enabled: true
@@ -2725,7 +2725,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: MY
+  country: my
 - name: Malaysiakini
   domain: malaysiakini.com
   enabled: true
@@ -2739,7 +2739,7 @@ sources:
   - independent
   - lean-center-left
   - news
-  country: MY
+  country: my
 - name: New Straits Times
   domain: nst.com.my
   enabled: true
@@ -2754,7 +2754,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: MY
+  country: my
 - name: Free Malaysia Today
   domain: freemalaysiatoday.com
   enabled: true
@@ -2769,7 +2769,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: MY
+  country: my
 - name: CNA
   domain: channelnewsasia.com
   enabled: true
@@ -2784,7 +2784,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: SG
+  country: sg
 - name: Bangkok Post
   domain: bangkokpost.com
   enabled: true
@@ -2799,7 +2799,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: TH
+  country: th
 - name: The Nation (Thailand)
   domain: nationthailand.com
   enabled: true
@@ -2814,7 +2814,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: TH
+  country: th
 - name: Khaosod English
   domain: khaosodenglish.com
   enabled: true
@@ -2829,7 +2829,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: TH
+  country: th
 - name: Prachatai
   domain: prachatai.com
   enabled: true
@@ -2843,7 +2843,7 @@ sources:
   - rights
   - lean-left
   - news
-  country: TH
+  country: th
 - name: VnExpress
   domain: vnexpress.net
   enabled: true
@@ -2858,7 +2858,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: VN
+  country: vn
 - name: Tuoi Tre
   domain: tuoitre.vn
   enabled: true
@@ -2873,7 +2873,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: VN
+  country: vn
 - name: VietnamNet
   domain: vietnamnet.vn
   enabled: true
@@ -2888,7 +2888,7 @@ sources:
   - politics
   - state-media
   - news
-  country: VN
+  country: vn
 - name: Philippine Daily Inquirer
   domain: inquirer.net
   enabled: true
@@ -2903,7 +2903,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PH
+  country: ph
 - name: Rappler
   domain: rappler.com
   enabled: true
@@ -2917,7 +2917,7 @@ sources:
   - investigative
   - lean-center-left
   - news
-  country: PH
+  country: ph
 - name: The Philippine Star
   domain: philstar.com
   enabled: true
@@ -2932,7 +2932,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PH
+  country: ph
 - name: GMA News
   domain: gmanetwork.com
   enabled: true
@@ -2947,7 +2947,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PH
+  country: ph
 - name: The Irrawaddy
   domain: irrawaddy.com
   enabled: true
@@ -2961,7 +2961,7 @@ sources:
   - independent
   - lean-center
   - news
-  country: MM
+  country: mm
 - name: Myanmar Now
   domain: myanmar-now.org
   enabled: true
@@ -2975,7 +2975,7 @@ sources:
   - independent
   - lean-center
   - news
-  country: MM
+  country: mm
 - name: The Phnom Penh Post
   domain: phnompenhpost.com
   enabled: true
@@ -2990,7 +2990,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: KH
+  country: kh
 - name: Khmer Times
   domain: khmertimeskh.com
   enabled: true
@@ -3005,7 +3005,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: KH
+  country: kh
 - name: The Astana Times
   domain: astanatimes.com
   enabled: true
@@ -3020,7 +3020,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: KZ
+  country: kz
 - name: Tengrinews
   domain: tengrinews.kz
   enabled: true
@@ -3035,7 +3035,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: KZ
+  country: kz
 - name: Gazeta.uz
   domain: gazeta.uz
   enabled: true
@@ -3050,7 +3050,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: UZ
+  country: uz
 - name: 24.kg
   domain: 24.kg
   enabled: true
@@ -3065,7 +3065,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: KG
+  country: kg
 - name: AKIpress
   domain: akipress.com
   enabled: true
@@ -3080,7 +3080,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: KG
+  country: kg
 - name: Asia-Plus
   domain: asiaplustj.info
   enabled: true
@@ -3095,7 +3095,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: TJ
+  country: tj
 - name: Daily Maverick
   domain: dailymaverick.co.za
   enabled: true
@@ -3109,7 +3109,7 @@ sources:
   - investigative
   - lean-center
   - news
-  country: ZA
+  country: za
 - name: IOL
   domain: iol.co.za
   enabled: true
@@ -3124,7 +3124,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: ZA
+  country: za
 - name: SABC News
   domain: sabcnews.com
   enabled: true
@@ -3139,7 +3139,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: ZA
+  country: za
 - name: The Punch
   domain: punchng.com
   enabled: true
@@ -3154,7 +3154,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: NG
+  country: ng
 - name: Vanguard
   domain: vanguardngr.com
   enabled: true
@@ -3169,7 +3169,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: NG
+  country: ng
 - name: The Guardian Nigeria
   domain: guardian.ng
   enabled: true
@@ -3184,7 +3184,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: NG
+  country: ng
 - name: TheCable
   domain: thecable.ng
   enabled: true
@@ -3199,7 +3199,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: NG
+  country: ng
 - name: Channels Television
   domain: channelstv.com
   enabled: true
@@ -3214,7 +3214,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: NG
+  country: ng
 - name: Daily Nation
   domain: nation.africa
   enabled: true
@@ -3229,7 +3229,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: KE
+  country: ke
 - name: The Standard (Kenya)
   domain: standardmedia.co.ke
   enabled: true
@@ -3244,7 +3244,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: KE
+  country: ke
 - name: KBC
   domain: kbc.co.ke
   enabled: true
@@ -3259,7 +3259,7 @@ sources:
   - politics
   - public-broadcaster
   - news
-  country: KE
+  country: ke
 - name: Graphic Online
   domain: graphic.com.gh
   enabled: true
@@ -3274,7 +3274,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: GH
+  country: gh
 - name: MyJoyOnline
   domain: myjoyonline.com
   enabled: true
@@ -3289,7 +3289,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: GH
+  country: gh
 - name: Addis Standard
   domain: addisstandard.com
   enabled: true
@@ -3303,7 +3303,7 @@ sources:
   - independent
   - lean-center
   - news
-  country: ET
+  country: et
 - name: The Reporter (Ethiopia)
   domain: thereporterethiopia.com
   enabled: true
@@ -3318,7 +3318,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: ET
+  country: et
 - name: Fana Broadcasting
   domain: fanabc.com
   enabled: true
@@ -3333,7 +3333,7 @@ sources:
   - politics
   - state-media
   - news
-  country: ET
+  country: et
 - name: Hespress
   domain: hespress.com
   enabled: true
@@ -3348,7 +3348,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: MA
+  country: ma
 - name: Morocco World News
   domain: moroccoworldnews.com
   enabled: true
@@ -3363,7 +3363,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: MA
+  country: ma
 - name: Le360
   domain: le360.ma
   enabled: true
@@ -3378,7 +3378,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: MA
+  country: ma
 - name: El Watan
   domain: elwatan-dz.com
   enabled: true
@@ -3393,7 +3393,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: DZ
+  country: dz
 - name: Tout Sur l'Algérie (TSA)
   domain: tsa-algerie.com
   enabled: true
@@ -3408,7 +3408,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: DZ
+  country: dz
 - name: Business News (Tunisia)
   domain: businessnews.com.tn
   enabled: true
@@ -3422,7 +3422,7 @@ sources:
   - business
   - lean-center
   - news
-  country: TN
+  country: tn
 - name: Tunisie Numérique
   domain: tunisienumerique.com
   enabled: true
@@ -3437,7 +3437,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: TN
+  country: tn
 - name: Seneweb
   domain: seneweb.com
   enabled: true
@@ -3452,7 +3452,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: SN
+  country: sn
 - name: Agence de Presse Sénégalaise
   domain: aps.sn
   enabled: true
@@ -3468,7 +3468,7 @@ sources:
   - state-media
   - wire-agency
   - news
-  country: SN
+  country: sn
 - name: Abidjan.net
   domain: abidjan.net
   enabled: true
@@ -3483,7 +3483,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: CI
+  country: ci
 - name: Actualité.cd
   domain: actualite.cd
   enabled: true
@@ -3498,7 +3498,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: CD
+  country: cd
 - name: Radio Okapi
   domain: radiookapi.net
   enabled: true
@@ -3513,7 +3513,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: CD
+  country: cd
 - name: The Citizen (Tanzania)
   domain: thecitizen.co.tz
   enabled: true
@@ -3528,7 +3528,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: TZ
+  country: tz
 - name: Daily Monitor
   domain: monitor.co.ug
   enabled: true
@@ -3543,7 +3543,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: UG
+  country: ug
 - name: New Vision
   domain: newvision.co.ug
   enabled: true
@@ -3558,7 +3558,7 @@ sources:
   - politics
   - state-media
   - news
-  country: UG
+  country: ug
 - name: NewsDay (Zimbabwe)
   domain: newsday.co.zw
   enabled: true
@@ -3573,7 +3573,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: ZW
+  country: zw
 - name: The Herald (Zimbabwe)
   domain: herald.co.zw
   enabled: true
@@ -3588,7 +3588,7 @@ sources:
   - politics
   - state-media
   - news
-  country: ZW
+  country: zw
 - name: The New Times (Rwanda)
   domain: newtimes.co.rw
   enabled: true
@@ -3603,7 +3603,7 @@ sources:
   - politics
   - state-media
   - news
-  country: RW
+  country: rw
 - name: Veja
   domain: veja.abril.com.br
   enabled: true
@@ -3618,7 +3618,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: BR
+  country: br
 - name: CartaCapital
   domain: cartacapital.com.br
   enabled: true
@@ -3632,7 +3632,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: BR
+  country: br
 - name: The Brazilian Report
   domain: brazilian.report
   enabled: true
@@ -3646,7 +3646,7 @@ sources:
   - analysis
   - lean-center
   - news
-  country: BR
+  country: br
 - name: Reforma
   domain: reforma.com
   enabled: true
@@ -3661,7 +3661,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: MX
+  country: mx
 - name: La Jornada
   domain: jornada.com.mx
   enabled: true
@@ -3676,7 +3676,7 @@ sources:
   - politics
   - lean-left
   - news
-  country: MX
+  country: mx
 - name: Proceso
   domain: proceso.com.mx
   enabled: true
@@ -3690,7 +3690,7 @@ sources:
   - investigative
   - lean-center-left
   - news
-  country: MX
+  country: mx
 - name: Animal Político
   domain: animalpolitico.com
   enabled: true
@@ -3704,7 +3704,7 @@ sources:
   - investigative
   - lean-center
   - news
-  country: MX
+  country: mx
 - name: Aristegui Noticias
   domain: aristeguinoticias.com
   enabled: true
@@ -3719,7 +3719,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: MX
+  country: mx
 - name: Emol (El Mercurio)
   domain: emol.com
   enabled: true
@@ -3734,7 +3734,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: CL
+  country: cl
 - name: BioBioChile
   domain: biobiochile.cl
   enabled: true
@@ -3749,7 +3749,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: CL
+  country: cl
 - name: El Espectador
   domain: elespectador.com
   enabled: true
@@ -3764,7 +3764,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: CO
+  country: co
 - name: El Nacional
   domain: elnacional.com
   enabled: true
@@ -3778,7 +3778,7 @@ sources:
   - opposition
   - lean-center
   - news
-  country: VE
+  country: ve
 - name: teleSUR English
   domain: telesurenglish.net
   enabled: true
@@ -3793,7 +3793,7 @@ sources:
   - politics
   - state-media
   - news
-  country: VE
+  country: ve
 - name: Granma
   domain: en.granma.cu
   enabled: true
@@ -3808,7 +3808,7 @@ sources:
   - politics
   - state-media
   - news
-  country: CU
+  country: cu
 - name: 14ymedio
   domain: 14ymedio.com
   enabled: true
@@ -3822,7 +3822,7 @@ sources:
   - independent
   - lean-center
   - news
-  country: CU
+  country: cu
 - name: El País (Uruguay)
   domain: elpais.com.uy
   enabled: true
@@ -3837,7 +3837,7 @@ sources:
   - politics
   - lean-center-right
   - news
-  country: UY
+  country: uy
 - name: la diaria
   domain: ladiaria.com.uy
   enabled: true
@@ -3852,7 +3852,7 @@ sources:
   - politics
   - lean-center-left
   - news
-  country: UY
+  country: uy
 - name: El Deber
   domain: eldeber.com.bo
   enabled: true
@@ -3867,7 +3867,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: BO
+  country: bo
 - name: ABC Color
   domain: abc.com.py
   enabled: true
@@ -3882,7 +3882,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PY
+  country: py
 - name: El Universo
   domain: eluniverso.com
   enabled: true
@@ -3897,7 +3897,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: EC
+  country: ec
 - name: Primicias
   domain: primicias.ec
   enabled: true
@@ -3912,7 +3912,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: EC
+  country: ec
 - name: Prensa Libre
   domain: prensalibre.com
   enabled: true
@@ -3927,7 +3927,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: GT
+  country: gt
 - name: Plaza Pública
   domain: plazapublica.com.gt
   enabled: true
@@ -3941,7 +3941,7 @@ sources:
   - investigative
   - lean-center
   - news
-  country: GT
+  country: gt
 - name: El Faro
   domain: elfaro.net
   enabled: true
@@ -3955,7 +3955,7 @@ sources:
   - investigative
   - lean-center
   - news
-  country: SV
+  country: sv
 - name: La Prensa (Honduras)
   domain: laprensa.hn
   enabled: true
@@ -3970,7 +3970,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: HN
+  country: hn
 - name: Confidencial
   domain: confidencial.digital
   enabled: true
@@ -3984,7 +3984,7 @@ sources:
   - independent
   - lean-center
   - news
-  country: NI
+  country: ni
 - name: La Nación (Costa Rica)
   domain: nacion.com
   enabled: true
@@ -3999,7 +3999,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: CR
+  country: cr
 - name: The Tico Times
   domain: ticotimes.net
   enabled: true
@@ -4014,7 +4014,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: CR
+  country: cr
 - name: La Prensa (Panama)
   domain: prensa.com
   enabled: true
@@ -4029,7 +4029,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: PA
+  country: pa
 - name: Diario Libre
   domain: diariolibre.com
   enabled: true
@@ -4044,7 +4044,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: DO
+  country: do
 - name: The Gleaner
   domain: jamaica-gleaner.com
   enabled: true
@@ -4059,7 +4059,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: JM
+  country: jm
 - name: Jamaica Observer
   domain: jamaicaobserver.com
   enabled: true
@@ -4074,7 +4074,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: JM
+  country: jm
 - name: Trinidad and Tobago Guardian
   domain: guardian.co.tt
   enabled: true
@@ -4089,7 +4089,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: TT
+  country: tt
 - name: Le Nouvelliste
   domain: lenouvelliste.com
   enabled: true
@@ -4104,7 +4104,7 @@ sources:
   - politics
   - lean-center
   - news
-  country: HT
+  country: ht
 - name: Rest of World
   domain: restofworld.org
   enabled: true

@@ -300,5 +300,18 @@
   "▶ Online": "▶ En ligne",
   "⏸ Offline": "⏸ Hors ligne",
   "Back online — network requests allowed again.": "De retour en ligne — les requêtes réseau sont de nouveau autorisées.",
-  "Offline — every new network request is refused. One in-flight request may finish.": "Hors ligne — toute nouvelle requête réseau est refusée. Une requête déjà en cours peut se terminer."
+  "Offline — every new network request is refused. One in-flight request may finish.": "Hors ligne — toute nouvelle requête réseau est refusée. Une requête déjà en cours peut se terminer.",
+  "Regional balance": "Équilibre régional",
+  "(floors are working targets from configs/catalog_targets.yml)": "(les seuils sont des objectifs de travail, définis dans configs/catalog_targets.yml)",
+  "Sources / floor": "Sources / seuil",
+  "Countries / floor": "Pays / seuil",
+  "below floor": "sous le seuil",
+  "Region": "Région",
+  "Country": "Pays",
+  "Enabled": "Activées",
+  "Topic keywords (source tags)": "Mots-clés thématiques (étiquettes des sources)",
+  "filter countries by name, code or topic…": "filtrer les pays par nom, code ou thème…",
+  "Click a country or a topic keyword": "Cliquez sur un pays ou un mot-clé thématique",
+  "No matching countries.": "Aucun pays correspondant.",
+  "every listed country has at least one source": "chaque pays répertorié a au moins une source"
 }

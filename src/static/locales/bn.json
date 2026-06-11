@@ -300,5 +300,18 @@
   "▶ Online": "▶ অনলাইন",
   "⏸ Offline": "⏸ অফলাইন",
   "Back online — network requests allowed again.": "আবার অনলাইন — নেটওয়ার্ক অনুরোধ আবার অনুমোদিত।",
-  "Offline — every new network request is refused. One in-flight request may finish.": "অফলাইন — প্রতিটি নতুন নেটওয়ার্ক অনুরোধ প্রত্যাখ্যাত। চলমান একটি অনুরোধ শেষ হতে পারে।"
+  "Offline — every new network request is refused. One in-flight request may finish.": "অফলাইন — প্রতিটি নতুন নেটওয়ার্ক অনুরোধ প্রত্যাখ্যাত। চলমান একটি অনুরোধ শেষ হতে পারে।",
+  "Regional balance": "আঞ্চলিক ভারসাম্য",
+  "(floors are working targets from configs/catalog_targets.yml)": "(সীমাগুলি configs/catalog_targets.yml-এর কাজের লক্ষ্য)",
+  "Sources / floor": "উৎস / সীমা",
+  "Countries / floor": "দেশ / সীমা",
+  "below floor": "সীমার নিচে",
+  "Region": "অঞ্চল",
+  "Country": "দেশ",
+  "Enabled": "সক্রিয়",
+  "Topic keywords (source tags)": "বিষয় কীওয়ার্ড (উৎসের ট্যাগ)",
+  "filter countries by name, code or topic…": "নাম, কোড বা বিষয় দিয়ে দেশ ছাঁকুন…",
+  "Click a country or a topic keyword": "একটি দেশ বা বিষয় কীওয়ার্ডে ক্লিক করুন",
+  "No matching countries.": "মিলে যাওয়া কোনো দেশ নেই।",
+  "every listed country has at least one source": "তালিকাভুক্ত প্রতিটি দেশের অন্তত একটি উৎস আছে"
 }

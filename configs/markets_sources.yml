@@ -27,7 +27,7 @@ sources:
     domain: nyse.com
     source_type: stock_exchange
     region: north-america
-    country: US
+    country: us
     language: en
     reliability_score: 9
     tags: [markets, stock-exchange, equities, americas]
@@ -35,7 +35,7 @@ sources:
     domain: nasdaq.com
     source_type: stock_exchange
     region: north-america
-    country: US
+    country: us
     language: en
     reliability_score: 9
     tags: [markets, stock-exchange, equities, americas]
@@ -43,7 +43,7 @@ sources:
     domain: cboe.com
     source_type: stock_exchange
     region: north-america
-    country: US
+    country: us
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, options, americas]
@@ -51,7 +51,7 @@ sources:
     domain: tsx.com
     source_type: stock_exchange
     region: north-america
-    country: CA
+    country: ca
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, americas]
@@ -59,7 +59,7 @@ sources:
     domain: b3.com.br
     source_type: stock_exchange
     region: south-america
-    country: BR
+    country: br
     language: pt
     reliability_score: 8
     tags: [markets, stock-exchange, equities, americas]
@@ -67,7 +67,7 @@ sources:
     domain: bmv.com.mx
     source_type: stock_exchange
     region: north-america
-    country: MX
+    country: mx
     language: es
     reliability_score: 8
     tags: [markets, stock-exchange, equities, americas]
@@ -75,7 +75,7 @@ sources:
     domain: bolsadesantiago.com
     source_type: stock_exchange
     region: south-america
-    country: CL
+    country: cl
     language: es
     reliability_score: 7
     tags: [markets, stock-exchange, equities, americas]
@@ -83,7 +83,7 @@ sources:
     domain: bvc.com.co
     source_type: stock_exchange
     region: south-america
-    country: CO
+    country: co
     language: es
     reliability_score: 7
     tags: [markets, stock-exchange, equities, americas]
@@ -91,7 +91,7 @@ sources:
     domain: bvl.com.pe
     source_type: stock_exchange
     region: south-america
-    country: PE
+    country: pe
     language: es
     reliability_score: 7
     tags: [markets, stock-exchange, equities, americas]
@@ -99,7 +99,7 @@ sources:
     domain: byma.com.ar
     source_type: stock_exchange
     region: south-america
-    country: AR
+    country: ar
     language: es
     reliability_score: 7
     tags: [markets, stock-exchange, equities, americas]
@@ -107,7 +107,7 @@ sources:
     domain: bsx.com
     source_type: stock_exchange
     region: north-america
-    country: BM
+    country: bm
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, americas]
@@ -115,7 +115,7 @@ sources:
     domain: jamstockex.com
     source_type: stock_exchange
     region: north-america
-    country: JM
+    country: jm
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, americas]
@@ -123,7 +123,7 @@ sources:
     domain: stockex.co.tt
     source_type: stock_exchange
     region: north-america
-    country: TT
+    country: tt
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, americas]
@@ -135,7 +135,7 @@ sources:
     domain: londonstockexchange.com
     source_type: stock_exchange
     region: europe
-    country: GB
+    country: gb
     language: en
     reliability_score: 9
     tags: [markets, stock-exchange, equities, europe]
@@ -143,7 +143,7 @@ sources:
     domain: euronext.com
     source_type: stock_exchange
     region: europe
-    country: NL
+    country: nl
     language: en
     reliability_score: 9
     tags: [markets, stock-exchange, equities, europe]
@@ -151,7 +151,7 @@ sources:
     domain: deutsche-boerse.com
     source_type: stock_exchange
     region: europe
-    country: DE
+    country: de
     language: en
     reliability_score: 9
     tags: [markets, stock-exchange, equities, europe]
@@ -159,7 +159,7 @@ sources:
     domain: boerse-frankfurt.de
     source_type: stock_exchange
     region: europe
-    country: DE
+    country: de
     language: de
     reliability_score: 8
     tags: [markets, stock-exchange, equities, europe]
@@ -167,7 +167,7 @@ sources:
     domain: six-group.com
     source_type: stock_exchange
     region: europe
-    country: CH
+    country: ch
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, europe]
@@ -175,7 +175,7 @@ sources:
     domain: nasdaqomxnordic.com
     source_type: stock_exchange
     region: europe
-    country: SE
+    country: se
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, europe, nordic]
@@ -183,7 +183,7 @@ sources:
     domain: bolsamadrid.es
     source_type: stock_exchange
     region: europe
-    country: ES
+    country: es
     language: es
     reliability_score: 8
     tags: [markets, stock-exchange, equities, europe]
@@ -191,7 +191,7 @@ sources:
     domain: borsaitaliana.it
     source_type: stock_exchange
     region: europe
-    country: IT
+    country: it
     language: it
     reliability_score: 8
     tags: [markets, stock-exchange, equities, europe]
@@ -199,7 +199,7 @@ sources:
     domain: wienerborse.at
     source_type: stock_exchange
     region: europe
-    country: AT
+    country: at
     language: de
     reliability_score: 7
     tags: [markets, stock-exchange, equities, europe]
@@ -207,7 +207,7 @@ sources:
     domain: gpw.pl
     source_type: stock_exchange
     region: europe
-    country: PL
+    country: pl
     language: pl
     reliability_score: 7
     tags: [markets, stock-exchange, equities, europe]
@@ -215,7 +215,7 @@ sources:
     domain: borsaistanbul.com
     source_type: stock_exchange
     region: europe
-    country: TR
+    country: tr
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, europe]
@@ -223,7 +223,7 @@ sources:
     domain: moex.com
     source_type: stock_exchange
     region: europe
-    country: RU
+    country: ru
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, europe]
@@ -231,7 +231,7 @@ sources:
     domain: athexgroup.gr
     source_type: stock_exchange
     region: europe
-    country: GR
+    country: gr
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, europe]
@@ -239,7 +239,7 @@ sources:
     domain: bse.hu
     source_type: stock_exchange
     region: europe
-    country: HU
+    country: hu
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, europe]
@@ -247,7 +247,7 @@ sources:
     domain: pse.cz
     source_type: stock_exchange
     region: europe
-    country: CZ
+    country: cz
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, europe]
@@ -255,7 +255,7 @@ sources:
     domain: bvb.ro
     source_type: stock_exchange
     region: europe
-    country: RO
+    country: ro
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, europe]
@@ -263,7 +263,7 @@ sources:
     domain: bourse.lu
     source_type: stock_exchange
     region: europe
-    country: LU
+    country: lu
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, bonds, europe]
@@ -271,7 +271,7 @@ sources:
     domain: zse.hr
     source_type: stock_exchange
     region: europe
-    country: HR
+    country: hr
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, europe]
@@ -279,7 +279,7 @@ sources:
     domain: bse-sofia.bg
     source_type: stock_exchange
     region: europe
-    country: BG
+    country: bg
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, europe]
@@ -291,7 +291,7 @@ sources:
     domain: jpx.co.jp
     source_type: stock_exchange
     region: asia
-    country: JP
+    country: jp
     language: en
     reliability_score: 9
     tags: [markets, stock-exchange, equities, derivatives, asia]
@@ -299,7 +299,7 @@ sources:
     domain: sse.com.cn
     source_type: stock_exchange
     region: asia
-    country: CN
+    country: cn
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, asia]
@@ -307,7 +307,7 @@ sources:
     domain: szse.cn
     source_type: stock_exchange
     region: asia
-    country: CN
+    country: cn
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, asia]
@@ -315,7 +315,7 @@ sources:
     domain: hkex.com.hk
     source_type: stock_exchange
     region: asia
-    country: HK
+    country: hk
     language: en
     reliability_score: 9
     tags: [markets, stock-exchange, equities, asia]
@@ -323,7 +323,7 @@ sources:
     domain: nseindia.com
     source_type: stock_exchange
     region: asia
-    country: IN
+    country: in
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, asia]
@@ -331,7 +331,7 @@ sources:
     domain: bseindia.com
     source_type: stock_exchange
     region: asia
-    country: IN
+    country: in
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, asia]
@@ -339,7 +339,7 @@ sources:
     domain: krx.co.kr
     source_type: stock_exchange
     region: asia
-    country: KR
+    country: kr
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, asia]
@@ -347,7 +347,7 @@ sources:
     domain: twse.com.tw
     source_type: stock_exchange
     region: asia
-    country: TW
+    country: tw
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, asia]
@@ -355,7 +355,7 @@ sources:
     domain: sgx.com
     source_type: stock_exchange
     region: asia
-    country: SG
+    country: sg
     language: en
     reliability_score: 9
     tags: [markets, stock-exchange, equities, commodities, asia]
@@ -363,7 +363,7 @@ sources:
     domain: asx.com.au
     source_type: stock_exchange
     region: oceania
-    country: AU
+    country: au
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, oceania]
@@ -371,7 +371,7 @@ sources:
     domain: bursamalaysia.com
     source_type: stock_exchange
     region: asia
-    country: MY
+    country: my
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, commodities, asia]
@@ -379,7 +379,7 @@ sources:
     domain: idx.co.id
     source_type: stock_exchange
     region: asia
-    country: ID
+    country: id
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, asia]
@@ -387,7 +387,7 @@ sources:
     domain: set.or.th
     source_type: stock_exchange
     region: asia
-    country: TH
+    country: th
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, asia]
@@ -395,7 +395,7 @@ sources:
     domain: pse.com.ph
     source_type: stock_exchange
     region: asia
-    country: PH
+    country: ph
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, asia]
@@ -403,7 +403,7 @@ sources:
     domain: hsx.vn
     source_type: stock_exchange
     region: asia
-    country: VN
+    country: vn
     language: vi
     reliability_score: 6
     tags: [markets, stock-exchange, equities, asia]
@@ -411,7 +411,7 @@ sources:
     domain: nzx.com
     source_type: stock_exchange
     region: oceania
-    country: NZ
+    country: nz
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, oceania]
@@ -419,7 +419,7 @@ sources:
     domain: psx.com.pk
     source_type: stock_exchange
     region: asia
-    country: PK
+    country: pk
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, asia]
@@ -427,7 +427,7 @@ sources:
     domain: dsebd.org
     source_type: stock_exchange
     region: asia
-    country: BD
+    country: bd
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, asia]
@@ -435,7 +435,7 @@ sources:
     domain: cse.lk
     source_type: stock_exchange
     region: asia
-    country: LK
+    country: lk
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, asia]
@@ -443,7 +443,7 @@ sources:
     domain: kase.kz
     source_type: stock_exchange
     region: asia
-    country: KZ
+    country: kz
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, asia]
@@ -455,7 +455,7 @@ sources:
     domain: saudiexchange.sa
     source_type: stock_exchange
     region: middle-east
-    country: SA
+    country: sa
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, middle-east]
@@ -463,7 +463,7 @@ sources:
     domain: adx.ae
     source_type: stock_exchange
     region: middle-east
-    country: AE
+    country: ae
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, middle-east]
@@ -471,7 +471,7 @@ sources:
     domain: dfm.ae
     source_type: stock_exchange
     region: middle-east
-    country: AE
+    country: ae
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, middle-east]
@@ -479,7 +479,7 @@ sources:
     domain: qe.com.qa
     source_type: stock_exchange
     region: middle-east
-    country: QA
+    country: qa
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, middle-east]
@@ -487,7 +487,7 @@ sources:
     domain: boursakuwait.com.kw
     source_type: stock_exchange
     region: middle-east
-    country: KW
+    country: kw
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, middle-east]
@@ -495,7 +495,7 @@ sources:
     domain: bahrainbourse.com
     source_type: stock_exchange
     region: middle-east
-    country: BH
+    country: bh
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, middle-east]
@@ -503,7 +503,7 @@ sources:
     domain: tase.co.il
     source_type: stock_exchange
     region: middle-east
-    country: IL
+    country: il
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, middle-east]
@@ -511,7 +511,7 @@ sources:
     domain: ase.com.jo
     source_type: stock_exchange
     region: middle-east
-    country: JO
+    country: jo
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, middle-east]
@@ -519,7 +519,7 @@ sources:
     domain: egx.com.eg
     source_type: stock_exchange
     region: africa
-    country: EG
+    country: eg
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, africa]
@@ -527,7 +527,7 @@ sources:
     domain: jse.co.za
     source_type: stock_exchange
     region: africa
-    country: ZA
+    country: za
     language: en
     reliability_score: 8
     tags: [markets, stock-exchange, equities, commodities, africa]
@@ -535,7 +535,7 @@ sources:
     domain: ngxgroup.com
     source_type: stock_exchange
     region: africa
-    country: NG
+    country: ng
     language: en
     reliability_score: 7
     tags: [markets, stock-exchange, equities, africa]
@@ -543,7 +543,7 @@ sources:
     domain: nse.co.ke
     source_type: stock_exchange
     region: africa
-    country: KE
+    country: ke
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, africa]
@@ -551,7 +551,7 @@ sources:
     domain: casablanca-bourse.com
     source_type: stock_exchange
     region: africa
-    country: MA
+    country: ma
     language: fr
     reliability_score: 6
     tags: [markets, stock-exchange, equities, africa]
@@ -559,7 +559,7 @@ sources:
     domain: brvm.org
     source_type: stock_exchange
     region: africa
-    country: CI
+    country: ci
     language: fr
     reliability_score: 6
     tags: [markets, stock-exchange, equities, africa]
@@ -567,7 +567,7 @@ sources:
     domain: stockexchangeofmauritius.com
     source_type: stock_exchange
     region: africa
-    country: MU
+    country: mu
     language: en
     reliability_score: 6
     tags: [markets, stock-exchange, equities, africa]
@@ -579,7 +579,7 @@ sources:
     domain: cmegroup.com
     source_type: commodity
     region: north-america
-    country: US
+    country: us
     language: en
     reliability_score: 9
     tags: [markets, commodity, futures, metals, energy, agriculture]
@@ -587,7 +587,7 @@ sources:
     domain: ice.com
     source_type: commodity
     region: north-america
-    country: US
+    country: us
     language: en
     reliability_score: 9
     tags: [markets, commodity, futures, energy, softs]
@@ -595,7 +595,7 @@ sources:
     domain: lme.com
     source_type: commodity
     region: europe
-    country: GB
+    country: gb
     language: en
     reliability_score: 9
     tags: [markets, commodity, metals, base-metals, futures]
@@ -603,7 +603,7 @@ sources:
     domain: shfe.com.cn
     source_type: commodity
     region: asia
-    country: CN
+    country: cn
     language: en
     reliability_score: 8
     tags: [markets, commodity, metals, energy, futures]
@@ -611,7 +611,7 @@ sources:
     domain: dce.com.cn
     source_type: commodity
     region: asia
-    country: CN
+    country: cn
     language: en
     reliability_score: 8
     tags: [markets, commodity, agriculture, futures]
@@ -619,7 +619,7 @@ sources:
     domain: czce.com.cn
     source_type: commodity
     region: asia
-    country: CN
+    country: cn
     language: en
     reliability_score: 7
     tags: [markets, commodity, agriculture, futures]
@@ -627,7 +627,7 @@ sources:
     domain: ine.cn
     source_type: commodity
     region: asia
-    country: CN
+    country: cn
     language: en
     reliability_score: 7
     tags: [markets, commodity, energy, crude-oil, futures]
@@ -635,7 +635,7 @@ sources:
     domain: gfex.com.cn
     source_type: commodity
     region: asia
-    country: CN
+    country: cn
     language: en
     reliability_score: 7
     tags: [markets, commodity, rare-earth, industrial-silicon, futures]
@@ -643,7 +643,7 @@ sources:
     domain: mcxindia.com
     source_type: commodity
     region: asia
-    country: IN
+    country: in
     language: en
     reliability_score: 7
     tags: [markets, commodity, metals, energy, futures]
@@ -651,7 +651,7 @@ sources:
     domain: ncdex.com
     source_type: commodity
     region: asia
-    country: IN
+    country: in
     language: en
     reliability_score: 7
     tags: [markets, commodity, agriculture, futures]
@@ -659,7 +659,7 @@ sources:
     domain: eurex.com
     source_type: commodity
     region: europe
-    country: DE
+    country: de
     language: en
     reliability_score: 8
     tags: [markets, derivatives, futures, europe]
@@ -667,7 +667,7 @@ sources:
     domain: mgex.com
     source_type: commodity
     region: north-america
-    country: US
+    country: us
     language: en
     reliability_score: 6
     tags: [markets, commodity, agriculture, grain, futures]
@@ -675,7 +675,7 @@ sources:
     domain: matbarofex.com.ar
     source_type: commodity
     region: south-america
-    country: AR
+    country: ar
     language: es
     reliability_score: 6
     tags: [markets, commodity, agriculture, futures]
@@ -687,7 +687,7 @@ sources:
     domain: metal.com
     source_type: commodity
     region: asia
-    country: CN
+    country: cn
     language: en
     reliability_score: 7
     tags: [markets, commodity, rare-earth, metals, prices]
@@ -695,7 +695,7 @@ sources:
     domain: asianmetal.com
     source_type: commodity
     region: asia
-    country: CN
+    country: cn
     language: en
     reliability_score: 6
     tags: [markets, commodity, rare-earth, metals, prices]
@@ -703,7 +703,7 @@ sources:
     domain: kitco.com
     source_type: commodity
     region: north-america
-    country: CA
+    country: ca
     language: en
     reliability_score: 7
     tags: [markets, commodity, precious-metals, gold, prices]
@@ -711,7 +711,7 @@ sources:
     domain: tradingeconomics.com
     source_type: commodity
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 7
     tags: [markets, commodity, prices, indicators, data]
@@ -719,7 +719,7 @@ sources:
     domain: usgs.gov
     source_type: commodity
     region: north-america
-    country: US
+    country: us
     language: en
     reliability_score: 9
     tags: [markets, commodity, rare-earth, minerals, official-data]
@@ -727,7 +727,7 @@ sources:
     domain: eia.gov
     source_type: commodity
     region: north-america
-    country: US
+    country: us
     language: en
     reliability_score: 9
     tags: [markets, commodity, energy, official-data]
@@ -735,7 +735,7 @@ sources:
     domain: worldbank.org
     source_type: commodity
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 9
     tags: [markets, commodity, prices, official-data]
@@ -743,7 +743,7 @@ sources:
     domain: iea.org
     source_type: commodity
     region: europe
-    country: FR
+    country: fr
     language: en
     reliability_score: 9
     tags: [markets, commodity, energy, official-data]
@@ -751,7 +751,7 @@ sources:
     domain: opec.org
     source_type: commodity
     region: middle-east
-    country: AT
+    country: at
     language: en
     reliability_score: 8
     tags: [markets, commodity, energy, crude-oil, official-data]
@@ -759,7 +759,7 @@ sources:
     domain: fastmarkets.com
     source_type: commodity
     region: europe
-    country: GB
+    country: gb
     language: en
     reliability_score: 7
     tags: [markets, commodity, rare-earth, metals, prices]
@@ -767,7 +767,7 @@ sources:
     domain: argusmedia.com
     source_type: commodity
     region: europe
-    country: GB
+    country: gb
     language: en
     reliability_score: 7
     tags: [markets, commodity, energy, metals, prices]
@@ -775,7 +775,7 @@ sources:
     domain: benchmarkminerals.com
     source_type: commodity
     region: europe
-    country: GB
+    country: gb
     language: en
     reliability_score: 7
     tags: [markets, commodity, rare-earth, battery-metals, prices]
@@ -783,7 +783,7 @@ sources:
     domain: spglobal.com
     source_type: commodity
     region: north-america
-    country: US
+    country: us
     language: en
     reliability_score: 8
     tags: [markets, commodity, energy, metals, prices]
@@ -791,7 +791,7 @@ sources:
     domain: mining.com
     source_type: commodity
     region: north-america
-    country: CA
+    country: ca
     language: en
     reliability_score: 6
     tags: [markets, commodity, mining, metals, news]
@@ -799,7 +799,7 @@ sources:
     domain: northernminer.com
     source_type: commodity
     region: north-america
-    country: CA
+    country: ca
     language: en
     reliability_score: 6
     tags: [markets, commodity, mining, metals, news]
@@ -807,7 +807,7 @@ sources:
     domain: adamasintel.com
     source_type: commodity
     region: north-america
-    country: CA
+    country: ca
     language: en
     reliability_score: 6
     tags: [markets, commodity, rare-earth, intelligence]
@@ -819,7 +819,7 @@ sources:
     domain: bloomberg.com
     source_type: financial
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 8
     tags: [markets, financial, news, data]
@@ -827,7 +827,7 @@ sources:
     domain: reuters.com
     source_type: financial
     region: global
-    country: GB
+    country: gb
     language: en
     reliability_score: 9
     tags: [markets, financial, news, data]
@@ -835,7 +835,7 @@ sources:
     domain: ft.com
     source_type: financial
     region: global
-    country: GB
+    country: gb
     language: en
     reliability_score: 9
     tags: [markets, financial, news]
@@ -843,7 +843,7 @@ sources:
     domain: wsj.com
     source_type: financial
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 8
     tags: [markets, financial, news]
@@ -851,7 +851,7 @@ sources:
     domain: cnbc.com
     source_type: financial
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 7
     tags: [markets, financial, news]
@@ -859,7 +859,7 @@ sources:
     domain: marketwatch.com
     source_type: financial
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 7
     tags: [markets, financial, news, data]
@@ -867,7 +867,7 @@ sources:
     domain: finance.yahoo.com
     source_type: financial
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 7
     tags: [markets, financial, news, data, quotes]
@@ -875,7 +875,7 @@ sources:
     domain: investing.com
     source_type: financial
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 7
     tags: [markets, financial, data, quotes, commodities]
@@ -883,7 +883,7 @@ sources:
     domain: seekingalpha.com
     source_type: financial
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 6
     tags: [markets, financial, analysis]
@@ -891,7 +891,7 @@ sources:
     domain: barrons.com
     source_type: financial
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 7
     tags: [markets, financial, news, analysis]
@@ -899,7 +899,7 @@ sources:
     domain: morningstar.com
     source_type: financial
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 7
     tags: [markets, financial, data, research]
@@ -907,7 +907,7 @@ sources:
     domain: asia.nikkei.com
     source_type: financial
     region: asia
-    country: JP
+    country: jp
     language: en
     reliability_score: 8
     tags: [markets, financial, news, asia]
@@ -915,7 +915,7 @@ sources:
     domain: caixinglobal.com
     source_type: financial
     region: asia
-    country: CN
+    country: cn
     language: en
     reliability_score: 7
     tags: [markets, financial, news, asia]
@@ -923,7 +923,7 @@ sources:
     domain: economictimes.indiatimes.com
     source_type: financial
     region: asia
-    country: IN
+    country: in
     language: en
     reliability_score: 7
     tags: [markets, financial, news, asia]
@@ -931,7 +931,7 @@ sources:
     domain: moneycontrol.com
     source_type: financial
     region: asia
-    country: IN
+    country: in
     language: en
     reliability_score: 6
     tags: [markets, financial, news, data, asia]
@@ -939,7 +939,7 @@ sources:
     domain: benzinga.com
     source_type: financial
     region: global
-    country: US
+    country: us
     language: en
     reliability_score: 6
     tags: [markets, financial, news]

@@ -826,6 +826,20 @@ Any future mobile/remote-access work must start from this ruling.
 
 ## KEY POINT for 0.0.9 — de-US-centre the default source catalog (maintainer-flagged)
 
+> **STATUS (2026-06-11): first batch SHIPPED.** Root cause found: the "US = 1,553"
+> inflation was overwhelmingly a silent `Source.country` `default="US"` — fabricated
+> data, now removed (unknown is NULL); the canonicalised catalog's real US share is
+> ~14% (227 of 1,641 located domains). Also fixed: mixed encodings across five
+> tables (one conversion layer, lowercase ISO-2 storage + full-name display,
+> `src/catalog/countries.py`), and a mention-indexer truncation that corrupted map
+> geography ("germany"→`ge`=Georgia). Migration `a3b4c5d6e7f8` repairs existing
+> DBs; `configs/catalog_targets.yml` + the Library "Regional balance" block +
+> `scripts/catalog_coverage_report.py` are the acceptance metric. REMAINING: run
+> the Wikidata generator for the named gaps (network step, maintainer's machine —
+> the report prints the exact missing/thin codes; 73 missing incl. Libya and
+> Yemen, Caribbean + Pacific islands thinnest), and raise the located share
+> (49% of domains carry no country at all).
+
 The live test exposed it plainly: the packaged catalog is heavily US-centric (World
 coverage showed ~1,553 "US" sources vs hundreds elsewhere — partly inflated by a mixed
 country-encoding bug: rows stored as both "US" and "United States" must be normalised to

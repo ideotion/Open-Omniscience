@@ -254,6 +254,21 @@ Before fearing loss from an archive-size change, run
   layer + coverage report as acceptance metric + per-region targets);
   SQLCipher+backup stays reserved for its own fresh session per the standing
   ruling; convergence/watch-rules follows as the cycle flagship.
+  **FIRST BATCH SHIPPED same day** — root cause of "US=1553" was a silent
+  `Source.country` default="US" (fabricated data, removed; real catalog US
+  share ~14%); one conversion layer src/catalog/countries.py (249 codes +
+  names + aliases + continents, lowercase ISO-2 storage, full-name display);
+  migration a3b4c5d6e7f8 (canonicalise 5 tables + clear default-suspect US
+  via catalog/ccTLD re-derivation + REBUILD keyword_mentions.country — the
+  old `[:2].lower()` truncation had corrupted map geography: "china"→ch=
+  Switzerland, "germany"→ge=Georgia); catalogs rewritten canonical (1,750
+  values) + drift-rejecting test; configs/catalog_targets.yml floors +
+  Library "Regional balance" + concentration guard + scripts/
+  catalog_coverage_report.py = the acceptance metric; #library anchor
+  (legacy #database aliased), coverage Refresh button retired (live poll);
+  ?country= filters accept full names. REMAINING: the Wikidata generator
+  run for the 73 named gaps (network step, maintainer's machine) + raising
+  the located share (49% of domains carry no country).
 - **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11 — "I did NOT
   have a chance to see the calendar format"): NOT BUILT YET, the tab only has
   the list.** Build the switcher: list / week / month / trimester / semester /
@@ -381,10 +396,11 @@ Before fearing loss from an archive-size change, run
 - **Commodities depth**: 1-month windows say "not enough points" (fix window/
   interpolation honesty); S&P500 is an INDEX not a commodity (reclassify);
   expand feeds: rare earths, oil, natural gas, LNG, sand, corn/cereals, sugar.
-- **Library tab**: anchor should be #library not #database; drop the Refresh
-  button if data is live; country data must be stored ISO-2 and DISPLAYED as
-  full names via one conversion (US=1553 vs "United States"=210 split shows
-  mixed encodings today).
+- **Library tab — DONE 2026-06-11 (the de-US-centring first batch):** #library
+  anchor (legacy #database aliased in showTab), Refresh button retired (the
+  coverage panel now live-polls), country stored lowercase ISO-2 + displayed
+  as full names via the one conversion layer. The US=1553 split was mostly
+  the fabricated default="US" — see the 0.09 opening-order entry above.
 - **SQLCipher at-rest encryption — RULED GO (maintainer 2026-06-10): next
   MAJOR batch, do first in a fresh session (crypto deserves full attention,
   not a session tail).** Design agreed in chat: sqlcipher3 driver + SQLAlchemy

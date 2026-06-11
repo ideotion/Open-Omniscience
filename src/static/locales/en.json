@@ -300,5 +300,18 @@
   "▶ Online": "▶ Online",
   "⏸ Offline": "⏸ Offline",
   "Back online — network requests allowed again.": "Back online — network requests allowed again.",
-  "Offline — every new network request is refused. One in-flight request may finish.": "Offline — every new network request is refused. One in-flight request may finish."
+  "Offline — every new network request is refused. One in-flight request may finish.": "Offline — every new network request is refused. One in-flight request may finish.",
+  "Regional balance": "Regional balance",
+  "(floors are working targets from configs/catalog_targets.yml)": "(floors are working targets from configs/catalog_targets.yml)",
+  "Sources / floor": "Sources / floor",
+  "Countries / floor": "Countries / floor",
+  "below floor": "below floor",
+  "Region": "Region",
+  "Country": "Country",
+  "Enabled": "Enabled",
+  "Topic keywords (source tags)": "Topic keywords (source tags)",
+  "filter countries by name, code or topic…": "filter countries by name, code or topic…",
+  "Click a country or a topic keyword": "Click a country or a topic keyword",
+  "No matching countries.": "No matching countries.",
+  "every listed country has at least one source": "every listed country has at least one source"
 }

@@ -1772,6 +1772,15 @@ or `configs/markets_sources.yml`, then writes `configs/world_news_sources.yml` a
 prints a country-coverage summary. Be polite: `--delay` (default 1s) spaces out
 Wikidata queries.
 
+**Targeting the gaps (0.0.9 workflow):** run the acceptance metric first —
+`python scripts/catalog_coverage_report.py` (offline; per-region balance against
+`configs/catalog_targets.yml`, the named missing-country list, the top-country
+concentration guard) — then point the generator at exactly the shortfall, e.g.
+`--countries` with the missing/thin codes the report prints. Country values are
+stored lowercase ISO-2 and displayed as full names via the one conversion layer
+(`src/catalog/countries.py`); `tests/test_country_normalization.py` rejects any
+catalog entry that drifts from canonical form.
+
 ### Scale: reaching tens of thousands of sources (target ~50,000+)
 
 The ambition is **at least ~50,000 sources, several dozen per country**. The honest

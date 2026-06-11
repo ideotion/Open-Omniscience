@@ -38,7 +38,8 @@ def test_seed_kwargs_backfills_and_tags_provenance():
 
 def test_seed_kwargs_does_not_override_explicit_values():
     kw = _to_source_kwargs({"name": "X", "domain": "x.fr", "country": "BE", "language": "nl"})
-    assert kw["country"] == "BE"  # explicit wins over ccTLD inference
+    # explicit wins over ccTLD inference (canonicalised to lowercase ISO-2, 0.09)
+    assert kw["country"] == "be"
     assert kw["language"] == "nl"
 
 

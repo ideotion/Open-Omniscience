@@ -22,6 +22,7 @@ import yaml
 from sqlalchemy.orm import Session
 
 from src.catalog.cctld import infer_country, infer_language
+from src.catalog.countries import normalize_country
 from src.database.models import Source
 
 # The full curated catalog shipped with the project.
@@ -96,6 +97,13 @@ def _to_source_kwargs(s: dict) -> dict:
     for field in _PASSTHROUGH_FIELDS:
         if s.get(field) is not None:
             kwargs[field] = s[field]
+    # Canonicalise to lowercase ISO-2 (one conversion layer, 0.09): full names,
+    # slugs and any-case codes all normalise; an unrecognisable value is dropped
+    # (never stored as junk) so the ccTLD fallback gets its chance instead.
+    if kwargs.get("country"):
+        kwargs["country"] = normalize_country(str(kwargs["country"]))
+        if kwargs["country"] is None:
+            del kwargs["country"]
     if not kwargs.get("country"):
         c = infer_country(s["domain"])
         if c:

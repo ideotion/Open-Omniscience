@@ -113,11 +113,33 @@ def country_coverage(db: Session = Depends(get_db)) -> dict:
     ISO 3166-1 set, so coverage is measured, never asserted. ``missing`` lists
     country codes with no source; ``thin`` lists covered countries with very few.
     """
-    from src.catalog.coverage import country_counts_from_session, coverage_report
+    from sqlalchemy import func
+
+    from src.catalog.countries import country_display_name
+    from src.catalog.coverage import (
+        country_counts_from_session,
+        coverage_report,
+        regional_report,
+    )
+    from src.database.models import Source
 
     counts = country_counts_from_session(db)
     report = coverage_report(counts)
     report["missing"] = report["missing"][:80]  # trim for the UI; details in /countries
+    total_sources = int(db.query(func.count(Source.id)).scalar() or 0)
+    report["regional"] = regional_report(counts, total_sources=total_sources)
+    # Full display names for every code this response mentions (one conversion
+    # layer, applied server-side; the UI never carries its own country table).
+    mentioned = (
+        set(report["missing"])
+        | set(report["thin"])
+        | set(report["extra_codes"])
+        | set(report["special_codes"])
+    )
+    top = report["regional"]["top_country"]["code"]
+    if top:
+        mentioned.add(top)
+    report["names"] = {c: country_display_name(c) for c in sorted(mentioned)}
     return report
 
 
@@ -132,7 +154,11 @@ def sources_by_country(db: Session = Depends(get_db)) -> dict:
     """
     from collections import Counter
 
-    from src.catalog.countries import ISO_3166_1_ALPHA2
+    from src.catalog.countries import (
+        ISO_3166_1_ALPHA2,
+        continent_of,
+        country_display_name,
+    )
     from src.database.models import Source
 
     rows = db.query(Source.country, Source.enabled, Source.tags).all()
@@ -151,6 +177,8 @@ def sources_by_country(db: Session = Depends(get_db)) -> dict:
     countries = [
         {
             "code": cc,
+            "name": None if cc == "(none)" else country_display_name(cc),
+            "region": None if cc == "(none)" else continent_of(cc),
             "sources": d["sources"],
             "enabled": d["enabled"],
             "top_tags": d["tags"].most_common(8),
@@ -166,6 +194,7 @@ def sources_by_country(db: Session = Depends(get_db)) -> dict:
         "covered": len(present),
         "total_countries": len(ISO_3166_1_ALPHA2),
         "missing": missing,
+        "missing_names": {c: country_display_name(c) for c in missing},
         "missing_count": len(missing),
     }
 

@@ -709,6 +709,12 @@ class SourceManager:
             logger.warning(f"Metadata for source {source_id} already exists")
             return existing
 
+        # Canonical lowercase ISO-2 (one conversion layer, 0.09); unrecognisable
+        # input is stored as None rather than junk.
+        if kwargs.get("country") is not None:
+            from src.catalog.countries import normalize_country
+
+            kwargs["country"] = normalize_country(str(kwargs["country"]))
         metadata = SourceMetadata(source_id=source_id, **kwargs)
         self.session.add(metadata)
         self.session.commit()
@@ -760,8 +766,11 @@ class SourceManager:
         return True
 
     def get_sources_by_country(self, country: str) -> list[Source]:
-        """Get sources by country code."""
-        metadata_list = self.session.query(SourceMetadata).filter_by(country=country).all()
+        """Get sources by country (any-case code or full name; one conversion layer)."""
+        from src.catalog.countries import normalize_country
+
+        cc = normalize_country(country) or country
+        metadata_list = self.session.query(SourceMetadata).filter_by(country=cc).all()
         source_ids = [m.source_id for m in metadata_list]
         return self.session.query(Source).filter(Source.id.in_(source_ids)).all()
 

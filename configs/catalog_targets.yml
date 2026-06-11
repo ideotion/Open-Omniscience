@@ -1,0 +1,27 @@
+# Per-region source-catalog balance targets — the 0.09 de-US-centring metric.
+#
+# METHOD (honesty note): these are aspirational FLOORS for the 0.09 cycle,
+# drafted 2026-06-11 from the canonicalised shipped catalog's actual shape
+# (1,641 of 3,177 unique domains carried a resolvable country; per-region
+# actuals in parentheses). They are user-editable working targets, not claims
+# about the world's media landscape. The coverage report compares reality
+# against them and says which side is short — it never pretends a target is met.
+#
+# min_sources:    sources whose country lies in the region (actual at drafting)
+# min_countries:  distinct countries of the region with at least one source
+regions:
+  Africa:        {min_sources: 200, min_countries: 50}   # (160 / 46 of 58)
+  Asia:          {min_sources: 450, min_countries: 50}   # (423 / 48 of 54)
+  Europe:        {min_sources: 600, min_countries: 46}   # (599 / 43 of 51)
+  North America: {min_sources: 350, min_countries: 25}   # (328 / 19 of 41 — Caribbean is the gap)
+  South America: {min_sources: 100, min_countries: 14}   # (74 / 12 of 14)
+  Oceania:       {min_sources: 60,  min_countries: 12}   # (52 / 9 of 26 — island states missing)
+  Antarctica:    {min_sources: 0,   min_countries: 0}    # uninhabited; listed for completeness
+
+# Concentration guards (the failure mode that motivated all of this):
+# no single country should dominate the located catalog, and the share of
+# sources with NO resolvable country should shrink (they are invisible to
+# every geographic analysis).
+concentration:
+  max_country_share_pct: 12      # US actual at drafting: 13.8% of located sources
+  min_located_share_pct: 70      # actual at drafting: 51% of domains carried a country

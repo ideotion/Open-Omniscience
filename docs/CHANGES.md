@@ -6,11 +6,36 @@
 
 The `0.09` cycle is open (the `0.08` cycle below shipped in full, including the
 June 2026 live-test hardening batches). On its slate, from the parked queue:
-space-time convergence detection + the watch-rule attention engine, de-US-centring
-the default source catalog (ISO-2 normalisation + per-region targets), SQLCipher
+space-time convergence detection + the watch-rule attention engine, SQLCipher
 at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
+
+- **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
+  Three real defects fixed at the root: (1) `Source.country` had a silent
+  `default="US"` — every source created without an explicit country was labelled
+  American (the live-test "US = 1,553" inflation; the canonicalised catalog's real
+  US share is ~14%). The default is gone; unknown is now honestly NULL. (2) Mixed
+  country encodings ("US" / "us" / "united-states") across five tables. (3) The
+  keyword-mention indexer truncated legacy values into *wrong* codes
+  ("china"→`ch`=Switzerland, "germany"→`ge`=Georgia), corrupting the temporal
+  map's geography. **One conversion layer** (`src/catalog/countries.py`: all 249
+  ISO 3166-1 codes + names + aliases + continents, iso-codes-derived, dependency-
+  free) now canonicalises every write path (seed, CSV import, metadata, mention
+  indexing) to lowercase ISO-2 and renders **full country names** everywhere
+  user-facing. Migration `a3b4c5d6e7f8` canonicalises existing databases,
+  re-derives default-suspect US values from the catalog/ccTLD (else NULL — the
+  value was never asserted), and rebuilds mention geography from the corrected
+  sources. The shipped catalogs (1,750 entries) are rewritten canonical, with a
+  regression test rejecting any drift. The Library tab's World coverage panel
+  gains **Regional balance** — per-continent sources + countries-covered against
+  the working floors in `configs/catalog_targets.yml` (labelled aspirations,
+  drafted from the real catalog shape) and a top-country **concentration guard**;
+  `scripts/catalog_coverage_report.py` prints the same acceptance metric offline.
+  Sources/coverage APIs return `country_name`/regions and accept full-name
+  filters; the tab anchor is now `#library` (legacy `#database` links redirect);
+  the coverage panel polls live (Refresh button retired). +14 chrome strings ×12
+  locales.
 
 ## 0.08 part 2 — the sense-making horizon
 
