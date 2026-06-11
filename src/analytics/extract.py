@@ -106,6 +106,24 @@ _EXTRA_STOPWORD_TEXT = (
     "sou somos foi ser este esse isso "
     # Dutch
     "de het een en of maar ook is zijn was niet met van te ik je wij zij "
+    # French (was MISSING entirely — the 2026-06-11 field log leaked dans/plus/
+    # pas/aux/ont/ses… as top "entities"; added with elision combos + fillers)
+    "le la les un une des du de au aux et ou mais donc or ni car que qui quoi "
+    "dont où dans sur sous avec sans pour par entre vers chez pas plus moins "
+    "très tout tous toute toutes même aussi ainsi alors comme encore déjà "
+    "depuis pendant avant après être avoir fait faire été ont sont est était "
+    "avait avaient seront sera leur leurs ses son sa ce cet cette ces celui "
+    "celle ceux celles il elle ils elles nous vous je tu on lui y en se soi "
+    "notre votre nos vos mon ma mes ton ta tes deux trois quatre cinq six "
+    "sept huit neuf dix plusieurs quelques chaque autre autres certains "
+    "certaines désormais également notamment toutefois cependant pourtant "
+    "c'est n'est d'un d'une qu'il qu'elle qu'ils s'est j'ai l'on jusqu'à "
+    "aujourd'hui hier demain lundi mardi mercredi jeudi vendredi samedi dimanche "
+    # Month names leak as entities ("June" en:317, "Juin" fr:68 in the field log)
+    "january february march april may june july august september october november december "
+    "janvier février mars avril mai juin juillet août septembre octobre novembre décembre "
+    # English generics observed leaking as entities in the field log
+    "including found help work million billion millions billions "
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any
@@ -143,7 +161,15 @@ class ExtractedTerm:
     first_offset: int | None
 
 
+_ELISION = re.compile(r"\b([dlncjmst]|qu)['’](?=\w)", re.IGNORECASE)
+
+
 def _normalize(s: str) -> str:
+    # French elisions are tokenization noise, not meaning: "d'euros" is about
+    # euros, "l'ia" about ia. Strip the elided article before keying (field
+    # log 2026-06-11). Contraction STOPWORDS like c'est stay listed verbatim
+    # (they're filtered before this matters).
+    s = _ELISION.sub("", s)
     return " ".join(s.split()).casefold()
 
 

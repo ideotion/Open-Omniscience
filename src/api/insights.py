@@ -426,6 +426,9 @@ def insights_graph(
     level: str = Query("keyword", description="keyword | family | supergroup"),
     term: str | None = Query(None, description="seed term (keyword level only)"),
     hops: int = Query(2, ge=1, le=2),
+    days: int | None = Query(None, ge=1, le=3650, description="window: last N days"),
+    start: str | None = Query(None, description="window start (YYYY-MM-DD)"),
+    end: str | None = Query(None, description="window end (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
 ) -> dict:
     """The layered keyword graph (maintainer-ruled 2026-06-10): a keyword with
@@ -436,4 +439,14 @@ def insights_graph(
         raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")
     if level == "keyword" and not (term or "").strip():
         raise HTTPException(status_code=400, detail="keyword level needs ?term=")
-    return q.layered_graph(db, level=level, term=term, hops=hops)
+    from datetime import date as _date
+
+    def _parse(d):
+        try:
+            return _date.fromisoformat(d) if d else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"bad date: {d!r}") from None
+
+    return q.layered_graph(
+        db, level=level, term=term, hops=hops, days=days, start=_parse(start), end=_parse(end)
+    )

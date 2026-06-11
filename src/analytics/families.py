@@ -209,15 +209,55 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
             by_ckey[key] = i
 
     # 2) Containment among entities of the same kind (plain terms excluded) — auto only.
+    # Guards added from the 2026-06-11 field log (the maintainer's first keyword
+    # batch exposed transitive over-merges like security+national+social and
+    # "Deep Dive: Iran" absorbing Israel):
+    #   G-parent: only CLEAN phrases of 2–3 tokens may act as merge parents —
+    #     headline-ish extractions (4+ tokens like "Climate Change and Cities",
+    #     or anything containing :;"()') were the hubs that chained unrelated
+    #     terms together in the field log.
+    #   G-ambiguous: a SINGLE-token form joins only when, after the multi-token
+    #     phrases have grouped among themselves, ALL the phrases containing it
+    #     share one family. "trump" (only Donald-Trump-rooted parents) merges;
+    #     "security" (national security / Social Security / Security Council…)
+    #     is ambiguous and honestly stays standalone.
+    _JUNK = re.compile(r"[:;()\"«»]|\.{3}")
     ents = [i for i in auto if recs[i]["kind"] != "term" and recs[i]["match"]]
-    for a in ents:
-        for b in ents:
-            if a == b or recs[a]["kind"] != recs[b]["kind"]:
+
+    def _clean_parent(i: int) -> bool:
+        return 2 <= len(recs[i]["match"]) <= 3 and not _JUNK.search(recs[i]["it"].get("term", ""))
+
+    # Honorific equivalence merges DIRECTLY (President Donald Trump ≡ Donald
+    # Trump): same stripped match + same kind. The old code relied on a shared
+    # single token bridging them — the very mechanism the guards remove.
+    by_match: dict[tuple, int] = {}
+    for i in ents:
+        key = (recs[i]["kind"], tuple(recs[i]["match"]))
+        if key in by_match:
+            union(by_match[key], i)
+        else:
+            by_match[key] = i
+
+    multi = [i for i in ents if len(recs[i]["match"]) >= 2]
+    for a in multi:  # phrase ⊂ longer phrase (both multi-token, parent clean)
+        for b in multi:
+            if a == b or recs[a]["kind"] != recs[b]["kind"] or not _clean_parent(b):
                 continue
             if len(recs[a]["match"]) < len(recs[b]["match"]) and _is_contiguous_sub(
                 recs[a]["match"], recs[b]["match"]
             ):
-                union(b, a)  # shorter (a) joins the more complete (b)
+                union(b, a)
+    singles = [i for i in ents if len(recs[i]["match"]) == 1]
+    for a in singles:
+        parents = {
+            find(b)
+            for b in multi
+            if recs[a]["kind"] == recs[b]["kind"]
+            and _clean_parent(b)
+            and _is_contiguous_sub(recs[a]["match"], recs[b]["match"])
+        }
+        if len(parents) == 1:  # unambiguous → join; 0 or 2+ → stay standalone
+            union(parents.pop(), a)
 
     # Final grouping: overridden forms group by family_key; the rest by auto-union.
     groups: dict[tuple, list[dict]] = {}
@@ -233,7 +273,12 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
             canonical = label or canon["it"].get("term") or " ".join(canon["match"])
             normalized, kind, manual = gkey[1], canon["kind"], True
         else:
-            canon = max(members, key=lambda r: (len(r["match"]), r["mentions"]))
+            def _label_rank(r):
+                toks = len(r["match"])
+                clean = 2 <= toks <= 4 and not _JUNK.search(r["it"].get("term", ""))
+                return (clean, r["mentions"], min(toks, 3))
+
+            canon = max(members, key=_label_rank)
             canonical = canon["it"].get("term") or " ".join(canon["match"])
             normalized, kind, manual = canon["ckey"], canon["kind"], False
         families.append(

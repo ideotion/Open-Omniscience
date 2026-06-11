@@ -29,6 +29,13 @@
     :root { --bg:#11151a; --panel:#1a2028; --panel2:#232b35; --fg:#e6e9ed;
             --fg-soft:#9aa4ae; --border:#2e3742; --accent:#5b8def; --warn:#d97706; --err:#ef4444; }
   }
+  /* The Console's chosen theme wins over the OS preference (set from oo.ui). */
+  html[data-mode="dark"] { --bg:#11151a; --panel:#1a2028; --panel2:#232b35; --fg:#e6e9ed;
+            --fg-soft:#9aa4ae; --border:#2e3742; --accent:#5b8def; --warn:#d97706; --err:#ef4444;
+            color-scheme:dark; }
+  html[data-mode="light"] { --bg:#f6f7f9; --panel:#ffffff; --panel2:#eef0f3; --fg:#1c2127;
+            --fg-soft:#5c6670; --border:#d8dde3; --accent:#2563eb; --warn:#b45309; --err:#b91c1c;
+            color-scheme:light; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg);
          font:15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -66,6 +73,15 @@
 
 <script>
 "use strict";
+// Follow the Console's appearance (same-origin localStorage), not just the OS:
+// the chosen theme's light/dark family + the custom accent carry over here.
+try {
+  const ui = JSON.parse(localStorage.getItem("oo.ui") || "{}");
+  const lightish = ["light", "paper", "mist", "dawn", "mint"];
+  if (ui.theme && ui.theme !== "system")
+    document.documentElement.dataset.mode = lightish.includes(ui.theme) ? "light" : "dark";
+  if (ui.accent) document.documentElement.style.setProperty("--accent", ui.accent);
+} catch { /* default to the OS preference */ }
 const Q = new URLSearchParams(location.search);
 const VIEW = Q.get("view") || "";
 const esc = s => String(s ?? "").replace(/[&<>"']/g,

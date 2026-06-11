@@ -17,8 +17,17 @@
     /* ================================================================= *
      *  Open Omniscience — design system "0.05"                           *
      *  Dependency-free on purpose: system fonts, hand-drawn SVG, no CDN, *
-     *  no web fonts — runs fully offline with the NetVM detached.        *
+     *  fonts are BUNDLED open-source files (/static/fonts, SIL OFL) —   *
+     *  zero network: runs fully offline with the NetVM detached.        *
      * ================================================================= */
+    /* Bundled OFL fonts (see src/static/fonts/README.md). Local files only. */
+    @font-face { font-family:"Cantarell"; src:url("/static/fonts/Cantarell-Regular.woff2") format("woff2"); font-weight:400; font-display:swap; }
+    @font-face { font-family:"Cantarell"; src:url("/static/fonts/Cantarell-Bold.woff2") format("woff2"); font-weight:700; font-display:swap; }
+    @font-face { font-family:"Inter"; src:url("/static/fonts/Inter-Variable.woff2") format("woff2"); font-weight:100 900; font-display:swap; }
+    @font-face { font-family:"Outfit"; src:url("/static/fonts/Outfit-Variable.woff2") format("woff2"); font-weight:100 900; font-display:swap; }
+    @font-face { font-family:"Manrope"; src:url("/static/fonts/Manrope-Variable.woff2") format("woff2"); font-weight:200 800; font-display:swap; }
+    @font-face { font-family:"JetBrains Mono"; src:url("/static/fonts/JetBrainsMono-Variable.woff2") format("woff2"); font-weight:100 800; font-display:swap; }
+    @font-face { font-family:"Source Serif 4"; src:url("/static/fonts/SourceSerif4-Variable.woff2") format("woff2"); font-weight:200 900; font-display:swap; }
     :root {
       /* Ink — the default dark theme */
       --bg:#0c0e13; --bg2:#0f1218;
@@ -31,17 +40,33 @@
       --radius:12px; --radius-sm:8px;
       --sidebar-w:250px; --space:20px; --pad:16px;
       --ff: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+      --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+      color-scheme: dark; /* native widgets (selects, date pickers, scrollbars) match the theme */
     }
     html[data-theme="slate"]{ --bg:#0e1116; --bg2:#11151c; --panel:#161b23; --panel2:#1e2531; --panel3:#28323f; --accent:#7aa2f7; --border:#28303d; }
     html[data-theme="midnight"]{ --bg:#080a1a; --bg2:#0b0e22; --panel:#10142e; --panel2:#171c3c; --panel3:#1f2650; --fg:#e8eaff; --fg-soft:#c3c7ee; --muted:#8a90c0; --accent:#8b7dff; --border:#23284f; }
     html[data-theme="terminal"]{ --bg:#04070a; --bg2:#06090c; --panel:#0a1013; --panel2:#0e1619; --panel3:#13211d; --fg:#c8f7d4; --fg-soft:#a3e9ba; --muted:#5f8c72; --accent:#36d97a; --accent-fg:#04140b; --border:#16291f; --ff:var(--mono); }
-    html[data-theme="sepia"]{ --bg:#1b150e; --bg2:#201911; --panel:#262019; --panel2:#2f2820; --panel3:#3a3127; --fg:#efe5d6; --fg-soft:#d8cab4; --muted:#a8967c; --accent:#d8a657; --accent-fg:#241a0c; --border:#3a3128; }
+    html[data-theme="sepia"]{ --bg:#1b150e; --bg2:#201911; --panel:#262019; --panel2:#2f2820; --panel3:#3a3127; --fg:#efe5d6; --fg-soft:#d8cab4; --muted:#a8967c; --accent:#d8a657; --accent-fg:#241a0c; --border:#3a3128; --ff:"Source Serif 4", Georgia, serif; }
     html[data-theme="contrast"]{ --bg:#000; --bg2:#000; --panel:#0a0a0a; --panel2:#161616; --panel3:#222; --fg:#fff; --fg-soft:#f2f2f2; --muted:#cfcfcf; --accent:#ffd400; --accent-fg:#000; --ok:#5cff9d; --warn:#ffd400; --err:#ff6b6b; --border:#4d4d4d; --border-soft:#333; }
     html[data-theme="light"]{ --bg:#eef1f5; --bg2:#e6eaf0; --panel:#fff; --panel2:#f3f5f9; --panel3:#e7ecf3; --fg:#1b1f27; --fg-soft:#37404f; --muted:#5c6573; --accent:#2f6fb3; --ok:#2e8b57; --warn:#b07a17; --err:#c0392b; --border:#dce1e9; --border-soft:#e8ebf1;
-      --shadow:0 14px 38px -20px rgba(20,30,50,.28), 0 2px 6px -3px rgba(20,30,50,.14); }
+      --shadow:0 14px 38px -20px rgba(20,30,50,.28), 0 2px 6px -3px rgba(20,30,50,.14); color-scheme:light; }
     html[data-theme="paper"]{ --bg:#f2eee4; --bg2:#ebe5d6; --panel:#fbf8f1; --panel2:#f1ebdc; --panel3:#e6ddc8; --fg:#2b271f; --fg-soft:#4a4436; --muted:#7a715c; --accent:#9a6a2f; --ok:#5b7d4b; --err:#b04a3a; --border:#ded2bc; --border-soft:#e7ddca;
-      --shadow:0 14px 38px -20px rgba(80,60,30,.22), 0 2px 6px -3px rgba(80,60,30,.12); }
+      --shadow:0 14px 38px -20px rgba(80,60,30,.22), 0 2px 6px -3px rgba(80,60,30,.12); color-scheme:light; --ff:"Source Serif 4", Georgia, serif; }
+    /* New colorways (2026-06-11, maintainer: "people like tuning with themes").
+       Bundled-font pairings: Arctic→Inter, Cyber→Outfit, Mint→Manrope,
+       Sepia/Paper→Source Serif 4. The Typeface picker overrides any of them. */
+    html[data-theme="arctic"]{ --bg:#0f1216; --bg2:#12161b; --panel:#171c22; --panel2:#1e242c; --panel3:#262e38; --fg:#e5e9f0; --fg-soft:#c8cfdb; --muted:#8a94a6; --accent:#88c0d0; --accent-fg:#0b1216; --border:#262e3a; --ff:"Inter", system-ui, sans-serif; }
+    html[data-theme="solar"]{ --bg:#002b36; --bg2:#00313d; --panel:#073642; --panel2:#0a4150; --panel3:#11505f; --fg:#eee8d5; --fg-soft:#cfc7ab; --muted:#839496; --accent:#b58900; --accent-fg:#002b36; --ok:#859900; --warn:#cb4b16; --err:#dc322f; --border:#0e4754; }
+    html[data-theme="forest"]{ --bg:#0c120d; --bg2:#0f150f; --panel:#131a14; --panel2:#19231a; --panel3:#223024; --fg:#e3ece2; --fg-soft:#c2d2c2; --muted:#7e957f; --accent:#6fbf73; --accent-fg:#0a140b; --border:#243224; }
+    html[data-theme="aubergine"]{ --bg:#120d18; --bg2:#150f1d; --panel:#1a1424; --panel2:#231b30; --panel3:#2e2440; --fg:#ece6f4; --fg-soft:#cfc5e0; --muted:#9a8cb4; --accent:#c084fc; --accent-fg:#160e20; --border:#2c2240; }
+    html[data-theme="garnet"]{ --bg:#150e11; --bg2:#191014; --panel:#1f1419; --panel2:#291a20; --panel3:#35222a; --fg:#f0e6ea; --fg-soft:#d8c6cd; --muted:#a88b96; --accent:#d96c7f; --accent-fg:#1c0d12; --border:#33222a; }
+    html[data-theme="cyber"]{ --bg:#070910; --bg2:#090c15; --panel:#0d1120; --panel2:#131830; --panel3:#1a2140; --fg:#dbe6ff; --fg-soft:#b6c5ec; --muted:#7787b8; --accent:#22d3ee; --accent-fg:#04121a; --border:#1c2444; --ff:"Outfit", system-ui, sans-serif; }
+    html[data-theme="mist"]{ --bg:#eceff2; --bg2:#e4e8ee; --panel:#f9fafc; --panel2:#eff2f6; --panel3:#e3e8ef; --fg:#222831; --fg-soft:#3d4654; --muted:#66707e; --accent:#5e81ac; --ok:#2e8b57; --warn:#b07a17; --err:#bf4040; --border:#d8dee7; --border-soft:#e5e9f0;
+      --shadow:0 14px 38px -20px rgba(30,40,55,.25), 0 2px 6px -3px rgba(30,40,55,.12); color-scheme:light; }
+    html[data-theme="dawn"]{ --bg:#faf4ed; --bg2:#f4ece2; --panel:#fffaf3; --panel2:#f2e9e1; --panel3:#e9dfd5; --fg:#575279; --fg-soft:#6e6a86; --muted:#9893a5; --accent:#b4637a; --accent-fg:#fff; --ok:#56949f; --warn:#ea9d34; --err:#c34043; --border:#ddd3c8; --border-soft:#ece3da;
+      --shadow:0 14px 38px -20px rgba(90,70,60,.20), 0 2px 6px -3px rgba(90,70,60,.10); color-scheme:light; }
+    html[data-theme="mint"]{ --bg:#edf3ee; --bg2:#e4ece6; --panel:#f8fbf8; --panel2:#ecf2ed; --panel3:#dfe9e1; --fg:#1f2a23; --fg-soft:#3a4a3f; --muted:#5f7466; --accent:#2e7d5b; --accent-fg:#fff; --ok:#2e8b57; --warn:#a8761a; --err:#b3503e; --border:#d5e0d8; --border-soft:#e2eae4;
+      --shadow:0 14px 38px -20px rgba(40,60,48,.22), 0 2px 6px -3px rgba(40,60,48,.11); color-scheme:light; --ff:"Manrope", system-ui, sans-serif; }
     html[data-density="compact"]{ --space:13px; --pad:12px; --radius:9px; --sidebar-w:228px; }
 
     * { box-sizing: border-box; }
@@ -56,7 +81,7 @@
     :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
     /* Skip link — keyboard users land here first; visible only on focus. */
     .skip-link { position:absolute; left:8px; top:-48px; z-index:200; background:var(--accent);
-      color:#fff; padding:8px 14px; border-radius:8px; font-weight:600; transition:top .15s ease; }
+      color:var(--accent-fg); padding:8px 14px; border-radius:8px; font-weight:600; transition:top .15s ease; }
     .skip-link:focus { top:8px; }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
       clip:rect(0,0,0,0); white-space:nowrap; border:0; }
@@ -139,6 +164,18 @@
       color:var(--fg); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; transition:border-color .12s; }
     input:focus, select:focus, textarea:focus { border-color:var(--accent); outline:none; }
     input::placeholder, textarea::placeholder { color:var(--muted); opacity:.7; }
+    input[type="checkbox"], input[type="radio"] { accent-color:var(--accent); }
+    /* Range sliders: themed track + thumb (browser defaults clash with dark themes). */
+    input[type="range"] { -webkit-appearance:none; appearance:none; height:24px; padding:0;
+      background:transparent; border:none; cursor:pointer; }
+    input[type="range"]::-webkit-slider-runnable-track { height:5px; border-radius:99px; background:var(--panel3); }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; margin-top:-5.5px;
+      border-radius:99px; background:var(--accent); border:2px solid var(--bg);
+      box-shadow:0 1px 4px rgba(0,0,0,.35); }
+    input[type="range"]::-moz-range-track { height:5px; border-radius:99px; background:var(--panel3); }
+    input[type="range"]::-moz-range-thumb { width:12px; height:12px; border-radius:99px;
+      background:var(--accent); border:2px solid var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.35); }
+    input[type="range"]:focus-visible { outline-offset:4px; }
     .row { display:flex; gap:11px; flex-wrap:wrap; }
     .row > div { flex:1; min-width:140px; }
     button { background:var(--accent); color:var(--accent-fg); border:0; border-radius:var(--radius-sm);
@@ -225,6 +262,19 @@
     .vitals-pop .vr b { font-variant-numeric:tabular-nums; font-weight:600; max-width:160px;
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .vitals-pop .vnote { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.35; }
+    /* App-wide network mode (the kill switch as a first-class control) */
+    body.net-offline header.topbar, body.net-offline .topbar { box-shadow: inset 0 -2px 0 var(--err); }
+    #net-toggle.off { color:var(--err); border-color:var(--err); animation: netpulse 2.2s ease-in-out infinite; }
+    @keyframes netpulse { 0%,100% { box-shadow:0 0 0 0 transparent; } 50% { box-shadow:0 0 0 4px color-mix(in srgb, var(--err) 25%, transparent); } }
+    #net-flash { position:fixed; inset:0; z-index:200; pointer-events:none; opacity:0;
+      background:radial-gradient(ellipse at top, color-mix(in srgb, var(--err) 30%, transparent), transparent 60%); }
+    #net-flash.go { animation: netflash 0.9s ease-out; }
+    @keyframes netflash { 0% { opacity:0; } 25% { opacity:1; } 100% { opacity:0; } }
+    /* Enlarged mind-map / cloud (maintainer: enlargeable, weight-true) */
+    .mm-big { position:fixed; inset:4vh 4vw; z-index:140; background:var(--panel);
+      border:1px solid var(--border); border-radius:12px; padding:12px; overflow:auto;
+      box-shadow:0 18px 60px rgba(0,0,0,.5); }
+    .mm-big svg { max-width:none !important; }
     /* Indices board */
     .idx-board { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; margin-top:14px; }
     .idx-card { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
@@ -407,24 +457,23 @@
     .pal-item.sel, .pal-item:hover { background:color-mix(in srgb,var(--accent) 16%, transparent); }
     .pal-group { font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:10px 12px 4px; }
 
-    /* ---- Customize drawer ------------------------------------------- */
-    .drawer { position:fixed; top:0; right:0; height:100vh; width:min(360px,94vw); background:var(--panel);
-      border-left:1px solid var(--border); box-shadow:var(--shadow); z-index:151; transform:translateX(100%);
-      transition:transform .2s ease; overflow-y:auto; padding:18px; }
-    .drawer.open { transform:none; }
-    .drawer h3 { margin:0; font-size:16px; }
-    .drawer .seg { margin-top:18px; }
-    .drawer .seg > .sl { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px; }
+    /* ---- Appearance section (Settings) ------------------------------ */
+    /* These used to be scoped under the retired .drawer — the Appearance
+       segments lost ALL styling when the drawer died. Scope them plainly. */
+    .seg { margin-top:18px; max-width:560px; }
+    .seg > .sl { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px; }
     .swatches { display:flex; flex-wrap:wrap; gap:8px; }
     .sw { width:30px; height:30px; border-radius:8px; border:2px solid var(--border); cursor:pointer; margin:0; padding:0; }
     .sw.sel { border-color:var(--fg); box-shadow:0 0 0 2px var(--accent); }
-    .theme-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+    .theme-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; }
     .theme-card { border:1px solid var(--border); border-radius:9px; padding:9px 11px; cursor:pointer; margin:0;
       background:var(--panel2); color:var(--fg); text-align:left; font-size:13px; display:flex; align-items:center; gap:8px; }
     .theme-card.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
-    .theme-card .tdot { width:14px; height:14px; border-radius:99px; border:1px solid rgba(255,255,255,.15); }
+    .theme-card .tdot { width:14px; height:14px; border-radius:99px; border:1px solid var(--border); }
     .seg-toggle { display:flex; gap:6px; }
     .seg-toggle button { flex:1; margin:0; }
+    .seg-toggle.wrap { flex-wrap:wrap; }
+    .seg-toggle.wrap button { flex:1 1 28%; white-space:nowrap; }
     .seg-toggle button:not(.sel) { background:var(--panel2); color:var(--fg-soft); border:1px solid var(--border); font-weight:500; }
     .modlist label { display:flex; align-items:center; gap:9px; color:var(--fg-soft); font-size:13.5px;
       text-transform:none; letter-spacing:0; margin:7px 0; cursor:pointer; }
@@ -523,6 +572,9 @@
       </nav>
 
       <div class="sb-foot">
+        <button class="secondary" id="net-toggle" onclick="toggleNetwork()"
+          title="Online/offline — the app-wide network switch. Offline refuses every new fetch instantly; one in-flight request may finish."
+          style="min-width:104px">▶ Online</button>
         <button class="secondary" onclick="showTab('settings')" title="Open Settings (appearance, language, data, safety)"
                 style="display:flex;align-items:center;justify-content:center;gap:8px;flex:1">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.2A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 14H2.5a2 2 0 0 1 0-4h.2A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 2.6V2.5a2 2 0 0 1 4 0v.2A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H23a2 2 0 0 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg>
@@ -1212,10 +1264,25 @@
       <h2 style="margin:14px 0 6px;font-size:13px">Associated keywords (mind-map)</h2>
       <!-- Layered zoom (maintainer-ruled): keyword + relatives-of-relatives →
            families → super-groups. Buttons switch; zooming far out goes up a level. -->
-      <div class="seg-toggle" id="mm-levels" style="margin-bottom:6px">
-        <button class="active" data-level="keyword" onclick="mmLevel('keyword')">Keywords</button>
-        <button data-level="family" onclick="mmLevel('family')">Families</button>
-        <button data-level="supergroup" onclick="mmLevel('supergroup')">Super-groups</button>
+      <div class="row" style="gap:8px;align-items:end;margin-bottom:6px">
+        <div class="seg-toggle" id="mm-levels">
+          <button class="active" data-level="keyword" onclick="mmLevel('keyword')">Keywords</button>
+          <button data-level="family" onclick="mmLevel('family')">Families</button>
+          <button data-level="supergroup" onclick="mmLevel('supergroup')">Super-groups</button>
+        </div>
+        <div class="seg-toggle" id="mm-views">
+          <button class="active" data-view="map" onclick="mmView('map')">Mind-map</button>
+          <button data-view="cloud" onclick="mmView('cloud')">Word cloud</button>
+        </div>
+        <div><label for="mm-window">Period</label><select id="mm-window" onchange="mmWindowChange()">
+          <option value="">all time</option><option value="7">last week</option>
+          <option value="30">last month</option><option value="365">last year</option>
+          <option value="custom">custom…</option></select></div>
+        <div id="mm-custom" style="display:none"><label for="mm-start">From / to</label>
+          <span style="white-space:nowrap"><input type="date" id="mm-start" onchange="mmReload()" style="width:auto">
+          <input type="date" id="mm-end" onchange="mmReload()" style="width:auto"></span></div>
+        <div><label for="mm-size">Text size</label><input type="range" id="mm-size" min="70" max="180" value="100" oninput="mmReload()" style="width:90px"></div>
+        <div style="flex:0 0 auto"><button class="secondary tiny" id="mm-expand" onclick="mmExpand()" title="Enlarge the chart">⛶ Enlarge</button></div>
       </div>
       <div id="ins-mindmap"></div>
       <h2 style="margin:14px 0 6px;font-size:13px">How outlets frame this <span class="muted">(VADER tone)</span></h2>
@@ -1342,16 +1409,28 @@
           <option value="25" selected>± 25 yrs</option>
           <option value="5">± 5 yrs</option>
           <option value="1">± 1 yr</option>
+          <option value="0.17">± 2 months</option>
+          <option value="0.085">± 1 month</option>
+          <option value="0.02">± 1 week</option>
         </select></div>
+        <div><label for="tmap-date">Focus date</label>
+          <input type="date" id="tmap-date" onchange="onTmapDate()" style="width:auto"></div>
         <div style="flex:0 0 auto;align-self:end">
           <button class="tiny secondary" id="tmap-play" onclick="toggleTmapPlay()" title="Sweep time forward">▶ play</button>
+          <select id="tmap-speed" class="tiny" title="Play speed" style="width:auto">
+            <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+            <option value="2">2×</option><option value="4">4×</option></select>
         </div>
+      </div>
+      <div class="row" style="margin-top:6px;align-items:end;gap:8px">
+        <div><label for="tmap-span-a">Time span — from / to</label>
+          <span style="white-space:nowrap">
+            <input type="date" id="tmap-span-a" onchange="onTmapSpanChange()" style="width:auto">
+            <input type="date" id="tmap-span-b" onchange="onTmapSpanChange()" style="width:auto"></span></div>
+        <div class="hint" style="align-self:center">Set both to re-map the whole slider onto that period (e.g. the last two months) — play then sweeps only it. Clear to return to all recorded time.</div>
       </div>
 
       <div class="row" style="margin-top:8px;align-items:center;gap:8px">
-        <button class="tiny secondary" onclick="zoomTmap(0.7)">＋ zoom</button>
-        <button class="tiny secondary" onclick="zoomTmap(1.4)">－ zoom</button>
-        <button class="tiny secondary" onclick="resetTmap()">reset view</button>
         <label class="tiny" style="display:inline-flex;align-items:center;gap:5px;margin-left:6px">
           <input type="checkbox" id="tmap-articles" onchange="loadTimemap()"> my corpus</label>
         <label class="tiny" style="display:inline-flex;align-items:center;gap:5px"
@@ -1365,7 +1444,16 @@
 
       <div id="tmap-legend" class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap"></div>
 
-      <div id="tmap-svg" style="margin-top:6px"></div>
+      <div id="tmap-wrap" style="position:relative;margin-top:6px">
+        <div id="tmap-svg"></div>
+        <!-- Controls live INSIDE the map (the Google-Maps lesson, maintainer-ruled) -->
+        <div style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
+          <button class="tiny secondary" onclick="zoomTmap(0.7)" title="Zoom in">＋</button>
+          <button class="tiny secondary" onclick="zoomTmap(1.4)" title="Zoom out">－</button>
+          <button class="tiny secondary" onclick="resetTmap()" title="Reset view">⟲</button>
+          <button class="tiny secondary" id="tmap-expand" onclick="tmapExpand()" title="Enlarge the map">⛶</button>
+        </div>
+      </div>
       <div id="tmap-detail" style="margin-top:8px"></div>
       <div id="tmap-caveat" class="hint" style="margin-top:8px"></div>
     </section>
@@ -1442,6 +1530,8 @@
       <div class="seg"><div class="sl">Theme</div><div class="theme-grid" id="dr-themes"></div></div>
       <div class="seg"><div class="sl">Accent</div><div class="swatches" id="dr-accents"></div></div>
       <div class="seg"><div class="sl">Density</div><div class="seg-toggle" id="dr-density"></div></div>
+      <div class="seg"><div class="sl">Typeface</div><div class="seg-toggle wrap" id="dr-faces"></div>
+        <div class="hint">Open-source fonts bundled with the app — nothing to download, nothing fetched.</div></div>
       <div class="seg"><div class="sl">Text size · <span id="dr-font-val">100%</span></div>
         <input type="range" id="dr-font" min="88" max="124" step="2" oninput="setFont(this.value)"></div>
       <div class="seg"><div class="sl">Sidebar</div><div class="seg-toggle" id="dr-sidebar"></div></div>
@@ -1550,7 +1640,7 @@
           <label for="dump-lang">Language edition</label>
           <input id="dump-lang-filter" placeholder="Type to filter (name, autonym or code)…"
                  oninput="renderWikiLanguages()" style="margin-bottom:6px">
-          <select id="dump-lang" size="8"><option value="en">Loading editions…</option></select>
+          <select id="dump-lang" size="8" multiple title="Ctrl/⌘-click to select several editions"><option value="en">Loading editions…</option></select>
         </div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="probeDump()">Estimate size</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
@@ -1784,11 +1874,32 @@
       if (!_bg) _bumpInflight(0);   // re-evaluate any still-pending in-flight spinner
       _ensureVitalsPoll();
     }
+    async function toggleNetwork() {
+      const btn = $("net-toggle");
+      const goingOnline = btn.classList.contains("off");
+      try {
+        const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online: goingOnline})});
+        _paintNetwork(r.online);
+        let f = document.getElementById("net-flash");
+        if (!f) { f = document.createElement("div"); f.id = "net-flash"; document.body.appendChild(f); }
+        f.classList.remove("go"); void f.offsetWidth; f.classList.add("go");
+        toast(r.online ? "Back online — network requests allowed again."
+                       : "Offline — every new network request is refused. One in-flight request may finish.",
+              r.online ? "ok" : "err");
+      } catch (e) { toast(e.message, "err"); }
+    }
+    function _paintNetwork(online) {
+      const btn = $("net-toggle"); if (!btn) return;
+      btn.textContent = online ? "▶ Online" : "⏸ Offline";
+      btn.classList.toggle("off", !online);
+      document.body.classList.toggle("net-offline", !online);
+    }
     async function _pollVitalsMini() {
       if (document.hidden) return;
       const el = $("vitals-mini"); if (!el) return;
       try {
         const v = await api("/api/system/vitals");
+        try { const nm = await api("/api/system/network"); _paintNetwork(nm.online); } catch (_e) {}
         const parts = [];
         if (v.cpu_percent != null) parts.push(`CPU ${v.cpu_percent.toFixed(0)}%`);
         if (v.rss_bytes != null) parts.push(`RAM ${(v.rss_bytes/1048576).toFixed(0)} MB`);
@@ -2009,15 +2120,31 @@
 
     // -- Appearance / customization (local-only, never transmitted) --------- //
     const UI_KEY = "oo.ui";
-    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, sidebar:"expanded", hidden:[]};
+    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, face:"", sidebar:"expanded", hidden:[]};
     const THEMES = [
       {id:"ink",name:"Ink",c:"#5b9dd9"}, {id:"slate",name:"Slate",c:"#7aa2f7"},
-      {id:"midnight",name:"Midnight",c:"#8b7dff"}, {id:"sepia",name:"Sepia",c:"#d8a657"},
+      {id:"midnight",name:"Midnight",c:"#8b7dff"}, {id:"arctic",name:"Arctic",c:"#88c0d0"},
+      {id:"cyber",name:"Cyber",c:"#22d3ee"}, {id:"forest",name:"Forest",c:"#6fbf73"},
+      {id:"aubergine",name:"Aubergine",c:"#c084fc"}, {id:"garnet",name:"Garnet",c:"#d96c7f"},
+      {id:"solar",name:"Solar",c:"#b58900"}, {id:"sepia",name:"Sepia",c:"#d8a657"},
       {id:"terminal",name:"Terminal",c:"#36d97a"}, {id:"contrast",name:"Contrast",c:"#ffd400"},
-      {id:"light",name:"Light",c:"#2f6fb3"}, {id:"paper",name:"Paper",c:"#9a6a2f"},
-      {id:"system",name:"System",c:"#8c95a6"},
+      {id:"light",name:"Light",c:"#2f6fb3"}, {id:"mist",name:"Mist",c:"#5e81ac"},
+      {id:"dawn",name:"Dawn",c:"#b4637a"}, {id:"mint",name:"Mint",c:"#2e7d5b"},
+      {id:"paper",name:"Paper",c:"#9a6a2f"}, {id:"system",name:"System",c:"#8c95a6"},
     ];
     const ACCENTS = ["", "#5b9dd9", "#7aa2f7", "#8b7dff", "#36d97a", "#e0698f", "#d9a441", "#e8743b", "#2bb3a3"];
+    // Bundled OFL typefaces (/static/fonts). "" = the theme's own font; a pick
+    // overrides every theme. Variable fonts carry the full weight range
+    // (Inter/Outfit go down to Thin 100 — the maintainer's modern-thin ask).
+    const FACES = [
+      {id:"", name:"Theme default", ff:""},
+      {id:"cantarell", name:"Cantarell", ff:'"Cantarell", system-ui, sans-serif'},
+      {id:"inter", name:"Inter", ff:'"Inter", system-ui, sans-serif'},
+      {id:"outfit", name:"Outfit", ff:'"Outfit", system-ui, sans-serif'},
+      {id:"manrope", name:"Manrope", ff:'"Manrope", system-ui, sans-serif'},
+      {id:"serif", name:"Source Serif", ff:'"Source Serif 4", Georgia, serif'},
+      {id:"mono", name:"JetBrains Mono", ff:'"JetBrains Mono", ui-monospace, monospace'},
+    ];
 
     function getUi() { try { return {...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(UI_KEY) || "{}")}; }
       catch { return {...UI_DEFAULTS}; } }
@@ -2033,6 +2160,8 @@
       const r = document.documentElement;
       applyThemeAttr(ui.theme);
       if (ui.accent) r.style.setProperty("--accent", ui.accent); else r.style.removeProperty("--accent");
+      const face = FACES.find(f => f.id === (ui.face || ""));
+      if (face && face.ff) r.style.setProperty("--ff", face.ff); else r.style.removeProperty("--ff");
       if (ui.density === "compact") r.setAttribute("data-density", "compact"); else r.removeAttribute("data-density");
       r.style.fontSize = (ui.font || 100) + "%";
       if (ui.sidebar === "collapsed") r.setAttribute("data-sidebar", "collapsed"); else r.removeAttribute("data-sidebar");
@@ -2049,6 +2178,7 @@
     function setTheme(t)   { const u = getUi(); u.theme = t;   saveUi(u); applyUi(u); buildDrawer(); syncThemeSelect(); }
     function setAccent(a)  { const u = getUi(); u.accent = a;  saveUi(u); applyUi(u); buildDrawer(); }
     function setDensity(d) { const u = getUi(); u.density = d; saveUi(u); applyUi(u); buildDrawer(); }
+    function setFace(f)    { const u = getUi(); u.face = f;    saveUi(u); applyUi(u); buildDrawer(); }
     function setFont(v)    { const u = getUi(); u.font = +v;   saveUi(u); applyUi(u); $("dr-font-val").textContent = v + "%"; }
     function setSidebar(s) { const u = getUi(); u.sidebar = s; saveUi(u); applyUi(u); buildDrawer(); }
     function toggleSidebar(){ setSidebar(getUi().sidebar === "collapsed" ? "expanded" : "collapsed"); }
@@ -2060,7 +2190,8 @@
     function resetUi() { localStorage.removeItem(UI_KEY); applyUi(getUi()); buildDrawer(); syncThemeSelect();
       toast("Appearance reset to defaults."); }
     function syncThemeSelect() { const t = getUi().theme; const sel = $("set-theme");
-      if (sel) sel.value = (t === "light" ? "light" : t === "system" ? "system" : "dark"); }
+      const lightish = ["light", "paper", "mist", "dawn", "mint"];
+      if (sel) sel.value = (t === "system" ? "system" : lightish.includes(t) ? "light" : "dark"); }
 
     // Appearance now lives in Settings → Appearance (the old drawer is gone).
     // openDrawer() is kept as the single "take me to appearance" entry point so the
@@ -2086,6 +2217,9 @@
            onclick="setAccent('${a}')" style="background:${a || "linear-gradient(135deg,var(--muted),var(--accent))"}"></button>`).join("");
       $("dr-density").innerHTML = ["comfortable", "compact"].map(d =>
         `<button class="${d === ui.density ? "sel" : ""}" onclick="setDensity('${d}')">${d[0].toUpperCase() + d.slice(1)}</button>`).join("");
+      $("dr-faces").innerHTML = FACES.map(f =>
+        `<button class="${f.id === (ui.face || "") ? "sel" : ""}" onclick="setFace('${f.id}')"
+           style="${f.ff ? "font-family:" + esc(f.ff) : ""}">${esc(f.name)}</button>`).join("");
       $("dr-sidebar").innerHTML = [["expanded", "Expanded"], ["collapsed", "Collapsed"]].map(([v, l]) =>
         `<button class="${v === ui.sidebar ? "sel" : ""}" onclick="setSidebar('${v}')">${l}</button>`).join("");
       $("dr-font").value = ui.font; $("dr-font-val").textContent = ui.font + "%";
@@ -2935,7 +3069,7 @@
           .forEach(b => { b.disabled = !st.backup_supported; });
       } catch (e) { $("backup-status").textContent = "Backup status unavailable: " + e.message; }
       loadKeywordFilter();
-      loadWikiLanguages();
+      loadDumpLanguages();
       loadWikiDumps();
       loadFetchMode();
     }
@@ -2943,7 +3077,10 @@
     // -- Wikipedia offline baselines (lives in Settings) -------------------- //
     const _TIER_LABEL = {huge: "very large", large: "large", medium: "medium", small: "smaller"};
     let _wikiLangGroups = [];   // [{region, languages:[...]}], cached after fetch
-    async function loadWikiLanguages() {
+    // NOTE: named loadDumpLanguages — a second loadWikiLanguages (the Wikipedia
+    // tab's edition picker) is declared later and would override this one (the
+    // exact bug behind "the download page can't show the languages").
+    async function loadDumpLanguages() {
       const sel = $("dump-lang");
       if (!sel) return;
       try {
@@ -4393,30 +4530,62 @@
     // to pin it, click a node to recenter (re-query). Vanilla — a tiny spring layout
     // over an SVG viewBox, no dependencies. Respects prefers-reduced-motion (settles
     // synchronously, no animation). _mmRAF holds the running animation handle.
-    let _mmRAF = null, _mmLevel = "keyword", _mmTerm = null;
+    let _mmRAF = null, _mmLevel = "keyword", _mmTerm = null, _mmViewMode = "map", _mmGraph = null;
+    function _mmWindowQS() {
+      const w = $("mm-window").value;
+      if (w === "custom") {
+        const a = $("mm-start").value, b = $("mm-end").value;
+        return (a ? `&start=${a}` : "") + (b ? `&end=${b}` : "");
+      }
+      return w ? `&days=${w}` : "";
+    }
+    function mmWindowChange() {
+      $("mm-custom").style.display = $("mm-window").value === "custom" ? "" : "none";
+      mmReload();
+    }
+    function mmView(v) {
+      _mmViewMode = v;
+      document.querySelectorAll("#mm-views button").forEach(b =>
+        b.classList.toggle("active", b.dataset.view === v));
+      if (_mmGraph) renderGraph(_mmGraph);
+    }
+    function mmExpand() {
+      const host = $("ins-mindmap");
+      host.classList.toggle("mm-big");
+      $("mm-expand").textContent = host.classList.contains("mm-big") ? "⛶ Reduce" : "⛶ Enlarge";
+      if (_mmGraph) renderGraph(_mmGraph);
+    }
+    function mmReload() {
+      if (_mmLevel === "keyword" && !_mmTerm) { if (_mmGraph) renderGraph(_mmGraph); return; }
+      mmLevel(_mmLevel);
+    }
     async function mmLevel(level) {
       _mmLevel = level;
       document.querySelectorAll("#mm-levels button").forEach(b =>
         b.classList.toggle("active", b.dataset.level === level));
+      const host = $("ins-mindmap");
       if (level === "keyword") {
-        if (_mmTerm) pickTerm(_mmTerm);
-        else $("ins-mindmap").innerHTML = '<div class="muted">Pick a keyword above to see its relatives (two hops).</div>';
+        if (!_mmTerm) { host.innerHTML = '<div class="muted">Pick a keyword above to see its relatives (two hops).</div>'; return; }
+        host.innerHTML = '<div class="muted">Loading…</div>';
+        try {
+          const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(_mmTerm)}&hops=2${_mmWindowQS()}`);
+          renderGraph(g);
+        } catch (e) { host.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
         return;
       }
-      const host = $("ins-mindmap");
       host.innerHTML = '<div class="muted">Loading…</div>';
       try {
-        const g = await api(`/api/insights/graph?level=${level}`);
+        const g = await api(`/api/insights/graph?level=${level}${_mmWindowQS()}`);
         renderGraph(g);
       } catch (e) { host.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
     }
-    // Adapter: the keyword view now also comes from the layered endpoint (2 hops).
+    // Adapter: the keyword view comes from the layered endpoint (2 hops + window).
     async function renderMindmap(center, _pairs) {
       _mmTerm = center; _mmLevel = "keyword";
       document.querySelectorAll("#mm-levels button").forEach(b =>
         b.classList.toggle("active", b.dataset.level === "keyword"));
       try {
-        const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(center)}&hops=2`);
+        const g = await api(`/api/insights/graph?level=keyword&term=${encodeURIComponent(center)}&hops=2${_mmWindowQS()}`);
         renderGraph(g);
       } catch (e) { $("ins-mindmap").innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
     }
@@ -4432,110 +4601,138 @@
       return items.join(" &nbsp;·&nbsp; ");
     }
     function renderGraph(g) {
+      _mmGraph = g;
       if (_mmRAF) { cancelAnimationFrame(_mmRAF); _mmRAF = null; }
       const host = $("ins-mindmap");
       if (!g.nodes || g.nodes.length < 2) { host.innerHTML = '<div class="muted">No strong associations yet.</div>'; return; }
-      const W = 680, H = 460;
+      const big = host.classList.contains("mm-big");
+      const W = big ? 1200 : 680, H = big ? 760 : 460;
+      const scale = (Number($("mm-size").value) || 100) / 100;
       const maxSize = Math.max(...g.nodes.map(n => n.size || 1), 1);
-      const idx = {};
-      const nodes = g.nodes.slice(0, 48).map((n, i) => {
-        idx[n.id] = i;
-        const ang = (i / Math.min(g.nodes.length, 48)) * 2 * Math.PI;
-        return {id:i, key:n.id, label:n.label, kind:n.kind, center:!!n.center, hop:n.hop||1,
-          variants:(n.members||[]).length || 1, members:n.members||[], pmi:n.pmi, cooccur:n.size,
-          r:(n.center ? 13 : 6 + 6*Math.sqrt((n.size||1)/maxSize)),
-          x:W/2 + (n.center ? 0 : 170*Math.cos(ang) + (Math.random()-0.5)*40),
-          y:H/2 + (n.center ? 0 : 170*Math.sin(ang) + (Math.random()-0.5)*40),
-          vx:0, vy:0, pinned:!!n.center};
-      });
-      const maxW = Math.max(...g.edges.map(e => e.weight || 1), 1);
-      const edges = g.edges
-        .filter(e => idx[e.a] != null && idx[e.b] != null)
-        .map(e => ({a:idx[e.a], b:idx[e.b], w:e.weight||1,
-                    len:70 + 130*(1 - (e.weight||1)/maxW)}));
+      const fsOf = (n) => ((n.center ? 17 : 9 + 9 * Math.sqrt((n.size || 1) / maxSize)) * scale);
+
+      // ---- layout: mind-map rules (center → arms → ALWAYS outward) -------- //
+      const nodes = g.nodes.slice(0, 60).map(n => ({...n, fs: fsOf(n)}));
+      const byId = {}; nodes.forEach(n => byId[n.id] = n);
+      let treeEdges = [];
+      if (_mmViewMode === "cloud") {
+        // Word cloud: weight-ordered spiral from the centre, no edges.
+        const sorted = [...nodes].sort((a, b) => (b.size || 1) - (a.size || 1));
+        sorted.forEach((n, i) => {
+          const ang = i * 2.39996, r = 16 * Math.sqrt(i);   // golden-angle spiral
+          n.x = W / 2 + r * Math.cos(ang) * 1.6;
+          n.y = H / 2 + r * Math.sin(ang);
+        });
+      } else if (g.level === "keyword") {
+        const center = nodes.find(n => n.center) || nodes[0];
+        center.x = W / 2; center.y = H / 2;
+        const arms = nodes.filter(n => !n.center && n.hop !== 2);
+        const leaves = nodes.filter(n => n.hop === 2);
+        const parentOf = {};
+        for (const e of g.edges) {
+          if (byId[e.b] && byId[e.b].hop === 2 && byId[e.a] && !byId[e.a].center) {
+            if (!(e.b in parentOf) || e.weight > parentOf[e.b].w) parentOf[e.b] = {p: e.a, w: e.weight};
+          }
+        }
+        const R1 = Math.min(W, H) * 0.30, R2 = Math.min(W, H) * 0.46;
+        arms.forEach((n, i) => {
+          n.ang = (i / arms.length) * 2 * Math.PI - Math.PI / 2;
+          n.x = W / 2 + R1 * Math.cos(n.ang); n.y = H / 2 + R1 * Math.sin(n.ang);
+          treeEdges.push({a: center, b: n, w: 2});
+        });
+        const kids = {};
+        leaves.forEach(n => {
+          const p = byId[(parentOf[n.id] || {}).p] || arms[0];
+          (kids[p.id] = kids[p.id] || []).push(n);
+          n._p = p;
+        });
+        for (const pid in kids) {
+          const p = byId[pid], ks = kids[pid];
+          const span = (2 * Math.PI / Math.max(arms.length, 1)) * 0.8;
+          ks.forEach((n, j) => {
+            const a = p.ang + span * ((j + 1) / (ks.length + 1) - 0.5);
+            n.x = W / 2 + R2 * Math.cos(a); n.y = H / 2 + R2 * Math.sin(a);
+            treeEdges.push({a: p, b: n, w: 1});
+          });
+        }
+      } else {
+        // family / super-group: concentric rings by weight rank (outward =
+        // lighter), each node linked only to its single strongest neighbour.
+        const sorted = [...nodes].sort((a, b) => (b.size || 1) - (a.size || 1));
+        sorted.forEach((n, i) => {
+          if (i === 0) { n.x = W / 2; n.y = H / 2; return; }
+          const ring = i <= 8 ? 1 : i <= 24 ? 2 : 3;
+          const start = ring === 1 ? 0 : ring === 2 ? 8 : 24;
+          const count = ring === 1 ? Math.min(8, sorted.length - 1) : ring === 2 ? Math.min(16, sorted.length - 9) : sorted.length - 25;
+          const ang = ((i - start) / Math.max(count, 1)) * 2 * Math.PI - Math.PI / 2 + ring * 0.3;
+          const R = Math.min(W, H) * (0.16 + 0.15 * ring);
+          n.x = W / 2 + R * Math.cos(ang) * 1.25; n.y = H / 2 + R * Math.sin(ang);
+        });
+        const best = {};
+        for (const e of g.edges) {
+          if (!byId[e.a] || !byId[e.b]) continue;
+          if (!(e.a in best) || e.weight > best[e.a].w) best[e.a] = {o: e.b, w: e.weight};
+          if (!(e.b in best) || e.weight > best[e.b].w) best[e.b] = {o: e.a, w: e.weight};
+        }
+        const seen = new Set();
+        for (const id in best) {
+          const key = [id, best[id].o].sort().join("|");
+          if (!seen.has(key)) { seen.add(key); treeEdges.push({a: byId[id], b: byId[best[id].o], w: best[id].w}); }
+        }
+      }
 
       host.innerHTML =
-        `<svg id="mm-svg" viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;touch-action:none;cursor:grab"><g id="mm-view"></g></svg>` +
         `<div class="hint" id="mm-legend">${mmLegend(g)}</div>` +
-        `<div class="hint">Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in. <b>Font size = shared-article volume · distance = association strength.</b> ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
+        `<svg id="mm-svg" viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;touch-action:none;cursor:grab"><g id="mm-view"></g></svg>` +
+        `<div class="hint">Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in. <b>Font size = shared-article volume.</b> ${_mmViewMode === "map" ? "Branches grow outward from the centre; each leaf hangs off its strongest relative." : "Cloud view: weight-ordered, no links."} ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
       const svg = $("mm-svg"), view = $("mm-view");
-
+      const maxW = Math.max(...treeEdges.map(e => e.w || 1), 1);
       view.innerHTML =
-        edges.map(e => `<line class="mm-edge" data-e="${e.a}-${e.b}" stroke="var(--border)" stroke-width="${Math.max(1,Math.min(4,e.w/2)).toFixed(1)}"></line>`).join("") +
-        nodes.map(n => {
+        treeEdges.map(e => `<line stroke="var(--border)" stroke-width="${(0.8 + 2.2 * (e.w || 1) / maxW).toFixed(1)}"
+            x1="${e.a.x.toFixed(1)}" y1="${e.a.y.toFixed(1)}" x2="${e.b.x.toFixed(1)}" y2="${e.b.y.toFixed(1)}"></line>`).join("") +
+        nodes.map((n, i) => {
           const col = n.center ? "var(--ok)"
             : n.kind === "supergroup" ? "var(--ok)"
             : n.kind === "family" ? "var(--warn)"
             : n.hop === 2 ? "var(--muted)" : "var(--accent)";
-          // No dots (maintainer-ruled 2026-06-10): the LABEL is the node, and
-          // FONT SIZE carries the shared-article volume the dot used to.
-          const fs = (n.center ? 17 : 9 + 9 * Math.sqrt((n.cooccur || 1) / maxSize)).toFixed(1);
-          const fam = n.variants > 1;
-          const title = fam ? `<title>Family of ${n.variants}: ${esc((n.members||[]).join(", "))}</title>` : "";
-          const sub = n.center ? "" : (fam ? ` <tspan fill="var(--muted)" font-size="${(fs*0.65).toFixed(1)}">·${n.variants}</tspan>` : "");
-          return `<g class="mm-node" data-id="${n.id}" style="cursor:pointer">${title}` +
-            `<text text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="${n.center ? 700 : 500}" fill="${col}">${esc(n.label)}${sub}</text></g>`;
+          const fam = (n.members || []).length > 1;
+          const title = fam ? `<title>${esc((n.members || []).join(", "))}</title>` : "";
+          return `<g class="mm-node" data-i="${i}" style="cursor:pointer" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">${title}` +
+            `<text text-anchor="middle" dominant-baseline="central" font-size="${n.fs.toFixed(1)}" font-weight="${n.center ? 700 : 500}" fill="${col}">${esc(n.label)}</text></g>`;
         }).join("");
 
-      const nodeEls = nodes.map(n => view.querySelector(`.mm-node[data-id="${n.id}"]`));
-      const edgeEls = edges.map(e => view.querySelector(`.mm-edge[data-e="${e.a}-${e.b}"]`));
-      function paint() {
-        nodes.forEach((n, i) => nodeEls[i].setAttribute("transform", `translate(${n.x.toFixed(1)},${n.y.toFixed(1)})`));
-        edges.forEach((e, i) => { const a = nodes[e.a], b = nodes[e.b]; const el = edgeEls[i];
-          el.setAttribute("x1", a.x.toFixed(1)); el.setAttribute("y1", a.y.toFixed(1));
-          el.setAttribute("x2", b.x.toFixed(1)); el.setAttribute("y2", b.y.toFixed(1)); });
-      }
-      function step() {
-        for (let i = 0; i < nodes.length; i++) for (let j = i+1; j < nodes.length; j++) {
-          const a = nodes[i], b = nodes[j]; let dx = a.x-b.x, dy = a.y-b.y; let d2 = dx*dx+dy*dy || 0.01;
-          const f = 2800/d2, d = Math.sqrt(d2); const fx = dx/d*f, fy = dy/d*f;
-          a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
-        }
-        edges.forEach(e => { const a = nodes[e.a], b = nodes[e.b]; let dx = b.x-a.x, dy = b.y-a.y;
-          const d = Math.sqrt(dx*dx+dy*dy) || 0.01; const f = (d-e.len)*0.02; const fx = dx/d*f, fy = dy/d*f;
-          a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy; });
-        nodes.forEach(n => { if (n.center) { n.x = W/2; n.y = H/2; n.vx = n.vy = 0; return; }
-          n.vx += (W/2-n.x)*0.0018; n.vy += (H/2-n.y)*0.0018;
-          if (n.pinned) { n.vx = n.vy = 0; } else { n.vx *= 0.85; n.vy *= 0.85; n.x += n.vx; n.y += n.vy; } });
-      }
-      const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduce) { for (let i = 0; i < 300; i++) step(); paint(); }
-      else { let f = 0; (function loop(){ step(); paint(); if (++f < 320) _mmRAF = requestAnimationFrame(loop); })(); }
-
-      // -- pan / zoom / node-drag over the viewBox -------------------------- //
-      let vb = {x:0, y:0, w:W, h:H};
+      // -- pan / zoom (level-up on far zoom-out) + click-to-dive ------------- //
+      let vb = {x: 0, y: 0, w: W, h: H};
       const applyVB = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-      const ptVB = (e) => { const m = svg.getScreenCTM().inverse(); const p = svg.createSVGPoint();
-        p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(m); };
+      const ptVB = (e) => { const m2 = svg.getScreenCTM().inverse(); const p = svg.createSVGPoint();
+        p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(m2); };
       svg.addEventListener("wheel", (e) => { e.preventDefault(); const p = ptVB(e);
-        const s = Math.min(3, Math.max(0.34, vb.w*Math.exp(e.deltaY*0.0015)/W)) * W / vb.w;
-        vb.x = p.x - (p.x-vb.x)*s; vb.y = p.y - (p.y-vb.y)*s; vb.w *= s; vb.h *= s; applyVB();
-        // Zooming far out = going up one interpretation layer (keyword → family → super-group).
+        const sc = Math.min(3, Math.max(0.34, vb.w * Math.exp(e.deltaY * 0.0015) / W)) * W / vb.w;
+        vb.x = p.x - (p.x - vb.x) * sc; vb.y = p.y - (p.y - vb.y) * sc; vb.w *= sc; vb.h *= sc; applyVB();
         if (vb.w / W >= 2.7) {
           if (_mmLevel === "keyword") mmLevel("family");
           else if (_mmLevel === "family") mmLevel("supergroup");
         }
-      }, {passive:false});
+      }, {passive: false});
       let drag = null;
       svg.addEventListener("pointerdown", (e) => {
-        const g = e.target.closest && e.target.closest(".mm-node");
-        if (g) { const id = +g.dataset.id; drag = {type:"node", id, sx:e.clientX, sy:e.clientY, moved:false};
-          if (!nodes[id].center) nodes[id].pinned = true; }
+        const gEl = e.target.closest && e.target.closest(".mm-node");
+        if (gEl) drag = {type: "node", i: +gEl.dataset.i, sx: e.clientX, sy: e.clientY, moved: false};
         else { const r = svg.getBoundingClientRect();
-          drag = {type:"pan", x0:vb.x, y0:vb.y, cx:e.clientX, cy:e.clientY, sx:vb.w/r.width, sy:vb.h/r.height}; }
+          drag = {type: "pan", x0: vb.x, y0: vb.y, cx: e.clientX, cy: e.clientY, sx: vb.w / r.width, sy: vb.h / r.height}; }
         svg.setPointerCapture(e.pointerId);
       });
       svg.addEventListener("pointermove", (e) => { if (!drag) return;
-        if (drag.type === "node") { const n = nodes[drag.id]; if (n.center) return; const p = ptVB(e);
-          n.x = p.x; n.y = p.y; if (Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy) > 4) drag.moved = true; paint(); }
-        else { vb.x = drag.x0 - (e.clientX-drag.cx)*drag.sx; vb.y = drag.y0 - (e.clientY-drag.cy)*drag.sy; applyVB(); }
+        if (drag.type === "node") { if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 4) drag.moved = true; }
+        else { vb.x = drag.x0 - (e.clientX - drag.cx) * drag.sx; vb.y = drag.y0 - (e.clientY - drag.cy) * drag.sy; applyVB(); }
       });
       svg.addEventListener("pointerup", (e) => {
-        if (drag && drag.type === "node" && !drag.moved && !nodes[drag.id].center) {
-          const n = nodes[drag.id];
-          // Dive DOWN a layer: super-group → its families view; family/keyword → that term's two-hop view.
-          if (n.kind === "supergroup") mmLevel("family");
-          else { $("ins-term").value = n.label; pickTerm(n.label); }
+        if (drag && drag.type === "node" && !drag.moved) {
+          const n = nodes[drag.i];
+          if (!n.center) {
+            if (n.kind === "supergroup") mmLevel("family");
+            else { $("ins-term").value = n.label; pickTerm(n.label); }
+          }
         }
         drag = null; try { svg.releasePointerCapture(e.pointerId); } catch (_e) {}
       });
@@ -4733,6 +4930,23 @@
       const svg = document.getElementById("oo-tmap");
       if (svg) svg.setAttribute("viewBox", `${TMAP_VB.x} ${TMAP_VB.y} ${TMAP_VB.w} ${TMAP_VB.h}`);
     }
+    function wireTmapWheel() {                     // Google-Maps-style wheel zoom
+      const svg = document.getElementById("oo-tmap");
+      if (!svg || svg._wheelWired) return;
+      svg._wheelWired = true;
+      svg.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const m = svg.getScreenCTM().inverse(); const p = svg.createSVGPoint();
+        p.x = e.clientX; p.y = e.clientY; const q = p.matrixTransform(m);
+        const f = Math.exp(e.deltaY * 0.0015);
+        const w = Math.min(MAP_W, Math.max(MAP_W * 0.03, TMAP_VB.w * f));
+        const sc = w / TMAP_VB.w;
+        TMAP_VB.x = q.x - (q.x - TMAP_VB.x) * sc;
+        TMAP_VB.y = q.y - (q.y - TMAP_VB.y) * sc;
+        TMAP_VB.w = w; TMAP_VB.h *= sc;
+        applyTmapVB(); renderTimemap();
+      }, {passive: false});
+    }
     function zoomTmap(f) {
       const cx = TMAP_VB.x + TMAP_VB.w/2, cy = TMAP_VB.y + TMAP_VB.h/2;
       TMAP_VB.w = Math.min(MAP_W, Math.max(30, TMAP_VB.w * f));
@@ -4766,7 +4980,35 @@
       }
     }
 
+    let TMAP_SPAN_OVERRIDE = null;                 // [a,b] fractional years (user-set)
+    function dateToT(iso) {                        // YYYY-MM-DD -> fractional year
+      const d = new Date(iso + "T00:00:00Z");
+      if (isNaN(d)) return null;
+      const y = d.getUTCFullYear(), start = Date.UTC(y, 0, 1);
+      return y + (d.getTime() - start) / (Date.UTC(y + 1, 0, 1) - start);
+    }
+    function tToDate(t) {                          // fractional year -> YYYY-MM-DD
+      const y = Math.floor(t), start = Date.UTC(y, 0, 1);
+      const ms = start + (t - y) * (Date.UTC(y + 1, 0, 1) - start);
+      return new Date(ms).toISOString().slice(0, 10);
+    }
+    function onTmapSpanChange() {                  // re-map the slider onto a period
+      const a = $("tmap-span-a").value, b = $("tmap-span-b").value;
+      TMAP_SPAN_OVERRIDE = (a && b && a < b) ? [dateToT(a), dateToT(b)] : null;
+      $("tmap-slider").value = 1000; onTmapSlide(); buildTmapStrip();
+    }
+    function onTmapDate() {                        // precise manual focus
+      const t = dateToT($("tmap-date").value);
+      if (t == null) return;
+      $("tmap-slider").value = tToSlider(t); onTmapSlide();
+    }
+    function tmapExpand() {
+      $("tmap-wrap").classList.toggle("mm-big");
+      $("tmap-expand").textContent = $("tmap-wrap").classList.contains("mm-big") ? "🗗" : "⛶";
+      renderTimemap();
+    }
     function tmapSpan() {                          // [min,max] fractional years, padded
+      if (TMAP_SPAN_OVERRIDE) return TMAP_SPAN_OVERRIDE;
       const r = TMAP.range || {};
       if (r.min == null) return [2000, 2030];
       const pad = Math.max(1, (r.max - r.min) * 0.02);
@@ -4778,6 +5020,7 @@
     function onTmapSlide() {
       TMAP_FOCUS = sliderToT(+$("tmap-slider").value);
       $("tmap-focus-label").textContent = fmtYear(TMAP_FOCUS);
+      if (TMAP_FOCUS > 1583 && TMAP_FOCUS < 9999) $("tmap-date").value = tToDate(TMAP_FOCUS);
       renderTimemap();
     }
 
@@ -4805,7 +5048,8 @@
       if (_tmapPlay) { stopTmapPlay(); return; }
       const btn = $("tmap-play"); if (btn) btn.textContent = "❚❚ pause";
       _tmapPlay = setInterval(() => {
-        const s = $("tmap-slider"); let v = +s.value + 6;
+        const speed = Number($("tmap-speed").value) || 1;   // user-tweakable sweep speed
+        const s = $("tmap-slider"); let v = +s.value + 6 * speed;
         if (v >= 1000) { v = 1000; stopTmapPlay(); }
         s.value = v; onTmapSlide();
       }, 120);
@@ -4872,11 +5116,14 @@
         const r = (mag ? 1.8 + mag*0.7 : (s.confirmed ? 3 : 2.4)).toFixed(1);
         const col = kindColor(s.kind);
         const ring = future || !s.confirmed
-          ? `fill="none" stroke="${col}" stroke-width="1.1" stroke-dasharray="${future?'2 1.5':''}"`
+          // fill="transparent" (not "none"): the whole disc stays a hit target —
+          // hollow rings were clickable only on their 1px edge (live test 2026-06-11).
+          ? `fill="transparent" stroke="${col}" stroke-width="1.1" stroke-dasharray="${future?'2 1.5':''}"`
           : `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`;
         const lab = labels ? `<text x="${x}" y="${(+y - +r - 1).toFixed(1)}" fill="var(--fg)"
           font-size="3.4" text-anchor="middle" opacity="${op.toFixed(2)}">${esc((s.title||"").slice(0,42))}</text>` : "";
         return `<g opacity="${op.toFixed(2)}" style="cursor:pointer" onclick="showTmapDetail(${i})">
+          <circle cx="${x}" cy="${y}" r="${(+r + 3.5).toFixed(1)}" fill="transparent" stroke="none"></circle>
           <circle cx="${x}" cy="${y}" r="${r}" ${ring}><title>${esc(s.title)} — ${esc(fmtDate(s))}</title></circle>${lab}</g>`;
       }).join("");
 
@@ -4955,7 +5202,7 @@
       const note = (TMAP.signals.length && !_tmapVisible.length)
         ? `<div class="hint" style="margin-top:6px">No signals fall in this time window — widen the <b>Window</b> or move the slider.</div>` : "";
       $("tmap-svg").innerHTML = svg + note;
-      applyTmapVB(); wireTmapDrag();
+      applyTmapVB(); wireTmapDrag(); wireTmapWheel();
     }
 
     async function loadTimemap() {
@@ -5038,8 +5285,11 @@
       } catch (e) { /* dumps optional */ }
     }
 
+    function dumpSelected() {                      // multi-select (maintainer 2026-06-11)
+      return [...$("dump-lang").selectedOptions].map(o => o.value).filter(Boolean);
+    }
     async function probeDump() {
-      const w = $("dump-lang").value.trim() || "en";
+      const w = dumpSelected()[0] || "en";
       $("dump-estimate").textContent = "Checking size…";
       try {
         const d = await api(`/api/wiki/dumps/probe?wiki=${encodeURIComponent(w)}`);
@@ -5048,7 +5298,13 @@
     }
 
     async function startDump(wiki) {
-      const w = wiki || $("dump-lang").value.trim() || "en";
+      // Several selected editions download sequentially (one polite queue).
+      const picks = wiki ? [wiki] : dumpSelected();
+      if (picks.length > 1) {
+        for (const code of picks) await startDump(code);
+        return;
+      }
+      const w = picks[0] || "en";
       if (!wiki && !confirm(`Download the ${w} current-text dump? This can be very large (tens of GB for big editions).`)) return;
       try { await api("/api/wiki/dumps/start", {method:"POST", body: JSON.stringify({wiki: w})});
         toast("Download started."); loadWikiDumps();

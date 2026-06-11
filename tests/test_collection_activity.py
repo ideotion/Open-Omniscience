@@ -102,3 +102,20 @@ def test_activity_endpoint_shape():
         for key in ("running", "active", "progress", "plan", "per_host_rates"):
             assert key in body
         assert "estimate_method" in body["plan"]
+
+
+def test_network_mode_toggle_endpoints():
+    """The app-wide online/offline switch (the kill switch as a first-class
+    top-bar control, maintainer-ruled 2026-06-11)."""
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.ingest import clear_kill_switch, kill_switch_active
+
+    with TestClient(app) as c:
+        assert c.get("/api/system/network").json()["online"] is True
+        r = c.post("/api/system/network", json={"online": False})
+        assert r.json()["online"] is False and kill_switch_active() is True
+        r = c.post("/api/system/network", json={"online": True})
+        assert r.json()["online"] is True and kill_switch_active() is False
+    clear_kill_switch()

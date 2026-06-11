@@ -109,14 +109,16 @@ feeds:
     market: world-bank
 
   # --- Precious metals + FX (daily, via FRED) ------------------------------ #
+  # LBMA daily fixes were removed from FRED (404 verified live 2026-06-11);
+  # the World Bank Pink Sheet monthlies are the free, stable replacements.
   - key: gold
-    name: "Gold (LBMA PM fix, daily)"
+    name: "Gold (World Bank, monthly)"
     symbol: GOLD
     category: precious
-    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=GOLDPMGBD228NLBM"
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PGOLDUSDM"
     currency: USD
     unit: ozt
-    market: LBMA/FRED
+    market: world-bank
   - key: eur_usd
     name: "EUR/USD exchange rate (daily)"
     symbol: EURUSD
@@ -168,13 +170,13 @@ feeds:
 
   # --- Precious metals (daily, via FRED) ----------------------------------- #
   - key: silver
-    name: "Silver (LBMA fix, daily)"
+    name: "Silver (World Bank, monthly)"
     symbol: SILVER
     category: precious
-    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SLVPRUSD"
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PSILVUSDM"
     currency: USD
     unit: ozt
-    market: LBMA/FRED
+    market: world-bank
 
   # --- Agriculture & cereals (World Bank Pink Sheet, monthly, via FRED) ----- #
   - key: corn

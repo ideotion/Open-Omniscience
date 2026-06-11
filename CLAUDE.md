@@ -123,6 +123,117 @@ Before fearing loss from an archive-size change, run
   the Help tab + USER_MANUAL; a proper rename is expected later (keep the
   suffix mechanism centralized enough to swap in one pass).
 
+- **FIELD LOG #1 PROCESSED (2026-06-11, the maintainer's overnight run):**
+  corpus 1,349 articles / 53k keywords (en 70k·fr 8.1k·de 1.2k signature
+  volume); 26/26 runs ok; 511/511 calendars verified by field-test mode.
+  Fixed from it: family over-merge guards (single-token ambiguity, clean
+  2–3-token parents only, honorific-equality direct merge, junk labels) —
+  validated by replaying the log; FRENCH stoplist block was entirely missing
+  (dans/plus/pas leaked as top entities) + months/weekdays + elision
+  stripping (d'euros→euros); first REAL equivalence ring batch (10 rings);
+  catalog pruned from live verdicts (13 defunct WPH codes, 8 empty families,
+  4 Stooq indices robots-denied, Wilshire 404; gold/silver → Pink Sheet
+  monthlies). KNOWN: calendar.google.com + webcal.guru robots-disallow their
+  feed paths (verdicts shown honestly; WPH is the working holiday provider);
+  FRED bursts intermittently refused (transient conn errors — retry exists);
+  'database is locked' under concurrent import+scrape = the download-manager
+  arbitration item (queued, unchanged); preflight covers 50 sources/run —
+  batch it like calendars (queued).
+
+- **LIVE-TEST BATCH 2026-06-11 — all five items SHIPPED same day:**
+  (1) Mind-maps follow MIND-MAP RULES now (maintainer-stated): centre → arms →
+  always outward; deterministic radial tree, leaves hang off their strongest
+  relative, no cross-tangle; family/supergroup levels use weight-ranked rings.
+  The cloud stayed as a SECOND VIEW (golden-angle spiral, weight-ordered).
+  Both have the date-spectrum control (all time/week/month/year/custom from-to
+  threaded down to windowed PMI — method says "within the selected window"),
+  ⛶ Enlarge (generic .mm-big) and a text-size slider (uniform multiplier:
+  font size keeps meaning weight). (2) Super-groups ship PRE-CREATED:
+  configs/keyword_supergroups.yml (8 groups drafted from field log #1,
+  members verified present), idempotent startup seed, user edits always win.
+  (3) Keyword log cap is PER LANGUAGE (5000) — maintainer: a global cap
+  anglicises the export; corpus header reports exported_per_language +
+  capped_languages. (4) Temporal map usability: precise Focus-date input,
+  Time-span from/to REMAPPING the slider (play sweeps only that period),
+  play speed 0.5–4×, ±2-months/±1-month/±1-week windows, pins now have fat
+  transparent hit discs (fill=none was edge-only clickable), wheel zoom,
+  in-map overlay controls (the Google-Maps "inside the map" principle —
+  apply to future map-like surfaces), ⛶ Enlarge. (5) Settings → Wikipedia
+  dumps language list never loaded: DUPLICATE loadWikiLanguages definition
+  (the later tab-picker one overwrote the Settings one) → renamed
+  loadDumpLanguages; the editions select is now MULTI-select and Download
+  queues all picked editions sequentially. Lesson: duplicate top-level JS
+  function names silently override — grep before declaring.
+
+- **Article reader rework — TABS (maintainer-ruled 2026-06-11):** the dedicated
+  article window gains tabs: Mindmap (this article's keyword graph) · Related
+  articles · Source description · Keyword analysis · Sentiment analysis. The
+  two-class metadata header SHIPPED same day (source-asserted vs app-deduced,
+  dashed amber box + "never a confirmed fact" note, with extracted event dates
+  AND places); the tabs are the next reader batch.
+- **Article CORPORA (maintainer-ruled 2026-06-11, the flagship analysis ask):**
+  select several articles anywhere in the app → "create a corpus" → opens its
+  own window/tab with the SAME tabs as the reader rework but computed over all
+  member articles, PLUS a corpus-only tab: **source competitive analysis** —
+  how each source approaches a concept (angle, framing, sentiment, volume,
+  timing), with real visual representations. Single articles don't get that
+  tab (n=1 has no competition). Joins the queued tag-driven corpora as one
+  corpora system: tag-selection and hand-selection are two entries to the
+  same object.
+- **Location extractor SHIPPED (2026-06-11):** src/timemap/locextract.py —
+  gazetteer cities (case-sensitive, source-country disambiguated, says which
+  rule decided) + curated multilingual country table (~90 forms); lexical,
+  bounded, snippet provenance, "deduced" notes. Surfaced in the reader's
+  deduced-metadata block next to extracted event dates. NEXT: feed the
+  temporal map's mention layer with text locations (event site, not just
+  coverage origin) + extend the country table from field logs.
+- **Entity extractor SHIPPED (2026-06-11, the maintainer's WHO axis):**
+  src/timemap/entextract.py — PEOPLE and ORGANIZATIONS as two SEPARATE classes
+  by design (maintainer: "We should treat people and companies/organizations
+  separately"). Rules, all explainable + noted per entry: honorific+name
+  (high precision), lowercase-word-preceded Firstname-Lastname shape (weakest,
+  says so), TitleCase phrase ending in an org word (leading determiners
+  stripped), repeated acronyms (≥2 occurrences, stoplisted common caps out);
+  a word claimed by an org never doubles as a person. Reader deduced block
+  gains "People in text" + "Organizations in text" rows with ×N mention
+  counts. NEXT: aggregate entities corpus-wide (the people/org layer for
+  analytics + the future corpus tabs). btop ruled OUT as a vitals dependency
+  (maintainer "OK for Btop, good call" 2026-06-11): Apache-2.0 C++ TUI binary,
+  wrong shape — the CPU bug was psutil per-core normalization, fixed in-app.
+- **Themes + bundled fonts (maintainer-ruled 2026-06-11, while away) —
+  SHIPPED same day:** (1) 9 NEW themes (Arctic/Solar/Forest/Aubergine/Garnet/
+  Cyber dark + Mist/Dawn/Mint light → 17 + System); (2) six SIL-OFL fonts
+  BUNDLED in src/static/fonts (~1.1 MB woff2: Cantarell R/B, Inter VF,
+  Outfit VF, Manrope VF, JetBrains Mono VF, Source Serif 4 VF; README +
+  license texts; fetched from github.com/google/fonts, lossless TTF→WOFF2);
+  themes pair with fonts (Arctic→Inter, Cyber→Outfit, Mint→Manrope,
+  Sepia/Paper→Source Serif, reader body→Source Serif) and a Typeface picker
+  in Appearance overrides any theme; Cantarell answer: yes modern humanist
+  (GNOME default) but the common build is 400/700 only — upstream VF with
+  Thin is on GNOME GitLab (network-blocked here); Inter/Outfit carry true
+  Thin 100. (3) Visual-bug sweep findings FIXED: the Settings "font cursor"
+  was TWO bugs — range inputs had zero styling app-wide AND the whole
+  Appearance section lost its .seg/.sl styles when the drawer was retired
+  (selectors stayed `.drawer .seg` = dead CSS); plus no color-scheme
+  declaration (native selects/date-pickers rendered light-on-dark — now per
+  theme), no accent-color on checkboxes/radios, skip-link + theme-dot
+  hardcoded white, /investigate ignored the Console's theme (now reads oo.ui
+  theme family + accent), syncThemeSelect treated all light themes as dark.
+  Invariants #10–12 added to test_ui_invariants (fonts bundled+local-only,
+  themed range sliders, no .drawer .seg regression, Typeface picker, ≥16
+  theme CSS blocks). Locales 296/296 ×12 (Typeface/Theme default/fonts hint).
+- **The WHAT axis (maintainer musing 2026-06-11, answer recorded):** after
+  when/where/who, the maintainer asked about "what" — then offered "maybe the
+  article is the what". Assistant position: the article is the TESTIMONY of
+  the what, not the what itself (many articles ↔ one event; that asymmetry is
+  what echo/event-family detection already exploits). The WHAT has no extractor
+  because it is not a surface feature — it EMERGES as the intersection of the
+  other axes: articles sharing a time window + place + people/orgs + keyword
+  family ARE an event, presented as overlap counts, never an event-type
+  classification score. Concretely: the parked-for-0.0.9 convergence detection
+  (PR #51 layers 3+4) becomes the WHAT engine, strengthened by the new WHO
+  axis. No ruling yet — awaiting maintainer's direction before building.
+
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`
@@ -133,10 +244,14 @@ Before fearing loss from an archive-size change, run
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 
 ## Open queue (when maintainer says proceed)
-- **Agenda views (maintainer 2026-06-10):** view switcher — monthly calendar,
-  weekly, daily, trimester, and list. Also: the Agenda tab is currently NOT
-  translated at all (part of the chrome-audit long tail — prioritize its
-  strings in the next i18n batch, as done for Indices).
+- **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11 — "I did NOT
+  have a chance to see the calendar format"): NOT BUILT YET, the tab only has
+  the list.** Build the switcher: list / week / month / trimester / semester /
+  year / decade. PLUS (2026-06-11): MONTH-SPANNING events ("Dry January",
+  "Movember") — the event model needs a duration/whole-month kind rendered as
+  a banner across the month, not a single-day pin; world_events.yml schema
+  gains an optional span (start/end or month=whole). Also: the Agenda tab is
+  currently NOT translated at all (chrome-audit long tail — prioritize).
 - **Agenda depth (maintainer 2026-06-10): only 4 categories — "we should be
   flooded; it's the point of datamining".** Expand `configs/world_events.yml`
   massively: many more calendars (elections worldwide, summits, central banks,
@@ -205,6 +320,23 @@ Before fearing loss from an archive-size change, run
   the top-1000 Wikipedia pages in all languages, bundled — needs a design
   answer first (network cost at first boot vs zero-network-boot non-negotiable;
   likely ship the LIST bundled + one-click opt-in, never auto-fetch).
+- **NETWORK MODE first-class (maintainer-ruled 2026-06-11, SHIPPED same day):**
+  the kill switch is now a top-bar ▶ Online / ⏸ Offline play-pause button —
+  never buried in a sub-tab. Loud-but-beautiful state: pulsing red button,
+  red top-bar underline, radial flash on toggle; honest toast ("one in-flight
+  request may finish" — an open socket can't be un-sent, which is why it
+  isn't strictly instantaneous; new requests refuse immediately). Endpoints
+  GET/POST /api/system/network; state synced via the 5s vitals poll. Also
+  FIXED: process CPU% was PER-CORE (psutil) and read higher than the whole
+  OS — now normalized by core count (cpu_cores reported). btop (maintainer
+  asked): Apache-2.0, GPLv3-compatible one-way, but unnecessary — it's a
+  C++ TUI binary, and our bug was normalization, not the data source.
+- **Task manager view (maintainer-ruled 2026-06-11, ELEVATES the download
+  manager):** the vitals panel becomes minimized-but-visible animated main
+  indicators; CLICK opens a dedicated window/tab — an OS-style task manager:
+  what scrapes next, wiki-dump progress, queued jobs with tweak/cancel/
+  reorder, organized in tabs if dense. Build together with the queue/
+  prioritize/cancel arbitration below (one system).
 - **Download manager + user arbitration (maintainer-ruled 2026-06-10, the
   live-test "load indices while scraping" confusion):** every network task
   (scrape pass, indices refresh, markets load, wiki track, offline-wiki dump)

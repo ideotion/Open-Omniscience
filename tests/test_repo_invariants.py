@@ -221,3 +221,26 @@ def test_ui_invariants():
     #    plain words FIRST, the exact math beneath, both translatable.
     assert "Why am I seeing this?" in html, "cards must explain themselves (CLAUDE.md)"
     assert "The exact math" in html, "the equations render under the plain explanation"
+    # 10. bundled open-source fonts (ruled 2026-06-11): OFL files ship in the
+    #     repo, @font-face declarations are local, no external font host.
+    fonts = _SRC / "static" / "fonts"
+    for fname in (
+        "Cantarell-Regular.woff2", "Inter-Variable.woff2", "Outfit-Variable.woff2",
+        "Manrope-Variable.woff2", "JetBrainsMono-Variable.woff2",
+        "SourceSerif4-Variable.woff2",
+    ):
+        assert (fonts / fname).exists(), f"bundled font missing: {fname} (CLAUDE.md)"
+    assert list(fonts.glob("OFL-*.txt")), "OFL license texts must ship with the fonts"
+    assert html.count("@font-face") >= 6, "bundled fonts must be declared in index.html"
+    assert "fonts.googleapis.com" not in html and "fonts.gstatic.com" not in html, (
+        "fonts are bundled — never fetched from an external host"
+    )
+    # 11. themed form widgets (the Settings 'font cursor' bug, 2026-06-11):
+    #     range sliders styled to the theme; the Appearance .seg styles must
+    #     never regress to the retired drawer scoping (dead selectors).
+    assert 'input[type="range"]::-webkit-slider-thumb' in html, "range sliders must be themed"
+    assert ".drawer .seg" not in html, "the drawer is retired; .seg styles must be unscoped"
+    # 12. the Typeface picker exists and the theme catalog never shrinks.
+    assert 'id="dr-faces"' in html, "the Typeface picker must exist (CLAUDE.md)"
+    # 16 CSS blocks: 17 named themes, Ink lives in :root (System is JS-only).
+    assert html.count('html[data-theme="') >= 16, "the theme catalog must not shrink"

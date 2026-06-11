@@ -106,6 +106,7 @@ def _article_signals(db: Session, days: int | None, limit: int) -> list[dict]:
                 "title": a.title,
                 "url": a.url,
                 "published": a.published_at,
+                "language": a.language,
                 "country": a.country or (getattr(src, "country", None) if src else None),
                 "city": getattr(meta, "city", None) if meta else None,
             }

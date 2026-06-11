@@ -186,6 +186,15 @@ async def lifespan(app: FastAPI):
         _install_errorlog()
     except Exception:  # noqa: BLE001 - logging must never block startup
         logger.warning("could not install the error-log handler", exc_info=True)
+    # Bundled initial super-groups (maintainer-ruled 2026-06-11): created only
+    # where missing; the user's own curation always wins. Offline, best-effort.
+    try:
+        from src.analytics.supergroup_seed import seed_supergroups
+
+        with session_scope() as _s:
+            seed_supergroups(_s)
+    except Exception:  # noqa: BLE001 - seeding must never block startup
+        logger.warning("super-group seeding failed", exc_info=True)
     try:
         with session_scope() as session:
             ARTICLES_COUNT.set(session.query(Article).count())
@@ -822,20 +831,100 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     hash_short = (a.hash[:12] + "…") if a.hash else None
     safe_src = safe_href(a.url)
 
-    meta_rows = "".join(
+    # TWO metadata classes, clearly differentiated (maintainer-ruled 2026-06-11):
+    # what the SOURCE asserted vs what THIS APP deduced (explicitly less reliable).
+    source_rows = "".join(
         [
             _row("Source", src_name),
             _row("Published", _html.escape(published) if published else None),
-            _row("Captured", _html.escape(captured) if captured else None),
             _row("Author", _html.escape(a.author) if a.author else None),
             _row("Language", lang if a.language else None),
+        ]
+    )
+    # App-deduced: capture facts + extracted event dates/locations + keywords.
+    deduced_extra = []
+    try:
+        from src.timemap.dateextract import extract_dates
+
+        anchor = a.published_at.date() if a.published_at else None
+        ds = extract_dates(content, anchor=anchor, language=a.language, limit=5)
+        if ds:
+            deduced_extra.append(
+                _row(
+                    "Event dates in text",
+                    " · ".join(
+                        f"{_html.escape(d['date'])} <span class='muted'>({_html.escape(d['precision'])})</span>"
+                        for d in ds
+                    ),
+                )
+            )
+    except Exception:  # noqa: BLE001 - extraction must never break the reader
+        logger.warning("date extraction failed in reader", exc_info=True)
+    try:
+        from src.timemap.locextract import extract_locations
+
+        locs = extract_locations(content, source_country=a.country, limit=5)
+        if locs:
+            deduced_extra.append(
+                _row(
+                    "Places in text",
+                    " · ".join(
+                        f"{_html.escape(loc['name'])}"
+                        + (f" <span class='muted'>({_html.escape(loc.get('country') or '')})</span>" if loc.get("country") else "")
+                        for loc in locs
+                    ),
+                )
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning("location extraction failed in reader", exc_info=True)
+    try:
+        from src.timemap.entextract import extract_entities
+
+        ents = extract_entities(content, limit=5)
+        if ents["people"]:
+            deduced_extra.append(
+                _row(
+                    "People in text",
+                    " · ".join(
+                        f"{_html.escape(p['name'])}"
+                        + (f" <span class='muted'>×{p['mentions']}</span>" if p["mentions"] > 1 else "")
+                        for p in ents["people"]
+                    ),
+                )
+            )
+        if ents["organizations"]:
+            deduced_extra.append(
+                _row(
+                    "Organizations in text",
+                    " · ".join(
+                        f"{_html.escape(o['name'])}"
+                        + (f" <span class='muted'>×{o['mentions']}</span>" if o["mentions"] > 1 else "")
+                        for o in ents["organizations"]
+                    ),
+                )
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning("entity extraction failed in reader", exc_info=True)
+    deduced_rows = "".join(
+        [
+            _row("Captured (downloaded)", _html.escape(captured) if captured else None),
             _row(
-                "Region", _html.escape(a.country or a.region) if (a.country or a.region) else None
+                "Region (from the source's catalog entry)",
+                _html.escape(a.country or a.region) if (a.country or a.region) else None,
             ),
+            *deduced_extra,
             _row(
                 "Content hash", f"<code>{_html.escape(hash_short)}</code>" if hash_short else None
             ),
         ]
+    )
+    meta_rows = (
+        "<div class='mgrp'><h3>From the source</h3>" + (source_rows or "<div class='mrow muted'>—</div>") + "</div>"
+        "<div class='mgrp deduced'><h3>Deduced by this app — less reliable</h3>"
+        + (deduced_rows or "<div class='mrow muted'>—</div>")
+        + "<div class='mnote'>Extractions are lexical candidates with snippet provenance — "
+        "an event date, place, person or organization mentioned in the text, "
+        "never a confirmed fact.</div></div>"
     )
 
     # Co-citation: the external links THIS article cites, each with how many distinct
@@ -983,13 +1072,21 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{(title[:40] + "…") if len(title) > 40 else title} · FOOS</title><style>
+  .mgrp {{ margin:8px 0; padding:8px 10px; border:1px solid var(--line); border-radius:8px; }}
+  .mgrp h3 {{ margin:0 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--mut); }}
+  .mgrp.deduced {{ border-style:dashed; }}
+  .mgrp.deduced h3 {{ color:var(--warn); }}
+  .mnote {{ margin-top:6px; font-size:11px; color:var(--mut); }}
   :root {{ color-scheme: light dark; --ink:#0b0d10; --paper:#0e1116; --fg:#e7e9ee; --mut:#8b93a1;
     --line:#222833; --accent:#5ea0ff; --card:#141923; --warn:#f0a23a; }}
   @media (prefers-color-scheme: light) {{ :root {{ --paper:#faf8f4; --fg:#1a1d22; --mut:#6b7280;
     --line:#e4e0d8; --card:#fff; --accent:#2b6cd4; }} }}
+  /* Bundled OFL reading serif (src/static/fonts) — local file, zero network. */
+  @font-face {{ font-family:"Source Serif 4"; src:url("/static/fonts/SourceSerif4-Variable.woff2")
+    format("woff2"); font-weight:200 900; font-display:swap; }}
   * {{ box-sizing: border-box; }}
   body {{ margin:0; background:var(--paper); color:var(--fg);
-    font: 18px/1.72 Georgia,'Times New Roman',serif; }}
+    font: 18px/1.72 "Source Serif 4",Georgia,'Times New Roman',serif; }}
   .wrap {{ max-width: 760px; margin: 0 auto; padding: 28px 22px 80px; }}
   .crumb {{ font: 12px/1.4 system-ui,sans-serif; color:var(--mut); margin-bottom:18px;
     display:flex; gap:8px; align-items:center; }}

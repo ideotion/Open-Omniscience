@@ -70,3 +70,177 @@ def test_empty_and_limit():
     assert extract_dates("", today=TODAY) == []
     many = " ".join(f"{i} January 2001" for i in range(1, 20))
     assert len(extract_dates(many, today=TODAY, limit=3)) == 3
+
+
+# --------------------------------------------------------------------------- #
+#  Extractor optimization (maintainer 2026-06-11: "so little dates aggregated")
+#  — multilingual months, numeric formats, anchored resolution.
+# --------------------------------------------------------------------------- #
+def test_multilingual_months_extract():
+    got = _dates("Le sommet du 11 juin 2026 suivra la réunion del 5 de mayo de 2026 "
+                 "und dem Treffen am 3. Dezember 2026, e l'incontro del 7 ottobre 2026.")
+    assert ("2026-06-11", "day") in got
+    assert ("2026-05-05", "day") in got
+    assert ("2026-12-03", "day") in got
+    assert ("2026-10-07", "day") in got
+
+
+def test_numeric_dates_language_disambiguated():
+    from src.timemap.dateextract import extract_dates
+
+    fr = extract_dates("Réunion le 11/06/2026.", language="fr")
+    assert fr and fr[0]["date"] == "2026-06-11"          # DMY for French
+    en = extract_dates("Meeting on 06/11/2026.", language="en")
+    assert en and en[0]["date"] == "2026-06-11"          # MDY for English
+    none = extract_dates("On 06/11/2026 something happened.")
+    assert none == []                                     # ambiguous + no hint: SKIPPED
+    sure = extract_dates("Am 25.12.2026 ist es soweit.")
+    assert sure and sure[0]["date"] == "2026-12-25"       # day>12 disambiguates alone
+
+
+def test_anchored_relative_and_weekday_resolution():
+    from datetime import date
+
+    from src.timemap.dateextract import extract_dates
+
+    anchor = date(2026, 6, 10)  # a Wednesday
+    got = {(c["date"], c["text"][:14]) for c in extract_dates(
+        "Hier, la ville était calme. Mardi, les frappes ont repris. "
+        "Tomorrow the talks resume; a summit on June 12 follows.",
+        anchor=anchor, language="fr", limit=10)}
+    dates = {d for d, _ in got}
+    assert "2026-06-09" in dates   # hier = anchor - 1 AND mardi (most recent Tuesday)
+    assert "2026-06-11" in dates   # tomorrow
+    assert "2026-06-12" in dates   # day+month, year resolved from the anchor
+    # Without an anchor, none of these resolve — never guessed.
+    bare = extract_dates("Hier, mardi, tomorrow, June 12.", language="fr")
+    assert bare == []
+
+
+# --------------------------------------------------------------------------- #
+#  Location extractor — the spatial twin (maintainer-ruled 2026-06-11)
+# --------------------------------------------------------------------------- #
+def test_extract_locations_cities_countries_and_disambiguation():
+    from src.timemap.locextract import extract_locations
+
+    text = ("Fighting intensified near Gaza while Iran and Israël traded warnings. "
+            "In Paris, officials met; Paris later confirmed. The summit moved to Berlin.")
+    got = extract_locations(text, source_country="fr", limit=8)
+    names = {(e["name"], e["kind"]) for e in got}
+    assert ("Iran", "country") in names
+    assert ("Israël", "country") in names or ("Israel", "country") in names
+    assert ("Paris", "city") in names
+    paris = next(e for e in got if e["name"] == "Paris")
+    assert paris["mentions"] == 2 and paris["country"] == "fr"
+    assert "lat" in paris and "deduced" in paris["note"]
+    # Case sensitivity guards common-word collisions: 'turkey' the bird ≠ Turkey.
+    assert extract_locations("the turkey was delicious") != []  # country matches case-insensitively...
+    # ...but a CITY name must be capitalised as written:
+    assert all(e["kind"] != "city" for e in extract_locations("a paris of possibilities"))
+
+
+def test_reader_shows_both_metadata_classes(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.database.models import Article, SessionLocal, Source
+
+    with TestClient(app) as c:  # startup creates the schema first
+        s = SessionLocal()
+        try:
+            src = Source(name="Meta source", domain="meta.test", country="fr")
+            s.add(src)
+            s.flush()
+            a = Article(
+                url="https://meta.test/1", canonical_url="https://meta.test/1",
+                source_id=src.id, title="Metadata classes", hash="meta-h1", language="fr",
+                content="Le 11 juin 2026, des frappes près de Gaza. À Paris, réunion d'urgence.",
+                published_at=__import__("datetime").datetime(2026, 6, 10),
+                created_at=__import__("datetime").datetime(2026, 6, 11),
+            )
+            s.add(a)
+            s.commit()
+            aid = a.id
+        finally:
+            s.close()
+        html = c.get(f"/api/articles/{aid}/view").text
+        assert "From the source" in html
+        assert "Deduced by this app — less reliable" in html
+        assert "Event dates in text" in html and "2026-06-11" in html
+        assert "Places in text" in html and "Gaza" in html
+        assert "never a confirmed fact" in html
+
+
+# --------------------------------------------------------------------------- #
+#  Entity extractor — people vs organizations, the WHO axis
+#  (maintainer-ruled 2026-06-11: separate classes by design)
+# --------------------------------------------------------------------------- #
+def test_extract_entities_people_and_orgs_separate():
+    from src.timemap.entextract import extract_entities
+
+    text = ("Yesterday, President Macron met Chancellor Scholz in Berlin. "
+            "The talks, said Ursula Leyenberg, will continue. NATO observers "
+            "attended, and NATO later issued a statement. The Finance Ministry "
+            "and Acme Corp declined to comment.")
+    got = extract_entities(text)
+    people = {p["name"] for p in got["people"]}
+    orgs = {o["name"] for o in got["organizations"]}
+    assert "Macron" in people and "Scholz" in people
+    assert "Ursula Leyenberg" in people               # mid-sentence shape rule
+    assert "NATO" in orgs                             # repeated acronym
+    assert "Finance Ministry" in orgs and "Acme Corp" in orgs
+    assert not people & orgs                          # never double-classed
+    assert all("deduced" in e["note"] for e in got["people"] + got["organizations"])
+    assert all(e["snippet"] for e in got["people"] + got["organizations"])
+
+
+def test_extract_entities_guards():
+    from src.timemap.entextract import extract_entities
+
+    # A single-occurrence acronym is NOT promoted to an organization.
+    one = extract_entities("The report cited UNHCR once in passing.")
+    assert all(o["name"] != "UNHCR" for o in one["organizations"])
+    # Stoplisted acronyms never count, however often they repeat.
+    stop = extract_entities("The USA and the EU met; the USA and the EU agreed.")
+    assert stop["organizations"] == []
+    # Sentence-initial TitleCase pairs are not mistaken for people.
+    lead = extract_entities("Many Happy Returns was the headline. Nothing else here.")
+    assert lead["people"] == []
+    # A word claimed by an organization never doubles as a person:
+    # 'World Bank' (org) blocks the person-shape 'Bank Moreau'.
+    mixed = extract_entities(
+        "Funding from the World Bank arrived, and analyst Bank Moreau agreed."
+    )
+    assert any("World Bank" in o["name"] for o in mixed["organizations"])
+    assert all("Bank" not in p["name"] for p in mixed["people"])
+    assert extract_entities("") == {"people": [], "organizations": []}
+
+
+def test_reader_shows_entity_rows():
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.database.models import Article, SessionLocal, Source
+
+    with TestClient(app) as c:
+        s = SessionLocal()
+        try:
+            src = Source(name="Ent source", domain="ent.test", country="us")
+            s.add(src)
+            s.flush()
+            a = Article(
+                url="https://ent.test/1", canonical_url="https://ent.test/1",
+                source_id=src.id, title="Entity classes", hash="ent-h1", language="en",
+                content=("President Macron spoke as NATO met; NATO confirmed. "
+                         "The Finance Ministry sent observers."),
+                published_at=__import__("datetime").datetime(2026, 6, 10),
+                created_at=__import__("datetime").datetime(2026, 6, 11),
+            )
+            s.add(a)
+            s.commit()
+            aid = a.id
+        finally:
+            s.close()
+        html = c.get(f"/api/articles/{aid}/view").text
+        assert "People in text" in html and "Macron" in html
+        assert "Organizations in text" in html and "NATO" in html

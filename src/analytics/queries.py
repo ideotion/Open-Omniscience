@@ -309,23 +309,54 @@ def _group_pairs(pairs: list[dict], overrides: dict[str, dict] | None = None) ->
     return out
 
 
+def _window_filter(q, start=None, end=None):
+    """Apply an observed_on window (ISO dates / date objects) to a mention query."""
+    if start:
+        q = q.filter(KeywordMention.observed_on >= start)
+    if end:
+        q = q.filter(KeywordMention.observed_on <= end)
+    return q
+
+
 def associations(
-    session, term: str, *, limit: int = 20, min_cooccur: int = 2, group: bool = False
+    session,
+    term: str,
+    *,
+    limit: int = 20,
+    min_cooccur: int = 2,
+    group: bool = False,
+    days: int | None = None,
+    start=None,
+    end=None,
 ) -> dict:
     """Keywords that co-occur with ``term`` in the same articles, ranked by PMI.
 
     With ``group=True`` the neighbours are merged into entity families (one node
     per entity instead of one per surface form) — see src/analytics/families.py.
+    ``days`` / ``start`` / ``end`` window the analysis (maintainer 2026-06-11:
+    the date spectrum is tweakable); PMI is then computed WITHIN the window —
+    the method string says so.
     """
+    if days and not start:
+        start = date.today() - timedelta(days=days)
     kw = resolve_keyword(session, term)
     if kw is None:
         return {"term": term, "resolved": None, "pairs": []}
-    total = session.query(func.count(func.distinct(KeywordMention.article_id))).scalar() or 0
+    total = (
+        _window_filter(
+            session.query(func.count(func.distinct(KeywordMention.article_id))), start, end
+        ).scalar()
+        or 0
+    )
     target_articles = [
         a
-        for (a,) in session.query(KeywordMention.article_id)
-        .filter(KeywordMention.keyword_id == kw.id)
-        .distinct()
+        for (a,) in _window_filter(
+            session.query(KeywordMention.article_id).filter(
+                KeywordMention.keyword_id == kw.id
+            ),
+            start,
+            end,
+        ).distinct()
     ]
     n_a = len(target_articles)
     if not target_articles or total == 0:
@@ -338,8 +369,12 @@ def associations(
         }
 
     co_rows = (
-        session.query(
-            KeywordMention.keyword_id, func.count(func.distinct(KeywordMention.article_id))
+        _window_filter(
+            session.query(
+                KeywordMention.keyword_id, func.count(func.distinct(KeywordMention.article_id))
+            ),
+            start,
+            end,
         )
         .filter(KeywordMention.article_id.in_(target_articles), KeywordMention.keyword_id != kw.id)
         .group_by(KeywordMention.keyword_id)
@@ -351,9 +386,13 @@ def associations(
     for kid, co in co_rows:
         co = int(co)
         n_b = (
-            session.query(func.count(func.distinct(KeywordMention.article_id)))
-            .filter(KeywordMention.keyword_id == kid)
-            .scalar()
+            _window_filter(
+                session.query(func.count(func.distinct(KeywordMention.article_id))).filter(
+                    KeywordMention.keyword_id == kid
+                ),
+                start,
+                end,
+            ).scalar()
             or 1
         )
         pmi = math.log2((co * total) / (n_a * n_b)) if co > 0 else 0.0
@@ -380,7 +419,9 @@ def associations(
         "n_articles_with_term": n_a,
         "grouped": group,
         "pairs": pairs[:limit],
-        "method": "pointwise mutual information over article co-occurrence",
+        "window": {"days": days, "start": str(start) if start else None, "end": str(end) if end else None},
+        "method": "pointwise mutual information over article co-occurrence"
+        + (" within the selected window" if (start or end) else ""),
         "caveat": "Association is not causation; PMI on small samples is noisy.",
     }
 
@@ -553,12 +594,15 @@ def layered_graph(
     term: str | None = None,
     hops: int = 2,
     limit_nodes: int = 36,
+    days: int | None = None,
+    start=None,
+    end=None,
 ) -> dict:
     """One zoom level of the keyword graph: keyword (≤2 hops) / family / supergroup."""
     if level == "keyword":
         if not term:
             return {"level": level, "nodes": [], "edges": [], "error": "term required"}
-        base = associations(session, term, limit=12, group=True)
+        base = associations(session, term, limit=12, group=True, days=days, start=start, end=end)
         center = (base.get("resolved") or {}).get("term", term)
         nodes = [{"id": center, "label": center, "kind": "keyword", "center": True, "size": 13}]
         edges, seen = [], {center}
@@ -579,7 +623,9 @@ def layered_graph(
             edges.append({"a": center, "b": p["term"], "weight": p.get("cooccur", 1), "pmi": p.get("pmi")})
         if hops >= 2:
             for p in base.get("pairs", [])[:5]:  # relatives of the strongest relatives
-                second = associations(session, p["term"], limit=4, group=True)
+                second = associations(
+                    session, p["term"], limit=4, group=True, days=days, start=start, end=end
+                )
                 for p2 in second.get("pairs", []):
                     if len(nodes) >= limit_nodes:
                         break
@@ -608,7 +654,7 @@ def layered_graph(
         }
 
     if level == "family":
-        top = top_terms(session, limit=limit_nodes, group=True)
+        top = top_terms(session, limit=limit_nodes, group=True, days=days)
         fams = top.get("terms", [])[:limit_nodes]
         nodes, sets = [], {}
         for f in fams:

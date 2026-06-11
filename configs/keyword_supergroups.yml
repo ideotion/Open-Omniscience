@@ -1,0 +1,26 @@
+# Initial keyword SUPER-GROUPS — bundled, pre-created (maintainer-ruled
+# 2026-06-11: "the supergroups should be created beforehand"). Drafted from
+# field log #1 (1,349 articles; June-2026 news cycle: Middle-East war, FIFA
+# World Cup, AI). Every member below was VERIFIED PRESENT in that log's
+# vocabulary — nothing invented; extend batch-by-batch from future logs.
+#
+# Seeded into the database at startup ONLY where a group name doesn't already
+# exist — the user's own edits/deletions always win (the dispose rule). Members
+# are family canonical normalized terms; a term may belong to several groups.
+supergroups:
+  - name: "Middle East conflict"
+    members: ["iran", "israel"]
+  - name: "FIFA World Cup 2026"
+    members: ["world cup", "fifa", "cup"]
+  - name: "Artificial intelligence"
+    members: ["ai", "ia", "intelligence artificielle", "model", "models", "modèles", "data", "données"]
+  - name: "US politics & government"
+    members: ["trump", "donald trump", "government", "federal government", "president", "supreme court", "court"]
+  - name: "Climate & environment"
+    members: ["climate", "climate change", "energy"]
+  - name: "Security & defense"
+    members: ["security", "military", "police"]
+  - name: "Economy & markets"
+    members: ["company", "companies", "euros"]
+  - name: "Russia & Ukraine"
+    members: ["russian"]
