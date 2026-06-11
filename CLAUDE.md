@@ -426,9 +426,16 @@ Before fearing loss from an archive-size change, run
   coverage panel now live-polls), country stored lowercase ISO-2 + displayed
   as full names via the one conversion layer. The US=1553 split was mostly
   the fabricated default="US" — see the 0.09 opening-order entry above.
-- **SQLCipher at-rest encryption — RULED GO (maintainer 2026-06-10): next
-  MAJOR batch, do first in a fresh session (crypto deserves full attention,
-  not a session tail).** Design agreed in chat: sqlcipher3 driver + SQLAlchemy
+- **SQLCipher at-rest encryption — RULED GO (maintainer 2026-06-10); REFINED
+  2026-06-11 ("not just on export, locally"): the LOCAL working DB file is
+  encrypted BY DEFAULT.** Reliability rider (the DB mandate applies to crypto):
+  random internal DB key wrapped twice — passphrase AND a one-time printed
+  RECOVERY KEY (forgotten passphrase recoverable; losing both = stated chosen
+  risk); plaintext stays a deliberate opt-out (FDE users); existing DBs get a
+  one-way encrypt tool (snapshot first, consent, never silent); sqlcipher3
+  wheels verified on all 3 OSes first (portability checkpoint). Next MAJOR
+  batch, fresh session (crypto deserves full attention, not a session tail).
+  Design agreed in chat: sqlcipher3 driver + SQLAlchemy
   engine key wiring (PRAGMA key on connect); passphrase asked ELEGANTLY in the
   installer GUI (whiptail box + plain-prompt fallback, confirm twice, honest
   'lost passphrase = lost corpus' warning, optional skip = plaintext with

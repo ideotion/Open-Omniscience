@@ -70,6 +70,21 @@
 - **Provenance safeguards** (from the earlier backup-merge stub, now folded in):
   merged rows keep their origin and are never laundered into first-party
   evidence; incoming custody signatures are *verified*, not trusted.
+- **LOCAL at-rest encryption by default (maintainer-refined 2026-06-11 — "not
+  just on export, locally"):** the working database FILE on disk is
+  SQLCipher-encrypted, unlocked with the passphrase at app start — a copied or
+  seized `*.db` without the key is random bytes. Default-encrypted comes WITH
+  the reliability rider (the mandate above applies to crypto too): a random
+  internal DB key wrapped twice — by the passphrase AND by a one-time printed
+  **recovery key** — so a forgotten passphrase is recoverable and only losing
+  BOTH loses the corpus (a stated, chosen risk, never a surprise). Plaintext
+  stays available as a deliberate opt-out with the risk spelled out (Qubes/
+  Tails users already under full-disk encryption may reasonably choose it).
+  Existing databases: a one-way encrypt tool, snapshot first, explicit consent
+  — never a silent conversion on upgrade. Threat model stated everywhere it
+  matters: this protects a seized/powered-off machine WITHOUT FDE; it does NOT
+  protect a compromised running session. Portability checkpoint: sqlcipher3
+  wheels verified on Linux+Windows+macOS before committing to the driver.
 
 **Sequencing (standing rulings combined):** design TOGETHER with SQLCipher
 at-rest encryption (ruled GO, own fresh session — one coherent key story), and
