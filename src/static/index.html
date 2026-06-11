@@ -295,6 +295,26 @@
     .ag-when { flex:0 0 86px; }
     .ag-body { flex:1; min-width:0; }
     .ag-cals { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
+    /* Month grid (the agenda's default view): 7 columns, 4-6 week rows. */
+    .ag-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+    .ag-grid-head { margin-bottom:4px; }
+    .ag-wd { font-size:11px; color:var(--muted); text-align:center; padding:2px 0; }
+    .ag-cell { min-height:74px; border:1px solid var(--border); border-radius:8px; padding:4px 5px;
+      display:flex; flex-direction:column; gap:2px; overflow:hidden; cursor:pointer;
+      background:color-mix(in srgb, var(--panel) 70%, transparent); }
+    .ag-cell:hover { border-color:var(--accent); }
+    .ag-cell.out { opacity:.35; cursor:default; }
+    .ag-cell.today { outline:2px solid var(--accent); outline-offset:-2px; }
+    .ag-cell.sel { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 10%, transparent); }
+    .ag-dn { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .ag-cell.today .ag-dn { color:var(--accent); font-weight:700; }
+    .ag-chip { font-size:10.5px; line-height:1.25; padding:1px 5px; border-radius:5px;
+      background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--fg);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ag-chip.approx { background:color-mix(in srgb, var(--warn, orange) 14%, transparent); }
+    .ag-more { font-size:10px; color:var(--muted); }
+    @media (max-width:900px) { .ag-cell { min-height:54px; } .ag-chip { display:none; }
+      .ag-cell.has::after { content:"•"; color:var(--accent); font-size:14px; line-height:.6; } }
     .ag-cal { font-size:12px; padding:3px 10px; border:1px solid var(--border); border-radius:999px;
       background:var(--panel); color:var(--muted); cursor:pointer; opacity:.6; }
     .ag-cal.on { color:var(--accent-fg,var(--fg)); background:color-mix(in srgb,var(--accent) 18%,transparent);
@@ -1088,39 +1108,35 @@
     <div class="tab-page" id="tab-agenda">
     <section class="panel">
       <h2>Agenda — major world events</h2>
-      <p class="muted" style="margin-top:0">A forward-looking calendar of major recurring events.
-        <b>Fixed civic dates are confirmed</b>; summit/meeting dates move each year — follow the official
-        source for the exact date. Nothing here is fabricated. <span class="muted">(Importing exact dates from
-        official iCal feeds is the next step.)</span></p>
-      <div style="margin-top:6px"><span class="hint">Calendars <span class="muted">— subscribe to the ones you care about; tap to toggle</span></span>
-        <div id="agenda-cals" class="ag-cals"></div></div>
+      <!-- Whole-sentence nodes (the i18n exact-match pattern; see the Indices intro). -->
+      <p class="muted" style="margin-top:0"><span>A forward-looking calendar of major recurring events.</span>
+        <b>Fixed civic dates are confirmed.</b>
+        <span>Summit/meeting dates move each year — follow the official source for the exact date.</span>
+        <span>Nothing here is fabricated.</span></p>
       <div class="row" style="margin-top:6px">
+        <div><label for="agenda-view">View</label><select id="agenda-view" onchange="agendaSetView(this.value)">
+          <option value="month">Month</option><option value="list">List</option></select></div>
         <div><label for="agenda-cat">Category</label><select id="agenda-cat" onchange="renderAgenda()">
           <option value="">all</option><option value="civic">civic</option><option value="political">political</option>
           <option value="economic">economic</option><option value="technology">technology</option></select></div>
         <div><label for="agenda-country">Country</label><select id="agenda-country" onchange="renderAgenda()"><option value="">all</option></select></div>
         <div><label for="agenda-tag">Tag</label><select id="agenda-tag" onchange="renderAgenda()"><option value="">all</option></select></div>
-        <div><label for="agenda-group">Group by</label><select id="agenda-group" onchange="renderAgenda()">
+        <div id="agenda-group-wrap"><label for="agenda-group">Group by</label><select id="agenda-group" onchange="renderAgenda()">
           <option value="month">month</option><option value="calendar">calendar</option><option value="country">country</option></select></div>
         <div style="flex:0 0 auto;align-self:end"><label class="switch" style="margin-top:0"><input type="checkbox" id="agenda-subonly" checked onchange="renderAgenda()"> subscribed only</label></div>
+        <div style="flex:1"></div>
+        <div class="hint" style="align-self:end"><a href="#settings" onclick="showTab('settings');showSetCat('agenda');return false">Manage calendars &amp; sources in Settings → Agenda.</a></div>
       </div>
+      <div id="agenda-monthbar" class="row" style="margin-top:10px;align-items:center;gap:8px;flex-wrap:nowrap">
+        <button class="secondary" onclick="agMonthShift(-1)" title="previous month" style="min-width:34px">‹</button>
+        <b id="agenda-monthlabel" style="min-width:170px;text-align:center;font-size:14px"></b>
+        <button class="secondary" onclick="agMonthShift(1)" title="next month" style="min-width:34px">›</button>
+        <button class="secondary" onclick="agMonthToday()">Today</button>
+        <span id="agenda-monthhint" class="hint"></span>
+      </div>
+      <div id="agenda-month" style="margin-top:10px"></div>
+      <div id="agenda-day"></div>
       <div id="agenda-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
-    </section>
-
-    <!-- Calendar feed directory (bundled candidates; explicit verify/import) -->
-    <section class="panel" id="agenda-feeds">
-      <h2>Calendar directory</h2>
-      <p class="hint" style="margin-top:0"><span>A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.</span>
-        <span>When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.</span></p>
-      <div class="row">
-        <div><label for="feeddir-kind">Kind</label><select id="feeddir-kind" onchange="renderFeedDir()">
-          <option value="">all</option></select></div>
-        <div style="flex:1"><label for="feeddir-q">Filter</label><input id="feeddir-q" placeholder="type to filter (name or country)…" oninput="renderFeedDir()"></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="verifyFeedBatch(this)">Verify next 25</button></div>
-        <div id="feeddir-status" class="hint" style="align-self:end"></div>
-      </div>
-      <div id="feeddir-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
-      <div id="feeddir-imported" style="margin-top:12px"></div>
     </section>
     </div>
 
@@ -1515,6 +1531,7 @@
         <button class="active" data-set="appearance" onclick="showSetCat('appearance')">Appearance</button>
         <button data-set="general" onclick="showSetCat('general')">General</button>
         <button data-set="wikipedia" onclick="showSetCat('wikipedia')">Wikipedia</button>
+        <button data-set="agenda" onclick="showSetCat('agenda')">Agenda</button>
         <button data-set="data" onclick="showSetCat('data')">Data &amp; backup</button>
         <button data-set="safety" onclick="showSetCat('safety')">Safety</button>
       </nav>
@@ -1649,6 +1666,31 @@
         hints, while <em>Estimate size</em> reports the exact current dump size from the server. You can also
         type any edition code that isn't listed.</div>
       <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>
+    </section>
+    </div>
+
+    <div class="set-view" id="set-agenda" style="display:none">
+    <section class="panel">
+      <h2>Calendars</h2>
+      <p class="hint" style="margin-top:0">Subscribe to the calendars you want in your agenda; tap to toggle.</p>
+      <div id="agenda-cals" class="ag-cals"><div class="muted">Loading…</div></div>
+    </section>
+
+    <!-- Calendar feed directory (bundled candidates; explicit verify/import).
+         Lives in Settings by ruling: the Agenda tab shows DATA, never plumbing. -->
+    <section class="panel" id="agenda-feeds">
+      <h2>Calendar directory</h2>
+      <p class="hint" style="margin-top:0"><span>A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.</span>
+        <span>When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.</span></p>
+      <div class="row">
+        <div><label for="feeddir-kind">Kind</label><select id="feeddir-kind" onchange="renderFeedDir()">
+          <option value="">all</option></select></div>
+        <div style="flex:1"><label for="feeddir-q">Filter</label><input id="feeddir-q" placeholder="type to filter (name or country)…" oninput="renderFeedDir()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="verifyFeedBatch(this)">Verify next 25</button></div>
+        <div id="feeddir-status" class="hint" style="align-self:end"></div>
+      </div>
+      <div id="feeddir-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="feeddir-imported" style="margin-top:12px"></div>
     </section>
     </div>
 
@@ -2207,6 +2249,7 @@
       document.querySelectorAll("#tab-settings .set-view").forEach(v =>
         v.style.display = (v.id === "set-" + cat) ? "" : "none");
       if (cat === "appearance") buildDrawer();      // (re)paint theme/accent/module state
+      if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
     }
     function buildDrawer() {
       const ui = getUi();
@@ -2776,16 +2819,98 @@
           ${variants}
           <div class="hint">${tags} ${e.note?"· "+esc(e.note):""} · <a href="${esc(safeUrl(e.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div></div></div>`;
     }
-    function renderAgenda() {
-      renderAgendaCals();
-      const box = $("agenda-list");
+    // -- Agenda views: MONTH grid (the ruled default) + the original list ----- //
+    // The tab shows DATA only (maintainer principle 2026-06-11): calendar
+    // subscriptions and the feed directory live in Settings -> Agenda.
+    function agView() { return localStorage.getItem("oo.agenda.view") || "month"; }
+    function agendaSetView(v) { localStorage.setItem("oo.agenda.view", v); renderAgenda(); }
+    const AGV = { y: null, m: null, day: null };   // displayed month (m = 1-12)
+    function agLocale() { return document.documentElement.lang || "en"; }
+    function agMonthShift(d) {
+      let m = AGV.m + d, y = AGV.y;
+      if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+      AGV.y = y; AGV.m = m; AGV.day = null; renderAgenda();
+    }
+    function agMonthToday() {
+      const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1;
+      AGV.day = t.getDate(); renderAgenda();
+    }
+    function agFiltered() {
       const subs = agSubs();
       const cat = $("agenda-cat").value, country = $("agenda-country").value, tag = $("agenda-tag").value;
-      const subOnly = $("agenda-subonly").checked, groupBy = $("agenda-group").value;
-      let rows = AG.events.filter(e =>
+      const subOnly = $("agenda-subonly").checked;
+      return AG.events.filter(e =>
         (!cat || e.category === cat) && (!country || e.country === country) &&
         (!tag || (e.tags||[]).includes(tag)) && (!subOnly || (e.sources || [e.calendar]).some(s => subs.has(s))));
-      if (!rows.length) { box.innerHTML = `<p class="hint">${esc(AG.caveat)}</p><div class="muted">No events match — adjust filters or subscribe to more calendars above.</div>`; return; }
+    }
+    function agShowDay(d) { AGV.day = d; renderAgenda(); }
+    function renderAgendaMonth(rows) {
+      const box = $("agenda-month"), dayBox = $("agenda-day");
+      if (AGV.y == null) { const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1; }
+      const y = AGV.y, m = AGV.m, loc = agLocale();
+      $("agenda-monthlabel").textContent =
+        new Intl.DateTimeFormat(loc, { month: "long", year: "numeric" }).format(new Date(y, m - 1, 1));
+      // Events on a specific day of THIS grid: annual rules (month+day, any year)
+      // + dated instances (next_occurrence inside exactly this year-month).
+      const ym = `${y}-${String(m).padStart(2, "0")}`;
+      const byDay = {}, monthOnly = [];
+      for (const e of rows) {
+        if (e.month === m && e.day) (byDay[e.day] = byDay[e.day] || []).push(e);
+        else if (e.next_occurrence && e.next_occurrence.slice(0, 7) === ym) {
+          const d = +e.next_occurrence.slice(8, 10);
+          if (!(byDay[d] || []).includes(e)) (byDay[d] = byDay[d] || []).push(e);
+        } else if (e.month === m && !e.day) monthOnly.push(e);
+      }
+      // Monday-start grid (4-6 week rows), days outside the month dimmed.
+      const first = new Date(y, m - 1, 1), daysIn = new Date(y, m, 0).getDate();
+      const lead = (first.getDay() + 6) % 7;                  // Mon=0 … Sun=6
+      const cells = [], prevDays = new Date(y, m - 1, 0).getDate();
+      for (let i = 0; i < lead; i++) cells.push({ d: prevDays - lead + 1 + i, out: true });
+      for (let d = 1; d <= daysIn; d++) cells.push({ d, out: false });
+      for (let nd = 1; cells.length % 7; nd++) cells.push({ d: nd, out: true });
+      const t = new Date();
+      const inThisMonth = t.getFullYear() === y && t.getMonth() + 1 === m;
+      const wd = [...Array(7)].map((_, i) =>
+        new Intl.DateTimeFormat(loc, { weekday: "short" }).format(new Date(2024, 0, i + 1))); // 2024-01-01 was a Monday
+      let html = `<div class="ag-grid ag-grid-head">` + wd.map(w => `<div class="ag-wd">${esc(w)}</div>`).join("") + `</div>`;
+      html += `<div class="ag-grid">` + cells.map((c) => {
+        if (c.out) return `<div class="ag-cell out"><span class="ag-dn">${c.d}</span></div>`;
+        const evs = byDay[c.d] || [];
+        const today = inThisMonth && t.getDate() === c.d;
+        const chips = evs.slice(0, 3).map(e =>
+          `<span class="ag-chip${e.confirmed ? "" : " approx"}" title="${esc(e.title)}${e.confirmed ? "" : " — exact date moves; check the official source"}">${esc(e.title.length > 22 ? e.title.slice(0, 21) + "…" : e.title)}</span>`).join("");
+        const more = evs.length > 3 ? `<span class="ag-more">+${evs.length - 3}</span>` : "";
+        return `<div class="ag-cell${today ? " today" : ""}${evs.length ? " has" : ""}${AGV.day === c.d ? " sel" : ""}" onclick="agShowDay(${c.d})">
+          <span class="ag-dn">${c.d}</span>${chips}${more}</div>`;
+      }).join("") + `</div>`;
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (monthOnly.length)
+        html += `<div class="hint" style="margin-top:8px"><span>${esc(t9("This month — no fixed day:"))}</span> ` +
+          monthOnly.map(e => `<span class="ag-tag" title="${esc(e.title)}">${esc(e.title)}</span>`).join(" ") + `</div>`;
+      box.innerHTML = html;
+      // Day detail under the grid: the familiar honest rows for the picked day.
+      if (AGV.day && (byDay[AGV.day] || []).length) {
+        const label = new Intl.DateTimeFormat(loc, { dateStyle: "full" }).format(new Date(y, m - 1, AGV.day));
+        dayBox.innerHTML = `<h3 style="font-size:13px;margin:12px 0 6px">${esc(label)}</h3>` +
+          byDay[AGV.day].map(agRow).join("");
+      } else dayBox.innerHTML = "";
+    }
+    function renderAgenda() {
+      renderAgendaCals();
+      const view = agView();
+      $("agenda-view").value = view;
+      $("agenda-monthbar").style.display = view === "month" ? "" : "none";
+      $("agenda-month").style.display = view === "month" ? "" : "none";
+      $("agenda-day").style.display = view === "month" ? "" : "none";
+      $("agenda-list").style.display = view === "month" ? "none" : "";
+      $("agenda-group-wrap").style.display = view === "month" ? "none" : "";
+      const rows = agFiltered();
+      $("agenda-monthhint").textContent = AG.caveat || "";
+      if (view === "month") { renderAgendaMonth(rows); return; }
+      const box = $("agenda-list");
+      const groupBy = $("agenda-group").value;
+      const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!rows.length) { box.innerHTML = `<p class="hint">${esc(AG.caveat)}</p><div class="muted">${esc(tt("No events this month — adjust filters or subscribe to more calendars in Settings."))}</div>`; return; }
       const groups = {};
       for (const e of rows) {
         const k = groupBy === "month" ? (e.next_occurrence ? _MONTHS[+e.next_occurrence.slice(5,7)-1] : (e.month ? _MONTHS[e.month-1] : "Movable / no fixed date"))

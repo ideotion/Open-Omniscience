@@ -99,6 +99,14 @@ Before fearing loss from an archive-size change, run
 7. **External links ALWAYS confirmed with a popup before opening** (ruled
    2026-06-10): delegated capture-phase `_externalLinkGuard` in BOTH UIs;
    loopback links exempt; message translated via `OOI18N.t`.
+8. **The UI shows DATA, never plumbing (maintainer-ruled 2026-06-11, stated
+   GENERALLY while rejecting the old agenda view):** data tabs present the
+   aggregated data itself — "that's the added value of this app, to take
+   care of the aggregation and bring forward the data"; acquisition/
+   configuration surfaces (feed directories, verification, source/category
+   management) live in Settings. First applied: Agenda (directory +
+   calendar subscriptions moved to Settings → Agenda; enforced as invariant
+   #13 in test_ui_invariants). Apply to every surface reworked from now on.
 
 - **Home must never go blank-and-silent**: producer registration is fail-safe
   (core first, recipe pack additive in try/except); zero cards renders the
@@ -454,16 +462,29 @@ Before fearing loss from an archive-size change, run
   stronger when When×Where×Who ingest persistence lands. Date-focused,
   event-focused AND agenda-focused approaches are all welcomed in the UI
   (maintainer's framing adopted).
-- **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11 — "I did NOT
-  have a chance to see the calendar format"): NOT BUILT YET, the tab only has
-  the list.** Build the switcher: list / week / month / trimester / semester /
-  year / decade. PLUS (2026-06-11): MONTH-SPANNING events ("Dry January",
-  "Movember") — the event model needs a duration/whole-month kind rendered as
-  a banner across the month, not a single-day pin; world_events.yml schema
-  gains an optional span (start/end or month=whole). Also: the Agenda tab is
-  currently NOT translated at all (chrome-audit long tail — prioritize).
-  UPDATED by field report #2 (2026-06-11): default view = MONTH GRID; the
-  schema change grows to recurrence rules + origin year + instances.
+- **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11; RULED AGAIN
+  same day — "I personally really don't like the agenda view"): FIRST SLICE
+  SHIPPED 2026-06-11 under the new data-first principle (UI invariant #8):**
+  the Agenda tab is now a pure data surface — MONTH GRID is the default view
+  (Monday-start 4–6 week rows, Intl month/weekday names in the UI language,
+  brief event chips per day + "+N", amber chips for approx dates, day-click
+  opens the honest detail rows, a "This month — no fixed day:" strip instead
+  of fabricated days, ‹/›/Today navigation; annual rules render in EVERY
+  browsed year — the recurring semantics), List remains as the second view
+  (view persisted in oo.agenda.view); the calendar-subscribe chips AND the
+  feed directory moved to Settings → Agenda (lazy-loaded); the tab's chrome
+  is now fully keyed (+20 locale keys ×12, 330 total — the formerly-worst
+  i18n surface covered). REMAINING (the agenda content batch): the other
+  views (week / trimester / semester / year / decade), MONTH-SPANNING events
+  ("Dry January") rendered as banners (schema: span + recurrence rules +
+  origin year + instances), and the CONTENT mandate (maintainer 2026-06-11:
+  "all major public, recurring events — all and everything that is
+  accessible") = preloaded worldwide bank holidays + religious calendars
+  (moon-based computed w/ caveat; Hindu/Buddhist sourced tables) + the
+  astronomy layer (Meeus moons + eclipse canon) + **article-extracted dated
+  events feeding the agenda automatically** (mentioned-dates → an agenda
+  layer labeled "deduced from N articles", never confirmed) — see field
+  report #2 item 2 for the full design notes.
 - **Agenda depth (maintainer 2026-06-10): only 4 categories — "we should be
   flooded; it's the point of datamining".** Expand `configs/world_events.yml`
   massively: many more calendars (elections worldwide, summits, central banks,
