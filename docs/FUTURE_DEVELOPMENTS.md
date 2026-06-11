@@ -78,12 +78,18 @@
   internal DB key wrapped twice — by the passphrase AND by a one-time printed
   **recovery key** — so a forgotten passphrase is recoverable and only losing
   BOTH loses the corpus (a stated, chosen risk, never a surprise). Plaintext
-  stays available as a deliberate opt-out with the risk spelled out (Qubes/
-  Tails users already under full-disk encryption may reasonably choose it).
+  stays available as a deliberate opt-out with the risk spelled out.
+  **Layering note (maintainer question 2026-06-11, answered):** DB-level
+  encryption is NOT redundant under full-disk encryption — the two cover
+  different machine states. FDE protects only the powered-OFF disk; once
+  booted/unlocked it is transparent to every process. The encrypted DB file
+  stays ciphertext in exactly the states FDE doesn't cover: a machine stolen
+  while running/suspended, an unlocked machine inspected, malware or sync
+  copying files off a live system. The layers are independent only if their
+  passphrases differ (same secret = one layer); and NO at-rest layer protects
+  a compromised running session (keys live in RAM) — stated wherever shown.
   Existing databases: a one-way encrypt tool, snapshot first, explicit consent
-  — never a silent conversion on upgrade. Threat model stated everywhere it
-  matters: this protects a seized/powered-off machine WITHOUT FDE; it does NOT
-  protect a compromised running session. Portability checkpoint: sqlcipher3
+  — never a silent conversion on upgrade. Portability checkpoint: sqlcipher3
   wheels verified on Linux+Windows+macOS before committing to the driver.
 
 **Sequencing (standing rulings combined):** design TOGETHER with SQLCipher
