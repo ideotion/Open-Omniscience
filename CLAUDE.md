@@ -168,7 +168,9 @@ Before fearing loss from an archive-size change, run
   queues all picked editions sequentially. Lesson: duplicate top-level JS
   function names silently override — grep before declaring.
 
-- **Article reader rework — TABS (maintainer-ruled 2026-06-11):** the dedicated
+- **Article reader rework — TABS (maintainer-ruled 2026-06-11; REPEATED in
+  field report #2 same day, bar restated: sleek/data-oriented/visually
+  rich/ethical/scientifically driven):** the dedicated
   article window gains tabs: Mindmap (this article's keyword graph) · Related
   articles · Source description · Keyword analysis · Sentiment analysis. The
   two-class metadata header SHIPPED same day (source-asserted vs app-deduced,
@@ -295,6 +297,76 @@ Before fearing loss from an archive-size change, run
   ?country= filters accept full names. REMAINING: the Wikidata generator
   run for the 73 named gaps (network step, maintainer's machine) + raising
   the located share (49% of domains carry no country).
+- **LIVE-TEST FIELD REPORT #2 (maintainer 2026-06-11, seven items, arrived
+  mid-DB-batch — RECORDED same turn; facts code-verified; analysis delivered
+  in-chat; implementation QUEUED behind the DB batch per its own blocking
+  ruling; proposed order at the end):**
+  (1) NETWORK TOGGLE → AIRPLANE-MODE semantics (ruled): one constant
+  icon+label, FILLED = offline engaged — the current "▶ Online"/"⏸ Offline"
+  is ambiguous (action glyphs read as state). Scrape-start ALREADY clears
+  the kill switch server-side (api/scheduler.py:73-75) but the button only
+  learns via the 5s vitals poll — must repaint immediately on EVERY
+  online-transition; and every transition to online (button, collect,
+  indices, wiki, dumps) FIRST shows one consent popup: warning + the
+  machine's LOCAL interface IPs (NEVER fetch a public-IP echo pre-consent —
+  that is itself a network call; wording stays honest about what the public
+  IP is). Kill-switch reliability (honest answer RECORDED): app-level can
+  be airtight (every socket through the one guarded factory + tests); an
+  OPT-IN privileged OS layer can go driver-deep (Linux rfkill for radios,
+  link-down/nmcli for wired, firewall rule; documented sudo setup, never
+  silent); Qubes NetVM-detach documented as the real physical-grade switch;
+  a userspace app can NEVER equal a hardware webcam light and we never
+  claim it — the button says which layer it controls. Inbound packets are
+  an OS matter: we bind loopback-only and hold no sockets when off —
+  stated, not oversold.
+  (2) AGENDA/TEMPORAL: the "Mexico independence 2026" sighting = imported
+  ICS feeds store year-pinned INSTANCES (bundled world_events.yml is
+  already annual-rule-based — `cadence: annual` — and carries NO Mexico
+  entry; the gap is the import path + missing catalog breadth) ⇒ RULED:
+  recurring-event model unifying rules + per-year instances + origin year
+  ("since 1810"); joins the queued month-span schema change. Play speeds
+  extend to 0.05–16× log-stepped (their framing: today's 0.1 ≈ the useful
+  1×). Agenda ships PRELOADED worldwide bank holidays + religious
+  calendars: moon-based Islamic = computed tabular dates with the honest
+  ±1-day moon-sighting caveat; Hindu/Buddhist = sourced published tables
+  first, NEVER a fabricated panchanga; plus an ASTRONOMY LAYER on a
+  reliable LOCAL mathematical model — full moons computed (Meeus) and
+  TESTED against almanac values, solar/lunar eclipses from a bundled
+  public canon table with provenance; every entry carries method+accuracy;
+  zero-network boot preserved (bundle data, never auto-fetch). Default
+  agenda view = MONTH GRID (4–5 week rows, brief descriptions) +
+  customizable views — UPDATES the Agenda-views entry below.
+  (3) CONTINUOUS COLLECTION (ruled): scraping never stops — background
+  auto-collect ON after an explicit first-run approval (ONE consent design
+  shared with item 1's popup; zero-network boot stands). Ordering answered
+  & adopted: per-country round-robin, one source each then repeat
+  (shuffled country order per cycle, least-recently-scraped within a
+  country, per-host politeness untouched) to break the US-volume bias,
+  PLUS a startup onboarding picker for country/language emphasis — BOTH,
+  not either. The schedule must stay explainable in the UI (which country
+  is next and why).
+  (4) TASK MANAGER — maintainer REPEAT (second ask, still only the old
+  popup): the dedicated OS-style window ruling stands; NEW acceptance
+  examples recorded: reorder the wiki-dump queue (fr before the much
+  bigger en), per-country scrape priority, every background process
+  visible & tweakable in one GUI.
+  (5) ARTICLE TAGS → CORPUS: clicking a tag/keyword chip anywhere offers
+  "explore this tag's corpus" in a dedicated tab — the THIRD entry into
+  the one corpora system (hand-selection, tag-selection, tag-click).
+  (6) DATE EXTRACTION AT INGEST — maintainer confirms the gap: the
+  reader's "Extract dates" button is manual-per-article
+  (api/article_dates.py); the reader view recomputes at read time, nothing
+  persists at scrape. RULED: extractors run at ingest for EVERY article
+  (wiki included) + backfill = the When×Where×Who anchoring is now
+  maintainer-CONFIRMED GO (slots after the DB batch; feeds convergence).
+  (7) READER TABS — maintainer REPEAT (second ask): the ruled tab set is
+  still unbuilt; bar restated: sleek, data-oriented, visually rich,
+  ethical, scientifically driven.
+  PROPOSED SEQUENCE (for the maintainer's veto): finish DB batch → network
+  toggle+consent (small) → task manager+download arbitration → reader tabs
+  + tag-corpora → agenda batch (recurrence+astronomy+month view) →
+  continuous-collection ordering+onboarding. Design notes for 1/2/3 in
+  FUTURE_DEVELOPMENTS.
 - **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11 — "I did NOT
   have a chance to see the calendar format"): NOT BUILT YET, the tab only has
   the list.** Build the switcher: list / week / month / trimester / semester /
@@ -303,6 +375,8 @@ Before fearing loss from an archive-size change, run
   a banner across the month, not a single-day pin; world_events.yml schema
   gains an optional span (start/end or month=whole). Also: the Agenda tab is
   currently NOT translated at all (chrome-audit long tail — prioritize).
+  UPDATED by field report #2 (2026-06-11): default view = MONTH GRID; the
+  schema change grows to recurrence rules + origin year + instances.
 - **Agenda depth (maintainer 2026-06-10): only 4 categories — "we should be
   flooded; it's the point of datamining".** Expand `configs/world_events.yml`
   massively: many more calendars (elections worldwide, summits, central banks,
@@ -370,7 +444,10 @@ Before fearing loss from an archive-size change, run
   the top-1000 Wikipedia pages in all languages, bundled — needs a design
   answer first (network cost at first boot vs zero-network-boot non-negotiable;
   likely ship the LIST bundled + one-click opt-in, never auto-fetch).
-- **NETWORK MODE first-class (maintainer-ruled 2026-06-11, SHIPPED same day):**
+- **NETWORK MODE first-class (maintainer-ruled 2026-06-11, SHIPPED same day;
+  EVOLVED by field report #2: airplane-mode fill semantics + consent popup
+  with local IPs + immediate repaint on scrape-start + opt-in OS layer —
+  see that entry):**
   the kill switch is now a top-bar ▶ Online / ⏸ Offline play-pause button —
   never buried in a sub-tab. Loud-but-beautiful state: pulsing red button,
   red top-bar underline, radial flash on toggle; honest toast ("one in-flight
@@ -381,7 +458,9 @@ Before fearing loss from an archive-size change, run
   OS — now normalized by core count (cpu_cores reported). btop (maintainer
   asked): Apache-2.0, GPLv3-compatible one-way, but unnecessary — it's a
   C++ TUI binary, and our bug was normalization, not the data source.
-- **Task manager view (maintainer-ruled 2026-06-11, ELEVATES the download
+- **Task manager view (maintainer-ruled 2026-06-11; REPEATED in field
+  report #2 same day — acceptance examples: fr wiki dump before en,
+  per-country scrape priority; ELEVATES the download
   manager):** the vitals panel becomes minimized-but-visible animated main
   indicators; CLICK opens a dedicated window/tab — an OS-style task manager:
   what scrapes next, wiki-dump progress, queued jobs with tweak/cancel/
@@ -484,8 +563,22 @@ Before fearing loss from an archive-size change, run
   ENABLE_FTS5, loud wrong-key fail, stdlib can't read; SQLAlchemy PRAGMA-key-
   on-connect wiring works; built-in pysqlcipher dialect resolves sqlcipher3);
   win/mac wheels inspected (self-contained, FTS5+codec baked in) — execution
-  proof stays with the future 3-OS CI matrix. DESIGN (deliverable 2) AWAITS
-  maintainer review of the gap analysis.
+  proof stays with the future 3-OS CI matrix. Deliverable 2 (DESIGN)
+  DELIVERED same day — `docs/design/DB_RELIABILITY_02_DESIGN.md` — written
+  on the maintainer's "continue from where you left off": D1–D7 resolved
+  per the gap-analysis leanings, each marked a VETO POINT in the doc
+  (D1 orphan state migrates INTO the main DB, custody log stays separate;
+  D2 plaintext exports never carry private keys; D3 wiki dumps excluded,
+  manifest-listed; D4 functional client state → server, cosmetic stays;
+  D5 jsonl logs included; D6 SQLCipher covers main DB + custody DB + key
+  wraps under THE one passphrase; D7 floor = 0.0.8 baseline, staged-copy
+  upgrade, legacy artifacts accepted forever). PR-A SHIPPED same day:
+  encrypted restore now DELEGATES to restore_from_bytes (one path — fixes
+  the §4 defects: atomic swap, WAL cleanup, pool disposal, online-API
+  snapshot, FTS reconcile) + atomic event-store writes. Implementation
+  order PR-B…PR-F in the design §6; torture suite T1–T10 + property tests
+  in §7. NEXT: PR-B (D1/D4 migrations + merge_batches/merged_rows +
+  commodity composite index).
 - **Backup redesign** (maintainer, ruled): encryption is the DEFAULT flow
   (Download backup -> passphrase -> download; Browse -> passphrase -> restore);
   restore must be NON-DESTRUCTIVE (merge, never replace) with bit-level
@@ -493,7 +586,9 @@ Before fearing loss from an archive-size change, run
   article carries content hash + an authentication hash (second integrity
   level proving no tampering). Big feature -- design before code.
 - **When×Where×Who anchoring (maintainer question 2026-06-11, answered
-  honestly):** extractors exist but run AT READ TIME in the reader only —
+  honestly; CONFIRMED GO at ingest by field report #2 item 6 — runs at
+  scrape for every article incl. wiki, + backfill; after the DB batch):**
+  extractors exist but run AT READ TIME in the reader only —
   nothing persists event-dates/places/entities or anchors them to keywords
   (mentions carry article+time+SOURCE-place only). The development (recorded
   in FUTURE_DEVELOPMENTS): run extractors at ingest + backfill, persist with
