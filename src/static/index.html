@@ -17,8 +17,17 @@
     /* ================================================================= *
      *  Open Omniscience — design system "0.05"                           *
      *  Dependency-free on purpose: system fonts, hand-drawn SVG, no CDN, *
-     *  no web fonts — runs fully offline with the NetVM detached.        *
+     *  fonts are BUNDLED open-source files (/static/fonts, SIL OFL) —   *
+     *  zero network: runs fully offline with the NetVM detached.        *
      * ================================================================= */
+    /* Bundled OFL fonts (see src/static/fonts/README.md). Local files only. */
+    @font-face { font-family:"Cantarell"; src:url("/static/fonts/Cantarell-Regular.woff2") format("woff2"); font-weight:400; font-display:swap; }
+    @font-face { font-family:"Cantarell"; src:url("/static/fonts/Cantarell-Bold.woff2") format("woff2"); font-weight:700; font-display:swap; }
+    @font-face { font-family:"Inter"; src:url("/static/fonts/Inter-Variable.woff2") format("woff2"); font-weight:100 900; font-display:swap; }
+    @font-face { font-family:"Outfit"; src:url("/static/fonts/Outfit-Variable.woff2") format("woff2"); font-weight:100 900; font-display:swap; }
+    @font-face { font-family:"Manrope"; src:url("/static/fonts/Manrope-Variable.woff2") format("woff2"); font-weight:200 800; font-display:swap; }
+    @font-face { font-family:"JetBrains Mono"; src:url("/static/fonts/JetBrainsMono-Variable.woff2") format("woff2"); font-weight:100 800; font-display:swap; }
+    @font-face { font-family:"Source Serif 4"; src:url("/static/fonts/SourceSerif4-Variable.woff2") format("woff2"); font-weight:200 900; font-display:swap; }
     :root {
       /* Ink — the default dark theme */
       --bg:#0c0e13; --bg2:#0f1218;
@@ -31,17 +40,33 @@
       --radius:12px; --radius-sm:8px;
       --sidebar-w:250px; --space:20px; --pad:16px;
       --ff: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+      --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+      color-scheme: dark; /* native widgets (selects, date pickers, scrollbars) match the theme */
     }
     html[data-theme="slate"]{ --bg:#0e1116; --bg2:#11151c; --panel:#161b23; --panel2:#1e2531; --panel3:#28323f; --accent:#7aa2f7; --border:#28303d; }
     html[data-theme="midnight"]{ --bg:#080a1a; --bg2:#0b0e22; --panel:#10142e; --panel2:#171c3c; --panel3:#1f2650; --fg:#e8eaff; --fg-soft:#c3c7ee; --muted:#8a90c0; --accent:#8b7dff; --border:#23284f; }
     html[data-theme="terminal"]{ --bg:#04070a; --bg2:#06090c; --panel:#0a1013; --panel2:#0e1619; --panel3:#13211d; --fg:#c8f7d4; --fg-soft:#a3e9ba; --muted:#5f8c72; --accent:#36d97a; --accent-fg:#04140b; --border:#16291f; --ff:var(--mono); }
-    html[data-theme="sepia"]{ --bg:#1b150e; --bg2:#201911; --panel:#262019; --panel2:#2f2820; --panel3:#3a3127; --fg:#efe5d6; --fg-soft:#d8cab4; --muted:#a8967c; --accent:#d8a657; --accent-fg:#241a0c; --border:#3a3128; }
+    html[data-theme="sepia"]{ --bg:#1b150e; --bg2:#201911; --panel:#262019; --panel2:#2f2820; --panel3:#3a3127; --fg:#efe5d6; --fg-soft:#d8cab4; --muted:#a8967c; --accent:#d8a657; --accent-fg:#241a0c; --border:#3a3128; --ff:"Source Serif 4", Georgia, serif; }
     html[data-theme="contrast"]{ --bg:#000; --bg2:#000; --panel:#0a0a0a; --panel2:#161616; --panel3:#222; --fg:#fff; --fg-soft:#f2f2f2; --muted:#cfcfcf; --accent:#ffd400; --accent-fg:#000; --ok:#5cff9d; --warn:#ffd400; --err:#ff6b6b; --border:#4d4d4d; --border-soft:#333; }
     html[data-theme="light"]{ --bg:#eef1f5; --bg2:#e6eaf0; --panel:#fff; --panel2:#f3f5f9; --panel3:#e7ecf3; --fg:#1b1f27; --fg-soft:#37404f; --muted:#5c6573; --accent:#2f6fb3; --ok:#2e8b57; --warn:#b07a17; --err:#c0392b; --border:#dce1e9; --border-soft:#e8ebf1;
-      --shadow:0 14px 38px -20px rgba(20,30,50,.28), 0 2px 6px -3px rgba(20,30,50,.14); }
+      --shadow:0 14px 38px -20px rgba(20,30,50,.28), 0 2px 6px -3px rgba(20,30,50,.14); color-scheme:light; }
     html[data-theme="paper"]{ --bg:#f2eee4; --bg2:#ebe5d6; --panel:#fbf8f1; --panel2:#f1ebdc; --panel3:#e6ddc8; --fg:#2b271f; --fg-soft:#4a4436; --muted:#7a715c; --accent:#9a6a2f; --ok:#5b7d4b; --err:#b04a3a; --border:#ded2bc; --border-soft:#e7ddca;
-      --shadow:0 14px 38px -20px rgba(80,60,30,.22), 0 2px 6px -3px rgba(80,60,30,.12); }
+      --shadow:0 14px 38px -20px rgba(80,60,30,.22), 0 2px 6px -3px rgba(80,60,30,.12); color-scheme:light; --ff:"Source Serif 4", Georgia, serif; }
+    /* New colorways (2026-06-11, maintainer: "people like tuning with themes").
+       Bundled-font pairings: Arctic→Inter, Cyber→Outfit, Mint→Manrope,
+       Sepia/Paper→Source Serif 4. The Typeface picker overrides any of them. */
+    html[data-theme="arctic"]{ --bg:#0f1216; --bg2:#12161b; --panel:#171c22; --panel2:#1e242c; --panel3:#262e38; --fg:#e5e9f0; --fg-soft:#c8cfdb; --muted:#8a94a6; --accent:#88c0d0; --accent-fg:#0b1216; --border:#262e3a; --ff:"Inter", system-ui, sans-serif; }
+    html[data-theme="solar"]{ --bg:#002b36; --bg2:#00313d; --panel:#073642; --panel2:#0a4150; --panel3:#11505f; --fg:#eee8d5; --fg-soft:#cfc7ab; --muted:#839496; --accent:#b58900; --accent-fg:#002b36; --ok:#859900; --warn:#cb4b16; --err:#dc322f; --border:#0e4754; }
+    html[data-theme="forest"]{ --bg:#0c120d; --bg2:#0f150f; --panel:#131a14; --panel2:#19231a; --panel3:#223024; --fg:#e3ece2; --fg-soft:#c2d2c2; --muted:#7e957f; --accent:#6fbf73; --accent-fg:#0a140b; --border:#243224; }
+    html[data-theme="aubergine"]{ --bg:#120d18; --bg2:#150f1d; --panel:#1a1424; --panel2:#231b30; --panel3:#2e2440; --fg:#ece6f4; --fg-soft:#cfc5e0; --muted:#9a8cb4; --accent:#c084fc; --accent-fg:#160e20; --border:#2c2240; }
+    html[data-theme="garnet"]{ --bg:#150e11; --bg2:#191014; --panel:#1f1419; --panel2:#291a20; --panel3:#35222a; --fg:#f0e6ea; --fg-soft:#d8c6cd; --muted:#a88b96; --accent:#d96c7f; --accent-fg:#1c0d12; --border:#33222a; }
+    html[data-theme="cyber"]{ --bg:#070910; --bg2:#090c15; --panel:#0d1120; --panel2:#131830; --panel3:#1a2140; --fg:#dbe6ff; --fg-soft:#b6c5ec; --muted:#7787b8; --accent:#22d3ee; --accent-fg:#04121a; --border:#1c2444; --ff:"Outfit", system-ui, sans-serif; }
+    html[data-theme="mist"]{ --bg:#eceff2; --bg2:#e4e8ee; --panel:#f9fafc; --panel2:#eff2f6; --panel3:#e3e8ef; --fg:#222831; --fg-soft:#3d4654; --muted:#66707e; --accent:#5e81ac; --ok:#2e8b57; --warn:#b07a17; --err:#bf4040; --border:#d8dee7; --border-soft:#e5e9f0;
+      --shadow:0 14px 38px -20px rgba(30,40,55,.25), 0 2px 6px -3px rgba(30,40,55,.12); color-scheme:light; }
+    html[data-theme="dawn"]{ --bg:#faf4ed; --bg2:#f4ece2; --panel:#fffaf3; --panel2:#f2e9e1; --panel3:#e9dfd5; --fg:#575279; --fg-soft:#6e6a86; --muted:#9893a5; --accent:#b4637a; --accent-fg:#fff; --ok:#56949f; --warn:#ea9d34; --err:#c34043; --border:#ddd3c8; --border-soft:#ece3da;
+      --shadow:0 14px 38px -20px rgba(90,70,60,.20), 0 2px 6px -3px rgba(90,70,60,.10); color-scheme:light; }
+    html[data-theme="mint"]{ --bg:#edf3ee; --bg2:#e4ece6; --panel:#f8fbf8; --panel2:#ecf2ed; --panel3:#dfe9e1; --fg:#1f2a23; --fg-soft:#3a4a3f; --muted:#5f7466; --accent:#2e7d5b; --accent-fg:#fff; --ok:#2e8b57; --warn:#a8761a; --err:#b3503e; --border:#d5e0d8; --border-soft:#e2eae4;
+      --shadow:0 14px 38px -20px rgba(40,60,48,.22), 0 2px 6px -3px rgba(40,60,48,.11); color-scheme:light; --ff:"Manrope", system-ui, sans-serif; }
     html[data-density="compact"]{ --space:13px; --pad:12px; --radius:9px; --sidebar-w:228px; }
 
     * { box-sizing: border-box; }
@@ -56,7 +81,7 @@
     :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
     /* Skip link — keyboard users land here first; visible only on focus. */
     .skip-link { position:absolute; left:8px; top:-48px; z-index:200; background:var(--accent);
-      color:#fff; padding:8px 14px; border-radius:8px; font-weight:600; transition:top .15s ease; }
+      color:var(--accent-fg); padding:8px 14px; border-radius:8px; font-weight:600; transition:top .15s ease; }
     .skip-link:focus { top:8px; }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
       clip:rect(0,0,0,0); white-space:nowrap; border:0; }
@@ -139,6 +164,18 @@
       color:var(--fg); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; transition:border-color .12s; }
     input:focus, select:focus, textarea:focus { border-color:var(--accent); outline:none; }
     input::placeholder, textarea::placeholder { color:var(--muted); opacity:.7; }
+    input[type="checkbox"], input[type="radio"] { accent-color:var(--accent); }
+    /* Range sliders: themed track + thumb (browser defaults clash with dark themes). */
+    input[type="range"] { -webkit-appearance:none; appearance:none; height:24px; padding:0;
+      background:transparent; border:none; cursor:pointer; }
+    input[type="range"]::-webkit-slider-runnable-track { height:5px; border-radius:99px; background:var(--panel3); }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; margin-top:-5.5px;
+      border-radius:99px; background:var(--accent); border:2px solid var(--bg);
+      box-shadow:0 1px 4px rgba(0,0,0,.35); }
+    input[type="range"]::-moz-range-track { height:5px; border-radius:99px; background:var(--panel3); }
+    input[type="range"]::-moz-range-thumb { width:12px; height:12px; border-radius:99px;
+      background:var(--accent); border:2px solid var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.35); }
+    input[type="range"]:focus-visible { outline-offset:4px; }
     .row { display:flex; gap:11px; flex-wrap:wrap; }
     .row > div { flex:1; min-width:140px; }
     button { background:var(--accent); color:var(--accent-fg); border:0; border-radius:var(--radius-sm);
@@ -420,24 +457,23 @@
     .pal-item.sel, .pal-item:hover { background:color-mix(in srgb,var(--accent) 16%, transparent); }
     .pal-group { font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:10px 12px 4px; }
 
-    /* ---- Customize drawer ------------------------------------------- */
-    .drawer { position:fixed; top:0; right:0; height:100vh; width:min(360px,94vw); background:var(--panel);
-      border-left:1px solid var(--border); box-shadow:var(--shadow); z-index:151; transform:translateX(100%);
-      transition:transform .2s ease; overflow-y:auto; padding:18px; }
-    .drawer.open { transform:none; }
-    .drawer h3 { margin:0; font-size:16px; }
-    .drawer .seg { margin-top:18px; }
-    .drawer .seg > .sl { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px; }
+    /* ---- Appearance section (Settings) ------------------------------ */
+    /* These used to be scoped under the retired .drawer — the Appearance
+       segments lost ALL styling when the drawer died. Scope them plainly. */
+    .seg { margin-top:18px; max-width:560px; }
+    .seg > .sl { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px; }
     .swatches { display:flex; flex-wrap:wrap; gap:8px; }
     .sw { width:30px; height:30px; border-radius:8px; border:2px solid var(--border); cursor:pointer; margin:0; padding:0; }
     .sw.sel { border-color:var(--fg); box-shadow:0 0 0 2px var(--accent); }
-    .theme-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+    .theme-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; }
     .theme-card { border:1px solid var(--border); border-radius:9px; padding:9px 11px; cursor:pointer; margin:0;
       background:var(--panel2); color:var(--fg); text-align:left; font-size:13px; display:flex; align-items:center; gap:8px; }
     .theme-card.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
-    .theme-card .tdot { width:14px; height:14px; border-radius:99px; border:1px solid rgba(255,255,255,.15); }
+    .theme-card .tdot { width:14px; height:14px; border-radius:99px; border:1px solid var(--border); }
     .seg-toggle { display:flex; gap:6px; }
     .seg-toggle button { flex:1; margin:0; }
+    .seg-toggle.wrap { flex-wrap:wrap; }
+    .seg-toggle.wrap button { flex:1 1 28%; white-space:nowrap; }
     .seg-toggle button:not(.sel) { background:var(--panel2); color:var(--fg-soft); border:1px solid var(--border); font-weight:500; }
     .modlist label { display:flex; align-items:center; gap:9px; color:var(--fg-soft); font-size:13.5px;
       text-transform:none; letter-spacing:0; margin:7px 0; cursor:pointer; }
@@ -1494,6 +1530,8 @@
       <div class="seg"><div class="sl">Theme</div><div class="theme-grid" id="dr-themes"></div></div>
       <div class="seg"><div class="sl">Accent</div><div class="swatches" id="dr-accents"></div></div>
       <div class="seg"><div class="sl">Density</div><div class="seg-toggle" id="dr-density"></div></div>
+      <div class="seg"><div class="sl">Typeface</div><div class="seg-toggle wrap" id="dr-faces"></div>
+        <div class="hint">Open-source fonts bundled with the app — nothing to download, nothing fetched.</div></div>
       <div class="seg"><div class="sl">Text size · <span id="dr-font-val">100%</span></div>
         <input type="range" id="dr-font" min="88" max="124" step="2" oninput="setFont(this.value)"></div>
       <div class="seg"><div class="sl">Sidebar</div><div class="seg-toggle" id="dr-sidebar"></div></div>
@@ -2082,15 +2120,31 @@
 
     // -- Appearance / customization (local-only, never transmitted) --------- //
     const UI_KEY = "oo.ui";
-    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, sidebar:"expanded", hidden:[]};
+    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, face:"", sidebar:"expanded", hidden:[]};
     const THEMES = [
       {id:"ink",name:"Ink",c:"#5b9dd9"}, {id:"slate",name:"Slate",c:"#7aa2f7"},
-      {id:"midnight",name:"Midnight",c:"#8b7dff"}, {id:"sepia",name:"Sepia",c:"#d8a657"},
+      {id:"midnight",name:"Midnight",c:"#8b7dff"}, {id:"arctic",name:"Arctic",c:"#88c0d0"},
+      {id:"cyber",name:"Cyber",c:"#22d3ee"}, {id:"forest",name:"Forest",c:"#6fbf73"},
+      {id:"aubergine",name:"Aubergine",c:"#c084fc"}, {id:"garnet",name:"Garnet",c:"#d96c7f"},
+      {id:"solar",name:"Solar",c:"#b58900"}, {id:"sepia",name:"Sepia",c:"#d8a657"},
       {id:"terminal",name:"Terminal",c:"#36d97a"}, {id:"contrast",name:"Contrast",c:"#ffd400"},
-      {id:"light",name:"Light",c:"#2f6fb3"}, {id:"paper",name:"Paper",c:"#9a6a2f"},
-      {id:"system",name:"System",c:"#8c95a6"},
+      {id:"light",name:"Light",c:"#2f6fb3"}, {id:"mist",name:"Mist",c:"#5e81ac"},
+      {id:"dawn",name:"Dawn",c:"#b4637a"}, {id:"mint",name:"Mint",c:"#2e7d5b"},
+      {id:"paper",name:"Paper",c:"#9a6a2f"}, {id:"system",name:"System",c:"#8c95a6"},
     ];
     const ACCENTS = ["", "#5b9dd9", "#7aa2f7", "#8b7dff", "#36d97a", "#e0698f", "#d9a441", "#e8743b", "#2bb3a3"];
+    // Bundled OFL typefaces (/static/fonts). "" = the theme's own font; a pick
+    // overrides every theme. Variable fonts carry the full weight range
+    // (Inter/Outfit go down to Thin 100 — the maintainer's modern-thin ask).
+    const FACES = [
+      {id:"", name:"Theme default", ff:""},
+      {id:"cantarell", name:"Cantarell", ff:'"Cantarell", system-ui, sans-serif'},
+      {id:"inter", name:"Inter", ff:'"Inter", system-ui, sans-serif'},
+      {id:"outfit", name:"Outfit", ff:'"Outfit", system-ui, sans-serif'},
+      {id:"manrope", name:"Manrope", ff:'"Manrope", system-ui, sans-serif'},
+      {id:"serif", name:"Source Serif", ff:'"Source Serif 4", Georgia, serif'},
+      {id:"mono", name:"JetBrains Mono", ff:'"JetBrains Mono", ui-monospace, monospace'},
+    ];
 
     function getUi() { try { return {...UI_DEFAULTS, ...JSON.parse(localStorage.getItem(UI_KEY) || "{}")}; }
       catch { return {...UI_DEFAULTS}; } }
@@ -2106,6 +2160,8 @@
       const r = document.documentElement;
       applyThemeAttr(ui.theme);
       if (ui.accent) r.style.setProperty("--accent", ui.accent); else r.style.removeProperty("--accent");
+      const face = FACES.find(f => f.id === (ui.face || ""));
+      if (face && face.ff) r.style.setProperty("--ff", face.ff); else r.style.removeProperty("--ff");
       if (ui.density === "compact") r.setAttribute("data-density", "compact"); else r.removeAttribute("data-density");
       r.style.fontSize = (ui.font || 100) + "%";
       if (ui.sidebar === "collapsed") r.setAttribute("data-sidebar", "collapsed"); else r.removeAttribute("data-sidebar");
@@ -2122,6 +2178,7 @@
     function setTheme(t)   { const u = getUi(); u.theme = t;   saveUi(u); applyUi(u); buildDrawer(); syncThemeSelect(); }
     function setAccent(a)  { const u = getUi(); u.accent = a;  saveUi(u); applyUi(u); buildDrawer(); }
     function setDensity(d) { const u = getUi(); u.density = d; saveUi(u); applyUi(u); buildDrawer(); }
+    function setFace(f)    { const u = getUi(); u.face = f;    saveUi(u); applyUi(u); buildDrawer(); }
     function setFont(v)    { const u = getUi(); u.font = +v;   saveUi(u); applyUi(u); $("dr-font-val").textContent = v + "%"; }
     function setSidebar(s) { const u = getUi(); u.sidebar = s; saveUi(u); applyUi(u); buildDrawer(); }
     function toggleSidebar(){ setSidebar(getUi().sidebar === "collapsed" ? "expanded" : "collapsed"); }
@@ -2133,7 +2190,8 @@
     function resetUi() { localStorage.removeItem(UI_KEY); applyUi(getUi()); buildDrawer(); syncThemeSelect();
       toast("Appearance reset to defaults."); }
     function syncThemeSelect() { const t = getUi().theme; const sel = $("set-theme");
-      if (sel) sel.value = (t === "light" ? "light" : t === "system" ? "system" : "dark"); }
+      const lightish = ["light", "paper", "mist", "dawn", "mint"];
+      if (sel) sel.value = (t === "system" ? "system" : lightish.includes(t) ? "light" : "dark"); }
 
     // Appearance now lives in Settings → Appearance (the old drawer is gone).
     // openDrawer() is kept as the single "take me to appearance" entry point so the
@@ -2159,6 +2217,9 @@
            onclick="setAccent('${a}')" style="background:${a || "linear-gradient(135deg,var(--muted),var(--accent))"}"></button>`).join("");
       $("dr-density").innerHTML = ["comfortable", "compact"].map(d =>
         `<button class="${d === ui.density ? "sel" : ""}" onclick="setDensity('${d}')">${d[0].toUpperCase() + d.slice(1)}</button>`).join("");
+      $("dr-faces").innerHTML = FACES.map(f =>
+        `<button class="${f.id === (ui.face || "") ? "sel" : ""}" onclick="setFace('${f.id}')"
+           style="${f.ff ? "font-family:" + esc(f.ff) : ""}">${esc(f.name)}</button>`).join("");
       $("dr-sidebar").innerHTML = [["expanded", "Expanded"], ["collapsed", "Collapsed"]].map(([v, l]) =>
         `<button class="${v === ui.sidebar ? "sel" : ""}" onclick="setSidebar('${v}')">${l}</button>`).join("");
       $("dr-font").value = ui.font; $("dr-font-val").textContent = ui.font + "%";

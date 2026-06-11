@@ -200,6 +200,28 @@ Before fearing loss from an archive-size change, run
   analytics + the future corpus tabs). btop ruled OUT as a vitals dependency
   (maintainer "OK for Btop, good call" 2026-06-11): Apache-2.0 C++ TUI binary,
   wrong shape — the CPU bug was psutil per-core normalization, fixed in-app.
+- **Themes + bundled fonts (maintainer-ruled 2026-06-11, while away) —
+  SHIPPED same day:** (1) 9 NEW themes (Arctic/Solar/Forest/Aubergine/Garnet/
+  Cyber dark + Mist/Dawn/Mint light → 17 + System); (2) six SIL-OFL fonts
+  BUNDLED in src/static/fonts (~1.1 MB woff2: Cantarell R/B, Inter VF,
+  Outfit VF, Manrope VF, JetBrains Mono VF, Source Serif 4 VF; README +
+  license texts; fetched from github.com/google/fonts, lossless TTF→WOFF2);
+  themes pair with fonts (Arctic→Inter, Cyber→Outfit, Mint→Manrope,
+  Sepia/Paper→Source Serif, reader body→Source Serif) and a Typeface picker
+  in Appearance overrides any theme; Cantarell answer: yes modern humanist
+  (GNOME default) but the common build is 400/700 only — upstream VF with
+  Thin is on GNOME GitLab (network-blocked here); Inter/Outfit carry true
+  Thin 100. (3) Visual-bug sweep findings FIXED: the Settings "font cursor"
+  was TWO bugs — range inputs had zero styling app-wide AND the whole
+  Appearance section lost its .seg/.sl styles when the drawer was retired
+  (selectors stayed `.drawer .seg` = dead CSS); plus no color-scheme
+  declaration (native selects/date-pickers rendered light-on-dark — now per
+  theme), no accent-color on checkboxes/radios, skip-link + theme-dot
+  hardcoded white, /investigate ignored the Console's theme (now reads oo.ui
+  theme family + accent), syncThemeSelect treated all light themes as dark.
+  Invariants #10–12 added to test_ui_invariants (fonts bundled+local-only,
+  themed range sliders, no .drawer .seg regression, Typeface picker, ≥16
+  theme CSS blocks). Locales 296/296 ×12 (Typeface/Theme default/fonts hint).
 - **The WHAT axis (maintainer musing 2026-06-11, answer recorded):** after
   when/where/who, the maintainer asked about "what" — then offered "maybe the
   article is the what". Assistant position: the article is the TESTIMONY of

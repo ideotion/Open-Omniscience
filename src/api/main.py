@@ -1081,9 +1081,12 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     --line:#222833; --accent:#5ea0ff; --card:#141923; --warn:#f0a23a; }}
   @media (prefers-color-scheme: light) {{ :root {{ --paper:#faf8f4; --fg:#1a1d22; --mut:#6b7280;
     --line:#e4e0d8; --card:#fff; --accent:#2b6cd4; }} }}
+  /* Bundled OFL reading serif (src/static/fonts) — local file, zero network. */
+  @font-face {{ font-family:"Source Serif 4"; src:url("/static/fonts/SourceSerif4-Variable.woff2")
+    format("woff2"); font-weight:200 900; font-display:swap; }}
   * {{ box-sizing: border-box; }}
   body {{ margin:0; background:var(--paper); color:var(--fg);
-    font: 18px/1.72 Georgia,'Times New Roman',serif; }}
+    font: 18px/1.72 "Source Serif 4",Georgia,'Times New Roman',serif; }}
   .wrap {{ max-width: 760px; margin: 0 auto; padding: 28px 22px 80px; }}
   .crumb {{ font: 12px/1.4 system-ui,sans-serif; color:var(--mut); margin-bottom:18px;
     display:flex; gap:8px; align-items:center; }}

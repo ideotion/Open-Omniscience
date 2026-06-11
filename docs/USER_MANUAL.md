@@ -144,6 +144,16 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
   crowded out of analysis by English volume.
 - **Wikipedia offline dumps:** the editions list loads correctly again and is
   multi-selectable — download several language editions in one queued run.
+- **17 themes and bundled open-source fonts:** nine new colorways (Arctic,
+  Solar, Forest, Aubergine, Garnet, Cyber, Mist, Dawn, Mint) join the original
+  set, and six SIL-OFL typefaces now ship **inside the app** (Cantarell, Inter,
+  Outfit, Manrope, JetBrains Mono, Source Serif 4 — see
+  `src/static/fonts/README.md`): nothing to download, no font request ever
+  leaves your machine. Some themes pair with a font (Arctic→Inter,
+  Cyber→Outfit, Sepia/Paper→Source Serif); the new **Typeface** picker in
+  Settings → Appearance overrides any of them, and the article reader uses the
+  bundled serif. Form widgets (sliders, checkboxes, native dropdowns) now
+  follow the theme too.
 
 **A note on “FOOS”.** Browser tabs the app opens (card investigations, the
 local article reader) are suffixed **“· FOOS” — Free Open OmniScience**: short
