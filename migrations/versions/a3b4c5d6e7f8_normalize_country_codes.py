@@ -17,6 +17,13 @@ The de-US-centring fix (0.09 KEY POINT). Three real defects, one migration:
    explicit country for the domain, else the domain's ccTLD, else NULL
    ("unknown" is the truthful answer).
 
+   STATED TRADE-OFF: a 'us' value asserted by a user (only possible via CSV
+   import; the create/update API never accepted a country) is indistinguishable
+   in the database from the silent default, so on a non-US-inferable domain it
+   is ALSO cleared. The asymmetry justifies it -- the default fabricated values
+   by the thousand, explicit CSV 'us' on a gTLD domain is rare and restorable
+   by re-importing the CSV (imports normalise and stick from now on).
+
 3. CORRUPTED MENTION GEOGRAPHY -- ``keyword_mentions.country`` was written as
    ``source.country[:2].lower()``; slug values were truncated into WRONG codes
    ("china" -> "ch" = Switzerland, "germany" -> "ge" = Georgia). The column is

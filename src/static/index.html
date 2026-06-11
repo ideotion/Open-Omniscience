@@ -3451,7 +3451,10 @@
         COV_MISSING = (d.missing || []).map(code =>
           ({code, name: (d.missing_names || {})[code] || code}));
         renderCoverageTable();
-      } catch (e) { el.innerHTML = `<div class="note err">Coverage unavailable: ${esc(e.message)}</div>`; }
+      } catch (e) {
+        _covStamp = "";   // error rendered: force a repaint on the next good poll
+        el.innerHTML = `<div class="note err">Coverage unavailable: ${esc(e.message)}</div>`;
+      }
     }
 
     // Regional balance vs the configured floors (configs/catalog_targets.yml) —

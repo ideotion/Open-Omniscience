@@ -248,6 +248,12 @@ Before fearing loss from an archive-size change, run
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 
 ## Open queue (when maintainer says proceed)
+- **FULL AUDIT (maintainer-ruled 2026-06-11, after the catalog batch):** a very
+  thorough audit of (1) code + its documentation, (2) the UI and its user-facing
+  text/notices, (3) ALL 12 translations, (4) GUI bugs + optimisations — explicitly
+  asked: be critical of own thinking patterns, self-contradictory about choices,
+  and hold the project's ethical/scientific standards throughout. IN PROGRESS
+  this session; deliver as a docs/audit/ report in the house style.
 - **0.09 OPENING ORDER (maintainer "Good, proceed" 2026-06-11, on the
   recommended sequencing):** start with de-US-centring the source catalog
   (the KEY POINT below — ISO-2 normalisation migration + one conversion
