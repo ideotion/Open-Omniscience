@@ -877,6 +877,34 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
             )
     except Exception:  # noqa: BLE001
         logger.warning("location extraction failed in reader", exc_info=True)
+    try:
+        from src.timemap.entextract import extract_entities
+
+        ents = extract_entities(content, limit=5)
+        if ents["people"]:
+            deduced_extra.append(
+                _row(
+                    "People in text",
+                    " · ".join(
+                        f"{_html.escape(p['name'])}"
+                        + (f" <span class='muted'>×{p['mentions']}</span>" if p["mentions"] > 1 else "")
+                        for p in ents["people"]
+                    ),
+                )
+            )
+        if ents["organizations"]:
+            deduced_extra.append(
+                _row(
+                    "Organizations in text",
+                    " · ".join(
+                        f"{_html.escape(o['name'])}"
+                        + (f" <span class='muted'>×{o['mentions']}</span>" if o["mentions"] > 1 else "")
+                        for o in ents["organizations"]
+                    ),
+                )
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning("entity extraction failed in reader", exc_info=True)
     deduced_rows = "".join(
         [
             _row("Captured (downloaded)", _html.escape(captured) if captured else None),
@@ -895,7 +923,8 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
         "<div class='mgrp deduced'><h3>Deduced by this app — less reliable</h3>"
         + (deduced_rows or "<div class='mrow muted'>—</div>")
         + "<div class='mnote'>Extractions are lexical candidates with snippet provenance — "
-        "an event date or place mentioned in the text, never a confirmed fact.</div></div>"
+        "an event date, place, person or organization mentioned in the text, "
+        "never a confirmed fact.</div></div>"
     )
 
     # Co-citation: the external links THIS article cites, each with how many distinct

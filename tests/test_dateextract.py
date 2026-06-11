@@ -169,3 +169,78 @@ def test_reader_shows_both_metadata_classes(tmp_path, monkeypatch):
         assert "Event dates in text" in html and "2026-06-11" in html
         assert "Places in text" in html and "Gaza" in html
         assert "never a confirmed fact" in html
+
+
+# --------------------------------------------------------------------------- #
+#  Entity extractor — people vs organizations, the WHO axis
+#  (maintainer-ruled 2026-06-11: separate classes by design)
+# --------------------------------------------------------------------------- #
+def test_extract_entities_people_and_orgs_separate():
+    from src.timemap.entextract import extract_entities
+
+    text = ("Yesterday, President Macron met Chancellor Scholz in Berlin. "
+            "The talks, said Ursula Leyenberg, will continue. NATO observers "
+            "attended, and NATO later issued a statement. The Finance Ministry "
+            "and Acme Corp declined to comment.")
+    got = extract_entities(text)
+    people = {p["name"] for p in got["people"]}
+    orgs = {o["name"] for o in got["organizations"]}
+    assert "Macron" in people and "Scholz" in people
+    assert "Ursula Leyenberg" in people               # mid-sentence shape rule
+    assert "NATO" in orgs                             # repeated acronym
+    assert "Finance Ministry" in orgs and "Acme Corp" in orgs
+    assert not people & orgs                          # never double-classed
+    assert all("deduced" in e["note"] for e in got["people"] + got["organizations"])
+    assert all(e["snippet"] for e in got["people"] + got["organizations"])
+
+
+def test_extract_entities_guards():
+    from src.timemap.entextract import extract_entities
+
+    # A single-occurrence acronym is NOT promoted to an organization.
+    one = extract_entities("The report cited UNHCR once in passing.")
+    assert all(o["name"] != "UNHCR" for o in one["organizations"])
+    # Stoplisted acronyms never count, however often they repeat.
+    stop = extract_entities("The USA and the EU met; the USA and the EU agreed.")
+    assert stop["organizations"] == []
+    # Sentence-initial TitleCase pairs are not mistaken for people.
+    lead = extract_entities("Many Happy Returns was the headline. Nothing else here.")
+    assert lead["people"] == []
+    # A word claimed by an organization never doubles as a person:
+    # 'World Bank' (org) blocks the person-shape 'Bank Moreau'.
+    mixed = extract_entities(
+        "Funding from the World Bank arrived, and analyst Bank Moreau agreed."
+    )
+    assert any("World Bank" in o["name"] for o in mixed["organizations"])
+    assert all("Bank" not in p["name"] for p in mixed["people"])
+    assert extract_entities("") == {"people": [], "organizations": []}
+
+
+def test_reader_shows_entity_rows():
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.database.models import Article, SessionLocal, Source
+
+    with TestClient(app) as c:
+        s = SessionLocal()
+        try:
+            src = Source(name="Ent source", domain="ent.test", country="us")
+            s.add(src)
+            s.flush()
+            a = Article(
+                url="https://ent.test/1", canonical_url="https://ent.test/1",
+                source_id=src.id, title="Entity classes", hash="ent-h1", language="en",
+                content=("President Macron spoke as NATO met; NATO confirmed. "
+                         "The Finance Ministry sent observers."),
+                published_at=__import__("datetime").datetime(2026, 6, 10),
+                created_at=__import__("datetime").datetime(2026, 6, 11),
+            )
+            s.add(a)
+            s.commit()
+            aid = a.id
+        finally:
+            s.close()
+        html = c.get(f"/api/articles/{aid}/view").text
+        assert "People in text" in html and "Macron" in html
+        assert "Organizations in text" in html and "NATO" in html

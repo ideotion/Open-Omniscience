@@ -187,6 +187,26 @@ Before fearing loss from an archive-size change, run
   deduced-metadata block next to extracted event dates. NEXT: feed the
   temporal map's mention layer with text locations (event site, not just
   coverage origin) + extend the country table from field logs.
+- **Entity extractor SHIPPED (2026-06-11, the maintainer's WHO axis):**
+  src/timemap/entextract.py — PEOPLE and ORGANIZATIONS as two SEPARATE classes
+  by design (maintainer: "We should treat people and companies/organizations
+  separately"). Rules, all explainable + noted per entry: honorific+name
+  (high precision), lowercase-word-preceded Firstname-Lastname shape (weakest,
+  says so), TitleCase phrase ending in an org word (leading determiners
+  stripped), repeated acronyms (≥2 occurrences, stoplisted common caps out);
+  a word claimed by an org never doubles as a person. Reader deduced block
+  gains "People in text" + "Organizations in text" rows with ×N mention
+  counts. NEXT: aggregate entities corpus-wide (the people/org layer for
+  analytics + the future corpus tabs). btop ruled OUT as a vitals dependency
+  (maintainer "OK for Btop, good call" 2026-06-11): Apache-2.0 C++ TUI binary,
+  wrong shape — the CPU bug was psutil per-core normalization, fixed in-app.
+- **The WHAT axis (maintainer musing 2026-06-11, answer recorded):** after
+  when/where/who, the maintainer asked about "what" — then offered "maybe the
+  article is the what". Assistant position: the article is the RECORD, not the
+  what; the closest honest proxy for WHAT already in the app is the keyword/
+  family/ring layer (concepts+events), so the what-axis is keywords ELEVATED:
+  event-typed vocabulary later, never topic-classification scores. No ruling
+  yet — awaiting maintainer's direction before building.
 
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must

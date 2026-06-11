@@ -129,10 +129,13 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
   remaps the slider (play then sweeps only that period), play speed 0.5–4×,
   fine ±month windows, wheel zoom, in-map controls and ⛶ Enlarge. Pins are
   clickable across their whole disc.
-- **Event dates AND places extracted from text:** the date extractor reads six
-  languages, numeric formats and anchored expressions ("yesterday", bare
-  weekdays, "June 11"); the new location extractor finds gazetteer cities and
-  country names. Both feed the article reader's metadata header, which now
+- **Event dates, places, people and organizations extracted from text:** the
+  date extractor reads six languages, numeric formats and anchored expressions
+  ("yesterday", bare weekdays, "June 11"); the location extractor finds
+  gazetteer cities and country names; the entity extractor surfaces **people**
+  and **organizations** as two deliberately separate classes (an honorific-led
+  name and a repeated acronym answer different questions — each entry records
+  which rule found it). All feed the article reader's metadata header, which
   separates **"From the source"** from **"Deduced by this app — less reliable"**
   (dashed box): extractions are lexical candidates with snippet provenance,
   never confirmed facts.
