@@ -22,6 +22,25 @@
 
 ---
 
+## The 0.0.9 sequencing (maintainer-agreed 2026-06-11)
+
+1. **Database reliability batch** — the mandate below, designed TOGETHER with
+   SQLCipher at-rest encryption (standing ruling: a fresh, dedicated session;
+   crypto and data-integrity deserve full attention, not a session tail).
+   Deliverables: gap analysis → design doc → implementation with a torture-test
+   suite (interrupted imports, duplicate floods, cross-version restores).
+2. **Newsletter scraper** — only after (1) is solid (see its section below).
+3. **Convergence flagship** (space-time layers 3+4) built on the
+   When×Where×Who ingest-time anchoring substrate.
+4. **Audit remediation queue** — `docs/audit/06_FULL_AUDIT_0_0_9.md` (ranked;
+   two items await a maintainer ruling: the "stays on this machine" wording and
+   caveats-visible-by-default vs calm UI). Rides along in normal sessions.
+5. Standing queue items (CLAUDE.md) continue as session work between batches:
+   agenda views/depth, corpora system, global search rework, download/task
+   manager, interactive charts + SI formatter, i18n long tail.
+
+---
+
 ## DATABASE RELIABILITY MANDATE — backup/restore as an OS-grade tool (maintainer-ruled 2026-06-11)
 
 > **The ruling (verbatim intent):** before any personal data is scraped
@@ -55,6 +74,30 @@
 **Sequencing (standing rulings combined):** design TOGETHER with SQLCipher
 at-rest encryption (ruled GO, own fresh session — one coherent key story), and
 **the newsletter scraper waits until this is done.**
+
+---
+
+## Newsletter scraper — email/newsletter intelligence (gated on the mandate above)
+
+**The goal (maintainer-stated 2026-06-11):** ingest the operator's newsletters
+as a first-class corpus domain. A detailed implementation plan already exists in
+`docs/ROADMAP.md` ("Email & Newsletter Intelligence"); `scripts/import_eml.py`
+is the manual seed of the path. What makes this different from web sources — and
+why it is **deliberately blocked behind the database mandate** — is that it is
+**personal data**: a mailbox identifies the operator, their subscriptions and
+their reading life. The bar:
+- **Local-only, operator's own mailbox, explicit opt-in** — fetched via the
+  operator's credentials (IMAP/.eml import), never a hosted relay; credentials
+  stored like the custody keys, never in plaintext config.
+- **Newsletters ride the same substrate**: provenance (sender, list-id, fetch
+  time, content hash), dedup, keywords/mentions, the reader, and — critically —
+  **backups and merge-import carry them with full fidelity** (the mandate's
+  "everything" clause is what unblocks this).
+- **Privacy asymmetry stated in the UI**: newsletter content may embed tracking
+  pixels/links — strip/neutralise them at ingest (no remote-image fetches), and
+  say so honestly.
+- At-rest encryption (SQLCipher batch) matters MORE here than anywhere; another
+  reason the sequencing is what it is.
 
 ---
 
@@ -175,6 +218,24 @@ never verdicts):
 
 Plus the standing queue item: a dedicated /investigate view per card TYPE so
 every Home card is clickable into a dashboard.
+
+---
+
+## Article corpora — the flagship analysis object (maintainer-ruled 2026-06-11)
+
+The reader rework and the corpora system are ONE design (ledger entries
+2026-06-11): the dedicated article window gains tabs — **Mindmap · Related
+articles · Source description · Keyword analysis · Sentiment analysis** (the
+two-class metadata header already shipped). Then: select several articles
+anywhere in the app → "create a corpus" → its own window with the SAME tabs
+computed over all members, PLUS the corpus-only tab: **source competitive
+analysis** — how each source approaches a concept (angle, framing, sentiment,
+volume, timing) with real visual representations; single articles never get
+that tab (n=1 has no competition). Tag-driven corpora (multi-tag AND-selection
+in Sources → "make this a corpus") and hand-selection are two entries to the
+same object. Honesty: every per-source figure carries method + caveat + n; no
+composite "source quality" number ever (CardSchemaError discipline extends to
+corpus views).
 
 ---
 
