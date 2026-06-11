@@ -1559,6 +1559,61 @@ class LawRevision(Base):
         return f"<LawRevision(doc={self.document_id} d={self.delta_bytes})>"
 
 
+class MergeBatch(Base):
+    """One import/merge of an external backup artifact into this corpus.
+
+    The provenance anchor for the DB-reliability mandate: every row that arrived
+    via merge is traceable to the batch that brought it (see MergedRow), so
+    imported material can never silently launder into first-party evidence.
+    ``origin_fingerprint`` is the artifact signer's public-key id when the
+    manifest was signed and verified, else "unsigned" -- verified, not trusted.
+    """
+
+    __tablename__ = "merge_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    imported_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), index=True
+    )
+    artifact_kind: Mapped[str] = mapped_column(String(20), nullable=False, default="oo-backup-2")
+    origin_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False, default="unsigned")
+    app_version: Mapped[str | None] = mapped_column(String(20))  # from the manifest (legacy: None)
+    alembic_rev: Mapped[str | None] = mapped_column(String(32))  # schema rev the artifact carried
+    manifest_json: Mapped[str | None] = mapped_column(Text)  # the verified manifest (or synthesized stub)
+    counts_json: Mapped[str | None] = mapped_column(Text)  # per-domain plan {new, duplicate, conflict}
+    report_json: Mapped[str | None] = mapped_column(Text)  # post-merge verification verdicts
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="previewed")  # previewed|merged|failed
+
+    rows = relationship("MergedRow", back_populates="batch", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<MergeBatch({self.id} {self.status} from {self.origin_fingerprint[:12]})>"
+
+
+class MergedRow(Base):
+    """One row written into this corpus by a merge batch (provenance of merge).
+
+    A mapping table instead of an origin column on ~20 domain tables: no schema
+    churn, one JOIN tells any surface (reader, evidence export, analytics)
+    whether a row is first-party or arrived via import -- and from which batch.
+    """
+
+    __tablename__ = "merged_rows"
+
+    batch_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("merge_batches.id", ondelete="CASCADE"), primary_key=True
+    )
+    table_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    batch = relationship("MergeBatch", back_populates="rows")
+
+    __table_args__ = (Index("ix_merged_rows_lookup", "table_name", "row_id"),)
+
+    def __repr__(self) -> str:
+        return f"<MergedRow(b{self.batch_id} {self.table_name}#{self.row_id})>"
+
+
 # Example usage
 if __name__ == "__main__":
     # Test database connection and table creation

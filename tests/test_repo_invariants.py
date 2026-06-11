@@ -244,3 +244,18 @@ def test_ui_invariants():
     assert 'id="dr-faces"' in html, "the Typeface picker must exist (CLAUDE.md)"
     # 16 CSS blocks: 17 named themes, Ink lives in :root (System is JS-only).
     assert html.count('html[data-theme="') >= 16, "the theme catalog must not shrink"
+    # 13. the agenda shows DATA, never plumbing (maintainer principle 2026-06-11):
+    #     the feed directory lives in Settings → Agenda, and the month grid is
+    #     the tab's default view.
+    agenda_tab = html.split('id="tab-agenda"', 1)[1].split('class="tab-page"', 1)[0]
+    assert 'id="agenda-feeds"' not in agenda_tab, (
+        "the calendar directory is plumbing — it lives in Settings, not the Agenda tab"
+    )
+    assert 'id="agenda-feeds"' in html, "the calendar directory must still exist (in Settings)"
+    assert 'id="set-agenda"' in html, "Settings must host the Agenda configuration section"
+    assert 'id="agenda-month"' in agenda_tab and 'id="agenda-view"' in agenda_tab, (
+        "the agenda month grid + view switcher must exist in the tab"
+    )
+    assert 'return localStorage.getItem("oo.agenda.view") || "month"' in html, (
+        "MONTH is the ruled default agenda view"
+    )

@@ -85,6 +85,7 @@ from src.api.briefing import router as briefing_router
 from src.api.custody import router as custody_router
 
 # Import database overview router (honest read-only corpus statistics + backup/restore)
+from src.api.backup_v2 import router as backup_v2_router
 from src.api.database import router as database_router
 
 # Import diagnostics router (shareable, on-demand back-end syntheses — CLAUDE.md)
@@ -186,6 +187,15 @@ async def lifespan(app: FastAPI):
         _install_errorlog()
     except Exception:  # noqa: BLE001 - logging must never block startup
         logger.warning("could not install the error-log handler", exc_info=True)
+    # Reclaim staging dirs orphaned by a crashed restore (DB-reliability batch).
+    try:
+        from src.backup.artifact import cleanup_stale_staging
+
+        _n = cleanup_stale_staging()
+        if _n:
+            logger.info(f"removed {_n} stale restore staging dir(s)")
+    except Exception:  # noqa: BLE001 - the janitor must never block startup
+        logger.warning("stale-staging cleanup failed", exc_info=True)
     # Bundled initial super-groups (maintainer-ruled 2026-06-11): created only
     # where missing; the user's own curation always wins. Offline, best-effort.
     try:
@@ -337,6 +347,7 @@ app.include_router(source_management_router)
 
 # Include database overview router
 app.include_router(database_router)
+app.include_router(backup_v2_router)
 
 # Include application settings router
 app.include_router(settings_router)

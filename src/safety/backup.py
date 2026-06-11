@@ -42,31 +42,22 @@ def restore_encrypted_backup(blob: bytes, passphrase: str) -> dict:
     Returns a small report. Raises ``EncryptionError`` on a bad passphrase/tamper and
     ``BackupError`` if the decrypted payload is not a genuine Open Omniscience database
     (so a hostile file can never overwrite the corpus).
+
+    The swap itself is delegated to :func:`src.backup.sqlite_backup.restore_from_bytes`
+    -- ONE restore path, encryption is only an envelope -- so this flow carries the
+    same guarantees as the plain one: validation on a staged copy, a pre-restore
+    snapshot via the online backup API, engine-pool disposal, stale ``-wal``/``-shm``
+    removal, an atomic ``os.replace`` and the schema/FTS reconcile. (Re-implementing
+    the swap by hand here had drifted into a non-atomic write with none of those
+    steps -- gap analysis `docs/design/DB_RELIABILITY_01_GAP_ANALYSIS.md` §4.)
     """
-    from src.backup.sqlite_backup import BackupError, live_db_path, validate_sqlite_file
+    from src.backup.sqlite_backup import live_db_path, restore_from_bytes
 
     plaintext = decrypt_bytes(blob, passphrase)  # raises on wrong passphrase / tamper
-
-    fd, tmp = tempfile.mkstemp(prefix="oo-encrestore-", suffix=".db")
-    import os
-
-    os.close(fd)
-    tmp_path = Path(tmp)
-    try:
-        tmp_path.write_bytes(plaintext)
-        rows = validate_sqlite_file(tmp_path)  # raises BackupError if not a real OO DB
-        dest = live_db_path()
-        if dest is None:
-            raise BackupError("restore is only supported for a local SQLite database")
-        # Snapshot the current DB next to it before overwriting (never destroy silently).
-        if dest.exists():
-            from datetime import UTC, datetime
-
-            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-            dest.with_suffix(dest.suffix + f".pre-restore-{stamp}.bak").write_bytes(
-                dest.read_bytes()
-            )
-        dest.write_bytes(plaintext)
-        return {"restored": True, "validated_rows": rows, "path": str(dest)}
-    finally:
-        tmp_path.unlink(missing_ok=True)
+    report = restore_from_bytes(plaintext)  # raises BackupError before touching anything
+    return {
+        "restored": True,
+        "validated_rows": report.tables_seen,
+        "path": str(live_db_path()),
+        "pre_restore_snapshot": report.pre_restore_snapshot,
+    }

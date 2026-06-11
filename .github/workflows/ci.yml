@@ -147,3 +147,88 @@ jobs:
 
       - name: Test the hybrid signing + signed annotation bundles
         run: python -m pytest -q tests/test_custody_signing.py tests/test_annotations.py
+
+  # ----------------------------------------------------------------------- #
+  # UNIVERSAL PORTABILITY (maintainer-ruled 2026-06-11): the 3-OS matrix IS
+  # the definition of "supported". The Windows/macOS lanes start as
+  # OBSERVATION lanes (continue-on-error) while platform-specific failures
+  # are discovered and fixed honestly -- they graduate to required (drop the
+  # flag) once green; Linux remains the release gate meanwhile. Never claim
+  # an OS works without this proof.
+  # ----------------------------------------------------------------------- #
+  portability:
+    if: github.event_name != 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    name: Portability observation (${{ matrix.os }})
+    continue-on-error: true  # observation lane: graduates to required when green
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install (core + analysis + dev)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,dev]"
+
+      - name: Boot check
+        run: python -c "from src.api.main import app; print(sum(1 for _ in app.routes), 'routes')"
+
+      - name: Test (pytest)
+        run: python -m pytest -q
+
+  # SQLCipher driver proof on every OS (gate zero, executed for real): the
+  # at-rest encryption batch (PR-E) must not land on wheel inspection alone.
+  # BLOCKING by design -- if a wheel breaks on any OS, we must know before
+  # the crypto ships, not after.
+  sqlcipher-smoke:
+    if: github.event_name != 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    name: SQLCipher wheel smoke (${{ matrix.os }})
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Encrypt, FTS5, wrong-key and stdlib-unreadable checks
+        shell: python
+        run: |
+          import subprocess, sys
+          subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "sqlcipher3==0.6.2"])
+          import os, sqlite3, tempfile
+          from sqlcipher3 import dbapi2 as sqc
+          path = os.path.join(tempfile.mkdtemp(), "enc.db")
+          con = sqc.connect(path)
+          con.execute("PRAGMA key = 'smoke-pass'")
+          ver = con.execute("PRAGMA cipher_version").fetchone()
+          assert ver and "4." in ver[0], f"unexpected cipher_version: {ver}"
+          con.execute("CREATE VIRTUAL TABLE ft USING fts5(body)")
+          con.execute("INSERT INTO ft VALUES ('the quick brown fox')")
+          assert con.execute("SELECT body FROM ft WHERE ft MATCH 'fox'").fetchone()
+          con.execute("CREATE TABLE t(x)"); con.execute("INSERT INTO t VALUES (42)")
+          con.commit(); con.close()
+          with open(path, "rb") as fh:
+              assert fh.read(16) != b"SQLite format 3\x00", "file header must be ciphertext"
+          con = sqc.connect(path); con.execute("PRAGMA key = 'WRONG'")
+          try:
+              con.execute("SELECT x FROM t"); raise SystemExit("wrong key read succeeded")
+          except sqc.DatabaseError:
+              pass
+          con.close()
+          try:
+              sqlite3.connect(path).execute("SELECT * FROM t")
+              raise SystemExit("stdlib sqlite3 could read the encrypted file")
+          except sqlite3.DatabaseError:
+              pass
+          print("sqlcipher3 OK on", sys.platform, "| cipher:", ver[0])

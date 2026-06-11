@@ -51,7 +51,21 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations against the live engine."""
+    """Run migrations against the live engine, or against a connection injected via
+    ``config.attributes["connection"]`` -- the staged-copy upgrade path used by the
+    backup/restore pipeline, which must never touch the live database."""
+    injected = config.attributes.get("connection", None)
+    if injected is not None:
+        context.configure(
+            connection=injected,
+            target_metadata=target_metadata,
+            render_as_batch=True,  # SQLite-safe ALTERs
+            include_object=_include_object,
+            compare_type=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+        return
     with engine.connect() as connection:
         context.configure(
             connection=connection,

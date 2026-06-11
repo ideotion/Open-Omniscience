@@ -133,7 +133,7 @@ their reading life. The bar:
 
 ---
 
-## When × Where × Who anchoring — persist the extractors at ingest (maintainer question 2026-06-11)
+## When × Where × Who anchoring — persist the extractors at ingest (maintainer question 2026-06-11; CONFIRMED GO in field report #2 same day — at scrape for every article incl. wiki, + backfill; sequenced after the DB batch)
 
 **Honest state today (code-verified):** every keyword mention is anchored to an
 article + a time (`observed_on`) + the SOURCE's place (country/city — coverage
@@ -213,7 +213,9 @@ horizon), and ReliefWeb/FEWS NET/WHO humanitarian channels.
 The agenda core shipped (catalog, subscriptions, facets, event-family dedup,
 verified feed directory). Still genuinely future, all queued in CLAUDE.md:
 - **Calendar VIEWS**: list / week / month / trimester / semester / year / decade
-  switcher (the tab has only the list).
+  switcher (the tab has only the list). **Field report #2 (2026-06-11): the
+  DEFAULT becomes a month GRID — 4–5 week rows, brief event descriptions,
+  like a regular agenda — with customizable view options.**
 - **Month-spanning events** ("Dry January"): a duration/whole-month kind in the
   schema, rendered as a banner across the month, not a single-day pin.
 - **Catalog depth** ("we should be flooded; it's the point of datamining"):
@@ -226,6 +228,120 @@ verified feed directory). Still genuinely future, all queued in CLAUDE.md:
 - **Saved-filter "smart calendars"**: subscribing to a *tag query* ("all
   elections in Africa") as the natural subscription unit.
 - **Agenda tab translation** (currently the worst i18n surface).
+
+### Recurrence + world calendars + the astronomy layer (field report #2, 2026-06-11)
+
+The maintainer saw "Independence Day (Mexico) 2026" as a one-off — root
+cause verified: the bundled `world_events.yml` is already recurrence-based
+(`cadence: annual, month, day`) and simply has no Mexico entry; **imported
+ICS feeds store year-pinned instances**, which is where single-dated
+"recurring" events come from. The design that unifies it all:
+
+- **One recurrence model**: an event is a RULE (annual fixed-date; movable
+  with method; span) plus optional dated INSTANCES (from feeds), plus an
+  optional `since:` origin year (Mexico: 1810 — render "since 1810", and the
+  temporal map can show it on every year it existed, not one pin).
+- **Worldwide preloads, honestly**: bank holidays via the existing verified
+  feed directory + a bundled computed set; **Islamic (moon-based) dates
+  computed from the tabular calendar and labelled "computed — actual
+  observance may differ by ±1 day (moon sighting)"**; Hindu/Buddhist major
+  observances from *published, sourced date tables* (movable-marked) — we do
+  NOT fabricate a panchanga engine; regional variation is stated. The
+  current catalog's Christian-centring is a coverage bug, treated like the
+  source catalog's US-centring: measured, then balanced.
+- **The astronomy layer — a reliable LOCAL mathematical model**: full moons
+  (and phases) computed with the standard Meeus algorithms (accuracy
+  ~minutes; unit-tested against published almanac values, the same pattern
+  as the model-catalog freshness test); solar/lunar **eclipses from a
+  bundled public canon table** (provenance + license recorded) rather than a
+  half-right computation — type, magnitude and "visibility is
+  location-dependent; not computed for your location" stated per event.
+  Every astronomical entry carries `method` + `accuracy`. Zero network at
+  boot: all of it bundles as data; nothing auto-fetches.
+- Speeds on the temporal map player extend to **0.05×–16×**, log-stepped
+  (the maintainer's calibration: today's 0.1 is about the useful 1×).
+
+---
+
+## Network switch — layered guarantees, stated honestly (field report #2, 2026-06-11)
+
+The maintainer asked for airplane-mode clarity and "physical kill-switch"
+reliability, including no *inbound* packets, "linked to the hardware driver
+like a webcam light". The honest layering this becomes:
+
+1. **In-app (what the button truly controls today):** the kill switch gates
+   the single fetch path; airtight is achievable and testable — every
+   outbound socket must route through one guarded factory, with a test that
+   fails the build if any module opens its own. Inbound: the app binds
+   loopback only and, when offline, holds no outbound sockets — there is
+   nothing addressed to it to receive. The button copy says exactly this
+   scope.
+2. **UI semantics (ruled):** airplane-mode pattern — one constant
+   icon+label whose FILL is the state (filled = offline engaged); never an
+   action glyph as a state label. State repaints immediately on every
+   transition including implicit ones (a collect run clears the kill switch
+   server-side — api/scheduler.py:73-75 — and the UI must not wait for the
+   5s poll). **Every transition to online first shows ONE consent popup**:
+   what is about to happen, which hosts/categories will be contacted, and
+   the machine's LOCAL interface IPs. We never fetch a public-IP echo
+   before consent — that would itself be a network call while "offline";
+   the popup says the public IP is whatever the ISP/VPN exposes.
+3. **OS layer (opt-in, privileged, never silent) — INTERFACE-AGNOSTIC
+   (maintainer correction 2026-06-11):** we hold no dom0/hypervisor
+   privileges from inside an AppVM/DispVM — NetVM-detach is not ours to
+   perform, and Qubes must not be special-cased. The cut operates on the
+   interfaces the app's OWN environment exposes — the same enumeration the
+   consent popup lists as local IPs — and works identically whatever
+   stands behind them (a NetVM's virtual NIC, a direct router, a VPN
+   tunnel):
+   - **firewall drop-all** (nftables/iptables table added/removed by the
+     helper): blocks **both directions, inbound included** — the precise
+     answer to "we shouldn't receive packets either" — and re-enables
+     cleanly without link flapping;
+   - **`ip link set <iface> down`** for every non-loopback interface
+     (takes VPN tun devices down with the rest);
+   - `rfkill` demoted to a bare-metal *radio* bonus (virtual NICs have no
+     radios);
+   - Windows (`netsh interface set interface … disable` /
+     `Disable-NetAdapter`) and macOS (`networksetup` / `ifconfig down`)
+     equivalents behind the **one helper** (`oo-netcut`), per the
+     universal-portability mandate.
+   Elevation is explicit and narrowly scoped: a single operator-installed
+   sudoers line for the helper, documented, never silent; where elevation
+   is unavailable the button honestly shows app-level scope only.
+4. **Honest limits, always stated:** we control the interfaces OUR
+   environment exposes; whatever sits beneath (host OS, NetVM, router,
+   VPN server) may remain online — the button names the layer it
+   controls. A userspace app can never equal a hardware-wired webcam
+   light, because software below it can be compromised; we say so
+   wherever the switch is explained (same threat-model honesty as the
+   at-rest encryption).
+
+---
+
+## Continuous collection & fair ordering (field report #2, 2026-06-11)
+
+"The intent of this app is to scrap everything. Scraping should never stop"
+— background auto-collect becomes the default **after an explicit first-run
+approval** (one consent design with the network popup above; zero-network
+boot is untouched — nothing moves before the operator says go).
+
+- **Ordering (maintainer's question, answer adopted):** per-country
+  round-robin, ONE source per country then repeat — country order shuffled
+  each cycle (no alphabetical bias), least-recently-scraped source chosen
+  within a country, per-host politeness delays untouched (rotation also
+  spreads load across hosts — good citizenship). This breaks the US-volume
+  bias structurally: equal turns per country, not per source count.
+- **Explainable schedule:** the activity panel / task manager shows which
+  country is next and why ("round-robin cycle 14, 37 of 92 countries
+  served, next: ke — least-recently-scraped: nation.africa").
+- **Onboarding picker (BOTH, not either):** a first-run step where the
+  operator picks countries/languages to emphasise (weights, not
+  exclusions — excluded regions are a coverage hole, stated as such in the
+  Library's regional-balance panel). Feeds the same scheduler.
+- Builds on the de-US-centred catalog (ISO-2 canonical countries) and lands
+  together with the download-manager/task-manager arbitration so a
+  continuous background pass and user-clicked jobs negotiate visibly.
 
 ---
 
