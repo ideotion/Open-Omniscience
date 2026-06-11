@@ -293,5 +293,9 @@
   "Ctrl/⌘-click to select several editions": "Ctrl/⌘-点击可选择多个语言版本",
   "Branches grow outward from the centre; each leaf hangs off its strongest relative.": "分支从中心向外生长；每片叶子挂在其最强关联词上。",
   "Cloud view: weight-ordered, no links.": "云视图：按权重排列，无连线。",
-  "Font size = shared-article volume.": "字号 = 共享文章数量。"
+  "Font size = shared-article volume.": "字号 = 共享文章数量。",
+  "▶ Online": "▶ 在线",
+  "⏸ Offline": "⏸ 离线",
+  "Back online — network requests allowed again.": "已恢复在线 — 再次允许网络请求。",
+  "Offline — every new network request is refused. One in-flight request may finish.": "离线 — 拒绝所有新的网络请求。已在途的一个请求可能会完成。"
 }

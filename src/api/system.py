@@ -63,7 +63,12 @@ def _process_vitals() -> dict:
         return out
     try:
         with _PROC.oneshot():
-            out["cpu_percent"] = round(_PROC.cpu_percent(interval=None), 1)
+            # psutil reports PER-CORE process percentages (160% = 1.6 cores),
+            # which read as "more than the whole OS" (live-test bug 2026-06-11).
+            # Normalize to a share of TOTAL machine capacity, like OS monitors.
+            ncpu = psutil.cpu_count() or 1
+            out["cpu_percent"] = round(_PROC.cpu_percent(interval=None) / ncpu, 1)
+            out["cpu_cores"] = ncpu
             mem = _PROC.memory_info()
             out["rss_bytes"] = int(getattr(mem, "rss", 0))
             out["vms_bytes"] = int(getattr(mem, "vms", 0))
@@ -107,3 +112,29 @@ def system_vitals() -> dict:
         # System-wide (not this process) -- labelled so the UI never misattributes it.
         "network_system_wide": _system_net(),
     }
+
+
+@router.get("/network")
+def network_mode() -> dict:
+    """The app-wide network mode (the kill switch, surfaced as online/offline)."""
+    from src.ingest import kill_switch_active
+
+    return {"online": not kill_switch_active()}
+
+
+@router.post("/network")
+def set_network_mode(payload: dict) -> dict:
+    """Flip the app-wide network mode (maintainer-ruled 2026-06-11: a first-
+    class top-bar play/pause, not a control buried in a sub-tab).
+
+    Offline = the global kill switch: every NEW fetch on every path is refused
+    immediately; one already-in-flight HTTP request may still complete (an
+    open socket cannot be honestly un-sent) — the UI says so.
+    """
+    from src.ingest import activate_kill_switch, clear_kill_switch, kill_switch_active
+
+    if bool(payload.get("online")):
+        clear_kill_switch()
+    else:
+        activate_kill_switch()
+    return {"online": not kill_switch_active()}

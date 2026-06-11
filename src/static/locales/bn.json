@@ -293,5 +293,9 @@
   "Ctrl/⌘-click to select several editions": "একাধিক সংস্করণ বাছতে Ctrl/⌘-ক্লিক",
   "Branches grow outward from the centre; each leaf hangs off its strongest relative.": "শাখা কেন্দ্র থেকে বাইরের দিকে বাড়ে; প্রতিটি পাতা তার সবচেয়ে শক্তিশালী সম্পর্কিত শব্দে ঝোলে।",
   "Cloud view: weight-ordered, no links.": "ক্লাউড দৃশ্য: ওজন-ক্রমে, সংযোগহীন।",
-  "Font size = shared-article volume.": "হরফের আকার = ভাগ করা নিবন্ধের পরিমাণ।"
+  "Font size = shared-article volume.": "হরফের আকার = ভাগ করা নিবন্ধের পরিমাণ।",
+  "▶ Online": "▶ অনলাইন",
+  "⏸ Offline": "⏸ অফলাইন",
+  "Back online — network requests allowed again.": "আবার অনলাইন — নেটওয়ার্ক অনুরোধ আবার অনুমোদিত।",
+  "Offline — every new network request is refused. One in-flight request may finish.": "অফলাইন — প্রতিটি নতুন নেটওয়ার্ক অনুরোধ প্রত্যাখ্যাত। চলমান একটি অনুরোধ শেষ হতে পারে।"
 }

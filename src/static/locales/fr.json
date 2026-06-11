@@ -293,5 +293,9 @@
   "Ctrl/⌘-click to select several editions": "Ctrl/⌘-clic pour sélectionner plusieurs éditions",
   "Branches grow outward from the centre; each leaf hangs off its strongest relative.": "Les branches partent du centre vers l'extérieur ; chaque feuille s'accroche à son apparenté le plus fort.",
   "Cloud view: weight-ordered, no links.": "Vue nuage : ordonnée par poids, sans liens.",
-  "Font size = shared-article volume.": "Taille de police = volume d'articles partagés."
+  "Font size = shared-article volume.": "Taille de police = volume d'articles partagés.",
+  "▶ Online": "▶ En ligne",
+  "⏸ Offline": "⏸ Hors ligne",
+  "Back online — network requests allowed again.": "De retour en ligne — les requêtes réseau sont de nouveau autorisées.",
+  "Offline — every new network request is refused. One in-flight request may finish.": "Hors ligne — toute nouvelle requête réseau est refusée. Une requête déjà en cours peut se terminer."
 }

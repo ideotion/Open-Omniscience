@@ -293,5 +293,9 @@
   "Ctrl/⌘-click to select several editions": "Ctrl/⌘-klik untuk memilih beberapa edisi",
   "Branches grow outward from the centre; each leaf hangs off its strongest relative.": "Cabang tumbuh keluar dari pusat; tiap daun menggantung pada kerabat terkuatnya.",
   "Cloud view: weight-ordered, no links.": "Tampilan awan: urut bobot, tanpa tautan.",
-  "Font size = shared-article volume.": "Ukuran huruf = volume artikel bersama."
+  "Font size = shared-article volume.": "Ukuran huruf = volume artikel bersama.",
+  "▶ Online": "▶ Daring",
+  "⏸ Offline": "⏸ Luring",
+  "Back online — network requests allowed again.": "Kembali daring — permintaan jaringan diizinkan lagi.",
+  "Offline — every new network request is refused. One in-flight request may finish.": "Luring — setiap permintaan jaringan baru ditolak. Satu permintaan yang sedang berjalan bisa selesai."
 }

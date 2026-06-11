@@ -293,5 +293,9 @@
   "Ctrl/⌘-click to select several editions": "Ctrl/⌘-انقر لاختيار عدة إصدارات",
   "Branches grow outward from the centre; each leaf hangs off its strongest relative.": "تنمو الفروع من المركز نحو الخارج؛ وكل ورقة تتدلى من أقوى صلاتها.",
   "Cloud view: weight-ordered, no links.": "عرض السحابة: مرتب بالوزن، بلا روابط.",
-  "Font size = shared-article volume.": "حجم الخط = حجم المقالات المشتركة."
+  "Font size = shared-article volume.": "حجم الخط = حجم المقالات المشتركة.",
+  "▶ Online": "▶ متصل",
+  "⏸ Offline": "⏸ غير متصل",
+  "Back online — network requests allowed again.": "عاد الاتصال — طلبات الشبكة مسموحة من جديد.",
+  "Offline — every new network request is refused. One in-flight request may finish.": "غير متصل — كل طلب شبكة جديد مرفوض. قد يكتمل طلب واحد جارٍ بالفعل."
 }

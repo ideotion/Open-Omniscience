@@ -293,5 +293,9 @@
   "Ctrl/⌘-click to select several editions": "कई संस्करण चुनने हेतु Ctrl/⌘-क्लिक",
   "Branches grow outward from the centre; each leaf hangs off its strongest relative.": "शाखाएँ केंद्र से बाहर की ओर बढ़ती हैं; हर पत्ती अपने सबसे मज़बूत संबंधी से जुड़ी है।",
   "Cloud view: weight-ordered, no links.": "क्लाउड दृश्य: भार-क्रमित, बिना कड़ियों के।",
-  "Font size = shared-article volume.": "फ़ॉन्ट आकार = साझा लेख मात्रा।"
+  "Font size = shared-article volume.": "फ़ॉन्ट आकार = साझा लेख मात्रा।",
+  "▶ Online": "▶ ऑनलाइन",
+  "⏸ Offline": "⏸ ऑफ़लाइन",
+  "Back online — network requests allowed again.": "फिर ऑनलाइन — नेटवर्क अनुरोध पुनः अनुमत।",
+  "Offline — every new network request is refused. One in-flight request may finish.": "ऑफ़लाइन — हर नया नेटवर्क अनुरोध अस्वीकृत। पहले से चल रहा एक अनुरोध पूरा हो सकता है।"
 }

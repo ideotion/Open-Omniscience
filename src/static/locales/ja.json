@@ -293,5 +293,9 @@
   "Ctrl/⌘-click to select several editions": "Ctrl/⌘クリックで複数の版を選択",
   "Branches grow outward from the centre; each leaf hangs off its strongest relative.": "枝は中心から外へ伸び、各葉は最も強い関連語にぶら下がります。",
   "Cloud view: weight-ordered, no links.": "クラウド表示：重み順、リンクなし。",
-  "Font size = shared-article volume.": "文字サイズ＝共有記事の量。"
+  "Font size = shared-article volume.": "文字サイズ＝共有記事の量。",
+  "▶ Online": "▶ オンライン",
+  "⏸ Offline": "⏸ オフライン",
+  "Back online — network requests allowed again.": "オンラインに復帰 — ネットワーク要求が再び許可されました。",
+  "Offline — every new network request is refused. One in-flight request may finish.": "オフライン — 新規のネットワーク要求はすべて拒否されます。実行中の1件は完了する場合があります。"
 }

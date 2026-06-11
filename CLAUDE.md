@@ -274,6 +274,23 @@ Before fearing loss from an archive-size change, run
   the top-1000 Wikipedia pages in all languages, bundled — needs a design
   answer first (network cost at first boot vs zero-network-boot non-negotiable;
   likely ship the LIST bundled + one-click opt-in, never auto-fetch).
+- **NETWORK MODE first-class (maintainer-ruled 2026-06-11, SHIPPED same day):**
+  the kill switch is now a top-bar ▶ Online / ⏸ Offline play-pause button —
+  never buried in a sub-tab. Loud-but-beautiful state: pulsing red button,
+  red top-bar underline, radial flash on toggle; honest toast ("one in-flight
+  request may finish" — an open socket can't be un-sent, which is why it
+  isn't strictly instantaneous; new requests refuse immediately). Endpoints
+  GET/POST /api/system/network; state synced via the 5s vitals poll. Also
+  FIXED: process CPU% was PER-CORE (psutil) and read higher than the whole
+  OS — now normalized by core count (cpu_cores reported). btop (maintainer
+  asked): Apache-2.0, GPLv3-compatible one-way, but unnecessary — it's a
+  C++ TUI binary, and our bug was normalization, not the data source.
+- **Task manager view (maintainer-ruled 2026-06-11, ELEVATES the download
+  manager):** the vitals panel becomes minimized-but-visible animated main
+  indicators; CLICK opens a dedicated window/tab — an OS-style task manager:
+  what scrapes next, wiki-dump progress, queued jobs with tweak/cancel/
+  reorder, organized in tabs if dense. Build together with the queue/
+  prioritize/cancel arbitration below (one system).
 - **Download manager + user arbitration (maintainer-ruled 2026-06-10, the
   live-test "load indices while scraping" confusion):** every network task
   (scrape pass, indices refresh, markets load, wiki track, offline-wiki dump)

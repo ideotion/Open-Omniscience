@@ -293,5 +293,9 @@
   "Ctrl/⌘-click to select several editions": "Ctrl/⌘-клик — выбрать несколько изданий",
   "Branches grow outward from the centre; each leaf hangs off its strongest relative.": "Ветви растут от центра наружу; каждый лист висит на своём сильнейшем родственнике.",
   "Cloud view: weight-ordered, no links.": "Вид облака: по весу, без связей.",
-  "Font size = shared-article volume.": "Размер шрифта = объём общих статей."
+  "Font size = shared-article volume.": "Размер шрифта = объём общих статей.",
+  "▶ Online": "▶ Онлайн",
+  "⏸ Offline": "⏸ Офлайн",
+  "Back online — network requests allowed again.": "Снова онлайн — сетевые запросы снова разрешены.",
+  "Offline — every new network request is refused. One in-flight request may finish.": "Офлайн — каждый новый сетевой запрос отклоняется. Один уже выполняющийся запрос может завершиться."
 }

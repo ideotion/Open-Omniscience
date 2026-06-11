@@ -293,5 +293,9 @@
   "Ctrl/⌘-click to select several editions": "Ctrl/⌘-click to select several editions",
   "Branches grow outward from the centre; each leaf hangs off its strongest relative.": "Branches grow outward from the centre; each leaf hangs off its strongest relative.",
   "Cloud view: weight-ordered, no links.": "Cloud view: weight-ordered, no links.",
-  "Font size = shared-article volume.": "Font size = shared-article volume."
+  "Font size = shared-article volume.": "Font size = shared-article volume.",
+  "▶ Online": "▶ Online",
+  "⏸ Offline": "⏸ Offline",
+  "Back online — network requests allowed again.": "Back online — network requests allowed again.",
+  "Offline — every new network request is refused. One in-flight request may finish.": "Offline — every new network request is refused. One in-flight request may finish."
 }
