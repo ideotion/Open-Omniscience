@@ -248,6 +248,12 @@ Before fearing loss from an archive-size change, run
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 
 ## Open queue (when maintainer says proceed)
+- **0.09 OPENING ORDER (maintainer "Good, proceed" 2026-06-11, on the
+  recommended sequencing):** start with de-US-centring the source catalog
+  (the KEY POINT below — ISO-2 normalisation migration + one conversion
+  layer + coverage report as acceptance metric + per-region targets);
+  SQLCipher+backup stays reserved for its own fresh session per the standing
+  ruling; convergence/watch-rules follows as the cycle flagship.
 - **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11 — "I did NOT
   have a chance to see the calendar format"): NOT BUILT YET, the tab only has
   the list.** Build the switcher: list / week / month / trimester / semester /
