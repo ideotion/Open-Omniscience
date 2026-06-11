@@ -117,6 +117,31 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
   guides), searchable and fully offline. There's also a link to the raw API page at
   `/docs`.
 
+### Recent additions (0.0.8 live-test cycle, June 2026)
+
+- **Layered mind-map & word cloud (Insights):** a true radial mind-map (centre →
+  arms → outward leaves) across three zoom layers (keywords ↔ families ↔
+  super-groups), with a word-cloud second view, a date-spectrum control, a
+  text-size slider and ⛶ Enlarge. Font size always encodes shared-article volume.
+- **Pre-created super-groups:** a bundled starter set (drafted from real field
+  logs) seeds at startup; your own edits and deletions always win.
+- **Temporal map controls:** precise focus-date entry, a from/to time-span that
+  remaps the slider (play then sweeps only that period), play speed 0.5–4×,
+  fine ±month windows, wheel zoom, in-map controls and ⛶ Enlarge. Pins are
+  clickable across their whole disc.
+- **Event dates AND places extracted from text:** the date extractor reads six
+  languages, numeric formats and anchored expressions ("yesterday", bare
+  weekdays, "June 11"); the new location extractor finds gazetteer cities and
+  country names. Both feed the article reader's metadata header, which now
+  separates **"From the source"** from **"Deduced by this app — less reliable"**
+  (dashed box): extractions are lexical candidates with snippet provenance,
+  never confirmed facts.
+- **Per-language keyword exports:** the diagnostics keyword log caps at 5,000
+  keywords *per dominant language*, so minority-language vocabularies are never
+  crowded out of analysis by English volume.
+- **Wikipedia offline dumps:** the editions list loads correctly again and is
+  multi-selectable — download several language editions in one queued run.
+
 **A note on “FOOS”.** Browser tabs the app opens (card investigations, the
 local article reader) are suffixed **“· FOOS” — Free Open OmniScience**: short
 enough for narrow tab strips while keeping the app identifiable. It is the

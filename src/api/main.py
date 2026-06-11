@@ -831,20 +831,71 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     hash_short = (a.hash[:12] + "…") if a.hash else None
     safe_src = safe_href(a.url)
 
-    meta_rows = "".join(
+    # TWO metadata classes, clearly differentiated (maintainer-ruled 2026-06-11):
+    # what the SOURCE asserted vs what THIS APP deduced (explicitly less reliable).
+    source_rows = "".join(
         [
             _row("Source", src_name),
             _row("Published", _html.escape(published) if published else None),
-            _row("Captured", _html.escape(captured) if captured else None),
             _row("Author", _html.escape(a.author) if a.author else None),
             _row("Language", lang if a.language else None),
+        ]
+    )
+    # App-deduced: capture facts + extracted event dates/locations + keywords.
+    deduced_extra = []
+    try:
+        from src.timemap.dateextract import extract_dates
+
+        anchor = a.published_at.date() if a.published_at else None
+        ds = extract_dates(content, anchor=anchor, language=a.language, limit=5)
+        if ds:
+            deduced_extra.append(
+                _row(
+                    "Event dates in text",
+                    " · ".join(
+                        f"{_html.escape(d['date'])} <span class='muted'>({_html.escape(d['precision'])})</span>"
+                        for d in ds
+                    ),
+                )
+            )
+    except Exception:  # noqa: BLE001 - extraction must never break the reader
+        logger.warning("date extraction failed in reader", exc_info=True)
+    try:
+        from src.timemap.locextract import extract_locations
+
+        locs = extract_locations(content, source_country=a.country, limit=5)
+        if locs:
+            deduced_extra.append(
+                _row(
+                    "Places in text",
+                    " · ".join(
+                        f"{_html.escape(loc['name'])}"
+                        + (f" <span class='muted'>({_html.escape(loc.get('country') or '')})</span>" if loc.get("country") else "")
+                        for loc in locs
+                    ),
+                )
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning("location extraction failed in reader", exc_info=True)
+    deduced_rows = "".join(
+        [
+            _row("Captured (downloaded)", _html.escape(captured) if captured else None),
             _row(
-                "Region", _html.escape(a.country or a.region) if (a.country or a.region) else None
+                "Region (from the source's catalog entry)",
+                _html.escape(a.country or a.region) if (a.country or a.region) else None,
             ),
+            *deduced_extra,
             _row(
                 "Content hash", f"<code>{_html.escape(hash_short)}</code>" if hash_short else None
             ),
         ]
+    )
+    meta_rows = (
+        "<div class='mgrp'><h3>From the source</h3>" + (source_rows or "<div class='mrow muted'>—</div>") + "</div>"
+        "<div class='mgrp deduced'><h3>Deduced by this app — less reliable</h3>"
+        + (deduced_rows or "<div class='mrow muted'>—</div>")
+        + "<div class='mnote'>Extractions are lexical candidates with snippet provenance — "
+        "an event date or place mentioned in the text, never a confirmed fact.</div></div>"
     )
 
     # Co-citation: the external links THIS article cites, each with how many distinct
@@ -992,6 +1043,11 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{(title[:40] + "…") if len(title) > 40 else title} · FOOS</title><style>
+  .mgrp {{ margin:8px 0; padding:8px 10px; border:1px solid var(--line); border-radius:8px; }}
+  .mgrp h3 {{ margin:0 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--mut); }}
+  .mgrp.deduced {{ border-style:dashed; }}
+  .mgrp.deduced h3 {{ color:var(--warn); }}
+  .mnote {{ margin-top:6px; font-size:11px; color:var(--mut); }}
   :root {{ color-scheme: light dark; --ink:#0b0d10; --paper:#0e1116; --fg:#e7e9ee; --mut:#8b93a1;
     --line:#222833; --accent:#5ea0ff; --card:#141923; --warn:#f0a23a; }}
   @media (prefers-color-scheme: light) {{ :root {{ --paper:#faf8f4; --fg:#1a1d22; --mut:#6b7280;

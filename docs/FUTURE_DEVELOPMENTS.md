@@ -14,7 +14,15 @@
 
 ## Events agenda / world calendar
 
-> **STATUS (reality check, 2026-06-10):** SHIPPED in 0.07 (PR #47: Agenda tab, subscribe/facet/group) and EXTENDED 2026-06-10: the 511-feed calendar directory in 268 duplicate-aware families with verify/import (`src/events/feeds.py`). Still open: view switcher (month/week/day/trimester/list), full Agenda translation — both in the CLAUDE.md queue.
+> **STATUS (refreshed 2026-06-11):** SHIPPED in 0.07 (PR #47) + the 511-feed
+> directory (2026-06-10, pruned to 498 verified feeds from field log #1, all
+> verified on a live install). The B-layer (dates extracted FROM articles) is
+> now LIVE and optimized: multilingual months, numeric formats, anchored
+> relative/weekday resolution (src/timemap/dateextract.py) + the NEW location
+> extractor (src/timemap/locextract.py) — both surfaced in the reader's
+> deduced-metadata block. Still open (CLAUDE.md queue): the calendar VIEW
+> switcher (list/week/month/trimester/semester/year/decade), month-SPANNING
+> events (Dry January), Agenda translation, iCal event import into the agenda.
 
 **Idea.** A curated, searchable **agenda of major scheduled world events** — the
 forward-looking complement to the corpus's record of what already happened. Examples:

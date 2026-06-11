@@ -165,6 +165,29 @@ Before fearing loss from an archive-size change, run
   queues all picked editions sequentially. Lesson: duplicate top-level JS
   function names silently override — grep before declaring.
 
+- **Article reader rework — TABS (maintainer-ruled 2026-06-11):** the dedicated
+  article window gains tabs: Mindmap (this article's keyword graph) · Related
+  articles · Source description · Keyword analysis · Sentiment analysis. The
+  two-class metadata header SHIPPED same day (source-asserted vs app-deduced,
+  dashed amber box + "never a confirmed fact" note, with extracted event dates
+  AND places); the tabs are the next reader batch.
+- **Article CORPORA (maintainer-ruled 2026-06-11, the flagship analysis ask):**
+  select several articles anywhere in the app → "create a corpus" → opens its
+  own window/tab with the SAME tabs as the reader rework but computed over all
+  member articles, PLUS a corpus-only tab: **source competitive analysis** —
+  how each source approaches a concept (angle, framing, sentiment, volume,
+  timing), with real visual representations. Single articles don't get that
+  tab (n=1 has no competition). Joins the queued tag-driven corpora as one
+  corpora system: tag-selection and hand-selection are two entries to the
+  same object.
+- **Location extractor SHIPPED (2026-06-11):** src/timemap/locextract.py —
+  gazetteer cities (case-sensitive, source-country disambiguated, says which
+  rule decided) + curated multilingual country table (~90 forms); lexical,
+  bounded, snippet provenance, "deduced" notes. Surfaced in the reader's
+  deduced-metadata block next to extracted event dates. NEXT: feed the
+  temporal map's mention layer with text locations (event site, not just
+  coverage origin) + extend the country table from field logs.
+
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`

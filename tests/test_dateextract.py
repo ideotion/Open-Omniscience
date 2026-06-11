@@ -115,3 +115,57 @@ def test_anchored_relative_and_weekday_resolution():
     # Without an anchor, none of these resolve — never guessed.
     bare = extract_dates("Hier, mardi, tomorrow, June 12.", language="fr")
     assert bare == []
+
+
+# --------------------------------------------------------------------------- #
+#  Location extractor — the spatial twin (maintainer-ruled 2026-06-11)
+# --------------------------------------------------------------------------- #
+def test_extract_locations_cities_countries_and_disambiguation():
+    from src.timemap.locextract import extract_locations
+
+    text = ("Fighting intensified near Gaza while Iran and Israël traded warnings. "
+            "In Paris, officials met; Paris later confirmed. The summit moved to Berlin.")
+    got = extract_locations(text, source_country="fr", limit=8)
+    names = {(e["name"], e["kind"]) for e in got}
+    assert ("Iran", "country") in names
+    assert ("Israël", "country") in names or ("Israel", "country") in names
+    assert ("Paris", "city") in names
+    paris = next(e for e in got if e["name"] == "Paris")
+    assert paris["mentions"] == 2 and paris["country"] == "fr"
+    assert "lat" in paris and "deduced" in paris["note"]
+    # Case sensitivity guards common-word collisions: 'turkey' the bird ≠ Turkey.
+    assert extract_locations("the turkey was delicious") != []  # country matches case-insensitively...
+    # ...but a CITY name must be capitalised as written:
+    assert all(e["kind"] != "city" for e in extract_locations("a paris of possibilities"))
+
+
+def test_reader_shows_both_metadata_classes(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.database.models import Article, SessionLocal, Source
+
+    with TestClient(app) as c:  # startup creates the schema first
+        s = SessionLocal()
+        try:
+            src = Source(name="Meta source", domain="meta.test", country="fr")
+            s.add(src)
+            s.flush()
+            a = Article(
+                url="https://meta.test/1", canonical_url="https://meta.test/1",
+                source_id=src.id, title="Metadata classes", hash="meta-h1", language="fr",
+                content="Le 11 juin 2026, des frappes près de Gaza. À Paris, réunion d'urgence.",
+                published_at=__import__("datetime").datetime(2026, 6, 10),
+                created_at=__import__("datetime").datetime(2026, 6, 11),
+            )
+            s.add(a)
+            s.commit()
+            aid = a.id
+        finally:
+            s.close()
+        html = c.get(f"/api/articles/{aid}/view").text
+        assert "From the source" in html
+        assert "Deduced by this app — less reliable" in html
+        assert "Event dates in text" in html and "2026-06-11" in html
+        assert "Places in text" in html and "Gaza" in html
+        assert "never a confirmed fact" in html
