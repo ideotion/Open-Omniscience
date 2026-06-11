@@ -55,8 +55,11 @@ Before fearing loss from an archive-size change, run
   activate/clear_kill_switch — the Collect Stop button trips it).
 - Honesty by construction: no composite trust/quality scores (CardSchemaError
   enforces); every signal carries method + caveat + n; degrade loudly.
-- Whole roadmap ships under cycle branch `0.08` ⇒ release 0.0.8 (maintainer:
-  do NOT open 0.09 until told). Version single-sourced from pyproject.
+- **The 0.09 cycle is OPEN (maintainer opened it 2026-06-11 by retitling the
+  default branch to `0.09`)** ⇒ release 0.0.9; the 0.0.8 roadmap shipped in
+  full under `0.08`. Version single-sourced from pyproject (bumped to 0.0.9
+  same day: pyproject + README header + src/__init__ + CHANGES/CONTRIBUTING
+  cycle references — historical `0.0.8` feature tags stay).
 - No bundling of Ollama/models in the repo (GitHub 100 MB limit; decided
   2026-06). Model catalog must stay date-stamped (`CATALOG_AS_OF` + freshness
   test). Clearnet is a stated install prerequisite for model downloads.
@@ -240,7 +243,8 @@ Before fearing loss from an archive-size change, run
   block after UI edits; locale files must stay 100% (scripts/i18n_report.py)
   when adding chrome strings (12 languages, Arabic is RTL).
 - Maintainer merges PRs fast: after `git push`, if the output says
-  "[new branch]", the previous PR was merged — open a NEW PR onto `0.08`.
+  "[new branch]", the previous PR was merged — open a NEW PR onto `0.09`
+  (the active cycle branch since 2026-06-11; was `0.08`).
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 
 ## Open queue (when maintainer says proceed)

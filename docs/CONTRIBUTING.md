@@ -62,8 +62,8 @@ else derives from it:
   `version=`, and the UI all report the *real* installed version automatically.
 - No other code hardcodes a version literal. Tests assert against the package metadata,
   not a string (see `tests/test_api_search.py`).
-- `docs/README.md` states the version once, in its header, and a CI guard asserts it
-  matches the package (`tests/test_repo_invariants.py::test_readme_version_matches_package`).
+- The repo-root `README.md` states the version once, in its header, and a CI guard asserts
+  it matches the package (`tests/test_repo_invariants.py::test_readme_version_matches_package`).
 
 **To bump the version, change `pyproject.toml` only**, update the README header to match
 (the guard enforces this), then `pip install -e .` so the metadata refreshes.
@@ -73,7 +73,7 @@ else derives from it:
 The software is young and still being proven, so it sits **below `0.1`**:
 
 ```
-0.0.x  pre-alpha   ← we are here (0.0.7). Things work and are tested, but the surface
+0.0.x  pre-alpha   ← we are here (0.0.9). Things work and are tested, but the surface
                      is still moving; not yet inviting public commentary.
 0.1.x  alpha       a public, working, honestly-labelled alpha — open to feedback.
 0.x    beta        once things consolidate.
@@ -81,7 +81,7 @@ The software is young and still being proven, so it sits **below `0.1`**:
 ```
 
 We will **not** jump to `0.4`/`0.7`-style numbers that imply more maturity than exists.
-`0.0.7` is the seventh small iteration of the pre-alpha series — nothing more is claimed.
+`0.0.9` is the ninth small iteration of the pre-alpha series — nothing more is claimed.
 
 ### Cycle ↔ version mapping
 
@@ -94,6 +94,8 @@ leading zeros elided for brevity:
 | `0.05` | `0.0.5` |
 | `0.06` | `0.0.6` |
 | `0.07` | `0.0.7` |
+| `0.08` | `0.0.8` |
+| `0.09` | `0.0.9` |
 
 So "the `0.06` intelligence layer" means "the work that ships in `0.0.6`". When you read a
 cycle shorthand like `0.05` in the docs, read it as `0.0.5`.

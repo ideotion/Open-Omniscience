@@ -1,6 +1,16 @@
 # Changelog
 
-> The repository’s **default branch is the active cycle branch** (currently `0.08`); each cycle branch `0.0N` produces release `0.0.N`.
+> The repository’s **default branch is the active cycle branch** (currently `0.09`); each cycle branch `0.0N` produces release `0.0.N`.
+
+## 0.09 — deeper sense-making (in progress)
+
+The `0.09` cycle is open (the `0.08` cycle below shipped in full, including the
+June 2026 live-test hardening batches). On its slate, from the parked queue:
+space-time convergence detection + the watch-rule attention engine, de-US-centring
+the default source catalog (ISO-2 normalisation + per-region targets), SQLCipher
+at-rest encryption with the backup redesign, the corpora system (hand- and
+tag-selected), the global-search rework, agenda calendar views + catalog depth,
+and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
 ## 0.08 part 2 — the sense-making horizon
 
