@@ -337,10 +337,9 @@ Before fearing loss from an archive-size change, run
   diet/coverage→sources; echo→integrity; law/wiki→reader) so EVERY card is
   clickable; card TITLES are still server-built English (template-based
   title translation needs a design — titles carry data values).
-- **Insights mindmap**: multi-layer zoom (keyword → family → supergroup) —
-  data exists (`keyword_supergroups`, families API); needs zoomable rendering +
-  proper legend on the trend graph above it. (Maintainer expected this; treat
-  as the next feature item.)
+- **Insights mindmap — multi-layer zoom SHIPPED (2026-06-11 live-test batch:
+  radial tree, scroll-out goes up a level, supergroup rings).** Remaining bit
+  folded into Interactive charts below: the proper legend on the trend graph.
 - **World stock indices don't download** in live test — NARROWED 2026-06-10:
   only Dow Jones + S&P 500 arrive (FRED partially OK); Nikkei (FRED) and ALL
   Stooq-fed indices (DAX/FTSE/Hang Seng) fail. Suspect robots fail-closed on
@@ -429,12 +428,33 @@ Before fearing loss from an archive-size change, run
   doctor attests encryption state; threat model documented (protects a
   seized/off machine, NOT a compromised session). Design TOGETHER with the
   backup redesign below — one coherent key story.
+- **DATABASE RELIABILITY MANDATE (maintainer-ruled 2026-06-11) — ELEVATES and
+  BROADENS the backup redesign; blocks the newsletter scraper:** "like the
+  backup/restore function of an OS. If it's not entirely reliable, it should
+  not exist, and I'd like it to exist." Requirements: backups carry EVERYTHING
+  (articles, keywords+mentions+families/overrides, wiki snapshots, newsletters,
+  financial/commodity series, law, events, custody, annotations, settings —
+  "It is not the case currently": side files + per-domain merge coverage are
+  the gap); import = merge-only with dedup that CANNOT corrupt (work on a
+  copy, atomic swap, dry-run preview, post-merge verification); export both
+  encrypted (default) and plaintext; provenance safeguards on merged rows.
+  Design TOGETHER with SQLCipher (standing ruling, fresh session). The
+  NEWSLETTER SCRAPER comes only after this is solid (maintainer sequencing).
+  Full requirements recorded in FUTURE_DEVELOPMENTS.
 - **Backup redesign** (maintainer, ruled): encryption is the DEFAULT flow
   (Download backup -> passphrase -> download; Browse -> passphrase -> restore);
   restore must be NON-DESTRUCTIVE (merge, never replace) with bit-level
   duplicate detection (byte/hash comparison, no offline DB tweaking), and each
   article carries content hash + an authentication hash (second integrity
   level proving no tampering). Big feature -- design before code.
+- **When×Where×Who anchoring (maintainer question 2026-06-11, answered
+  honestly):** extractors exist but run AT READ TIME in the reader only —
+  nothing persists event-dates/places/entities or anchors them to keywords
+  (mentions carry article+time+SOURCE-place only). The development (recorded
+  in FUTURE_DEVELOPMENTS): run extractors at ingest + backfill, persist with
+  snippet provenance, anchor per article / per mention (event-place feeds the
+  map) / per entity (corpus-wide WHO layer) — the substrate the convergence
+  flagship needs. Deduced stays labelled deduced.
 - **Custody tab UX**: most users won't get it -- rename/explain/guided steps.
 - Offline LLM kit (RM-08 release artifact). DuckDuckGo discovery channel only
   after RM-03 gate UX proves out.
