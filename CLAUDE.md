@@ -202,11 +202,15 @@ Before fearing loss from an archive-size change, run
   wrong shape — the CPU bug was psutil per-core normalization, fixed in-app.
 - **The WHAT axis (maintainer musing 2026-06-11, answer recorded):** after
   when/where/who, the maintainer asked about "what" — then offered "maybe the
-  article is the what". Assistant position: the article is the RECORD, not the
-  what; the closest honest proxy for WHAT already in the app is the keyword/
-  family/ring layer (concepts+events), so the what-axis is keywords ELEVATED:
-  event-typed vocabulary later, never topic-classification scores. No ruling
-  yet — awaiting maintainer's direction before building.
+  article is the what". Assistant position: the article is the TESTIMONY of
+  the what, not the what itself (many articles ↔ one event; that asymmetry is
+  what echo/event-family detection already exploits). The WHAT has no extractor
+  because it is not a surface feature — it EMERGES as the intersection of the
+  other axes: articles sharing a time window + place + people/orgs + keyword
+  family ARE an event, presented as overlap counts, never an event-type
+  classification score. Concretely: the parked-for-0.0.9 convergence detection
+  (PR #51 layers 3+4) becomes the WHAT engine, strengthened by the new WHO
+  axis. No ruling yet — awaiting maintainer's direction before building.
 
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must
