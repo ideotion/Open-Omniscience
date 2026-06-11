@@ -68,6 +68,23 @@ def test_encrypted_backup_roundtrip(live_db):
     assert report["restored"] is True and report["validated_rows"] >= 0
 
 
+def test_encrypted_restore_uses_the_one_safe_path(live_db):
+    """Encrypted restore is an envelope over restore_from_bytes -- it must carry the
+    plain path's guarantees: a pre-restore snapshot taken via the online backup API
+    (itself a valid OO database) and a swapped-in file that opens cleanly."""
+    from pathlib import Path
+
+    from src.backup.sqlite_backup import validate_sqlite_file
+    from src.safety import make_encrypted_backup, restore_encrypted_backup
+
+    blob = make_encrypted_backup("pw1234")
+    report = restore_encrypted_backup(blob, "pw1234")
+    snap = Path(report["pre_restore_snapshot"])
+    assert snap.exists() and snap.stat().st_size > 0
+    assert validate_sqlite_file(snap) > 0  # consistent snapshot, not a naive byte copy
+    assert validate_sqlite_file(Path(report["path"])) > 0
+
+
 def test_restore_wrong_passphrase(live_db):
     from src.safety import make_encrypted_backup, restore_encrypted_backup
 

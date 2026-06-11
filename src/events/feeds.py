@@ -24,6 +24,7 @@ The maintainer supplied an aggregated directory of ~500 public iCalendar feeds
 from __future__ import annotations
 
 import json
+import os
 import re
 import unicodedata
 from contextlib import suppress
@@ -99,9 +100,13 @@ def _load_json(name: str) -> dict:
 
 
 def _save_json(name: str, data: dict) -> None:
+    # Atomic write (temp + os.replace): these files hold the user's imported
+    # events/verdicts -- a crash mid-write must never wipe them all.
     p = _store_path(name)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, p)
 
 
 def load_verdicts() -> dict:
