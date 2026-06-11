@@ -185,6 +185,23 @@ Before fearing loss from an archive-size change, run
   tab (n=1 has no competition). Joins the queued tag-driven corpora as one
   corpora system: tag-selection and hand-selection are two entries to the
   same object.
+  **EXTENDED (maintainer 2026-06-11 late — the unification ruling): KEYWORDS
+  ARE CORPORA.** Clicking ANY keyword anywhere (incl. a date's keywords in
+  the agenda/date view) opens THE keyword window — the SAME consistent
+  sub-tab architecture as article and corpus windows (a keyword refers to
+  the corpus of articles mentioning it), PLUS a keyword-specific sub-tab:
+  the keyword's related EVENTS (agenda events matched via keyword/family
+  against event titles/tags + via articles' mentioned-dates intersecting
+  event dates — both linkage routes labeled, never conflated). And every
+  keyword window carries a **TIME-SCOPE control** (begin/end/timescale
+  picker — the shipped mind-map date-spectrum control generalized; all
+  analytics sub-tabs recompute within the picked window, with the honest
+  n-shown/windowed-PMI discipline and the early-corpus caveat on sparse
+  windows) because keyword meaning/importance varies through time
+  (maintainer-stated). Entries into the ONE corpora system now: hand-
+  selection, tag-selection (Sources), tag-click, commodity-click,
+  keyword-click, date-keyword-click — one window architecture for all
+  (article = corpus of 1, without the competition tab).
 - **Location extractor SHIPPED (2026-06-11):** src/timemap/locextract.py —
   gazetteer cities (case-sensitive, source-country disambiguated, says which
   rule decided) + curated multilingual country table (~90 forms); lexical,
