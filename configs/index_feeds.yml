@@ -53,14 +53,8 @@ feeds:
     currency: USD
     unit: pts
     market: "US · NYSE"
-  - key: idx_wilshire5000
-    name: "Wilshire 5000 (Total Market)"
-    symbol: WILL5000IND
-    category: index
-    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=WILL5000IND"
-    currency: USD
-    unit: pts
-    market: "US · total market"
+  # idx_wilshire5000 removed: FRED 404 — Wilshire withdrew the series (field test 2026-06-11). No free, robots-permitting
+  #   official source known — candidates welcome via PR.
   - key: idx_vix
     name: "CBOE Volatility Index (VIX)"
     symbol: VIX
@@ -79,45 +73,13 @@ feeds:
     currency: JPY
     unit: pts
     market: "Japan · Tokyo (TSE)"
-  - key: idx_hangseng
-    name: "Hang Seng"
-    symbol: HSI
-    category: index
-    url: "https://stooq.com/q/d/l/?s=^hsi&i=d"
-    currency: HKD
-    unit: pts
-    market: "Hong Kong (HKEX)"
-    date_column: Date
-    value_column: Close
+  # idx_hangseng removed: stooq robots.txt disallows (verified live 2026-06-11). No free, robots-permitting
+  #   official source known — candidates welcome via PR.
 
   # --- Europe (Stooq) ------------------------------------------------------ #
-  - key: idx_dax
-    name: "DAX 40"
-    symbol: DAX
-    category: index
-    url: "https://stooq.com/q/d/l/?s=^dax&i=d"
-    currency: EUR
-    unit: pts
-    market: "Germany · Frankfurt (Xetra)"
-    date_column: Date
-    value_column: Close
-  - key: idx_ftse100
-    name: "FTSE 100"
-    symbol: UKX
-    category: index
-    url: "https://stooq.com/q/d/l/?s=^ukx&i=d"
-    currency: GBP
-    unit: pts
-    market: "UK · London (LSE)"
-    date_column: Date
-    value_column: Close
-  - key: idx_cac40
-    name: "CAC 40"
-    symbol: CAC
-    category: index
-    url: "https://stooq.com/q/d/l/?s=^cac&i=d"
-    currency: EUR
-    unit: pts
-    market: "France · Euronext Paris"
-    date_column: Date
-    value_column: Close
+  # idx_dax removed: stooq robots.txt disallows (verified live 2026-06-11). No free, robots-permitting
+  #   official source known — candidates welcome via PR.
+  # idx_ftse100 removed: stooq robots.txt disallows (verified live 2026-06-11). No free, robots-permitting
+  #   official source known — candidates welcome via PR.
+  # idx_cac40 removed: stooq robots.txt disallows (verified live 2026-06-11). No free, robots-permitting
+  #   official source known — candidates welcome via PR.

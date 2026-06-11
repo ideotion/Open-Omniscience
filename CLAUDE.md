@@ -123,6 +123,23 @@ Before fearing loss from an archive-size change, run
   the Help tab + USER_MANUAL; a proper rename is expected later (keep the
   suffix mechanism centralized enough to swap in one pass).
 
+- **FIELD LOG #1 PROCESSED (2026-06-11, the maintainer's overnight run):**
+  corpus 1,349 articles / 53k keywords (en 70k·fr 8.1k·de 1.2k signature
+  volume); 26/26 runs ok; 511/511 calendars verified by field-test mode.
+  Fixed from it: family over-merge guards (single-token ambiguity, clean
+  2–3-token parents only, honorific-equality direct merge, junk labels) —
+  validated by replaying the log; FRENCH stoplist block was entirely missing
+  (dans/plus/pas leaked as top entities) + months/weekdays + elision
+  stripping (d'euros→euros); first REAL equivalence ring batch (10 rings);
+  catalog pruned from live verdicts (13 defunct WPH codes, 8 empty families,
+  4 Stooq indices robots-denied, Wilshire 404; gold/silver → Pink Sheet
+  monthlies). KNOWN: calendar.google.com + webcal.guru robots-disallow their
+  feed paths (verdicts shown honestly; WPH is the working holiday provider);
+  FRED bursts intermittently refused (transient conn errors — retry exists);
+  'database is locked' under concurrent import+scrape = the download-manager
+  arbitration item (queued, unchanged); preflight covers 50 sources/run —
+  batch it like calendars (queued).
+
 ## Session rituals
 - Verify with BOTH venv profiles when deps change; `pytest -q` full suite must
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`

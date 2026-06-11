@@ -1,26 +1,40 @@
 # Trans-language keyword equivalents — the curated bridge for cross-language
-# analytics (maintainer-designed 2026-06-10; built FROM the keyword diagnostics
-# logs, batch by batch).
+# analytics. FIRST REAL BATCH drafted 2026-06-11 from the maintainer's field
+# log (1,349 articles; en 70k / fr 8.1k / de 1.2k article-language signature
+# volume). Built batch-by-batch from the keyword diagnostics logs.
 #
 # THE RULES (honesty by construction):
-# - An equivalence is ALWAYS language-qualified: `fr:main` ≠ `en:main`. The
-#   French word for hand never captures the English adjective or the German
-#   river — the polysemy trap this corpus exists to avoid.
-# - Equivalents come from the operator's real keyword logs (language
-#   signatures = distinct-article counts per article language), reviewed by a
-#   human before landing here. Never a blind dictionary import.
-# - Grouping stays transparent: a trans-language family SHOWS its per-language
-#   members and counts; nothing is averaged away. The user can split any ring
-#   (the same dispose rule as keyword families).
-#
-# Format: one ring per concept; members are "<lang>:<normalized term>".
-# `note` records the disambiguation reasoning when a term is polysemous.
+# - Always language-qualified: `fr:main` ≠ `en:main` (the polysemy trap).
+# - Members come from the operator's REAL logs (language signatures =
+#   distinct-article counts per article language), human-reviewed. Never a
+#   blind dictionary import.
+# - Per-language counts stay visible in any merged view; the user can split
+#   any ring. Polysemous members carry a reasoning note.
 rings:
+  # --- From the 2026-06-11 log (fr terms verified ≥70% fr-dominant) -------- #
+  - id: artificial-intelligence
+    members: ["en:ai", "en:artificial intelligence", "fr:ia", "fr:intelligence artificielle", "fr:artificielle"]
+    note: "fr:ia appears as l'ia in raw text (elision now stripped). fr:artificielle rides along — in this corpus it is 100% the AI adjective."
+  - id: data
+    members: ["en:data", "fr:données", "de:daten"]
+  - id: world
+    members: ["en:world", "fr:monde", "de:welt", "es:mundo", "pt:mundo", "it:mondo"]
+    note: "World-Cup vocabulary may dominate temporarily (June 2026 news cycle)."
+  - id: model
+    members: ["en:model", "en:models", "fr:modèle", "fr:modèles"]
+  - id: system
+    members: ["en:system", "en:systems", "fr:système", "fr:systèmes"]
+  - id: infrastructure
+    members: ["en:infrastructure", "fr:infrastructure", "fr:infrastructures"]
+  - id: euro
+    members: ["en:euro", "en:euros", "fr:euro", "fr:euros"]
+    note: "fr side appeared as d'euros / millions d'euros before elision stripping."
+  # --- Carried from the seed batch (still valid) --------------------------- #
   - id: hand
     members: ["en:hand", "fr:main", "de:hand", "es:mano", "pt:mão", "it:mano"]
     note: "fr:main only — en:main (adjective/place) and de:Main (river) stay out."
   - id: election
-    members: ["en:election", "fr:élection", "de:wahl", "es:elección", "pt:eleição", "id:pemilu"]
+    members: ["en:election", "en:elections", "fr:élection", "fr:élections", "de:wahl", "es:elección", "pt:eleição", "id:pemilu"]
     note: "de:wahl is also 'choice'; signature evidence should dominate before merging."
   - id: war
     members: ["en:war", "fr:guerre", "de:krieg", "es:guerra", "pt:guerra", "ru:война"]
