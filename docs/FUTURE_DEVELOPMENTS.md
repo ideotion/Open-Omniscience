@@ -71,14 +71,25 @@
   merged rows keep their origin and are never laundered into first-party
   evidence; incoming custody signatures are *verified*, not trusted.
 - **LOCAL at-rest encryption by default (maintainer-refined 2026-06-11 — "not
-  just on export, locally"):** the working database FILE on disk is
-  SQLCipher-encrypted, unlocked with the passphrase at app start — a copied or
-  seized `*.db` without the key is random bytes. Default-encrypted comes WITH
-  the reliability rider (the mandate above applies to crypto too): a random
-  internal DB key wrapped twice — by the passphrase AND by a one-time printed
-  **recovery key** — so a forgotten passphrase is recoverable and only losing
-  BOTH loses the corpus (a stated, chosen risk, never a surprise). Plaintext
-  stays available as a deliberate opt-out with the risk spelled out.
+  just on export, locally"; UI SIMPLIFIED by ruling same day):** the working
+  database FILE on disk is SQLCipher-encrypted; a copied or seized `*.db`
+  without the key is random bytes. **The start-up UX (maintainer-specced):**
+  when the app starts it asks for THE passphrase — one stable secret, "like a
+  user ID", same every time — and unlocks the storage. At FIRST launch, a
+  plain note: choose something unique and remember it; **there is no recovery
+  and no decryption alternative.** Maintainer's recorded rationale for
+  no-recovery: the database can be reconstituted from the web's corpus — it
+  holds no personal information beyond what was scraped and algorithmically
+  deduced from public sources, so a lost passphrase costs re-collection time,
+  not unique data. (The earlier recovery-key rider is superseded by this
+  ruling.) `OO_DB_PASSPHRASE` env for scripted/headless runs.
+  **Recorded contingency:** this premise EXPIRES when the newsletter domain
+  ships — mailbox content is personal and NOT reconstitutable — so the
+  no-recovery choice must be consciously revisited before newsletters land
+  (options then: optional recovery key, or a re-key/export checkpoint).
+  **Honesty constraint on sequencing:** the passphrase prompt ships TOGETHER
+  WITH the encryption, never before it — a lock screen over a plaintext file
+  would be fabricated security, the exact thing this project forbids.
   **Layering note (maintainer question 2026-06-11, answered):** DB-level
   encryption is NOT redundant under full-disk encryption — the two cover
   different machine states. FDE protects only the powered-OFF disk; once

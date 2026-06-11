@@ -428,15 +428,22 @@ Before fearing loss from an archive-size change, run
   the fabricated default="US" — see the 0.09 opening-order entry above.
 - **SQLCipher at-rest encryption — RULED GO (maintainer 2026-06-10); REFINED
   2026-06-11 ("not just on export, locally"): the LOCAL working DB file is
-  encrypted BY DEFAULT.** Reliability rider (the DB mandate applies to crypto):
-  random internal DB key wrapped twice — passphrase AND a one-time printed
-  RECOVERY KEY (forgotten passphrase recoverable; losing both = stated chosen
-  risk); plaintext stays a deliberate opt-out (FDE users); existing DBs get a
-  one-way encrypt tool (snapshot first, consent, never silent); sqlcipher3
-  wheels verified on all 3 OSes first (portability checkpoint). Next MAJOR
-  batch, fresh session (crypto deserves full attention, not a session tail).
-  Design agreed in chat: sqlcipher3 driver + SQLAlchemy
-  engine key wiring (PRAGMA key on connect); passphrase asked ELEGANTLY in the
+  encrypted BY DEFAULT. UI SIMPLIFIED by ruling (same day, pre-merge of #75):
+  app start asks for THE passphrase — one stable secret "like a user ID" —
+  and unlocks storage; first launch shows a plain note: unique, remembered,
+  NO recovery/decryption alternative (supersedes the recovery-key rider).
+  Maintainer rationale recorded: the DB is reconstitutable from the web's
+  corpus, no personal data beyond scraped+deduced material. CONTINGENCY: that
+  premise EXPIRES when newsletters ship (mailbox content is personal,
+  non-reconstitutable) — revisit no-recovery BEFORE the newsletter scraper.
+  HONESTY GATE: the prompt ships WITH the crypto, never before (a lock over a
+  plaintext file = fabricated security).** Plaintext opt-out for special
+  setups; existing DBs get a one-way encrypt tool (snapshot first, consent,
+  never silent); sqlcipher3 wheels verified on all 3 OSes first (portability
+  checkpoint). Next MAJOR batch, fresh session (crypto deserves full
+  attention, not a session tail). Design agreed in chat: sqlcipher3 driver +
+  SQLAlchemy engine key wiring (PRAGMA key on connect); passphrase asked
+  ELEGANTLY in the
   installer GUI (whiptail box + plain-prompt fallback, confirm twice, honest
   'lost passphrase = lost corpus' warning, optional skip = plaintext with
   stated risk); launcher prompts for the passphrase at start (env
