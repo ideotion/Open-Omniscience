@@ -1,8 +1,8 @@
 # Quickstart — running the prototype
 
-This is the **trustworthy core** (v0.0.7): add a source → ethically scrape it →
-store with provenance → Boolean full-text search → export. Local-first, loopback
-only, no accounts. Local LLM and the vertical pillars come in later phases.
+This is the **trustworthy core** (the `0.0.x` pre-alpha; the running app reports
+its exact version): add a source → ethically scrape it → store with provenance →
+Boolean full-text search → export. Local-first, loopback only, no accounts.
 
 ---
 
