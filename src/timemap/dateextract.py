@@ -24,7 +24,7 @@ as provenance, never a confirmed fact. Pure: no I/O, fully unit-tested.
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, timedelta
 
 _MONTHS = {
     "january": 1,
@@ -52,10 +52,64 @@ _MONTHS = {
     "nov": 11,
     "dec": 12,
 }
+# Multilingual month names (field log 2026-06-11: the corpus is half French —
+# "le 11 juin 2026" was invisible to an English-only table). Unambiguous tokens:
+# every name maps to exactly one month, so all tables stay active at once.
+_MONTHS.update({
+    # French
+    "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5,
+    "juin": 6, "juillet": 7, "août": 8, "aout": 8, "septembre": 9, "octobre": 10,
+    "novembre": 11, "décembre": 12, "decembre": 12,
+    # German
+    "januar": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4,
+    "juni": 6, "juli": 7, "oktober": 10, "dezember": 12,
+    # Spanish
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11,
+    "diciembre": 12,
+    # Italian
+    "gennaio": 1, "febbraio": 2, "aprile": 4, "maggio": 5, "giugno": 6,
+    "luglio": 7, "settembre": 9, "ottobre": 10, "dicembre": 12,
+    # Portuguese
+    "janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3, "maio": 5, "junho": 6,
+    "julho": 7, "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12,
+})
 _MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))  # longest first so 'sept' beats 'sep'
 
+# Numeric dates (dd/mm/yyyy · dd.mm.yyyy · dd-mm-yyyy · yyyy/mm/dd). When both
+# fields are ≤12 the order is ambiguous: the ARTICLE LANGUAGE decides (en→MDY,
+# everything else→DMY); with no hint, an ambiguous numeric date is SKIPPED —
+# never guessed (provenance honesty).
+_NUM_DMY_RE = re.compile(r"\b(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b")
+_NUM_YMD_RE = re.compile(r"\b(\d{4})[./](\d{1,2})[./](\d{1,2})\b")
+
+# Anchored expressions (resolved against the article's PUBLICATION date; each
+# carries graded provenance — FUTURE_DEVELOPMENTS design, now implemented):
+_DM_NOYEAR_RE = re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th|er|\.)?\s+(?:de\s+)?({_MONTH_ALT})\.?\b(?!\.?\s+(?:de\s+)?\d{{4}})", re.I)
+_MD_NOYEAR_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b(?!\s*,?\s*\d{{4}})", re.I)
+_REL_WORDS = {
+    "yesterday": -1, "today": 0, "tomorrow": 1,
+    "hier": -1, "aujourd'hui": 0, "aujourd’hui": 0, "demain": 1,
+    "gestern": -1, "heute": 0, "morgen": 1,
+    "ayer": -1, "hoy": 0, "mañana": 1,
+    "ontem": -1, "hoje": 0, "amanhã": 1,
+    "ieri": -1, "oggi": 0, "domani": 1,
+}
+_REL_RE = re.compile(r"\b(" + "|".join(sorted(_REL_WORDS, key=len, reverse=True)) + r")\b", re.I)
+_WEEKDAYS = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4,
+    "saturday": 5, "sunday": 6,
+    "lundi": 0, "mardi": 1, "mercredi": 2, "jeudi": 3, "vendredi": 4,
+    "samedi": 5, "dimanche": 6,
+    "montag": 0, "dienstag": 1, "mittwoch": 2, "donnerstag": 3, "freitag": 4,
+    "samstag": 5, "sonntag": 6,
+}
+_WD_RE = re.compile(
+    r"\b(next\s+|last\s+)?(" + "|".join(sorted(_WEEKDAYS, key=len, reverse=True)) + r")\b", re.I
+)
+
 _ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
-_DMY_RE = re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_ALT})\.?\s+(\d{{4}})\b", re.I)
+_DMY_RE = re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th|er|\.)?\s+(?:de\s+)?({_MONTH_ALT})\.?\s+(?:de\s+)?(\d{{4}})\b", re.I)
 _MDY_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b", re.I)
 _MY_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{4}})\b", re.I)
 
@@ -77,12 +131,25 @@ def _snippet(text: str, start: int, end: int, pad: int = 24) -> str:
     return re.sub(r"\s+", " ", s)
 
 
-def extract_dates(text: str, *, today: date | None = None, limit: int = 8) -> list[dict]:
-    """Explicit calendar dates mentioned in ``text``, as candidates with provenance.
+def extract_dates(
+    text: str,
+    *,
+    today: date | None = None,
+    limit: int = 8,
+    anchor: date | None = None,
+    language: str | None = None,
+) -> list[dict]:
+    """Calendar dates mentioned in ``text``, as candidates with provenance.
 
     Returns up to ``limit`` de-duplicated ``{date, precision, text}`` dicts, ordered by
     first appearance. ``precision`` is ``"day"`` or ``"month"``. Overlapping matches are
     resolved most-specific-first (a day match suppresses the month match inside it).
+
+    ``anchor`` (the article's publication date) unlocks ANCHORED resolution —
+    day+month without a year, yesterday/today/tomorrow words, bare weekdays —
+    each marked with how it was resolved. ``language`` decides the order of
+    ambiguous numeric dates (en→MDY, others→DMY; no hint + ambiguous → skipped,
+    never guessed). Optimized 2026-06-11 (maintainer: far too few dates).
     """
     if not text:
         return []
@@ -119,10 +186,66 @@ def extract_dates(text: str, *, today: date | None = None, limit: int = 8) -> li
         d = _valid(int(m.group(3)), _MONTHS[m.group(1).lower()], int(m.group(2)), today)
         if d and claim(*m.span()):
             add(d, "day", m)
+    # Numeric dates — language picks the order when ambiguous; never guessed.
+    mdy_first = (language or "").lower().startswith("en")
+    for m in _NUM_YMD_RE.finditer(text):
+        d = _valid(int(m.group(1)), int(m.group(2)), int(m.group(3)), today)
+        if d and claim(*m.span()):
+            add(d, "day", m)
+    for m in _NUM_DMY_RE.finditer(text):
+        a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if a > 12 and b <= 12:
+            d = _valid(y, b, a, today)
+        elif b > 12 and a <= 12:
+            d = _valid(y, a, b, today)
+        elif a <= 12 and b <= 12 and language:
+            d = _valid(y, a, b, today) if mdy_first else _valid(y, b, a, today)
+        else:
+            continue  # ambiguous with no language hint: skipped, not guessed
+        if d and claim(*m.span()):
+            add(d, "day", m)
+
     for m in _MY_RE.finditer(text):  # month precision — only where no day match claimed it
         d = _valid(int(m.group(2)), _MONTHS[m.group(1).lower()], 1, today)
         if d and claim(*m.span()):
             add(d, "month", m)
+
+    # ---- anchored resolution (needs the article's publication date) -------- #
+    if anchor is not None:
+        def nearest_year(month: int, day: int) -> date | None:
+            best = None
+            for y in (anchor.year - 1, anchor.year, anchor.year + 1):
+                try:
+                    cand = date(y, month, day)
+                except ValueError:
+                    continue
+                if best is None or abs((cand - anchor).days) < abs((best - anchor).days):
+                    best = cand
+            return best if best and abs((best - anchor).days) <= 183 else None
+
+        for rx, gi_d, gi_m in ((_DM_NOYEAR_RE, 1, 2), (_MD_NOYEAR_RE, 2, 1)):
+            for m in rx.finditer(text):
+                mon = _MONTHS.get(m.group(gi_m).lower())
+                if not mon:
+                    continue
+                d = nearest_year(mon, int(m.group(gi_d)))
+                if d and claim(*m.span()):
+                    add(d, "day", m)
+        for m in _REL_RE.finditer(text):
+            if claim(*m.span()):
+                add(anchor + timedelta(days=_REL_WORDS[m.group(1).lower()]), "day", m)
+        for m in _WD_RE.finditer(text):
+            wd = _WEEKDAYS[m.group(2).lower()]
+            mod = (m.group(1) or "").strip().lower()
+            delta = (wd - anchor.weekday()) % 7
+            if mod == "next":
+                d = anchor + timedelta(days=delta or 7)
+            elif mod == "last":
+                d = anchor - timedelta(days=((anchor.weekday() - wd) % 7) or 7)
+            else:  # bare weekday in news prose: the most recent such day
+                d = anchor - timedelta(days=(anchor.weekday() - wd) % 7)
+            if claim(*m.span()):
+                add(d, "day", m)
 
     out = sorted(found.values(), key=lambda c: c["pos"])
     for c in out:

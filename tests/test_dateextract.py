@@ -70,3 +70,48 @@ def test_empty_and_limit():
     assert extract_dates("", today=TODAY) == []
     many = " ".join(f"{i} January 2001" for i in range(1, 20))
     assert len(extract_dates(many, today=TODAY, limit=3)) == 3
+
+
+# --------------------------------------------------------------------------- #
+#  Extractor optimization (maintainer 2026-06-11: "so little dates aggregated")
+#  — multilingual months, numeric formats, anchored resolution.
+# --------------------------------------------------------------------------- #
+def test_multilingual_months_extract():
+    got = _dates("Le sommet du 11 juin 2026 suivra la réunion del 5 de mayo de 2026 "
+                 "und dem Treffen am 3. Dezember 2026, e l'incontro del 7 ottobre 2026.")
+    assert ("2026-06-11", "day") in got
+    assert ("2026-05-05", "day") in got
+    assert ("2026-12-03", "day") in got
+    assert ("2026-10-07", "day") in got
+
+
+def test_numeric_dates_language_disambiguated():
+    from src.timemap.dateextract import extract_dates
+
+    fr = extract_dates("Réunion le 11/06/2026.", language="fr")
+    assert fr and fr[0]["date"] == "2026-06-11"          # DMY for French
+    en = extract_dates("Meeting on 06/11/2026.", language="en")
+    assert en and en[0]["date"] == "2026-06-11"          # MDY for English
+    none = extract_dates("On 06/11/2026 something happened.")
+    assert none == []                                     # ambiguous + no hint: SKIPPED
+    sure = extract_dates("Am 25.12.2026 ist es soweit.")
+    assert sure and sure[0]["date"] == "2026-12-25"       # day>12 disambiguates alone
+
+
+def test_anchored_relative_and_weekday_resolution():
+    from datetime import date
+
+    from src.timemap.dateextract import extract_dates
+
+    anchor = date(2026, 6, 10)  # a Wednesday
+    got = {(c["date"], c["text"][:14]) for c in extract_dates(
+        "Hier, la ville était calme. Mardi, les frappes ont repris. "
+        "Tomorrow the talks resume; a summit on June 12 follows.",
+        anchor=anchor, language="fr", limit=10)}
+    dates = {d for d, _ in got}
+    assert "2026-06-09" in dates   # hier = anchor - 1 AND mardi (most recent Tuesday)
+    assert "2026-06-11" in dates   # tomorrow
+    assert "2026-06-12" in dates   # day+month, year resolved from the anchor
+    # Without an anchor, none of these resolve — never guessed.
+    bare = extract_dates("Hier, mardi, tomorrow, June 12.", language="fr")
+    assert bare == []

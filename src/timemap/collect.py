@@ -101,7 +101,15 @@ def article_mentions_to_signals(
         if not g:
             continue
         title = (r.get("title") or "").strip() or "(untitled article)"
-        for c in extract_dates(r.get("content") or "", today=today, limit=per_article):
+        anchor = r.get("published")
+        anchor = anchor.date() if hasattr(anchor, "date") and not isinstance(anchor, date) else anchor
+        for c in extract_dates(
+            r.get("content") or "",
+            today=today,
+            limit=per_article,
+            anchor=anchor,
+            language=r.get("language"),
+        ):
             try:
                 d = date.fromisoformat(c["date"])
             except (TypeError, ValueError):

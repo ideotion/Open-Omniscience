@@ -175,10 +175,14 @@ Before fearing loss from an archive-size change, run
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 
 ## Open queue (when maintainer says proceed)
-- **Agenda views (maintainer 2026-06-10):** view switcher — monthly calendar,
-  weekly, daily, trimester, and list. Also: the Agenda tab is currently NOT
-  translated at all (part of the chrome-audit long tail — prioritize its
-  strings in the next i18n batch, as done for Indices).
+- **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11 — "I did NOT
+  have a chance to see the calendar format"): NOT BUILT YET, the tab only has
+  the list.** Build the switcher: list / week / month / trimester / semester /
+  year / decade. PLUS (2026-06-11): MONTH-SPANNING events ("Dry January",
+  "Movember") — the event model needs a duration/whole-month kind rendered as
+  a banner across the month, not a single-day pin; world_events.yml schema
+  gains an optional span (start/end or month=whole). Also: the Agenda tab is
+  currently NOT translated at all (chrome-audit long tail — prioritize).
 - **Agenda depth (maintainer 2026-06-10): only 4 categories — "we should be
   flooded; it's the point of datamining".** Expand `configs/world_events.yml`
   massively: many more calendars (elections worldwide, summits, central banks,
