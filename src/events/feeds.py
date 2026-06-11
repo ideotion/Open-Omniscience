@@ -109,6 +109,45 @@ def _save_json(name: str, data: dict) -> None:
     os.replace(tmp, p)
 
 
+def merge_imported_store(name: str, incoming: dict) -> dict:
+    """Union-merge an events/verdicts store arriving via backup restore.
+
+    Local entries always win; incoming events are added by fingerprint with
+    their sources/uids unioned (the same dedup discipline as import_feed).
+    Idempotent: re-running with the same input converges. Atomic save."""
+    local = _load_json(name)
+    added = enriched = kept = 0
+    if name == "calendar_feed_imports.json":
+        for fam_key, bucket in (incoming or {}).items():
+            if not isinstance(bucket, dict):
+                continue
+            lb = local.setdefault(fam_key, {"name": bucket.get("name", fam_key), "events": {}})
+            lb.setdefault("events", {})
+            for fp, entry in (bucket.get("events") or {}).items():
+                le = lb["events"].get(fp)
+                if le is None:
+                    lb["events"][fp] = entry
+                    added += 1
+                    continue
+                kept += 1
+                for src_id in entry.get("sources", []):
+                    if src_id not in le.setdefault("sources", []):
+                        le["sources"].append(src_id)
+                        enriched += 1
+                for uid in entry.get("uids", []):
+                    if uid not in le.setdefault("uids", []):
+                        le["uids"].append(uid)
+    else:
+        for feed_id, verdict in (incoming or {}).items():
+            if feed_id in local:
+                kept += 1
+            else:
+                local[feed_id] = verdict
+                added += 1
+    _save_json(name, local)
+    return {"action": "merged", "added": added, "enriched": enriched, "kept_local": kept}
+
+
 def load_verdicts() -> dict:
     return _load_json("calendar_feed_checks.json")
 

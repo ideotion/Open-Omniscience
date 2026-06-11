@@ -378,6 +378,65 @@ Before fearing loss from an archive-size change, run
   + tag-corpora → agenda batch (recurrence+astronomy+month view) →
   continuous-collection ordering+onboarding. Design notes for 1/2/3 in
   FUTURE_DEVELOPMENTS.
+- **LIVE-TEST FIELD REPORT #3 (maintainer 2026-06-11 evening, five notes
+  arriving mid-implementation — RECORDED same turn; answers delivered
+  in-chat; implementation queued per the standing sequence):**
+  (1) i18n & LANGUAGE UX: a PERMANENT language switcher in the top bar
+  (top-right) — flag-styled button opening the all-12 menu, one click
+  translates the ENTIRE UI; honest note recorded: flags ≠ languages (ar has
+  no single flag, fr spans countries) ⇒ conventional flag + NATIVE NAME
+  pairs. Untranslated sections keep surfacing (maintainer repeat — "I am
+  not capable as a single user to test EVERYTHING") ⇒ the chrome-audit
+  burn-down is ELEVATED (scripts/i18n_report.py --audit-chrome per tab,
+  every session, until ~0). URL anchors stay language-neutral code
+  identifiers (answered: per-locale URLs break bookmarks/deep links across
+  language switches; LABELS translate, anchors don't); the #markets-vs-
+  #commodities naming folds into the ledgered index/commodity
+  reclassification (alias pattern like #database→#library). Easter eggs
+  gain FRENCH references while staying transnational/translatable
+  (personality.yml) — the privileged nod lives in content, never in URLs.
+  (2) COMMODITIES → the WHAT×WHEN pivot (maintainer: "quite important"):
+  >6-month scales render only 5 datapoints (arbitrary cap — kill it,
+  render the real curve; merges with the ledgered detailed-curve item);
+  charts become INTERACTIVE: wheel zoom, drag-pan left/right through time,
+  click → X/Y readout, discrete adjustable legends (one chart toolkit for
+  commodities/markets/insights). Clicking a commodity graph TITLE opens a
+  dedicated analysis tab: the commodity's keyword family (name + curated
+  equivalents across languages) → ALL articles mentioning it (verbatim
+  reachable via the local reader), keyword-link explorer, mindmap + cloud
+  views, article timeline OVERLAID on the price curve — the FOURTH entry
+  into the one corpora system (hand-selection, tag-selection, tag-click,
+  commodity-click). Maintainer framing adopted verbatim: "what and when to
+  deduce why and how" — shown as co-occurrence in time, NEVER causation
+  claims; needs a curated symbol→family seed table (XAU→gold…, extendable
+  by equivalence rings).
+  (3) TOR FIELD TEST (DispVM, Tor-only connection): only DJIA imported —
+  NARROWS the world-indices item: provider Tor-exit blocking compounds
+  robots fail-closed; maintainer sends logs (analyze per-host verdicts on
+  arrival). RULINGS RECORDED: NEVER silently downgrade transport (no
+  Tor→clearnet fallback without explicit consent — that is a
+  deanonymization, not a retry); per-host verdicts gain TRANSPORT-
+  AWARENESS ("refused over Tor" distinct from "robots disallows" and
+  "unreachable"); ethical workarounds = prefer Tor-tolerant OFFICIAL
+  endpoints (FRED API, ECB/Eurostat SDMX, exchange open-data, archives/
+  dumps), NEVER evade blocks/CAPTCHAs — a host's Tor block is the host's
+  choice, surfaced honestly; the app serves BOTH populations (clearnet
+  breadth; Tor subset clearly labeled; USER_MANUAL gains a "running over
+  Tor" chapter). The ethics exchange is answered in-chat; position
+  recorded: truth-seeking is not self-certifying — the METHOD is the
+  ethics (provenance, robots-consent, loud degradation, user disposes);
+  against hostile digestion of public work the defense is REPRODUCIBILITY
+  (auditable source + signed evidence), not secrecy.
+  (4) CALENDAR DATES → first-class pivot: every date shown in the agenda
+  becomes CLICKABLE → a dedicated tab: that date through time (across
+  years), its keywords, its articles. ANSWERED (code truth): dates and
+  keywords are ALREADY linked both ways — keyword_mentions.observed_on
+  (what was said ON a date) and article_mentioned_dates (texts REFERRING
+  TO a date, candidate/confirmed) ⇒ the date-pivot is computable today;
+  it joins the corpora/investigate family as a "date corpus" and gets
+  stronger when When×Where×Who ingest persistence lands. Date-focused,
+  event-focused AND agenda-focused approaches are all welcomed in the UI
+  (maintainer's framing adopted).
 - **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11 — "I did NOT
   have a chance to see the calendar format"): NOT BUILT YET, the tab only has
   the list.** Build the switcher: list / week / month / trimester / semester /
@@ -588,8 +647,54 @@ Before fearing loss from an archive-size change, run
   the §4 defects: atomic swap, WAL cleanup, pool disposal, online-API
   snapshot, FTS reconcile) + atomic event-store writes. Implementation
   order PR-B…PR-F in the design §6; torture suite T1–T10 + property tests
-  in §7. NEXT: PR-B (D1/D4 migrations + merge_batches/merged_rows +
-  commodity composite index).
+  in §7.
+  **IMPLEMENTATION SHIPPED same day (maintainer's "proceed with everything
+  autonomously" mandate; reasoned REORDER recorded: artifact+merge engine
+  FIRST, the D1/D4 state-into-DB migrations AFTER — lower risk first, the
+  user-facing guarantee sooner; the artifact tolerates both layouts via
+  manifest member lists):** (1) merge_batches/merged_rows provenance tables
+  (migration d1e2f3a4b5c6, alembic check clean) + staged-file migration
+  machinery (env.py injected-connection mode; upgrade_database_file/
+  file_revision/known_revisions — historical schemas buildable for
+  fixtures); (2) the oo-backup-2 artifact (src/backup/artifact.py): ONE zip
+  = signed manifest (Ed25519, per-member sha256, per-table counts, Merkle
+  over article hashes, EXCLUSIONS listed — wiki dumps) + corpus.db +
+  custody_log.db online-API snapshots + settings/annotations/events/logs
+  members; keys ride ONLY in encrypted artifacts (D2); OOENC1 reused;
+  zip-slip-guarded reader accepts v2 + legacy bare-db + legacy v1 ooenc
+  forever; (3) the merge engine (src/backup/merge.py): preview and commit
+  run the SAME code on a disposable working copy (the preview cannot lie);
+  floor = 0.0.8 baseline and alien/newer revisions refused BY NAME; staged
+  copy alembic-upgraded, never the live DB; ~28 tables merged on natural
+  keys with FK remap via temp maps (articles by hash + byte-compare;
+  commodity 6-col key — REFINEMENT vs design §3.1: same-key different-price
+  keeps LOCAL + reports both values, never inserts a second point — charts
+  must not silently mix disagreeing observations; curation + settings local-
+  ALWAYS-wins; unmerged tables reported, never silent); pre-swap
+  verification gate (quick_check, foreign_key_check, FTS rebuild + count,
+  sampled content equality); atomic swap + pre-restore snapshot + keep-3
+  pruning; custody chains land in custody_imported_entries (original seqs
+  preserved — seq is inside the signed core; verified-not-trusted per
+  chain; tampered chains import as verified=0 with reason — the failure is
+  evidence; transitive chains propagate; the local chain is NEVER touched);
+  side files additive + idempotent (settings kept-local + diff; annotations
+  signature-re-verified per author; events fingerprint-union via
+  feeds.merge_imported_store; logs line-dedup with origin marker; keys
+  only-if-absent); (4) endpoints /api/backup/v2 + restore preview/commit/
+  discard (single-use tokens) + batches history + boot janitor for orphaned
+  staging dirs; (5) **TORTURE SUITE GREEN 10/10**
+  (tests/test_db_reliability_torture.py, subprocess-isolated): T1/T7
+  SIGKILL mid-merge and at-swap ⇒ live DB byte-identical; T2 flood
+  idempotent; T3 wrong passphrase loud; T4 cross-version (old schema merges
+  after staged upgrade; floorless + alien refused by name); T5
+  plaintext↔encrypted round trips content-identical; T6 divergent corpora
+  (FK remap proven, XAU disagreement reported with both values); T8 FTS
+  truth; T9 custody verified-not-trusted; T10 settings sanctity; symmetry
+  holds outside reported conflicts BY DESIGN. Full suite 953 passed.
+  REMAINING IN BATCH: PR-E SQLCipher (NEXT, fresh session — crypto + unlock
+  UX + doctor + encrypt tool SHIP TOGETHER per the honesty gate) → then the
+  D1/D4 state-into-DB migrations, the Settings restore-preview UI + locale
+  keys ×12, USER_MANUAL chapter; legacy endpoints stay until the UI swaps.
 - **Backup redesign** (maintainer, ruled): encryption is the DEFAULT flow
   (Download backup -> passphrase -> download; Browse -> passphrase -> restore);
   restore must be NON-DESTRUCTIVE (merge, never replace) with bit-level
