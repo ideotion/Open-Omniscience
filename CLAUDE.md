@@ -465,6 +465,27 @@ Before fearing loss from an archive-size change, run
   Design TOGETHER with SQLCipher (standing ruling, fresh session). The
   NEWSLETTER SCRAPER comes only after this is solid (maintainer sequencing).
   Full requirements recorded in FUTURE_DEVELOPMENTS.
+  **BATCH SESSION OPENED (2026-06-11, maintainer mission):** the TORTURE-TEST
+  SUITE is the acceptance metric (maintainer-restated at session open) —
+  interrupted imports mid-write, duplicate floods, wrong-passphrase handling,
+  cross-version restore, plaintext↔encrypted round trips, merge of two
+  divergent corpora; a failed torture test BLOCKS the feature. Deliverable 1
+  DELIVERED: `docs/design/DB_RELIABILITY_01_GAP_ANALYSIS.md` (code-verified
+  coverage matrix; the main DB is the only covered store — custody_log.db,
+  keys/, settings JSONs, annotations, calendar imports, localStorage agenda
+  subs all sit outside every backup; cross-version restore broken today —
+  nothing ever runs `alembic upgrade`, create_all can't add columns; existing
+  encrypted-restore defects found and listed for this batch: non-atomic
+  write_bytes, stale -wal/-shm kept, no pool disposal, snapshot misses WAL,
+  no init_db; 7 decisions flagged D1–D7: artifact scope, keys-in-plaintext-
+  export, wiki dumps, localStorage line, jsonl logs, SQLCipher scope, cross-
+  version floor). GATE ZERO PASSED same day: sqlcipher3 0.6.2 cp313 wheels
+  exist for Linux+Windows+macOS; Linux functionally proven (SQLCipher 4.12.0,
+  ENABLE_FTS5, loud wrong-key fail, stdlib can't read; SQLAlchemy PRAGMA-key-
+  on-connect wiring works; built-in pysqlcipher dialect resolves sqlcipher3);
+  win/mac wheels inspected (self-contained, FTS5+codec baked in) — execution
+  proof stays with the future 3-OS CI matrix. DESIGN (deliverable 2) AWAITS
+  maintainer review of the gap analysis.
 - **Backup redesign** (maintainer, ruled): encryption is the DEFAULT flow
   (Download backup -> passphrase -> download; Browse -> passphrase -> restore);
   restore must be NON-DESTRUCTIVE (merge, never replace) with bit-level
