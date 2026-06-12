@@ -31,7 +31,8 @@ def article(client):
 
     with session_scope() as s:
         src = Source(name="WWSeed", domain="wwseed.example", country="fr")
-        s.add(src); s.flush()
+        s.add(src)
+        s.flush()
         a = Article(
             url="https://wwseed.example/1", canonical_url="https://wwseed.example/1",
             source_id=src.id, title="t12",
@@ -42,7 +43,8 @@ def article(client):
             ),
             language="en", hash="t12ww" + "1" * 59,
         )
-        s.add(a); s.flush()
+        s.add(a)
+        s.flush()
         ids = {"a": a.id, "s": src.id}
     yield ids
     with session_scope() as s:
