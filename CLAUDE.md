@@ -406,6 +406,13 @@ ruling, a contingency, or a deliberate-omission note.
   source, ≥25% of its articles, both ≥10 — flagged with real counts, never
   auto-hidden); language_mismatch flag per keyword (stored vs dominant
   signature language — evidence, not a correction).
+- **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
+  FUTURE_DEVELOPMENTS with the design map + 5 QUESTIONS awaiting answers):**
+  wiki articles enter the SAME aggregation as sourced articles (metadata,
+  when×where×who, keywords) BUT are AMENDABLE like the law — every change
+  traceable, version-anchored analytics, perfect audit control. Honest gap
+  recorded: downloaded dumps are FILES only today (never parsed into the
+  corpus); only watched pages get baseline→diff→flag.
 - **WIKIPEDIA (field report #4):** limit the dump-download list to the app's
   languages (RULED — Esperanto was "fun but quite unnecessary"); the
   offline-dump READER/SEARCH gap is ELEVATED — the maintainer could not read

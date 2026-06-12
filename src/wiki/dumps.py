@@ -70,6 +70,7 @@ class DumpDownloadManager:
         self._threads: dict[str, threading.Thread] = {}
         self._stops: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
+        self._save_lock = threading.Lock()  # state-file writes only (see _save)
         # ONE download at a time (T9 download-arbitration ruling): later
         # requests become a REAL, reorderable queue instead of competing
         # threads -- the operator can put the small fr dump before the huge
@@ -95,18 +96,24 @@ class DumpDownloadManager:
                 _LOG.warning("wiki dumps state unreadable; ignoring", exc_info=True)
 
     def _save(self) -> None:
-        tmp = self.state_path.with_suffix(".json.tmp")
-        tmp.write_text(
-            json.dumps(
-                {
-                    "entries": {k: asdict(e) for k, e in self._entries.items()},
-                    "queue_order": list(self._order),
-                },
-                indent=2,
-            ),
-            "utf-8",
-        )
-        tmp.replace(self.state_path)
+        # Serialized: the worker thread saves progress while the API thread
+        # saves queue changes — both used ONE tmp path, so an interleaved
+        # write/replace pair crashed with FileNotFoundError (caught by CI on
+        # test_queue_order_survives_a_reload). The snapshot is taken under the
+        # same lock so each written state file is internally consistent.
+        with self._save_lock:
+            tmp = self.state_path.with_suffix(".json.tmp")
+            tmp.write_text(
+                json.dumps(
+                    {
+                        "entries": {k: asdict(e) for k, e in self._entries.items()},
+                        "queue_order": list(self._order),
+                    },
+                    indent=2,
+                ),
+                "utf-8",
+            )
+            tmp.replace(self.state_path)
 
     def _downloading_now(self) -> int:
         return sum(
