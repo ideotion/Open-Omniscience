@@ -1986,6 +1986,25 @@
   <div id="lang-menu" role="menu" hidden
        style="position:fixed;z-index:300;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:70vh;overflow:auto"></div>
 
+  <!-- T10 slice 1: THE corpora window (keyword-click entry). One window
+       architecture; sub-tabs computed over the n member articles. -->
+  <dialog id="corpus-win" style="width:min(760px,94vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
+      <b id="corpus-title" style="font-size:15px"></b>
+      <span id="corpus-n" class="muted" style="font-size:12px"></span>
+      <span style="margin-inline-start:auto"></span>
+      <button class="icon-btn" onclick="document.getElementById('corpus-win').close()" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div style="display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--line)">
+      <button class="tiny secondary" data-ctab="trend" onclick="corpusTab('trend')">Trend</button>
+      <button class="tiny secondary" data-ctab="articles" onclick="corpusTab('articles')">Articles</button>
+      <button class="tiny secondary" data-ctab="links" onclick="corpusTab('links')"
+        title="Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.">Links</button>
+    </div>
+    <div id="corpus-body" style="padding:12px 16px;max-height:64vh;overflow:auto"></div>
+  </dialog>
+
   <dialog id="net-consent" style="max-width:440px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
     <h3 style="margin:0 0 8px">Go online?</h3>
     <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
@@ -5349,6 +5368,54 @@
       finally { _indexing = false; }
     }
 
+    // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
+    let _corpusTerm = null, _corpusTab = "trend";
+    async function openCorpus(term) {
+      _corpusTerm = term;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      $("corpus-title").textContent = term;
+      $("corpus-n").textContent = "";
+      document.getElementById("corpus-win").showModal();
+      corpusTab(_corpusTab);
+    }
+    async function corpusTab(which) {
+      _corpusTab = which;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      document.querySelectorAll("#corpus-win [data-ctab]").forEach(b =>
+        b.classList.toggle("secondary", b.dataset.ctab !== which));
+      const el = $("corpus-body"); el.innerHTML = `<div class="muted">…</div>`;
+      try {
+        if (which === "trend") {
+          const tr = await api(`/api/insights/trend?term=${encodeURIComponent(_corpusTerm)}`);
+          if (!tr.resolved) { el.innerHTML = `<div class="muted">${esc(t("No indexed mentions yet."))}</div>`; return; }
+          $("corpus-n").textContent = `${tr.total} ${t("mentions in")} ${tr.articles} ${t("articles")}`;
+          el.innerHTML = `<div id="corpus-chart"></div>`;
+          ooChart($("corpus-chart"), [{label: tr.resolved.term, unit: "mentions",
+            points: (tr.points || []).map(pt => ({t: pt.date, v: pt.count}))}], {height: 200, zeroBase: true});
+        } else if (which === "articles") {
+          const ctx = await api(`/api/insights/context?term=${encodeURIComponent(_corpusTerm)}&limit=25`);
+          const ms = ctx.mentions || [];
+          el.innerHTML = ms.length ? ms.map(m =>
+            `<div class="note" style="max-width:none;margin-bottom:6px">
+               <div class="muted" style="font-size:12px">${esc(m.source || "")}${m.observed_on ? " · " + esc(m.observed_on) : ""}
+                 ${m.article_id ? `· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a>` : ""}</div>
+               <div style="font-size:13px">${esc(m.snippet || m.title || "")}</div></div>`).join("")
+            : `<div class="muted">${esc(t("No indexed mentions yet."))}</div>`;
+        } else if (which === "links") {
+          const d = await api(`/api/links/shared?term=${encodeURIComponent(_corpusTerm)}`);
+          const rows = d.shared || [];
+          el.innerHTML =
+            `<div class="hint">${esc(t("Shared outbound links among the member articles — a shared origin means agreement is ONE path, not independent confirmation."))}</div>` +
+            (rows.length ? rows.map(r =>
+              `<div class="note" style="max-width:none;margin-bottom:6px">
+                 <div style="font-size:12.5px;word-break:break-all"><b>${r.cited_by_articles}×</b> ${esc(r.url)}</div>
+                 <div class="muted" style="font-size:12px">${esc(t("citing sources:"))} ${r.citing_sources} — ${esc(r.note)}</div>
+               </div>`).join("")
+             : `<div class="muted">${esc(t("No outbound link is shared by more than one member article."))}</div>`);
+        }
+      } catch (e) { el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+
     function pickTerm(t) { $("ins-term").value = t; showInsightCat("explore"); exploreTerm(); }
 
     function trendSvg(points) {
@@ -5592,7 +5659,8 @@
         const r = tr.resolved;
         $("ins-trend").innerHTML =
           `<div style="margin-bottom:6px">Resolved to <strong>${esc(r.term)}</strong> ` +
-          `<span class="pill">${esc(r.kind)}</span> · ${tr.total} mentions in ${tr.articles} articles</div>` +
+          `<span class="pill">${esc(r.kind)}</span> · ${tr.total} mentions in ${tr.articles} articles ` +
+          `<button class="tiny secondary" onclick="openCorpus(${esc(JSON.stringify(r.term))})" title="Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).">⊞ Corpus</button></div>` +
           `<div id="ins-trend-oo"></div>`;
         ooChart($("ins-trend-oo"), [{label: r.term, unit: "mentions",
           points: (tr.points || []).map(pt => ({t: pt.date, v: pt.count}))}],

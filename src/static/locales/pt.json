@@ -471,5 +471,17 @@
   "queued": "na fila",
   "paused": "pausado",
   "failed": "falhou",
-  "scheduled": "agendado"
+  "scheduled": "agendado",
+  "Trend": "Tendência",
+  "Articles": "Artigos",
+  "Links": "Links",
+  "mentions in": "menções em",
+  "articles": "artigos",
+  "open": "abrir",
+  "No indexed mentions yet.": "Ainda sem menções indexadas.",
+  "citing sources:": "fontes citantes:",
+  "Shared outbound links among the member articles — a shared origin means agreement is ONE path, not independent confirmation.": "Links externos compartilhados entre os artigos membros — origem compartilhada significa que a concordância é UM caminho, não confirmação independente.",
+  "No outbound link is shared by more than one member article.": "Nenhum link externo é compartilhado por mais de um artigo membro.",
+  "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "Quais artigos membros compartilham links externos — origens compartilhadas visíveis: contagem de citações nunca é confirmação independente quando os caminhos compartilham origem.",
+  "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Abrir esta palavra-chave como janela de corpus: tendência, artigos membros e links externos compartilhados (as fontes das fontes)."
 }

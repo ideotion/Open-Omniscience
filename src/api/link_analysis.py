@@ -275,3 +275,85 @@ def export_graph_graphml(
         media_type="application/graphml+xml",
         headers={"Content-Disposition": "attachment; filename=citation-graph.graphml"},
     )
+
+
+@router.get("/shared")
+def shared_links(
+    term: str,
+    limit: int = Query(30, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The corpus LINKS view (T10): which member articles SHARE outbound links.
+
+    METHODOLOGICAL RULING (anti-false-triangulation, 2026-06-12): convergence
+    counts as corroboration ONLY when the paths are independent — three
+    articles citing the same single origin are ONE source wearing three hats.
+    This endpoint surfaces exactly that shared-origin structure: for the
+    articles mentioning ``term``, the outbound URLs cited by MORE THAN ONE
+    member, with which members cite them — counts and structure, never a
+    credibility verdict.
+    """
+    from sqlalchemy import func, text as _text
+
+    from src.analytics import queries as q
+    from src.database.models import Article, ArticleLink, KeywordMention
+
+    kw = q.resolve_keyword(db, term)
+    if kw is None:
+        return {"resolved": None, "shared": [], "members": 0}
+    member_ids = [
+        r[0]
+        for r in db.query(KeywordMention.article_id).filter_by(keyword_id=kw.id).all()
+    ]
+    if not member_ids:
+        return {"resolved": {"term": kw.term}, "shared": [], "members": 0}
+
+    rows = (
+        db.query(
+            ArticleLink.normalized_url,
+            func.count(func.distinct(ArticleLink.article_id)).label("n"),
+        )
+        .filter(ArticleLink.article_id.in_(member_ids))
+        .filter(ArticleLink.normalized_url.isnot(None))
+        .group_by(ArticleLink.normalized_url)
+        .having(func.count(func.distinct(ArticleLink.article_id)) > 1)
+        .order_by(func.count(func.distinct(ArticleLink.article_id)).desc())
+        .limit(limit)
+        .all()
+    )
+    shared = []
+    for url, n in rows:
+        citers = (
+            db.query(Article.id, Article.title, Article.source_id)
+            .join(ArticleLink, ArticleLink.article_id == Article.id)
+            .filter(ArticleLink.normalized_url == url, Article.id.in_(member_ids))
+            .limit(12)
+            .all()
+        )
+        distinct_sources = len({c[2] for c in citers})
+        shared.append(
+            {
+                "url": url,
+                "cited_by_articles": int(n),
+                "citing_sources": distinct_sources,
+                "citers": [{"article_id": c[0], "title": c[1]} for c in citers],
+                # The independence note, per shared link (informed consent):
+                "note": (
+                    "shared origin: these member articles cite the SAME page — "
+                    "their agreement is one path, not independent confirmation"
+                )
+                if distinct_sources <= 1 or int(n) > distinct_sources
+                else "cited across distinct sources — paths may still share an upstream origin",
+            }
+        )
+    return {
+        "resolved": {"term": kw.term},
+        "members": len(member_ids),
+        "shared": shared,
+        "method": (
+            "Outbound links cited by >1 member article (normalized URLs), with "
+            "the citing members and distinct-source counts. Structure and counts "
+            "only — citation counts are NEVER independent confirmation when the "
+            "paths share an origin (the Links view exists to make that visible)."
+        ),
+    }
