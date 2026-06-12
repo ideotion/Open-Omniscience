@@ -215,9 +215,20 @@ ruling, a contingency, or a deliberate-omission note.
   restore-preview UI SHIPPED in T6, 2026-06-12 — v2 flow primary, legacy
   demoted-not-removed):** D1/D4 state-into-DB migrations (settings/
   annotations/event-imports → tables; agenda subs server-side), signing-key
-  re-wrap inside the encrypt tool, launcher/installer passphrase prompt
-  wiring (whiptail box + plain fallback, confirm twice, honest
-  lost-passphrase warning, optional plaintext skip with stated risk).
+  re-wrap inside the encrypt tool. ~~launcher/installer passphrase prompt~~
+  **INSTALLER HALF SHIPPED (2026-06-12, caught LIVE: the curl|bash
+  bootstrap crashed with DatabaseLockedError at "Initialising the
+  database" on a fresh machine — encryption-by-default needs a passphrase
+  choice no non-interactive init can make):** install.sh now tries env-
+  driven init first (covers existing stores + OO_DB_PLAINTEXT/PASSPHRASE),
+  then PROMPTS on a real terminal via /dev/tty (works under curl|bash:
+  encrypted with confirm-twice + no-recovery + length guidance / PLAINTEXT
+  typed-confirmation with stated risk / defer), else DEFERS honestly to
+  the in-app first-launch prompt (deferred startup seeds at first
+  unlocked boot, so nothing is lost) — never a traceback, never a silent
+  default. EMPIRICAL: under curl|bash stdin is the pipe — prompts MUST
+  read /dev/tty. The launcher half = the in-app /unlock create flow
+  (already shipped); whiptail stays optional polish.
   **The NEWSLETTER SCRAPER stays blocked until these riders ship AND the
   no-recovery contingency is revisited** (see Non-negotiables).
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked

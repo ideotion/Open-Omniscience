@@ -11,6 +11,20 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Installer: the passphrase moment, fixed live.** The one-line
+  `curl | bash` install crashed at "Initialising the database" on a fresh
+  machine — encryption-by-default means a new store NEEDS the user's
+  passphrase choice, which a blind non-interactive init cannot make. The
+  installer now: tries env-driven init first (existing stores,
+  `OO_DB_PLAINTEXT`/`OO_DB_PASSPHRASE`); otherwise **asks on a real
+  terminal** (reading `/dev/tty`, so it works under `curl | bash`):
+  encrypted with confirm-twice, the honest no-recovery warning and length
+  guidance, or plaintext behind a typed `PLAINTEXT` confirmation with the
+  risk stated, or defer; with no terminal it **defers honestly to the
+  in-app first-launch prompt** — starter sources seed themselves at the
+  first unlocked boot, so nothing is lost. Never a traceback, never a
+  silent default.
+
 - **V0.1 alpha preparation: the reflective plans (docs).** Two
   maintainer-commissioned analyses landed: **user-centric reflections**
   (FUTURE_DEVELOPMENTS — six personas, six contradictions faced honestly,
