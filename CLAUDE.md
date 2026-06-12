@@ -446,12 +446,23 @@ ruling, a contingency, or a deliberate-omission note.
   traceable, version-anchored analytics, perfect audit control. Honest gap
   recorded: downloaded dumps are FILES only today (never parsed into the
   corpus); only watched pages get baseline→diff→flag.
-- **WIKIPEDIA (field report #4):** limit the dump-download list to the app's
-  languages (RULED — Esperanto was "fun but quite unnecessary"); the
-  offline-dump READER/SEARCH gap is ELEVATED — the maintainer could not read
-  or search downloaded dumps (no UI entry); ties into Wikipedia-as-a-source.
-  Standing idea: bundle the top-1000-pages LIST + one-click opt-in watch —
-  never auto-fetch at boot.
+- **WIKIPEDIA (field report #4; T14 SLICE 1 SHIPPED 2026-06-12):** the RULED
+  dump-list limit SHIPPED (/api/wiki/languages?scope=dumps serves only
+  APP_LANGUAGE_CODES = 12 UI locales + 5 stoplist-evidenced corpus languages;
+  Esperanto stays in the WATCHED-pages picker — invariant #1 untouched —
+  and out of the dump list; tested). The READER gap's first slice SHIPPED:
+  new downloads default to pages-articles-MULTISTREAM with the companion
+  index auto-queued (same reorderable queue); src/wiki/dumpread.py reads ONE
+  page locally (index scan → seek → one-block decompress; exact match wins,
+  case-insensitive match is LABELLED; legacy single-stream files reported
+  honestly as non-seekable with the re-download hint); Settings gains the
+  "Read a page from a downloaded dump" box (raw-wikitext snapshot note,
+  scan stats, +17 strings ×12); EMPIRICAL: multistream page blocks are bare
+  <page> elements — wrap before parsing; the index is offset:pageid:title
+  with title possibly containing colons (split(":", 2)). REMAINING:
+  full-text SEARCH over dumps + wikitext rendering + the corpus ingestion
+  path (the living-source design); standing idea: bundle the
+  top-1000-pages LIST + one-click opt-in watch — never auto-fetch at boot.
 - **Collector: cumulative runs + progress (2026-06-10):** one Collect pass
   cumulatively does RSS + crawl + markets + wiki watched pages; a progress
   bar visible throughout the UI (top-bar activity chip hosts it).

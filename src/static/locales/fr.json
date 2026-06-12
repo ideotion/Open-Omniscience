@@ -499,5 +499,22 @@
   "article": "article",
   "matches in total": "résultats au total",
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Les opérateurs booléens fonctionnent ici : AND, OR, NOT, « expressions entre guillemets ».",
-  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, « expressions entre guillemets » et (parenthèses) affinent la recherche d'articles. Tout est cherché sur cette machine uniquement — taper ici ne touche jamais le réseau."
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, « expressions entre guillemets » et (parenthèses) affinent la recherche d'articles. Tout est cherché sur cette machine uniquement — taper ici ne touche jamais le réseau.",
+  "Read a page from a downloaded dump": "Lire une page depuis un dump téléchargé",
+  "Edition": "Édition",
+  "Page title": "Titre de la page",
+  "Exact page title (a case-insensitive match is offered and labelled)…": "Titre exact de la page (une correspondance insensible à la casse est proposée et signalée)…",
+  "Read locally": "Lire localement",
+  "Editions with a complete multistream dump + index on disk": "Éditions dont le dump multistream complet + l'index sont sur le disque",
+  "Reading happens entirely on this machine: the dump's index is scanned for the title, then one small block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.": "La lecture se fait entièrement sur cette machine : l'index du dump est parcouru pour trouver le titre, puis un petit bloc est décompressé à son décalage d'octets. Le texte affiché est du wikitexte brut (non rendu) à la date du dump — un instantané, pas l'article en ligne.",
+  "No readable dump yet — download a multistream dump above; its index rides along automatically.": "Aucun dump lisible pour l'instant — téléchargez un dump multistream ci-dessus ; son index l'accompagne automatiquement.",
+  "Enter a page title.": "Saisissez un titre de page.",
+  "This title is not in the dump's index.": "Ce titre n'est pas dans l'index du dump.",
+  "index lines scanned": "lignes d'index parcourues",
+  "No readable dump for this edition: the multistream file or its index is missing.": "Aucun dump lisible pour cette édition : le fichier multistream ou son index manque.",
+  "An older single-stream file exists but cannot be random-accessed — re-download to enable reading.": "Un fichier mono-flux plus ancien existe mais ne permet pas l'accès direct — retéléchargez pour activer la lecture.",
+  "Found via case-insensitive match.": "Trouvé via une correspondance insensible à la casse.",
+  "dump revision of": "révision du dump du",
+  "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "Wikitexte brut (non rendu), extrait localement de votre dump téléchargé — aucun appel réseau.",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "La liste est limitée aux langues de l'application — les éditions que cette application sait lire et analyser. Groupée par continent ;"
 }

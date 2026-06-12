@@ -11,6 +11,21 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Offline dump reader (T14 slice 1) + the ruled dump-list limit.** New
+  Wikipedia dump downloads default to the **multistream** form and its tiny
+  companion index rides along automatically — that pair is what makes a
+  downloaded dump *readable*: Settings → Wikipedia gains **"Read a page from
+  a downloaded dump"**, which scans the index for the title, decompresses one
+  small block at its byte offset, and shows the page's raw wikitext entirely
+  on this machine (zero network; scan stats shown; a case-insensitive match
+  is offered and labelled; legacy single-stream files are honestly reported
+  as non-seekable with a re-download hint). The dump-download language list
+  is now **limited to the app's languages** (the 12 UI locales + the
+  stoplist-evidenced corpus languages) per the maintainer ruling — the
+  watched-pages edition picker keeps the full curated list. +17 chrome
+  strings ×12 locales; 9 new tests against a format-faithful synthetic
+  multistream dump built in-test.
+
 - **The omnibar (T13 slice 1).** The Ctrl/⌘-K command palette now federates
   over the corpus itself: `/api/search/omni` serves the first three hits per
   group — articles (FTS5, relevance-ordered), keywords (indexed prefix),

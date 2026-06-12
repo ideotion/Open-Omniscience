@@ -499,5 +499,22 @@
   "article": "নিবন্ধ",
   "matches in total": "মোট মিল",
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "বুলিয়ান অপারেটর এখানে কাজ করে: AND, OR, NOT, “উদ্ধৃত বাক্যাংশ”।",
-  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “উদ্ধৃত বাক্যাংশ” এবং (বন্ধনী) নিবন্ধ অনুসন্ধানকে নিখুঁত করে। সবকিছু শুধু এই মেশিনেই খোঁজা হয় — এখানে টাইপ করা কখনো নেটওয়ার্ক স্পর্শ করে না।"
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “উদ্ধৃত বাক্যাংশ” এবং (বন্ধনী) নিবন্ধ অনুসন্ধানকে নিখুঁত করে। সবকিছু শুধু এই মেশিনেই খোঁজা হয় — এখানে টাইপ করা কখনো নেটওয়ার্ক স্পর্শ করে না।",
+  "Read a page from a downloaded dump": "ডাউনলোড করা ডাম্প থেকে একটি পৃষ্ঠা পড়ুন",
+  "Edition": "সংস্করণ",
+  "Page title": "পৃষ্ঠার শিরোনাম",
+  "Exact page title (a case-insensitive match is offered and labelled)…": "সঠিক পৃষ্ঠার শিরোনাম (কেস-অসংবেদনশীল মিল প্রস্তাবিত ও চিহ্নিত হয়)…",
+  "Read locally": "স্থানীয়ভাবে পড়ুন",
+  "Editions with a complete multistream dump + index on disk": "ডিস্কে সম্পূর্ণ multistream ডাম্প + সূচি থাকা সংস্করণ",
+  "Reading happens entirely on this machine: the dump's index is scanned for the title, then one small block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.": "পড়া সম্পূর্ণ এই মেশিনেই ঘটে: ডাম্পের সূচিতে শিরোনাম খোঁজা হয়, তারপর তার বাইট-অফসেটে একটি ছোট ব্লক আনজিপ করা হয়। দেখানো লেখাটি ডাম্পের তারিখের কাঁচা উইকিটেক্সট (রেন্ডার-বিহীন) — একটি স্ন্যাপশট, লাইভ নিবন্ধ নয়।",
+  "No readable dump yet — download a multistream dump above; its index rides along automatically.": "এখনও কোনো পাঠযোগ্য ডাম্প নেই — উপরে একটি multistream ডাম্প ডাউনলোড করুন; এর সূচি স্বয়ংক্রিয়ভাবে সঙ্গে আসে।",
+  "Enter a page title.": "একটি পৃষ্ঠার শিরোনাম লিখুন।",
+  "This title is not in the dump's index.": "এই শিরোনামটি ডাম্পের সূচিতে নেই।",
+  "index lines scanned": "সূচির লাইন স্ক্যান হয়েছে",
+  "No readable dump for this edition: the multistream file or its index is missing.": "এই সংস্করণের জন্য কোনো পাঠযোগ্য ডাম্প নেই: multistream ফাইল বা এর সূচি অনুপস্থিত।",
+  "An older single-stream file exists but cannot be random-accessed — re-download to enable reading.": "একটি পুরোনো একক-স্ট্রিম ফাইল আছে কিন্তু এতে সরাসরি প্রবেশ সম্ভব নয় — পড়া চালু করতে পুনরায় ডাউনলোড করুন।",
+  "Found via case-insensitive match.": "কেস-অসংবেদনশীল মিলের মাধ্যমে পাওয়া গেছে।",
+  "dump revision of": "ডাম্প সংস্করণের তারিখ",
+  "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "কাঁচা উইকিটেক্সট (রেন্ডার-বিহীন), আপনার ডাউনলোড করা ডাম্প থেকে স্থানীয়ভাবে আহরিত — কোনো নেটওয়ার্ক কল নেই।",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "তালিকাটি অ্যাপের ভাষাগুলোতে সীমিত — যে সংস্করণগুলো এই অ্যাপ পড়তে ও বিশ্লেষণ করতে পারে। মহাদেশ অনুযায়ী দলবদ্ধ;"
 }

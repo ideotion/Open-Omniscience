@@ -451,6 +451,19 @@ Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and l
 in **Settings → Wikipedia** — you don't need them for change-tracking. See
 [`docs/USER_MANUAL.md`](USER_MANUAL.md).
 
+**Reading a downloaded dump (offline):** new dump downloads use the
+*multistream* form, and the small companion index downloads with them — that
+pair makes the dump seekable. In **Settings → Wikipedia → Read a page from a
+downloaded dump**, pick a ready edition, type a page title, and the app scans
+the index, decompresses one small block at its byte offset, and shows the
+page's **raw wikitext** — entirely on this machine, with the scan stats shown.
+What you read is a *snapshot as of the dump date*, not the live article; a
+case-insensitive title match is offered and labelled. Older single-stream
+files can't be random-accessed — the app says so and suggests a re-download.
+The dump **language list is limited to the app's languages** (the 12 interface
+languages plus the corpus languages the analyzers support); the watched-pages
+edition picker above keeps the full list.
+
 ### 3.7a World law
 
 **What it's for:** tracking the **law** — statutes, gazettes, IP records — from official

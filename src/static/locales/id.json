@@ -499,5 +499,22 @@
   "article": "artikel",
   "matches in total": "kecocokan total",
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Operator Boolean berfungsi di sini: AND, OR, NOT, “frasa dalam kutipan”.",
-  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “frasa dalam kutipan”, dan (tanda kurung) mempertajam pencarian artikel. Semuanya dicari hanya di mesin ini — mengetik di sini tidak pernah menyentuh jaringan."
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “frasa dalam kutipan”, dan (tanda kurung) mempertajam pencarian artikel. Semuanya dicari hanya di mesin ini — mengetik di sini tidak pernah menyentuh jaringan.",
+  "Read a page from a downloaded dump": "Baca halaman dari dump yang diunduh",
+  "Edition": "Edisi",
+  "Page title": "Judul halaman",
+  "Exact page title (a case-insensitive match is offered and labelled)…": "Judul halaman persis (kecocokan tanpa membedakan huruf besar/kecil ditawarkan dan diberi label)…",
+  "Read locally": "Baca secara lokal",
+  "Editions with a complete multistream dump + index on disk": "Edisi dengan dump multistream lengkap + indeks di disk",
+  "Reading happens entirely on this machine: the dump's index is scanned for the title, then one small block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.": "Pembacaan terjadi sepenuhnya di mesin ini: indeks dump dipindai untuk judul, lalu satu blok kecil didekompresi pada offset byte-nya. Teks yang ditampilkan adalah wikiteks mentah (tanpa render) per tanggal dump — sebuah potret, bukan artikel langsung.",
+  "No readable dump yet — download a multistream dump above; its index rides along automatically.": "Belum ada dump yang dapat dibaca — unduh dump multistream di atas; indeksnya ikut otomatis.",
+  "Enter a page title.": "Masukkan judul halaman.",
+  "This title is not in the dump's index.": "Judul ini tidak ada dalam indeks dump.",
+  "index lines scanned": "baris indeks dipindai",
+  "No readable dump for this edition: the multistream file or its index is missing.": "Tidak ada dump terbaca untuk edisi ini: berkas multistream atau indeksnya hilang.",
+  "An older single-stream file exists but cannot be random-accessed — re-download to enable reading.": "Berkas aliran-tunggal lama ada tetapi tidak bisa diakses acak — unduh ulang untuk mengaktifkan pembacaan.",
+  "Found via case-insensitive match.": "Ditemukan lewat kecocokan tanpa membedakan kapital.",
+  "dump revision of": "revisi dump per",
+  "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "Wikiteks mentah (tanpa render), diekstrak secara lokal dari dump unduhan Anda — tanpa panggilan jaringan.",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "Daftar dibatasi pada bahasa-bahasa aplikasi — edisi yang dapat dibaca dan dianalisis aplikasi ini. Dikelompokkan per benua;"
 }

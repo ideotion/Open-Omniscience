@@ -26,13 +26,27 @@ from pathlib import Path
 
 _LOG = logging.getLogger(__name__)
 _CHUNK = 1024 * 1024  # 1 MiB
-DUMP_KINDS = ("pages-articles",)
+# "pages-articles-multistream" is the DEFAULT for new downloads (T14): its
+# companion index makes pages readable OFFLINE by direct seek — the plain
+# single-stream dump is kept for legacy files but cannot be random-accessed.
+DUMP_KINDS = (
+    "pages-articles",
+    "pages-articles-multistream",
+    "pages-articles-multistream-index",
+)
 
 
-def dump_url(wiki: str, kind: str = "pages-articles") -> str:
+def dump_filename(wiki: str, kind: str) -> str:
+    """Official 'latest' filename for an edition+kind (the index is .txt, not .xml)."""
+    w = (wiki or "en").strip().lower()
+    suffix = ".txt.bz2" if kind.endswith("-index") else ".xml.bz2"
+    return f"{w}wiki-latest-{kind}{suffix}"
+
+
+def dump_url(wiki: str, kind: str = "pages-articles-multistream") -> str:
     """Official 'latest' dump URL for a language edition."""
     w = (wiki or "en").strip().lower()
-    return f"https://dumps.wikimedia.org/{w}wiki/latest/{w}wiki-latest-{kind}.xml.bz2"
+    return f"https://dumps.wikimedia.org/{w}wiki/latest/{dump_filename(w, kind)}"
 
 
 @dataclass
@@ -196,7 +210,7 @@ class DumpDownloadManager:
         key = f"{wiki.lower()}:{kind}"
         e = self._entries.get(key)
         if e is None:
-            dest = self.base_dir / f"{wiki.lower()}wiki-latest-{kind}.xml.bz2"
+            dest = self.base_dir / dump_filename(wiki, kind)
             e = DownloadEntry(
                 key=key, wiki=wiki.lower(), kind=kind, url=dump_url(wiki, kind), dest=str(dest)
             )
