@@ -147,7 +147,7 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
                 marks = ",".join(str(int(i)) for i in batch)
                 for kid, term, norm, lang, is_ent, ent_type in db.execute(
                     text(
-                        "SELECT id, term, normalized_term, language, is_entity,"
+                        "SELECT id, term, normalized_term, language, is_entity,"  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
                         f" entity_type FROM keywords WHERE id IN ({marks})"
                     )
                 ):
@@ -157,7 +157,7 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
                 # contributes exactly one distinct article to its language.
                 for kid, aid in db.execute(
                     text(
-                        "SELECT keyword_id, article_id FROM keyword_mentions"
+                        "SELECT keyword_id, article_id FROM keyword_mentions"  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
                         f" WHERE keyword_id IN ({marks})"
                     )
                 ):
