@@ -340,11 +340,14 @@ ruling, a contingency, or a deliberate-omission note.
   + inflection/month pass (extract.py; global_stopwords applies at query
   time ⇒ 704 rows / 71,854 mentions retroactively hidden, no migration;
   en+fr were already clean; junk ≈ 6% of mentions ⇒ capping would buy
-  little; NO CAP stands). QUEUED systemic findings: source SELF-NAMES leak
-  as keywords ("The Moscow Times"×213 ⇒ suppress keywords matching the
-  article's own source — a rule, not a stoplist); per-source
-  extraction-quality check (Swedish boilerplate "alla artiklar"×118 =
-  navigation text); language-attribution noise (de-tagged English text).
+  little; NO CAP stands). The three queued systemic findings SHIPPED (T3,
+  2026-06-12): source SELF-NAMES suppressed at index time as a per-article
+  RULE (_self_name_forms: full name ± leading article + domain labels; other
+  sources' mentions of the outlet STAY — re-indexing applies retroactively);
+  per-source concentration suspects in the diagnostics export (≥90% one
+  source, ≥25% of its articles, both ≥10 — flagged with real counts, never
+  auto-hidden); language_mismatch flag per keyword (stored vs dominant
+  signature language — evidence, not a correction).
 - **WIKIPEDIA (field report #4):** limit the dump-download list to the app's
   languages (RULED — Esperanto was "fun but quite unnecessary"); the
   offline-dump READER/SEARCH gap is ELEVATED — the maintainer could not read

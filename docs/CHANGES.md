@@ -52,6 +52,23 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   any new direct importer fails the suite until consciously routed through the
   fetch path. UI invariant #14 enforces all of it; +15 chrome strings ×12
   locales.
+
+- **Keyword policy: the three systemic findings from field report #4.**
+  (1) **Source self-names are suppressed at extraction** as a per-article
+  rule, never a stoplist: a keyword equal to the article's OWN outlet name
+  ("The Moscow Times" ×213 in the live export) or domain label is byline/
+  footer boilerplate and is skipped — while the same term mentioned by OTHER
+  sources stays a real keyword, so coverage *about* an outlet is untouched.
+  Re-indexing applies it retroactively (indexing replaces an article's
+  mentions). (2) The diagnostics export gains **per_source_concentration**:
+  keywords whose articles sit ≥90% in one source while covering ≥25% of that
+  source's articles (both sides ≥10) are listed as boilerplate/navigation
+  suspects — the Swedish "alla artiklar" ×118 shape — with real counts and
+  stated thresholds, strongest first, capped at 200; flagged, never
+  auto-hidden. (3) Every exported keyword carries **language_mismatch**:
+  true when the stored language disagrees with the signature's dominant
+  article language (the de-tagged-English attribution noise) — evidence for
+  the operator, never a silent correction.
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled
   American (the live-test "US = 1,553" inflation; the canonicalised catalog's real

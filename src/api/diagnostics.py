@@ -79,27 +79,76 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
                 for aid, lang in db.execute(text("SELECT id, language FROM articles"))
             }
 
+            # Article -> source, the same codec-free way (covering index on
+            # source_id), for the per-source concentration diagnostic below.
+            art_src: dict[int, int] = dict(
+                db.execute(text("SELECT id, source_id FROM articles")).fetchall()
+            )
+            src_articles: dict[int, int] = dict(
+                db.execute(
+                    text("SELECT source_id, COUNT(*) FROM articles GROUP BY source_id")
+                ).fetchall()
+            )
+
             # Dominant signature language per keyword from ONE index-only scan
             # of (keyword_id, article_id), ordered so each keyword's counts can
             # be reduced and freed as the scan passes it. Ties: language asc
             # (matching the previous argmax over language-asc grouped rows).
+            # The SAME pass measures per-source concentration: a keyword whose
+            # articles sit ≥90% in one source, covering ≥25% of that source's
+            # articles (≥10 articles) is a boilerplate/navigation-text suspect
+            # (field report #4: Swedish "alla artiklar" ×118) — FLAGGED with
+            # real counts, never auto-hidden; the operator decides.
             dom_lang: dict[int, str] = {}
+            suspects: list[dict] = []
             _cur_kid: int | None = None
             _counts: dict[str, int] = {}
+            _srcs: dict[int, int] = {}
 
-            def _finalize(kid: int | None, counts: dict[str, int]) -> None:
-                if kid is not None and counts:
-                    dom_lang[kid] = min(counts, key=lambda lg: (-counts[lg], lg))
+            def _finalize(kid: int | None, counts: dict[str, int], srcs: dict[int, int]) -> None:
+                if kid is None or not counts:
+                    return
+                dom_lang[kid] = min(counts, key=lambda lg: (-counts[lg], lg))
+                n_articles = sum(srcs.values())
+                if n_articles >= 10:
+                    top_src, top_n = max(srcs.items(), key=lambda kv: kv[1])
+                    src_total = src_articles.get(top_src, 0)
+                    if src_total >= 10 and top_n / n_articles >= 0.9 and top_n / src_total >= 0.25:
+                        suspects.append(
+                            {
+                                "keyword_id": kid,
+                                "source_id": top_src,
+                                "articles_with_keyword": n_articles,
+                                "in_this_source": top_n,
+                                "source_article_total": src_total,
+                                "share_of_keyword": round(top_n / n_articles, 3),
+                                "share_of_source": round(top_n / src_total, 3),
+                            }
+                        )
 
             for kid, aid in db.execute(
                 text("SELECT keyword_id, article_id FROM keyword_mentions ORDER BY keyword_id")
             ):
                 if kid != _cur_kid:
-                    _finalize(_cur_kid, _counts)
-                    _cur_kid, _counts = kid, {}
+                    _finalize(_cur_kid, _counts, _srcs)
+                    _cur_kid, _counts, _srcs = kid, {}, {}
                 lg = art_lang.get(aid, "?")
                 _counts[lg] = _counts.get(lg, 0) + 1
-            _finalize(_cur_kid, _counts)
+                sid = art_src.get(aid)
+                if sid is not None:
+                    _srcs[sid] = _srcs.get(sid, 0) + 1
+            _finalize(_cur_kid, _counts, _srcs)
+
+            # The DETECTION is unbounded: every keyword × source pair in the
+            # corpus is evaluated (inside the same full mention scan). Only the
+            # LIST PRINTED in this report is bounded — strongest-first, with
+            # the true total disclosed — so the file stays reviewable while no
+            # magnitude is ever hidden (the maintainer's anti-capping rule:
+            # caps may bound a REPORT, never the data crunching).
+            suspects.sort(key=lambda s: (-s["share_of_source"], -s["in_this_source"]))
+            suspects_total = len(suspects)
+            suspects_capped = suspects_total > 200
+            suspects = suspects[:200]
 
             # Stored-language fallback for keywords with no mentions (kept from
             # the previous contract: they export with zero counts, quota applies).
@@ -165,6 +214,36 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
                     lg = art_lang.get(aid, "?")
                     sig[lg] = sig.get(lg, 0) + 1
 
+            # Names for the concentration suspects (small, bounded set) — the
+            # section is readable on its own: terms + source names + counts.
+            suspect_kids = {s["keyword_id"] for s in suspects} - set(meta)
+            for batch in _in_batches(sorted(suspect_kids)):
+                marks = ",".join(str(int(i)) for i in batch)
+                for kid, term, norm, lang, is_ent, ent_type in db.execute(
+                    text(
+                        "SELECT id, term, normalized_term, language, is_entity,"  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
+                        f" entity_type FROM keywords WHERE id IN ({marks})"
+                    )
+                ):
+                    meta[kid] = (term, norm, lang, bool(is_ent), ent_type)
+            src_names: dict[int, str] = {}
+            sids = sorted({s["source_id"] for s in suspects})
+            if sids:
+                marks = ",".join(str(int(i)) for i in sids)
+                src_names = dict(
+                    db.execute(
+                        text(f"SELECT id, name FROM sources WHERE id IN ({marks})")  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
+                    ).fetchall()
+                )
+            per_source_concentration = [
+                {
+                    "term": meta.get(s["keyword_id"], ("?",))[0],
+                    "source": src_names.get(s["source_id"], f"#{s['source_id']}"),
+                    **{k: v for k, v in s.items() if k not in ("keyword_id", "source_id")},
+                }
+                for s in suspects
+            ]
+
             corpus = {
                 "articles": int(db.query(func.count(Article.id)).scalar() or 0),
                 "sources": int(db.query(func.count(Source.id)).scalar() or 0),
@@ -191,6 +270,7 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
     def _entry(s: tuple) -> dict:
         kid, m, a, first, last = s
         term, norm, lang, is_ent, ent_type = meta.get(kid, ("?", "?", None, False, None))
+        dom = dom_lang.get(kid)
         return {
             "term": term,
             "normalized": norm,
@@ -202,6 +282,10 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
             "last_seen": str(last) if last else None,
             "hidden": bool(is_hidden(norm)),
             "language_signature": lang_sig.get(kid, {}),
+            # Attribution noise flag (field report #4: de-tagged English text):
+            # the stored language disagrees with the signature's dominant one.
+            # Evidence, not a correction — both values stay visible above.
+            "language_mismatch": bool(dom is not None and dom != (lang or "?")),
         }
 
     fam_items = []
@@ -223,9 +307,14 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
         f"All gathered keywords (top {_MAX_KEYWORDS_PER_LANG} PER dominant signature "
         "language — a global cap would anglicise the export) with real "
         "counts; language_signature = distinct articles per ARTICLE language "
-        "(the trans-language disambiguation evidence); families computed by the "
+        "(the trans-language disambiguation evidence); language_mismatch flags a "
+        "stored language that disagrees with the signature's dominant one "
+        "(attribution-noise evidence, never a correction); families computed by the "
         "live grouping logic incl. the user's merge/split overrides; super-groups "
-        "as curated. No scores, no inference."
+        "as curated. per_source_concentration lists boilerplate SUSPECTS — a "
+        "keyword whose articles sit ≥90% in one source, covering ≥25% of that "
+        "source's articles (both sides ≥10 articles), strongest first, capped at "
+        "200 — flagged with real counts, never auto-hidden. No scores, no inference."
     )
 
     def _stream():
@@ -247,6 +336,20 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
             separators=(",", ":"),
         )
         yield ', "supergroups": ' + json.dumps(supergroups, separators=(",", ":"))
+        yield ', "per_source_concentration": ' + json.dumps(
+            {
+                "suspects": per_source_concentration,
+                "suspects_total": suspects_total,
+                "list_capped_at_200": suspects_capped,
+                "thresholds": {
+                    "min_articles_with_keyword": 10,
+                    "min_source_articles": 10,
+                    "min_share_of_keyword": 0.9,
+                    "min_share_of_source": 0.25,
+                },
+            },
+            separators=(",", ":"),
+        )
         yield "}}"
 
     fname = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d')}.json"

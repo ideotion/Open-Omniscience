@@ -27,6 +27,41 @@ from src.database.models import Article, Keyword, KeywordMention
 _LOG = logging.getLogger(__name__)
 
 
+# Leading articles stripped when matching a source's own name (multi-language,
+# matching the catalog's languages — "The Moscow Times" also matches as
+# "moscow times").
+_LEADING_ARTICLES = {"the", "le", "la", "les", "el", "los", "las", "die", "der", "das", "il", "al"}
+
+
+def _self_name_forms(source) -> set[str]:
+    """Normalized forms of the article's OWN source identity.
+
+    A keyword equal to one of these is the source naming ITSELF (header,
+    footer, byline boilerplate — the field-report #4 finding: "The Moscow
+    Times" ×213 as a keyword), not article content. The match is per-article:
+    the same term mentioned by OTHER sources remains a real keyword, so
+    coverage ABOUT an outlet is never suppressed. Exact full-form matches
+    only — single shared words ("moscow", "times") are untouched.
+    """
+    forms: set[str] = set()
+    if source is None:
+        return forms
+    name = " ".join((source.name or "").split()).casefold()
+    if name:
+        forms.add(name)
+        toks = name.split()
+        if len(toks) > 1 and toks[0] in _LEADING_ARTICLES:
+            forms.add(" ".join(toks[1:]))
+    domain = (source.domain or "").casefold().strip()
+    if domain:
+        label = domain.removeprefix("www.").split(":", 1)[0]
+        forms.add(label)
+        parts = label.split(".")
+        if len(parts) >= 2 and parts[-2]:
+            forms.add(parts[-2])  # the registrable label: "themoscowtimes"
+    return {f for f in forms if len(f) >= 3}
+
+
 def _get_or_create_keyword(
     session: Session, t: ExtractedTerm, *, language: str, extractor: str
 ) -> Keyword:
@@ -82,8 +117,17 @@ def index_article(
     # Idempotent re-index: drop this article's existing mentions first.
     session.query(KeywordMention).filter_by(article_id=article.id).delete()
 
+    # Source self-names are boilerplate, not content (maintainer-ruled rule,
+    # NOT a stoplist — see _self_name_forms; re-indexing applies it
+    # retroactively because index_article replaces an article's mentions).
+    self_forms = _self_name_forms(getattr(article, "source", None))
+
     written = 0
+    self_suppressed = 0
     for t in terms:
+        if t.normalized in self_forms:
+            self_suppressed += 1
+            continue
         kw = _get_or_create_keyword(
             session, t, language=article.language or "en", extractor=extractor.name
         )
@@ -105,6 +149,7 @@ def index_article(
         "article_id": article.id,
         "mentions": written,
         "entities": sum(1 for t in terms if t.kind != "term"),
+        "self_name_suppressed": self_suppressed,
     }
 
 
