@@ -499,5 +499,22 @@
   "article": "लेख",
   "matches in total": "कुल मिलान",
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "बूलियन ऑपरेटर यहाँ काम करते हैं: AND, OR, NOT, “उद्धृत वाक्यांश”।",
-  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “उद्धृत वाक्यांश” और (कोष्ठक) लेख खोज को परिष्कृत करते हैं। सब कुछ केवल इसी मशीन पर खोजा जाता है — यहाँ टाइप करना कभी नेटवर्क को नहीं छूता।"
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “उद्धृत वाक्यांश” और (कोष्ठक) लेख खोज को परिष्कृत करते हैं। सब कुछ केवल इसी मशीन पर खोजा जाता है — यहाँ टाइप करना कभी नेटवर्क को नहीं छूता।",
+  "Read a page from a downloaded dump": "डाउनलोड किए गए डंप से पृष्ठ पढ़ें",
+  "Edition": "संस्करण",
+  "Page title": "पृष्ठ शीर्षक",
+  "Exact page title (a case-insensitive match is offered and labelled)…": "सटीक पृष्ठ शीर्षक (केस-असंवेदनशील मिलान प्रस्तावित और चिह्नित किया जाता है)…",
+  "Read locally": "स्थानीय रूप से पढ़ें",
+  "Editions with a complete multistream dump + index on disk": "डिस्क पर पूर्ण multistream डंप + अनुक्रमणिका वाले संस्करण",
+  "Reading happens entirely on this machine: the dump's index is scanned for the title, then one small block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.": "पठन पूरी तरह इसी मशीन पर होता है: डंप की अनुक्रमणिका में शीर्षक खोजा जाता है, फिर उसके बाइट-ऑफ़सेट पर एक छोटा ब्लॉक असंपीड़ित किया जाता है। दिखाया गया पाठ डंप की तिथि का कच्चा विकिटेक्स्ट (बिना रेंडर) है — एक स्नैपशॉट, लाइव लेख नहीं।",
+  "No readable dump yet — download a multistream dump above; its index rides along automatically.": "अभी कोई पठनीय डंप नहीं — ऊपर एक multistream डंप डाउनलोड करें; उसकी अनुक्रमणिका स्वतः साथ आती है।",
+  "Enter a page title.": "एक पृष्ठ शीर्षक दर्ज करें।",
+  "This title is not in the dump's index.": "यह शीर्षक डंप की अनुक्रमणिका में नहीं है।",
+  "index lines scanned": "अनुक्रमणिका पंक्तियाँ जाँची गईं",
+  "No readable dump for this edition: the multistream file or its index is missing.": "इस संस्करण के लिए कोई पठनीय डंप नहीं: multistream फ़ाइल या उसकी अनुक्रमणिका अनुपस्थित है।",
+  "An older single-stream file exists but cannot be random-accessed — re-download to enable reading.": "एक पुरानी सिंगल-स्ट्रीम फ़ाइल मौजूद है पर उसमें सीधी पहुँच संभव नहीं — पढ़ने के लिए पुनः डाउनलोड करें।",
+  "Found via case-insensitive match.": "केस-असंवेदनशील मिलान से मिला।",
+  "dump revision of": "डंप संशोधन दिनांक",
+  "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "कच्चा विकिटेक्स्ट (बिना रेंडर), आपके डाउनलोड किए डंप से स्थानीय रूप से निकाला गया — कोई नेटवर्क कॉल नहीं।",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "सूची ऐप की भाषाओं तक सीमित है — वे संस्करण जिन्हें यह ऐप पढ़ और विश्लेषित कर सकता है। महाद्वीप के अनुसार समूहित;"
 }

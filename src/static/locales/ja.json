@@ -499,5 +499,22 @@
   "article": "記事",
   "matches in total": "件（合計）",
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "ここではブール演算子が使えます：AND、OR、NOT、「引用句」。",
-  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND、OR、NOT、「引用句」、（括弧）で記事検索を絞り込めます。検索はこのマシン内のみで行われ、ここでの入力がネットワークに触れることはありません。"
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND、OR、NOT、「引用句」、（括弧）で記事検索を絞り込めます。検索はこのマシン内のみで行われ、ここでの入力がネットワークに触れることはありません。",
+  "Read a page from a downloaded dump": "ダウンロード済みダンプからページを読む",
+  "Edition": "言語版",
+  "Page title": "ページタイトル",
+  "Exact page title (a case-insensitive match is offered and labelled)…": "正確なページタイトル（大文字小文字を区別しない一致も提示され、その旨表示されます）…",
+  "Read locally": "ローカルで読む",
+  "Editions with a complete multistream dump + index on disk": "完全なマルチストリームダンプとインデックスがディスク上にある言語版",
+  "Reading happens entirely on this machine: the dump's index is scanned for the title, then one small block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.": "読み取りはすべてこのマシン上で行われます。ダンプのインデックスからタイトルを探し、そのバイトオフセットで小さなブロックを 1 つ解凍します。表示されるテキストはダンプ日時点の生のウィキテキスト（未レンダリング）であり、ライブ記事ではなくスナップショットです。",
+  "No readable dump yet — download a multistream dump above; its index rides along automatically.": "まだ読み取り可能なダンプがありません — 上でマルチストリームダンプをダウンロードしてください。そのインデックスは自動的に付いてきます。",
+  "Enter a page title.": "ページタイトルを入力してください。",
+  "This title is not in the dump's index.": "このタイトルはダンプのインデックスにありません。",
+  "index lines scanned": "走査済みインデックス行",
+  "No readable dump for this edition: the multistream file or its index is missing.": "この言語版には読み取り可能なダンプがありません。マルチストリームファイルまたはそのインデックスが欠けています。",
+  "An older single-stream file exists but cannot be random-accessed — re-download to enable reading.": "古いシングルストリームファイルは存在しますがランダムアクセスできません — 読み取りを有効にするには再ダウンロードしてください。",
+  "Found via case-insensitive match.": "大文字小文字を区別しない一致で見つかりました。",
+  "dump revision of": "ダンプ版の日付",
+  "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "生のウィキテキスト（未レンダリング）。ダウンロード済みダンプからローカルに抽出 — ネットワーク通信なし。",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "このリストはアプリの言語に限定されています — このアプリが読み取り・分析できる言語版です。大陸別にグループ化；"
 }

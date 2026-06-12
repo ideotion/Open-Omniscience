@@ -247,3 +247,31 @@ def get_language(code: str) -> WikiLanguage | None:
 
 def is_known(code: str) -> bool:
     return (code or "").strip().lower() in _BY_CODE
+
+
+# The DUMP-DOWNLOAD list is LIMITED to the app's languages (maintainer-ruled
+# 2026-06-12, field report #4 — "Esperanto was fun but quite unnecessary"):
+# the 12 UI locales plus the corpus languages with shipped, evidence-backed
+# stoplists (field log #2). Only the heavy offline-dump surface narrows; the
+# watched-pages edition picker keeps the full curated list (UI invariant #1).
+APP_LANGUAGE_CODES = frozenset({
+    # UI locales (the languages the app speaks)
+    "en", "fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id",
+    # corpus languages with evidence-backed stoplists (src/analytics/extract.py)
+    "nl", "sv", "it", "pl", "tr",
+})
+
+
+def app_languages() -> list[WikiLanguage]:
+    """The dump-scope subset of :func:`all_languages` (same ordering)."""
+    return [lang for lang in all_languages() if lang.code in APP_LANGUAGE_CODES]
+
+
+def app_languages_by_region() -> list[tuple[str, list[WikiLanguage]]]:
+    """:func:`languages_by_region`, filtered to the app's languages."""
+    out = []
+    for region, langs in languages_by_region():
+        kept = [lang for lang in langs if lang.code in APP_LANGUAGE_CODES]
+        if kept:
+            out.append((region, kept))
+    return out

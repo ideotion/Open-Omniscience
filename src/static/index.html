@@ -1697,11 +1697,27 @@
         <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
         <div id="dump-estimate" class="hint" style="align-self:center"></div>
       </div>
-      <div class="hint">The list covers 100+ editions, grouped by continent (largest first within each) —
+      <div class="hint">The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;
         <strong>type in the box to filter</strong> by name, autonym or code. Sizes shown are coarse heaviness
         hints, while <em>Estimate size</em> reports the exact current dump size from the server. You can also
         type any edition code that isn't listed.</div>
       <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>
+      <h3 style="margin-top:14px">Read a page from a downloaded dump</h3>
+      <div class="row">
+        <div style="flex:0 0 110px">
+          <label for="dumpread-wiki">Edition</label>
+          <select id="dumpread-wiki" title="Editions with a complete multistream dump + index on disk"><option value="">—</option></select>
+        </div>
+        <div style="flex:2">
+          <label for="dumpread-title">Page title</label>
+          <input id="dumpread-title" placeholder="Exact page title (a case-insensitive match is offered and labelled)…"
+                 onkeydown="if(event.key==='Enter')dumpReadPage()">
+        </div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="dumpReadPage()">Read locally</button></div>
+      </div>
+      <div class="hint">Reading happens entirely on this machine: the dump's index is scanned for the title, then one small
+        block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.</div>
+      <div id="dumpread-out" style="margin-top:8px"></div>
     </section>
     </div>
 
@@ -3712,7 +3728,7 @@
       const sel = $("dump-lang");
       if (!sel) return;
       try {
-        const d = await api("/api/wiki/languages");
+        const d = await api("/api/wiki/languages?scope=dumps");
         // Normalise to a grouped form so rendering is uniform (older API → one group).
         _wikiLangGroups = (d.groups && d.groups.length)
           ? d.groups
@@ -6345,6 +6361,7 @@
     }
 
     async function loadWikiDumps() {
+      loadReadableDumps();  // keep the local-reader edition list in step
       try {
         const d = await api("/api/wiki/dumps");
         const t = $("dump-table");
@@ -6398,6 +6415,54 @@
       if (!confirm("Delete this download and its file?")) return;
       try { await api("/api/wiki/dumps?key="+encodeURIComponent(key), {method:"DELETE"}); loadWikiDumps(); }
       catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    // -- Read a page from a downloaded dump (T14: local, zero network) ------- //
+    async function loadReadableDumps() {
+      const sel = $("dumpread-wiki"); if (!sel) return;
+      try {
+        const d = await api("/api/wiki/dumps/readable");
+        const cur = sel.value;
+        sel.innerHTML = (d.wikis || []).map(w => `<option value="${esc(w)}">${esc(w)}</option>`).join("")
+          || `<option value="">—</option>`;
+        if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+      } catch (e) { /* reader box is optional */ }
+    }
+    async function dumpReadPage() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const wiki = $("dumpread-wiki").value.trim();
+      const title = $("dumpread-title").value.trim();
+      const out = $("dumpread-out");
+      if (!wiki) { out.innerHTML = `<div class="note err">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`; return; }
+      if (!title) { out.innerHTML = `<div class="note err">${esc(t("Enter a page title."))}</div>`; return; }
+      out.textContent = t("Loading…");
+      try {
+        const d = await api(`/api/wiki/dumps/page?wiki=${encodeURIComponent(wiki)}&title=${encodeURIComponent(title)}`);
+        if (!d.found) {
+          let msg;
+          if (d.reason === "title-not-in-index") {
+            msg = `${t("This title is not in the dump's index.")} <span class="muted">(${d.index_lines_scanned} ${t("index lines scanned")}, ${d.scan_seconds}s)</span>`;
+          } else if (d.reason === "no-multistream-dump" || d.reason === "no-index") {
+            msg = esc(t("No readable dump for this edition: the multistream file or its index is missing."))
+              + (d.legacy_file_present ? " " + esc(t("An older single-stream file exists but cannot be random-accessed — re-download to enable reading.")) : "");
+          } else {
+            msg = esc(d.reason || "unreadable");
+          }
+          out.innerHTML = `<div class="note err">${msg}</div>`;
+          return;
+        }
+        const meta = [
+          d.match === "case-insensitive" ? t("Found via case-insensitive match.") : "",
+          d.rev_timestamp ? `${t("dump revision of")} ${esc(d.rev_timestamp.slice(0,10))}` : "",
+          `${d.index_lines_scanned} ${t("index lines scanned")} · ${d.scan_seconds}s`
+        ].filter(Boolean).join(" · ");
+        out.innerHTML = `<div class="card">
+          <h4>${esc(d.title)} <span class="muted" style="font-weight:normal">(${esc(d.wiki)})</span></h4>
+          <div class="muted small" title="${esc(d.method || "")}">${meta}</div>
+          <div class="muted small">${esc(t("Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call."))}</div>
+          <pre style="max-height:420px;overflow:auto;white-space:pre-wrap;margin-top:6px">${esc(d.wikitext)}</pre>
+        </div>`;
+      } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
 
     async function loadWikiPages() {

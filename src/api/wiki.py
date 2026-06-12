@@ -220,11 +220,13 @@ def changes(
 
 class StartDump(BaseModel):
     wiki: str
-    kind: str = "pages-articles"
+    # Multistream is the default (T14): its companion index makes downloaded
+    # dumps READABLE offline; the index file is queued automatically with it.
+    kind: str = "pages-articles-multistream"
 
 
 @router.get("/languages")
-def wiki_languages() -> dict:
+def wiki_languages(scope: str = "all") -> dict:
     """Curated Wikipedia editions for the offline-baseline picker.
 
     Returns both a flat ``languages`` list (largest tier first; each entry now
@@ -232,14 +234,29 @@ def wiki_languages() -> dict:
     splits the editions by continent — regions ordered largest-edition-first —
     so the UI can render short, scannable ``<optgroup>`` sections instead of one
     long scroll.
-    """
-    from src.wiki.languages import all_languages, languages_by_region
 
+    ``scope="dumps"`` limits the list to THE APP'S LANGUAGES (maintainer-ruled
+    2026-06-12): the UI locales + evidence-backed corpus languages. Only the
+    heavy dump surface narrows — the watched-pages picker (invariant #1) keeps
+    the full list via the default scope.
+    """
+    from src.wiki.languages import (
+        all_languages,
+        app_languages,
+        app_languages_by_region,
+        languages_by_region,
+    )
+
+    if scope == "dumps":
+        flat, grouped = app_languages(), app_languages_by_region()
+    else:
+        flat, grouped = all_languages(), languages_by_region()
     return {
-        "languages": [lang.to_dict() for lang in all_languages()],
+        "scope": scope,
+        "languages": [lang.to_dict() for lang in flat],
         "groups": [
             {"region": region, "languages": [lang.to_dict() for lang in langs]}
-            for region, langs in languages_by_region()
+            for region, langs in grouped
         ],
     }
 
@@ -252,7 +269,7 @@ def dumps_list() -> dict:
 
 
 @router.get("/dumps/probe")
-def dumps_probe(wiki: str, kind: str = "pages-articles") -> dict:
+def dumps_probe(wiki: str, kind: str = "pages-articles-multistream") -> dict:
     from src.wiki.dumps import dump_url, get_manager
 
     size = get_manager().probe_size(wiki, kind)
@@ -266,7 +283,13 @@ def dumps_start(payload: StartDump) -> dict:
     if not payload.wiki.strip():
         raise HTTPException(status_code=400, detail="wiki is required.")
     try:
-        return get_manager().start(payload.wiki, payload.kind)
+        result = get_manager().start(payload.wiki, payload.kind)
+        if payload.kind == "pages-articles-multistream":
+            # The tiny companion index rides along automatically — it is what
+            # makes the downloaded dump READABLE (seekable) offline.
+            get_manager().start(payload.wiki, "pages-articles-multistream-index")
+            result["index_queued"] = True
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -283,6 +306,29 @@ def dumps_delete(key: str) -> dict:
     from src.wiki.dumps import get_manager
 
     return {"deleted": get_manager().delete(key)}
+
+
+@router.get("/dumps/readable")
+def dumps_readable() -> dict:
+    """Editions whose multistream data+index pair is on disk (reader-ready)."""
+    from src.wiki.dumpread import readable_wikis
+
+    return {"wikis": readable_wikis()}
+
+
+@router.get("/dumps/page")
+def dumps_page(wiki: str, title: str) -> dict:
+    """Read ONE page out of a downloaded multistream dump — local, no network.
+
+    The result is always honest about what happened: found (with raw
+    wikitext + match kind + scan stats), not in the index, or not readable
+    because only a legacy single-stream file exists (re-download hint).
+    """
+    from src.wiki.dumpread import find_page
+
+    if not wiki.strip() or not title.strip():
+        raise HTTPException(status_code=400, detail="wiki and title are required.")
+    return find_page(wiki.strip(), title.strip())
 
 
 @router.get("/revisions/{rev_id}")

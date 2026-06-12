@@ -499,5 +499,22 @@
   "article": "文章",
   "matches in total": "条匹配（共计）",
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "此处支持布尔运算符：AND、OR、NOT、“引号短语”。",
-  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND、OR、NOT、“引号短语”和（括号）可细化文章搜索。一切仅在本机搜索——在此输入绝不触网。"
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND、OR、NOT、“引号短语”和（括号）可细化文章搜索。一切仅在本机搜索——在此输入绝不触网。",
+  "Read a page from a downloaded dump": "从已下载的转储中读取页面",
+  "Edition": "语言版本",
+  "Page title": "页面标题",
+  "Exact page title (a case-insensitive match is offered and labelled)…": "准确的页面标题（提供不区分大小写的匹配并予以标注）……",
+  "Read locally": "本地读取",
+  "Editions with a complete multistream dump + index on disk": "磁盘上具有完整 multistream 转储和索引的语言版本",
+  "Reading happens entirely on this machine: the dump's index is scanned for the title, then one small block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.": "读取完全在本机进行：先在转储索引中查找标题，然后在其字节偏移处解压一个小块。显示的文本是转储日期时的原始维基文本（未渲染）——是快照，而非在线条目。",
+  "No readable dump yet — download a multistream dump above; its index rides along automatically.": "尚无可读取的转储——请在上方下载 multistream 转储；其索引会自动一并下载。",
+  "Enter a page title.": "请输入页面标题。",
+  "This title is not in the dump's index.": "该标题不在转储索引中。",
+  "index lines scanned": "已扫描索引行",
+  "No readable dump for this edition: the multistream file or its index is missing.": "该语言版本没有可读取的转储：缺少 multistream 文件或其索引。",
+  "An older single-stream file exists but cannot be random-accessed — re-download to enable reading.": "存在较旧的单流文件，但无法随机访问——请重新下载以启用读取。",
+  "Found via case-insensitive match.": "通过不区分大小写的匹配找到。",
+  "dump revision of": "转储修订日期",
+  "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "原始维基文本（未渲染），从您下载的转储中本地提取——无任何网络调用。",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "列表仅限于应用支持的语言——本应用能够读取和分析的语言版本。按大洲分组；"
 }

@@ -499,5 +499,22 @@
   "article": "статья",
   "matches in total": "совпадений всего",
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Здесь работают булевы операторы: AND, OR, NOT, «фразы в кавычках».",
-  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, «фразы в кавычках» и (скобки) уточняют поиск статей. Всё ищется только на этой машине — ввод здесь никогда не обращается к сети."
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, «фразы в кавычках» и (скобки) уточняют поиск статей. Всё ищется только на этой машине — ввод здесь никогда не обращается к сети.",
+  "Read a page from a downloaded dump": "Прочитать страницу из загруженного дампа",
+  "Edition": "Издание",
+  "Page title": "Название страницы",
+  "Exact page title (a case-insensitive match is offered and labelled)…": "Точное название страницы (совпадение без учёта регистра предлагается и помечается)…",
+  "Read locally": "Прочитать локально",
+  "Editions with a complete multistream dump + index on disk": "Издания с полным multistream-дампом и индексом на диске",
+  "Reading happens entirely on this machine: the dump's index is scanned for the title, then one small block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.": "Чтение происходит целиком на этой машине: индекс дампа просматривается в поисках названия, затем один небольшой блок распаковывается по его байтовому смещению. Показанный текст — необработанный викитекст (без рендеринга) на дату дампа: снимок, а не живая статья.",
+  "No readable dump yet — download a multistream dump above; its index rides along automatically.": "Читаемого дампа пока нет — загрузите multistream-дамп выше; его индекс загрузится автоматически.",
+  "Enter a page title.": "Введите название страницы.",
+  "This title is not in the dump's index.": "Этого названия нет в индексе дампа.",
+  "index lines scanned": "строк индекса просмотрено",
+  "No readable dump for this edition: the multistream file or its index is missing.": "Для этого издания нет читаемого дампа: отсутствует multistream-файл или его индекс.",
+  "An older single-stream file exists but cannot be random-accessed — re-download to enable reading.": "Существует старый однопоточный файл, но прямой доступ к нему невозможен — загрузите заново, чтобы включить чтение.",
+  "Found via case-insensitive match.": "Найдено по совпадению без учёта регистра.",
+  "dump revision of": "ревизия дампа от",
+  "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "Необработанный викитекст (без рендеринга), извлечённый локально из вашего дампа — без сетевых запросов.",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "Список ограничен языками приложения — изданиями, которые оно может читать и анализировать. Сгруппирован по континентам;"
 }

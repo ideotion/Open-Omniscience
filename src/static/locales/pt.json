@@ -499,5 +499,22 @@
   "article": "artigo",
   "matches in total": "correspondências no total",
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Os operadores booleanos funcionam aqui: AND, OR, NOT, “frases entre aspas”.",
-  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “frases entre aspas” e (parênteses) refinam a pesquisa de artigos. Tudo é pesquisado apenas nesta máquina — digitar aqui nunca toca a rede."
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “frases entre aspas” e (parênteses) refinam a pesquisa de artigos. Tudo é pesquisado apenas nesta máquina — digitar aqui nunca toca a rede.",
+  "Read a page from a downloaded dump": "Ler uma página de um dump transferido",
+  "Edition": "Edição",
+  "Page title": "Título da página",
+  "Exact page title (a case-insensitive match is offered and labelled)…": "Título exato da página (uma correspondência sem distinção de maiúsculas é oferecida e assinalada)…",
+  "Read locally": "Ler localmente",
+  "Editions with a complete multistream dump + index on disk": "Edições com dump multistream completo + índice no disco",
+  "Reading happens entirely on this machine: the dump's index is scanned for the title, then one small block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.": "A leitura acontece inteiramente nesta máquina: o índice do dump é percorrido à procura do título e depois um pequeno bloco é descomprimido no seu offset de bytes. O texto mostrado é wikitexto bruto (não renderizado) à data do dump — um instantâneo, não o artigo ao vivo.",
+  "No readable dump yet — download a multistream dump above; its index rides along automatically.": "Ainda não há dump legível — transfira acima um dump multistream; o seu índice acompanha automaticamente.",
+  "Enter a page title.": "Introduza um título de página.",
+  "This title is not in the dump's index.": "Este título não está no índice do dump.",
+  "index lines scanned": "linhas de índice percorridas",
+  "No readable dump for this edition: the multistream file or its index is missing.": "Nenhum dump legível para esta edição: falta o ficheiro multistream ou o seu índice.",
+  "An older single-stream file exists but cannot be random-accessed — re-download to enable reading.": "Existe um ficheiro antigo de fluxo único mas não permite acesso direto — volte a transferir para permitir a leitura.",
+  "Found via case-insensitive match.": "Encontrado por correspondência sem distinção de maiúsculas.",
+  "dump revision of": "revisão do dump de",
+  "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "Wikitexto bruto (não renderizado), extraído localmente do seu dump transferido — nenhuma chamada de rede.",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "A lista limita-se aos idiomas da aplicação — as edições que esta aplicação consegue ler e analisar. Agrupada por continente;"
 }

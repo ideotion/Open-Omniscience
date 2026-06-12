@@ -499,5 +499,22 @@
   "article": "artículo",
   "matches in total": "coincidencias en total",
   "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Los operadores booleanos funcionan aquí: AND, OR, NOT, «frases entre comillas».",
-  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, «frases entre comillas» y (paréntesis) refinan la búsqueda de artículos. Todo se busca solo en esta máquina — escribir aquí nunca toca la red."
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, «frases entre comillas» y (paréntesis) refinan la búsqueda de artículos. Todo se busca solo en esta máquina — escribir aquí nunca toca la red.",
+  "Read a page from a downloaded dump": "Leer una página de un volcado descargado",
+  "Edition": "Edición",
+  "Page title": "Título de la página",
+  "Exact page title (a case-insensitive match is offered and labelled)…": "Título exacto de la página (se ofrece y se señala una coincidencia sin distinguir mayúsculas)…",
+  "Read locally": "Leer localmente",
+  "Editions with a complete multistream dump + index on disk": "Ediciones con un volcado multistream completo + índice en disco",
+  "Reading happens entirely on this machine: the dump's index is scanned for the title, then one small block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.": "La lectura ocurre íntegramente en esta máquina: se recorre el índice del volcado buscando el título y luego se descomprime un pequeño bloque en su desplazamiento de bytes. El texto mostrado es wikitexto en bruto (sin renderizar) a la fecha del volcado — una instantánea, no el artículo en vivo.",
+  "No readable dump yet — download a multistream dump above; its index rides along automatically.": "Aún no hay volcado legible — descargue arriba un volcado multistream; su índice se descarga automáticamente.",
+  "Enter a page title.": "Introduzca un título de página.",
+  "This title is not in the dump's index.": "Este título no está en el índice del volcado.",
+  "index lines scanned": "líneas de índice recorridas",
+  "No readable dump for this edition: the multistream file or its index is missing.": "No hay volcado legible para esta edición: falta el archivo multistream o su índice.",
+  "An older single-stream file exists but cannot be random-accessed — re-download to enable reading.": "Existe un archivo antiguo de flujo único pero no permite acceso aleatorio — vuelva a descargarlo para poder leer.",
+  "Found via case-insensitive match.": "Encontrado mediante coincidencia sin distinguir mayúsculas.",
+  "dump revision of": "revisión del volcado del",
+  "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "Wikitexto en bruto (sin renderizar), extraído localmente de su volcado descargado — sin llamadas de red.",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "La lista se limita a los idiomas de la aplicación — las ediciones que esta aplicación puede leer y analizar. Agrupada por continente;"
 }

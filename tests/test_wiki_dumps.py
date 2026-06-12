@@ -13,9 +13,18 @@ from src.wiki.dumps import DumpDownloadManager, dump_url
 
 
 def test_dump_url():
+    # Multistream is the DEFAULT since T14 (its index makes dumps readable);
+    # the legacy single-stream kind still builds, and the index is .txt.bz2.
     assert (
         dump_url("en")
+        == "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles-multistream.xml.bz2"
+    )
+    assert (
+        dump_url("en", "pages-articles")
         == "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2"
+    )
+    assert dump_url("en", "pages-articles-multistream-index").endswith(
+        "enwiki-latest-pages-articles-multistream-index.txt.bz2"
     )
     assert "frwiki" in dump_url("FR")
 
