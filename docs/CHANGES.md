@@ -119,6 +119,17 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   the markets symbol chart and the Insights keyword trend; UI invariant #16
   enforces the rules. +4 chrome strings ×12.
 
+- **The universal "hover for information" convention.** One consistent,
+  theme-aware affordance across the whole UI: anything carrying layered
+  information shows a **dotted accent underline** (text) or a **tiny accent
+  corner dot** (buttons, pills, icons), and opens one shared styled bubble on
+  hover, **keyboard focus, or touch long-press** — capabilities the native
+  tooltip never had. Marking is automatic (driven by the translated `title`
+  mechanism + a MutationObserver), so new surfaces inherit it and it cannot
+  be forgotten; the bubble re-reads the live translated text, so all 12
+  languages work by construction. One delegated listener and pure CSS —
+  no per-element handlers, no animation loops. UI invariant #17 enforces it.
+
 - **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled

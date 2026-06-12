@@ -539,6 +539,31 @@
     }
     @media (max-width:560px) { .omni span.ph { display:none; } }
     @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
+    /* ===== THE universal hover-for-information convention (ruled 2026-06-12,
+       "informed consent" instrument): every element carrying layered info —
+       anything with a translated title — is marked AUTOMATICALLY with a
+       dotted accent underline (text) or a tiny accent corner dot (blocks),
+       and opens ONE shared styled bubble on hover/focus/long-press. CSS-only
+       affordance + one delegated listener: zero per-element cost. */
+    .oo-tip-target { text-decoration-line: underline; text-decoration-style: dotted;
+      text-decoration-color: color-mix(in srgb, var(--accent) 65%, transparent);
+      text-underline-offset: 3px; text-decoration-thickness: 1px; cursor: help; }
+    .oo-tip-target:hover, .oo-tip-target:focus-visible {
+      text-decoration-color: var(--accent); }
+    button.oo-tip-target, .pill.oo-tip-target, svg.oo-tip-target, input.oo-tip-target,
+    select.oo-tip-target, a.oo-tip-target, .icon-btn.oo-tip-target, summary.oo-tip-target {
+      text-decoration: none; position: relative; }
+    button.oo-tip-target::after, .pill.oo-tip-target::after, .icon-btn.oo-tip-target::after,
+    summary.oo-tip-target::after {
+      content: ""; position: absolute; top: 3px; inset-inline-end: 3px; width: 4px; height: 4px;
+      border-radius: 50%; background: var(--accent); opacity: .55; pointer-events: none; }
+    button.oo-tip-target:hover::after, .icon-btn.oo-tip-target:hover::after { opacity: 1; }
+    #oo-tip { position: fixed; z-index: 400; max-width: 330px; background: var(--panel);
+      color: var(--fg); border: 1px solid var(--line); border-inline-start: 3px solid var(--accent);
+      border-radius: 9px; padding: 8px 11px; font-size: 12.5px; line-height: 1.45;
+      box-shadow: 0 8px 24px rgba(0,0,0,.30); pointer-events: none; opacity: 0;
+      transition: opacity .12s ease; }
+    #oo-tip.show { opacity: 1; }
   </style>
 </head>
 <body>
@@ -6506,6 +6531,55 @@
     // -- External-link guard (maintainer ruling 2026-06-10): the app ALWAYS --- //
     // asks before opening an external link. Capture-phase + delegated, so it
     // covers every anchor — static or rendered later. Loopback links are exempt.
+    // ---- the hover-for-information enhancer (one delegated listener; the ----
+    // bubble re-reads the live translated title, so language switches apply.
+    (function ooTipInit() {
+      const tip = document.createElement("div"); tip.id = "oo-tip";
+      tip.setAttribute("role", "tooltip"); document.body.appendChild(tip);
+      const mark = (root) => {
+        (root.querySelectorAll ? root.querySelectorAll("[title]") : []).forEach((el) => {
+          if ((el.getAttribute("title") || "").trim()) el.classList.add("oo-tip-target");
+        });
+      };
+      mark(document);
+      new MutationObserver((muts) => muts.forEach((m) => m.addedNodes.forEach((n) => {
+        if (n.nodeType === 1) { if (n.hasAttribute && n.hasAttribute("title")) mark({querySelectorAll: () => [n]}); mark(n); }
+      }))).observe(document.body, {childList: true, subtree: true});
+      let cur = null, hideT = null;
+      function show(el, x, y) {
+        const text = el.getAttribute("title") || el.dataset.ooTip || "";
+        if (!text.trim()) return;
+        el.dataset.ooTip = text; el.removeAttribute("title");  // suppress the native double bubble
+        cur = el; tip.textContent = text;
+        tip.style.left = Math.min(x + 12, window.innerWidth - 346) + "px";
+        tip.style.top = Math.min(y + 14, window.innerHeight - tip.offsetHeight - 12) + "px";
+        tip.classList.add("show");
+      }
+      function hide() {
+        if (cur && cur.dataset.ooTip != null) { cur.setAttribute("title", cur.dataset.ooTip); }
+        cur = null; tip.classList.remove("show");
+      }
+      document.addEventListener("mouseover", (e) => {
+        const el = e.target.closest && e.target.closest(".oo-tip-target");
+        clearTimeout(hideT);
+        if (el && el !== cur) { hide(); show(el, e.clientX, e.clientY); }
+        else if (!el) hideT = setTimeout(hide, 80);
+      }, true);
+      document.addEventListener("focusin", (e) => {
+        const el = e.target.closest && e.target.closest(".oo-tip-target");
+        if (el) { const r = el.getBoundingClientRect(); hide(); show(el, r.left, r.bottom); }
+      }, true);
+      document.addEventListener("focusout", () => hide(), true);
+      let pressT = null;  // touch: long-press opens the same bubble (title never did)
+      document.addEventListener("touchstart", (e) => {
+        const el = e.target.closest && e.target.closest(".oo-tip-target");
+        if (!el) { hide(); return; }
+        const t = e.touches[0];
+        pressT = setTimeout(() => show(el, t.clientX, t.clientY), 450);
+      }, {passive: true});
+      document.addEventListener("touchend", () => { clearTimeout(pressT); hideT = setTimeout(hide, 2600); }, {passive: true});
+    })();
+
     document.addEventListener("click", function _externalLinkGuard(e) {
       const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
       if (!a || !/^https?:/i.test(a.href)) return;

@@ -297,3 +297,13 @@ def test_ui_invariants():
     )
     for surface in ('ooChart($("mkt-chart-oo")', 'ooChart($("ins-trend-oo")'):
         assert surface in html, f"chart surface must use THE toolkit: {surface}"
+    # 17. the universal hover-for-information convention (ruled 2026-06-12,
+    #     the informed-consent instrument): every titled element is marked
+    #     automatically (dotted accent underline / corner dot) and opens ONE
+    #     shared bubble; touch gets long-press; one delegated listener only.
+    assert ".oo-tip-target" in html and 'tip.id = "oo-tip"' in html, (
+        "the hover-affordance theme must exist (CLAUDE.md #17)"
+    )
+    assert "ooTipInit" in html and "touchstart" in html, (
+        "the enhancer must be universal (auto-mark + touch long-press)"
+    )

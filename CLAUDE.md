@@ -113,6 +113,16 @@ ruling, a contingency, or a deliberate-omission note.
    Wired: markets symbol chart + insights trend (slice 1); commodity CARDS
    keep the static detailed SVG (tiny multiples; interactivity there is the
    enlarge path, later slice). Enforced in test_ui_invariants (#16).
+17. **The universal hover-for-information convention (ruled 2026-06-12; the
+   informed-consent instrument, SHIPPED same day):** every element carrying
+   layered info (= anything with a translated `title`) is marked
+   AUTOMATICALLY — dotted accent underline on text, tiny accent corner dot
+   on buttons/pills/icons — and opens ONE shared styled bubble (`#oo-tip`)
+   on hover, keyboard focus, or touch long-press. The bubble re-reads the
+   live translated title, so it is ×12 by construction. One delegated
+   listener + CSS only (no per-element handlers, no animation loops); a
+   MutationObserver marks future surfaces, so the convention cannot be
+   forgotten. Enforced in test_ui_invariants (#17).
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First
