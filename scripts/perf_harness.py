@@ -35,7 +35,7 @@ import random
 import sys
 import tempfile
 import time
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 # Bind all on-disk artifacts to a throwaway dir BEFORE importing src.* (the
@@ -45,17 +45,10 @@ os.environ["OO_DATA_DIR"] = _TMP
 os.environ.setdefault("OO_NO_SCHEDULER", "1")
 os.environ.setdefault("OO_FIELD_TEST", "0")
 
-LANGS = "en fr de es it pt ru ar zh ja sv nl pl tr fa uk".split()  # 16 catalog languages
-COUNTRIES = (
-    "us fr de es it br ru eg cn jp se nl pl tr ir ua gb in ke ng za mx ca au ar"
-).split()
+LANGS = ["en", "fr", "de", "es", "it", "pt", "ru", "ar", "zh", "ja", "sv", "nl", "pl", "tr", "fa", "uk"]  # 16 catalog languages
+COUNTRIES = ["us", "fr", "de", "es", "it", "br", "ru", "eg", "cn", "jp", "se", "nl", "pl", "tr", "ir", "ua", "gb", "in", "ke", "ng", "za", "mx", "ca", "au", "ar"]
 
-WORDS = (
-    "market crisis election protest court ruling climate energy bank merger "
-    "drought flood treaty sanction summit verdict inflation strike vote reform "
-    "border refugee scandal probe leak audit budget tariff oil metal harvest "
-    "minister parliament senate currency pipeline embargo ceasefire mandate"
-).split()
+WORDS = ["market", "crisis", "election", "protest", "court", "ruling", "climate", "energy", "bank", "merger", "drought", "flood", "treaty", "sanction", "summit", "verdict", "inflation", "strike", "vote", "reform", "border", "refugee", "scandal", "probe", "leak", "audit", "budget", "tariff", "oil", "metal", "harvest", "minister", "parliament", "senate", "currency", "pipeline", "embargo", "ceasefire", "mandate"]
 
 
 def log(msg: str) -> None:
@@ -75,7 +68,6 @@ def build_corpus(n_articles: int, n_keywords: int, body_kb: int = 35) -> dict:
     rng = random.Random(42)
 
     n_sources = max(40, min(400, n_articles // 16))
-    today = date(2026, 6, 12)
 
     with engine.begin() as conn:
         # Sources spread over countries/languages (coverage endpoints need this).

@@ -18,19 +18,20 @@ Honesty constraints (FUTURE_DEVELOPMENTS design):
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from src.analytics import queries as q
 from src.analytics.families import build_families
+from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.models import (
     Article,
     Keyword,
-    KeywordMention,
     KeywordSuperGroup,
     Source,
 )
@@ -48,133 +49,211 @@ router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
 _MAX_KEYWORDS_PER_LANG = 5000
 
 
+def _in_batches(ids: list[int], size: int = 800):
+    for i in range(0, len(ids), size):
+        yield ids[i : i + size]
+
+
 @router.get("/keywords")
-def keyword_log(db: Session = Depends(get_db)) -> JSONResponse:
+def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
     """The keyword diagnostics log: every gathered keyword (bounded, mentions-desc)
     with its counts, plus the computed families, the user's merge/split overrides
-    and the super-groups — exactly the structures the grouping logic works on."""
-    rows = (
-        db.query(
-            Keyword,
-            func.coalesce(func.sum(KeywordMention.count), 0).label("mentions"),
-            func.count(func.distinct(KeywordMention.article_id)).label("articles"),
-            func.min(KeywordMention.observed_on).label("first_seen"),
-            func.max(KeywordMention.observed_on).label("last_seen"),
-        )
-        .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-        .group_by(Keyword.id)
-        .order_by(func.coalesce(func.sum(KeywordMention.count), 0).desc())
-        .all()
-    )
+    and the super-groups — exactly the structures the grouping logic works on.
 
-    # Language signatures (maintainer-ruled 2026-06-10, the hand/main idea):
-    # per keyword, HOW MANY DISTINCT ARTICLES mention it per article language.
-    # This is the disambiguation evidence for trans-language grouping — "main"
-    # mentioned mostly in fr-articles is the French word (= hand), not the
-    # English adjective or the German river. Real counts, never a dictionary guess.
-    lang_rows = (
-        db.query(
-            KeywordMention.keyword_id,
-            Article.language,
-            func.count(func.distinct(KeywordMention.article_id)),
-        )
-        .join(Article, Article.id == KeywordMention.article_id)
-        .group_by(KeywordMention.keyword_id, Article.language)
-        .all()
-    )
-    lang_sig: dict[int, dict[str, int]] = {}
-    for kid, lang, n in lang_rows:
-        lang_sig.setdefault(kid, {})[lang or "?"] = int(n)
+    Performance batch 2026-06-12 (failed live at 228k keywords): the per-language
+    cap now bounds the WORK, not just the output — totals scan the covering
+    index as plain tuples, the dominant language is computed in SQL, and the
+    full language signatures / keyword metadata are fetched only for the
+    keywords that survive the quota. The body is STREAMED, so memory stays
+    bounded and the download starts immediately. Same envelope, same fields,
+    same cap semantics as before (contract-tested).
+    """
+    try:
+        with statement_deadline(db):
+            # Article -> language, ONCE, via the covering index (verified plan:
+            # idx_article_country_language) — joining mentions to articles in
+            # SQL would drag article rows through the SQLCipher codec for every
+            # batch (measured 26 s of the 32 s encrypted-profile wall time).
+            art_lang: dict[int, str] = {
+                aid: (lang or "?")
+                for aid, lang in db.execute(text("SELECT id, language FROM articles"))
+            }
 
-    # Per-language quota (rows are mentions-ordered, so each language keeps its
-    # own top-5000). Dominant language = the signature's argmax, else the
-    # keyword's stored language, else "?".
-    per_lang_taken: dict[str, int] = {}
-    capped_langs: set[str] = set()
-    quota_rows = []
-    for row in rows:
-        k = row[0]
-        sig = lang_sig.get(k.id, {})
-        dom = max(sig, key=lambda lang: sig[lang]) if sig else (k.language or "?")
-        taken = per_lang_taken.get(dom, 0)
-        if taken >= _MAX_KEYWORDS_PER_LANG:
-            capped_langs.add(dom)
-            continue
-        per_lang_taken[dom] = taken + 1
-        quota_rows.append(row)
-    rows = quota_rows
+            # Dominant signature language per keyword from ONE index-only scan
+            # of (keyword_id, article_id), ordered so each keyword's counts can
+            # be reduced and freed as the scan passes it. Ties: language asc
+            # (matching the previous argmax over language-asc grouped rows).
+            dom_lang: dict[int, str] = {}
+            _cur_kid: int | None = None
+            _counts: dict[str, int] = {}
+
+            def _finalize(kid: int | None, counts: dict[str, int]) -> None:
+                if kid is not None and counts:
+                    dom_lang[kid] = min(counts, key=lambda lg: (-counts[lg], lg))
+
+            for kid, aid in db.execute(
+                text("SELECT keyword_id, article_id FROM keyword_mentions ORDER BY keyword_id")
+            ):
+                if kid != _cur_kid:
+                    _finalize(_cur_kid, _counts)
+                    _cur_kid, _counts = kid, {}
+                lg = art_lang.get(aid, "?")
+                _counts[lg] = _counts.get(lg, 0) + 1
+            _finalize(_cur_kid, _counts)
+
+            # Stored-language fallback for keywords with no mentions (kept from
+            # the previous contract: they export with zero counts, quota applies).
+            stored_lang: dict[int, str | None] = dict(
+                db.execute(text("SELECT id, language FROM keywords")).fetchall()
+            )
+
+            # Totals, mentions-desc — an index-only scan of ix_mention_covering,
+            # iterated as tuples; the quota decides survivors ON THE FLY, so the
+            # 228k-keyword aggregation never materialises as ORM objects.
+            per_lang_taken: dict[str, int] = {}
+            capped_langs: set[str] = set()
+            survivors: list[tuple[int, int, int, str | None, str | None]] = []
+            seen: set[int] = set()
+            totals_sql = text(
+                "SELECT keyword_id, COALESCE(SUM(count), 0) AS m,"
+                " COUNT(DISTINCT article_id) AS a,"
+                " MIN(observed_on) AS first_seen, MAX(observed_on) AS last_seen"
+                " FROM keyword_mentions GROUP BY keyword_id"
+                " ORDER BY m DESC, keyword_id ASC"
+            )
+            for kid, m, a, first, last in db.execute(totals_sql):
+                seen.add(kid)
+                dom = dom_lang.get(kid) or stored_lang.get(kid) or "?"
+                taken = per_lang_taken.get(dom, 0)
+                if taken >= _MAX_KEYWORDS_PER_LANG:
+                    capped_langs.add(dom)
+                    continue
+                per_lang_taken[dom] = taken + 1
+                survivors.append((kid, int(m), int(a), first, last))
+            for kid in sorted(set(stored_lang) - seen):  # zero-mention keywords
+                dom = stored_lang.get(kid) or "?"
+                taken = per_lang_taken.get(dom, 0)
+                if taken >= _MAX_KEYWORDS_PER_LANG:
+                    capped_langs.add(dom)
+                    continue
+                per_lang_taken[dom] = taken + 1
+                survivors.append((kid, 0, 0, None, None))
+
+            survivor_ids = [s[0] for s in survivors]
+            # Metadata + full language signatures for SURVIVORS only.
+            meta: dict[int, tuple] = {}
+            lang_sig: dict[int, dict[str, int]] = {}
+            for batch in _in_batches(survivor_ids):
+                marks = ",".join(str(int(i)) for i in batch)
+                for kid, term, norm, lang, is_ent, ent_type in db.execute(
+                    text(
+                        "SELECT id, term, normalized_term, language, is_entity,"
+                        f" entity_type FROM keywords WHERE id IN ({marks})"
+                    )
+                ):
+                    meta[kid] = (term, norm, lang, bool(is_ent), ent_type)
+                # Full signatures via index-only probes + the art_lang map —
+                # mention rows are unique per (keyword, article), so each row
+                # contributes exactly one distinct article to its language.
+                for kid, aid in db.execute(
+                    text(
+                        "SELECT keyword_id, article_id FROM keyword_mentions"
+                        f" WHERE keyword_id IN ({marks})"
+                    )
+                ):
+                    sig = lang_sig.setdefault(kid, {})
+                    lg = art_lang.get(aid, "?")
+                    sig[lg] = sig.get(lg, 0) + 1
+
+            corpus = {
+                "articles": int(db.query(func.count(Article.id)).scalar() or 0),
+                "sources": int(db.query(func.count(Source.id)).scalar() or 0),
+                "keywords_total": len(stored_lang),
+                "keywords_exported": len(survivors),
+                "exported_per_language": per_lang_taken,
+                "capped_languages": sorted(capped_langs),
+            }
+            overrides = q.load_overrides(db)
+            supergroups = [
+                {
+                    "name": sg.name,
+                    "members": sorted(m.normalized_term for m in sg.members),
+                }
+                for sg in db.query(KeywordSuperGroup).order_by(KeywordSuperGroup.name).all()
+            ]
+    except StatementTimeout as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     # The stoplist verdict is part of the diagnosis: leaked function words the
     # operator hid are exactly what grouping fixes need to see — flag, not omit.
     is_hidden = q._hidden_predicate()
-    keywords = [
-        {
-            "term": k.term,
-            "normalized": k.normalized_term,
-            "kind": q.kind_of(k),
-            "language": k.language,
-            "mentions": int(m),
-            "articles": int(a),
-            "first_seen": first.isoformat() if first else None,
-            "last_seen": last.isoformat() if last else None,
-            "hidden": bool(is_hidden(k.normalized_term)),
-            "language_signature": lang_sig.get(k.id, {}),
-        }
-        for k, m, a, first, last in rows
-    ]
 
-    overrides = q.load_overrides(db)
-    fam_items = [
-        {
-            "term": kw["term"],
-            "normalized": kw["normalized"],
-            "kind": kw["kind"],
-            "mentions": kw["mentions"],
-            "articles": kw["articles"],
+    def _entry(s: tuple) -> dict:
+        kid, m, a, first, last = s
+        term, norm, lang, is_ent, ent_type = meta.get(kid, ("?", "?", None, False, None))
+        return {
+            "term": term,
+            "normalized": norm,
+            "kind": (ent_type or "entity") if is_ent else "term",
+            "language": lang,
+            "mentions": m,
+            "articles": a,
+            "first_seen": str(first) if first else None,
+            "last_seen": str(last) if last else None,
+            "hidden": bool(is_hidden(norm)),
+            "language_signature": lang_sig.get(kid, {}),
         }
-        for kw in keywords
-        if not kw["hidden"]
-    ]
+
+    fam_items = []
+    for s in survivors:
+        kw = _entry(s)
+        if not kw["hidden"]:
+            fam_items.append(
+                {
+                    "term": kw["term"],
+                    "normalized": kw["normalized"],
+                    "kind": kw["kind"],
+                    "mentions": kw["mentions"],
+                    "articles": kw["articles"],
+                }
+            )
     families = [f.to_dict() for f in build_families(fam_items, overrides)]
 
-    supergroups = [
-        {
-            "name": sg.name,
-            "members": sorted(m.normalized_term for m in sg.members),
-        }
-        for sg in db.query(KeywordSuperGroup).order_by(KeywordSuperGroup.name).all()
-    ]
-
-    payload = {
-        "corpus": {
-            "articles": int(db.query(func.count(Article.id)).scalar() or 0),
-            "sources": int(db.query(func.count(Source.id)).scalar() or 0),
-            "keywords_total": int(db.query(func.count(Keyword.id)).scalar() or 0),
-            "keywords_exported": len(keywords),
-            "exported_per_language": per_lang_taken,
-            "capped_languages": sorted(capped_langs),
-        },
-        "method": (
-            f"All gathered keywords (top {_MAX_KEYWORDS_PER_LANG} PER dominant signature "
-            "language — a global cap would anglicise the export) with real "
-            "counts; language_signature = distinct articles per ARTICLE language "
-            "(the trans-language disambiguation evidence); families computed by the "
-            "live grouping logic incl. the user's merge/split overrides; super-groups "
-            "as curated. No scores, no inference."
-        ),
-        "keywords": keywords,
-        "families": families,
-        "overrides": [
-            {"normalized_term": term, **data} for term, data in sorted(overrides.items())
-        ],
-        "supergroups": supergroups,
-    }
-    body = envelope(
-        kind="keyword-diagnostics", query={}, count=len(keywords), payload=payload
+    method = (
+        f"All gathered keywords (top {_MAX_KEYWORDS_PER_LANG} PER dominant signature "
+        "language — a global cap would anglicise the export) with real "
+        "counts; language_signature = distinct articles per ARTICLE language "
+        "(the trans-language disambiguation evidence); families computed by the "
+        "live grouping logic incl. the user's merge/split overrides; super-groups "
+        "as curated. No scores, no inference."
     )
+
+    def _stream():
+        head = envelope(
+            kind="keyword-diagnostics", query={}, count=len(survivors), payload=None
+        )
+        del head["data"]
+        yield json.dumps(head, separators=(",", ":"))[:-1] + ', "data": {'
+        yield '"corpus": ' + json.dumps(corpus, separators=(",", ":"))
+        yield ', "method": ' + json.dumps(method, separators=(",", ":"))
+        yield ', "keywords": ['
+        for i in range(0, len(survivors), 1000):
+            chunk = survivors[i : i + 1000]
+            prefix = "" if i == 0 else ","
+            yield prefix + ",".join(json.dumps(_entry(s), separators=(",", ":")) for s in chunk)
+        yield '], "families": ' + json.dumps(families, separators=(",", ":"))
+        yield ', "overrides": ' + json.dumps(
+            [{"normalized_term": term, **data} for term, data in sorted(overrides.items())],
+            separators=(",", ":"),
+        )
+        yield ', "supergroups": ' + json.dumps(supergroups, separators=(",", ":"))
+        yield "}}"
+
     fname = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d')}.json"
-    return JSONResponse(
-        body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    return StreamingResponse(
+        _stream(),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
 
 

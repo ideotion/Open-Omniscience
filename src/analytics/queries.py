@@ -478,9 +478,24 @@ def map_data(
     """Top keywords per country and per city (from denormalised mention facets)."""
     is_hidden = _hidden_predicate()
 
+    def _kind_cols(is_entity, entity_type) -> str:
+        # kind_of() over plain columns: the map aggregates thousands of
+        # (area, keyword) groups, and materialising full ORM entities for each
+        # measurably dominates the endpoint at corpus scale (perf batch).
+        if not is_entity:
+            return "term"
+        return entity_type or "entity"
+
     def _agg(area_col):
         q = (
-            session.query(area_col, Keyword, func.sum(KeywordMention.count).label("m"))
+            session.query(
+                area_col,
+                Keyword.term,
+                Keyword.normalized_term,
+                Keyword.is_entity,
+                Keyword.entity_type,
+                func.sum(KeywordMention.count).label("m"),
+            )
             .join(Keyword, Keyword.id == KeywordMention.keyword_id)
             .filter(area_col.isnot(None))
         )
@@ -491,12 +506,14 @@ def map_data(
             q.group_by(area_col, Keyword.id).order_by(func.sum(KeywordMention.count).desc()).all()
         )
         areas: dict[str, list] = {}
-        for area, kw, m in rows:
-            if is_hidden(kw.normalized_term):
+        for area, term, norm, is_ent, ent_type, m in rows:
+            if is_hidden(norm):
                 continue
             lst = areas.setdefault(area, [])
             if len(lst) < top_per_area and int(m) >= min_mentions:
-                lst.append({"term": kw.term, "kind": kind_of(kw), "mentions": int(m)})
+                lst.append(
+                    {"term": term, "kind": _kind_cols(is_ent, ent_type), "mentions": int(m)}
+                )
         return areas
 
     def _agg_cities():
@@ -504,7 +521,10 @@ def map_data(
             session.query(
                 KeywordMention.city,
                 KeywordMention.country,
-                Keyword,
+                Keyword.term,
+                Keyword.normalized_term,
+                Keyword.is_entity,
+                Keyword.entity_type,
                 func.sum(KeywordMention.count).label("m"),
             )
             .join(Keyword, Keyword.id == KeywordMention.keyword_id)
@@ -519,12 +539,14 @@ def map_data(
             .all()
         )
         out: dict[tuple, dict] = {}
-        for city, country, kw, m in rows:
-            if is_hidden(kw.normalized_term):
+        for city, country, term, norm, is_ent, ent_type, m in rows:
+            if is_hidden(norm):
                 continue
             slot = out.setdefault((city, country), {"name": city, "country": country, "top": []})
             if len(slot["top"]) < top_per_area and int(m) >= min_mentions:
-                slot["top"].append({"term": kw.term, "kind": kind_of(kw), "mentions": int(m)})
+                slot["top"].append(
+                    {"term": term, "kind": _kind_cols(is_ent, ent_type), "mentions": int(m)}
+                )
         return list(out.values())
 
     countries = _agg(KeywordMention.country)

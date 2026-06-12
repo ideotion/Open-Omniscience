@@ -1348,6 +1348,13 @@ class KeywordMention(Base):
         Index("ix_mention_keyword_date", "keyword_id", "observed_on"),
         Index("ix_mention_country", "country"),
         Index("ix_mention_article", "article_id"),
+        # Covering index for the corpus-wide keyword aggregations (diagnostics
+        # export, insights rankings): SUM(count)/COUNT(DISTINCT article_id)/
+        # MIN-MAX(observed_on) GROUP BY keyword_id become index-only scans —
+        # without it every mention row costs a table page read (a decrypt
+        # each, under SQLCipher). Also in maintenance.HOT_INDEXES (boot
+        # self-heal) and migration e2f3a4b5c6d7.
+        Index("ix_mention_covering", "keyword_id", "article_id", "count", "observed_on"),
     )
 
     def __repr__(self) -> str:

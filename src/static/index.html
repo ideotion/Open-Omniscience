@@ -1787,6 +1787,17 @@
       <div id="enc-restore-result" class="hint"></div>
 
       <hr>
+      <h3 style="margin-bottom:6px">Database maintenance</h3>
+      <p class="muted" style="margin-top:0">Compacting rebuilds the database file: it reclaims the
+        space deletions leave behind and defragments the indexes. It takes time proportional to the
+        file size and pauses collection writes while it runs — nothing is interpreted or removed.</p>
+      <div class="row">
+        <div style="flex:2"><span class="muted">Reclaimable space:</span> <b id="vacuum-reclaim">—</b></div>
+        <div style="flex:0 0 auto"><button class="secondary" id="vacuum-btn" onclick="vacuumNow()">Compact database (VACUUM)</button></div>
+      </div>
+      <div id="vacuum-result" class="hint"></div>
+
+      <hr>
       <h3 style="margin-bottom:6px">Network fetch mode</h3>
       <p class="muted" style="margin-top:0" id="fetch-note">Transparent mode names this tool in the
         User-Agent (polite, but identifiable). Protected mode sends a generic User-Agent and routes
@@ -3221,6 +3232,8 @@
           : `Backend <span class="pill warn">${esc(st.backend)}</span> — file backup/restore is SQLite-only; use the backend's native dump tool.`;
         document.querySelectorAll("#backup-panel .danger, #backup-panel button.secondary")
           .forEach(b => { b.disabled = !st.backup_supported; });
+        $("vacuum-reclaim").textContent =
+          (st.reclaimable_bytes == null) ? "—" : _fmtBytes(st.reclaimable_bytes);
       } catch (e) { $("backup-status").textContent = "Backup status unavailable: " + e.message; }
       loadKeywordFilter();
       loadDumpLanguages();
@@ -3313,6 +3326,21 @@
         setTheme({dark:"ink", light:"light", system:"system"}[$("set-theme").value] || "ink");
         toast("Preferences saved.");
       } catch (e) { toast("Save failed: " + e.message, "err"); }
+    }
+
+    async function vacuumNow() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const btn = $("vacuum-btn"), out = $("vacuum-result");
+      btn.disabled = true; out.textContent = t("Compacting… this can take a while on a large corpus.");
+      try {
+        const r = await api("/api/database/vacuum", {method: "POST"});
+        const freed = (r.bytes_reclaimed == null) ? "—" : _fmtBytes(r.bytes_reclaimed);
+        out.textContent = t("Compacted.") + " " + t("Space freed:") + " " + freed +
+          " · " + ((r.duration_ms / 1000).toFixed(1)) + " s";
+        $("vacuum-reclaim").textContent = _fmtBytes(0);
+      } catch (e) {
+        out.textContent = t("Compaction failed:") + " " + e.message;
+      } finally { btn.disabled = false; }
     }
 
     function downloadBackup() {

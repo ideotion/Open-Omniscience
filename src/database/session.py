@@ -96,6 +96,12 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         # under SQLCipher, where every page re-read costs a decrypt.
         cursor.execute("PRAGMA cache_size=-65536")  # negative = KiB => 64 MiB
         cursor.execute("PRAGMA temp_store=MEMORY")
+        # mmap for PLAINTEXT stores only: SQLCipher pages cannot be memory-
+        # mapped through the codec (every page passes the decrypt), so mmap
+        # there would be a fabricated speed-up. For plaintext files it lets
+        # reads come straight from the OS page cache without a copy.
+        if "sqlcipher" not in type(dbapi_connection).__module__:
+            cursor.execute("PRAGMA mmap_size=268435456")  # 256 MiB
     finally:
         cursor.close()
 
@@ -127,6 +133,12 @@ def init_db() -> None:
     from src.database.migrate import stamp_if_unstamped
 
     stamp_if_unstamped(engine)
+
+    # Hot-path indexes for databases created before they existed (create_all
+    # never adds indexes to existing tables; not every install runs alembic).
+    from src.database.maintenance import ensure_hot_indexes
+
+    ensure_hot_indexes(engine)
 
 
 def get_session() -> SASession:
