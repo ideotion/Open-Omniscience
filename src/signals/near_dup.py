@@ -21,12 +21,25 @@ Everything here is pure: deterministic hashing, no DB, no network, fully unit-te
 from __future__ import annotations
 
 import re
+from collections import OrderedDict
 from dataclasses import dataclass, field
+from functools import lru_cache
 from random import Random
 
 # Mersenne prime 2**61 - 1: a large prime for the universal hash family h(x)=(a·x+b) mod p.
+# Domain bounds chosen so a·x+b fits in 64 bits EXACTLY (a,b < 2^31; x reduced to
+# 32 bits): the numpy fast path and the pure-Python fallback then compute the
+# *identical* signature — clusters never depend on which optional deps are
+# installed (performance batch 2026-06-12; the briefing refresh measured 36 s
+# at the live corpus scale, >95% of it in this module's pure-Python inner loop).
 _MERSENNE = (1 << 61) - 1
 _MAX_HASH = (1 << 32) - 1
+_AB_BOUND = 1 << 31
+
+try:  # optional accelerator (the analysis extra); identical math either way
+    import numpy as _np
+except ImportError:  # pragma: no cover - exercised on core-only installs
+    _np = None
 
 _WORD_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -63,24 +76,40 @@ def _h64(s: str) -> int:
     return int.from_bytes(hashlib.blake2b(s.encode("utf-8"), digest_size=8).digest(), "big")
 
 
-def _hash_family(num_perm: int, *, seed: int = 0) -> list[tuple[int, int]]:
-    """``num_perm`` deterministic (a, b) pairs for h(x) = (a·x + b) mod p, a≠0."""
+@lru_cache(maxsize=8)
+def _hash_family(num_perm: int, seed: int = 0) -> tuple[tuple[int, int], ...]:
+    """``num_perm`` deterministic (a, b) pairs for h(x) = (a·x + b) mod p, a≠0.
+
+    a, b < 2^31 so that with x reduced to 32 bits the affine form stays below
+    2^64 — exact in unsigned 64-bit arithmetic (the numpy path) and in Python
+    ints alike. Cached: the family is pure in (num_perm, seed).
+    """
     rng = Random(seed)
-    return [(rng.randrange(1, _MERSENNE), rng.randrange(0, _MERSENNE)) for _ in range(num_perm)]
+    return tuple(
+        (rng.randrange(1, _AB_BOUND), rng.randrange(0, _AB_BOUND)) for _ in range(num_perm)
+    )
 
 
 def minhash_signature(elements: set[int], num_perm: int = 128, *, seed: int = 0) -> list[int]:
     """MinHash signature of a shingle set: the min of each hash permutation.
 
-    An empty set yields a sentinel signature (all ``_MERSENNE``) that matches nothing.
+    An empty set yields a sentinel signature (all ``_MERSENNE``) that matches
+    nothing. Vectorised through numpy when available; the pure-Python fallback
+    computes the identical numbers (parity is unit-tested), so results never
+    depend on optional dependencies.
     """
-    family = _hash_family(num_perm, seed=seed)
+    family = _hash_family(num_perm, seed)
     if not elements:
         return [_MERSENNE] * num_perm
-    sig = []
-    for a, b in family:
-        sig.append(min(((a * x + b) % _MERSENNE) for x in elements))
-    return sig
+    if _np is not None:
+        x = _np.fromiter(elements, dtype=_np.uint64, count=len(elements))
+        x &= _np.uint64(_MAX_HASH)  # reduce to the 32-bit domain (exactness bound)
+        ab = _np.asarray(family, dtype=_np.uint64)  # (num_perm, 2)
+        # (a·x + b) % p, broadcast: num_perm × n — max value < 2^63 + 2^31 < 2^64.
+        hashed = (ab[:, 0:1] * x[_np.newaxis, :] + ab[:, 1:2]) % _np.uint64(_MERSENNE)
+        return [int(v) for v in hashed.min(axis=1)]
+    reduced = [x & _MAX_HASH for x in elements]
+    return [min((a * x + b) % _MERSENNE for x in reduced) for a, b in family]
 
 
 def jaccard_estimate(sig_a: list[int], sig_b: list[int]) -> float:
@@ -165,6 +194,46 @@ def _connected_components(nodes: set[str], edges: set[tuple[str, str]]) -> list[
     return [c for c in comps.values() if len(c) > 1]
 
 
+# Memo for repeat clustering of the SAME documents within a process: the Home
+# briefing refresh runs the pass several times over one recent-news window
+# (echo_chamber + lonely_signal + story_lineage — audit finding F-005). The
+# function is pure, so identical inputs may return the cached result; the key
+# fingerprints the full content + parameters, and results are copied out so a
+# caller can never mutate the cache.
+_MEMO_MAX = 8
+_memo: OrderedDict[bytes, NearDupResult] = OrderedDict()
+
+
+def _fingerprint(docs: dict[str, str], params: tuple) -> bytes:
+    import hashlib
+
+    h = hashlib.blake2b(digest_size=16)
+    h.update(repr(params).encode())
+    for doc_id in sorted(docs):
+        h.update(doc_id.encode("utf-8", "replace"))
+        h.update(b"\x00")
+        h.update(docs[doc_id].encode("utf-8", "replace"))
+        h.update(b"\x01")
+    return h.digest()
+
+
+def _copy_result(r: NearDupResult) -> NearDupResult:
+    return NearDupResult(
+        method=r.method,
+        n=r.n,
+        threshold=r.threshold,
+        clusters=[
+            DuplicateCluster(
+                members=list(c.members),
+                representative=c.representative,
+                avg_similarity=c.avg_similarity,
+                evidence=[dict(e) for e in c.evidence],
+            )
+            for c in r.clusters
+        ],
+    )
+
+
 def near_duplicate_clusters(
     docs: dict[str, str],
     *,
@@ -183,6 +252,12 @@ def near_duplicate_clusters(
     """
     if bands * rows != num_perm:
         raise ValueError(f"bands*rows ({bands * rows}) must equal num_perm ({num_perm})")
+
+    key = _fingerprint(docs, (threshold, num_perm, bands, rows, seed))
+    cached = _memo.get(key)
+    if cached is not None:
+        _memo.move_to_end(key)
+        return _copy_result(cached)
 
     signatures = {
         doc_id: minhash_signature(shingles(text), num_perm, seed=seed)
@@ -212,7 +287,7 @@ def near_duplicate_clusters(
         )
     clusters.sort(key=lambda c: (-len(c.members), -c.avg_similarity))
 
-    return NearDupResult(
+    result = NearDupResult(
         method=(
             f"MinHash({num_perm} perm) + LSH({bands}×{rows} banding); pairs confirmed "
             f"at Jaccard ≥ {threshold}"
@@ -221,3 +296,7 @@ def near_duplicate_clusters(
         threshold=threshold,
         clusters=clusters,
     )
+    _memo[key] = _copy_result(result)
+    while len(_memo) > _MEMO_MAX:
+        _memo.popitem(last=False)
+    return result

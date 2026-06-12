@@ -363,5 +363,15 @@
   "Encrypting — this rewrites the whole database…": "جارٍ التشفير — تُعاد كتابة قاعدة البيانات كاملة…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "تم التشفير. عبارة المرور مطلوبة الآن عند كل تشغيل — بلا استرداد.",
   "Wrong passphrase — try again.": "عبارة مرور خاطئة — حاول مجددًا.",
-  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "اجعلها طويلة — عدة كلمات غير مترابطة أفضل من كلمة واحدة ذكية. إذا نُسخ ملف قاعدة بياناتك فيمكن تخمينه دون اتصال؛ لذا فإن الطول هو الحماية الحقيقية (وليست سرعة رد هذه الشاشة)."
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "اجعلها طويلة — عدة كلمات غير مترابطة أفضل من كلمة واحدة ذكية. إذا نُسخ ملف قاعدة بياناتك فيمكن تخمينه دون اتصال؛ لذا فإن الطول هو الحماية الحقيقية (وليست سرعة رد هذه الشاشة).",
+  "Database maintenance": "صيانة قاعدة البيانات",
+  "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "يعيد الضغط بناء ملف قاعدة البيانات: يستعيد المساحة التي تتركها عمليات الحذف ويزيل تجزئة الفهارس. يستغرق وقتًا يتناسب مع حجم الملف ويوقف كتابات الجمع مؤقتًا أثناء تشغيله — لا يُفسَّر أي شيء ولا يُحذف.",
+  "Reclaimable space:": "المساحة القابلة للاستعادة:",
+  "Compact database (VACUUM)": "ضغط قاعدة البيانات (VACUUM)",
+  "Compacting… this can take a while on a large corpus.": "جارٍ الضغط… قد يستغرق وقتًا مع مجموعة كبيرة.",
+  "Compacted.": "اكتمل الضغط.",
+  "Space freed:": "المساحة المحررة:",
+  "Compaction failed:": "فشل الضغط:",
+  "Download performance report (.json)": "تنزيل تقرير الأداء (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "يحمل تقرير الأداء أدلة حقيقية من هذا الجهاز: أزمنة الاستجابة لكل نقطة وصول من استخدامك الفعلي منذ بدء التطبيق، وحقائق التخزين والذاكرة، واختبارًا ذاتيًا موقوتًا سريعًا للعروض الثقيلة على مجموعتك الحقيقية. محلي فقط؛ يستغرق ثوانٍ ولا يُرسل شيء."
 }

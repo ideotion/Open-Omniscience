@@ -363,5 +363,15 @@
   "Encrypting — this rewrites the whole database…": "正在加密 — 整个数据库将被重写…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "已加密。现在每次启动都需要口令短语 — 不可恢复。",
   "Wrong passphrase — try again.": "口令短语错误 — 请重试。",
-  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "请设得长一些 — 几个不相关的词胜过一个巧妙的词。若数据库文件被复制，可在离线状态下被暴力猜测；所以真正的保护是长度，而非此界面的响应速度。"
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "请设得长一些 — 几个不相关的词胜过一个巧妙的词。若数据库文件被复制，可在离线状态下被暴力猜测；所以真正的保护是长度，而非此界面的响应速度。",
+  "Database maintenance": "数据库维护",
+  "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "压缩会重建数据库文件：回收删除操作留下的空间并整理索引碎片。耗时与文件大小成正比，运行期间会暂停采集写入——不会解读或删除任何数据。",
+  "Reclaimable space:": "可回收空间：",
+  "Compact database (VACUUM)": "压缩数据库（VACUUM）",
+  "Compacting… this can take a while on a large corpus.": "正在压缩……大型语料库可能需要一些时间。",
+  "Compacted.": "压缩完成。",
+  "Space freed:": "已释放空间：",
+  "Compaction failed:": "压缩失败：",
+  "Download performance report (.json)": "下载性能报告 (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "性能报告包含来自本机的真实证据：自应用启动以来您实际使用中各端点的响应时间、存储与内存事实，以及对真实语料库重型视图的快速计时自测。仅限本地；只需几秒，不会传输任何内容。"
 }

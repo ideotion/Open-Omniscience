@@ -363,5 +363,15 @@
   "Encrypting — this rewrites the whole database…": "Mengenkripsi — seluruh basis data ditulis ulang…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Terenkripsi. Frasa sandi kini diperlukan di setiap mulai — tanpa pemulihan.",
   "Wrong passphrase — try again.": "Frasa sandi salah — coba lagi.",
-  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Buat panjang — beberapa kata tak berhubungan lebih kuat daripada satu kata cerdik. Jika berkas basis data Anda disalin, ia bisa ditebak secara offline; jadi panjang adalah perlindungan yang sebenarnya (bukan secepat apa layar ini menjawab)."
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Buat panjang — beberapa kata tak berhubungan lebih kuat daripada satu kata cerdik. Jika berkas basis data Anda disalin, ia bisa ditebak secara offline; jadi panjang adalah perlindungan yang sebenarnya (bukan secepat apa layar ini menjawab).",
+  "Database maintenance": "Pemeliharaan basis data",
+  "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "Pemadatan membangun ulang berkas basis data: memulihkan ruang yang ditinggalkan penghapusan dan mendefragmentasi indeks. Waktunya sebanding dengan ukuran berkas dan menjeda penulisan pengumpulan selama berjalan — tidak ada yang ditafsirkan atau dihapus.",
+  "Reclaimable space:": "Ruang yang dapat dipulihkan:",
+  "Compact database (VACUUM)": "Padatkan basis data (VACUUM)",
+  "Compacting… this can take a while on a large corpus.": "Memadatkan… bisa memakan waktu pada korpus besar.",
+  "Compacted.": "Pemadatan selesai.",
+  "Space freed:": "Ruang yang dibebaskan:",
+  "Compaction failed:": "Pemadatan gagal:",
+  "Download performance report (.json)": "Unduh laporan performa (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "Laporan performa membawa bukti nyata dari mesin ini: waktu respons per endpoint dari penggunaan nyata Anda sejak aplikasi dimulai, fakta penyimpanan dan memori, serta uji mandiri singkat yang diukur waktunya atas tampilan berat pada korpus asli Anda. Hanya lokal; perlu beberapa detik dan tidak ada yang dikirim."
 }

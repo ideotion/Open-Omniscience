@@ -178,6 +178,16 @@ def run_deferred_startup() -> None:
     idempotent — init_db has always self-healed a damaged schema on boot) and
     again the moment the operator unlocks/creates an encrypted store."""
     init_db()
+    # Query-planner statistics (performance batch 2026-06-12): bounded ANALYZE
+    # on first boot at a schema, PRAGMA optimize after — best-effort, never
+    # blocks startup, and repeat boots are near-free.
+    try:
+        from src.database.maintenance import optimize_at_boot
+        from src.database.session import engine as _engine
+
+        optimize_at_boot(_engine)
+    except Exception:  # noqa: BLE001 - upkeep must never block startup
+        logger.warning("planner-statistics refresh failed", exc_info=True)
     # Rolling WARNING+ error log (the debug bundle's heart) — best-effort.
     try:
         from src.monitoring.errorlog import install as _install_errorlog

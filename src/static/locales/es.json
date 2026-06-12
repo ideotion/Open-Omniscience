@@ -363,5 +363,15 @@
   "Encrypting — this rewrites the whole database…": "Cifrando — se reescribe toda la base de datos…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Cifrado. Tu frase ahora se requiere en cada inicio — sin recuperación.",
   "Wrong passphrase — try again.": "Frase incorrecta — inténtalo de nuevo.",
-  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Hazla larga — varias palabras sin relación superan a una sola palabra ingeniosa. Si copian tu archivo de base de datos, puede adivinarse sin conexión; por eso la longitud es la protección real (no la rapidez de esta pantalla)."
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Hazla larga — varias palabras sin relación superan a una sola palabra ingeniosa. Si copian tu archivo de base de datos, puede adivinarse sin conexión; por eso la longitud es la protección real (no la rapidez de esta pantalla).",
+  "Database maintenance": "Mantenimiento de la base de datos",
+  "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "La compactación reconstruye el archivo de la base de datos: recupera el espacio que dejan las eliminaciones y desfragmenta los índices. Tarda un tiempo proporcional al tamaño del archivo y pausa las escrituras de recolección mientras se ejecuta — nada se interpreta ni se elimina.",
+  "Reclaimable space:": "Espacio recuperable:",
+  "Compact database (VACUUM)": "Compactar la base de datos (VACUUM)",
+  "Compacting… this can take a while on a large corpus.": "Compactando… puede tardar en un corpus grande.",
+  "Compacted.": "Compactado.",
+  "Space freed:": "Espacio liberado:",
+  "Compaction failed:": "Error al compactar:",
+  "Download performance report (.json)": "Descargar informe de rendimiento (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "El informe de rendimiento contiene pruebas reales de esta máquina: tiempos de respuesta por endpoint de su uso real desde el arranque, datos del almacenamiento y la memoria, y una autoprueba cronometrada de las vistas pesadas sobre su corpus real. Solo local; tarda unos segundos y no se transmite nada."
 }

@@ -125,6 +125,13 @@ ruling, a contingency, or a deliberate-omission note.
   shipping (the 06-audit false-positive lesson).
 
 ## Open queue (when maintainer says proceed)
+- **SESSION WORKING MODE (ruled 2026-06-12, this session):** reality-check the
+  docs↔code gap, organize ALL open work into TOPICS (T1 performance … T20
+  release-eng; the full plan lives in the session log + PR descriptions), then
+  execute topic-by-topic — **ONE PR PER TOPIC**, draft onto `0.09`, CI
+  subscribed, autonomously; ask only when a genuine ruling is needed.
+  Reality-check verdict recorded: the ledger and RC gate are ACCURATE (961
+  tests green; 28 gap claims verified in code; no shipped claim found false).
 - **V0.1 ALPHA RC MANDATE (ruled 2026-06-11): "absolutely everything" from
   this ledger + FUTURE_DEVELOPMENTS built into 0.09 before the V0.1 alpha RC;
   Windows+macOS installs TESTED; docs↔app reciprocity; security impeccable;
@@ -136,23 +143,17 @@ ruling, a contingency, or a deliberate-omission note.
   observation lanes graduate to REQUIRED when green — "the matrix IS the
   definition of supported"); the sqlcipher3 smoke job is BLOCKING and green
   on all three OSes.
-- **PERFORMANCE BATCH (maintainer 2026-06-12 — "the app is getting very slow,
-  we should think of a better data management background"; THE NEXT SESSION'S
-  MISSION, opener committed at `docs/product/NEXT_SESSION_PROMPT.md`):** at
-  6.4k articles / 228k keywords / 243 MB the keyword diagnostics export
-  initially failed (prime suspect: /api/diagnostics/keywords aggregates ALL
-  keywords×mentions before the per-language cap — the cap bounds output, not
-  work). Queue: profile hot endpoints at real scale (measure→fix→re-measure);
-  precompute keyword totals or covering index on keyword_mentions; stream/
-  paginate the diagnostics export + statement timeouts; PRAGMA optimize/
-  ANALYZE at boot; cached counts for vitals/Library; VACUUM tool in Settings;
-  mmap for PLAINTEXT stores only (SQLCipher pages can't be mmap'd through the
-  codec); cachetools TTL caches for hot aggregations. SHIPPED already: 64 MiB
-  page cache + temp_store=MEMORY per connection (the RAM-for-CPU lever — the
-  maintainer saw 600 MB RAM idle while 2 cores saturated). THREADING honesty
-  recorded: the app IS multi-threaded (scheduler + API; SQLite C core + lxml
-  release the GIL) but pure-Python work serializes — worker PROCESSES only if
-  cheap wins prove insufficient; single-writer SQLite stays the design.
+- **PERFORMANCE — REMAINING (batch T1 SHIPPED 2026-06-12, see batch log):**
+  THREADING honesty recorded: the app IS multi-threaded (scheduler + API;
+  SQLite C core + lxml release the GIL) but pure-Python work serializes —
+  worker PROCESSES only if cheap wins prove insufficient (they proved
+  SUFFICIENT for the reported scale); single-writer SQLite stays the design.
+  EMPIRICAL FACTS not to relearn: a SQL join from keyword_mentions to
+  articles for ONE small column drags whole 35 KB article rows through the
+  SQLCipher codec (column order puts content before language) — measured 26 s
+  of a 32 s wall; read small denormalisable facts via covering indexes or a
+  one-pass Python map instead. FastAPI JSONResponse uses COMPACT JSON
+  separators — streamed JSON must pass separators=(",",":") for byte parity.
 - **DB-RELIABILITY BATCH — REMAINING RIDERS (core SHIPPED, see batch log):**
   D1/D4 state-into-DB migrations (settings/annotations/event-imports →
   tables; agenda subs server-side), Settings restore-preview UI on the
@@ -388,12 +389,26 @@ ruling, a contingency, or a deliberate-omission note.
 - **Parked (designed-only):** event-family merge/split UI (#53), saved-filter
   "smart calendars" (#50), offline vector map, two-hop keyword graphs (#43),
   autonomous onboarding track (#49). All in FUTURE_DEVELOPMENTS.
-- **PROPOSED SEQUENCE (standing, maintainer may veto):** performance batch →
-  network toggle+consent → task manager+download arbitration → reader tabs +
-  corpora system → agenda content batch → continuous-collection
+- **PROPOSED SEQUENCE (standing, maintainer may veto):** ~~performance batch~~
+  (T1 shipped) → network toggle+consent → task manager+download arbitration →
+  reader tabs + corpora system → agenda content batch → continuous-collection
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **PERFORMANCE BATCH T1 (2026-06-12, this session):** measure→fix→re-measure
+  at the live shape (6.4k articles / 228k keywords / 317 MB synthetic;
+  `scripts/perf_harness.py`, zero network). Keyword export 14.1→4.0 s
+  (encrypted 33.8→7.8 s), STREAMED, cap bounds the WORK, envelope
+  byte-compatible (contract-tested); briefing recompute 36.6→1.5 s (MinHash
+  numpy vectorisation, EXACT parity with pure fallback unit-tested, + memo
+  across producers — F-005 closed); insights map ≈550→215 ms (tuples, not ORM
+  entities); covering index ix_mention_covering (model + migration
+  e2f3a4b5c6d7 + boot self-heal); statement deadlines (typed 503, never a
+  hang); PRAGMA optimize + bounded first-boot ANALYZE; mmap plaintext-only;
+  stats/coverage cached 30 s with computed_at/cache_ttl_s DISCLOSED; Settings
+  VACUUM tool with real freed bytes + freelist "reclaimable" readout (+8
+  strings ×12). ANALYZE/index plan-regression suspicion tested and DISPROVEN
+  (identical plans, evidence in PR #79).
 - **Console/Desk FINAL verdict (2026-06-10):** Desk RETIRED ENTIRELY — one
   interface, the Console (sidebar → icon rail). `desk.html` deleted; `/desk`
   308-redirects to `/`; one launcher. Fold Desk's best ideas (task-framed

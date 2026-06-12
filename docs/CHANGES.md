@@ -11,6 +11,29 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Performance batch (maintainer field report 2026-06-12: 6.4k articles /
+  228k keywords / 243 MB corpus got "very slow"; the keyword export failed).**
+  Measured on a synthetic corpus of exactly that shape (`scripts/perf_harness.py`,
+  deterministic, in-process, zero network), fixed, re-measured — same machine,
+  comparative numbers: **keyword diagnostics export 14.1 s → 4.0 s** (encrypted
+  profile 33.8 s → 7.8 s) and **streamed** (bounded memory, immediate first
+  byte; envelope byte-compatible, contract-tested); **Home briefing recompute
+  36.6 s → 1.5 s** (the MinHash inner loop was 95% of it: exact numpy
+  vectorisation with a parity-tested pure fallback + a memo across the three
+  producers that cluster the same window, audit finding F-005); insights map
+  ~550 ms → ~215 ms (tuple aggregation instead of ORM entities). Mechanics
+  shipped: a covering index on `keyword_mentions` (model + migration
+  `e2f3a4b5c6d7` + boot self-heal for installs that never run alembic);
+  per-language cap applied BEFORE the work (semantics unchanged); statement
+  deadlines on the heavy read path (typed 503 — "aborted after N s" — never a
+  hung UI; `OO_STATEMENT_TIMEOUT_S`, default 60); `PRAGMA optimize` + bounded
+  first-boot ANALYZE at startup; `mmap_size` for PLAINTEXT stores only (never
+  through the SQLCipher codec — that speed-up cannot exist, so it is not
+  claimed); Library/coverage counts cached 30 s with `computed_at`/`cache_ttl_s`
+  disclosed in the response; and a **Settings → Database maintenance** tool
+  (VACUUM + optimize) reporting real freed bytes, with "reclaimable space" from
+  `PRAGMA freelist_count` (+8 chrome strings ×12 locales).
+
 - **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled

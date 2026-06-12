@@ -591,6 +591,12 @@ locally; no telemetry.
     A lost or wrong passphrase means the file cannot be opened: there is no recovery.
     **Encrypted restore** decrypts, validates and replaces the corpus (a tampered or
     wrong-passphrase file is refused before anything is overwritten).
+  - **Database maintenance** — *Compact database (VACUUM)* rebuilds the database
+    file: it reclaims the space deletions leave behind (shown as “Reclaimable
+    space”, a real `PRAGMA freelist_count` reading) and defragments the indexes.
+    It takes time proportional to the file size and pauses collection writes
+    while it runs; the result reports the real bytes freed and duration. It
+    never interprets or removes data.
   - **Network fetch mode** — *Transparent* (default; polite, names the tool in the
     User-Agent) or *Protected* (generic User-Agent routed through a proxy **you** run,
     e.g. Tor). Protected mode **cannot guarantee anonymity** — you must run and trust
