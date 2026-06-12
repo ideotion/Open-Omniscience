@@ -739,3 +739,77 @@ correlation≠causation caveat in its own payload.
 - Agricultural calendars (waxing/waning planting rules) become testable the
   same way once yield/series data exists locally; the lunar series is the
   shared substrate.
+
+---
+
+## Worldwide official-statistics ingestion (maintainer concept 2026-06-12; designed-only)
+
+**The ask (recorded):** ingest government and international statistical data
+worldwide — BLS (US), INSEE (France), Eurostat (EU), the World Bank, the
+IMF, and deliberately also agencies tied to BRICS, Africa, and the
+forgotten parts of the world. ALL statistical data is treated as
+controversial and possibly politically oriented — like any other source —
+with data source, date, and the producing state on every figure. The
+approach must be mathematically oriented, scientifically sound, and
+ethically impeccable.
+
+**Design map (assistant, same date):**
+
+1. **Source skepticism as schema.** Every series datapoint carries:
+   producing agency, producing STATE or bloc, publication date, methodology
+   reference (the agency's own published definition), unit, and the
+   adjustment flags below. No series is ground truth; an agency's number is
+   an ASSERTION with provenance — the reader's two-class discipline
+   (asserted vs deduced) extends naturally: here everything is asserted,
+   and BY WHOM is always one glance away (hover convention).
+2. **Vintage honesty (the revision problem).** Official statistics are
+   REVISED — GDP and employment figures change after first publication, and
+   the revisions are themselves politically interesting. Store VINTAGES:
+   the value as-published on each publication date (the law/wiki versioning
+   model again — one identity, append-only versions). "What did the agency
+   say X was, as of date D" becomes answerable; silent overwrites never
+   happen.
+3. **Comparability guards (the epidemiological discipline).** Definitions
+   differ across producers (unemployment ILO vs national; deficit
+   Maastricht vs national accounts). Cross-country/cross-agency charts must
+   FLAG definitional mismatches and adjustment mismatches — seasonally
+   adjusted vs raw (SA/NSA stated per series), index base years, nominal vs
+   PPP, calendar effects — instead of silently comparing incomparable
+   denominators. A comparison the data cannot support renders with the
+   warning, or not at all.
+4. **Acquisition: official machine-readable endpoints FIRST, scraping
+   last.** SDMX (Eurostat, IMF, OECD, ECB, BIS), the BLS API, the World
+   Bank API, INSEE's API — the markets CSV-feed pattern generalizes
+   (catalog-driven configs/stats_sources.yml, per-feed robots/policy
+   verdicts, transport-aware failures, retry discipline as shipped in T4).
+   HTML scraping only where no machine endpoint exists, under the same
+   EthicalFetcher rules.
+5. **De-centring applied from day one.** The catalog deliberately includes
+   BRICS-tied producers (IBGE, Rosstat, NBS China, MoSPI India, StatsSA),
+   African national statistics offices + AfDB/UNECA, Pacific/Caribbean
+   community statistics — and the coverage REPORT discipline (the
+   de-US-centring acceptance metric) extends to the stats catalog:
+   per-continent producer coverage is measured, gaps named.
+6. **Triangulation, never averaging.** The same indicator from multiple
+   producers (IMF vs national office vs Eurostat) renders SIDE BY SIDE with
+   per-producer provenance — divergence is a SIGNAL to investigate, never
+   noise to smooth away (the conflicts-keep-both rule from the merge
+   engine, applied to statistics).
+7. **Forecast tracking.** Agencies publish PROJECTIONS (IMF WEO, OECD
+   outlooks, central-bank forecasts). These join the prediction-tracking
+   lens designed for the IPCC: claim + horizon + conditions as printed;
+   when the horizon arrives, projection sits next to outturn — the record
+   speaks, the app never issues a verdict.
+8. **Statistical hygiene everywhere:** SI/metric + the shared smart
+   formatter; n and method on every aggregation; correlation screens
+   against news/keywords inherit the lunar framework's rules (FDR control
+   mandatory for screening, stated test counts, pre-registration spirit).
+9. **Storage:** series generalize the commodity-price substrate (symbol →
+   indicator code; market → producer), so the chart toolkit, the corpora
+   correlation entries and the backup engine apply unchanged.
+
+**QUESTIONS FOR THE MAINTAINER (answer later):** which producers/indicators
+first (a starter set: CPI, unemployment, GDP, population from ~10 producers
+across 5 continents?); vintage depth (all revisions vs first+latest);
+SDMX needs an XML/JSON parser dependency — acceptable; storage budget at
+the reference VM scale.
