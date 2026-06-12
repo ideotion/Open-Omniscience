@@ -542,6 +542,16 @@ ruling, a contingency, or a deliberate-omission note.
   recorded honestly (residential-line realities, exposure → quiet-origin
   + public-mirrors split, offline signing keys, the fork inherits the
   ethics constitution); node-0 questions filed (#7 in the section).
+  **BLOCKCHAIN (maintainer's INITIAL INTENTION, recorded 2026-06-12):**
+  tamper-proof reliability via blockchain was the original concept; honest
+  read recorded in the section — the design's math IS blockchain-class
+  (hash-chained Merkle logs; CT ≈ "a blockchain without the token");
+  preferred use is ANCHORING log roots into existing public chains
+  (OpenTimestamps-style existence-before-T, no tokens/validators) over
+  running a dedicated chain (permissioned BFT ≈ witness cosigning; PoW/PoS
+  at our scale buy nothing); public claim stays "detectable + practically
+  infeasible to hide", NEVER "tamper-proof" (no fabricated security);
+  chain-choice + cadence question filed (#8 in the section).
 - **Parked (designed-only):** event-family merge/split UI (#53), saved-filter
   "smart calendars" (#50), offline vector map, two-hop keyword graphs (#43),
   autonomous onboarding track (#49), **voice-only mode (maintainer input
