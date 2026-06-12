@@ -130,6 +130,21 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   languages work by construction. One delegated listener and pure CSS —
   no per-element handlers, no animation loops. UI invariant #17 enforces it.
 
+- **Task manager + download arbitration, slice 1 (the twice-repeated ask).**
+  Every network task is now a **visible job**: `/api/jobs` aggregates live
+  from the owning systems — the collection pass, every Wikipedia dump with
+  its real queue position, the fetch currently on the wire (domain only) —
+  deliberately keeping no shadow state, so the view cannot disagree with
+  reality. The dump downloader becomes a **true queue** (one download at a
+  time; later requests genuinely queue, persisted across restarts) with
+  **operator reordering** — the "fr before en" case works end-to-end (↑↓
+  buttons + API, tested). The activity-chip popover is now **Tasks &
+  collection**: jobs with progress bars and Stop/Pause/Cancel (stopping
+  collection states its kill-switch side effect — informed consent), the
+  detailed collection panel, hardware vitals as the compact bottom row. New
+  heavy starts **ask** when another network task runs (who is busy, proceed
+  or wait) — never a silent pile-up. +18 chrome strings ×12.
+
 - **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled

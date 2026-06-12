@@ -416,6 +416,11 @@ app.include_router(ingestion_router)
 
 # Include system router (live scraping URL + process vitals; loopback-only)
 app.include_router(system_router)
+
+# Jobs view + download arbitration (T9): every network task is a visible job.
+from src.api.jobs import router as jobs_router  # noqa: E402 - after app exists
+
+app.include_router(jobs_router)
 from src.api.unlock import router as unlock_router  # noqa: E402 - after app exists
 
 app.include_router(unlock_router)
