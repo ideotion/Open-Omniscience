@@ -449,5 +449,9 @@
   "Русский": "Русский",
   "Português": "Português",
   "Bahasa Indonesia": "Bahasa Indonesia",
-  "日本語": "日本語"
+  "日本語": "日本語",
+  "no data points yet": "aucun point de données pour l'instant",
+  "no points in this window — zoom out (double-click)": "aucun point dans cette fenêtre — dézoomez (double-clic)",
+  "early corpus: dots shown, no curve interpolated through sparse points": "corpus précoce : points affichés, aucune courbe interpolée entre des points épars",
+  "(pinned — click empty space or re-click to move)": "(épinglé — cliquez ailleurs ou re-cliquez pour déplacer)"
 }

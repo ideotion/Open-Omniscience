@@ -94,6 +94,16 @@ ruling, a contingency, or a deliberate-omission note.
    ENTIRE UI through THE i18n engine (OOI18N.setLang); Settings select stays
    in sync; constant footprint; RTL-aware placement. Enforced in
    test_ui_invariants (#15).
+16. **ONE chart toolkit (`ooChart`), detailed-curves SYSTEMATIC (ruled
+   2026-06-12; SHIPPED T8 slice 1):** full-resolution series always within
+   the visible window — never downsampled/thinned; SPARSE series render as
+   honest POINTS with n shown + the early-corpus caveat (a line only when
+   density supports it, lineMin=8); wheel = cursor-anchored time zoom, drag
+   = pan, hover/click = exact pinned X/Y readout, dblclick reset, legend
+   chips toggle series; smart y-gridlines labelled via the shared formatter.
+   Wired: markets symbol chart + insights trend (slice 1); commodity CARDS
+   keep the static detailed SVG (tiny multiples; interactivity there is the
+   enlarge path, later slice). Enforced in test_ui_invariants (#16).
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First
@@ -317,10 +327,9 @@ ruling, a contingency, or a deliberate-omission note.
   while staying transnational/translatable (personality.yml). Home-card
   TITLES are still server-built English — template-based title translation
   needs a design (titles carry data values).
-- **MARKETS/INDICES/COMMODITIES (consolidated):** interactive charts (wheel
-  zoom, drag-pan through time, click → X/Y readout, discrete adjustable
-  legends — one chart toolkit, also for Insights trends; the detailed-curves
-  invariant above governs). Commodities cards render the real curve at every
+- **MARKETS/INDICES/COMMODITIES (consolidated; TOOLKIT SHIPPED T8 slice 1 —
+  invariant #16; REMAINING: roll ooChart onto commodity-card enlarge,
+  indices board detail, timemap-adjacent charts):** Commodities cards render the real curve at every
   timeframe (drop the "· 5 pts" suffix); axes detailed; discrete gridlines.
   S&P500 is an INDEX, not a commodity — reclassify; expand feeds (rare
   earths, oil, gas, LNG, sand, cereals, sugar…). **Tor/indices diagnosis

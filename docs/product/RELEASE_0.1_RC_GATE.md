@@ -56,7 +56,7 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 | Task manager window (repeat ×2; acceptance: reorder fr-before-en wiki dumps; per-country scrape priority) + download arbitration (queue/prioritize/cancel) | ⬜ | RC-BLOCKING (twice-repeated ask) | the two acceptance examples work end-to-end |
 | Reader TABS (mindmap/related/source/keywords/sentiment) | ⬜ | RC-BLOCKING (twice-repeated ask) | bar: sleek, data-rich, scientifically driven |
 | The ONE corpora system (6 entries: hand/tag-selection/tag-click/commodity-click/keyword-click/date-keyword-click; keyword windows = same sub-tabs + events sub-tab + TIME-SCOPE control) | ⬜ | RC-BLOCKING (the flagship analysis object) | one window architecture, n=1..N |
-| Interactive charts (zoom/pan/X-Y readout/legends; kill the 5-point cap; real curves) | ⬜ | RC-BLOCKING (live-test complaint) | >6mo scales render full series |
+| Interactive charts (zoom/pan/X-Y readout/legends; kill the 5-point cap; real curves) | 🔶 2026-06-12 (T8 slice 1: ooChart toolkit + markets symbol + insights trend; invariant #16) | RC-BLOCKING (live-test complaint) | >6mo scales render full series; REMAINING: commodity-card enlarge + indices board detail onto the toolkit |
 | Commodity → keyword-family pivot (price curve + article-timeline overlay; symbol→family seed table) | ⬜ | SHOULD | co-occurrence framing, never causation |
 | Continuous collection (per-country round-robin + first-run approval + onboarding country/language picker; explainable schedule) | ⬜ | SHOULD | consent design shared with network popup |
 | When×Where×Who extraction at ingest + backfill (confirmed GO) | ⬜ | SHOULD (substrate for convergence) | reader stops recomputing; map gains event-places |

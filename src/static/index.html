@@ -4760,6 +4760,161 @@
       catch (e) { toast("Delete failed: " + e.message, "err"); }
     }
 
+    // ===== THE chart toolkit (maintainer-ruled: ONE component for every =====
+    // chart surface). Honesty rules built in: the FULL series renders within
+    // the visible window -- never downsampled, never thinned; SPARSE series
+    // render as honest POINTS with n shown and an early-corpus caveat (a line
+    // only when density supports it; no interpolation faking a curve).
+    // Interactions: wheel = time zoom (cursor-anchored), drag = pan,
+    // hover = crosshair readout, click = pin exact X/Y, dblclick = reset,
+    // legend chips toggle series.
+    function ooChart(el, seriesList, opts = {}) {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      el.innerHTML = "";
+      const W = Math.max(320, Math.min(el.clientWidth || 680, opts.maxWidth || 900));
+      const H = opts.height || 220, padL = 52, padR = 10, padT = 10, padB = 24;
+      const wrap = document.createElement("div");
+      const cv = document.createElement("canvas");
+      const dpr = window.devicePixelRatio || 1;
+      cv.width = W * dpr; cv.height = H * dpr;
+      cv.style.cssText = `width:${W}px;height:${H}px;display:block;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:crosshair;touch-action:none`;
+      const legend = document.createElement("div");
+      legend.style.cssText = "display:flex;gap:10px;flex-wrap:wrap;font-size:12px;margin-top:4px;align-items:center";
+      const readout = document.createElement("div");
+      readout.className = "hint"; readout.style.minHeight = "18px";
+      wrap.appendChild(cv); wrap.appendChild(legend); wrap.appendChild(readout); el.appendChild(wrap);
+
+      const toMs = (x) => {
+        if (typeof x === "number") return x;
+        const wk = /^(\d{4})-W(\d{2})$/.exec(x);   // ISO week -> its Monday
+        if (wk) {
+          const jan4 = Date.UTC(+wk[1], 0, 4);
+          const dow = (new Date(jan4).getUTCDay() + 6) % 7;
+          return jan4 - dow * 864e5 + (+wk[2] - 1) * 7 * 864e5;
+        }
+        if (/^\d{4}-\d{2}$/.test(x)) return Date.parse(x + "-01");
+        return Date.parse(x);
+      };
+      const all = seriesList.map((s, i) => ({
+        label: s.label || `#${i + 1}`, unit: s.unit || "",
+        color: s.color || ["var(--accent)", "var(--ok)", "var(--warn)", "var(--err)"][i % 4],
+        pts: (s.points || []).map(p => ({t: toMs(p.t), v: +p.v})).filter(p => isFinite(p.t) && isFinite(p.v))
+              .sort((a, b) => a.t - b.t),
+        hidden: false,
+      })).filter(s => s.pts.length);
+      if (!all.length) { el.innerHTML = `<div class="muted">${esc(t9("no data points yet"))}</div>`; return; }
+      const tMin = Math.min(...all.map(s => s.pts[0].t)), tMax = Math.max(...all.map(s => s.pts[s.pts.length - 1].t));
+      const span0 = Math.max(tMax - tMin, 1);
+      let t0 = tMin, t1 = tMax, pinned = null;
+      const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
+      const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n) || "#888";
+      const fmtV = (v) => (typeof fmtNum === "function") ? fmtNum(v) : String(v);
+      const fmtT = (ms) => new Date(ms).toISOString().slice(0, 10);
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+      const Xof = (ms) => padL + plotW * ((ms - t0) / Math.max(t1 - t0, 1));
+
+      function visible() {
+        return all.filter(s => !s.hidden).map(s => ({...s, vis: s.pts.filter(p => p.t >= t0 && p.t <= t1)}));
+      }
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+        const vs = visible();
+        const ys = vs.flatMap(s => s.vis.map(p => p.v));
+        if (!ys.length) { readout.textContent = t9("no points in this window — zoom out (double-click)"); return; }
+        const yMin = opts.zeroBase ? Math.min(0, ...ys) : Math.min(...ys);
+        const yMax = Math.max(...ys), ySpan = (yMax - yMin) || 1;
+        const Yof = (v) => padT + plotH * (1 - (v - yMin) / ySpan);
+        ctx.font = "10px sans-serif"; ctx.fillStyle = cssVar("--muted"); ctx.strokeStyle = cssVar("--border");
+        for (let g = 0; g <= 3; g++) {                     // discrete gridlines, labelled
+          const v = yMin + ySpan * g / 3, y = Yof(v);
+          ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+          ctx.setLineDash([]); ctx.textAlign = "right"; ctx.fillText(fmtV(v), padL - 4, y + 3);
+        }
+        const nTicks = Math.max(2, Math.min(6, Math.floor(plotW / 110)));
+        ctx.textAlign = "center";
+        for (let g = 0; g <= nTicks; g++) {
+          const ms = t0 + (t1 - t0) * g / nTicks;
+          ctx.fillText(fmtT(ms), Math.min(Math.max(Xof(ms), padL + 28), W - padR - 28), H - 8);
+        }
+        let sparse = false;
+        for (const s of vs) {
+          if (!s.vis.length) continue;
+          const n = s.vis.length, pxPer = plotW / Math.max(n - 1, 1);
+          const lineOK = n >= (opts.lineMin || 8);          // a line only when density supports it
+          if (!lineOK) sparse = true;
+          ctx.strokeStyle = s.color.startsWith("var(") ? cssVar(s.color.slice(4, -1)) : s.color;
+          ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = 1.8;
+          if (lineOK) {
+            ctx.beginPath();
+            s.vis.forEach((p, i) => { const x = Xof(p.t), y = Yof(p.v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+            ctx.stroke();
+          }
+          if (!lineOK || pxPer > 9) {                        // honest dots when sparse or roomy
+            for (const p of s.vis) { ctx.beginPath(); ctx.arc(Xof(p.t), Yof(p.v), lineOK ? 2 : 3, 0, 7); ctx.fill(); }
+          }
+        }
+        if (pinned) {
+          const x = Xof(pinned.t), y = Yof(pinned.v);
+          ctx.strokeStyle = cssVar("--muted"); ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke(); ctx.setLineDash([]);
+          ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.stroke();
+        }
+        legend.innerHTML = vs.map((s) => {
+          const i = all.indexOf(all.find(a => a.label === s.label));
+          return `<span style="cursor:pointer;${s.hidden ? "opacity:.4" : ""}" onclick="this._oo&&this._oo()" data-oo-leg="${i}">` +
+            `<span style="display:inline-block;width:14px;height:0;border-top:3px solid ${s.color};vertical-align:middle;margin-inline-end:4px"></span>` +
+            `${esc(s.label)} <span class="muted">n=${s.vis.length}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></span>`;
+        }).join("") + (sparse ? `<span class="muted">\u26a0 ${esc(t9("early corpus: dots shown, no curve interpolated through sparse points"))}</span>` : "");
+        legend.querySelectorAll("[data-oo-leg]").forEach(elm => {
+          elm._oo = () => { all[+elm.dataset.ooLeg].hidden = !all[+elm.dataset.ooLeg].hidden; draw(); };
+        });
+      }
+      function nearest(ev) {
+        const r = cv.getBoundingClientRect(), mx = ev.clientX - r.left;
+        const ms = t0 + (t1 - t0) * (mx - padL) / plotW;
+        let best = null;
+        for (const s of visible()) for (const p of s.vis) {
+          const d = Math.abs(p.t - ms);
+          if (!best || d < best.d) best = {d, p, s};
+        }
+        return best;
+      }
+      cv.addEventListener("wheel", (ev) => {
+        ev.preventDefault();
+        const r = cv.getBoundingClientRect();
+        const anchor = t0 + (t1 - t0) * ((ev.clientX - r.left) - padL) / plotW;
+        const f = ev.deltaY > 0 ? 1.18 : 1 / 1.18;
+        t0 = Math.max(tMin, anchor - (anchor - t0) * f);
+        t1 = Math.min(tMax, anchor + (t1 - anchor) * f);
+        if (t1 - t0 < 3600e3) { const c = (t0 + t1) / 2; t0 = c - 1800e3; t1 = c + 1800e3; }
+        draw();
+      }, {passive: false});
+      let dragX = null, dragT = null;
+      cv.addEventListener("pointerdown", (ev) => { dragX = ev.clientX; dragT = [t0, t1]; cv.setPointerCapture(ev.pointerId); });
+      cv.addEventListener("pointermove", (ev) => {
+        if (dragX != null) {
+          const dt = (dragX - ev.clientX) / plotW * (dragT[1] - dragT[0]);
+          const span = dragT[1] - dragT[0];
+          t0 = Math.max(tMin, Math.min(dragT[0] + dt, tMax - span));
+          t1 = t0 + span; draw(); return;
+        }
+        const b = nearest(ev);
+        if (b) readout.textContent = `${b.s.label}: ${fmtV(b.p.v)}${b.s.unit ? " " + b.s.unit : ""} \u00b7 ${fmtT(b.p.t)}`;
+      });
+      cv.addEventListener("pointerup", (ev) => {
+        if (dragX != null && Math.abs(ev.clientX - dragX) < 4) {
+          const b = nearest(ev);
+          pinned = b ? b.p : null;
+          if (b) readout.innerHTML = `<b>${esc(b.s.label)}: ${fmtV(b.p.v)}${b.s.unit ? " " + esc(b.s.unit) : ""} \u00b7 ${fmtT(b.p.t)}</b> <span class="muted">${esc(t9("(pinned — click empty space or re-click to move)"))}</span>`;
+          draw();
+        }
+        dragX = null;
+      });
+      cv.addEventListener("dblclick", () => { t0 = tMin; t1 = tMax; pinned = null; draw(); });
+      draw();
+      return {redraw: draw};
+    }
+
     function sparkSvg(points) {
       if (!points.length) return '<div class="muted">No price points stored yet — use “Test” to fetch one.</div>';
       const w = 680, h = 180, pad = 34;
@@ -4786,8 +4941,9 @@
         const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`);
         el.innerHTML = `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} — ${d.count} point(s)
             <button class="tiny secondary" onclick="correlateSymbol(${esc(JSON.stringify(symbol))})" title="Correlate price change vs news volume">Correlate with news</button></h2>` +
-          sparkSvg(d.prices) +
-          `<div id="mkt-corr" class="hint" style="margin-top:8px"></div>`;
+          `<div id="mkt-chart-oo"></div><div id="mkt-corr" class="hint" style="margin-top:8px"></div>`;
+        ooChart($("mkt-chart-oo"), [{label: symbol, unit: unit || (d.prices[0] && d.prices[0].unit) || "",
+          points: d.prices.map(p => ({t: p.observed_on, v: p.price}))}], {height: 230});
       } catch (e) {
         el.innerHTML = `<div class="note err">Chart unavailable: ${esc(e.message)} ` +
           `<span class="muted">(commodity analysis endpoints require the [analysis] extra)</span></div>`;
@@ -5340,7 +5496,10 @@
         $("ins-trend").innerHTML =
           `<div style="margin-bottom:6px">Resolved to <strong>${esc(r.term)}</strong> ` +
           `<span class="pill">${esc(r.kind)}</span> · ${tr.total} mentions in ${tr.articles} articles</div>` +
-          trendSvg(tr.points);
+          `<div id="ins-trend-oo"></div>`;
+        ooChart($("ins-trend-oo"), [{label: r.term, unit: "mentions",
+          points: (tr.points || []).map(pt => ({t: pt.date, v: pt.count}))}],
+          {height: 180, zeroBase: true, lineMin: 8});
         renderMindmap(r.term, assoc.pairs);
         loadFraming(r.term);
         $("ins-context").innerHTML = (ctx.mentions || []).length
