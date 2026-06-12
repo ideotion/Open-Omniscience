@@ -308,6 +308,17 @@ def dumps_delete(key: str) -> dict:
     return {"deleted": get_manager().delete(key)}
 
 
+@router.post("/corpus/sync")
+def corpus_sync(db: Session = Depends(get_db)) -> dict:
+    """Backfill: every watched page's stored text enters the corpus as an
+    article (keywords + When x Where x Who via the one index hook). LOCAL
+    ONLY — this reads text already on disk and never touches the network;
+    new revisions sync automatically when the tracker runs."""
+    from src.wiki.corpus import sync_watched
+
+    return sync_watched(db)
+
+
 @router.get("/dumps/readable")
 def dumps_readable() -> dict:
     """Editions whose multistream data+index pair is on disk (reader-ready)."""

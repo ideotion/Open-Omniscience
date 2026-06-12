@@ -11,6 +11,23 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Wikipedia pages become first-class corpus articles (the living-source
+  bridge, maintainer-ruled 2026-06-12).** Watched pages now enter THE corpus:
+  one article per page (canonical wiki URL) under a per-edition "Wikipedia
+  (xx)" source, carrying the **newest version** of the text — the tracker
+  refreshes `latest_text` (+ the revid it corresponds to) whenever edits
+  land, and the corpus row re-indexes idempotently through the one
+  `index_article` hook, so **general full-text search, the keyword
+  aggregator and When×Where×Who all follow the latest version
+  automatically**. Wikitext is reduced to plain text by a bounded, stated
+  lexical strip. `POST /api/wiki/corpus/sync` backfills existing watchlists
+  locally (zero network). Migration `b6c7d8e9f0a1`. Honest gap recorded as
+  now-blocking for the full version engine: stored revision diffs are
+  truncated summaries, not reconstructable patches — the per-revision
+  storage decision (full text vs patches+checkpoints) is elevated in
+  FUTURE_DEVELOPMENTS, and the dedicated tracked-changes tab is the named
+  next slice.
+
 - **Local-first link previews on Home cards (T16 slice 1 — invariant #6
   extended, first target).** External evidence links on Home cards no longer
   jump straight out: they open a **local preview** first — what your database

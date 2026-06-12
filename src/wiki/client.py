@@ -76,6 +76,14 @@ class WikiClient:
             self._get(wiki, mw.build_recentchanges_params(namespace=namespace, limit=limit))
         )
 
+    def fetch_revision_texts(self, wiki: str, revids: list[int]) -> dict[int, str]:
+        """Full text of specific revisions, one batched call (<=50 revids)."""
+        if not revids:
+            return {}
+        return mw.parse_revision_texts(
+            self._get(wiki, mw.build_revision_texts_params(revids))
+        )
+
     def fetch_current_text(self, wiki: str, title: str) -> dict:
         return mw.parse_current_text(self._get(wiki, mw.build_current_text_params(title)))
 

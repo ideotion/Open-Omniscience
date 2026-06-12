@@ -96,6 +96,19 @@ def update_page(
     new = sorted((r for r in revs if (r.get("revid") or 0) > last), key=lambda r: r["revid"])
     size_by_revid = {r["revid"]: r.get("size") for r in revs if r.get("revid")}
 
+    # Per-revision FULL TEXT (maintainer-agreed 2026-06-12): one batched call
+    # for all new revids — exact versions become locally materializable. A
+    # fetch failure stores the revisions without text (honest partial, said
+    # in the row by its NULL) rather than dropping them.
+    texts_by_revid: dict[int, str] = {}
+    if new:
+        try:
+            texts_by_revid = client.fetch_revision_texts(
+                page.wiki, [r["revid"] for r in new]
+            )
+        except Exception:  # noqa: BLE001 - text enrichment must not drop revisions
+            _LOG.warning("revision-text fetch failed for %s", page.title, exc_info=True)
+
     stored = flagged = 0
     for r in new:
         parent = r.get("parent_revid")
@@ -155,6 +168,7 @@ def update_page(
                 minor=r.get("minor", False),
                 bot=r.get("bot", False),
                 diff=diff_text,
+                full_text=texts_by_revid.get(r["revid"]),
                 ores_damaging=ores_d,
                 ores_goodfaith=ores_g,
                 ores_provenance=ores_prov,
@@ -165,6 +179,24 @@ def update_page(
         stored += 1
         flagged += 1 if fr.flagged else 0
         page.last_revid = max(page.last_revid or 0, r["revid"])
+
+    # Edits landed -> refresh the LATEST full text (maintainer-ruled
+    # 2026-06-12: the article shown is always the newest version; the revid it
+    # corresponds to travels with it). One extra fetch per CHANGED page only;
+    # a failure keeps the previous text — honest staleness, never a crash.
+    if stored:
+        newest = max((r["revid"] for r in new), default=None)
+        if newest is not None and newest in texts_by_revid:
+            page.latest_text = texts_by_revid[newest]
+            page.latest_text_revid = newest
+        else:
+            try:
+                cur = client.fetch_current_text(page.wiki, page.title)
+                if cur.get("revid") and cur.get("text"):
+                    page.latest_text = cur["text"]
+                    page.latest_text_revid = cur["revid"]
+            except Exception:  # noqa: BLE001 - latest-text refresh must not drop the revisions
+                _LOG.warning("latest-text refresh failed for %s", page.title, exc_info=True)
 
     page.last_checked_at = now
     session.commit()
@@ -189,6 +221,17 @@ def track_watched(
             total_new += res["new"]
             total_flagged += res["flagged"]
             pages_done += 1
+            # The living-source bridge: changed pages re-enter the corpus with
+            # their newest text (keywords + When x Where x Who follow). A sync
+            # failure never blocks tracking.
+            if res.get("new") or res.get("baseline"):
+                try:
+                    from src.wiki.corpus import sync_page_to_corpus
+
+                    sync_page_to_corpus(session, page)
+                except Exception:  # noqa: BLE001
+                    session.rollback()
+                    _LOG.warning("corpus sync failed for %s", page.title, exc_info=True)
         except Exception:  # noqa: BLE001 - one bad page must not abort the batch
             session.rollback()
             _LOG.warning("wiki tracking failed for %s:%s", page.wiki, page.title, exc_info=True)

@@ -528,5 +528,7 @@
   "Built from your local database only — no network call.": "ローカルデータベースのみから構築 — ネットワーク通信なし。",
   "The transparent outbound link — its text is the full address; opening it leaves this machine:": "透明な外部リンク — テキストが完全なアドレスです。開くとこのマシンを離れます：",
   "Opens the local preview first — what your database knows about this link": "まずローカルプレビューを開きます — データベースがこのリンクについて知っていること",
-  "Close": "閉じる"
+  "Close": "閉じる",
+  "Watched pages join your corpus as articles: the newest version is what search and analytics see (the exact revision id is recorded), the full text of every tracked revision is stored on this machine — so past versions stay reconstructable, at the cost of storage growing with edit activity — and the change history remains available per page.": "ウォッチ中のページは記事としてコーパスに加わります。検索と分析が見るのは最新版です（正確なリビジョン ID が記録されます）。追跡した各リビジョンの全文はこのマシンに保存されるため、過去の版を正確に再構築できます（編集が活発なほどストレージは増えます）。変更履歴はページごとに利用できます。",
+  "Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.": "これらの選択の理由：最新版を表示することで分析は読者が今日見るものと一致します。各リビジョンの全文を保存することで、過去のどの版もこのマシン上で正確に再構築できます（バージョンに固定された分析 — 差分の再生も推測も不要）。テキストはキーワード抽出のためにプレーンテキスト化したウィキテキストであり、レンダリング済み記事として提示されることはありません。すべてローカルに保たれます。"
 }
