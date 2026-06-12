@@ -120,18 +120,12 @@ def _sha256_file(path: Path) -> str:
 
 
 def snapshot_sqlite(src: Path, dest: Path) -> Path:
-    """Consistent online-backup snapshot of ANY SQLite file (WAL-safe)."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    src_conn = sqlite3.connect(str(src))
-    try:
-        dst_conn = sqlite3.connect(str(dest))
-        try:
-            src_conn.backup(dst_conn)
-        finally:
-            dst_conn.close()
-    finally:
-        src_conn.close()
-    return dest
+    """Consistent PLAINTEXT snapshot of ANY store (WAL-safe; encrypted sources
+    are exported -- artifact members are portable plaintext by design, the
+    artifact's own OOENC1 envelope being their at-rest protection)."""
+    from src.database.connect import snapshot_to_plaintext
+
+    return snapshot_to_plaintext(src, dest)
 
 
 def _corpus_stats(corpus_snapshot: Path) -> dict:

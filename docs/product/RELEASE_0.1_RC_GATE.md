@@ -26,7 +26,7 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 | Merge-only restore (preview=commit code path, FK remap, conflicts reported, atomic swap) | ✅ | RC-BLOCKING | torture suite 10/10 green (is, today) |
 | Custody chains verified-not-trusted, never spliced | ✅ | RC-BLOCKING | T9 |
 | Cross-version restore floor + staged upgrade | ✅ | RC-BLOCKING | T4 |
-| **SQLCipher at-rest encryption ON by default + passphrase unlock UX + doctor attestation + one-way encrypt tool (PR-E)** | ⬜ | **RC-BLOCKING** | unlock/create flows ship WITH crypto (honesty gate); doctor reads real header; torture T3 extended to DB unlock; smoke green on 3 OSes (CI job added 2026-06-11) |
+| **SQLCipher at-rest encryption ON by default + passphrase unlock UX + doctor attestation + one-way encrypt tool (PR-E)** | ✅ 2026-06-12 | **RC-BLOCKING** | shipped in one PR per the honesty gate; 8-test suite incl. subprocess boot states + the crown (encrypted corpus stays ciphertext through backup/merge); doctor reads real headers; remaining riders: key re-wrap in the tool, launcher prompt wiring |
 | State-into-DB migrations (settings/annotations/events → tables, D1/D4) | ⬜ | SHOULD | legacy JSONs imported once; artifact v3 member list updated; suite green |
 | Settings → Data & backup UI on the v2 endpoints (restore preview table, encrypted-default, ×12 locales) | ⬜ | RC-BLOCKING | a non-technical operator can preview+merge from the UI; i18n 100% |
 | Network kill switch: airplane-mode semantics + online-consent popup (local IPs) + immediate repaint | ⬜ | RC-BLOCKING (ethics-facing) | every online transition consented; state never lies (scrape-start repaint) |

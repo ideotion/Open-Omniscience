@@ -48,13 +48,21 @@ _IS_SQLITE = DATABASE_URL.startswith("sqlite")
 def _build_engine() -> Engine:
     """Create the SQLAlchemy engine with backend-appropriate settings."""
     if _IS_SQLITE:
-        # check_same_thread=False is safe here because sessions are request/operation
-        # scoped (see module docstring), not shared globally across threads.
-        return create_engine(
-            DATABASE_URL,
-            future=True,
-            connect_args={"check_same_thread": False, "timeout": 30},
-        )
+        # Every connection comes from the ONE factory (src/database/connect.py),
+        # which opens the file per its real at-rest state: SQLCipher + PRAGMA key
+        # when encrypted (the ruled default), stdlib sqlite3 when plaintext, and
+        # a loud DatabaseLockedError while an encrypted store awaits its
+        # passphrase. The URL is kept so engine.url.database stays truthful.
+        # check_same_thread=False is safe here because sessions are
+        # request/operation scoped (see module docstring), not shared globally.
+        db_path = DATABASE_URL.removeprefix("sqlite:///")
+
+        def _creator():
+            from src.database.connect import connect
+
+            return connect(db_path, check_same_thread=False, timeout=30)
+
+        return create_engine(DATABASE_URL, future=True, creator=_creator)
     # PostgreSQL / other: modest pool suitable for a single-user server.
     return create_engine(
         DATABASE_URL,
@@ -80,6 +88,14 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA busy_timeout=30000")  # ms; wait instead of erroring
         cursor.execute("PRAGMA synchronous=NORMAL")  # safe with WAL, much faster
+        # Trade RAM for CPU (maintainer field report 2026-06-12: 600 MB RAM idle
+        # while 2 cores saturate). SQLite's default page cache is ~2 MB per
+        # connection, so a 243 MB corpus is re-walked from cold pages on every
+        # aggregation; 64 MB keeps the hot b-trees decoded. temp_store=MEMORY
+        # moves GROUP BY / ORDER BY scratch trees off disk. Both matter MORE
+        # under SQLCipher, where every page re-read costs a decrypt.
+        cursor.execute("PRAGMA cache_size=-65536")  # negative = KiB => 64 MiB
+        cursor.execute("PRAGMA temp_store=MEMORY")
     finally:
         cursor.close()
 

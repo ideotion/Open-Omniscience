@@ -208,8 +208,24 @@ Before fearing loss from an archive-size change, run
   windows) because keyword meaning/importance varies through time
   (maintainer-stated). Entries into the ONE corpora system now: hand-
   selection, tag-selection (Sources), tag-click, commodity-click,
-  keyword-click, date-keyword-click — one window architecture for all
-  (article = corpus of 1, without the competition tab).
+  keyword-click, date-keyword-click, search-enter (field report #4) — one
+  window architecture for all (article = corpus of 1, without the
+  competition tab).
+  **EXTENDED (maintainer 2026-06-12): a LINKS sub-tab** in article/corpus/
+  search windows — link analysis tailored to the selection: which member
+  articles SHARE outbound links; one-click ingestion of linked pages into
+  the corpus (through the normal ethical fetch path) for keyword/date/
+  place extraction; the goal is identifying the SOURCES' SOURCES.
+  **METHODOLOGICAL RULING (anti-false-triangulation): convergence counts
+  as corroboration ONLY when the paths are independent — three articles
+  citing the same single origin are ONE source wearing three hats (the
+  real source is the origin, "the guy", not the people quoting him). The
+  Links tab must surface shared-origin structure (e.g. "these 5 articles
+  all trace to one press release / one interviewee") instead of letting
+  citation counts masquerade as independent confirmation.** Builds on the
+  existing substrate: article_links (39.8k rows live), citation-graph
+  export, the dormant external_sources resolution (0 rows live — wire it),
+  and the echo/lineage signals (same-origin detection precedent).
 - **Location extractor SHIPPED (2026-06-11):** src/timemap/locextract.py —
   gazetteer cities (case-sensitive, source-country disambiguated, says which
   rule decided) + curated multilingual country table (~90 forms); lexical,
@@ -456,7 +472,26 @@ Before fearing loss from an archive-size change, run
   (3) TOR FIELD TEST (DispVM, Tor-only connection): only DJIA imported —
   NARROWS the world-indices item: provider Tor-exit blocking compounds
   robots fail-closed; maintainer sends logs (analyze per-host verdicts on
-  arrival). RULINGS RECORDED: NEVER silently downgrade transport (no
+  arrival). **LOGS ANALYZED (2026-06-12, preflight + debug bundle):** the
+  Tor story is SUBTLER than uniform blocking — (a) FRED is NOT Tor-hostile
+  as a class: in one run 21/28 commodity series imported 8,453 points
+  while 7 failed with connection errors, and an earlier run failed 28/28
+  then recovered ⇒ INTERMITTENT per-connection exit refusals ⇒ fix =
+  feed-level retry/backoff + a "retry failed feeds" affordance +
+  transport-aware verdict wording, NOT catalog removal; (b) GOLD/SILVER/
+  SAWNWOOD are HTTP 404 = DEAD FRED series ids (PGOLDUSDM/PSILVUSDM/
+  PSAWMUSDM discontinued upstream) ⇒ catalog replacement task, ids to be
+  verified on clearnet; (c) webcal.guru robots-DISALLOWS its download
+  paths — host policy, transport-independent, the honest verdict stands;
+  (d) raw.githubusercontent/space.floern robots fetches failed over Tor ⇒
+  fail-closed engaged exactly as designed; cantonbecker.com was a DNS
+  resolution failure; (e) sources: 32/50 OK OVER TOR, 9 robots_denied
+  (reuters/economist/lefigaro/cnbc… — policy, respected on any transport),
+  9 unreachable (bloomberg/ft/afp/elpais… — the CDN Tor-exit-refusal
+  class); (f) the overnight Tor run GREW the corpus to 6,398 articles /
+  227.7k keywords / 10,966 price points — the pipeline genuinely works
+  over Tor; 148 of 175 logged errors are routine trafilatura extraction
+  noise. RULINGS RECORDED: NEVER silently downgrade transport (no
   Tor→clearnet fallback without explicit consent — that is a
   deanonymization, not a retry); per-host verdicts gain TRANSPORT-
   AWARENESS ("refused over Tor" distinct from "robots disallows" and
@@ -480,7 +515,82 @@ Before fearing loss from an archive-size change, run
   stronger when When×Where×Who ingest persistence lands. Date-focused,
   event-focused AND agenda-focused approaches are all welcomed in the UI
   (maintainer's framing adopted).
-- **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11; RULED AGAIN
+- **LIVE-TEST FIELD REPORT #4 (maintainer 2026-06-12, with the night's
+  63,672-keyword export — RECORDED same turn; analysis in-chat; the first
+  fix SHIPPED same turn):**
+  (1) KEYWORD POLICY — maintainer position recorded: NOT a fan of capping;
+  data crunching should use as many keywords as possible; if a cap ever
+  became necessary it must be DYNAMIC (the ChatGPT-2020 example: novel
+  rising terms must always be capturable); the ruled instrument instead is
+  a CLEAR EXCEPTION POLICY for pronouns/conjunctions/etc. in ALL the app's
+  corpus languages. EXPORT ANALYZED (22 source languages — the de-US-centred
+  catalog is working; en+fr CLEAN, the field-log-#1 French fix held; 16
+  catalog languages had NO stoplists: nl leaked 10,257 mentions (dat×1599
+  TOPPING Dutch analytics), de 8,194, es 5,754, sv/it/pl/ru/nb/hu/ar/sr/
+  tr/id/pt/fi/da likewise; 0% numeric junk — the extractor's number
+  handling is fine). SHIPPED same turn: evidence-based per-language
+  stoplist blocks ×16 languages + a second inflection/month-name pass
+  (extract.py; global_stopwords also applies at QUERY time ⇒ 704 rows /
+  71,854 mentions (6.3%) retroactively hidden with no data migration;
+  post-policy tops verified as real signal). PERF ANGLE QUANTIFIED: junk
+  is ~6% of mentions — capping would buy little; the slowness is
+  aggregation work (the performance batch), not row count ⇒ NO CAP stands.
+  NEW SYSTEMIC FINDINGS queued: source SELF-NAMES leak as keywords ("The
+  Moscow Times"×213, "DN"×107 ⇒ suppress keywords matching the article's
+  own source name — a rule, not a stoplist); Swedish boilerplate ("alla
+  artiklar"×118 = navigation text ⇒ per-source extraction-quality check);
+  some de-tagged articles carry English text (language-attribution noise).
+  (2) WIKIPEDIA: limit the dump-download list to the app's languages
+  (Esperanto "fun but quite unnecessary") — RULED; and the maintainer
+  could NOT READ/search the downloaded Wikipedia content (no UI entry) ⇒
+  the offline-dump reader/search gap is ELEVATED (ties into the ledgered
+  Wikipedia-as-a-source design).
+  (3) SEARCH = ONE CENTRAL ANALYTICAL TOOL (major refinement of the
+  ledgered global-search rework): typing → a bubble with the first THREE
+  results, each clickable; ENTER → the results open as a CORPUS-OF-
+  ARTICLES window — the SEVENTH entry into the one corpora system — with
+  the standard sub-tabs PLUS a search-corpus-only tab: ADVANCED SEARCH
+  (select/sort by dates, keywords, sources, source tags, region,
+  language); the boolean/operator vocabulary ("AND OR +"…) reminded
+  DISCREETLY in the UI or via an intuitively-placed hover popup; DATE
+  SEARCH is first-class (a searched date opens that date's corpus — joins
+  the date-pivot family) — **REFINED (maintainer 2026-06-12): the UI
+  facilitates date search with a CALENDAR PICKER, and PERIODS are
+  searchable, not only single dates** (a period search = a date-range
+  corpus; same shared begin/end/timescale component as the keyword
+  windows' time-scope control — built once, used by search, keyword
+  windows and the mind-map date spectrum); TYPO TOLERANCE for keyword AND
+  date input with
+  the honest did-you-mean pattern: "Prsident" → show "President" results
+  while offering "search 'Prsident' literally" — NEVER silently
+  substitute. "Searching is an analytical tool" (maintainer framing).
+- **PERFORMANCE BATCH (maintainer 2026-06-12, live: "the app is getting very
+  slow, we should think of a better data management background"; the keyword
+  diagnostics download FAILED at real scale — 6.4k articles / 228k keywords /
+  243 MB):** prime suspect for the export failure is /api/diagnostics/
+  keywords' full GROUP-BY aggregation over keywords×mentions BEFORE the
+  per-language cap (the 5000 cap bounds output, not work). Queue: profile
+  the hot endpoints against a real-scale corpus (the maintainer's bundle
+  gives the shape); persist/precompute keyword totals or add a covering
+  index on keyword_mentions(keyword_id, count, article_id, observed_on);
+  stream/paginate the diagnostics export + statement timeouts; PRAGMA
+  optimize/ANALYZE at boot; cached counts for vitals/Library; VACUUM tool
+  in Settings. Sits naturally with the task-manager batch (one "data
+  management background" story, the maintainer's framing).
+  **RAM LEVER ADDED (maintainer observation 2026-06-12: only ~600 MB RAM
+  used while both CPU cores saturate — "can't we leverage more RAM?"):**
+  YES — the CPU burn is largely re-walking cold SQLite pages (default page
+  cache ≈2 MB/connection against a 243 MB corpus) + sort/temp trees.
+  SHIPPED same turn: PRAGMA cache_size=64 MiB + temp_store=MEMORY on every
+  engine connection (matters MORE under SQLCipher: each re-read costs a
+  decrypt). Queued for the batch: mmap_size (plaintext stores only —
+  SQLCipher pages can't be mmap'd through the codec), cachetools TTL
+  caches for hot aggregations (trending/vitals/coverage), and the honest
+  THREADING answer recorded: the app IS multi-threaded (scheduler thread +
+  API; SQLite's C core and lxml release the GIL, which is why both cores
+  light up) but pure-Python work serializes on the GIL — true multi-core
+  for extraction would need worker PROCESSES, only worth it after the
+  cheap wins; single-writer SQLite stays the design.
   same day — "I personally really don't like the agenda view"): FIRST SLICE
   SHIPPED 2026-06-11 under the new data-first principle (UI invariant #8):**
   the Agenda tab is now a pure data surface — MONTH GRID is the default view
@@ -559,6 +669,18 @@ Before fearing loss from an archive-size change, run
 - **Interactive charts** (maintainer, live test): commodity/markets graphs need
   zoom (wheel/drag) + discrete per-graph adjustable legends — "the user should
   feel closer to the data". Same treatment for the Insights trend graph.
+  **GENERALIZED (maintainer 2026-06-12): DETAILED CURVES ARE SYSTEMATIC,
+  APP-WIDE.** Commodities currently render the full curve at only ONE
+  timeframe (the >6-month 5-point downsampling) — every chart on every
+  surface (commodities, markets, indices, keyword/trend graphs, future
+  corpus/keyword-window charts) renders the FULL-RESOLUTION series; no
+  arbitrary downsampling anywhere ("this is rich data, leverage it").
+  COROLLARY for sparse series (the maintainer's "3-data-point curve looks
+  sloppy"): the fix is honest rendering, never fabrication — sparse data
+  draws as POINTS/bars with the early-corpus caveat (n shown), a line only
+  when density supports it, and NEVER interpolation that fakes a smooth
+  curve through 3 points; binning (day→week) only when data supports it
+  and always labeled. One chart toolkit enforces both rules everywhere.
 - **Commodities cards detail (maintainer 2026-06-10, NEXT UP):** initial cards'
   graphs show only 5 points — they must render a detailed curve (then DROP the
   "· 5 pts" suffix as useless); detailed both axes + a legend + very discrete
@@ -747,10 +869,64 @@ Before fearing loss from an archive-size change, run
   (FK remap proven, XAU disagreement reported with both values); T8 FTS
   truth; T9 custody verified-not-trusted; T10 settings sanctity; symmetry
   holds outside reported conflicts BY DESIGN. Full suite 953 passed.
-  REMAINING IN BATCH: PR-E SQLCipher (NEXT, fresh session — crypto + unlock
-  UX + doctor + encrypt tool SHIP TOGETHER per the honesty gate) → then the
-  D1/D4 state-into-DB migrations, the Settings restore-preview UI + locale
-  keys ×12, USER_MANUAL chapter; legacy endpoints stay until the UI swaps.
+  **PR-E SQLCIPHER SHIPPED (2026-06-12, the dedicated session the ruling
+  reserved; crypto + unlock UX + doctor + encrypt tool in ONE PR per the
+  honesty gate):** sqlcipher3>=0.6.2 core dep; ONE connection factory
+  src/database/connect.py — per-FILE header detection (encrypted→driver+
+  PRAGMA key; plaintext→stdlib unchanged; fresh→ENCRYPTED BY DEFAULT;
+  precedence: explicit caller key > OO_DB_PLAINTEXT opt-out > holder
+  passphrase > LOCKED; WrongPassphraseError/DatabaseLockedError loud and
+  typed); engine creator, custody log (a fresh custody log FOLLOWS the
+  main store's state), merge engine, backups and torture helper all routed
+  through it. EMPIRICAL FACT RECORDED: SQLCipher's backup API cannot cross
+  key boundaries — sqlcipher_export does ⇒ TWO intentional snapshot
+  helpers: snapshot_to_plaintext (portable artifact members; the
+  artifact's own envelope is their protection) vs snapshot_preserving
+  (working copies + pre-restore nets STAY ciphertext — a restore must
+  never silently decrypt; the legacy replace-restore re-encrypts the
+  validated upload before the swap). Locked boot: lifespan defers startup;
+  middleware answers 503 {locked:true} and 307s / → /unlock; the Console
+  api() self-redirects; /unlock page (self-contained, offline, i18n'd)
+  carries the verbatim no-recovery note + threat model; endpoints
+  lock-state/unlock/create-db/encrypt-db + GET /api/system/doctor
+  (header-read attestation per store + cipher version + threat model);
+  one-way encrypt tool (src/database/encrypt_tool.py + scripts/
+  encrypt_db.py + Settings→Safety panel with consent + the DELIBERATE
+  plaintext escape-hatch snapshot); OO_DB_PASSPHRASE headless;
+  OO_DB_PLAINTEXT=1 explicit opt-out (the test suite's default — crypto
+  tests opt back in); D6 key-wrap fallback: OO_KEY_PASSPHRASE defaults to
+  THE passphrase, with STATE-TOLERANT key loading (legacy plaintext keys
+  keep loading after encryption — wrapped only by explicit re-key;
+  key_protection reports the FILE's real state); +29 locale keys ×12 (359
+  total); USER_MANUAL §Safety chapter. TESTS: 8-test PR-E suite incl.
+  subprocess boot states (fresh→create→locked→wrong-403→unlock→env
+  headless) and THE CROWN: an encrypted corpus backs up (plaintext members
+  inside the encrypted artifact), merges a foreign artifact, and is STILL
+  ciphertext after the swap with ciphertext pre-restore nets.
+  REMAINING IN BATCH: D1/D4 state-into-DB migrations, Settings
+  restore-preview UI on the v2 endpoints, signing-key re-wrap inside the
+  encrypt tool, launcher/installer passphrase prompt wiring; legacy
+  endpoints stay until the UI swaps.
+  **WRONG-PASSPHRASE RATE-LIMITING — RULED OUT (maintainer asked 2026-06-12,
+  "exponential delay to stop brute force? or useless since the DB is
+  readable without the app?"). Answer: the second instinct is correct —
+  app-level backoff is USELESS and would be FABRICATED SECURITY (forbidden).
+  Reasoning, measured: an attacker who can brute-force HAS the file and uses
+  offline tools (sqlcipher CLI, hashcat mode 24600) — our loopback HTTP
+  endpoint is irrelevant to them, and a locked app holds NO key in memory so
+  there is no "API-only" attacker on a loopback bind. Our endpoint already
+  costs one full KDF per try (measured 173 ms ≈ 6 guesses/s) — backoff would
+  only punish the honest fat-finger user, protecting against a threat that
+  cannot exist. The REAL per-guess tax lives in the right place: SQLCipher 4
+  KDF = PBKDF2-HMAC-SHA512 ×256,000 (verified PRAGMA), applied to EVERY
+  attacker incl. offline GPUs. The dominant term is passphrase ENTROPY: +1
+  word ≈ +13 bits beats doubling kdf_iter (+1 bit) or any endpoint limit
+  (0 bits). DECISIONS: keep unlimited loud retries; keep the audited KDF
+  default (no off-piste tuning); the honest lever is GUIDANCE — the create
+  flow now recommends a long multi-word passphrase and states the offline
+  reality (+1 locale key ×12 = 360). DO NOT re-add login rate-limiting in a
+  later session thinking it was an oversight — it is a deliberate,
+  reasoned omission.
 - **Backup redesign** (maintainer, ruled): encryption is the DEFAULT flow
   (Download backup -> passphrase -> download; Browse -> passphrase -> restore);
   restore must be NON-DESTRUCTIVE (merge, never replace) with bit-level

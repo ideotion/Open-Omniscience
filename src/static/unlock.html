@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<!-- The passphrase gate (PR-E). Served while the store is locked or fresh.
+     Self-contained + offline: local fonts, local i18n, zero external calls.
+     Honesty: this page ships TOGETHER with the working SQLCipher layer --
+     never a lock screen over a plaintext file (the server only routes here
+     when the file really is ciphertext, or doesn't exist yet). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Omniscience — unlock</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --fg:#e6edf3; --muted:#8b949e;
+          --accent:#58a6ff; --err:#f85149; --warn:#d29922; --border:#30363d; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#ffffff; --fg:#1f2328; --muted:#656d76;
+            --accent:#0969da; --err:#cf222e; --warn:#9a6700; --border:#d0d7de; } }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:var(--bg); color:var(--fg);
+         font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .card { width:min(440px, 92vw); background:var(--panel); border:1px solid var(--border);
+          border-radius:14px; padding:28px; }
+  .eye { display:flex; justify-content:center; margin-bottom:14px; }
+  h1 { font-size:18px; margin:0 0 6px; text-align:center; }
+  p { color:var(--muted); font-size:13px; margin:8px 0; }
+  label { display:block; font-size:12.5px; color:var(--muted); margin:14px 0 4px; }
+  input[type=password] { width:100%; padding:10px 12px; border-radius:8px;
+    border:1px solid var(--border); background:var(--bg); color:var(--fg); font-size:15px; }
+  input[type=password]:focus { outline:2px solid var(--accent); border-color:transparent; }
+  button { width:100%; margin-top:16px; padding:10px; border-radius:8px; border:0;
+    background:var(--accent); color:#fff; font-size:15px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:wait; }
+  .note { border:1px dashed var(--warn); border-radius:8px; padding:10px 12px; margin-top:14px; }
+  .note p { margin:4px 0; }
+  .err { color:var(--err); font-size:13px; min-height:18px; margin-top:10px; text-align:center; }
+  .tm { font-size:12px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="eye"><svg width="56" height="34" viewBox="0 0 48 28" fill="none" stroke="currentColor" stroke-width="1.6">
+    <path d="M2 14 C8 6.5, 24 6.5, 30 16 M2 14 C8 21.5, 24 21.5, 30 12 M18 14 C24 6.5, 40 6.5, 46 14 C40 21.5, 24 21.5, 18 14"/>
+    <circle cx="32" cy="14" r="5.5"/><path d="M32 8.5v11M26.5 14h11"/>
+  </svg></div>
+
+  <div id="view-unlock" class="hidden">
+    <h1>Unlock your corpus</h1>
+    <p>This database is encrypted at rest (SQLCipher 4). Enter THE passphrase to open it.</p>
+    <label for="pw">Passphrase</label>
+    <input type="password" id="pw" autocomplete="current-password" autofocus>
+    <button id="btn-unlock">Unlock</button>
+    <div class="err" id="msg"></div>
+    <p class="tm"><span>At-rest encryption protects a seized or copied file.</span> <span>It cannot protect a compromised running session.</span></p>
+  </div>
+
+  <div id="view-create" class="hidden">
+    <h1>Create your corpus passphrase</h1>
+    <p>Your corpus will be encrypted at rest by default (SQLCipher 4). Pick ONE stable passphrase — you will enter it at every start, like a user ID.</p>
+    <div class="note">
+      <p><b>Choose something unique and remember it.</b></p>
+      <p>There is no recovery and no decryption alternative. A lost passphrase costs re-collection time — the corpus is rebuilt from the web, not from us.</p>
+    </div>
+    <p class="tm">Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).</p>
+    <label for="pw1">Passphrase</label>
+    <input type="password" id="pw1" autocomplete="new-password">
+    <label for="pw2">Confirm passphrase</label>
+    <input type="password" id="pw2" autocomplete="new-password">
+    <button id="btn-create">Create</button>
+    <div class="err" id="msg2"></div>
+    <p class="tm"><span>At-rest encryption protects a seized or copied file.</span> <span>It cannot protect a compromised running session.</span></p>
+  </div>
+
+  <div id="view-open" class="hidden">
+    <h1>Already unlocked</h1>
+    <p>The corpus is open. You can return to the Console.</p>
+    <button onclick="location.href='/'">Open the Console</button>
+  </div>
+</div>
+
+<script src="/static/i18n.js"></script>
+<script>
+  (function () {
+    if (window.OOI18N && OOI18N.init) { try { OOI18N.init(); } catch (e) {} }
+    const $ = (id) => document.getElementById(id);
+    const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+
+    async function post(path, body) {
+      const r = await fetch(path, { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || r.statusText);
+      return data;
+    }
+
+    async function boot() {
+      try {
+        const s = await (await fetch("/api/system/lock-state")).json();
+        const view = s.state === "locked" ? "view-unlock"
+                   : s.state === "fresh" ? "view-create" : "view-open";
+        $(view).classList.remove("hidden");
+        if (view === "view-unlock") $("pw").focus();
+        if (view === "view-create") $("pw1").focus();
+      } catch (e) { $("view-unlock").classList.remove("hidden"); }
+    }
+
+    async function go(btn, fn) {
+      btn.disabled = true;
+      try { await fn(); location.href = "/"; }
+      catch (e) {
+        const box = btn.id === "btn-unlock" ? $("msg") : $("msg2");
+        box.textContent = e.message || t("Wrong passphrase — try again.");
+        btn.disabled = false;
+      }
+    }
+
+    document.addEventListener("click", (ev) => {
+      if (ev.target.id === "btn-unlock")
+        go(ev.target, () => post("/api/system/unlock", { passphrase: $("pw").value }));
+      if (ev.target.id === "btn-create")
+        go(ev.target, () => post("/api/system/create-db",
+          { passphrase: $("pw1").value, confirm: $("pw2").value }));
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter") return;
+      if (!$("view-unlock").classList.contains("hidden")) $("btn-unlock").click();
+      else if (!$("view-create").classList.contains("hidden")) $("btn-create").click();
+    });
+
+    boot();
+  })();
+</script>
+</body>
+</html>

@@ -78,14 +78,14 @@ from src.api.annotations import router as annotations_router
 # Import article date-tag router (extracted, human-confirmable dates mentioned in text)
 from src.api.article_dates import router as article_dates_router
 
+# Import database overview router (honest read-only corpus statistics + backup/restore)
+from src.api.backup_v2 import router as backup_v2_router
+
 # Import briefing router (the Home triage feed of honest "cards" + draft accumulator)
 from src.api.briefing import router as briefing_router
 
 # Import custody router (append-only signed chain-of-custody log + anchoring)
 from src.api.custody import router as custody_router
-
-# Import database overview router (honest read-only corpus statistics + backup/restore)
-from src.api.backup_v2 import router as backup_v2_router
 from src.api.database import router as database_router
 
 # Import diagnostics router (shareable, on-demand back-end syntheses — CLAUDE.md)
@@ -172,13 +172,11 @@ except PackageNotFoundError:  # pragma: no cover - only when not pip-installed
     APP_VERSION = "0.0.0+local"
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan: create schema + FTS index, then dispose on shutdown.
-
-    Replaces the deprecated @app.on_event hooks (D1). Metric initialisation is
-    best-effort so the API still starts on a brand-new/empty database.
-    """
+def run_deferred_startup() -> None:
+    """Everything that needs an OPEN database: schema/FTS, error log, janitor,
+    seeds, metrics, scheduler. Runs at every unlocked lifespan (each step is
+    idempotent — init_db has always self-healed a damaged schema on boot) and
+    again the moment the operator unlocks/creates an encrypted store."""
     init_db()
     # Rolling WARNING+ error log (the debug bundle's heart) — best-effort.
     try:
@@ -228,6 +226,22 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Could not autostart scheduler: {exc}")
 
     logger.info(f"Open Omniscience API {APP_VERSION} started")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan. When the store is encrypted and no passphrase is
+    available yet (and on first launch without OO_DB_PLAINTEXT), the app boots
+    LOCKED: only the unlock flow is served; the deferred startup runs the
+    moment the operator supplies THE passphrase. A plaintext store boots
+    exactly as before — never a lock screen over a plaintext file."""
+    from src.api.unlock import app_lock_state
+
+    state = app_lock_state()
+    if state.startswith("unlocked"):
+        run_deferred_startup()
+    else:
+        logger.info(f"started LOCKED ({state}): serving the unlock flow only")
     yield
 
     # Stop the scheduler thread cleanly if it is running (no-op otherwise).
@@ -392,6 +406,9 @@ app.include_router(ingestion_router)
 
 # Include system router (live scraping URL + process vitals; loopback-only)
 app.include_router(system_router)
+from src.api.unlock import router as unlock_router  # noqa: E402 - after app exists
+
+app.include_router(unlock_router)
 app.include_router(hazards_router)
 app.include_router(events_router)
 app.include_router(personality_router)
@@ -446,6 +463,32 @@ app.mount(
     StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True),
     name="static",
 )
+
+
+# The passphrase gate (PR-E): while the store is locked/fresh, only the unlock
+# flow is reachable; every other API answers 503 {"locked": true} and the
+# Console redirects itself to /unlock. A plaintext store never hits this.
+@app.middleware("http")
+async def _lock_gate(request: Request, call_next):
+    from src.api.unlock import ALLOWED_WHILE_LOCKED, app_is_locked
+
+    if app_is_locked():
+        path = request.url.path
+        if path == "/" or path == "/index.html":
+            return RedirectResponse(url="/unlock", status_code=307)
+        if not any(path == p or path.startswith(p) for p in ALLOWED_WHILE_LOCKED):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "the database is locked: unlock it first", "locked": True},
+            )
+    return await call_next(request)
+
+
+@app.get("/unlock", response_class=HTMLResponse, include_in_schema=False)
+async def unlock_page():
+    """The passphrase gate page (also reachable unlocked: it then offers /)."""
+    page = Path(__file__).parent.parent / "static" / "unlock.html"
+    return HTMLResponse(content=page.read_text(encoding="utf-8"), status_code=200)
 
 
 # Middleware for Prometheus metrics

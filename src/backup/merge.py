@@ -168,11 +168,14 @@ def merge_corpus(
 ) -> tuple[dict, int]:
     """Merge the staged corpus into the working copy. Returns (per-domain counts,
     batch_id). The working copy is disposable; the live DB is never touched."""
-    con = sqlite3.connect(str(working_copy))
-    con.isolation_level = None  # explicit BEGIN/COMMIT (stdlib auto-BEGIN would collide)
+    from src.database.connect import attach
+    from src.database.connect import connect as db_connect
+
+    con = db_connect(working_copy, check_same_thread=False)
+    con.isolation_level = None  # explicit BEGIN/COMMIT (auto-BEGIN would collide)
     try:
         con.execute("PRAGMA foreign_keys=OFF")  # order is FK-safe; checked at the end
-        con.execute("ATTACH DATABASE ? AS inc", (str(staged_corpus),))
+        attach(con, staged_corpus, "inc")  # staged members are plaintext by design
         con.execute("BEGIN IMMEDIATE")
         results: dict[str, DomainResult] = {}
 
@@ -929,7 +932,10 @@ def _merge_source_candidates(con, batch_id, results) -> None:
 def verify_copy(working_copy: Path, staged_corpus: Path, batch_id: int) -> dict:
     """Post-merge verification, all on the copy. Any failure aborts the restore
     BEFORE the swap -- the live DB never sees an unverified merge."""
-    con = sqlite3.connect(str(working_copy))
+    from src.database.connect import attach
+    from src.database.connect import connect as db_connect
+
+    con = db_connect(working_copy, check_same_thread=False)
     try:
         v: dict = {}
         v["quick_check"] = con.execute("PRAGMA quick_check").fetchone()[0]
@@ -950,7 +956,7 @@ def verify_copy(working_copy: Path, staged_corpus: Path, batch_id: int) -> dict:
 
         # Sampled transfer-integrity check: merged articles' content must equal
         # the staged source's content byte-for-byte (joined on the content hash).
-        con.execute("ATTACH DATABASE ? AS inc", (str(staged_corpus),))
+        attach(con, staged_corpus, "inc")
         bad = _count(
             con,
             "SELECT COUNT(*) FROM ("
@@ -1136,7 +1142,9 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
     if not chains:
         return {"entries": 0, "imported": 0, "duplicate": 0, "chains": []}
 
-    dest = sqlite3.connect(str(data_dir() / "custody_log.db"))
+    from src.database.connect import connect as db_connect
+
+    dest = db_connect(data_dir() / "custody_log.db", check_same_thread=False)
     try:
         dest.execute(
             """
@@ -1222,7 +1230,7 @@ def run_restore(
     Preview and commit run THE SAME merge code against a disposable working
     copy, so the preview's numbers are exactly what a commit would do to the
     then-current corpus."""
-    from src.backup.sqlite_backup import backup_to, live_db_path
+    from src.backup.sqlite_backup import live_db_path
     from src.database.session import dispose_engine, init_db
 
     original_rev = prepare_staged_corpus(staged, allow_unverified=allow_unverified)
@@ -1230,7 +1238,11 @@ def run_restore(
     working = staged.staging_dir / "working.db"
     if working.exists():
         working.unlink()
-    backup_to(working)  # consistent snapshot of the LIVE corpus
+    # The working copy PRESERVES the live at-rest state: merging on an
+    # encrypted corpus must never yield a plaintext live file at the swap.
+    from src.database.connect import snapshot_preserving
+
+    snapshot_preserving(live_db_path(), working)
 
     meta = {
         "artifact_kind": staged.kind,
@@ -1261,7 +1273,7 @@ def run_restore(
     # ---- commit path ------------------------------------------------------ #
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = data_dir() / f"pre-restore-{ts}.db"
-    backup_to(snapshot)
+    snapshot_preserving(live_db_path(), snapshot)
     report["pre_restore_snapshot"] = str(snapshot)
 
     report["side_files"] = merge_side_files(staged)
@@ -1269,7 +1281,9 @@ def run_restore(
         report["custody"] = merge_custody(staged.custody_path, staged.origin_fingerprint)
 
     # Persist the final report inside the copy BEFORE it becomes the live DB.
-    con = sqlite3.connect(str(working))
+    from src.database.connect import connect as db_connect
+
+    con = db_connect(working, check_same_thread=False)
     try:
         con.execute(
             "UPDATE merge_batches SET report_json = ? WHERE id = ?",

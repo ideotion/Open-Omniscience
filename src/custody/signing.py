@@ -81,7 +81,13 @@ def _keys_dir() -> Path:
 
 
 def _passphrase() -> bytes | None:
+    # OO_KEY_PASSPHRASE wins when set; otherwise THE database passphrase wraps
+    # the signing keys too (design D6: one secret, no plaintext stragglers).
     p = os.getenv("OO_KEY_PASSPHRASE")
+    if not p:
+        from src.database.connect import get_passphrase
+
+        p = get_passphrase()
     return p.encode("utf-8") if p else None
 
 
@@ -171,14 +177,37 @@ class HybridSigner:
 
     @property
     def key_protection(self) -> str:
-        return "aes256gcm-scrypt" if self._pp else "plaintext-0600"
+        # The FILE's actual state, never the environment's wish: a legacy
+        # plaintext key stays reported as plaintext until it is re-wrapped.
+        if self._pp and not getattr(self, "_legacy_plain", False):
+            return "aes256gcm-scrypt"
+        return "plaintext-0600"
 
     # -- Ed25519 ----------------------------------------------------------- #
     def _load_or_create_ed25519(self) -> Ed25519PrivateKey:
+        def _as_ed25519(key: object) -> Ed25519PrivateKey:
+            if not isinstance(key, Ed25519PrivateKey):
+                raise TypeError(f"custody key is not Ed25519: {type(key).__name__}")
+            return key
+
         if self._ed_path.exists():
             raw = self._ed_path.read_bytes()
-            pw = self._pp if self._pp else None
-            return serialization.load_pem_private_key(raw, password=pw)
+            try:
+                return _as_ed25519(
+                    serialization.load_pem_private_key(
+                        raw, password=self._pp if self._pp else None
+                    )
+                )
+            except TypeError:
+                # Wrapped-vs-plaintext mismatch with the current passphrase
+                # availability: a legacy PLAINTEXT key must keep loading after
+                # the database gains a passphrase (it is re-wrapped only by an
+                # explicit re-key, never silently). The reverse (encrypted key,
+                # no passphrase) re-raises loudly below.
+                if self._pp:
+                    self._legacy_plain = True
+                    return _as_ed25519(serialization.load_pem_private_key(raw, password=None))
+                raise
         key = Ed25519PrivateKey.generate()
         enc = (
             serialization.BestAvailableEncryption(self._pp)
@@ -201,7 +230,16 @@ class HybridSigner:
             return None, None
         if self._mldsa_path.exists():
             blob = self._mldsa_path.read_bytes()
-            data = _unwrap(blob, self._pp) if self._pp else blob
+            if self._pp:
+                try:
+                    data = _unwrap(blob, self._pp)
+                except Exception:  # noqa: BLE001 - GCM tag check failed
+                    # Legacy plaintext key from before the passphrase existed:
+                    # the failed unwrap is deterministic proof it is not wrapped.
+                    self._legacy_plain = True
+                    data = blob
+            else:
+                data = blob
             pk_len = _mldsa.PUBLIC_KEY_SIZE
             return data[:pk_len], data[pk_len:]
         pk, sk = _mldsa.generate_keypair()

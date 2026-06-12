@@ -26,6 +26,10 @@ _ISOLATED = tempfile.mkdtemp(prefix="oo-tests-")
 os.environ.setdefault("OO_DATA_DIR", _ISOLATED)
 # Never autostart the background scraper thread during tests.
 os.environ.setdefault("OO_NO_SCHEDULER", "1")
+# The suite runs on an EXPLICIT plaintext store (the ruled opt-out); the
+# SQLCipher paths are exercised by tests/test_sqlcipher.py with their own
+# passphrases and data dirs.
+os.environ.setdefault("OO_DB_PLAINTEXT", "1")
 
 # --- Optional [analysis] extra (finding TEST-06) ----------------------------- #
 # numpy/scipy/pandas/scikit-learn ship only with the [analysis] extra. The app
