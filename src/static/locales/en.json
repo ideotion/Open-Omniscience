@@ -387,5 +387,7 @@
   "Start continuous background collection": "Start continuous background collection",
   "Stay offline": "Stay offline",
   "This action needs the network:": "This action needs the network:",
-  "Your machine presents these local network addresses:": "Your machine presents these local network addresses:"
+  "Your machine presents these local network addresses:": "Your machine presents these local network addresses:",
+  "Download performance report (.json)": "Download performance report (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted."
 }

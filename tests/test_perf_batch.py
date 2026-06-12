@@ -306,3 +306,37 @@ def test_near_dup_memo_returns_equal_isolated_results():
         r1.clusters[0].members.append("tampered")
     r3 = near_duplicate_clusters(docs)
     assert "tampered" not in (r3.clusters[0].members if r3.clusters else [])
+
+
+# --------------------------------------------------------------------------- #
+# The performance field report (maintainer-asked 2026-06-12): real evidence,
+# on click, never transmitted.
+# --------------------------------------------------------------------------- #
+def test_performance_report_carries_real_evidence(client, seeded):
+    client.get("/api/database/stats")  # ensure at least one measured request
+    r = client.get("/api/diagnostics/performance")
+    assert r.status_code == 200
+    assert "attachment" in r.headers.get("content-disposition", "")
+    body = r.json()
+    assert body["kind"] == "performance-report"
+    data = body["data"]
+    env = data["environment"]
+    assert env["cpu_count"] >= 1 and env["at_rest_state"].startswith("unlocked")
+    assert data["store"]["page_size"] > 0
+    assert data["corpus"]["keywords"] >= 3
+    lat = data["endpoint_latency_since_boot"]
+    assert "real use since this boot" in lat["method"]
+    st = data["selftest"]
+    assert st["ran"] is True
+    probes = {row["probe"] for row in st["results"]}
+    assert {"database_stats", "insights_map", "keyword_export_streamed"} <= probes
+    for row in st["results"]:
+        assert ("ms" in row) or ("error" in row)  # measured or honestly failed
+    streamed = [x for x in st["results"] if x["probe"] == "keyword_export_streamed"]
+    assert all("bytes" in x for x in streamed), "streamed body must be fully consumed"
+
+
+def test_performance_report_selftest_can_be_skipped(client):
+    body = client.get("/api/diagnostics/performance?selftest=false").json()
+    assert body["data"]["selftest"]["ran"] is False
+    assert body["data"]["selftest"]["results"] == []
