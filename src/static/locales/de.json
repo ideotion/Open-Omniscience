@@ -471,5 +471,17 @@
   "queued": "wartend",
   "paused": "pausiert",
   "failed": "fehlgeschlagen",
-  "scheduled": "geplant"
+  "scheduled": "geplant",
+  "Trend": "Trend",
+  "Articles": "Artikel",
+  "Links": "Links",
+  "mentions in": "Erwähnungen in",
+  "articles": "Artikeln",
+  "open": "öffnen",
+  "No indexed mentions yet.": "Noch keine indizierten Erwähnungen.",
+  "citing sources:": "zitierende Quellen:",
+  "Shared outbound links among the member articles — a shared origin means agreement is ONE path, not independent confirmation.": "Geteilte ausgehende Links der Mitgliedsartikel — eine gemeinsame Herkunft heißt: Übereinstimmung ist EIN Pfad, keine unabhängige Bestätigung.",
+  "No outbound link is shared by more than one member article.": "Kein ausgehender Link wird von mehr als einem Mitgliedsartikel geteilt.",
+  "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "Welche Mitgliedsartikel ausgehende Links teilen — gemeinsame Ursprünge sichtbar gemacht: Zitierzahlen sind nie unabhängige Bestätigung, wenn die Pfade einen Ursprung teilen.",
+  "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Dieses Schlüsselwort als Korpusfenster öffnen: Trend, Mitgliedsartikel und geteilte ausgehende Links (die Quellen der Quellen)."
 }

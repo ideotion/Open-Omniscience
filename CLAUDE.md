@@ -314,8 +314,13 @@ ruling, a contingency, or a deliberate-omission note.
   — the shipped mind-map date-spectrum control generalized; all sub-tabs
   recompute within the window; n-shown/windowed-PMI discipline + early-corpus
   caveat) because keyword meaning/importance varies through time.
-  **LINKS sub-tab (ruled 2026-06-12):** which member articles SHARE outbound
-  links; one-click ethical ingestion of linked pages for keyword/date/place
+  **LINKS sub-tab (ruled 2026-06-12; SUBSTRATE + WINDOW SLICE 1 SHIPPED T10
+  same day: /api/links/shared with the independence notes per shared URL +
+  the corpus window — keyword-click entry via the ⊞ Corpus button — with
+  Trend (ooChart)/Articles/Links sub-tabs; REMAINING: the full sub-tab set
+  (mindmap/source/sentiment/competitive), the other six entries, the
+  TIME-SCOPE control, one-click ingestion of linked pages):** which member
+  articles SHARE outbound links; one-click ethical ingestion of linked pages for keyword/date/place
   extraction; the goal is the SOURCES' SOURCES. **METHODOLOGICAL RULING
   (anti-false-triangulation): convergence counts as corroboration ONLY when
   the paths are independent — three articles citing the same single origin

@@ -145,6 +145,15 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   heavy starts **ask** when another network task runs (who is busy, proceed
   or wait) — never a silent pile-up. +18 chrome strings ×12.
 
+- **The corpora system, slice 1 — the Links substrate + the window.** A
+  keyword now opens as a **corpus window** (⊞ Corpus next to the resolved
+  term): Trend (the interactive toolkit), member Articles, and **Links** —
+  the anti-false-triangulation view: which member articles **share outbound
+  links**, with per-URL independence notes ("a shared origin means agreement
+  is ONE path, not independent confirmation") and distinct-source counts.
+  `/api/links/shared` serves counts and structure only, never a credibility
+  verdict; the method travels in the response. +12 chrome strings ×12.
+
 - **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled
