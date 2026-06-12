@@ -54,6 +54,19 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   deduction failure never blocks keyword indexing (tested). Deduced stays
   labelled deduced — never promoted to fact.
 
+- **Seasons + the climate record (T11 slice 2).** Equinoxes and solstices
+  computed locally (Meeus ch. 27, verified against the book's example 27.a
+  to ~9 s and the published 2024 dates) with **hemisphere-honest naming** —
+  "June solstice", never "summer solstice": seasons are opposite across
+  hemispheres and undefined at the equator, and the payload says so. The
+  bundled **El Niño episode dataset** (`/api/events/climate`) follows the
+  NOAA CPC ONI convention with per-file provenance and an explicit
+  **verification-pending flag** — drafted entries are never presented as
+  verified before the clearnet check. IPCC-as-a-source with
+  prediction-tracking ("were their anticipations right after all?") and
+  agenda↔Wikipedia linking recorded as designed concepts with filed
+  questions.
+
 - **Markets/indices: transport-aware honesty (the 2026-06-12 Tor diagnosis).**
   Feed failures now carry a **verdict taxonomy over the real error**:
   *refused* (connection refused/reset — over Tor commonly one exit's refusal;

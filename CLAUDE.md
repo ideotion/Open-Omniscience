@@ -245,7 +245,17 @@ ruling, a contingency, or a deliberate-omission note.
   computed locally, VERIFIED against the book's worked example 49.a to ≤30 s
   + 2024 almanac dates; /api/events/astronomy; moon glyphs in the month grid
   with method+accuracy in the hover bubble; ΔT non-application STATED):
-  REMAINING: recurring-event model unifying rules + per-year instances +
+  SEASONS + CLIMATE slice SHIPPED T11b same day: Meeus ch.27
+  equinoxes/solstices (verified vs example 27.a ≤9 s + 2024 dates;
+  hemisphere-honest astronomical naming — never "summer", stated in the
+  payload), /api/events/astronomy gains seasons; /api/events/climate serves
+  the bundled El Niño episode dataset (NOAA CPC ONI convention, drafted
+  2026-06-12, VERIFICATION-PENDING flag travels per file until the clearnet
+  check); IPCC-as-source + prediction-tracking + agenda↔wiki linking
+  recorded in FUTURE_DEVELOPMENTS with questions.
+  REMAINING: moons/seasons as default agenda EVENTS with ×12 keyword links
+  (⊞ corpus entry); El Niño episodes rendered as month-span agenda banners;
+  recurring-event model unifying rules + per-year instances +
   origin year ("since 1810" — the Mexico sighting was the ICS import path
   storing year-pinned instances); month-span banners ("Dry January"); the
   remaining views (week/trimester/semester/year/decade); play speeds 0.05–16×
