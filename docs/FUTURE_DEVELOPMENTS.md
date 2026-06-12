@@ -546,3 +546,64 @@ bundling Python/runtimes in the repo (the 100 MB rule — release artifacts only
 > central server, no accounts, no telemetry. The forward path for reach is a PWA
 > + one-click self-host (BYO-home tunnel as an option); centralized hosting is
 > rejected. Any future mobile/remote-access work starts from this ruling.
+
+---
+
+## Voice-only mode — accessibility-first, useful to everyone (maintainer input 2026-06-12; designed-only, NOT committed work)
+
+**The ask (maintainer, recorded):** a "voice only" mode designed for disabled
+and handicapped users and useful for everyone. A big ask deserving deep
+thought. It must carry **all the ethical constraints the GUI has** (informed
+consent, honesty by construction, local-first). It must **not saturate** the
+user with repetitive meta-information ("say X for more…") — rely on the
+user's memory plus a single word, **"help"**, for contextual assistance.
+Powered by **local models through/alongside Ollama** (speech-to-text and
+text-to-speech exist today); users are guided through current technology's
+limits (e.g. "don't speak until the listening tone"). Hardware limits and
+prerequisites need serious thinking. Priority stays on current work.
+
+**Design thinking (assistant, same date — a starting map, not a plan):**
+
+- **The microphone is a consent surface.** Push-to-talk (or an explicit
+  spoken session) is the default; never always-listening without a visible
+  AND audible state. Earcons carry state honestly: one tone = "listening",
+  another = "thinking", silence = "off". The webcam-light honesty rule
+  applies verbatim: software can never equal a hardware mic LED, and we say
+  so wherever the mode is explained. Hardware mute always wins.
+- **Informed consent, spoken — once, not nagged.** Consequential actions
+  (going online, deleting, merging) get a terse spoken consent with
+  repeat-back ("Start a collection pass — say yes to confirm"), the voice
+  analogue of `ensureOnline`. Caveats are spoken the FIRST time a surface is
+  used in a session, then compressed to a single word marker; **"help"**
+  re-reads the full contextual layer on demand.
+- **One source of layered information.** The hover-bubble convention
+  (invariant #17) and the voice "help" should read the SAME translated
+  `title` strings — the GUI's layered-info corpus becomes the spoken
+  assistance for free, ×12 locales by construction.
+- **Honest tech-limits onboarding (spoken, once):** wait for the tone;
+  numbers and proper nouns transcribe imperfectly; noisy rooms degrade
+  recognition; per-language STT quality varies — the mode states which of
+  the 12 locales its installed models actually support instead of implying
+  parity (the language-parity honesty rule).
+- **Local-only pipeline:** STT (Whisper-class), TTS (Piper-class), optional
+  LLM intent parsing via Ollama — all installed like the offline LLM kit
+  (clearnet stated as an install prerequisite; runtime stays loopback).
+  Prototype path needs NO LLM: a small command grammar over the existing API
+  (tabs, search, collect, readouts) + earcons; LLM intent parsing is a later
+  layer, never a dependency for the basics.
+- **Privacy:** audio is processed in memory and never persisted by default;
+  transcripts are opt-in, stored like annotations (and then ride backups).
+  NOTE: voice transcripts are PERSONAL data — the same no-recovery
+  contingency recorded for newsletters applies here and must be revisited
+  before transcripts ship.
+- **Hardware prerequisites — measure, never assert:** concurrent STT + TTS
+  (+ optional LLM) is the real budget; tiers must be MEASURED on reference
+  shapes (the maintainer's 2-core Qubes VM is the floor: likely tiny-model
+  STT with queued processing) and published as a minimum-spec table with
+  method, not marketing numbers. Audio-stack portability (Linux/Windows/
+  macOS) rides the universal-portability mandate; wake-word engines (e.g.
+  openWakeWord-class, fully local) are optional and off by default.
+- **Sequencing:** after the corpora/task-manager flagships; depends on the
+  offline LLM kit (RM-08) for the principled model-install path. Candidate
+  first slice: spoken readout of Home cards + search + "help", push-to-talk,
+  one language, measured on the reference VM.

@@ -432,7 +432,11 @@ ruling, a contingency, or a deliberate-omission note.
   with a local model.
 - **Parked (designed-only):** event-family merge/split UI (#53), saved-filter
   "smart calendars" (#50), offline vector map, two-hop keyword graphs (#43),
-  autonomous onboarding track (#49). All in FUTURE_DEVELOPMENTS.
+  autonomous onboarding track (#49), **voice-only mode (maintainer input
+  2026-06-12: accessibility-first, all GUI ethics carried over, no
+  meta-information saturation — memory + one-word "help"; local STT/TTS via
+  the Ollama path; mic = a consent surface; hardware tiers MEASURED never
+  asserted; full map in FUTURE_DEVELOPMENTS)**. All in FUTURE_DEVELOPMENTS.
 - **PROPOSED SEQUENCE (standing, maintainer may veto):** ~~performance batch~~
   (T1 shipped) → network toggle+consent → task manager+download arbitration →
   reader tabs + corpora system → agenda content batch → continuous-collection
