@@ -124,6 +124,116 @@ _EXTRA_STOPWORD_TEXT = (
     "janvier février mars avril mai juin juillet août septembre octobre novembre décembre "
     # English generics observed leaking as entities in the field log
     "including found help work million billion millions billions "
+    # ----------------------------------------------------------------------- #
+    # Field log #2 (2026-06-12, 63,672-keyword export): the de-US-centred
+    # catalog brought 22 source languages, 16 of them WITHOUT stoplists —
+    # function words sat in TOP analytics slots (nl "dat"×1599, de "sich"×982,
+    # es "más"×1001, sv "som"×795, ru "что"×531…). Maintainer ruling: NO cap on
+    # keyword counts; instead a clear exception policy for pronouns,
+    # conjunctions & co. in ALL the app's corpus languages. Every block below
+    # is evidence-backed by that export; global_stopwords() applies these
+    # retroactively at query time, so stored junk disappears from analytics
+    # without touching data.
+    # English (the 3 residual leaks)
+    "another further yes "
+    # Spanish (extends the thin block above; 48 leaked words, 5,754 mentions)
+    "al en sobre entre desde hasta yo tú él ella ellos ellas nosotros usted "
+    "ustedes mi tu nuestro este esta estos estas ese esa esos esas aquel quien "
+    "cual cuyo donde cuando fueron hay también ya si sólo solo así pues porque "
+    "aunque mientras cada todo toda todos todas otro otra otros otras mismo misma qué "
+    # German (48 leaked, 8,194 mentions: sich/bei/wie/aus/über/nach/einem/einen…)
+    "des einem einen eines kein keine ja nein bei aus nach über unter vor "
+    "hinter zwischen durch gegen ohne um er ihr sich mein dein sein unser euer "
+    "dieser diese dieses jener welche welcher was wer wie wo wann warum waren "
+    "haben hat hatte werden wird wurde noch schon nur sehr mehr als wenn weil "
+    "dass damit sowie sowohl beide jeder jede jedes alle "
+    # Italian (42 leaked, 3,230 mentions: alla/dei/nel/più/delle/anche…)
+    "i dei delle a al alla in nel nella con da dal su sul senza io tu lui lei "
+    "noi voi loro mio tuo suo nostro questa questi queste quella cui dove "
+    "quando perché è erano avere ha hanno fu furono anche molto più meno già "
+    "sì così poiché mentre ogni tutto tutta tutti tutte altro altra "
+    # Portuguese (20 leaked: não/ele/também/até/foram/seu/ela…)
+    "no na nos nas em sem sobre entre desde até eu tu ele ela eles elas nós "
+    "você vocês meu teu seu nosso estes estas essa aquele quem qual cujo onde "
+    "quando porque é são era eram estar foram há também muito mais menos já "
+    "não sim só assim pois embora enquanto cada todo toda todos todas outro outra "
+    # Dutch (34 leaked, 10,257 mentions — the worst: dat/voor/hij/uit/bij/naar…)
+    "dat voor naar in op bij uit door over onder tussen tegen zonder om jij "
+    "hij wie zich mijn jouw zijn haar ons hun deze die dit welke wat waar "
+    "wanneer hoe waarom waren worden wordt werd hebben heeft had nog al alleen "
+    "zeer meer als toen omdat zodat beide elke alle "
+    # Russian (54 leaked, 2,658 mentions: что/для/как/его/также/это/при/более…)
+    "и в во не на я он она оно они мы вы ты что это эта этот эти как так но "
+    "или а же бы был была были быть есть от до из у за под над при с со для "
+    "по о об к ко его её их наш ваш мой твой свой кто где когда почему зачем "
+    "тоже также уже ещё еще только очень более менее всех весь вся всё все "
+    "другой другая каждый если потому пока между через без "
+    # Swedish (30 leaked, 3,752 mentions: som/har/det/och/för…)
+    "och eller men av till i på vid med för från ut genom över under mellan "
+    "mot utan om jag du han hon vi ni de sig min din sin vår er denna detta "
+    "dessa den det som vem vad var när hur varför är varit bli blir blev ha "
+    "har hade också än redan bara mycket mer mest alla varje annan "
+    # Norwegian bokmål (30 leaked: til/jeg/seg/ble/også/hadde/ved/når…)
+    "og av til ved fra gjennom mellom mot uten jeg han hun dere seg din sin "
+    "deres denne dette disse hvem hva hvor når hvordan hvorfor vært ble enn "
+    "hver annen "
+    # Danish (9 leaked; same family as nb/sv — completes the Scandinavian set)
+    "ud mod hvis bliver blive meget havde vores hvad gennem uden anden "
+    # Polish (42 leaked, 2,789 mentions: się/jest/jak/przez/czy/dla…)
+    "i w we na nie z ze do od po za pod nad przy o u dla przez bez się to ta "
+    "ten te tej tego tych jak tak ale lub albo czy że by był była było były "
+    "być jest są ma mają mój twój swój nasz wasz kto co gdzie kiedy dlaczego "
+    "też także już jeszcze tylko bardzo więcej mniej każdy wszystko wszyscy "
+    "inny inna jeśli bo między "
+    # Hungarian (32 leaked: hogy/nem/egy/már/volt/vagy/még/több…)
+    "a az és vagy de hogy nem igen egy ez ezek azok aki ami amely ahol amikor "
+    "miért hogyan én te ő mi ti ők enyém tied övé miénk van volt lesz lenni "
+    "már még csak nagyon több kevesebb minden mindenki más ha mert között "
+    "nélkül ellen alatt felett által "
+    # Arabic (22 leaked, 1,417 mentions: على/إلى/هذا/التي/هذه/كما/ذلك…)
+    "في من إلى على عن مع هذا هذه ذلك تلك التي الذي الذين ما لا لم لن إن أن "
+    "كان كانت يكون هو هي هم هن نحن أنت أنا أو ثم بل لكن حتى إذا كما قد كل "
+    "بعض غير بين عند منذ أي "
+    # Serbian/Croatian/Bosnian latin (30 leaked: kako/još/sve/više/biti/kada…)
+    "u za od do po pri sa bez kroz preko ispod iznad između protiv ovaj ova "
+    "ovo taj ona oni ko šta gde gdje kada kako zašto je su bio bila bilo biti "
+    "ima imaju takođe također već još samo veoma više manje svaki sve drugi "
+    "druga ako jer moj tvoj svoj naš vaš "
+    # Turkish (26 leaked: için/olarak/daha/çok/veya/ancak/gibi/değil…)
+    "ve veya ama fakat ancak ki bu şu bir için ile gibi kadar sonra önce "
+    "üzere göre eğer çünkü her hem ya ne hangi kim nerede zaman nasıl niçin "
+    "neden ben sen biz siz onlar benim senin onun bizim sizin değil var yok "
+    "daha çok az en idi olan olarak "
+    # Indonesian (33 leaked: untuk/ini/dengan/itu/adalah/pada/juga…)
+    "dan atau tetapi tapi dari ke di pada dengan untuk tanpa atas bawah "
+    "antara terhadap ini itu yang siapa apa mana kapan bagaimana mengapa saya "
+    "kamu dia kami kita mereka aku adalah ialah ada sudah telah akan juga "
+    "masih hanya sangat lebih kurang semua setiap lain jika karena "
+    # Finnish (16 leaked: että/olla/hän/myös…)
+    "ja tai mutta että ei kyllä se tämä nämä nuo joka mikä kuka missä milloin "
+    "miksi miten minä sinä hän me te he on oli ollut olla olen myös jo vain "
+    "hyvin enemmän vähemmän kaikki jokainen muu jos koska välillä ilman "
+    # Hindi (1 leaked — अगर; the conjunction/pronoun core completes the policy)
+    "और या लेकिन कि नहीं हाँ यह वह ये वे जो क्या कौन कहाँ कब कैसे क्यों मैं तुम आप हम "
+    "का की के को से में पर है हैं था थे थी होना भी अभी केवल बहुत अधिक कम सब हर "
+    "अन्य अगर क्योंकि बीच बिना "
+    # Second evidence pass (same export, post-policy survivors): inflected
+    # function words, modals, attribution verbs and date-generics that the
+    # core sets miss — plus month names beyond en/fr (es "junio"×257 and
+    # ru "июня"×133 leaked exactly like the en/fr months above).
+    "aan geen wel veel zegt zei jaar jaren niet maar werd onder meer "  # nl
+    "att ett kommer skriver sade säger mån månader dag dagar år procent "  # sv
+    "está según durante contra años año donde fueron sido siendo estado "  # es
+    "zum zur kann muss soll andere anderen ihre ihren seinen seiner jahr jahren "  # de
+    "anni anno dopo prima contro essere stato stata fatto detto "  # it
+    "года году год лет годы после этом этой этого того тем том тех ней нем них ему ей им "  # ru
+    "etter siden også året år dager "  # nb
+    "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre "
+    "januar februar märz april mai juni juli august september oktober november dezember "
+    "gennaio febbraio marzo aprile maggio giugno luglio agosto settembre ottobre novembre dicembre "
+    "januari februari maart april mei juni juli augustus oktober "
+    "января февраля марта апреля мая июня июля августа сентября октября ноября декабря "
+    "январь февраль март апрель май июнь июль август сентябрь октябрь ноябрь декабрь "
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any

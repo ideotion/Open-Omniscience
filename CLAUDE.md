@@ -208,8 +208,24 @@ Before fearing loss from an archive-size change, run
   windows) because keyword meaning/importance varies through time
   (maintainer-stated). Entries into the ONE corpora system now: hand-
   selection, tag-selection (Sources), tag-click, commodity-click,
-  keyword-click, date-keyword-click — one window architecture for all
-  (article = corpus of 1, without the competition tab).
+  keyword-click, date-keyword-click, search-enter (field report #4) — one
+  window architecture for all (article = corpus of 1, without the
+  competition tab).
+  **EXTENDED (maintainer 2026-06-12): a LINKS sub-tab** in article/corpus/
+  search windows — link analysis tailored to the selection: which member
+  articles SHARE outbound links; one-click ingestion of linked pages into
+  the corpus (through the normal ethical fetch path) for keyword/date/
+  place extraction; the goal is identifying the SOURCES' SOURCES.
+  **METHODOLOGICAL RULING (anti-false-triangulation): convergence counts
+  as corroboration ONLY when the paths are independent — three articles
+  citing the same single origin are ONE source wearing three hats (the
+  real source is the origin, "the guy", not the people quoting him). The
+  Links tab must surface shared-origin structure (e.g. "these 5 articles
+  all trace to one press release / one interviewee") instead of letting
+  citation counts masquerade as independent confirmation.** Builds on the
+  existing substrate: article_links (39.8k rows live), citation-graph
+  export, the dormant external_sources resolution (0 rows live — wire it),
+  and the echo/lineage signals (same-origin detection precedent).
 - **Location extractor SHIPPED (2026-06-11):** src/timemap/locextract.py —
   gazetteer cities (case-sensitive, source-country disambiguated, says which
   rule decided) + curated multilingual country table (~90 forms); lexical,
@@ -499,6 +515,49 @@ Before fearing loss from an archive-size change, run
   stronger when When×Where×Who ingest persistence lands. Date-focused,
   event-focused AND agenda-focused approaches are all welcomed in the UI
   (maintainer's framing adopted).
+- **LIVE-TEST FIELD REPORT #4 (maintainer 2026-06-12, with the night's
+  63,672-keyword export — RECORDED same turn; analysis in-chat; the first
+  fix SHIPPED same turn):**
+  (1) KEYWORD POLICY — maintainer position recorded: NOT a fan of capping;
+  data crunching should use as many keywords as possible; if a cap ever
+  became necessary it must be DYNAMIC (the ChatGPT-2020 example: novel
+  rising terms must always be capturable); the ruled instrument instead is
+  a CLEAR EXCEPTION POLICY for pronouns/conjunctions/etc. in ALL the app's
+  corpus languages. EXPORT ANALYZED (22 source languages — the de-US-centred
+  catalog is working; en+fr CLEAN, the field-log-#1 French fix held; 16
+  catalog languages had NO stoplists: nl leaked 10,257 mentions (dat×1599
+  TOPPING Dutch analytics), de 8,194, es 5,754, sv/it/pl/ru/nb/hu/ar/sr/
+  tr/id/pt/fi/da likewise; 0% numeric junk — the extractor's number
+  handling is fine). SHIPPED same turn: evidence-based per-language
+  stoplist blocks ×16 languages + a second inflection/month-name pass
+  (extract.py; global_stopwords also applies at QUERY time ⇒ 704 rows /
+  71,854 mentions (6.3%) retroactively hidden with no data migration;
+  post-policy tops verified as real signal). PERF ANGLE QUANTIFIED: junk
+  is ~6% of mentions — capping would buy little; the slowness is
+  aggregation work (the performance batch), not row count ⇒ NO CAP stands.
+  NEW SYSTEMIC FINDINGS queued: source SELF-NAMES leak as keywords ("The
+  Moscow Times"×213, "DN"×107 ⇒ suppress keywords matching the article's
+  own source name — a rule, not a stoplist); Swedish boilerplate ("alla
+  artiklar"×118 = navigation text ⇒ per-source extraction-quality check);
+  some de-tagged articles carry English text (language-attribution noise).
+  (2) WIKIPEDIA: limit the dump-download list to the app's languages
+  (Esperanto "fun but quite unnecessary") — RULED; and the maintainer
+  could NOT READ/search the downloaded Wikipedia content (no UI entry) ⇒
+  the offline-dump reader/search gap is ELEVATED (ties into the ledgered
+  Wikipedia-as-a-source design).
+  (3) SEARCH = ONE CENTRAL ANALYTICAL TOOL (major refinement of the
+  ledgered global-search rework): typing → a bubble with the first THREE
+  results, each clickable; ENTER → the results open as a CORPUS-OF-
+  ARTICLES window — the SEVENTH entry into the one corpora system — with
+  the standard sub-tabs PLUS a search-corpus-only tab: ADVANCED SEARCH
+  (select/sort by dates, keywords, sources, source tags, region,
+  language); the boolean/operator vocabulary ("AND OR +"…) reminded
+  DISCREETLY in the UI or via an intuitively-placed hover popup; DATE
+  SEARCH is first-class (a searched date opens that date's corpus — joins
+  the date-pivot family); TYPO TOLERANCE for keyword AND date input with
+  the honest did-you-mean pattern: "Prsident" → show "President" results
+  while offering "search 'Prsident' literally" — NEVER silently
+  substitute. "Searching is an analytical tool" (maintainer framing).
 - **PERFORMANCE BATCH (maintainer 2026-06-12, live: "the app is getting very
   slow, we should think of a better data management background"; the keyword
   diagnostics download FAILED at real scale — 6.4k articles / 228k keywords /
