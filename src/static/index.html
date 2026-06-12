@@ -1704,6 +1704,55 @@
     <section class="panel" id="backup-panel">
       <h2>Backup &amp; restore</h2>
       <div id="backup-status" class="hint">Checking backend…</div>
+
+      <h3 style="margin-bottom:6px">Full backup — one signed archive</h3>
+      <p class="muted" style="margin-top:0">One file carries everything: articles, keywords, Wikipedia and law
+        snapshots, market series, events, settings, annotations and the custody log — with a signed manifest, so
+        tampering is detectable. Encrypted with a passphrase by default; there is no recovery for a lost passphrase.</p>
+      <div class="row">
+        <div style="flex:2"><label for="v2-pass">Passphrase</label>
+          <input id="v2-pass" type="password" autocomplete="new-password" placeholder="a strong, memorable passphrase"></div>
+        <div style="flex:0 0 auto;align-self:end">
+          <button onclick="v2Backup(false)">Download full backup (.ooenc)</button></div>
+      </div>
+      <details style="margin-top:6px">
+        <summary class="muted">Unencrypted archive (deliberate choice)…</summary>
+        <div class="hint">An unencrypted archive protects nothing at rest and deliberately excludes your signing keys.</div>
+        <button class="secondary" onclick="v2Backup(true)">Download unencrypted backup (.oobak)</button>
+      </details>
+      <div id="v2-backup-result" class="hint"></div>
+
+      <hr>
+      <h3 style="margin-bottom:6px">Restore — merge with a preview</h3>
+      <p class="muted" style="margin-top:0">Restoring <b>merges</b> the archive into your corpus — nothing is replaced
+        or deleted, duplicates are detected bit-for-bit, and where a value conflicts your local version is kept and
+        both values are reported. Preview first: the plan below shows exactly what would happen. A safety snapshot is
+        taken before anything is applied, and the merge refuses to proceed if verification fails.</p>
+      <div class="row">
+        <div style="flex:2"><label for="v2-restore-file">Backup file</label>
+          <input type="file" id="v2-restore-file" accept=".oobak,.ooenc,application/octet-stream"></div>
+        <div style="flex:2"><label for="v2-restore-pass">Passphrase for this file</label>
+          <input id="v2-restore-pass" type="password" autocomplete="off" placeholder="empty for an unencrypted archive"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="v2Preview()">Preview merge</button></div>
+      </div>
+      <div id="v2-preview" style="display:none">
+        <div id="v2-verify" class="hint"></div>
+        <div id="v2-plan"></div>
+        <div class="row" style="margin-top:8px">
+          <button id="v2-apply-btn" onclick="v2Apply()">Apply this merge</button>
+          <button class="secondary" onclick="v2Discard()">Discard preview</button>
+        </div>
+      </div>
+      <div id="v2-commit-result" class="hint"></div>
+
+      <details style="margin-top:8px">
+        <summary class="muted">Import history</summary>
+        <div id="v2-batches" class="hint">—</div>
+      </details>
+
+      <hr>
+      <details>
+        <summary class="muted">Older backup tools (replace-style, kept for compatibility)…</summary>
       <div class="row" style="margin-top:6px">
         <button class="secondary" onclick="downloadBackup()">Download backup (.db)</button>
       </div>
@@ -1720,6 +1769,7 @@
         <code>pre-restore-*.db</code> beside the database so the operation is reversible.
       </div>
       <div id="restore-result" class="hint"></div>
+      </details>
     </section>
 
     <section class="panel" id="diagnostics-panel">
@@ -3311,6 +3361,7 @@
           (st.reclaimable_bytes == null) ? "—" : _fmtBytes(st.reclaimable_bytes);
       } catch (e) { $("backup-status").textContent = "Backup status unavailable: " + e.message; }
       loadKeywordFilter();
+      loadV2Batches();
       loadDumpLanguages();
       loadWikiDumps();
       loadFetchMode();
@@ -3416,6 +3467,109 @@
       } catch (e) {
         out.textContent = t("Compaction failed:") + " " + e.message;
       } finally { btn.disabled = false; }
+    }
+
+    // ---- Backup v2: one signed archive; restore = MERGE with a preview ---- //
+    let _v2Token = null;
+    async function v2Backup(plaintext) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("v2-backup-result");
+      const pass = $("v2-pass").value;
+      if (!plaintext && !pass) { out.textContent = t("Choose a passphrase first (or use the deliberate unencrypted option)."); return; }
+      out.textContent = t("Building the archive…");
+      try {
+        const r = await fetch("/api/backup/v2", {method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(plaintext ? {plaintext: true} : {passphrase: pass})});
+        if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+        const blob = await r.blob();
+        const cd = r.headers.get("Content-Disposition") || "";
+        const m = cd.match(/filename="?([^";]+)"?/);
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = m ? m[1] : "open-omniscience-backup";
+        document.body.appendChild(a); a.click(); a.remove();
+        out.textContent = t("Backup downloaded.") + " " + _fmtBytes(blob.size);
+      } catch (e) { out.textContent = t("Backup failed:") + " " + e.message; }
+    }
+    function _v2PlanTable(plan) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const rows = Object.entries(plan || {})
+        .map(([tbl, c]) => ({tbl, new: c.new || 0, dup: c.duplicate || 0, conf: c.conflict || 0, conflicts: c.conflicts || []}))
+        .sort((a, b) => (b.new + b.conf) - (a.new + a.conf));
+      const active = rows.filter(r => r.new || r.dup || r.conf);
+      const quiet = rows.length - active.length;
+      let html = `<table style="width:100%;font-size:13px;border-collapse:collapse"><thead><tr>` +
+        `<th style="text-align:left">${esc(t("Data"))}</th><th>${esc(t("New"))}</th>` +
+        `<th>${esc(t("Already present"))}</th><th>${esc(t("Conflicts (your version kept)"))}</th></tr></thead><tbody>`;
+      for (const r of active) {
+        html += `<tr><td style="padding:2px 6px">${esc(r.tbl)}</td>` +
+          `<td style="text-align:center">${r.new ? `<b>${r.new}</b>` : "0"}</td>` +
+          `<td style="text-align:center" class="muted">${r.dup}</td>` +
+          `<td style="text-align:center">${r.conf ? `<b>${r.conf}</b>` : "0"}</td></tr>`;
+        if (r.conflicts.length) {
+          const det = r.conflicts.slice(0, 5).map(c => esc(JSON.stringify(c))).join("<br>");
+          html += `<tr><td colspan="4" class="muted" style="font-size:12px;padding:0 6px 6px"><details><summary>` +
+            esc(t("conflict samples (local value kept)")) + `</summary>${det}</details></td></tr>`;
+        }
+      }
+      html += `</tbody></table>`;
+      if (!active.length) html = `<div class="hint">${esc(t("Nothing new: every row in this archive is already in your corpus."))}</div>` ;
+      if (quiet > 0) html += `<div class="muted" style="font-size:12px;margin-top:4px">${quiet} ${esc(t("further table(s) with no changes."))}</div>`;
+      return html;
+    }
+    async function v2Preview() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const f = $("v2-restore-file").files[0];
+      const out = $("v2-commit-result");
+      if (!f) { out.textContent = t("Choose a backup file first."); return; }
+      out.textContent = t("Previewing — nothing is changed yet…");
+      const fd = new FormData();
+      fd.append("file", f); fd.append("passphrase", $("v2-restore-pass").value || "");
+      try {
+        const r = await fetch("/api/backup/v2/restore/preview", {method: "POST", body: fd});
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.detail || r.statusText);
+        _v2Token = body.commit_token;
+        $("v2-preview").style.display = "";
+        const ver = body.verification || {};
+        const sig = body.signature_state || "?";
+        $("v2-verify").innerHTML =
+          `<span class="pill ${ver.ok ? "ok" : "warn"}">${esc(ver.ok ? t("verification passed") : t("verification FAILED — merge will be refused"))}</span> ` +
+          `<span class="muted">${esc(t("signature:"))} ${esc(sig)} · ${esc(t("archive schema:"))} ${esc(body.artifact_schema_rev || "?")}</span>`;
+        $("v2-plan").innerHTML = _v2PlanTable(body.plan);
+        $("v2-apply-btn").disabled = !ver.ok;
+        out.textContent = "";
+      } catch (e) { out.textContent = t("Preview failed:") + " " + e.message; $("v2-preview").style.display = "none"; }
+    }
+    async function v2Apply() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("v2-commit-result");
+      if (!_v2Token) { out.textContent = t("Preview first."); return; }
+      out.textContent = t("Merging… a safety snapshot is taken first.");
+      const fd = new FormData(); fd.append("token", _v2Token);
+      try {
+        const r = await fetch("/api/backup/v2/restore/commit", {method: "POST", body: fd});
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.detail || r.statusText);
+        _v2Token = null; $("v2-preview").style.display = "none";
+        out.innerHTML = body.committed
+          ? `<span class="pill ok">${esc(t("Merge applied."))}</span> <span class="muted">${esc(t("batch"))} ${esc(String(body.batch_id))} · ${esc(t("snapshot:"))} ${esc(body.pre_restore_snapshot || "—")}</span>`
+          : `<span class="pill warn">${esc(t("Merge refused:"))} ${esc(body.refused || "?")}</span>`;
+        loadV2Batches();
+      } catch (e) { out.textContent = t("Merge failed:") + " " + e.message; }
+    }
+    async function v2Discard() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_v2Token) { try { await api(`/api/backup/v2/restore/preview/${encodeURIComponent(_v2Token)}`, {method: "DELETE"}); } catch (_e) {} }
+      _v2Token = null; $("v2-preview").style.display = "none";
+      $("v2-commit-result").textContent = t("Preview discarded; nothing was changed.");
+    }
+    async function loadV2Batches() {
+      try {
+        const d = await api("/api/backup/v2/batches");
+        const rows = (d.batches || []).slice(0, 10).map(b =>
+          `<div>#${esc(String(b.id))} · ${esc(b.imported_at || "?")} · ${esc(b.artifact_kind || "?")} · ${esc((b.origin_fingerprint || "?").slice(0, 12))} · ${esc(b.status || "?")}</div>`);
+        $("v2-batches").innerHTML = rows.join("") || "—";
+      } catch (_e) { /* panel stays at dash */ }
     }
 
     function downloadBackup() {

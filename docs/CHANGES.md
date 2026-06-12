@@ -51,7 +51,19 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   build environment cannot reach FRED to verify; honesty over speed).
   USER_MANUAL gains the "Running over Tor" chapter. +5 chrome strings ×12.
 
-- **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
+- **Settings: backup v2 becomes the UI's primary path (the OS-grade mandate's
+  last user-facing mile).** Data & backup now leads with the signed archive:
+  one passphrase-encrypted file carrying everything (plaintext only as a
+  deliberate, explained choice that excludes signing keys), and **Restore =
+  merge with a preview**: upload → dry-run plan table per data domain (new /
+  already present / conflicts-kept-local, with conflict samples), the
+  verification verdict up front, Apply disabled when verification fails (the
+  engine would refuse anyway — the UI does not invite it), one-shot commit
+  token, safety snapshot stated, import history visible. The legacy
+  replace-style tools are demoted into a collapsed "older tools" block —
+  available, never silently lost. ~36 chrome strings ×12 locales; UI contract
+  pinned by tests.
+
 - **Network switch → airplane mode + online consent (field report #2 item 1).**
   The sidebar toggle is now ONE constant airplane glyph whose **fill is the
   state** (filled = offline engaged) — action glyphs no longer label state.
@@ -87,6 +99,8 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   true when the stored language disagrees with the signature's dominant
   article language (the de-tagged-English attribution noise) — evidence for
   the operator, never a silent correction.
+
+- **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled
   American (the live-test "US = 1,553" inflation; the canonicalised catalog's real
