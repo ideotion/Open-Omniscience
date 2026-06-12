@@ -533,7 +533,15 @@ ruling, a contingency, or a deliberate-omission note.
   single point of capture — the app's own anti-single-origin ethics) but
   the most VERIFIABLE mirror in a clonable federation; provenance ≠
   veracity, stated forever. User corpora NEVER touch the mirror
-  (hosting-stance clarification under Non-negotiables).
+  (hosting-stance clarification under Non-negotiables). **NODE 0 +
+  SEQUENCING (maintainer, same day):** the maintainer's own computer is
+  the first server (cheap, web-accessible, AIR-GAPPED future-proof
+  backups — the strongest tamper-resistance layer); the project is a NEW
+  REPO / FORK of this one, created ONLY when the current project is
+  MATURE (maintainer's gate — V0.1+ first); home-hosting implications
+  recorded honestly (residential-line realities, exposure → quiet-origin
+  + public-mirrors split, offline signing keys, the fork inherits the
+  ethics constitution); node-0 questions filed (#7 in the section).
 - **Parked (designed-only):** event-family merge/split UI (#53), saved-filter
   "smart calendars" (#50), offline vector map, two-hop keyword graphs (#43),
   autonomous onboarding track (#49), **voice-only mode (maintainer input

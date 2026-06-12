@@ -1032,6 +1032,48 @@ anything that monetizes reader behavior. If funds are raised, the
 permanence promise must be structural (endowment, data escrowed across
 independent nodes), not a pledge. Publish the business plan in the open.
 
+### Node 0 — the maintainer's own machine (maintainer addition 2026-06-12)
+
+**The decision recorded:** the maintainer offers a personal computer as the
+first server — a cheap way to have a local solution, accessible through the
+web, with **air-gapped, future-proof backups**; the whole idea lives in a
+**NEW repository, a fork of this project — created only once the current
+project is MATURE** (the maintainer's own sequencing gate; V0.1-and-beyond
+comes first, the fork waits).
+
+Why node-0-at-home is actually the RIGHT first step, on the project's own
+terms: it proves the entire stack (capture → content addressing → signed
+log → snapshot export → independent verification) at zero infrastructure
+cost, and a self-hosted node is the purest expression of "we control our
+copy". The **air-gapped backup is the strongest layer in the whole design**
+— an offline disk cannot be remotely tampered with at all; it turns the
+printed-book property literal (write, disconnect, shelve; fixity-check on a
+schedule). Honest implications to design for, stated now so they are never
+surprises:
+
+- **Residential hosting realities:** asymmetric upload bandwidth, ISP terms
+  (many forbid servers on consumer lines), dynamic IP, power/uptime — fine
+  for node 0 + snapshot seeding (torrents tolerate downtime by design),
+  wrong for "the" always-on public endpoint. Publish SNAPSHOTS + log roots
+  rather than promising 24/7 interactive service from a home line.
+- **Exposure:** a public server on a home connection points the world at
+  the maintainer's house — IP, DDoS surface, and the personal-liability
+  question land on one person. Mitigations to weigh: a cheap tunnel/CDN
+  front (changes the trust story — state it), publishing through an
+  existing host (torrent + IA + university mirrors) while the home machine
+  stays the SIGNING origin, and moving legal exposure to a foundation
+  before the node is loud. The home machine as quiet origin-of-truth +
+  public distribution elsewhere is the sane v0 split.
+- **Security posture for the box itself:** the server hosts OPEN data +
+  signing keys — the keys are the crown jewels, not the data; keep signing
+  on an offline/air-gapped step where practical (sign snapshots, then
+  publish), so even a compromised web-facing box cannot rewrite history
+  silently (the log + external witnesses catch it).
+- **The fork inherits the constitution:** robots-first acquisition, honest
+  provenance, no user data EVER (the web UI it serves must work without
+  accounts; analytics-free), GPL, the no-fabricated-security rule — the
+  fork is a deployment shape, never an ethics fork.
+
 ### QUESTIONS FOR THE MAINTAINER (answer when the sister project starts)
 
 1. **Scope of "all open data" v1:** news feeds + Wikipedia dumps +
@@ -1048,3 +1090,8 @@ independent nodes), not a pledge. Publish the business plan in the open.
    or a neutral commons several apps (including non-OO tools) can cite?
 6. **The first witness set:** which independent parties co-sign log roots
    at launch — universities, press-freedom orgs, libraries?
+7. **Node 0 specifics (added with the self-hosting decision):** which
+   machine/OS and disk budget; tunnel/CDN front vs direct exposure vs
+   quiet-origin+public-mirrors; the air-gap rotation cadence (how many
+   disks, how often, stored where); and what "current project is mature"
+   means concretely — the V0.1 RC gate, or a later milestone?
