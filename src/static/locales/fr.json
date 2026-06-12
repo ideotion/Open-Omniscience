@@ -516,5 +516,17 @@
   "Found via case-insensitive match.": "Trouvé via une correspondance insensible à la casse.",
   "dump revision of": "révision du dump du",
   "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "Wikitexte brut (non rendu), extrait localement de votre dump téléchargé — aucun appel réseau.",
-  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "La liste est limitée aux langues de l'application — les éditions que cette application sait lire et analyser. Groupée par continent ;"
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "La liste est limitée aux langues de l'application — les éditions que cette application sait lire et analyser. Groupée par continent ;",
+  "Before you leave — what this app knows": "Avant de partir — ce que cette application sait",
+  "A stored local copy exists — read it without going online:": "Une copie locale existe — lisez-la sans aller en ligne :",
+  "Known source in your catalog:": "Source connue de votre catalogue :",
+  "Articles in your corpus citing this URL:": "Articles de votre corpus citant cette URL :",
+  "Tracked law document:": "Document juridique suivi :",
+  "Watched Wikipedia page:": "Page Wikipédia surveillée :",
+  "Top keywords of the local copy:": "Principaux mots-clés de la copie locale :",
+  "No local record of this link yet.": "Aucune trace locale de ce lien pour l'instant.",
+  "Built from your local database only — no network call.": "Construit uniquement depuis votre base locale — aucun appel réseau.",
+  "The transparent outbound link — its text is the full address; opening it leaves this machine:": "Le lien sortant transparent — son texte est l'adresse complète ; l'ouvrir quitte cette machine :",
+  "Opens the local preview first — what your database knows about this link": "Ouvre d'abord l'aperçu local — ce que votre base sait de ce lien",
+  "Close": "Fermer"
 }

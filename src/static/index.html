@@ -2023,6 +2023,19 @@
     <div id="corpus-body" style="padding:12px 16px;max-height:64vh;overflow:auto"></div>
   </dialog>
 
+  <!-- Local link preview (invariant #6 extension, first target: Home-card
+       evidence links): before any external link is followed, show what THIS
+       database already knows about it; the outbound anchor's visible text IS
+       the full URL, and clicking it still passes the external-link confirm. -->
+  <dialog id="link-preview" style="max-width:520px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
+    <h3 style="margin:0 0 8px">Before you leave — what this app knows</h3>
+    <div id="lp-body" style="display:flex;flex-direction:column;gap:5px"></div>
+    <div id="lp-out" style="margin-top:10px"></div>
+    <div style="margin-top:12px;display:flex;justify-content:flex-end">
+      <button class="secondary" onclick="document.getElementById('link-preview').close()">Close</button>
+    </div>
+  </dialog>
+
   <dialog id="net-consent" style="max-width:440px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
     <h3 style="margin:0 0 8px">Go online?</h3>
     <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
@@ -2832,9 +2845,16 @@
       const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).map(e => {
         const label = esc(e.title || e.url);
         const meta = [e.source, (e.published_at || "").slice(0,10)].filter(Boolean).map(esc).join(" · ");
+        // External evidence opens the LOCAL preview first (invariant #6
+        // extension, maintainer-repeated first target): never a bare jump.
+        const ext = e.url && /^https?:\/\//i.test(e.url);
         const link = e.article_id
           ? `<a href="/api/articles/${e.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">${label}</a>`
-          : (e.url ? `<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${label}</a>` : label);
+          : (e.url
+            ? (ext
+              ? `<a href="${esc(safeUrl(e.url))}" onclick="event.preventDefault();openLinkPreview('${esc(safeUrl(e.url))}')" title="Opens the local preview first — what your database knows about this link">${label}</a>`
+              : `<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${label}</a>`)
+            : label);
         return `<span>${link}${meta ? ` <span class="muted">— ${meta}</span>` : ""}</span>`;
       }).join("");
       const evidBlock = evid ? `<div class="evid">${evid}</div>` : "";
@@ -2914,6 +2934,44 @@
         const el = document.querySelector(`.card[data-card="${id}"]`);
         if (el) el.remove();
       } catch (e) { toast("Could not dismiss: " + e.message, "err"); }
+    }
+
+    // --- Local link preview (invariant #6 extension) ---------------------------
+    // The database extraction for an outbound URL, shown BEFORE leaving the
+    // machine; the outbound anchor's text IS the full address, and clicking it
+    // still passes the external-link confirm (invariant #7) — layered consent.
+    async function openLinkPreview(url) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const dlg = $("link-preview"), body = $("lp-body"), out = $("lp-out");
+      if (!dlg) { window.open(url, "_blank", "noopener"); return false; }
+      body.textContent = t("Loading…"); out.innerHTML = "";
+      dlg.showModal();
+      try {
+        const d = await api("/api/links/preview?url=" + encodeURIComponent(url));
+        const rows = [`<div class="muted small">${esc(d.domain)}</div>`];
+        if (d.local_article) {
+          rows.push(`<div>${esc(t("A stored local copy exists — read it without going online:"))} <a href="${esc(d.local_article.reader_url)}" target="_blank" rel="noopener">${esc(d.local_article.title || "")}</a></div>`);
+        }
+        if (d.known_source) {
+          rows.push(`<div>${esc(t("Known source in your catalog:"))} <b>${esc(d.known_source.name)}</b>${d.known_source.country ? ` <span class="muted">(${esc(String(d.known_source.country).toUpperCase())})</span>` : ""}</div>`);
+        }
+        rows.push(`<div>${esc(t("Articles in your corpus citing this URL:"))} <b>${d.cited_by_articles}</b></div>`);
+        if ((d.citing_examples || []).length) {
+          rows.push(`<div class="muted small">${d.citing_examples.map(x => `<a href="/api/articles/${x.article_id}/view" target="_blank" rel="noopener">${esc(x.title || ("#" + x.article_id))}</a>`).join(" · ")}</div>`);
+        }
+        if (d.law_document) rows.push(`<div>${esc(t("Tracked law document:"))} <b>${esc(d.law_document.title)}</b> <span class="muted">(${esc(String(d.law_document.jurisdiction || "").toUpperCase())})</span></div>`);
+        if (d.wiki_page) rows.push(`<div>${esc(t("Watched Wikipedia page:"))} <b>${esc(d.wiki_page.title)}</b> <span class="muted">(${esc(d.wiki_page.wiki)})</span></div>`);
+        if (d.keywords && d.keywords.length) rows.push(`<div class="muted small">${esc(t("Top keywords of the local copy:"))} ${d.keywords.map(esc).join(", ")}</div>`);
+        if (!d.local_article && !d.known_source && !d.cited_by_articles) rows.push(`<div class="muted">${esc(t("No local record of this link yet."))}</div>`);
+        rows.push(`<div class="muted small" style="margin-top:4px" title="${esc(d.method || "")}">${esc(t("Built from your local database only — no network call."))}</div>`);
+        body.innerHTML = rows.join("");
+        out.innerHTML = `<div class="muted small">${esc(t("The transparent outbound link — its text is the full address; opening it leaves this machine:"))}</div>` +
+          `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer" style="word-break:break-all">${esc(d.url)}</a>`;
+      } catch (e) {
+        body.innerHTML = `<div class="note err">${esc(e.message)}</div>`;
+        out.innerHTML = `<a href="${esc(safeUrl(url))}" target="_blank" rel="noopener noreferrer" style="word-break:break-all">${esc(url)}</a>`;
+      }
+      return false;
     }
 
     // --- Weather corroboration (if-this-then-SUGGEST, 2026-06-12) -------------

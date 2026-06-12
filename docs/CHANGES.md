@@ -11,6 +11,17 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Local-first link previews on Home cards (T16 slice 1 — invariant #6
+  extended, first target).** External evidence links on Home cards no longer
+  jump straight out: they open a **local preview** first — what your database
+  already knows about the URL (known source, a stored local copy with the
+  reader link, how many of your own articles cite it with examples, tracked
+  law/Wikipedia matches, the local copy's top keywords) — built from local
+  reads only and saying so. The outbound anchor's **visible text is the full
+  URL**, and clicking it still passes the external-link confirmation popup
+  (layered consent). Enforced in the invariants suite (#6e). +12 chrome
+  strings ×12 locales.
+
 - **Offline dump reader (T14 slice 1) + the ruled dump-list limit.** New
   Wikipedia dump downloads default to the **multistream** form and its tiny
   companion index rides along automatically — that pair is what makes a

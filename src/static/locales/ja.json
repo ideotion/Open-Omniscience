@@ -516,5 +516,17 @@
   "Found via case-insensitive match.": "大文字小文字を区別しない一致で見つかりました。",
   "dump revision of": "ダンプ版の日付",
   "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "生のウィキテキスト（未レンダリング）。ダウンロード済みダンプからローカルに抽出 — ネットワーク通信なし。",
-  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "このリストはアプリの言語に限定されています — このアプリが読み取り・分析できる言語版です。大陸別にグループ化；"
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "このリストはアプリの言語に限定されています — このアプリが読み取り・分析できる言語版です。大陸別にグループ化；",
+  "Before you leave — what this app knows": "離れる前に — このアプリが知っていること",
+  "A stored local copy exists — read it without going online:": "保存済みのローカルコピーがあります — オンラインにせず読めます：",
+  "Known source in your catalog:": "カタログ内の既知のソース：",
+  "Articles in your corpus citing this URL:": "この URL を引用しているコーパス内の記事：",
+  "Tracked law document:": "追跡中の法令文書：",
+  "Watched Wikipedia page:": "ウォッチ中のウィキペディアページ：",
+  "Top keywords of the local copy:": "ローカルコピーの主要キーワード：",
+  "No local record of this link yet.": "このリンクのローカル記録はまだありません。",
+  "Built from your local database only — no network call.": "ローカルデータベースのみから構築 — ネットワーク通信なし。",
+  "The transparent outbound link — its text is the full address; opening it leaves this machine:": "透明な外部リンク — テキストが完全なアドレスです。開くとこのマシンを離れます：",
+  "Opens the local preview first — what your database knows about this link": "まずローカルプレビューを開きます — データベースがこのリンクについて知っていること",
+  "Close": "閉じる"
 }

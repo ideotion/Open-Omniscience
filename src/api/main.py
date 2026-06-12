@@ -110,6 +110,9 @@ from src.api.law import router as law_router
 # Import link / co-citation analysis router (honest counts only)
 from src.api.link_analysis import router as link_analysis_router
 
+# Import link-preview router (invariant #6 extension: the local popup's extraction)
+from src.api.link_preview import router as link_preview_router
+
 # Link-analysis router quarantined in v0.4: its services (credibility scorer,
 # source scraper, network analyzer) produced fabricated outputs (see docs/HISTORY.md).
 # Import LLM router (clean Ollama HTTP client; replaces the legacy routes.llm)
@@ -410,6 +413,7 @@ app.include_router(law_router)
 
 # Include link / co-citation analysis router
 app.include_router(link_analysis_router)
+app.include_router(link_preview_router)
 
 # Include Wikipedia change-tracking router
 app.include_router(wiki_router)

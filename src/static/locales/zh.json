@@ -516,5 +516,17 @@
   "Found via case-insensitive match.": "通过不区分大小写的匹配找到。",
   "dump revision of": "转储修订日期",
   "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "原始维基文本（未渲染），从您下载的转储中本地提取——无任何网络调用。",
-  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "列表仅限于应用支持的语言——本应用能够读取和分析的语言版本。按大洲分组；"
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "列表仅限于应用支持的语言——本应用能够读取和分析的语言版本。按大洲分组；",
+  "Before you leave — what this app knows": "离开之前——本应用所知的信息",
+  "A stored local copy exists — read it without going online:": "已存有本地副本——无需联网即可阅读：",
+  "Known source in your catalog:": "您目录中的已知来源：",
+  "Articles in your corpus citing this URL:": "您语料库中引用此网址的文章：",
+  "Tracked law document:": "已跟踪的法律文件：",
+  "Watched Wikipedia page:": "已关注的维基百科页面：",
+  "Top keywords of the local copy:": "本地副本的主要关键词：",
+  "No local record of this link yet.": "此链接尚无本地记录。",
+  "Built from your local database only — no network call.": "仅基于您的本地数据库构建——无任何网络调用。",
+  "The transparent outbound link — its text is the full address; opening it leaves this machine:": "透明的外链——其文字即完整地址；打开它将离开本机：",
+  "Opens the local preview first — what your database knows about this link": "先打开本地预览——您的数据库对此链接的了解",
+  "Close": "关闭"
 }
