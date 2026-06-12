@@ -63,7 +63,7 @@ def _self_name_forms(source) -> set[str]:
 
 
 def _get_or_create_keyword(
-    session: Session, t: ExtractedTerm, *, language: str, extractor: str
+    session: Session, t: ExtractedTerm, *, language: str | None, extractor: str
 ) -> Keyword:
     kw = session.query(Keyword).filter_by(normalized_term=t.normalized).first()
     is_entity = t.kind != "term"
@@ -71,7 +71,7 @@ def _get_or_create_keyword(
         kw = Keyword(
             term=t.term,
             normalized_term=t.normalized,
-            language=language or "en",
+            language=language or None,  # unknown stays NULL, never silently "en" (audit 06)
             frequency=0,
             is_entity=is_entity,
             entity_type=(t.kind if is_entity else None),
@@ -102,7 +102,8 @@ def index_article(
     terms = extractor.extract(
         content or "",
         title=article.title or "",
-        language=article.language or "en",
+        language=article.language or "en",  # extractor needs SOME stoplist; "en" here
+        # is an extraction working assumption, never stored as the keyword's language.
     )
 
     observed = article.published_at or article.created_at
@@ -129,7 +130,7 @@ def index_article(
             self_suppressed += 1
             continue
         kw = _get_or_create_keyword(
-            session, t, language=article.language or "en", extractor=extractor.name
+            session, t, language=article.language, extractor=extractor.name
         )
         session.add(
             KeywordMention(

@@ -405,8 +405,14 @@ class Source(Base):
     tags: Mapped[str | None] = mapped_column(String(500))  # Comma-separated tags
 
     # Enhanced metadata fields
-    reliability_score: Mapped[int | None] = mapped_column(Integer, default=5)  # 1-10 scale
-    language: Mapped[str | None] = mapped_column(String(10), default="en")  # ISO 639-1 code
+    # No default: an unrated source has NO reliability figure (the old
+    # default=5 asserted "medium" for every unrated source — fabricated data;
+    # audit 06 remediation). Operator/catalog-set metadata only, never computed.
+    reliability_score: Mapped[int | None] = mapped_column(Integer)  # 1-10 scale, operator-set
+    # No default: an unknown language is honestly NULL, never silently "en"
+    # (audit 06 remediation; the keyword export's language_mismatch evidence
+    # exposed exactly this class of attribution noise).
+    language: Mapped[str | None] = mapped_column(String(10))  # ISO 639-1 code
     region: Mapped[str | None] = mapped_column(String(50), default="global")
     # No default: a country is set from the catalog, the ccTLD, or the user —
     # never assumed. (The old default="US" fabricated a US bias; 0.09 fix.)
@@ -651,7 +657,7 @@ class Keyword(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     term: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_term: Mapped[str] = mapped_column(String(255), nullable=False)
-    language: Mapped[str | None] = mapped_column(String(10), default="en")
+    language: Mapped[str | None] = mapped_column(String(10))  # honest NULL when unknown (audit 06)
     frequency: Mapped[int | None] = mapped_column(Integer, default=0)
     category_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("keyword_categories.id"))
     is_ngram: Mapped[bool | None] = mapped_column(Boolean, default=False)
@@ -803,9 +809,11 @@ class ExternalSource(Base):
     # "medium credibility" for every unknown — fabricated data; audit 0.0.9). The
     # link-analysis API exposes counts only, never this field.
     credibility_score: Mapped[float | None] = mapped_column(Float)  # 0-100, unused today
-    political_bias: Mapped[float | None] = mapped_column(Float, default=0.0)  # -100 (left) to 100 (right)
+    # No default: an unmeasured bias is NULL — default 0.0 asserted "centrist"
+    # for every unknown (same fabrication class as credibility; audit 06).
+    political_bias: Mapped[float | None] = mapped_column(Float)  # -100 (left) to 100 (right)
     country: Mapped[str | None] = mapped_column(String(2))
-    language: Mapped[str | None] = mapped_column(String(10), default="en")
+    language: Mapped[str | None] = mapped_column(String(10))  # honest NULL when unknown (audit 06)
     description: Mapped[str | None] = mapped_column(Text)
     founded_year: Mapped[int | None] = mapped_column(Integer)
     alexa_rank: Mapped[int | None] = mapped_column(Integer)
