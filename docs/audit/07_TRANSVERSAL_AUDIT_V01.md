@@ -168,6 +168,11 @@ be dishonest.
 
 ## 7. Action Plan B — the multi-step path to V0.1 ALPHA
 
+> **The canonical, full version of this plan — every step with its
+> rationale, commentary, and acceptance criteria — lives in
+> `docs/product/V01_ALPHA_ACTION_PLANS.md` (Plan B).** The list below is
+> the summary that stays with the findings.
+
 - **B0 · Arbitrate this audit** (maintainer): confirm severities; fold rows
   into `RELEASE_0.1_RC_GATE.md` (B1 items proposed RC-BLOCKING).
 - **B1 · Disclosure sweep (cheap, ×12, test-enforced):** VADER

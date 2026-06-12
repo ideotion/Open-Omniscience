@@ -1205,6 +1205,11 @@ surprises:
 > users *without* a scientifically sound approach — through contradictory,
 > critical reflection, and deduce what the app still owes them. Companion
 > piece: `docs/audit/07_TRANSVERSAL_AUDIT_V01.md` (the systems half).
+> **THE ACTION PLANS live canonically in
+> `docs/product/V01_ALPHA_ACTION_PLANS.md`** — both plans in full, every
+> step with its rationale + commentary + acceptance criteria, plus the
+> maintainer's verbatim commission for recall. This section keeps the
+> REFLECTIONS (scenarios + contradictions) the plan was deduced from.
 
 ### The scenarios reasoned from
 
@@ -1301,6 +1306,6 @@ A9. **"What changed since I last looked"** *(S2 retention, honestly):* a
     flagged edits, watch-rule hits when those land) — facts, not a feed
     of opinions.
 
-*Proposed order:* A2+A6-slice-1 (cheap disclosures) → A1 slice 1 → A3 →
-A4/A5 → A7/A8/A9 → A6 slice 2. Each slice: strings ×12, methods stated,
-tests, browser-verified where UI.
+*The full ACTION PLAN built from these features — step order, rationale
+per decision, my commentary, acceptance criteria, dependencies — lives in
+`docs/product/V01_ALPHA_ACTION_PLANS.md` (Plan A).*

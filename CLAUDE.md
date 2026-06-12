@@ -246,8 +246,14 @@ ruling, a contingency, or a deliberate-omission note.
   never auto-corrected; 10 named aggregator biases with which are
   update-fixable vs disclosure-permanent — notably CJK segmentation absent
   = zh/ja keywords nonfunctional while the UI ships those locales; steps
-  B0–B7). AWAITS B0: maintainer arbitration of severities into the RC
-  gate (B1 disclosure sweep proposed RC-BLOCKING).
+  B0–B7). **THE CANONICAL ACTION PLANS (maintainer-asked re-issue
+  2026-06-12 "I haven't seen any action plans"): both plans live IN FULL in
+  `docs/product/V01_ALPHA_ACTION_PLANS.md`** — every step with rationale +
+  my commentary + acceptance criteria + dependencies + sequencing
+  rationale, AND the maintainer's verbatim commission stored for recall;
+  FUTURE_DEVELOPMENTS/audit-07/RC-gate all point at it. AWAITS B0:
+  maintainer arbitration of severities into the RC gate (B1 disclosure
+  sweep proposed RC-BLOCKING).
 - **FULL-AUDIT REMEDIATION QUEUE (from `docs/audit/06_FULL_AUDIT_0_0_9.md`,
   delivered 2026-06-11; several items already fixed in-audit):** top: qualify
   the "stays on this machine" claim ×12 locales (AWAITS MAINTAINER RULING);
