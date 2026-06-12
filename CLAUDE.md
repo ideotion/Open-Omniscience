@@ -447,12 +447,40 @@ ruling, a contingency, or a deliberate-omission note.
   auto-hidden); language_mismatch flag per keyword (stored vs dominant
   signature language — evidence, not a correction).
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
-  FUTURE_DEVELOPMENTS with the design map + 5 QUESTIONS awaiting answers):**
-  wiki articles enter the SAME aggregation as sourced articles (metadata,
-  when×where×who, keywords) BUT are AMENDABLE like the law — every change
-  traceable, version-anchored analytics, perfect audit control. Honest gap
-  recorded: downloaded dumps are FILES only today (never parsed into the
-  corpus); only watched pages get baseline→diff→flag.
+  FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
+  the SAME aggregation as sourced articles (metadata, when×where×who,
+  keywords) BUT are AMENDABLE like the law — every change traceable,
+  version-anchored analytics, perfect audit control.
+  **RULED 2026-06-12 (the mandate made concrete — "this needs your full
+  attention"):** (1) wiki articles appear in GENERAL search like any article;
+  (2) same keyword aggregator + When×Where×Who anchoring; (3) the article
+  shown is ALWAYS the LATEST version (default), change history available
+  beneath; (4) an audit/track-change ENGINE receives edits and materializes
+  the latest version on demand; (5) a DEDICATED tracked-changes TAB in the
+  wiki-article UI — scrolling/discovering/exploiting/analyzing edits through
+  time; intuitive, genuinely smart, interactive, beautiful, all core ethics
+  (informed consent, math/science proof). This ANSWERS filed questions 2
+  (same pools: YES) and 4 (the watched-pages tracker IS the change feed).
+  **BRIDGE SLICE SHIPPED same day (PR: t-wiki-corpus):** watched pages now
+  enter THE corpus — src/wiki/corpus.py syncs the NEWEST text (latest_text,
+  refreshed by the tracker on every change + revid anchored; falls back to
+  baseline) as ONE Article per page (canonical wiki URL; per-edition source
+  "Wikipedia (xx)" domain xx.wikipedia.org — filterable forever; bounded
+  wikitext→plain strip, stated), through THE index_article hook (keywords +
+  WWW follow the latest version automatically; idempotent on content hash);
+  tracker wired (sync after new revisions, failures never block tracking);
+  POST /api/wiki/corpus/sync backfills existing watchlists, LOCAL-only;
+  migration b6c7d8e9f0a1. **HONEST GAP NOW BLOCKING the full engine: stored
+  revision diffs are TRUNCATED 2000-char summaries (diff_summary), NOT
+  reconstructable patches — past versions cannot be materialized locally.
+  Storage question (#3) is therefore ELEVATED: per-revision full text
+  (CompressedText; simple, version-anchored analytics for free) vs real
+  patches + checkpoints (lean, replay engine needed). DEFAULT per-revision
+  full text unless the maintainer objects.** REMAINING: the dedicated
+  tracked-changes TAB (the full-attention GUI — own slice, browser-verified);
+  per-mention revid anchoring; dumps→corpus ingestion path.
+  Earlier honest gap stands: downloaded dumps are FILES only (T14 reads one
+  page; never yet parsed into the corpus).
 - **WIKIPEDIA (field report #4; T14 SLICE 1 SHIPPED 2026-06-12):** the RULED
   dump-list limit SHIPPED (/api/wiki/languages?scope=dumps serves only
   APP_LANGUAGE_CODES = 12 UI locales + 5 stoplist-evidenced corpus languages;

@@ -166,6 +166,19 @@ def update_page(
         flagged += 1 if fr.flagged else 0
         page.last_revid = max(page.last_revid or 0, r["revid"])
 
+    # Edits landed -> refresh the LATEST full text (maintainer-ruled
+    # 2026-06-12: the article shown is always the newest version; the revid it
+    # corresponds to travels with it). One extra fetch per CHANGED page only;
+    # a failure keeps the previous text — honest staleness, never a crash.
+    if stored:
+        try:
+            cur = client.fetch_current_text(page.wiki, page.title)
+            if cur.get("revid") and cur.get("text"):
+                page.latest_text = cur["text"]
+                page.latest_text_revid = cur["revid"]
+        except Exception:  # noqa: BLE001 - latest-text refresh must not drop the revisions
+            _LOG.warning("latest-text refresh failed for %s", page.title, exc_info=True)
+
     page.last_checked_at = now
     session.commit()
     return {"page": page.title, "new": stored, "flagged": flagged, "baseline": False}
@@ -189,6 +202,17 @@ def track_watched(
             total_new += res["new"]
             total_flagged += res["flagged"]
             pages_done += 1
+            # The living-source bridge: changed pages re-enter the corpus with
+            # their newest text (keywords + When x Where x Who follow). A sync
+            # failure never blocks tracking.
+            if res.get("new") or res.get("baseline"):
+                try:
+                    from src.wiki.corpus import sync_page_to_corpus
+
+                    sync_page_to_corpus(session, page)
+                except Exception:  # noqa: BLE001
+                    session.rollback()
+                    _LOG.warning("corpus sync failed for %s", page.title, exc_info=True)
         except Exception:  # noqa: BLE001 - one bad page must not abort the batch
             session.rollback()
             _LOG.warning("wiki tracking failed for %s:%s", page.wiki, page.title, exc_info=True)

@@ -500,6 +500,30 @@ task manager (dump-parse as a visible, cancellable job).
 
 ---
 
+**RULED 2026-06-12 (the mandate made concrete; supersedes question 2 and
+question 4 of this section — both answered YES):** Wikipedia articles appear
+in GENERAL search results like any article; same keyword aggregator + same
+When×Where×Who anchoring; the article PRESENTED is always the LATEST version
+(default) with the change history available beneath it; an audit/track-change
+ENGINE receives edits and materializes the latest version on demand; and the
+wiki-article UI gains a DEDICATED tracked-changes tab — an interface for
+scrolling through, discovering, exploiting and analyzing edits through time —
+intuitive, genuinely smart, interactive, beautiful, and carrying every core
+ethical principle (informed consent, math/science proof).
+
+**BRIDGE SLICE SHIPPED (2026-06-12):** watched pages now enter THE corpus as
+first-class articles — newest text (tracker-refreshed `latest_text`, revid
+anchored, baseline fallback), one Article per page under a per-edition
+"Wikipedia (xx)" source, bounded wikitext→plain strip (stated), indexed
+through the one `index_article` hook so keywords + When×Where×Who follow
+every edit; `POST /api/wiki/corpus/sync` backfills existing watchlists
+locally. **The storage question (#3) is now the blocking one:** stored
+revision diffs are truncated summaries, not reconstructable patches — past
+versions cannot be materialized locally. Proposed default: per-revision FULL
+TEXT (compressed; version-anchored analytics for free), with checkpoints+
+patches as the lean alternative if storage proves heavy. The dedicated
+tracked-changes tab is the named next slice (own session-grade attention).
+
 ## Offline LLM kit (RM-08 release artifact)
 
 A checksummed GitHub *release artifact* (never repo content): Ollama binary +

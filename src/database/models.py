@@ -1483,6 +1483,12 @@ class WikiPage(Base):
     baseline_revid: Mapped[int | None] = mapped_column(Integer)  # revid the baseline_text corresponds to
     baseline_text: Mapped[str | None] = mapped_column(CompressedText)  # one full snapshot; later versions = baseline + diffs
     last_revid: Mapped[int | None] = mapped_column(Integer)  # newest revid we have stored
+    # The LATEST full text (maintainer-ruled 2026-06-12: the article shown is
+    # always the newest version, with the change history beneath). Refreshed by
+    # the tracker when new revisions land; the revid it corresponds to travels
+    # with it so the UI can say exactly which version the user is reading.
+    latest_text: Mapped[str | None] = mapped_column(CompressedText)
+    latest_text_revid: Mapped[int | None] = mapped_column(Integer)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
     # The wiki's own verdict on the title (live test 2026-06-10): True = the page
     # does not exist (typo / renamed / deleted) — surfaced loudly, never silent.
