@@ -1152,6 +1152,7 @@
       <div class="row">
         <div style="flex:0 0 auto"><button onclick="loadIndicesData(this)">Load / refresh indices</button></div>
         <div id="idx-status" class="hint" style="align-self:center"></div>
+        <div id="idx-verdicts" class="hint" style="flex-basis:100%"></div>
       </div>
       <div id="idx-note" class="hint muted" style="margin-top:4px"></div>
       <div id="idx-board" class="idx-board"><div class="muted">Loading…</div></div>
@@ -1173,6 +1174,7 @@
             <option value="365" selected>1 year</option><option value="1825">5 years</option>
             <option value="0">All</option></select></div>
         <div id="mkt-dash-status" class="hint" style="align-self:center"></div>
+        <div id="mkt-verdicts" class="hint" style="flex-basis:100%"></div>
       </div>
       <div id="mkt-dashboard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:12px"></div>
       <div id="mkt-chart" style="margin-top:12px"></div>
@@ -4156,6 +4158,36 @@
       </div>`;
     }
 
+    // Per-feed TRANSPORT-AWARE verdicts (ruled 2026-06-12): "refused over Tor"
+    // is not "robots disallows" is not "dead series". Failures are listed with
+    // their honest note, and ONLY honestly-retryable ones get the Retry button.
+    function _renderFeedVerdicts(elId, r, category) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $(elId); if (!el) return;
+      const fails = (r.results || []).filter(x => x.status !== "imported");
+      if (!fails.length) { el.innerHTML = ""; return; }
+      const rows = fails.map(x =>
+        `<div><span class="pill warn">${esc(x.verdict || x.status)}</span> <b>${esc(x.symbol || x.key)}</b>` +
+        ` <span class="muted">— ${esc(x.verdict_note || x.detail || "")}</span></div>`).join("");
+      const retry = (r.retryable_failed_keys || []);
+      const btn = retry.length
+        ? `<button class="secondary tiny" style="margin-top:4px" onclick="retryFailedFeeds('${esc(category||"")}', '${esc(retry.join(","))}', '${esc(elId)}')">` +
+          esc(t("Retry failed feeds")) + ` (${retry.length})</button>`
+        : "";
+      el.innerHTML = rows + btn;
+    }
+    async function retryFailedFeeds(category, keys, elId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (typeof ensureOnline === "function" &&
+          !await ensureOnline(t("Fetch market and index data from the official feeds"))) return;
+      const el = $(elId); if (el) el.textContent = t("Retrying failed feeds…");
+      try {
+        const q = category ? `?category=${encodeURIComponent(category)}&keys=` : "?keys=";
+        const r = await api(`/api/markets/feeds/import-all${q}${encodeURIComponent(keys)}`, {method: "POST"});
+        toast(`${t("Retry finished:")} ${r.points_imported} ${t("new point(s);")} ${r.failed} ${t("still failing.")}`);
+        _renderFeedVerdicts(elId, r, category);
+      } catch (e) { if (el) el.textContent = e.message; }
+    }
     async function loadIndicesData(btn) {
       btn.disabled = true;
       const st = $("idx-status");
@@ -4163,6 +4195,7 @@
       try {
         const r = await api("/api/markets/feeds/import-all?category=index", {method: "POST"});
         st.textContent = `Imported ${r.points_imported} point(s) across ${r.feeds} feed(s)${r.failed ? `, ${r.failed} failed` : ""}.`;
+        _renderFeedVerdicts("idx-verdicts", r, "index");
         // Degrade loudly (maintainer hit "only Dow + S&P arrive"): name each
         // failing feed and the exact refusal, instead of a silent count.
         const bad = (r.results || []).filter(x => x.status !== "imported");
@@ -4300,6 +4333,7 @@
       try {
         const r = await api("/api/markets/feeds/import-all", {method: "POST"});
         status.textContent = `Imported ${r.points_imported} point(s) across ${r.feeds} feeds${r.failed?`, ${r.failed} failed`:""}.`;
+        _renderFeedVerdicts("mkt-verdicts", r, "");
         for (const k in MKT_PRICES) delete MKT_PRICES[k];
         await loadDashboard();
         if (_mktConfigLoaded) loadFeeds();

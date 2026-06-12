@@ -773,6 +773,32 @@ fractional-year window, `?hazards`, `?articles`, `?mentions`, `?days`); `GET /ap
 `/api/keywords/*` (extraction utilities); `/api/monitoring/health|anomalies`;
 `POST /api/verify/image-metadata` (EXIF/GPS).
 
+### 5.5 Running over Tor
+
+The app works over Tor (Protected fetch mode → a Tor proxy you run), with an
+honestly smaller reach — measured, not guessed (live log 2026-06-12: 32 of 50
+default sources imported over Tor in one pass):
+
+- **Per-connection refusals are normal, not fatal.** Some hosts refuse some
+  Tor exits: in the same run, 21/28 FRED series imported while others failed.
+  That is why feed failures carry a **transport-aware verdict** — *refused*
+  ("connection refused/reset — over Tor this is often a single exit's
+  refusal; a retry frequently lands a different circuit") is not *robots
+  disallows* (the host's stated policy, which we honor and never retry or
+  evade), is not *dead series* (HTTP 404 — the catalog entry needs a
+  replacement; retrying cannot help), is not *unreachable*. Transient
+  failures are retried once automatically; the **Retry failed feeds** button
+  re-runs exactly the honestly-retryable ones.
+- **A host's Tor block is the host's choice.** We surface it; we never evade
+  robots, blocks or CAPTCHAs. Prefer Tor-tolerant official endpoints where
+  they exist.
+- **Model downloads don't work over Tor** — the offline LLM kit (release
+  artifact) is the principled path; inference itself is loopback and
+  unaffected.
+- **Anonymity remains yours to manage**: Protected mode cannot guarantee
+  anonymity — you run and trust the proxy; the app's part is a generic
+  User-Agent and routing every fetch through it.
+
 ---
 
 ## 6. Troubleshooting

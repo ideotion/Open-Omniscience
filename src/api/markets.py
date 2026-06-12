@@ -256,19 +256,29 @@ def import_catalog_feed(key: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/feeds/import-all")
-def import_all_feeds(category: str | None = None, db: Session = Depends(get_db)) -> dict:
+def import_all_feeds(
+    category: str | None = None,
+    keys: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
     """Import every curated feed (for one-click out-of-the-box market data).
 
     ``category='index'`` imports the world stock-index catalog; otherwise the
-    commodity catalog (default, backward-compatible). Best-effort: each feed is
-    attempted; failures are reported per-key rather than aborting the batch, so a
-    single retired series doesn't block the rest.
+    commodity catalog (default, backward-compatible). ``keys=a,b,c`` restricts
+    the pass to those feed keys — the "retry failed feeds" affordance (ruled
+    2026-06-12). Best-effort: each feed is attempted; failures are reported
+    per-key with a TRANSPORT-AWARE verdict ("refused over Tor" ≠ "robots
+    disallows" ≠ "dead series" ≠ "unreachable") rather than aborting the
+    batch, so a single retired series doesn't block the rest.
     """
     from src.markets.csv_feeds import import_feed
     from src.markets.feed_catalog import feeds_for_category
 
+    wanted = {k.strip() for k in keys.split(",") if k.strip()} if keys else None
     results, imported, failed = [], 0, 0
     for feed in feeds_for_category(category):
+        if wanted is not None and feed.key not in wanted:
+            continue
         try:
             r = import_feed(
                 db,
@@ -298,10 +308,17 @@ def import_all_feeds(category: str | None = None, db: Session = Depends(get_db))
                     "detail": f"{type(exc).__name__}: {exc}",
                 }
             )
+    # The retry affordance's input: failures another attempt can honestly help
+    # (refused/unreachable/transient upstream errors — never robots or a dead
+    # series). The UI offers "Retry failed feeds" over exactly this list.
+    retryable_failed = [
+        r["key"] for r in results if r.get("status") != "imported" and r.get("retryable")
+    ]
     summary = {
         "feeds": len(results),
         "points_imported": imported,
         "failed": failed,
+        "retryable_failed_keys": retryable_failed,
         "results": results,
     }
     # Persist the outcome for the debug bundle (maintainer-ruled 2026-06-10):

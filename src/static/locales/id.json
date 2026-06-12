@@ -373,5 +373,10 @@
   "Space freed:": "Ruang yang dibebaskan:",
   "Compaction failed:": "Pemadatan gagal:",
   "Download performance report (.json)": "Unduh laporan performa (.json)",
-  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "Laporan performa membawa bukti nyata dari mesin ini: waktu respons per endpoint dari penggunaan nyata Anda sejak aplikasi dimulai, fakta penyimpanan dan memori, serta uji mandiri singkat yang diukur waktunya atas tampilan berat pada korpus asli Anda. Hanya lokal; perlu beberapa detik dan tidak ada yang dikirim."
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "Laporan performa membawa bukti nyata dari mesin ini: waktu respons per endpoint dari penggunaan nyata Anda sejak aplikasi dimulai, fakta penyimpanan dan memori, serta uji mandiri singkat yang diukur waktunya atas tampilan berat pada korpus asli Anda. Hanya lokal; perlu beberapa detik dan tidak ada yang dikirim.",
+  "Retry failed feeds": "Coba lagi umpan yang gagal",
+  "Retrying failed feeds…": "Mencoba lagi umpan yang gagal…",
+  "Retry finished:": "Percobaan ulang selesai:",
+  "new point(s);": "titik baru;",
+  "still failing.": "masih gagal."
 }

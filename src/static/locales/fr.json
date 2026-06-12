@@ -373,5 +373,10 @@
   "Space freed:": "Espace libéré :",
   "Compaction failed:": "Échec du compactage :",
   "Download performance report (.json)": "Télécharger le rapport de performance (.json)",
-  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "Le rapport de performance contient des preuves réelles de cette machine : temps de réponse par endpoint issus de votre usage réel depuis le démarrage, faits sur le stockage et la mémoire, et un auto-test chronométré des vues lourdes sur votre vrai corpus. Local uniquement ; quelques secondes, rien n'est transmis."
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "Le rapport de performance contient des preuves réelles de cette machine : temps de réponse par endpoint issus de votre usage réel depuis le démarrage, faits sur le stockage et la mémoire, et un auto-test chronométré des vues lourdes sur votre vrai corpus. Local uniquement ; quelques secondes, rien n'est transmis.",
+  "Retry failed feeds": "Réessayer les flux en échec",
+  "Retrying failed feeds…": "Nouvel essai des flux en échec…",
+  "Retry finished:": "Nouvel essai terminé :",
+  "new point(s);": "nouveau(x) point(s) ;",
+  "still failing.": "toujours en échec."
 }

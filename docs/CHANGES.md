@@ -34,6 +34,23 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   (VACUUM + optimize) reporting real freed bytes, with "reclaimable space" from
   `PRAGMA freelist_count` (+8 chrome strings ×12 locales).
 
+- **Markets/indices: transport-aware honesty (the 2026-06-12 Tor diagnosis).**
+  Feed failures now carry a **verdict taxonomy over the real error**:
+  *refused* (connection refused/reset — over Tor commonly one exit's refusal;
+  the live log imported 21/28 FRED series while others failed in the same
+  run) ≠ *robots-disallowed* (the host's choice, honored, never retried or
+  evaded) ≠ *dead-series* (HTTP 404/410 — the catalog entry needs a verified
+  replacement; retrying cannot help) ≠ *unreachable* ≠ *offline* (kill switch
+  engaged). Transient verdicts get ONE bounded feed-level retry on top of the
+  fetcher's own backoff; policy verdicts never. The Indices/Markets boards
+  list each failure with its verdict and honest note, and a **Retry failed
+  feeds** button re-runs exactly the honestly-retryable keys
+  (`import-all?keys=`). The dead World-Bank-monthly FRED ids
+  (PGOLDUSDM/PSILVUSDM/PSAWMUSDM) now surface as *dead-series* instead of
+  undifferentiated failures — replacements await clearnet verification (this
+  build environment cannot reach FRED to verify; honesty over speed).
+  USER_MANUAL gains the "Running over Tor" chapter. +5 chrome strings ×12.
+
 - **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled
