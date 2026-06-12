@@ -145,12 +145,33 @@ def index_article(
             )
         )
         written += 1
+
+    # When x Where x Who at ingest (T12, CONFIRMED GO): persist the deduced
+    # dates/places/entities WITH the keyword pass — one hook, so every path
+    # that indexes (live ingest, re-index, backfill) anchors them. Lexical
+    # and bounded; failures must never abort the keyword indexing.
+    www = {"dates": 0, "places": 0, "entities_stored": 0}
+    try:
+        from src.timemap.datestore import store_for_article as _store_dates
+        from src.timemap.whostore import (
+            store_entities_for_article as _store_ents,
+        )
+        from src.timemap.whostore import (
+            store_places_for_article as _store_places,
+        )
+
+        www["dates"] = _store_dates(session, article)
+        www["places"] = _store_places(session, article)
+        www["entities_stored"] = _store_ents(session, article)
+    except Exception:  # noqa: BLE001 - deductions are a bonus, never a blocker
+        _LOG.warning("when/where/who persistence failed for %s", article.id, exc_info=True)
     session.commit()
     return {
         "article_id": article.id,
         "mentions": written,
         "entities": sum(1 for t in terms if t.kind != "term"),
         "self_name_suppressed": self_suppressed,
+        **www,
     }
 
 

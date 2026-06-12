@@ -44,6 +44,16 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   hidden); the agenda month grid shows moon glyphs whose hover bubble carries
   the method — informed consent down to the moon. +2 chrome strings ×12.
 
+- **When×Where×Who persists at ingest (T12, the convergence substrate).**
+  The date/place/entity extractors — reader-only until now — persist their
+  deduced candidates **at indexing time** through the one `index_article`
+  hook, so live ingest, re-index and backfill all anchor them: new
+  `article_mentioned_places` and `article_entities` tables (people and
+  organizations separate by design), every row carrying **snippet provenance
+  and the rule note** that decided it, idempotent per article, and a
+  deduction failure never blocks keyword indexing (tested). Deduced stays
+  labelled deduced — never promoted to fact.
+
 - **Markets/indices: transport-aware honesty (the 2026-06-12 Tor diagnosis).**
   Feed failures now carry a **verdict taxonomy over the real error**:
   *refused* (connection refused/reset — over Tor commonly one exit's refusal;

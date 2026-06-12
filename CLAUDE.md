@@ -426,12 +426,16 @@ ruling, a contingency, or a deliberate-omission note.
 - **Collector: cumulative runs + progress (2026-06-10):** one Collect pass
   cumulatively does RSS + crawl + markets + wiki watched pages; a progress
   bar visible throughout the UI (top-bar activity chip hosts it).
-- **When×Where×Who at ingest (CONFIRMED GO, field report #2):** the
-  extractors (dateextract/locextract/entextract — all shipped, reader-only
-  today) run at ingest for EVERY article incl. wiki, + backfill; persist
-  with snippet provenance; anchor per article / per mention (event-place
-  feeds the map) / per entity (corpus-wide WHO layer). Deduced stays
-  labelled deduced. The substrate the convergence flagship needs. NEXT for
+- **When×Where×Who at ingest (CONFIRMED GO; PERSISTENCE SHIPPED T12
+  2026-06-12):** dates/places/entities now persist AT INGEST through the one
+  index_article hook (live ingest + re-index + backfill all inherit it) —
+  article_mentioned_places + article_entities tables (migration
+  a5b6c7d8e9f0), snippet provenance + rule notes on every row, idempotent
+  per article, failures never block keyword indexing (tested). Deduced
+  stays labelled deduced. REMAINING: reader switches to reading the stored
+  rows (stops recomputing); temporal map's mention layer consumes
+  event-places; corpus-wide WHO aggregation endpoint; wiki articles join
+  when the living-source design lands. NEXT for
   the extractors themselves: feed the temporal map's mention layer with text
   locations; extend the country table; aggregate entities corpus-wide.
 - **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51):**

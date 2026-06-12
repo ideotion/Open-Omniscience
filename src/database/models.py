@@ -1320,6 +1320,65 @@ class KeywordSuperGroupMember(Base):
         return f"<KeywordSuperGroupMember(sg={self.supergroup_id} {self.normalized_term})>"
 
 
+class ArticleMentionedPlace(Base):
+    """A place DEDUCED from an article's text at ingest (T12, When×Where×Who).
+
+    Lexical candidates with snippet provenance and the rule note — displayed
+    as deduced, never promoted to fact. Event-place (from the text) is
+    distinct from coverage origin (the source's country on mentions)."""
+
+    __tablename__ = "article_mentioned_places"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    article_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    country: Mapped[str | None] = mapped_column(String(2))  # ISO-2, lowercase
+    kind: Mapped[str | None] = mapped_column(String(20))  # city | country
+    mentions: Mapped[int] = mapped_column(Integer, default=1)
+    snippet: Mapped[str | None] = mapped_column(String(400))
+    lat: Mapped[float | None] = mapped_column(Float)
+    lon: Mapped[float | None] = mapped_column(Float)
+    note: Mapped[str | None] = mapped_column(String(300))  # which rule decided
+    extractor: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("ix_amp_article_place", "article_id", "name", unique=True),
+        Index("ix_amp_country", "country"),
+    )
+
+
+class ArticleEntity(Base):
+    """A person or organization DEDUCED from an article's text at ingest
+    (T12). The two classes are separate BY DESIGN (maintainer ruling): they
+    answer different questions and anchor to space differently."""
+
+    __tablename__ = "article_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    article_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    entity_class: Mapped[str] = mapped_column(String(16), nullable=False)  # person | organization
+    mentions: Mapped[int] = mapped_column(Integer, default=1)
+    snippet: Mapped[str | None] = mapped_column(String(400))
+    note: Mapped[str | None] = mapped_column(String(300))
+    extractor: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("ix_ae_article_name_class", "article_id", "name", "entity_class", unique=True),
+        Index("ix_ae_class_name", "entity_class", "name"),
+    )
+
+
 class KeywordMention(Base):
     """One article's mention of a keyword/entity, with context + denormalised facets.
 
