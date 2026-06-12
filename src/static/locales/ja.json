@@ -387,5 +387,12 @@
   "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "機内モード — 塗りつぶしはオフラインを意味します。新しいネットワークリクエストは即座に拒否され、進行中のリクエストは完了する場合があります。",
   "Fetch market and index data from the official feeds": "公式フィードから市場・指数データを取得",
   "Download a Wikipedia dump": "Wikipediaダンプをダウンロード",
-  "Add a watched Wikipedia page (fetches its current revision)": "ウォッチするWikipediaページを追加（現在の版を取得します）"
+  "Add a watched Wikipedia page (fetches its current revision)": "ウォッチするWikipediaページを追加（現在の版を取得します）",
+  "Download performance report (.json)": "パフォーマンスレポートをダウンロード (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "パフォーマンスレポートには、このマシンの実際の証拠が含まれます。起動以降の実使用におけるエンドポイント別応答時間、ストレージとメモリの事実、実コーパスの重いビューに対する短い計測セルフテストです。ローカルのみ。数秒で完了し、何も送信されません。",
+  "Retry failed feeds": "失敗したフィードを再試行",
+  "Retrying failed feeds…": "失敗したフィードを再試行中…",
+  "Retry finished:": "再試行が完了:",
+  "new point(s);": "件の新しいポイント;",
+  "still failing.": "件は引き続き失敗。"
 }

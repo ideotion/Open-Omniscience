@@ -360,6 +360,207 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
     )
 
 
+@router.get("/performance")
+def performance_report(
+    selftest: bool = True, db: Session = Depends(get_db)
+) -> JSONResponse:
+    """The PERFORMANCE field report (maintainer-asked 2026-06-12): one local,
+    on-click JSON the operator can send back, carrying real evidence from THIS
+    machine and THIS corpus — the maintainer↔developer channel pattern.
+
+    Three evidence classes, each with its method stated:
+      * passive endpoint latencies — the app's own Prometheus histograms,
+        accumulated from REAL interactive use since this boot (no overhead
+        added; the middleware was already measuring);
+      * environment + store facts — CPUs, RAM, at-rest encryption state, page
+        cache/mmap settings, file/page/freelist sizes (real PRAGMA readings);
+      * an optional ACTIVE self-test — the hot read handlers timed twice,
+        in-process, against the live corpus (labelled in-session: OS and page
+        caches reflect real use, so these are warm-path numbers).
+    Generated only on click; never transmitted anywhere by the app.
+    """
+    import os as _os
+    import platform
+    import sys as _sys
+    import time as _time
+
+    from src.api import system as _system
+    from src.database.connect import locked_state
+    from src.database.session import engine
+    from src.paths import data_dir as _data_dir
+
+    db_file = _data_dir() / "open_omniscience.db"
+
+    # -- environment ------------------------------------------------------- #
+    vitals = _system._process_vitals()
+    try:
+        import psutil as _ps
+
+        total_ram = int(_ps.virtual_memory().total)
+    except Exception:  # noqa: BLE001 - honest null, never a guess
+        total_ram = None
+    env = {
+        "python": _sys.version.split()[0],
+        "platform": platform.platform(),
+        "cpu_count": _os.cpu_count(),
+        "total_ram_bytes": total_ram,
+        "process_rss_bytes": vitals.get("rss_bytes"),
+        "at_rest_state": locked_state(db_file),
+        "uptime_s": round(_time.time() - _system._BOOT_TS, 1),
+    }
+
+    # -- store facts (real PRAGMA readings) --------------------------------- #
+    store: dict = {"db_bytes": db_file.stat().st_size if db_file.exists() else None}
+    if engine.url.get_backend_name() == "sqlite":
+        with engine.connect() as conn:
+            for pragma in (
+                "page_size",
+                "page_count",
+                "freelist_count",
+                "journal_mode",
+                "cache_size",
+                "mmap_size",
+            ):
+                store[pragma] = conn.execute(text(f"PRAGMA {pragma}")).scalar()
+    counts = {
+        "articles": int(db.query(func.count(Article.id)).scalar() or 0),
+        "sources": int(db.query(func.count(Source.id)).scalar() or 0),
+        "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
+        "keyword_mentions": int(
+            db.execute(text("SELECT COUNT(*) FROM keyword_mentions")).scalar() or 0
+        ),
+    }
+
+    # -- passive latencies: the app's own histograms, real use since boot --- #
+    endpoint_latency: list[dict] = []
+    try:
+        from src.api.main import REQUEST_LATENCY
+
+        for metric in REQUEST_LATENCY.collect():
+            series: dict[tuple, dict] = {}
+            for s in metric.samples:
+                key = (s.labels.get("method", "?"), s.labels.get("endpoint", "?"))
+                slot = series.setdefault(key, {"buckets": []})
+                if s.name.endswith("_bucket"):
+                    slot["buckets"].append((float(s.labels["le"]), s.value))
+                elif s.name.endswith("_count"):
+                    slot["count"] = s.value
+                elif s.name.endswith("_sum"):
+                    slot["sum_s"] = s.value
+            for (method_, endpoint_), slot in series.items():
+                n = slot.get("count", 0)
+                if not n:
+                    continue
+                est = {}
+                finite = sorted(b for b in slot["buckets"] if b[0] != float("inf"))
+                for q_ in (0.5, 0.95):
+                    target = n * q_
+                    for le, cum in finite:
+                        if cum >= target:
+                            est[f"p{int(q_ * 100)}_le_s"] = le
+                            break
+                    else:
+                        # The quantile sits beyond the largest finite bucket —
+                        # report that bound honestly instead of a fake number.
+                        if finite:
+                            est[f"p{int(q_ * 100)}_gt_s"] = finite[-1][0]
+                endpoint_latency.append(
+                    {
+                        "method": method_,
+                        "endpoint": endpoint_,
+                        "requests": int(n),
+                        "total_s": round(slot.get("sum_s", 0.0), 3),
+                        "mean_ms": round(slot.get("sum_s", 0.0) / n * 1000, 1),
+                        **est,
+                    }
+                )
+        endpoint_latency.sort(key=lambda e: -e["total_s"])
+        endpoint_latency = endpoint_latency[:80]
+    except Exception:  # noqa: BLE001 - the report must not fail on metrics shape
+        endpoint_latency = []
+
+    # -- active self-test: hot read handlers, timed in-process -------------- #
+    selftest_rows: list[dict] = []
+    if selftest:
+        from src.analytics import queries as aq
+        from src.api.database import country_coverage, database_stats
+
+        def _timed(name: str, fn) -> None:
+            for run in (1, 2):
+                t0 = _time.perf_counter()
+                try:
+                    out = fn()
+                    # Streamed responses: consume fully so the cost is real.
+                    body_iter = getattr(out, "body_iterator", None)
+                    size = None
+                    if body_iter is not None and hasattr(body_iter, "__aiter__"):
+                        # Starlette wraps sync generators into async iterators;
+                        # this sync endpoint runs in a worker thread (no loop),
+                        # so a private loop can drain the stream for real.
+                        import asyncio
+
+                        async def _drain(it) -> int:
+                            total = 0
+                            async for c in it:
+                                total += len(c.encode("utf-8") if isinstance(c, str) else c)
+                            return total
+
+                        size = asyncio.run(_drain(body_iter))
+                    elif body_iter is not None:
+                        size = sum(len(c.encode("utf-8")) for c in body_iter)
+                    selftest_rows.append(
+                        {
+                            "probe": name,
+                            "run": run,
+                            "ms": round((_time.perf_counter() - t0) * 1000),
+                            **({"bytes": size} if size is not None else {}),
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001 - report failures honestly
+                    selftest_rows.append(
+                        {"probe": name, "run": run, "error": str(exc)[:160]}
+                    )
+
+        _timed("database_stats", lambda: database_stats(db=db))
+        _timed("country_coverage", lambda: country_coverage(db=db))
+        _timed("insights_top", lambda: aq.top_terms(db, limit=50))
+        _timed("insights_trending", lambda: aq.trending(db))
+        _timed("insights_map", lambda: aq.map_data(db))
+        _timed("keyword_export_streamed", lambda: keyword_log(db=db))
+
+    payload = {
+        "environment": env,
+        "store": store,
+        "corpus": counts,
+        "endpoint_latency_since_boot": {
+            "method": (
+                "The app's own request-latency histograms (Prometheus middleware), "
+                "accumulated from real use since this boot — server-side wall time "
+                "per endpoint; p50/p95 are bucket upper bounds (≤), not exact "
+                "quantiles. Top 80 by total time."
+            ),
+            "series": endpoint_latency,
+        },
+        "selftest": {
+            "method": (
+                "Hot read handlers timed in-process against the live corpus, two "
+                "runs each, streamed bodies fully consumed. In-session numbers: "
+                "OS/page caches reflect real use (warm path). No network involved."
+            ),
+            "ran": bool(selftest),
+            "results": selftest_rows,
+        },
+    }
+    body = envelope(
+        kind="performance-report", query={"selftest": selftest},
+        count=len(selftest_rows) + len(endpoint_latency), payload=payload,
+    )
+    fname = f"oo-perf-report-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+    return JSONResponse(
+        body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+
 @router.get("/network")
 def network_preflight_log() -> JSONResponse:
     """The network-targets diagnostics log (maintainer↔developer channel):

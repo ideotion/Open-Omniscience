@@ -387,5 +387,12 @@
   "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "Modo avião — preenchido significa offline: toda nova solicitação de rede é recusada na hora; uma solicitação em andamento pode terminar.",
   "Fetch market and index data from the official feeds": "Buscar dados de mercados e índices dos feeds oficiais",
   "Download a Wikipedia dump": "Baixar um dump da Wikipédia",
-  "Add a watched Wikipedia page (fetches its current revision)": "Adicionar uma página vigiada da Wikipédia (busca sua revisão atual)"
+  "Add a watched Wikipedia page (fetches its current revision)": "Adicionar uma página vigiada da Wikipédia (busca sua revisão atual)",
+  "Download performance report (.json)": "Baixar relatório de desempenho (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "O relatório de desempenho traz evidências reais desta máquina: tempos de resposta por endpoint do seu uso real desde a inicialização, fatos de armazenamento e memória, e um autoteste cronometrado das visões pesadas sobre seu corpus real. Somente local; leva alguns segundos e nada é transmitido.",
+  "Retry failed feeds": "Repetir feeds com falha",
+  "Retrying failed feeds…": "Repetindo feeds com falha…",
+  "Retry finished:": "Nova tentativa concluída:",
+  "new point(s);": "novo(s) ponto(s);",
+  "still failing.": "ainda falhando."
 }
