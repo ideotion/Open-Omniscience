@@ -78,6 +78,16 @@ ruling, a contingency, or a deliberate-omission note.
 7. **External links ALWAYS confirmed with a popup before opening** (ruled
    2026-06-10): capture-phase `_externalLinkGuard` in BOTH UIs; loopback
    exempt; message via `OOI18N.t`.
+14. **Network toggle is AIRPLANE-MODE (ruled 2026-06-12, SHIPPED T2):** one
+   constant plane glyph + label, FILL = state (filled = offline engaged);
+   never ▶/⏸ action glyphs. EVERY offline→online transition passes the ONE
+   consent popup (`ensureOnline`): names the action, lists LOCAL interface
+   IPs from kernel tables (NEVER a public-IP echo pre-consent), honest
+   public-IP wording. Scheduler responses carry `online` → immediate repaint,
+   never the 5 s poll. Gated: toggle, collect (start/run-now/first-run),
+   markets/indices imports, wiki page add, dump start. Enforced in
+   test_ui_invariants + tests/test_network_consent.py (incl. the
+   socket-importer RATCHET: no new module may import requests/httpx).
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First
@@ -177,26 +187,20 @@ ruling, a contingency, or a deliberate-omission note.
   share (49% of domains carry no country).
 - **LIVE-TEST FIELD REPORT #2 (2026-06-11, seven items — facts code-verified;
   implementation queued; proposed order at the end):**
-  (1) NETWORK TOGGLE → AIRPLANE-MODE semantics (ruled): one constant
-  icon+label, FILLED = offline engaged (action glyphs read as state — the
-  current ▶/⏸ is ambiguous). Scrape-start already clears the kill switch
-  server-side but the button waits for the 5s poll — must repaint immediately
-  on EVERY online transition; and every transition to online (button,
-  collect, indices, wiki, dumps) FIRST shows ONE consent popup: warning + the
-  machine's LOCAL interface IPs (NEVER fetch a public-IP echo pre-consent —
-  that is itself a network call; wording stays honest about what the public
-  IP is). Kill-switch reliability (CORRECTED by maintainer: NO dom0
-  privileges from inside an AppVM/DispVM — NetVM-detach is not ours; don't
-  focus on Qubes): app level airtight (every socket through one guarded
-  factory + a build-failing test); the OPT-IN privileged OS layer is
-  INTERFACE-AGNOSTIC on whatever interfaces the app's environment sees —
-  (a) firewall drop-all both directions incl. inbound, (b) `ip link down` on
-  non-loopback interfaces, (c) rfkill demoted to a bare-metal radio bonus;
-  Windows netsh / macOS networksetup behind ONE helper (oo-netcut); elevation
-  explicit + narrowly scoped, never silent. We control OUR environment's
-  interfaces; layers beneath may stay online; the button names the layer it
-  controls; a userspace app can NEVER equal a hardware webcam light and we
-  never claim it.
+  (1) NETWORK TOGGLE — UI SEMANTICS + CONSENT SHIPPED (T2, invariant #14):
+  airplane glyph FILL=state, ONE consent popup with local IPs, immediate
+  repaint via scheduler responses, gates on collect/markets/wiki/dumps, +
+  socket-importer ratchet test. REMAINING from this item: refactor the six
+  allowed HTTP importers onto ONE guarded socket factory (gate §1 SHOULD;
+  the ratchet pins them meanwhile); the OPT-IN privileged OS layer
+  (oo-netcut) stays POST — INTERFACE-AGNOSTIC (no dom0 privileges from an
+  AppVM/DispVM; don't focus on Qubes): (a) firewall drop-all both directions
+  incl. inbound, (b) `ip link down` on non-loopback interfaces, (c) rfkill a
+  bare-metal radio bonus; Windows netsh / macOS networksetup behind ONE
+  helper; elevation explicit + narrowly scoped, never silent. We control OUR
+  environment's interfaces; layers beneath may stay online; the button names
+  the layer it controls; a userspace app can NEVER equal a hardware webcam
+  light and we never claim it.
   (2) AGENDA CONTENT (the month-grid default + plumbing→Settings SHIPPED, see
   batch log): recurring-event model unifying rules + per-year instances +
   origin year ("since 1810" — the Mexico sighting was the ICS import path
@@ -337,11 +341,14 @@ ruling, a contingency, or a deliberate-omission note.
   + inflection/month pass (extract.py; global_stopwords applies at query
   time ⇒ 704 rows / 71,854 mentions retroactively hidden, no migration;
   en+fr were already clean; junk ≈ 6% of mentions ⇒ capping would buy
-  little; NO CAP stands). QUEUED systemic findings: source SELF-NAMES leak
-  as keywords ("The Moscow Times"×213 ⇒ suppress keywords matching the
-  article's own source — a rule, not a stoplist); per-source
-  extraction-quality check (Swedish boilerplate "alla artiklar"×118 =
-  navigation text); language-attribution noise (de-tagged English text).
+  little; NO CAP stands). The three queued systemic findings SHIPPED (T3,
+  2026-06-12): source SELF-NAMES suppressed at index time as a per-article
+  RULE (_self_name_forms: full name ± leading article + domain labels; other
+  sources' mentions of the outlet STAY — re-indexing applies retroactively);
+  per-source concentration suspects in the diagnostics export (≥90% one
+  source, ≥25% of its articles, both ≥10 — flagged with real counts, never
+  auto-hidden); language_mismatch flag per keyword (stored vs dominant
+  signature language — evidence, not a correction).
 - **WIKIPEDIA (field report #4):** limit the dump-download list to the app's
   languages (RULED — Esperanto was "fun but quite unnecessary"); the
   offline-dump READER/SEARCH gap is ELEVATED — the maintainer could not read

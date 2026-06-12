@@ -52,6 +52,41 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   USER_MANUAL gains the "Running over Tor" chapter. +5 chrome strings ×12.
 
 - **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
+- **Network switch → airplane mode + online consent (field report #2 item 1).**
+  The sidebar toggle is now ONE constant airplane glyph whose **fill is the
+  state** (filled = offline engaged) — action glyphs no longer label state.
+  **Every offline→online transition passes a single consent popup**: it names
+  the action ("Start a collection pass…", "Fetch market and index data…",
+  "Download a Wikipedia dump"…) and lists the machine's **local interface
+  addresses** read from the kernel's tables (`/api/system/interfaces`,
+  psutil) — never a public-IP echo before consent, because that would itself
+  be a network call; the popup says honestly that the public address is
+  whatever the ISP/VPN presents, unchecked. Scheduler responses now carry the
+  network state, so the toggle repaints **immediately** on implicit
+  transitions (collect-start clears the kill switch) instead of waiting for
+  the 5 s poll. Kill-switch reliability gains a build-failing **socket-importer
+  ratchet**: exactly six modules may import an HTTP client (the guarded fetch
+  path, loopback Ollama, the gated discovery channel, three wiki fetchers);
+  any new direct importer fails the suite until consciously routed through the
+  fetch path. UI invariant #14 enforces all of it; +15 chrome strings ×12
+  locales.
+
+- **Keyword policy: the three systemic findings from field report #4.**
+  (1) **Source self-names are suppressed at extraction** as a per-article
+  rule, never a stoplist: a keyword equal to the article's OWN outlet name
+  ("The Moscow Times" ×213 in the live export) or domain label is byline/
+  footer boilerplate and is skipped — while the same term mentioned by OTHER
+  sources stays a real keyword, so coverage *about* an outlet is untouched.
+  Re-indexing applies it retroactively (indexing replaces an article's
+  mentions). (2) The diagnostics export gains **per_source_concentration**:
+  keywords whose articles sit ≥90% in one source while covering ≥25% of that
+  source's articles (both sides ≥10) are listed as boilerplate/navigation
+  suspects — the Swedish "alla artiklar" ×118 shape — with real counts and
+  stated thresholds, strongest first, capped at 200; flagged, never
+  auto-hidden. (3) Every exported keyword carries **language_mismatch**:
+  true when the stored language disagrees with the signature's dominant
+  article language (the de-tagged-English attribution noise) — evidence for
+  the operator, never a silent correction.
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled
   American (the live-test "US = 1,553" inflation; the canonicalised catalog's real
