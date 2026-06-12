@@ -362,5 +362,6 @@
   "Tick the consent box first.": "पहले सहमति बॉक्स चुनें।",
   "Encrypting — this rewrites the whole database…": "एन्क्रिप्ट हो रहा है — पूरा डेटाबेस फिर लिखा जा रहा है…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "एन्क्रिप्टेड। अब हर शुरुआत पर पासफ़्रेज़ आवश्यक है — कोई रिकवरी नहीं।",
-  "Wrong passphrase — try again.": "गलत पासफ़्रेज़ — फिर प्रयास करें।"
+  "Wrong passphrase — try again.": "गलत पासफ़्रेज़ — फिर प्रयास करें।",
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "इसे लंबा रखें — कई असंबंधित शब्द एक चतुर शब्द से बेहतर हैं। यदि आपकी डेटाबेस फ़ाइल कॉपी हो जाए तो उसे ऑफ़लाइन अनुमान से तोड़ा जा सकता है; इसलिए लंबाई ही असली सुरक्षा है (यह स्क्रीन कितनी जल्दी जवाब देती है, वह नहीं)।"
 }

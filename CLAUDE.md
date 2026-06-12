@@ -816,6 +816,26 @@ Before fearing loss from an archive-size change, run
   restore-preview UI on the v2 endpoints, signing-key re-wrap inside the
   encrypt tool, launcher/installer passphrase prompt wiring; legacy
   endpoints stay until the UI swaps.
+  **WRONG-PASSPHRASE RATE-LIMITING — RULED OUT (maintainer asked 2026-06-12,
+  "exponential delay to stop brute force? or useless since the DB is
+  readable without the app?"). Answer: the second instinct is correct —
+  app-level backoff is USELESS and would be FABRICATED SECURITY (forbidden).
+  Reasoning, measured: an attacker who can brute-force HAS the file and uses
+  offline tools (sqlcipher CLI, hashcat mode 24600) — our loopback HTTP
+  endpoint is irrelevant to them, and a locked app holds NO key in memory so
+  there is no "API-only" attacker on a loopback bind. Our endpoint already
+  costs one full KDF per try (measured 173 ms ≈ 6 guesses/s) — backoff would
+  only punish the honest fat-finger user, protecting against a threat that
+  cannot exist. The REAL per-guess tax lives in the right place: SQLCipher 4
+  KDF = PBKDF2-HMAC-SHA512 ×256,000 (verified PRAGMA), applied to EVERY
+  attacker incl. offline GPUs. The dominant term is passphrase ENTROPY: +1
+  word ≈ +13 bits beats doubling kdf_iter (+1 bit) or any endpoint limit
+  (0 bits). DECISIONS: keep unlimited loud retries; keep the audited KDF
+  default (no off-piste tuning); the honest lever is GUIDANCE — the create
+  flow now recommends a long multi-word passphrase and states the offline
+  reality (+1 locale key ×12 = 360). DO NOT re-add login rate-limiting in a
+  later session thinking it was an oversight — it is a deliberate,
+  reasoned omission.
 - **Backup redesign** (maintainer, ruled): encryption is the DEFAULT flow
   (Download backup -> passphrase -> download; Browse -> passphrase -> restore);
   restore must be NON-DESTRUCTIVE (merge, never replace) with bit-level

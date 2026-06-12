@@ -362,5 +362,6 @@
   "Tick the consent box first.": "Сначала отметьте согласие.",
   "Encrypting — this rewrites the whole database…": "Шифрование — вся база переписывается…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Зашифровано. Парольная фраза теперь нужна при каждом запуске — без восстановления.",
-  "Wrong passphrase — try again.": "Неверная фраза — попробуйте ещё раз."
+  "Wrong passphrase — try again.": "Неверная фраза — попробуйте ещё раз.",
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Сделайте её длинной — несколько несвязанных слов надёжнее одного хитрого слова. Если файл базы данных скопируют, его можно подбирать офлайн; поэтому длина — это и есть настоящая защита (а не скорость ответа этого экрана)."
 }

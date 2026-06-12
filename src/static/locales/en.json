@@ -362,5 +362,6 @@
   "Tick the consent box first.": "Tick the consent box first.",
   "Encrypting — this rewrites the whole database…": "Encrypting — this rewrites the whole database…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Encrypted. Your passphrase is now required at every start — there is no recovery.",
-  "Wrong passphrase — try again.": "Wrong passphrase — try again."
+  "Wrong passphrase — try again.": "Wrong passphrase — try again.",
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers)."
 }

@@ -362,5 +362,6 @@
   "Tick the consent box first.": "Marca primero la casilla de consentimiento.",
   "Encrypting — this rewrites the whole database…": "Cifrando — se reescribe toda la base de datos…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Cifrado. Tu frase ahora se requiere en cada inicio — sin recuperación.",
-  "Wrong passphrase — try again.": "Frase incorrecta — inténtalo de nuevo."
+  "Wrong passphrase — try again.": "Frase incorrecta — inténtalo de nuevo.",
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Hazla larga — varias palabras sin relación superan a una sola palabra ingeniosa. Si copian tu archivo de base de datos, puede adivinarse sin conexión; por eso la longitud es la protección real (no la rapidez de esta pantalla)."
 }

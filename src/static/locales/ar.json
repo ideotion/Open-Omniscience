@@ -362,5 +362,6 @@
   "Tick the consent box first.": "ضع علامة الموافقة أولًا.",
   "Encrypting — this rewrites the whole database…": "جارٍ التشفير — تُعاد كتابة قاعدة البيانات كاملة…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "تم التشفير. عبارة المرور مطلوبة الآن عند كل تشغيل — بلا استرداد.",
-  "Wrong passphrase — try again.": "عبارة مرور خاطئة — حاول مجددًا."
+  "Wrong passphrase — try again.": "عبارة مرور خاطئة — حاول مجددًا.",
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "اجعلها طويلة — عدة كلمات غير مترابطة أفضل من كلمة واحدة ذكية. إذا نُسخ ملف قاعدة بياناتك فيمكن تخمينه دون اتصال؛ لذا فإن الطول هو الحماية الحقيقية (وليست سرعة رد هذه الشاشة)."
 }

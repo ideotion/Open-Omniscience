@@ -362,5 +362,6 @@
   "Tick the consent box first.": "আগে সম্মতি বাক্স টিক করুন।",
   "Encrypting — this rewrites the whole database…": "এনক্রিপ্ট হচ্ছে — পুরো ডাটাবেস পুনর্লিখিত হচ্ছে…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "এনক্রিপ্টেড। এখন প্রতিবার চালুতে পাসফ্রেজ লাগবে — কোনো পুনরুদ্ধার নেই।",
-  "Wrong passphrase — try again.": "ভুল পাসফ্রেজ — আবার চেষ্টা করুন।"
+  "Wrong passphrase — try again.": "ভুল পাসফ্রেজ — আবার চেষ্টা করুন।",
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "এটি লম্বা করুন — কয়েকটি অসম্পর্কিত শব্দ একটি চতুর শব্দের চেয়ে ভালো। আপনার ডাটাবেস ফাইল কপি হলে তা অফলাইনে অনুমান করা যায়; তাই দৈর্ঘ্যই আসল সুরক্ষা (এই স্ক্রিন কত দ্রুত উত্তর দেয় তা নয়)।"
 }

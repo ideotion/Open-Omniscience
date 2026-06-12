@@ -362,5 +362,6 @@
   "Tick the consent box first.": "Cochez d'abord la case de consentement.",
   "Encrypting — this rewrites the whole database…": "Chiffrement — toute la base est réécrite…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Chiffré. Votre phrase secrète est désormais requise à chaque démarrage — sans récupération possible.",
-  "Wrong passphrase — try again.": "Phrase secrète erronée — réessayez."
+  "Wrong passphrase — try again.": "Phrase secrète erronée — réessayez.",
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Faites-la longue — plusieurs mots sans rapport valent mieux qu'un seul mot astucieux. Si votre fichier de base de données est copié, il peut être deviné hors ligne ; la longueur est donc la vraie protection (pas la vitesse de réponse de cet écran)."
 }

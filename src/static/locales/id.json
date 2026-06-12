@@ -362,5 +362,6 @@
   "Tick the consent box first.": "Centang kotak persetujuan dahulu.",
   "Encrypting — this rewrites the whole database…": "Mengenkripsi — seluruh basis data ditulis ulang…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Terenkripsi. Frasa sandi kini diperlukan di setiap mulai — tanpa pemulihan.",
-  "Wrong passphrase — try again.": "Frasa sandi salah — coba lagi."
+  "Wrong passphrase — try again.": "Frasa sandi salah — coba lagi.",
+  "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Buat panjang — beberapa kata tak berhubungan lebih kuat daripada satu kata cerdik. Jika berkas basis data Anda disalin, ia bisa ditebak secara offline; jadi panjang adalah perlindungan yang sebenarnya (bukan secepat apa layar ini menjawab)."
 }
