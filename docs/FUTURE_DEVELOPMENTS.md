@@ -395,7 +395,7 @@ tier header (early/developing/established) on Home; power-style "what's missing"
 inversions when a card does NOT fire; optional Benjamini–Hochberg once p-values
 exist; the dismiss-with-reason local feedback loop and the card-diagnostics
 export slice (the app's honest observational study of its own card quality).
-Open ruling (audit U3): caveats visible by default vs the calm-UI toggle.
+RULED 2026-06-12: caveats by design — visible by default, "informed consent" app-wide; translated hover bubbles carry the long form (layering, never hiding).
 
 ---
 

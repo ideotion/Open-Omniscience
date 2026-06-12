@@ -24,6 +24,15 @@ ruling, a contingency, or a deliberate-omission note.
 - Honesty by construction: no composite trust/quality scores (CardSchemaError
   enforces); every signal carries method + caveat + n; degrade loudly. No
   fabricated security, ever (no lock screens over plaintext, no theater).
+- **INFORMED CONSENT — permanent, app-wide (RULED 2026-06-12, resolves audit
+  U3 as "caveats by design"):** caveats are VISIBLE BY DEFAULT — never hidden
+  behind a calm-UI toggle; the UI the user is in is always fully transparent
+  AND always gives choice. Information overflow is handled by LAYERING, not
+  hiding: translated HOVER BUBBLES (the existing translated `title`/popover
+  mechanism) carry the long form while the visible surface keeps the caveat
+  present. Every consent/caveat string ships ×12 locales. Applies to every
+  surface built or reworked from now on (T9+); the network consent popup
+  (invariant #14) and the restore preview (T6) are the reference patterns.
 - **The 0.09 cycle is OPEN** (default branch `0.09` since 2026-06-11) ⇒ release
   0.0.9. Version single-sourced from pyproject. Historical `0.0.8`/`0.08` tags
   in docs/entries are records, not the current version.
