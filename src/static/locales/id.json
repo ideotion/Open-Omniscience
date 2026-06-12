@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "Buang istilah yang murni angka",
   "Use built-in multilingual stoplist": "Gunakan stoplist multibahasa bawaan",
   "Excluded keywords": "Kata kunci yang dikecualikan",
-  "Search the app, jump anywhere, run an action…": "Cari di aplikasi, lompat ke mana saja, jalankan aksi…",
   "Backup & restore": "Cadangkan & pulihkan",
   "Download backup (.db)": "Unduh cadangan (.db)",
   "Restore from a backup file": "Pulihkan dari berkas cadangan",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "Pengambilan cuaca ditolak:",
   "cached copy": "salinan tersimpan",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Reanalisis Open-Meteo (CC BY 4.0): estimasi model untuk tempat dan jendela ini — penguat, bukan bukti.",
-  "No values were returned for this variable and window.": "Tidak ada nilai yang dikembalikan untuk variabel dan jendela ini."
+  "No values were returned for this variable and window.": "Tidak ada nilai yang dikembalikan untuk variabel dan jendela ini.",
+  "Search your data, jump to a tool, run an action…": "Cari di data Anda, buka alat, jalankan aksi…",
+  "Search everything — data, tools, actions, docs…": "Cari semuanya — data, alat, aksi, dokumen…",
+  "Run the full Boolean search for": "Jalankan pencarian Boolean lengkap untuk",
+  "opens its corpus window": "membuka jendela korpusnya",
+  "article": "artikel",
+  "matches in total": "kecocokan total",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Operator Boolean berfungsi di sini: AND, OR, NOT, “frasa dalam kutipan”.",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “frasa dalam kutipan”, dan (tanda kurung) mempertajam pencarian artikel. Semuanya dicari hanya di mesin ini — mengetik di sini tidak pernah menyentuh jaringan."
 }

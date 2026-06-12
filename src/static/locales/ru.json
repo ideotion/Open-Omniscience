@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "Отбрасывать чисто числовые термины",
   "Use built-in multilingual stoplist": "Использовать встроенный многоязычный стоп-список",
   "Excluded keywords": "Исключённые ключевые слова",
-  "Search the app, jump anywhere, run an action…": "Искать по приложению, перейти куда угодно, выполнить действие…",
   "Backup & restore": "Резервное копирование и восстановление",
   "Download backup (.db)": "Скачать резервную копию (.db)",
   "Restore from a backup file": "Восстановить из файла резервной копии",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "Запрос метеоданных отклонён:",
   "cached copy": "кэшированная копия",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Реанализ Open-Meteo (CC BY 4.0): модельная оценка для этого места и окна — подтверждение, но никогда не доказательство.",
-  "No values were returned for this variable and window.": "Для этой переменной и окна не было возвращено значений."
+  "No values were returned for this variable and window.": "Для этой переменной и окна не было возвращено значений.",
+  "Search your data, jump to a tool, run an action…": "Ищите в своих данных, открывайте инструмент, запускайте действие…",
+  "Search everything — data, tools, actions, docs…": "Искать везде — данные, инструменты, действия, документы…",
+  "Run the full Boolean search for": "Выполнить полный булев поиск по",
+  "opens its corpus window": "открывает его окно корпуса",
+  "article": "статья",
+  "matches in total": "совпадений всего",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Здесь работают булевы операторы: AND, OR, NOT, «фразы в кавычках».",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, «фразы в кавычках» и (скобки) уточняют поиск статей. Всё ищется только на этой машине — ввод здесь никогда не обращается к сети."
 }

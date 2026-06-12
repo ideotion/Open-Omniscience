@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "Écarter les termes purement numériques",
   "Use built-in multilingual stoplist": "Utiliser la liste d'exclusion multilingue intégrée",
   "Excluded keywords": "Mots-clés exclus",
-  "Search the app, jump anywhere, run an action…": "Chercher dans l'app, aller n'importe où, lancer une action…",
   "Backup & restore": "Sauvegarde & restauration",
   "Download backup (.db)": "Télécharger la sauvegarde (.db)",
   "Restore from a backup file": "Restaurer depuis un fichier de sauvegarde",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "Récupération météo refusée :",
   "cached copy": "copie en cache",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Réanalyse Open-Meteo (CC BY 4.0) : une estimation par modèle pour ce lieu et cette fenêtre — une corroboration, jamais une preuve.",
-  "No values were returned for this variable and window.": "Aucune valeur n'a été renvoyée pour cette variable et cette fenêtre."
+  "No values were returned for this variable and window.": "Aucune valeur n'a été renvoyée pour cette variable et cette fenêtre.",
+  "Search your data, jump to a tool, run an action…": "Cherchez dans vos données, ouvrez un outil, lancez une action…",
+  "Search everything — data, tools, actions, docs…": "Tout chercher — données, outils, actions, docs…",
+  "Run the full Boolean search for": "Lancer la recherche booléenne complète pour",
+  "opens its corpus window": "ouvre sa fenêtre de corpus",
+  "article": "article",
+  "matches in total": "résultats au total",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Les opérateurs booléens fonctionnent ici : AND, OR, NOT, « expressions entre guillemets ».",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, « expressions entre guillemets » et (parenthèses) affinent la recherche d'articles. Tout est cherché sur cette machine uniquement — taper ici ne touche jamais le réseau."
 }

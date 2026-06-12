@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "Descartar termos puramente numéricos",
   "Use built-in multilingual stoplist": "Usar a lista de exclusão multilingue integrada",
   "Excluded keywords": "Palavras-chave excluídas",
-  "Search the app, jump anywhere, run an action…": "Pesquise na app, salte para qualquer lado, execute uma ação…",
   "Backup & restore": "Cópia de segurança e restauro",
   "Download backup (.db)": "Transferir cópia de segurança (.db)",
   "Restore from a backup file": "Restaurar a partir de um ficheiro de cópia",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "Obtenção meteorológica recusada:",
   "cached copy": "cópia em cache",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Reanálise Open-Meteo (CC BY 4.0): uma estimativa de modelo para este lugar e janela — corroboração, nunca prova.",
-  "No values were returned for this variable and window.": "Nenhum valor foi devolvido para esta variável e janela."
+  "No values were returned for this variable and window.": "Nenhum valor foi devolvido para esta variável e janela.",
+  "Search your data, jump to a tool, run an action…": "Pesquise nos seus dados, abra uma ferramenta, execute uma ação…",
+  "Search everything — data, tools, actions, docs…": "Pesquisar tudo — dados, ferramentas, ações, docs…",
+  "Run the full Boolean search for": "Executar a pesquisa booleana completa de",
+  "opens its corpus window": "abre a sua janela de corpus",
+  "article": "artigo",
+  "matches in total": "correspondências no total",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Os operadores booleanos funcionam aqui: AND, OR, NOT, “frases entre aspas”.",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “frases entre aspas” e (parênteses) refinam a pesquisa de artigos. Tudo é pesquisado apenas nesta máquina — digitar aqui nunca toca a rede."
 }

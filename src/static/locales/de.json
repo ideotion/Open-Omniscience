@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "Rein numerische Begriffe verwerfen",
   "Use built-in multilingual stoplist": "Eingebaute mehrsprachige Stoppliste verwenden",
   "Excluded keywords": "Ausgeschlossene Schlagwörter",
-  "Search the app, jump anywhere, run an action…": "Die App durchsuchen, überallhin springen, eine Aktion ausführen…",
   "Backup & restore": "Sicherung & Wiederherstellung",
   "Download backup (.db)": "Sicherung herunterladen (.db)",
   "Restore from a backup file": "Aus einer Sicherungsdatei wiederherstellen",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "Wetterabruf verweigert:",
   "cached copy": "zwischengespeicherte Kopie",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Open-Meteo-Reanalyse (CC BY 4.0): eine Modellschätzung für diesen Ort und dieses Zeitfenster — eine Bestätigung, nie ein Beweis.",
-  "No values were returned for this variable and window.": "Für diese Variable und dieses Zeitfenster wurden keine Werte zurückgegeben."
+  "No values were returned for this variable and window.": "Für diese Variable und dieses Zeitfenster wurden keine Werte zurückgegeben.",
+  "Search your data, jump to a tool, run an action…": "Durchsuchen Sie Ihre Daten, öffnen Sie ein Werkzeug, starten Sie eine Aktion…",
+  "Search everything — data, tools, actions, docs…": "Alles durchsuchen — Daten, Werkzeuge, Aktionen, Doku…",
+  "Run the full Boolean search for": "Vollständige Boolesche Suche ausführen für",
+  "opens its corpus window": "öffnet sein Korpusfenster",
+  "article": "Artikel",
+  "matches in total": "Treffer insgesamt",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Boolesche Operatoren funktionieren hier: AND, OR, NOT, „Phrasen in Anführungszeichen“.",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, „Phrasen in Anführungszeichen“ und (Klammern) verfeinern die Artikelsuche. Alles wird nur auf diesem Rechner durchsucht — Tippen hier berührt nie das Netzwerk."
 }

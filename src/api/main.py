@@ -133,6 +133,9 @@ from src.api.safety import router as safety_router
 # Import scheduler router (in-app background ingester control surface)
 from src.api.scheduler import router as scheduler_router
 
+# Import omnibar federated-search router (T13: instant, index-backed)
+from src.api.search_omni import router as search_omni_router
+
 # Import application settings router (GUI-editable preferences)
 from src.api.settings import router as settings_router
 
@@ -430,6 +433,7 @@ app.include_router(unlock_router)
 app.include_router(hazards_router)
 app.include_router(events_router)
 app.include_router(weather_router)
+app.include_router(search_omni_router)
 app.include_router(personality_router)
 
 # Include temporal-map router (offline by default; hazards layer opt-in)

@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "Descartar términos puramente numéricos",
   "Use built-in multilingual stoplist": "Usar la lista de exclusión multilingüe integrada",
   "Excluded keywords": "Palabras clave excluidas",
-  "Search the app, jump anywhere, run an action…": "Busque en la app, salte a cualquier parte, ejecute una acción…",
   "Backup & restore": "Copia de seguridad y restauración",
   "Download backup (.db)": "Descargar copia de seguridad (.db)",
   "Restore from a backup file": "Restaurar desde un archivo de copia",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "Obtención meteorológica rechazada:",
   "cached copy": "copia en caché",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Reanálisis de Open-Meteo (CC BY 4.0): una estimación de modelo para este lugar y ventana — corroboración, nunca prueba.",
-  "No values were returned for this variable and window.": "No se devolvieron valores para esta variable y ventana."
+  "No values were returned for this variable and window.": "No se devolvieron valores para esta variable y ventana.",
+  "Search your data, jump to a tool, run an action…": "Busque en sus datos, abra una herramienta, ejecute una acción…",
+  "Search everything — data, tools, actions, docs…": "Buscar en todo — datos, herramientas, acciones, docs…",
+  "Run the full Boolean search for": "Ejecutar la búsqueda booleana completa de",
+  "opens its corpus window": "abre su ventana de corpus",
+  "article": "artículo",
+  "matches in total": "coincidencias en total",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Los operadores booleanos funcionan aquí: AND, OR, NOT, «frases entre comillas».",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, «frases entre comillas» y (paréntesis) refinan la búsqueda de artículos. Todo se busca solo en esta máquina — escribir aquí nunca toca la red."
 }

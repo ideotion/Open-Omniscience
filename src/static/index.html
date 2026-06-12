@@ -642,7 +642,7 @@
              aria-label="Open command palette" aria-keyshortcuts="Control+K"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openPalette();}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <span class="ph">Search the app, jump anywhere, run an action…</span>
+          <span class="ph">Search everything — data, tools, actions, docs…</span>
           <span class="kbd">Ctrl K</span>
         </div>
         <div class="spacer"></div>
@@ -1970,9 +1970,11 @@
   <div class="overlay" id="palOverlay" onclick="closePalette()"></div>
   <div class="palette" id="palette" role="dialog" aria-label="Command palette">
     <input id="pal-input" autocomplete="off" spellcheck="false"
-           placeholder="Jump to a tool, run an action, or open a doc…"
+           placeholder="Search your data, jump to a tool, run an action…"
            oninput="renderPalette()" onkeydown="palKey(event)">
     <div class="pal-list" id="pal-list"></div>
+    <div class="pal-hint muted" style="padding:7px 16px;font-size:11.5px;border-top:1px solid var(--border)"
+         title="AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.">Boolean operators work here: AND, OR, NOT, “quoted phrases”.</div>
   </div>
 
   <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -2607,8 +2609,14 @@
            onchange="toggleModule('${n.id}', this.checked)"> ${esc(n.label)}</label>`).join("");
     }
 
-    // -- Command palette (Ctrl/⌘-K) ----------------------------------------- //
+    // -- Command palette = the OMNIBAR (Ctrl/⌘-K; T13 slice 1) -------------- //
+    // Static commands (pages/actions/docs) match instantly; from 2 typed
+    // characters the palette ALSO federates over the indexed data surfaces
+    // (articles via FTS5, keywords, sources, wiki pages, law documents) —
+    // debounced and sequence-guarded, never scan-on-type: the endpoint is
+    // index-backed and discloses the true totals behind the first three.
     let _palItems = [], _palFiltered = [], _palSel = 0;
+    let _omniLive = null, _omniTimer = null, _omniSeq = 0;
     function palCommands() {
       const pages = NAV.map(n => ({grp:"Pages", label:n.label, sub:n.grp, run:() => showTab(n.id)}));
       const actions = [
@@ -2628,14 +2636,77 @@
     }
     function openPalette() {
       _palItems = palCommands();
+      _omniLive = null;
       $("palOverlay").classList.add("open"); $("palette").classList.add("open");
       const i = $("pal-input"); i.value = ""; renderPalette(); setTimeout(() => i.focus(), 30);
     }
     function closePalette() { $("palOverlay").classList.remove("open"); $("palette").classList.remove("open"); }
+    // The live half of the omnibar: items built from /api/search/omni results.
+    // Each carries a run() like any static command, so keyboard navigation and
+    // Enter work unchanged. Group headers disclose the TRUE total behind the
+    // first three (the display bound never hides the magnitude).
+    function _omniItems(q) {
+      if (!_omniLive || _omniLive.q !== q) return [];
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const head = (label, g) => label + (g.total > (g.items || []).length ? ` · ${g.total} ${t("matches in total")}` : "");
+      const out = [];
+      (_omniLive.groups || []).forEach(g => {
+        const items = g.items || [];
+        if (!items.length) return;
+        if (g.kind === "articles") {
+          const grp = head(t("Articles"), g);
+          items.forEach(it => out.push({grp, label: it.title || ("#" + it.article_id),
+            sub: (it.published_at || "").slice(0, 10) || t("article"),
+            run: () => window.open(it.url, "_blank")}));
+        } else if (g.kind === "keywords") {
+          const grp = head(t("Keywords"), g);
+          items.forEach(it => out.push({grp,
+            label: it.term + (it.frequency ? ` (${it.frequency})` : ""),
+            sub: t("opens its corpus window"),
+            run: () => openCorpus(it.normalized_term)}));
+        } else if (g.kind === "sources") {
+          const grp = head(t("Sources"), g);
+          items.forEach(it => out.push({grp, label: it.name, sub: it.domain || "",
+            run: () => showTab("sources")}));
+        } else if (g.kind === "wiki") {
+          const grp = head(t("Wikipedia"), g);
+          items.forEach(it => out.push({grp, label: it.title, sub: it.wiki || "",
+            run: () => showTab("wiki")}));
+        } else if (g.kind === "law") {
+          const grp = head(t("World law"), g);
+          items.forEach(it => out.push({grp, label: it.title,
+            sub: (it.jurisdiction || "").toUpperCase(),
+            run: () => showTab("law")}));
+        }
+      });
+      return out;
+    }
+    function _omniFetch(q) {
+      clearTimeout(_omniTimer);
+      _omniTimer = setTimeout(async () => {
+        const seq = ++_omniSeq;
+        try {
+          const d = await api("/api/search/omni?q=" + encodeURIComponent(q));
+          if (seq !== _omniSeq) return;  // a newer keystroke superseded this reply
+          _omniLive = d;
+          if ($("palette").classList.contains("open") && $("pal-input").value.trim() === q) renderPalette();
+        } catch (_e) { /* static commands still work; the server logs the why */ }
+      }, 160);
+    }
     function renderPalette() {
-      const q = $("pal-input").value.trim().toLowerCase();
-      _palFiltered = _palItems.filter(it => !q ||
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const raw = $("pal-input").value.trim();
+      const q = raw.toLowerCase();
+      const statics = _palItems.filter(it => !q ||
         it.label.toLowerCase().includes(q) || (it.sub || "").toLowerCase().includes(q));
+      let live = [];
+      if (raw.length >= 2) {
+        live = _omniItems(raw);
+        if (!_omniLive || _omniLive.q !== raw) _omniFetch(raw);
+        live.unshift({grp: t("Search"), label: `${t("Run the full Boolean search for")} “${raw}”`,
+          sub: "↵", run: () => { showTab("search"); setTimeout(() => { $("q").value = raw; doSearch(); }, 60); }});
+      }
+      _palFiltered = [...statics, ...live];
       _palSel = 0;
       let html = "", lastGrp = null;
       _palFiltered.forEach((it, i) => {

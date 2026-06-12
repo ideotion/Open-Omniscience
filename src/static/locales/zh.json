@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "丢弃纯数字词条",
   "Use built-in multilingual stoplist": "使用内置多语言停用词表",
   "Excluded keywords": "已排除的关键词",
-  "Search the app, jump anywhere, run an action…": "搜索应用、跳转到任意位置、运行操作…",
   "Backup & restore": "备份与恢复",
   "Download backup (.db)": "下载备份 (.db)",
   "Restore from a backup file": "从备份文件恢复",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "天气获取被拒绝：",
   "cached copy": "缓存副本",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Open-Meteo 再分析（CC BY 4.0）：该地点和时间窗口的模型估计——仅作佐证，绝非证明。",
-  "No values were returned for this variable and window.": "该变量和时间窗口未返回任何数值。"
+  "No values were returned for this variable and window.": "该变量和时间窗口未返回任何数值。",
+  "Search your data, jump to a tool, run an action…": "搜索您的数据、跳转到工具、运行操作……",
+  "Search everything — data, tools, actions, docs…": "搜索一切——数据、工具、操作、文档……",
+  "Run the full Boolean search for": "对以下内容运行完整布尔搜索：",
+  "opens its corpus window": "打开其语料库窗口",
+  "article": "文章",
+  "matches in total": "条匹配（共计）",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "此处支持布尔运算符：AND、OR、NOT、“引号短语”。",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND、OR、NOT、“引号短语”和（括号）可细化文章搜索。一切仅在本机搜索——在此输入绝不触网。"
 }

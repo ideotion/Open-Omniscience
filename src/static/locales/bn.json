@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "শুধু সংখ্যার শব্দ বাদ দিন",
   "Use built-in multilingual stoplist": "অন্তর্নির্মিত বহুভাষিক স্টপলিস্ট ব্যবহার করুন",
   "Excluded keywords": "বাদ দেওয়া কীওয়ার্ড",
-  "Search the app, jump anywhere, run an action…": "অ্যাপে খুঁজুন, যেকোনো জায়গায় যান, একটি কাজ চালান…",
   "Backup & restore": "ব্যাকআপ ও পুনরুদ্ধার",
   "Download backup (.db)": "ব্যাকআপ ডাউনলোড করুন (.db)",
   "Restore from a backup file": "ব্যাকআপ ফাইল থেকে পুনরুদ্ধার",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "আবহাওয়া আনা প্রত্যাখ্যাত:",
   "cached copy": "ক্যাশে রাখা কপি",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Open-Meteo পুনর্বিশ্লেষণ (CC BY 4.0): এই স্থান ও সময়-জানালার জন্য মডেল-ভিত্তিক অনুমান — সমর্থন, কখনোই প্রমাণ নয়।",
-  "No values were returned for this variable and window.": "এই চলক ও সময়-জানালার জন্য কোনো মান ফেরত আসেনি।"
+  "No values were returned for this variable and window.": "এই চলক ও সময়-জানালার জন্য কোনো মান ফেরত আসেনি।",
+  "Search your data, jump to a tool, run an action…": "আপনার ডেটায় খুঁজুন, কোনো সরঞ্জামে যান, কোনো কাজ চালান…",
+  "Search everything — data, tools, actions, docs…": "সবকিছু খুঁজুন — ডেটা, সরঞ্জাম, কাজ, নথি…",
+  "Run the full Boolean search for": "এর জন্য সম্পূর্ণ বুলিয়ান অনুসন্ধান চালান",
+  "opens its corpus window": "এর কর্পাস উইন্ডো খোলে",
+  "article": "নিবন্ধ",
+  "matches in total": "মোট মিল",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "বুলিয়ান অপারেটর এখানে কাজ করে: AND, OR, NOT, “উদ্ধৃত বাক্যাংশ”।",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “উদ্ধৃত বাক্যাংশ” এবং (বন্ধনী) নিবন্ধ অনুসন্ধানকে নিখুঁত করে। সবকিছু শুধু এই মেশিনেই খোঁজা হয় — এখানে টাইপ করা কখনো নেটওয়ার্ক স্পর্শ করে না।"
 }
