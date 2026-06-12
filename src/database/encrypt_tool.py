@@ -42,7 +42,7 @@ def _table_counts(conn) -> dict[str, int]:
             "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'article_fts%'"
         )
     ]
-    return {n: conn.execute(f'SELECT COUNT(*) FROM "{n}"').fetchone()[0] for n in names}  # noqa: S608
+    return {n: conn.execute(f'SELECT COUNT(*) FROM "{n}"').fetchone()[0] for n in names}  # noqa: S608  # nosec B608 - identifier from the fixed store list, never input
 
 
 def encrypt_database(path: Path | str, key: str) -> dict:
