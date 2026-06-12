@@ -483,5 +483,7 @@
   "Shared outbound links among the member articles — a shared origin means agreement is ONE path, not independent confirmation.": "Enlaces salientes compartidos entre los artículos miembros — un origen compartido significa que el acuerdo es UNA sola vía, no confirmación independiente.",
   "No outbound link is shared by more than one member article.": "Ningún enlace saliente es compartido por más de un artículo miembro.",
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "Qué artículos miembros comparten enlaces salientes — orígenes compartidos visibles: contar citas nunca es confirmación independiente cuando las vías comparten origen.",
-  "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Abrir esta palabra clave como ventana de corpus: tendencia, artículos miembros y enlaces salientes compartidos (las fuentes de las fuentes)."
+  "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Abrir esta palabra clave como ventana de corpus: tendencia, artículos miembros y enlaces salientes compartidos (las fuentes de las fuentes).",
+  "Full moon": "Luna llena",
+  "New moon": "Luna nueva"
 }

@@ -240,8 +240,12 @@ ruling, a contingency, or a deliberate-omission note.
   environment's interfaces; layers beneath may stay online; the button names
   the layer it controls; a userspace app can NEVER equal a hardware webcam
   light and we never claim it.
-  (2) AGENDA CONTENT (the month-grid default + plumbing→Settings SHIPPED, see
-  batch log): recurring-event model unifying rules + per-year instances +
+  (2) AGENDA CONTENT (the month-grid default + plumbing→Settings SHIPPED;
+  ASTRONOMY LAYER slice SHIPPED T11 2026-06-12: Meeus ch.49 full/new moons
+  computed locally, VERIFIED against the book's worked example 49.a to ≤30 s
+  + 2024 almanac dates; /api/events/astronomy; moon glyphs in the month grid
+  with method+accuracy in the hover bubble; ΔT non-application STATED):
+  REMAINING: recurring-event model unifying rules + per-year instances +
   origin year ("since 1810" — the Mexico sighting was the ICS import path
   storing year-pinned instances); month-span banners ("Dry January"); the
   remaining views (week/trimester/semester/year/decade); play speeds 0.05–16×

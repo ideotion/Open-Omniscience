@@ -3178,6 +3178,19 @@
         (!tag || (e.tags||[]).includes(tag)) && (!subOnly || (e.sources || [e.calendar]).some(s => subs.has(s))));
     }
     function agShowDay(d) { AGV.day = d; renderAgenda(); }
+    // T11: the astronomy layer (Meeus, computed locally) — moon glyphs in the
+    // month grid; method+accuracy ride the hover convention (informed consent).
+    let _astroYear = null, _astroByDate = {};
+    async function _ensureAstro(year) {
+      if (_astroYear === year) return;
+      try {
+        const d = await api(`/api/events/astronomy?year=${year}`);
+        _astroByDate = {};
+        for (const fm of (d.full_moons || [])) _astroByDate[fm.date] = {glyph: "\u{1F315}", kind: "full", time: fm.time_utc, method: d.method, acc: d.accuracy};
+        for (const nm of (d.new_moons || [])) _astroByDate[nm.date] = {glyph: "\u{1F311}", kind: "new", time: nm.time_utc, method: d.method, acc: d.accuracy};
+        _astroYear = year;
+      } catch (_e) { _astroByDate = {}; _astroYear = null; }
+    }
     function renderAgendaMonth(rows) {
       const box = $("agenda-month"), dayBox = $("agenda-day");
       if (AGV.y == null) { const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1; }
@@ -3204,6 +3217,7 @@
       for (let nd = 1; cells.length % 7; nd++) cells.push({ d: nd, out: true });
       const t = new Date();
       const inThisMonth = t.getFullYear() === y && t.getMonth() + 1 === m;
+      const t9m = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const wd = [...Array(7)].map((_, i) =>
         new Intl.DateTimeFormat(loc, { weekday: "short" }).format(new Date(2024, 0, i + 1))); // 2024-01-01 was a Monday
       let html = `<div class="ag-grid ag-grid-head">` + wd.map(w => `<div class="ag-wd">${esc(w)}</div>`).join("") + `</div>`;
@@ -3211,11 +3225,16 @@
         if (c.out) return `<div class="ag-cell out"><span class="ag-dn">${c.d}</span></div>`;
         const evs = byDay[c.d] || [];
         const today = inThisMonth && t.getDate() === c.d;
+        const iso = `${y}-${String(m).padStart(2, "0")}-${String(c.d).padStart(2, "0")}`;
+        const moon = _astroByDate[iso];
+        const moonHtml = moon
+          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc((moon.kind === "full" ? t9m("Full moon") : t9m("New moon")) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
+          : "";
         const chips = evs.slice(0, 3).map(e =>
           `<span class="ag-chip${e.confirmed ? "" : " approx"}" title="${esc(e.title)}${e.confirmed ? "" : " — exact date moves; check the official source"}">${esc(e.title.length > 22 ? e.title.slice(0, 21) + "…" : e.title)}</span>`).join("");
         const more = evs.length > 3 ? `<span class="ag-more">+${evs.length - 3}</span>` : "";
         return `<div class="ag-cell${today ? " today" : ""}${evs.length ? " has" : ""}${AGV.day === c.d ? " sel" : ""}" onclick="agShowDay(${c.d})">
-          <span class="ag-dn">${c.d}</span>${chips}${more}</div>`;
+          <span class="ag-dn">${c.d}</span>${moonHtml}${chips}${more}</div>`;
       }).join("") + `</div>`;
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (monthOnly.length)
@@ -3240,7 +3259,11 @@
       $("agenda-group-wrap").style.display = view === "month" ? "none" : "";
       const rows = agFiltered();
       $("agenda-monthhint").textContent = AG.caveat || "";
-      if (view === "month") { renderAgendaMonth(rows); return; }
+      if (view === "month") {
+        if (AGV.y == null) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
+        _ensureAstro(AGV.y).then(() => renderAgendaMonth(rows));
+        return;
+      }
       const box = $("agenda-list");
       const groupBy = $("agenda-group").value;
       const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
