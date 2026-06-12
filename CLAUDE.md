@@ -487,6 +487,14 @@ ruling, a contingency, or a deliberate-omission note.
   denominators silently); official machine endpoints (SDMX/APIs) before
   scraping; triangulation side-by-side never averaged; agency FORECASTS
   join the IPCC prediction-tracking lens; coverage measured per continent.
+- **OPEN-METEO WEATHER-CONTEXT LAYER (maintainer concept 2026-06-12,
+  designed in FUTURE_DEVELOPMENTS; honest amendment recorded: NOT the
+  entire dataset — the CORPUS drives bounded (place,window) reanalysis
+  slices via the T12 substrate; corroborates, never confirms; anomalies vs
+  stated baselines; signal-keywords from explicit threshold rules with
+  (date,place) anchors by construction, kind="signal", never silently mixed
+  with text keywords; reader weather-context row + Home co-occurrence
+  producer; opt-in, consented, visible jobs).**
 - **Parked (designed-only):** event-family merge/split UI (#53), saved-filter
   "smart calendars" (#50), offline vector map, two-hop keyword graphs (#43),
   autonomous onboarding track (#49), **voice-only mode (maintainer input
