@@ -658,3 +658,47 @@ prerequisites need serious thinking. Priority stays on current work.
   offline LLM kit (RM-08) for the principled model-install path. Candidate
   first slice: spoken readout of Home cards + search + "help", push-to-talk,
   one language, measured on the reference VM.
+
+
+---
+
+## IPCC as a source + prediction-tracking (maintainer concept 2026-06-12; designed-only)
+
+**The ask (recorded):** ingest IPCC material as articles — reliable-seeming
+but treated like ANY other source (the Wikipedia discipline: no assumed
+authority), with the same When×Where×Who extraction. IPCC is climate-focused
+and publishes MODELS/projections that may or may not come true: the app
+could analyze **whether their anticipations were right after all**.
+
+**Design thinking (assistant):**
+- **Ingestion**: IPCC reports are large PDFs + HTML summaries on ipcc.ch —
+  needs a PDF-to-text path (new capability; robots/politeness apply as
+  everywhere). Chapters/sections become articles with full provenance
+  (report, AR cycle, working group, chapter, page anchors).
+- **Predictions as first-class dated claims**: the date extractor already
+  finds future dates; a PREDICTION layer would store (claim text, horizon
+  date/range, scenario label e.g. SSP/RCP, confidence wording AS PRINTED —
+  the IPCC's own calibrated language, never our score).
+- **The retrospective lens** (the maintainer's framing): when a horizon
+  arrives, the promises-due pattern (shipped, 0.0.8) surfaces the claim with
+  what the corpus + climate datasets show — co-occurrence and the record,
+  NEVER a verdict; the reader judges. Scenario-conditional claims ("under
+  RCP8.5…") must carry their condition — judging an unconditional miss on a
+  conditional claim would be dishonest.
+- **Data link**: the bundled climate dataset (El Niño episodes, shipped
+  2026-06-12 with verification flags) is the first reality-series such
+  claims can sit next to; more series (NOAA/Copernicus) only as
+  provenance-carrying bundled datasets or official CSV feeds.
+- **QUESTIONS FOR THE MAINTAINER (answer later):** which IPCC products
+  first (AR6 SPMs? full WG reports? special reports)? PDF ingestion is a
+  new dependency surface (pypdf?) — acceptable? Are predictions extracted
+  automatically (lexical, noisy) or operator-curated from a suggested list?
+
+## Agenda ↔ Wikipedia linking (maintainer ask 2026-06-12; designed-only)
+
+Each agenda entry (astronomy, climate episodes, world events) can carry an
+optional wiki page reference: one click opens the LOCAL wiki baseline (if
+watched/ingested) or offers to WATCH the page (consented fetch) — never an
+silent external jump (invariant #6/#7 apply). Builds on the
+Wikipedia-as-living-source design; the event→page mapping ships as data
+(per-locale page titles where they exist), with the usual provenance.

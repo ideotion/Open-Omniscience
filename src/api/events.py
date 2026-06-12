@@ -142,6 +142,42 @@ def astronomy(year: int = Query(..., ge=1900, le=2200)) -> dict:
     """Lunar phases for the agenda year — computed locally (Meeus ch. 49),
     zero network, with method + accuracy carried on the result (the agenda
     renders them via the hover convention)."""
-    from src.events.astronomy import phases_for_year
+    from src.events.astronomy import phases_for_year, seasons_for_year
 
-    return phases_for_year(year)
+    out = phases_for_year(year)
+    out["seasons"] = seasons_for_year(year)["seasons"]
+    out["seasons_naming"] = seasons_for_year(year)["naming"]
+    return out
+
+
+@router.get("/climate")
+def climate_events() -> dict:
+    """Historical climate phenomena (El Niño episodes) from the bundled,
+    provenance-carrying dataset. HONESTY: the per-file verification_status
+    travels with the data — entries drafted from training knowledge stay
+    flagged until the clearnet check against the NOAA CPC ONI table; nothing
+    is presented as verified before it is."""
+    from pathlib import Path
+
+    import yaml
+
+    path = Path(__file__).resolve().parents[2] / "configs" / "climate_events.yml"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="climate dataset not bundled")
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    episodes = data.get("el_nino_episodes", [])
+    for ep in episodes:
+        try:
+            sy, sm = (int(x) for x in ep["start"].split("-"))
+            ey, em = (int(x) for x in ep["end"].split("-"))
+            ep["length_months"] = (ey - sy) * 12 + (em - sm) + 1
+        except Exception:  # noqa: BLE001 - a malformed row shows without the derived field
+            ep["length_months"] = None
+    return {
+        "as_of": data.get("as_of"),
+        "source": data.get("source"),
+        "method": data.get("method"),
+        "verification_status": data.get("verification_status"),
+        "el_nino_episodes": episodes,
+        "count": len(episodes),
+    }

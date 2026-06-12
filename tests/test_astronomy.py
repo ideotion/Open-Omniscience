@@ -52,3 +52,48 @@ def test_phase_listing_carries_method_and_accuracy():
     # Chronological and within the year.
     dates = [f["date"] for f in out["full_moons"]]
     assert dates == sorted(dates) and all(d.startswith("2026") for d in dates)
+
+
+def test_meeus_worked_example_27a_june_solstice_1962():
+    """Meeus, example 27.a: the June solstice of 1962 — JDE 2437837.39245.
+    Agreement to 1e-4 day (~9 s) validates the polynomial + the 24-term table."""
+    from src.events.astronomy import _jde_season
+
+    jde = _jde_season(1962, "june_solstice")
+    assert abs(jde - 2437837.39245) < 0.0001, f"got {jde!r}"
+
+
+def test_seasons_2024_match_published_dates():
+    """Published 2024 season dates (UTC): Mar 20, Jun 20, Sep 22, Dec 21."""
+    from src.events.astronomy import seasons_for_year
+
+    out = seasons_for_year(2024)
+    got = {s["event"]: s["date"] for s in out["seasons"]}
+    assert got["march_equinox"] == "2024-03-20"
+    assert got["june_solstice"] == "2024-06-20"
+    assert got["september_equinox"] == "2024-09-22"
+    assert got["december_solstice"] == "2024-12-21"
+    assert "hemispheres" in out["naming"], "hemisphere honesty must travel with the data"
+
+
+def test_climate_endpoint_carries_provenance_and_verification_flag():
+    import os
+    os.environ.setdefault("OO_DB_PLAINTEXT", "1")
+    os.environ.setdefault("OO_NO_SCHEDULER", "1")
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as c:
+        body = c.get("/api/events/climate").json()
+        assert body["source"].startswith("NOAA CPC")
+        assert "pending" in body["verification_status"], (
+            "drafted data must stay flagged until the clearnet check"
+        )
+        assert body["count"] >= 20
+        ep9798 = next(e for e in body["el_nino_episodes"] if e["start"] == "1997-04")
+        assert ep9798["intensity"] == "very strong"
+        assert ep9798["length_months"] == 14
+        astro = c.get("/api/events/astronomy?year=2026").json()
+        assert len(astro["seasons"]) == 4
+        assert "hemispheres" in astro["seasons_naming"]
