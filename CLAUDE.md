@@ -554,7 +554,13 @@ Before fearing loss from an archive-size change, run
   language); the boolean/operator vocabulary ("AND OR +"…) reminded
   DISCREETLY in the UI or via an intuitively-placed hover popup; DATE
   SEARCH is first-class (a searched date opens that date's corpus — joins
-  the date-pivot family); TYPO TOLERANCE for keyword AND date input with
+  the date-pivot family) — **REFINED (maintainer 2026-06-12): the UI
+  facilitates date search with a CALENDAR PICKER, and PERIODS are
+  searchable, not only single dates** (a period search = a date-range
+  corpus; same shared begin/end/timescale component as the keyword
+  windows' time-scope control — built once, used by search, keyword
+  windows and the mind-map date spectrum); TYPO TOLERANCE for keyword AND
+  date input with
   the honest did-you-mean pattern: "Prsident" → show "President" results
   while offering "search 'Prsident' literally" — NEVER silently
   substitute. "Searching is an analytical tool" (maintainer framing).
