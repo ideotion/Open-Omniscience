@@ -577,6 +577,20 @@ Before fearing loss from an archive-size change, run
   optimize/ANALYZE at boot; cached counts for vitals/Library; VACUUM tool
   in Settings. Sits naturally with the task-manager batch (one "data
   management background" story, the maintainer's framing).
+  **RAM LEVER ADDED (maintainer observation 2026-06-12: only ~600 MB RAM
+  used while both CPU cores saturate — "can't we leverage more RAM?"):**
+  YES — the CPU burn is largely re-walking cold SQLite pages (default page
+  cache ≈2 MB/connection against a 243 MB corpus) + sort/temp trees.
+  SHIPPED same turn: PRAGMA cache_size=64 MiB + temp_store=MEMORY on every
+  engine connection (matters MORE under SQLCipher: each re-read costs a
+  decrypt). Queued for the batch: mmap_size (plaintext stores only —
+  SQLCipher pages can't be mmap'd through the codec), cachetools TTL
+  caches for hot aggregations (trending/vitals/coverage), and the honest
+  THREADING answer recorded: the app IS multi-threaded (scheduler thread +
+  API; SQLite's C core and lxml release the GIL, which is why both cores
+  light up) but pure-Python work serializes on the GIL — true multi-core
+  for extraction would need worker PROCESSES, only worth it after the
+  cheap wins; single-writer SQLite stays the design.
   same day — "I personally really don't like the agenda view"): FIRST SLICE
   SHIPPED 2026-06-11 under the new data-first principle (UI invariant #8):**
   the Agenda tab is now a pure data surface — MONTH GRID is the default view

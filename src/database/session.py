@@ -88,6 +88,14 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA busy_timeout=30000")  # ms; wait instead of erroring
         cursor.execute("PRAGMA synchronous=NORMAL")  # safe with WAL, much faster
+        # Trade RAM for CPU (maintainer field report 2026-06-12: 600 MB RAM idle
+        # while 2 cores saturate). SQLite's default page cache is ~2 MB per
+        # connection, so a 243 MB corpus is re-walked from cold pages on every
+        # aggregation; 64 MB keeps the hot b-trees decoded. temp_store=MEMORY
+        # moves GROUP BY / ORDER BY scratch trees off disk. Both matter MORE
+        # under SQLCipher, where every page re-read costs a decrypt.
+        cursor.execute("PRAGMA cache_size=-65536")  # negative = KiB => 64 MiB
+        cursor.execute("PRAGMA temp_store=MEMORY")
     finally:
         cursor.close()
 
