@@ -119,6 +119,18 @@ carries live status (a health dot, an **LLM** pill) and three affordances:
 
 ### Recent additions (0.0.8 live-test cycle, June 2026)
 
+- **The network switch is an airplane-mode toggle (sidebar foot):** one constant
+  airplane glyph whose **fill is the state** — filled means offline engaged
+  (every new network request refused instantly; one in-flight request may
+  finish). **Every transition back to online asks first**: a single consent
+  popup says which action needs the network and lists your machine's **local
+  interface addresses** (read from the kernel's own tables — never a network
+  call; the app deliberately does not fetch a "what is my IP" echo, because
+  that would itself be traffic). Beyond those local addresses, the internet
+  sees whatever public address your ISP or VPN presents. Starting a collection
+  pass, importing market feeds, adding a watched Wikipedia page or downloading
+  a dump all pass through the same consent when offline, and the toggle
+  repaints immediately on every transition — it never waits for the next poll.
 - **Layered mind-map & word cloud (Insights):** a true radial mind-map (centre →
   arms → outward leaves) across three zoom layers (keywords ↔ families ↔
   super-groups), with a word-cloud second view, a date-spectrum control, a

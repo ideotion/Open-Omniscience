@@ -122,6 +122,46 @@ def network_mode() -> dict:
     return {"online": not kill_switch_active()}
 
 
+@router.get("/interfaces")
+def local_interfaces() -> dict:
+    """The machine's LOCAL network addresses, for the online-consent popup.
+
+    Read from the kernel's interface tables via psutil — NEVER a network call
+    (fetching a public-IP echo before consent would itself be network traffic
+    while "offline"). Loopback and link-local addresses are skipped: the list
+    answers "what addresses does this machine present to its networks". The
+    public address beyond them is whatever the ISP/VPN presents; this app does
+    not check it, and the UI says so.
+    """
+    interfaces: list[dict] = []
+    if _HAVE_PSUTIL:
+        try:
+            import socket as _socket
+
+            for name, addrs in psutil.net_if_addrs().items():
+                ips = []
+                for a in addrs:
+                    if a.family not in (_socket.AF_INET, getattr(_socket, "AF_INET6", None)):
+                        continue
+                    ip = (a.address or "").split("%")[0]
+                    if not ip or ip.startswith(("127.", "169.254.", "fe80")) or ip == "::1":
+                        continue
+                    ips.append(ip)
+                if ips:
+                    interfaces.append({"interface": name, "addresses": ips})
+        except Exception:  # noqa: BLE001 - degrade honestly below, never fabricate
+            pass
+    return {
+        "available": _HAVE_PSUTIL,
+        "interfaces": interfaces,
+        "method": (
+            "psutil.net_if_addrs() — the kernel's own interface tables, read "
+            "locally; no packet leaves the machine. Loopback and link-local "
+            "addresses omitted."
+        ),
+    }
+
+
 @router.post("/network")
 def set_network_mode(payload: dict) -> dict:
     """Flip the app-wide network mode (maintainer-ruled 2026-06-11: a first-

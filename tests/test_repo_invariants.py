@@ -170,11 +170,10 @@ def test_llm_catalog_freshness():
     cycle to re-verify the list against https://ollama.com/library or knowingly
     bump the date. The live picker uses the operator's INSTALLED models; this
     list is only the offline suggestion."""
+    import re as _re
     from datetime import date
 
     from src.llm.ollama import CATALOG_AS_OF
-
-    import re as _re
     m = _re.fullmatch(r"(\d{4})-(\d{2})", CATALOG_AS_OF)
     assert m, f"CATALOG_AS_OF must be 'YYYY-MM', got {CATALOG_AS_OF!r}"
     y, mo = int(m.group(1)), int(m.group(2))
@@ -258,4 +257,23 @@ def test_ui_invariants():
     )
     assert 'return localStorage.getItem("oo.agenda.view") || "month"' in html, (
         "MONTH is the ruled default agenda view"
+    )
+    # 14. the network toggle is AIRPLANE-MODE (ruled 2026-06-12): one constant
+    #     glyph whose FILL is the state — never ▶/⏸ action glyphs — and EVERY
+    #     offline→online transition passes the ONE consent popup (local
+    #     interface addresses; no public-IP echo before consent).
+    assert 'id="net-plane"' in html and 'id="net-label"' in html, (
+        "the network toggle must be the constant airplane glyph + label"
+    )
+    assert "▶ Online" not in html and "⏸ Offline" not in html, (
+        "action glyphs must not label network STATE (CLAUDE.md #14)"
+    )
+    assert 'id="net-consent"' in html and "ensureOnline(" in html, (
+        "every online transition must pass the consent popup"
+    )
+    for fn in ("schedulerStart", "schedulerRunNow", "firstRun"):
+        body = html.split(f"async function {fn}(", 1)[1].split("async function", 1)[0]
+        assert "ensureOnline(" in body, f"{fn} must consent before going online"
+    assert "st.online" in html, (
+        "scheduler responses carry network state for the immediate repaint"
     )

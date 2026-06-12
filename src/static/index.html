@@ -593,8 +593,12 @@
 
       <div class="sb-foot">
         <button class="secondary" id="net-toggle" onclick="toggleNetwork()"
-          title="Online/offline — the app-wide network switch. Offline refuses every new fetch instantly; one in-flight request may finish."
-          style="min-width:104px">▶ Online</button>
+          title="Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish."
+          style="min-width:104px;display:flex;align-items:center;justify-content:center;gap:6px">
+          <svg id="net-plane" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+               style="flex:0 0 auto"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+          <span id="net-label">Online</span></button>
         <button class="secondary" onclick="showTab('settings')" title="Open Settings (appearance, language, data, safety)"
                 style="display:flex;align-items:center;justify-content:center;gap:8px;flex:1">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.2A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 14H2.5a2 2 0 0 1 0-4h.2A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 2.6V2.5a2 2 0 0 1 4 0v.2A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H23a2 2 0 0 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg>
@@ -1891,6 +1895,24 @@
 
   <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
+  <!-- Online-consent popup (maintainer-ruled): EVERY transition to online is
+       consented. Lists the machine's LOCAL interface addresses (kernel tables,
+       never a network call) and states honestly what the public IP is. -->
+  <dialog id="net-consent" style="max-width:440px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
+    <h3 style="margin:0 0 8px">Go online?</h3>
+    <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
+      <div id="net-consent-reason" style="margin-top:4px"><b></b></div></div>
+    <div class="muted" style="margin-bottom:4px">Your machine presents these local network addresses:</div>
+    <div id="net-consent-ifaces" style="font-family:var(--mono,monospace);font-size:12.5px;margin-bottom:8px"></div>
+    <div class="hint" style="margin-bottom:12px">Beyond these local addresses, the internet sees whatever
+      public address your ISP or VPN presents — this app does not check it, because checking would
+      itself be a network call.</div>
+    <div class="row" style="justify-content:flex-end;gap:8px">
+      <button class="secondary" id="net-consent-cancel">Stay offline</button>
+      <button id="net-consent-ok">Go online</button>
+    </div>
+  </dialog>
+
   <script src="/static/i18n.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
@@ -1958,22 +1980,71 @@
     async function toggleNetwork() {
       const btn = $("net-toggle");
       const goingOnline = btn.classList.contains("off");
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
-        const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online: goingOnline})});
-        _paintNetwork(r.online);
+        if (goingOnline) {
+          // EVERY transition to online is consented (maintainer-ruled).
+          if (!await ensureOnline(t("Allow network requests again"))) return;
+        } else {
+          const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online:false})});
+          _paintNetwork(r.online);
+        }
         let f = document.getElementById("net-flash");
         if (!f) { f = document.createElement("div"); f.id = "net-flash"; document.body.appendChild(f); }
         f.classList.remove("go"); void f.offsetWidth; f.classList.add("go");
-        toast(r.online ? "Back online — network requests allowed again."
-                       : "Offline — every new network request is refused. One in-flight request may finish.",
-              r.online ? "ok" : "err");
+        const online = !$("net-toggle").classList.contains("off");
+        toast(online ? t("Back online — network requests allowed again.")
+                     : t("Offline — every new network request is refused. One in-flight request may finish."),
+              online ? "ok" : "err");
       } catch (e) { toast(e.message, "err"); }
     }
     function _paintNetwork(online) {
       const btn = $("net-toggle"); if (!btn) return;
-      btn.textContent = online ? "▶ Online" : "⏸ Offline";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Airplane-mode semantics (maintainer-ruled): ONE constant glyph whose
+      // FILL is the state — filled = offline engaged. Never an action glyph.
+      const plane = document.getElementById("net-plane");
+      if (plane) plane.setAttribute("fill", online ? "none" : "currentColor");
+      const label = document.getElementById("net-label");
+      if (label) label.textContent = online ? t("Online") : t("Offline");
       btn.classList.toggle("off", !online);
       document.body.classList.toggle("net-offline", !online);
+    }
+    // ONE consent design for every offline->online transition: what will
+    // happen + the machine's LOCAL addresses (kernel tables; fetching a
+    // public-IP echo pre-consent would itself be a network call, so we never
+    // do it — the popup says what the public IP is instead).
+    async function ensureOnline(reason) {
+      try {
+        const nm = await api("/api/system/network");
+        _paintNetwork(nm.online);
+        if (nm.online) return true;
+      } catch (_e) { /* fall through to consent — flipping online still asks */ }
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dlg = document.getElementById("net-consent");
+      dlg.querySelector("#net-consent-reason b").textContent = reason;
+      const box = document.getElementById("net-consent-ifaces");
+      box.textContent = "…";
+      api("/api/system/interfaces").then(d => {
+        const rows = (d.interfaces || []).map(i => `${i.interface}: ${i.addresses.join(", ")}`);
+        box.textContent = rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.");
+        box.style.whiteSpace = "pre-line";
+      }).catch(() => { box.textContent = t("No non-loopback network interfaces were found."); });
+      return new Promise((resolve) => {
+        const ok = document.getElementById("net-consent-ok");
+        const cancel = document.getElementById("net-consent-cancel");
+        const done = (val) => { dlg.close(); ok.onclick = cancel.onclick = dlg.oncancel = null; resolve(val); };
+        ok.onclick = async () => {
+          try {
+            const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online:true})});
+            _paintNetwork(r.online);
+            done(true);
+          } catch (e) { toast(e.message, "err"); done(false); }
+        };
+        cancel.onclick = () => done(false);
+        dlg.oncancel = () => done(false); // Esc = stay offline
+        dlg.showModal();
+      });
     }
     async function _pollVitalsMini() {
       if (document.hidden) return;
@@ -3514,6 +3585,8 @@
     }
 
     async function firstRun(btn) {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!await ensureOnline(t9("Start a collection pass (RSS, crawl, markets, watched Wikipedia pages)"))) return;
       btn.disabled = true;
       const st = $("onboard-status");
       try {
@@ -4009,6 +4082,7 @@
       const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString();
     }
     function renderSchedStatus(st) {
+      if (typeof st.online === "boolean") _paintNetwork(st.online);  // repaint NOW, not at the next poll
       setBackgroundActivity(st.active ? "Collecting…" : null);
       const pill = st.running
         ? (st.active ? '<span class="pill ok">running — scrape in progress</span>'
@@ -4068,6 +4142,8 @@
     }
 
     async function schedulerStart() {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!await ensureOnline(t9("Start continuous background collection"))) return;
       try { renderSchedStatus(await api("/api/scheduler/start", {method: "POST"}));
         toast("Scheduler started."); } catch (e) { toast("Start failed: " + e.message, "err"); }
     }
@@ -4076,6 +4152,8 @@
         toast("Scheduler stopped."); } catch (e) { toast("Stop failed: " + e.message, "err"); }
     }
     async function schedulerRunNow() {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!await ensureOnline(t9("Start a collection pass (RSS, crawl, markets, watched Wikipedia pages)"))) return;
       try {
         const st = await api("/api/scheduler/run-now", {method: "POST"});
         renderSchedStatus(st);
@@ -4158,6 +4236,7 @@
 
     async function loadIndicesData(btn) {
       btn.disabled = true;
+      if (!await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Fetch market and index data from the official feeds"))) { btn.disabled = false; return; }
       const st = $("idx-status");
       st.textContent = "Importing index feeds (official end-of-day CSVs; may take a moment)…";
       try {
@@ -4295,6 +4374,7 @@
 
     async function loadMarketData(btn) {
       btn.disabled = true;
+      if (!await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Fetch market and index data from the official feeds"))) { btn.disabled = false; return; }
       const status = $("mkt-dash-status");
       status.textContent = "Importing official feeds… (downloads CSVs, may take a moment)";
       try {
@@ -4362,6 +4442,7 @@
     }
 
     async function importFeed(key) {
+      if (!await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Fetch market and index data from the official feeds"))) return;
       toast("Importing feed… (downloads a CSV, may take a moment)");
       try {
         const r = await api(`/api/markets/feeds/${encodeURIComponent(key)}/import`, {method: "POST"});
@@ -5570,6 +5651,7 @@
       }
       const w = picks[0] || "en";
       if (!wiki && !confirm(`Download the ${w} current-text dump? This can be very large (tens of GB for big editions).`)) return;
+      if (!await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Download a Wikipedia dump"))) return;
       try { await api("/api/wiki/dumps/start", {method:"POST", body: JSON.stringify({wiki: w})});
         toast("Download started."); loadWikiDumps();
         // refresh progress a few times
@@ -5612,6 +5694,7 @@
       const body = { wiki: $("wiki-lang").value.trim() || "en", title: $("wiki-title").value.trim(),
                      category: $("wiki-cat").value.trim() || null };
       if (!body.title) { toast("Enter an article title.", "err"); return; }
+      if (!await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Add a watched Wikipedia page (fetches its current revision)"))) return;
       try { await api("/api/wiki/pages", {method:"POST", body: JSON.stringify(body)});
         toast("Page added to watchlist."); $("wiki-title").value=""; loadWikiPages(); loadWiki(); }
       catch (e) { toast("Add failed: " + e.message, "err"); }
