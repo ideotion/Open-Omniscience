@@ -34,7 +34,24 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   (VACUUM + optimize) reporting real freed bytes, with "reclaimable space" from
   `PRAGMA freelist_count` (+8 chrome strings ×12 locales).
 
-- **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
+- **Network switch → airplane mode + online consent (field report #2 item 1).**
+  The sidebar toggle is now ONE constant airplane glyph whose **fill is the
+  state** (filled = offline engaged) — action glyphs no longer label state.
+  **Every offline→online transition passes a single consent popup**: it names
+  the action ("Start a collection pass…", "Fetch market and index data…",
+  "Download a Wikipedia dump"…) and lists the machine's **local interface
+  addresses** read from the kernel's tables (`/api/system/interfaces`,
+  psutil) — never a public-IP echo before consent, because that would itself
+  be a network call; the popup says honestly that the public address is
+  whatever the ISP/VPN presents, unchecked. Scheduler responses now carry the
+  network state, so the toggle repaints **immediately** on implicit
+  transitions (collect-start clears the kill switch) instead of waiting for
+  the 5 s poll. Kill-switch reliability gains a build-failing **socket-importer
+  ratchet**: exactly six modules may import an HTTP client (the guarded fetch
+  path, loopback Ollama, the gated discovery channel, three wiki fetchers);
+  any new direct importer fails the suite until consciously routed through the
+  fetch path. UI invariant #14 enforces all of it; +15 chrome strings ×12
+  locales.
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled
   American (the live-test "US = 1,553" inflation; the canonicalised catalog's real

@@ -371,5 +371,21 @@
   "Compacting… this can take a while on a large corpus.": "Kompaktierung… bei einem großen Korpus kann das dauern.",
   "Compacted.": "Kompaktiert.",
   "Space freed:": "Freigegebener Speicherplatz:",
-  "Compaction failed:": "Kompaktierung fehlgeschlagen:"
+  "Compaction failed:": "Kompaktierung fehlgeschlagen:",
+  "Go online?": "Online gehen?",
+  "This action needs the network:": "Diese Aktion benötigt das Netzwerk:",
+  "Your machine presents these local network addresses:": "Ihr Rechner präsentiert diese lokalen Netzwerkadressen:",
+  "Beyond these local addresses, the internet sees whatever public address your ISP or VPN presents — this app does not check it, because checking would itself be a network call.": "Jenseits dieser lokalen Adressen sieht das Internet die öffentliche Adresse, die Ihr Provider oder VPN präsentiert — diese App prüft sie nicht, denn die Prüfung wäre selbst ein Netzwerkaufruf.",
+  "Stay offline": "Offline bleiben",
+  "Go online": "Online gehen",
+  "No non-loopback network interfaces were found.": "Keine Nicht-Loopback-Netzwerkschnittstellen gefunden.",
+  "Start a collection pass (RSS, crawl, markets, watched Wikipedia pages)": "Einen Sammellauf starten (RSS, Crawl, Märkte, beobachtete Wikipedia-Seiten)",
+  "Start continuous background collection": "Kontinuierliche Hintergrund-Sammlung starten",
+  "Allow network requests again": "Netzwerkanfragen wieder erlauben",
+  "Online": "Online",
+  "Offline": "Offline",
+  "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "Flugmodus — gefüllt heißt offline: Jede neue Netzwerkanfrage wird sofort verweigert; eine laufende Anfrage darf enden.",
+  "Fetch market and index data from the official feeds": "Markt- und Indexdaten aus den offiziellen Feeds abrufen",
+  "Download a Wikipedia dump": "Einen Wikipedia-Dump herunterladen",
+  "Add a watched Wikipedia page (fetches its current revision)": "Eine beobachtete Wikipedia-Seite hinzufügen (ruft ihre aktuelle Version ab)"
 }

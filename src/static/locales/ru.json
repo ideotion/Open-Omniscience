@@ -371,5 +371,21 @@
   "Compacting… this can take a while on a large corpus.": "Сжатие… на большом корпусе это может занять время.",
   "Compacted.": "Сжатие завершено.",
   "Space freed:": "Освобождено:",
-  "Compaction failed:": "Ошибка сжатия:"
+  "Compaction failed:": "Ошибка сжатия:",
+  "Go online?": "Выйти в сеть?",
+  "This action needs the network:": "Для этого действия нужна сеть:",
+  "Your machine presents these local network addresses:": "Ваша машина использует эти локальные сетевые адреса:",
+  "Beyond these local addresses, the internet sees whatever public address your ISP or VPN presents — this app does not check it, because checking would itself be a network call.": "За пределами этих локальных адресов интернет видит публичный адрес, который предоставляет ваш провайдер или VPN — приложение его не проверяет, потому что проверка сама была бы сетевым запросом.",
+  "Stay offline": "Остаться офлайн",
+  "Go online": "Выйти в сеть",
+  "No non-loopback network interfaces were found.": "Сетевые интерфейсы, кроме loopback, не найдены.",
+  "Start a collection pass (RSS, crawl, markets, watched Wikipedia pages)": "Запустить проход сбора (RSS, обход, рынки, отслеживаемые страницы Википедии)",
+  "Start continuous background collection": "Запустить непрерывный фоновый сбор",
+  "Allow network requests again": "Снова разрешить сетевые запросы",
+  "Online": "В сети",
+  "Offline": "Офлайн",
+  "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "Режим полёта — закрашенный значок означает офлайн: каждый новый сетевой запрос немедленно отклоняется; начатый запрос может завершиться.",
+  "Fetch market and index data from the official feeds": "Получить данные рынков и индексов из официальных источников",
+  "Download a Wikipedia dump": "Скачать дамп Википедии",
+  "Add a watched Wikipedia page (fetches its current revision)": "Добавить отслеживаемую страницу Википедии (загружает её текущую версию)"
 }

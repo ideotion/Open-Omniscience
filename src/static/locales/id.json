@@ -371,5 +371,21 @@
   "Compacting… this can take a while on a large corpus.": "Memadatkan… bisa memakan waktu pada korpus besar.",
   "Compacted.": "Pemadatan selesai.",
   "Space freed:": "Ruang yang dibebaskan:",
-  "Compaction failed:": "Pemadatan gagal:"
+  "Compaction failed:": "Pemadatan gagal:",
+  "Go online?": "Online sekarang?",
+  "This action needs the network:": "Tindakan ini membutuhkan jaringan:",
+  "Your machine presents these local network addresses:": "Mesin Anda menampilkan alamat jaringan lokal berikut:",
+  "Beyond these local addresses, the internet sees whatever public address your ISP or VPN presents — this app does not check it, because checking would itself be a network call.": "Di luar alamat lokal ini, internet melihat alamat publik yang disajikan ISP atau VPN Anda — aplikasi ini tidak memeriksanya, karena memeriksa pun sudah merupakan panggilan jaringan.",
+  "Stay offline": "Tetap offline",
+  "Go online": "Online",
+  "No non-loopback network interfaces were found.": "Tidak ditemukan antarmuka jaringan non-loopback.",
+  "Start a collection pass (RSS, crawl, markets, watched Wikipedia pages)": "Mulai satu putaran pengumpulan (RSS, perayapan, pasar, halaman Wikipedia yang dipantau)",
+  "Start continuous background collection": "Mulai pengumpulan latar belakang berkelanjutan",
+  "Allow network requests again": "Izinkan kembali permintaan jaringan",
+  "Online": "Online",
+  "Offline": "Offline",
+  "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "Mode pesawat — terisi berarti offline: setiap permintaan jaringan baru langsung ditolak; satu permintaan yang sedang berjalan dapat selesai.",
+  "Fetch market and index data from the official feeds": "Ambil data pasar dan indeks dari umpan resmi",
+  "Download a Wikipedia dump": "Unduh dump Wikipedia",
+  "Add a watched Wikipedia page (fetches its current revision)": "Tambahkan halaman Wikipedia yang dipantau (mengambil revisi terbarunya)"
 }

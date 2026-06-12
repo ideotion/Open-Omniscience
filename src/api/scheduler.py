@@ -45,8 +45,14 @@ class SchedulerConfigUpdate(BaseModel):
 
 
 def _status_payload() -> dict:
+    from src.ingest import kill_switch_active
+
     status = get_scheduler().status()
     status["valid_modes"] = list(VALID_MODES)
+    # Network state rides every scheduler response so the UI repaints the
+    # airplane toggle IMMEDIATELY on implicit transitions (a collect start
+    # clears the kill switch server-side) instead of waiting for the 5 s poll.
+    status["online"] = not kill_switch_active()
     return status
 
 
