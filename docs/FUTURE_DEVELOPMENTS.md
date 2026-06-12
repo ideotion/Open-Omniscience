@@ -440,12 +440,63 @@ Unchanged design, still unbuilt; revisit within 0.0.9:
 
 ---
 
-## Wikipedia as a first-class source (still future, verified)
+## Wikipedia as a first-class LIVING source — the law model (maintainer concept 2026-06-12; supersedes the earlier stub)
 
-Make the offline Wikipedia corpus searchable and indexed like articles (FTS,
-keyword associations, LLM summarise, link exploration) while keeping its
-special-case handling for scale. Interacts with the database mandate above
-(wiki snapshots must ride backups faithfully).
+**The maintainer's concept (recorded):** Wikipedia articles must be ingested
+with the SAME aggregation rules as journal-sourced articles — rich metadata,
+content deduction (when × where × who), keywords/mentions, reader, corpora
+membership. The structural difference: journal articles are write-once;
+**Wikipedia articles are AMENDABLE over time — like the law**. Every change
+must be reliably traceable, with perfect audit control.
+
+**Honest current state (code-verified 2026-06-12, the gap that surfaced the
+concept):** downloaded dumps are FILES only — never parsed into the corpus;
+no keywords, no mentions, no deduction. Only WATCHED pages get the
+baseline → revision → diff → flag treatment (wiki_pages/wiki_revisions),
+and those revisions are tracking records, not corpus articles either.
+
+**Design map (assistant, same date):**
+- **One identity, many versions** — generalize the law vertical's model
+  (document → revisions with content hashes, observed_at, diffs): a wiki
+  page is ONE corpus identity whose VERSIONS are first-class, append-only,
+  hash-chained (the custody discipline). Never overwrite: an amendment is a
+  new revision, the old text remains evidence.
+- **Version-anchored analytics (the audit-control heart):** every keyword
+  mention, deduction and analysis records WHICH revision it saw ("as of
+  revid N"). Re-indexing on change updates the live layer while the
+  revision trail preserves what any past analysis was looking at.
+- **Dumps become an ingestion source**: stream-parse the downloaded XML into
+  the SAME ingestion pipeline (idempotent per (wiki, title, revid); bounded
+  batches; a visible job with progress in the task manager). The dump's
+  revid is the version anchor; the watched-pages live checks then diff
+  FORWARD from it.
+- **Same rules, stated provenance**: wiki-derived articles carry
+  source-type "encyclopedia" with the wiki + revid + dump-of date; the
+  reader's two-class header (source-asserted vs app-deduced) applies
+  unchanged; self-name suppression and stoplists apply unchanged.
+
+**QUESTIONS FOR THE MAINTAINER (answer when convenient — deliberately not
+asked mid-session, per instruction):**
+1. **Scope of dump ingestion:** ALL pages of a downloaded dump (enwiki ≈
+   millions — would dwarf the news corpus and strain the 2-core reference
+   VM), or a chosen subset (watched pages + their categories + top-N +
+   search-hit-on-demand)? A measured tier table would come first either way.
+2. **Analytics mixing:** should wiki keywords flow into the SAME trend/
+   association pools as news by default (volume would dominate), or ship as
+   a per-source-type layer the user can merge/split (the per-language-counts
+   discipline applied to source types)?
+3. **Version storage depth:** full text per revision seen (the law model;
+   storage-heavy at wiki scale) or baseline + diffs with periodic full
+   checkpoints?
+4. **Change feed:** does the watched-pages tracker become THE change feed
+   for ingested pages (watch = ingest), or stay a separate monitoring layer?
+5. **Backups:** dump-derived articles are reconstitutable from the dump
+   file — carry them fully in oo-backup-2, or reference the dump + carry
+   only revisions/deductions?
+
+Interacts with: the database mandate (versions must ride backups
+faithfully), When×Where×Who at ingest (deductions per revision), and the
+task manager (dump-parse as a visible, cancellable job).
 
 ---
 
