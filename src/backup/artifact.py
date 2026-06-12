@@ -145,7 +145,7 @@ def _corpus_stats(corpus_snapshot: Path) -> dict:
         ]
         counts = {}
         for t in tables:
-            counts[t] = conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]  # noqa: S608
+            counts[t] = conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]  # noqa: S608  # nosec B608 - identifier from the fixed member map, never input
         leaves = [
             hashlib.sha256(canonical_bytes({"id": rid, "hash": h})).hexdigest()
             for rid, h in conn.execute("SELECT id, hash FROM articles ORDER BY id")
