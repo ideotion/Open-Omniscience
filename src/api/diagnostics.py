@@ -139,9 +139,15 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
                     _srcs[sid] = _srcs.get(sid, 0) + 1
             _finalize(_cur_kid, _counts, _srcs)
 
-            # Bounded, strongest-first (the export discipline; bound stated).
+            # The DETECTION is unbounded: every keyword × source pair in the
+            # corpus is evaluated (inside the same full mention scan). Only the
+            # LIST PRINTED in this report is bounded — strongest-first, with
+            # the true total disclosed — so the file stays reviewable while no
+            # magnitude is ever hidden (the maintainer's anti-capping rule:
+            # caps may bound a REPORT, never the data crunching).
             suspects.sort(key=lambda s: (-s["share_of_source"], -s["in_this_source"]))
-            suspects_capped = len(suspects) > 200
+            suspects_total = len(suspects)
+            suspects_capped = suspects_total > 200
             suspects = suspects[:200]
 
             # Stored-language fallback for keywords with no mentions (kept from
@@ -333,7 +339,8 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
         yield ', "per_source_concentration": ' + json.dumps(
             {
                 "suspects": per_source_concentration,
-                "capped_at_200": suspects_capped,
+                "suspects_total": suspects_total,
+                "list_capped_at_200": suspects_capped,
                 "thresholds": {
                     "min_articles_with_keyword": 10,
                     "min_source_articles": 10,

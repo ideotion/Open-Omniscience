@@ -188,6 +188,9 @@ def test_export_flags_concentration_suspects(client, concentrated_corpus):
     body = json.loads(client.get("/api/diagnostics/keywords").content)
     sec = body["data"]["per_source_concentration"]
     assert sec["thresholds"]["min_share_of_keyword"] == 0.9
+    # The cap bounds only the printed list; the true magnitude is disclosed.
+    assert sec["suspects_total"] >= len(sec["suspects"])
+    assert sec["list_capped_at_200"] is False
     by_term = {s["term"]: s for s in sec["suspects"]}
     assert "alla artiklar" in by_term, "the boilerplate-shaped keyword must be flagged"
     flagged = by_term["alla artiklar"]
