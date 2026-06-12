@@ -135,3 +135,13 @@ def feed_verify_batch(limit: int = Query(25, ge=1, le=100)) -> dict:
     return {"checked": len(out), "ok": ok, "remaining_unchecked": max(
         0, sum(len(f["feeds"]) for f in load_families()) - len(load_verdicts())
     ), "verdicts": out}
+
+
+@router.get("/astronomy")
+def astronomy(year: int = Query(..., ge=1900, le=2200)) -> dict:
+    """Lunar phases for the agenda year — computed locally (Meeus ch. 49),
+    zero network, with method + accuracy carried on the result (the agenda
+    renders them via the hover convention)."""
+    from src.events.astronomy import phases_for_year
+
+    return phases_for_year(year)

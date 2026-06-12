@@ -483,5 +483,7 @@
   "Shared outbound links among the member articles — a shared origin means agreement is ONE path, not independent confirmation.": "メンバー記事が共有する外部リンク — 共有された出所は、一致が独立した確認ではなく単一の経路であることを意味します。",
   "No outbound link is shared by more than one member article.": "複数のメンバー記事に共有されている外部リンクはありません。",
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "どのメンバー記事が外部リンクを共有しているか — 共有出所を可視化：経路が出所を共有する場合、引用数は決して独立した確認になりません。",
-  "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "このキーワードをコーパスウィンドウとして開く：トレンド、メンバー記事、共有外部リンク（情報源の情報源）。"
+  "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "このキーワードをコーパスウィンドウとして開く：トレンド、メンバー記事、共有外部リンク（情報源の情報源）。",
+  "Full moon": "満月",
+  "New moon": "新月"
 }

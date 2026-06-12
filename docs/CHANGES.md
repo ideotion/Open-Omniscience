@@ -34,6 +34,16 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   (VACUUM + optimize) reporting real freed bytes, with "reclaimable space" from
   `PRAGMA freelist_count` (+8 chrome strings ×12 locales).
 
+- **Agenda astronomy layer (T11 slice 1).** Full and new moons computed
+  **locally** with the standard Meeus algorithm (ch. 49, periodic + planetary
+  corrections) — zero network, zero data files — and **verified against gold
+  references in the test suite**: the book's own worked example (49.a, the
+  February 1977 new moon) to within ~26 seconds, and the published 2024
+  almanac full-moon dates. `/api/events/astronomy?year=` serves the phases
+  with `method` and `accuracy` fields (ΔT non-application stated, never
+  hidden); the agenda month grid shows moon glyphs whose hover bubble carries
+  the method — informed consent down to the moon. +2 chrome strings ×12.
+
 - **Markets/indices: transport-aware honesty (the 2026-06-12 Tor diagnosis).**
   Feed failures now carry a **verdict taxonomy over the real error**:
   *refused* (connection refused/reset — over Tor commonly one exit's refusal;

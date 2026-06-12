@@ -483,5 +483,7 @@
   "Shared outbound links among the member articles — a shared origin means agreement is ONE path, not independent confirmation.": "成员文章共享的外部链接——共享来源意味着一致只是同一条路径，而非独立证实。",
   "No outbound link is shared by more than one member article.": "没有任何外部链接被多于一篇成员文章共享。",
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "哪些成员文章共享外部链接——共享来源可见：当路径共享同一来源时，引用次数绝不等于独立证实。",
-  "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "将此关键词作为语料库窗口打开：趋势、成员文章及共享外部链接（来源的来源）。"
+  "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "将此关键词作为语料库窗口打开：趋势、成员文章及共享外部链接（来源的来源）。",
+  "Full moon": "满月",
+  "New moon": "新月"
 }
