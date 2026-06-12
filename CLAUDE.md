@@ -265,7 +265,18 @@ ruling, a contingency, or a deliberate-omission note.
   untouched), PLUS a startup onboarding picker for country/language emphasis
   — BOTH. The schedule stays explainable in the UI (which country is next
   and why).
-  (4) TASK MANAGER (maintainer REPEAT ×2 — still only the old popup): the
+  (4) TASK MANAGER — SLICE 1 SHIPPED (T9, 2026-06-12): /api/jobs aggregates
+  LIVE from the owning systems (no shadow state — the view cannot disagree
+  with reality): collect pass, every wiki dump with its REAL queue position,
+  the in-flight fetch (DOMAIN only). Dump manager gained a true
+  single-download QUEUE (max_concurrent=1, persisted reorderable order,
+  pump-on-finish) — the fr-before-en reorder works end-to-end (↑↓ in the
+  panel + POST /api/jobs/dumps/reorder, tested). The vitals popover is now
+  "Tasks & collection": jobs list with progress bars + Stop/Pause/Cancel
+  (collect-stop states the kill-switch side effect — informed consent), the
+  collection detail, vitals as the bottom row. ARBITRATION ASK shipped for
+  collect run-now (busy_with listed; proceed-or-wait). REMAINING from the
+  original ask (maintainer REPEAT ×2 context preserved): the
   vitals panel becomes minimized animated indicators; CLICK opens a dedicated
   OS-style task-manager window: what scrapes next, wiki-dump progress, queued
   jobs with tweak/cancel/reorder. Acceptance examples: reorder fr wiki dump

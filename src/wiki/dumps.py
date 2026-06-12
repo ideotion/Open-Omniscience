@@ -70,6 +70,12 @@ class DumpDownloadManager:
         self._threads: dict[str, threading.Thread] = {}
         self._stops: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
+        # ONE download at a time (T9 download-arbitration ruling): later
+        # requests become a REAL, reorderable queue instead of competing
+        # threads -- the operator can put the small fr dump before the huge
+        # en one (the ledger's acceptance case). Persisted with the entries.
+        self.max_concurrent = 1
+        self._order: list[str] = []
         self._load()
 
     # -- state ------------------------------------------------------------- #
@@ -78,6 +84,9 @@ class DumpDownloadManager:
         if self.state_path.exists():
             try:
                 raw = json.loads(self.state_path.read_text("utf-8"))
+                if isinstance(raw, dict) and "entries" in raw:
+                    self._order = [k for k in raw.get("queue_order", []) if isinstance(k, str)]
+                    raw = raw["entries"]
                 for k, v in raw.items():
                     self._entries[k] = DownloadEntry(
                         **{f: v[f] for f in DownloadEntry.__annotations__ if f in v}
@@ -88,9 +97,75 @@ class DumpDownloadManager:
     def _save(self) -> None:
         tmp = self.state_path.with_suffix(".json.tmp")
         tmp.write_text(
-            json.dumps({k: asdict(e) for k, e in self._entries.items()}, indent=2), "utf-8"
+            json.dumps(
+                {
+                    "entries": {k: asdict(e) for k, e in self._entries.items()},
+                    "queue_order": list(self._order),
+                },
+                indent=2,
+            ),
+            "utf-8",
         )
         tmp.replace(self.state_path)
+
+    def _downloading_now(self) -> int:
+        return sum(
+            1
+            for k, t in self._threads.items()
+            if t.is_alive() and self._entries.get(k) and self._entries[k].status == "downloading"
+        )
+
+    def _launch(self, entry: DownloadEntry) -> None:
+        stop = threading.Event()
+        self._stops[entry.key] = stop
+
+        def _run() -> None:
+            self._download(entry, stop)
+            self._pump()  # a finished/paused/errored slot frees the queue
+
+        t = threading.Thread(target=_run, name=f"oo-dump-{entry.key}", daemon=True)
+        self._threads[entry.key] = t
+        t.start()
+
+    def _pump(self) -> None:
+        """Start the next QUEUED entry when a download slot is free (FIFO over
+        the operator-reorderable queue_order)."""
+        with self._lock:
+            if self._downloading_now() >= self.max_concurrent:
+                return
+            next_key = None
+            for k in list(self._order):
+                e = self._entries.get(k)
+                if e is None or e.status != "queued":
+                    self._order.remove(k)
+                    continue
+                next_key = k
+                break
+            if next_key is None:
+                return
+            self._order.remove(next_key)
+            entry = self._entries[next_key]
+            self._save()
+        self._launch(entry)
+
+    def reorder(self, keys: list[str]) -> list[str]:
+        """Reorder the QUEUED downloads (the fr-before-en acceptance case).
+        Unknown/non-queued keys are ignored; queued keys missing from the
+        request keep their relative order at the tail. Returns the new order."""
+        with self._lock:
+            queued = [k for k in self._order if self._entries.get(k) and self._entries[k].status == "queued"]
+            wanted = [k for k in keys if k in queued]
+            tail = [k for k in queued if k not in wanted]
+            self._order = wanted + tail
+            self._save()
+            return list(self._order)
+
+    def queue_order(self) -> list[str]:
+        with self._lock:
+            return [
+                k for k in self._order
+                if self._entries.get(k) and self._entries[k].status == "queued"
+            ]
 
     def list(self) -> list[dict]:
         with self._lock:
@@ -170,16 +245,28 @@ class DumpDownloadManager:
         entry = self._entry_for(wiki, kind)
         if self._threads.get(entry.key) and self._threads[entry.key].is_alive():
             return entry.to_dict()
-        stop = threading.Event()
-        self._stops[entry.key] = stop
-        t = threading.Thread(
-            target=self._download, args=(entry, stop), name=f"oo-dump-{entry.key}", daemon=True
-        )
-        self._threads[entry.key] = t
-        t.start()
+        with self._lock:
+            busy = self._downloading_now() >= self.max_concurrent
+            if busy:
+                # Honest arbitration: a visible queue, never a competing thread.
+                entry.status = "queued"
+                entry.error = None
+                if entry.key not in self._order:
+                    self._order.append(entry.key)
+                self._save()
+                return entry.to_dict()
+        self._launch(entry)
         return entry.to_dict()
 
     def pause(self, key: str) -> bool:
+        with self._lock:
+            e = self._entries.get(key)
+            if e is not None and e.status == "queued":
+                if key in self._order:
+                    self._order.remove(key)
+                e.status = "paused"
+                self._save()
+                return True
         stop = self._stops.get(key)
         if stop:
             stop.set()
@@ -189,6 +276,8 @@ class DumpDownloadManager:
     def delete(self, key: str) -> bool:
         self.pause(key)
         with self._lock:
+            if key in self._order:
+                self._order.remove(key)
             entry = self._entries.pop(key, None)
         if entry is None:
             return False

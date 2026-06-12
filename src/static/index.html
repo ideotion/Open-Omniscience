@@ -663,9 +663,10 @@
       </header>
 
       <div id="vitals-pop" class="vitals-pop" hidden role="dialog" aria-label="Collection activity">
-        <div class="vitals-head"><b>Collection activity</b>
+        <div class="vitals-head"><b>Tasks &amp; collection</b>
           <button class="icon-btn" style="width:24px;height:24px" onclick="toggleVitals()" aria-label="Close" title="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+        <div id="jobs-body"></div>
         <div id="vitals-body"></div>
         <div id="vitals-note"></div>
       </div>
@@ -2251,7 +2252,7 @@
         }
         _paintActivity();
       }
-      if (_vitalsOpen) _renderVitals(v);
+      if (_vitalsOpen) { _renderVitals(v); _renderJobs(); }
       _vitalsPrev = v;
     }
     function _fmtDur(s) {
@@ -2309,6 +2310,73 @@
       $("vitals-body").innerHTML = nowHtml + planHtml + rateHtml + sysHtml;
       $("vitals-note").innerHTML = "";
     }
+    // ---- T9: the visible-jobs section of the task manager ---- //
+    let _jobsData = null;
+    async function _renderJobs() {
+      const el = $("jobs-body"); if (!el) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      try { _jobsData = await api("/api/jobs"); } catch { el.innerHTML = ""; return; }
+      const jobs = (_jobsData.jobs || []).filter(j => j.state !== "done");
+      if (!jobs.length) { el.innerHTML = `<div class="vsect">${esc(t("Jobs"))}</div><div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("No background jobs — every network task appears here when it runs."))}</div>`; return; }
+      const queuedKeys = jobs.filter(j => j.state === "queued" && j.kind === "wiki-dump")
+                             .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0))
+                             .map(j => j.id.slice(5));
+      const rows = jobs.map(j => {
+        const pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
+        let prog = "";
+        if (j.progress && j.progress.total) {
+          const pct = j.progress.percent || Math.round(100 * j.progress.done / j.progress.total);
+          prog = `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>` +
+                 `<div class="muted" style="font-size:11px">${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)} · ${pct}%</div>`;
+        }
+        const acts = [];
+        if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" onclick="jobCancel('${esc(j.id)}')">${esc(t("Stop"))}</button>`);
+        if (j.kind === "wiki-dump" && j.state === "running") acts.push(`<button class="tiny secondary" onclick="jobCancel('${esc(j.id)}')">${esc(t("Pause"))}</button>`);
+        if (j.kind === "wiki-dump" && j.state === "queued") {
+          const k = j.id.slice(5), idx = queuedKeys.indexOf(k);
+          if (idx > 0) acts.push(`<button class="tiny secondary" onclick="jobMove('${esc(k)}', -1)" title="${esc(t("Move earlier in the queue"))}">\u2191</button>`);
+          if (idx >= 0 && idx < queuedKeys.length - 1) acts.push(`<button class="tiny secondary" onclick="jobMove('${esc(k)}', 1)" title="${esc(t("Move later in the queue"))}">\u2193</button>`);
+          acts.push(`<button class="tiny secondary" onclick="jobCancel('${esc(j.id)}')">${esc(t("Cancel"))}</button>`);
+        }
+        const qpos = j.queue_position ? ` <span class="muted">#${j.queue_position} ${esc(t("in queue"))}</span>` : "";
+        return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">` +
+          `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(j.label)}</b>${qpos}` +
+          `<span style="margin-inline-start:auto;display:flex;gap:4px">${acts.join("")}</span>` +
+          `<div style="flex-basis:100%">${prog}</div></div>`;
+      }).join("");
+      el.innerHTML = `<div class="vsect">${esc(t("Jobs"))}</div>` + rows;
+    }
+    async function jobCancel(id) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      try {
+        const r = await api(`/api/jobs/${encodeURIComponent(id)}/cancel`, {method: "POST"});
+        if (typeof r.online === "boolean") _paintNetwork(r.online);
+        toast(r.detail || t("Cancelled."));
+        _renderJobs();
+      } catch (e) { toast(e.message, "err"); }
+    }
+    async function jobMove(key, dir) {
+      const jobs = (_jobsData && _jobsData.jobs) || [];
+      const queued = jobs.filter(j => j.state === "queued" && j.kind === "wiki-dump")
+                         .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0))
+                         .map(j => j.id.slice(5));
+      const i = queued.indexOf(key);
+      if (i < 0 || i + dir < 0 || i + dir >= queued.length) return;
+      [queued[i], queued[i + dir]] = [queued[i + dir], queued[i]];
+      try { await api("/api/jobs/dumps/reorder", {method: "POST", body: JSON.stringify({keys: queued})}); _renderJobs(); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    // The arbitration ASK (ruled): a new heavy task while one runs is offered
+    // a choice, never silently piled up. Dumps queue automatically (real
+    // queue); collect/import ask proceed-or-wait.
+    async function arbitrate(actionLabel) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      let d; try { d = await api("/api/jobs"); } catch { return true; }
+      if (!d.network_busy) return true;
+      const busy = (d.busy_with || []).join(", ");
+      return confirm(`${t("Another network task is running:")} ${busy}\n\n${t("Start anyway? (Cancel waits — the running task keeps the bandwidth and the database writer to itself.)")} ${actionLabel}`);
+    }
+
     function toggleVitals() {
       const pop = $("vitals-pop"); if (!pop) return;
       _vitalsOpen = !_vitalsOpen;
@@ -4390,6 +4458,7 @@
     async function schedulerRunNow() {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!await ensureOnline(t9("Start a collection pass (RSS, crawl, markets, watched Wikipedia pages)"))) return;
+      if (!await arbitrate(t9("Start a collection pass (RSS, crawl, markets, watched Wikipedia pages)"))) return;
       try {
         const st = await api("/api/scheduler/run-now", {method: "POST"});
         renderSchedStatus(st);

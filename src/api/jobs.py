@@ -1,0 +1,170 @@
+"""
+Jobs API: ONE honest view over every background/network task + arbitration.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+T9 (maintainer repeat ×2): every network task is a VISIBLE JOB. This module
+deliberately keeps NO state of its own — it AGGREGATES the real owning
+systems (the scheduler, the wiki-dump manager, the fetcher's live activity)
+so the view can never disagree with reality, and routes actions back to the
+owners (stop = the scheduler's own stop; reorder = the dump queue's own
+order). The 'database is locked' class of collisions is what the arbitration
+choices prevent: a new heavy task while one runs ASKS — queue / proceed /
+stop the other — never a silent pile-up.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+def _dump_jobs() -> list[dict]:
+    from src.wiki.dumps import get_manager
+
+    mgr = get_manager()
+    order = mgr.queue_order()
+    jobs = []
+    for e in mgr.list():
+        state = {
+            "downloading": "running",
+            "queued": "queued",
+            "paused": "paused",
+            "done": "done",
+            "error": "failed",
+        }.get(e["status"], e["status"])
+        jobs.append(
+            {
+                "id": f"dump:{e['key']}",
+                "kind": "wiki-dump",
+                "label": f"{e['wiki']} · {e['kind']}",
+                "state": state,
+                "queue_position": (order.index(e["key"]) + 1) if e["key"] in order else None,
+                "progress": {
+                    "done": e["downloaded_bytes"],
+                    "total": e["total_bytes"] or None,
+                    "unit": "bytes",
+                    "percent": e["percent"],
+                },
+                "error": e.get("error"),
+                "actions": ["pause", "cancel"] if state == "running" else (
+                    ["reorder", "cancel"] if state == "queued" else ["cancel"]
+                ),
+            }
+        )
+    return jobs
+
+
+def _collect_job() -> dict | None:
+    from src.scheduler.runner import get_scheduler
+
+    st = get_scheduler().status()
+    if not (st.get("running") or st.get("active")):
+        return None
+    return {
+        "id": "collect:current",
+        "kind": "collect",
+        "label": "collection pass" if st.get("active") else "collection loop (idle)",
+        "state": "running" if st.get("active") else "scheduled",
+        "next_run": st.get("next_run"),
+        "progress": None,  # the detailed panel reads /api/scheduler/activity
+        "actions": ["stop"],
+    }
+
+
+def _live_fetch() -> dict | None:
+    from src.monitoring.activity import activity_monitor
+
+    snap = activity_monitor.snapshot()
+    cur = snap.get("current_fetch")
+    if not cur:
+        return None
+    from urllib.parse import urlparse
+
+    host = ""
+    try:
+        host = urlparse(cur).hostname or ""
+    except Exception:  # noqa: BLE001 - display aid only
+        host = ""
+    return {
+        "id": "fetch:current",
+        "kind": "fetch",
+        # DOMAIN only (ruled): never the full URL in the manager view.
+        "label": host or "fetch in flight",
+        "state": "running",
+        "actions": [],
+    }
+
+
+@router.get("")
+def list_jobs() -> dict:
+    """Every visible job, aggregated LIVE from the owning systems (no shadow
+    state): the collection loop/pass, each wiki-dump download with its real
+    queue position, and the fetch currently on the wire (domain only)."""
+    jobs: list[dict] = []
+    j = _collect_job()
+    if j:
+        jobs.append(j)
+    jobs.extend(_dump_jobs())
+    f = _live_fetch()
+    if f:
+        jobs.append(f)
+    running = [j for j in jobs if j["state"] == "running"]
+    return {
+        "jobs": jobs,
+        "running": len(running),
+        "queued": len([j for j in jobs if j["state"] == "queued"]),
+        # The arbitration summary the UI asks with BEFORE starting new work.
+        "network_busy": bool(running),
+        "busy_with": [f"{j['kind']}: {j['label']}" for j in running],
+        "method": (
+            "Aggregated live from the scheduler, the dump manager and the "
+            "fetcher's own activity monitor — no shadow state, so this view "
+            "cannot disagree with reality."
+        ),
+    }
+
+
+class ReorderBody(BaseModel):
+    keys: list[str]
+
+
+@router.post("/dumps/reorder")
+def reorder_dumps(body: ReorderBody) -> dict:
+    """Reorder the QUEUED dump downloads (the fr-before-en acceptance case)."""
+    from src.wiki.dumps import get_manager
+
+    return {"queue_order": get_manager().reorder(body.keys)}
+
+
+@router.post("/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict:
+    """Cancel/stop a job via its OWNING system, honestly named per kind."""
+    if job_id.startswith("dump:"):
+        from src.wiki.dumps import get_manager
+
+        key = job_id.split(":", 1)[1]
+        mgr = get_manager()
+        ok = mgr.pause(key)
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"unknown dump {key!r}")
+        return {"cancelled": job_id, "detail": "download paused (resumable; delete it in Settings → Wikipedia)"}
+    if job_id == "collect:current":
+        from src.ingest import activate_kill_switch, kill_switch_active
+        from src.scheduler.runner import get_scheduler
+
+        # The Stop-button semantics exactly (§0.5): refuse every further fetch
+        # FIRST, then stop the loop — and SAY so (informed consent: stopping
+        # collection takes the app offline; the airplane toggle will show it).
+        activate_kill_switch()
+        stopped = get_scheduler().stop()
+        return {
+            "cancelled": job_id,
+            "stopped": stopped,
+            "online": not kill_switch_active(),
+            "detail": "collection stopped; the network kill switch is now engaged",
+        }
+    raise HTTPException(status_code=404, detail=f"unknown or uncancellable job {job_id!r}")
