@@ -476,6 +476,17 @@ ruling, a contingency, or a deliberate-omission note.
   shipped (per-language docs served with honest machine-drafted banner; fr
   QUICKSTART hand-seeded); TODO: run scripts/translate_docs.py on a machine
   with a local model.
+- **OFFICIAL-STATISTICS INGESTION (maintainer concept 2026-06-12, designed
+  in FUTURE_DEVELOPMENTS with questions):** worldwide government +
+  international statistical agencies (BLS/INSEE/Eurostat/World Bank/IMF +
+  deliberately BRICS/Africa/forgotten-regions producers) ingested as
+  CONTROVERSIAL sources like any other — producing state + agency +
+  publication date + methodology ref on every figure; VINTAGES stored
+  (revisions are evidence, the law/wiki versioning model); comparability
+  guards (SA/NSA, definitions, base years — never compare incomparable
+  denominators silently); official machine endpoints (SDMX/APIs) before
+  scraping; triangulation side-by-side never averaged; agency FORECASTS
+  join the IPCC prediction-tracking lens; coverage measured per continent.
 - **Parked (designed-only):** event-family merge/split UI (#53), saved-filter
   "smart calendars" (#50), offline vector map, two-hop keyword graphs (#43),
   autonomous onboarding track (#49), **voice-only mode (maintainer input
