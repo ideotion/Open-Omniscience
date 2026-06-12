@@ -485,5 +485,12 @@
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "أي المقالات الأعضاء تتشارك روابط خارجية — الأصول المشتركة مرئية: عدّ الاستشهادات ليس تأكيدًا مستقلًا أبدًا عندما تتشارك المسارات أصلًا واحدًا.",
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "افتح هذه الكلمة المفتاحية كنافذة مجموعة: الاتجاه والمقالات الأعضاء والروابط الخارجية المشتركة (مصادر المصادر).",
   "Full moon": "بدر",
-  "New moon": "محاق"
+  "New moon": "محاق",
+  "Fetch weather context": "جلب السياق الجوي",
+  "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "يجلب مقطع Open-Meteo المحدود لهذا المكان والنافذة الزمنية — فقط بعد موافقتك.",
+  "Fetch weather context for one place and time window (Open-Meteo)": "جلب السياق الجوي لمكان واحد ونافذة زمنية واحدة (Open-Meteo)",
+  "Weather fetch refused:": "رُفض جلب بيانات الطقس:",
+  "cached copy": "نسخة مخزّنة مؤقتاً",
+  "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "إعادة تحليل Open-Meteo (CC BY 4.0): تقدير نموذجي لهذا المكان والنافذة — تعزيز، وليس إثباتاً أبداً.",
+  "No values were returned for this variable and window.": "لم تُرجَع أي قيم لهذا المتغيّر وهذه النافذة."
 }

@@ -485,5 +485,12 @@
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "Quais artigos membros compartilham links externos — origens compartilhadas visíveis: contagem de citações nunca é confirmação independente quando os caminhos compartilham origem.",
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Abrir esta palavra-chave como janela de corpus: tendência, artigos membros e links externos compartilhados (as fontes das fontes).",
   "Full moon": "Lua cheia",
-  "New moon": "Lua nova"
+  "New moon": "Lua nova",
+  "Fetch weather context": "Obter o contexto meteorológico",
+  "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "Obtém o recorte limitado do Open-Meteo para este lugar e janela — apenas após o seu consentimento.",
+  "Fetch weather context for one place and time window (Open-Meteo)": "Obter o contexto meteorológico de um lugar e uma janela temporal (Open-Meteo)",
+  "Weather fetch refused:": "Obtenção meteorológica recusada:",
+  "cached copy": "cópia em cache",
+  "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Reanálise Open-Meteo (CC BY 4.0): uma estimativa de modelo para este lugar e janela — corroboração, nunca prova.",
+  "No values were returned for this variable and window.": "Nenhum valor foi devolvido para esta variável e janela."
 }

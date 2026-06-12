@@ -2760,6 +2760,15 @@
           ? `<button class="secondary tiny" onclick="cardCollapse('${esc(sig.signature)}', false)">Expand (revert)</button>`
           : `<button class="secondary tiny" onclick="cardCollapse('${esc(sig.signature)}', true)" title="Count this coordinated network as one voice (reversible, stays flagged)">Collapse to one actor</button>`;
       }
+      // Weather-corroboration cards (if-this-then-SUGGEST, 2026-06-12): the
+      // bounded Open-Meteo fetch happens ONLY from this button, behind the one
+      // consent popup — the producer that made the card never touched the network.
+      let weatherBtn = "";
+      let weatherBox = "";
+      if (c.type === "weather_corroboration" && sig.lat != null && sig.lon != null) {
+        weatherBtn = `<button class="secondary tiny" onclick="cardWeatherFetch('${c.id}')" title="Fetches the bounded Open-Meteo slice for this place and window — only after your consent.">Fetch weather context</button>`;
+        weatherBox = `<div class="wx" id="wx-${c.id}" style="margin-top:6px"></div>`;
+      }
       // Investigation recipe (0.0.8 WP8/RM-20): opens /investigate in a NEW tab,
       // fully URL-parameterised (shareable, no hidden state), main UI stays put.
       let recipeBtn = "";
@@ -2791,9 +2800,11 @@
         ${sigLine}
         ${evidBlock}
         ${whyBlock}
+        ${weatherBox}
         <div class="mc" hidden><b>Method:</b> ${esc(c.method)}<br><b>Caveat:</b> ${esc(c.caveat)}</div>
         <div class="acts">
           ${recipeBtn}
+          ${weatherBtn}
           <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
           ${collapseBtn}
           ${dismiss}
@@ -2816,6 +2827,66 @@
         const el = document.querySelector(`.card[data-card="${id}"]`);
         if (el) el.remove();
       } catch (e) { toast("Could not dismiss: " + e.message, "err"); }
+    }
+
+    // --- Weather corroboration (if-this-then-SUGGEST, 2026-06-12) -------------
+    // The card only OFFERS the check; this click is the consent moment. The
+    // fetch is one bounded (place, window) reanalysis slice through the same
+    // ethical fetch path as everything else; failures render the honest
+    // transport verdict, results render per-variable (one chart per unit —
+    // mixed units on one axis would be a fabricated comparison).
+    async function cardWeatherFetch(id) {
+      const c = _briefCards[id]; if (!c) return;
+      const sig = c.signal || {};
+      const box = document.getElementById("wx-" + id); if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (!await ensureOnline(t("Fetch weather context for one place and time window (Open-Meteo)"))) return;
+      box.textContent = t("Loading…");
+      try {
+        const body = {
+          lat: sig.lat, lon: sig.lon,
+          start_date: sig.window_start, end_date: sig.window_end,
+          variables: String(sig.variables || "").split(",").filter(Boolean),
+          label: sig.rule_label || c.title
+        };
+        const d = await api("/api/weather/context", {method: "POST", body: JSON.stringify(body)});
+        renderWeatherContext(box, d, sig);
+      } catch (e) {
+        box.innerHTML = `<div class="note err">${esc(e.message)}</div>`;
+      }
+    }
+
+    function renderWeatherContext(box, d, sig) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (!d || !d.ok) {
+        const verdict = d ? `${d.verdict || ""} — ${d.verdict_note || ""}` : "";
+        box.innerHTML = `<div class="note err"><b>${esc(t("Weather fetch refused:"))}</b> <span>${esc(verdict)}</span></div>`;
+        return;
+      }
+      const days = (d.daily && d.daily.time) || [];
+      const vars = Object.keys(d.daily || {}).filter(k => k !== "time");
+      let html = "";
+      vars.forEach(k => {
+        html += `<div class="muted" style="margin:4px 0 2px">${esc(k)}${d.units && d.units[k] ? " (" + esc(d.units[k]) + ")" : ""}</div><div class="wx-chart" data-var="${esc(k)}"></div>`;
+      });
+      const prov = d.provenance || {};
+      const facts = [
+        prov.fetched_at ? prov.fetched_at.slice(0, 16).replace("T", " ") + " UTC" : "",
+        d.cached ? t("cached copy") : "",
+        (sig && sig.geocode) ? `geocode: ${sig.geocode}` : ""
+      ].filter(Boolean).join(" · ");
+      html += `<div class="muted small" style="margin-top:4px"><span title="${esc(prov.requested_url || "")}">${esc(t("Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof."))}</span> <span>${esc(facts)}</span></div>`;
+      box.innerHTML = html;
+      box.querySelectorAll(".wx-chart").forEach(el => {
+        const k = el.getAttribute("data-var");
+        const pts = days.map((dt, i) => ({t: dt, v: (d.daily[k] || [])[i]})).filter(p => p.v != null);
+        if (pts.length) {
+          try { ooChart(el, [{label: k, unit: (d.units && d.units[k]) || "", points: pts}], {height: 120}); }
+          catch (_e) { el.textContent = pts.map(p => `${p.t}: ${p.v}`).join("  "); }
+        } else {
+          el.innerHTML = `<span class="muted small">${esc(t("No values were returned for this variable and window."))}</span>`;
+        }
+      });
     }
 
     // -- The newsletter draft (card → reproducible Markdown) ---------------- //

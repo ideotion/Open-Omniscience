@@ -874,3 +874,266 @@ joins then come free: text says drought (WHO said it) × data shows deficit
 cache budget per corpus place; ToS posture (Open-Meteo is free
 non-commercial, no key — fits, but stated); should signal-keywords feed
 trends by default or as a toggleable layer (the wiki-mixing question again)?
+
+**SLICE 1 SHIPPED (2026-06-12, maintainer-asked same day): the
+if-this-then-SUGGEST corroboration cards.** A curated multilingual
+climate-event vocabulary (`configs/corroboration_rules.yml`, provenance
+in-file) is matched — locally, zero network — against indexed keywords ×
+T12 place mentions × article dates; a qualifying cluster (≥3 articles, one
+place, one window) produces a Home card in the *investigate* bucket that
+OFFERS the check: "N articles mention drought near X in window W —
+independent weather data could corroborate or challenge this." The fetch
+happens only from the card's button, behind the one consent popup, as ONE
+bounded (place, window) reanalysis slice through the single ethical fetch
+path (kill switch, robots fail-closed, protected-mode proxy inherited);
+results render per-variable (one chart per unit — mixed units on one axis
+would be a fabricated comparison) with the CC BY 4.0 attribution, the
+reanalysis-not-station-truth note, and the cache disclosed. Failures come
+back as the T4 transport verdicts. This is the consent-first precursor of
+the co-occurrence producer designed above: the producer never fetches; the
+user always chooses.
+
+---
+
+## The Open Commons Mirror — a SISTER PROJECT (maintainer vision 2026-06-12; recorded, NOT committed work)
+
+**The vision (maintainer, recorded):** if computing and storage were not a
+limitation — a server-based approach where ALL cumulative open data is
+reliably stored, with a reliable interface to the copied-and-guaranteed raw
+data, carrying every tool this app has and will have; a web-based UI *and*
+the offline local-first app over the same corpus; ambition explicitly on
+the scale of archive.org, as a SEPARATE project branched from this one; a
+business plan and fund-raising if that is what permanence costs. Intent,
+verbatim in spirit: *bring the world an honest, unbiased, truth-seeking
+tool that incorporates as much open data as possible and helps users figure
+out what the truth is about events and the reality surrounding them.*
+
+**The RELIABLE-MEMORY pillar (maintainer, 2026-06-12 — the project's
+deepest stated intention, now told):** citizens cannot indefinitely trust
+all governments with their data; data must be protected from manipulation
+and tampering, voluntary or involuntary. A printed book, re-read years
+later, is the same book — print cannot be silently rewritten. Digital data
+on editable media is **unreliable by nature, not by design**; in this era
+History — capital H, the science of understanding and deducing what
+actually happened — needs a memory that cannot be quietly edited. The
+local/offline design of THIS app was always the untold half of that
+intention: a copy outside anyone else's reach, able to confront the web
+when the web changes. "History is written by those who win wars" — the
+project exists so that stops being true for the foreseeable future.
+
+### Honest opinion (assistant, as asked — agreement first, then two amendments)
+
+The vision is sound and the timing is right: the app's entire discipline
+(provenance on every row, custody chains, signed evidence, vintages,
+fail-closed ethics) IS a preservation architecture in miniature. But two
+framings need amending to keep the project honest with itself:
+
+1. **"The one and only source of reliable information" is the wrong target
+   — on the project's own ethics.** A single authority is a single point of
+   failure (technical, legal, governance) and a single point of CAPTURE —
+   the exact structure the app's anti-single-origin/triangulation rules
+   exist to detect. archive.org is the cautionary tale as much as the
+   model: one organization, one jurisdiction — lawsuits (Hachette v.
+   Internet Archive), a 2024 breach and DDoS, one board between the record
+   and whoever wants it changed. The honest reformulation: **the most
+   VERIFIABLE mirror, not the only one** — a federation where trust comes
+   from anyone's ability to recompute the hashes, not from the operator's
+   reputation. Aim to be the reference implementation and the first node,
+   and to make node #2 trivially cloneable. "One and only" wins by
+   monopoly; a commons wins by reproducibility. The METHOD is the ethics.
+
+2. **The hosting non-negotiable survives intact — because OPEN data and
+   USER data are different objects.** The ruling "give the software away
+   free; NEVER host the users' data" is not contradicted by a mirror of
+   PUBLIC open data (feeds, dumps, statistics, archives). The line to keep
+   bright forever: the mirror stores what was already published to the
+   world; user corpora, watchlists, annotations, queries stay local —
+   the mirror must never even SEE them (verification must be possible by
+   downloading, never by uploading the user's state). A sister project, a
+   separate repo, a separate threat model; this app remains complete
+   without it.
+
+### The printed-book property, formalized (the math-based approach asked for)
+
+Digital permanence is not achieved by trusting better hardware; it is
+achieved by making tampering DETECTABLE first and IMPRACTICAL second.
+Each mechanism below is standard, public mathematics — no novelty risk:
+
+- **Tamper-EVIDENT (detection):** every object stored under its
+  cryptographic hash (content addressing): any single-bit change changes
+  the name. Collision resistance of SHA-256 is the printed page.
+  *The app already does this* (article hashes, backup manifests).
+- **Attribution:** signatures over manifests (who vouched for this capture,
+  when) — the custody-chain discipline, generalized.
+- **Append-only by proof, not by promise:** a Merkle-tree transparency log
+  (the Certificate Transparency model, RFC 6962): inclusion proofs ("this
+  capture is in the log") and consistency proofs ("today's log extends
+  yesterday's — nothing was rewritten") are O(log n) and publicly
+  checkable. Rewriting history then requires forking the log in front of
+  every witness who holds an old root hash.
+- **Tamper-RESISTANT (impracticality):** independent replication — LOCKSS'
+  literal insight, "Lots Of Copies Keep Stuff Safe": one library's book
+  can be doctored or burned; ten thousand copies across independent
+  custodians cannot all be. Every local-first install of THIS app is
+  already one such copy of what it captured. Witness cosigning (multiple
+  parties co-sign log roots) makes a silent fork require collusion.
+- **Existence-before-T:** anchoring log roots in external timestamp
+  systems (OpenTimestamps-style) proves a capture existed before a date
+  without trusting the mirror at all.
+- **Against INVOLUNTARY tampering** (bit rot, media death, format
+  obsolescence — decay is also an editor): scheduled fixity audits
+  (re-hash and compare, statistically sampled), erasure coding across
+  media and sites, format migration with the original bytes kept forever
+  alongside any migrated rendering.
+- **Vintages, never overwrites:** the law/wiki/official-statistics model
+  generalized — a changed upstream is a NEW version next to the old one;
+  revisions are evidence, deletion is an event to record, not perform.
+
+**Honest limits, stated up front (no fabricated security — the ledger
+rule applies to archives too):**
+- The mirror proves *"source X published bytes B at time T"* — never that
+  B is TRUE. Capture-time provenance is not veracity; propaganda archived
+  perfectly is still propaganda (the triangulation tools exist for that).
+- Nothing proves what existed BEFORE capture began; the record starts
+  when the recording starts. (Reason to start early; not a flaw, a fact.)
+- Signatures prove who signed, not that the signer was honest; the trust
+  root is people and process — publish both.
+- A single jurisdiction can compel one operator; only multi-jurisdiction
+  federation answers that, and even it bows to coordinated force. The
+  claim is "tampering is detectable and expensive", never "impossible".
+
+### Blockchain — the maintainer's initial intention (recorded 2026-06-12)
+
+**Recorded:** the long-term server approach was initially conceived on
+**blockchain technology**, for tamper-proof reliability. The instinct is
+right — and the honest engineering read keeps it useful:
+
+- **The math above already IS blockchain-class.** Hash chains, Merkle
+  trees, signed append-only logs, agreement on the current head — a
+  permissioned blockchain and a witness-cosigned transparency log are
+  close cousins; Certificate Transparency is essentially "a blockchain
+  without the token": named, accountable witnesses instead of anonymous
+  consensus. Choosing the transparency-log formulation is choosing the
+  same cryptography with fewer moving parts, not rejecting the idea.
+- **The strongest, cheapest blockchain use: ANCHOR INTO one, don't run
+  one.** OpenTimestamps-style commitment of the log's root hash into
+  Bitcoin (and optionally other public chains) buys existence-before-T
+  proofs backed by a security budget (the chain's accumulated work) this
+  project could never fund itself — no tokens, no validators to govern,
+  one cheap transaction anchoring unlimited documents per batch, and the
+  proof verifies forever without trusting us OR the timestamping service.
+- **A DEDICATED chain is the option that must justify itself, not the
+  default.** The data cannot live on-chain either way (terabytes — every
+  chain design stores hashes and keeps bytes off-chain, which is exactly
+  the content-addressed store + log above). Proof-of-work at small scale
+  buys no security; proof-of-stake imports governance-by-wealth; a
+  permissioned BFT chain among known institutions ≈ witness cosigning
+  with extra machinery. The scenario that would genuinely demand a chain
+  — Byzantine agreement among mutually-distrusting anonymous operators —
+  is not the federation described here (named libraries, universities,
+  press organizations). Revisit if that changes.
+- **Wording discipline regardless of substrate** (the no-fabricated-
+  security rule applies to marketing too): the public claim is "tampering
+  is publicly DETECTABLE — proofs anyone can recheck — and practically
+  infeasible to hide", never "tamper-proof"/"impossible". No real system,
+  blockchain included, earns the absolute.
+
+### Relation to this app (the bridge, both directions)
+
+- This app's users form the distributed library: opt-in, consented
+  **capture contribution** (what a user chose to collect, minus anything
+  personal, license-permitting) could seed the mirror — design later,
+  consent-first, default OFF, nothing leaves without an explicit act.
+- The mirror gives this app: a **verify-against-mirror** action (does my
+  copy's hash match the public log? — divergence is a FINDING, the
+  confront-the-web intention made one-click); a remote corpus backend
+  CHOICE for users who want breadth beyond local disk (pointed at any
+  node, self-hostable); and bulk open-data slices (the Open-Meteo /
+  official-statistics scale problem) served from infrastructure built
+  for it.
+- Everything already shipped that generalizes: oo-backup-2 signed
+  manifests + Merkle roots, custody chains imported verified-not-trusted,
+  staged migrations, the vintage model, robots-first ethical acquisition.
+
+### Sustainability (the business plan asked about, honestly)
+
+Permanence is an endowment problem, not a revenue problem. Aligned models:
+nonprofit foundation + open membership; grants (digital-preservation,
+journalism, internet-health funders — e.g. NLnet/NGI-class, press-freedom
+funds); memberships/donations (the Wikimedia/IA pattern); paid SERVICES
+never paid DATA (priority API lanes, hosted analysis compute, support —
+the data itself stays free forever, snapshots torrentable). Misaligned:
+VC equity (exit pressure contradicts a permanence promise), advertising,
+anything that monetizes reader behavior. If funds are raised, the
+permanence promise must be structural (endowment, data escrowed across
+independent nodes), not a pledge. Publish the business plan in the open.
+
+### Node 0 — the maintainer's own machine (maintainer addition 2026-06-12)
+
+**The decision recorded:** the maintainer offers a personal computer as the
+first server — a cheap way to have a local solution, accessible through the
+web, with **air-gapped, future-proof backups**; the whole idea lives in a
+**NEW repository, a fork of this project — created only once the current
+project is MATURE** (the maintainer's own sequencing gate; V0.1-and-beyond
+comes first, the fork waits).
+
+Why node-0-at-home is actually the RIGHT first step, on the project's own
+terms: it proves the entire stack (capture → content addressing → signed
+log → snapshot export → independent verification) at zero infrastructure
+cost, and a self-hosted node is the purest expression of "we control our
+copy". The **air-gapped backup is the strongest layer in the whole design**
+— an offline disk cannot be remotely tampered with at all; it turns the
+printed-book property literal (write, disconnect, shelve; fixity-check on a
+schedule). Honest implications to design for, stated now so they are never
+surprises:
+
+- **Residential hosting realities:** asymmetric upload bandwidth, ISP terms
+  (many forbid servers on consumer lines), dynamic IP, power/uptime — fine
+  for node 0 + snapshot seeding (torrents tolerate downtime by design),
+  wrong for "the" always-on public endpoint. Publish SNAPSHOTS + log roots
+  rather than promising 24/7 interactive service from a home line.
+- **Exposure:** a public server on a home connection points the world at
+  the maintainer's house — IP, DDoS surface, and the personal-liability
+  question land on one person. Mitigations to weigh: a cheap tunnel/CDN
+  front (changes the trust story — state it), publishing through an
+  existing host (torrent + IA + university mirrors) while the home machine
+  stays the SIGNING origin, and moving legal exposure to a foundation
+  before the node is loud. The home machine as quiet origin-of-truth +
+  public distribution elsewhere is the sane v0 split.
+- **Security posture for the box itself:** the server hosts OPEN data +
+  signing keys — the keys are the crown jewels, not the data; keep signing
+  on an offline/air-gapped step where practical (sign snapshots, then
+  publish), so even a compromised web-facing box cannot rewrite history
+  silently (the log + external witnesses catch it).
+- **The fork inherits the constitution:** robots-first acquisition, honest
+  provenance, no user data EVER (the web UI it serves must work without
+  accounts; analytics-free), GPL, the no-fabricated-security rule — the
+  fork is a deployment shape, never an ethics fork.
+
+### QUESTIONS FOR THE MAINTAINER (answer when the sister project starts)
+
+1. **Scope of "all open data" v1:** news feeds + Wikipedia dumps +
+   official statistics + weather reanalysis are four very different
+   beasts (size, license, churn). Which corpus FIRST proves the model?
+2. **Legal home:** which jurisdiction(s) for the foundation and the first
+   nodes? (This decides more about tamper-resistance than any algorithm.)
+3. **Licensing posture:** mirror only license-clean open data, or also
+   robots-permitted news HTML the way the local app does (a much harder
+   copyright position at public scale)?
+4. **Federation protocol:** plain rsync/torrent snapshots first (boring,
+   provable), or content-addressed p2p (IPFS-class) from day one?
+5. **Name and relationship:** branded as Open-Omniscience infrastructure,
+   or a neutral commons several apps (including non-OO tools) can cite?
+6. **The first witness set:** which independent parties co-sign log roots
+   at launch — universities, press-freedom orgs, libraries?
+7. **Node 0 specifics (added with the self-hosting decision):** which
+   machine/OS and disk budget; tunnel/CDN front vs direct exposure vs
+   quiet-origin+public-mirrors; the air-gap rotation cadence (how many
+   disks, how often, stored where); and what "current project is mature"
+   means concretely — the V0.1 RC gate, or a later milestone?
+8. **Blockchain anchoring (added with the blockchain intention):** which
+   public chain(s) to anchor log roots into and at what cadence
+   (OpenTimestamps batches make daily anchoring ~free); and is there any
+   concrete federation scenario — mutually-distrusting anonymous
+   operators — that would justify a dedicated chain over witness-cosigned
+   transparency logs?

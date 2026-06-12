@@ -485,5 +485,12 @@
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "कौन से सदस्य लेख बाहरी लिंक साझा करते हैं — साझा मूल दृश्य: जब मार्ग एक मूल साझा करते हैं तो उद्धरण गिनती कभी स्वतंत्र पुष्टि नहीं होती।",
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "इस कीवर्ड को कॉर्पस विंडो के रूप में खोलें: रुझान, सदस्य लेख और साझा बाहरी लिंक (स्रोतों के स्रोत)।",
   "Full moon": "पूर्णिमा",
-  "New moon": "अमावस्या"
+  "New moon": "अमावस्या",
+  "Fetch weather context": "मौसम संदर्भ प्राप्त करें",
+  "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "इस स्थान और समय-सीमा के लिए सीमित Open-Meteo अंश प्राप्त करता है — केवल आपकी सहमति के बाद।",
+  "Fetch weather context for one place and time window (Open-Meteo)": "एक स्थान और समय-सीमा के लिए मौसम संदर्भ प्राप्त करें (Open-Meteo)",
+  "Weather fetch refused:": "मौसम डेटा प्राप्ति अस्वीकृत:",
+  "cached copy": "कैश की गई प्रति",
+  "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Open-Meteo पुनर्विश्लेषण (CC BY 4.0): इस स्थान और समय-सीमा के लिए मॉडल अनुमान — पुष्टि-सहायक, प्रमाण कभी नहीं।",
+  "No values were returned for this variable and window.": "इस चर और समय-सीमा के लिए कोई मान नहीं लौटा।"
 }

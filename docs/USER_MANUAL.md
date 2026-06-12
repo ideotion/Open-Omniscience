@@ -971,6 +971,7 @@ why** (loud degradation); it never fabricates a card.
 | **Ownership change** | investigate | deal-verb language (acquired/merger/divested) in recent news | thin |
 | **Story lineage** | context | `signals.lineage` — a near-dup cluster ordered by publication time + wire attribution | new |
 | **Coverage advisor** | context | `signals.concentration` over your sources' country/language (skew, not a cap) | new |
+| **Weather check available** | investigate | `analytics.corroboration` — climate-event terms × deduced places × article dates | new |
 
 ¹ Needs the `[analysis]` extra (VADER / scipy). Without it those cards simply don't
 appear — the rest of the briefing still works.
@@ -994,6 +995,18 @@ surfaces structure; the human judges. **Coverage advisor** surfaces geographic/l
 **skew in your own collection** (e.g. "~80% of what you collected is from one country") as a
 gentle suggestion to broaden — it never filters or caps anything; a skewed corpus skews every
 downstream signal, so seeing the skew is the point.
+
+**Weather check available** is the first *if-this-then-suggest* card: when several of your
+articles mention the same climate-event word (drought, flood, heatwave… — a curated
+12-language seed list, `configs/corroboration_rules.yml`) together with the same deduced
+place inside one time window, the card **offers** to fetch independent weather data for
+exactly that place and window. The card itself is computed locally — it says so — and
+nothing is fetched until you click **Fetch weather context**, which passes through the
+same network-consent popup as every other online action. What comes back is one bounded
+Open-Meteo **reanalysis** slice (CC BY 4.0, attribution shown): a *model estimate*, not a
+station record — it can **corroborate or challenge** what the articles say, never prove
+it. The slice is cached on disk so re-reading it later is offline; the cached state and
+fetch time are always shown.
 
 ---
 

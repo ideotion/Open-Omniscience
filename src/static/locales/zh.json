@@ -485,5 +485,12 @@
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "哪些成员文章共享外部链接——共享来源可见：当路径共享同一来源时，引用次数绝不等于独立证实。",
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "将此关键词作为语料库窗口打开：趋势、成员文章及共享外部链接（来源的来源）。",
   "Full moon": "满月",
-  "New moon": "新月"
+  "New moon": "新月",
+  "Fetch weather context": "获取天气背景数据",
+  "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "仅在您同意后，为该地点和时间窗口获取限定的 Open-Meteo 数据片段。",
+  "Fetch weather context for one place and time window (Open-Meteo)": "为一个地点和时间窗口获取天气背景数据（Open-Meteo）",
+  "Weather fetch refused:": "天气获取被拒绝：",
+  "cached copy": "缓存副本",
+  "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Open-Meteo 再分析（CC BY 4.0）：该地点和时间窗口的模型估计——仅作佐证，绝非证明。",
+  "No values were returned for this variable and window.": "该变量和时间窗口未返回任何数值。"
 }

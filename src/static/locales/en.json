@@ -485,5 +485,12 @@
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.",
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).",
   "Full moon": "Full moon",
-  "New moon": "New moon"
+  "New moon": "New moon",
+  "Fetch weather context": "Fetch weather context",
+  "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.",
+  "Fetch weather context for one place and time window (Open-Meteo)": "Fetch weather context for one place and time window (Open-Meteo)",
+  "Weather fetch refused:": "Weather fetch refused:",
+  "cached copy": "cached copy",
+  "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.",
+  "No values were returned for this variable and window.": "No values were returned for this variable and window."
 }

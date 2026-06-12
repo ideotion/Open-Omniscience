@@ -485,5 +485,12 @@
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "Какие статьи-участники разделяют исходящие ссылки — общие первоисточники видимы: число цитирований никогда не является независимым подтверждением, если пути разделяют источник.",
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Открыть это ключевое слово как окно корпуса: тренд, статьи-участники и общие исходящие ссылки (источники источников).",
   "Full moon": "Полнолуние",
-  "New moon": "Новолуние"
+  "New moon": "Новолуние",
+  "Fetch weather context": "Получить метеоконтекст",
+  "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "Загружает ограниченный фрагмент Open-Meteo для этого места и окна — только после вашего согласия.",
+  "Fetch weather context for one place and time window (Open-Meteo)": "Получить метеоконтекст для одного места и временного окна (Open-Meteo)",
+  "Weather fetch refused:": "Запрос метеоданных отклонён:",
+  "cached copy": "кэшированная копия",
+  "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Реанализ Open-Meteo (CC BY 4.0): модельная оценка для этого места и окна — подтверждение, но никогда не доказательство.",
+  "No values were returned for this variable and window.": "Для этой переменной и окна не было возвращено значений."
 }
