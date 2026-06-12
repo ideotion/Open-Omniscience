@@ -316,13 +316,14 @@ ruling, a contingency, or a deliberate-omission note.
   timeframe (drop the "· 5 pts" suffix); axes detailed; discrete gridlines.
   S&P500 is an INDEX, not a commodity — reclassify; expand feeds (rare
   earths, oil, gas, LNG, sand, cereals, sugar…). **Tor/indices diagnosis
-  (logs analyzed 2026-06-12):** FRED is NOT Tor-hostile as a class —
-  INTERMITTENT per-connection exit refusals (21/28 series imported 8,453
-  points in the same run others failed) ⇒ feed-level retry/backoff + a
-  "retry failed feeds" affordance + TRANSPORT-AWARE verdict wording
-  ("refused over Tor" ≠ "robots disallows" ≠ "unreachable"), NOT catalog
-  removal. GOLD/SILVER/SAWNWOOD = HTTP 404 = dead FRED series ids
-  (PGOLDUSDM/PSILVUSDM/PSAWMUSDM) ⇒ replacement ids verified on clearnet.
+  (logs analyzed 2026-06-12) — SHIPPED in T4:** transport-aware verdict
+  taxonomy (refused ≠ robots-disallowed ≠ dead-series ≠ unreachable ≠
+  offline) + one bounded feed-level retry for transient verdicts only +
+  "Retry failed feeds" (import-all?keys=) + per-feed verdicts on both boards
+  + the USER_MANUAL Tor chapter. REMAINING: GOLD/SILVER/SAWNWOOD replacement
+  FRED ids still need CLEARNET VERIFICATION before swapping (the dev
+  container's network allowlist blocks fred.stlouisfed.org — verified
+  2026-06-12; they now surface honestly as dead-series meanwhile).
   Stooq + webcal.guru robots-disallow = honest fail-closed (host policy).
   Per-index verdicts shown in the Indices UI (degrade loudly). 32/50 sources
   worked over Tor; the app serves BOTH populations (clearnet breadth; Tor

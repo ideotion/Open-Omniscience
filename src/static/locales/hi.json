@@ -389,5 +389,10 @@
   "Download a Wikipedia dump": "विकिपीडिया डंप डाउनलोड करें",
   "Add a watched Wikipedia page (fetches its current revision)": "देखी जाने वाली विकिपीडिया पृष्ठ जोड़ें (उसका वर्तमान संस्करण प्राप्त करता है)",
   "Download performance report (.json)": "प्रदर्शन रिपोर्ट डाउनलोड करें (.json)",
-  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "प्रदर्शन रिपोर्ट में इस मशीन के वास्तविक प्रमाण होते हैं: ऐप शुरू होने के बाद से आपके वास्तविक उपयोग के प्रति-एंडपॉइंट प्रतिक्रिया समय, संग्रहण और मेमोरी तथ्य, और आपके वास्तविक कॉर्पस के भारी दृश्यों का एक त्वरित समयबद्ध स्व-परीक्षण। केवल स्थानीय; कुछ सेकंड लगते हैं और कुछ भी प्रेषित नहीं होता।"
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "प्रदर्शन रिपोर्ट में इस मशीन के वास्तविक प्रमाण होते हैं: ऐप शुरू होने के बाद से आपके वास्तविक उपयोग के प्रति-एंडपॉइंट प्रतिक्रिया समय, संग्रहण और मेमोरी तथ्य, और आपके वास्तविक कॉर्पस के भारी दृश्यों का एक त्वरित समयबद्ध स्व-परीक्षण। केवल स्थानीय; कुछ सेकंड लगते हैं और कुछ भी प्रेषित नहीं होता।",
+  "Retry failed feeds": "विफल फ़ीड पुनः आज़माएँ",
+  "Retrying failed feeds…": "विफल फ़ीड पुनः आज़माए जा रहे हैं…",
+  "Retry finished:": "पुनः प्रयास पूर्ण:",
+  "new point(s);": "नए बिंदु;",
+  "still failing.": "अब भी विफल।"
 }

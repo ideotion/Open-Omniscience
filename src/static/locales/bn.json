@@ -389,5 +389,10 @@
   "Download a Wikipedia dump": "উইকিপিডিয়া ডাম্প ডাউনলোড করুন",
   "Add a watched Wikipedia page (fetches its current revision)": "নজরে রাখা উইকিপিডিয়া পাতা যোগ করুন (বর্তমান সংস্করণ আনে)",
   "Download performance report (.json)": "পারফরম্যান্স রিপোর্ট ডাউনলোড করুন (.json)",
-  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "পারফরম্যান্স রিপোর্টে এই মেশিনের প্রকৃত প্রমাণ থাকে: অ্যাপ চালুর পর থেকে আপনার প্রকৃত ব্যবহারের প্রতি-এন্ডপয়েন্ট প্রতিক্রিয়ার সময়, স্টোরেজ ও মেমরির তথ্য, এবং আপনার আসল কর্পাসের ভারী ভিউগুলির একটি দ্রুত সময় মাপা স্ব-পরীক্ষা। শুধুই স্থানীয়; কয়েক সেকেন্ড লাগে এবং কিছুই প্রেরণ করা হয় না।"
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "পারফরম্যান্স রিপোর্টে এই মেশিনের প্রকৃত প্রমাণ থাকে: অ্যাপ চালুর পর থেকে আপনার প্রকৃত ব্যবহারের প্রতি-এন্ডপয়েন্ট প্রতিক্রিয়ার সময়, স্টোরেজ ও মেমরির তথ্য, এবং আপনার আসল কর্পাসের ভারী ভিউগুলির একটি দ্রুত সময় মাপা স্ব-পরীক্ষা। শুধুই স্থানীয়; কয়েক সেকেন্ড লাগে এবং কিছুই প্রেরণ করা হয় না।",
+  "Retry failed feeds": "ব্যর্থ ফিড আবার চেষ্টা করুন",
+  "Retrying failed feeds…": "ব্যর্থ ফিড আবার চেষ্টা হচ্ছে…",
+  "Retry finished:": "পুনঃচেষ্টা সম্পন্ন:",
+  "new point(s);": "নতুন পয়েন্ট;",
+  "still failing.": "এখনও ব্যর্থ।"
 }

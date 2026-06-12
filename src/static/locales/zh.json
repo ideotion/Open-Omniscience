@@ -389,5 +389,10 @@
   "Download a Wikipedia dump": "下载维基百科转储",
   "Add a watched Wikipedia page (fetches its current revision)": "添加关注的维基百科页面（获取其当前版本）",
   "Download performance report (.json)": "下载性能报告 (.json)",
-  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "性能报告包含来自本机的真实证据：自应用启动以来您实际使用中各端点的响应时间、存储与内存事实，以及对真实语料库重型视图的快速计时自测。仅限本地；只需几秒，不会传输任何内容。"
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "性能报告包含来自本机的真实证据：自应用启动以来您实际使用中各端点的响应时间、存储与内存事实，以及对真实语料库重型视图的快速计时自测。仅限本地；只需几秒，不会传输任何内容。",
+  "Retry failed feeds": "重试失败的数据源",
+  "Retrying failed feeds…": "正在重试失败的数据源……",
+  "Retry finished:": "重试完成：",
+  "new point(s);": "个新数据点；",
+  "still failing.": "仍然失败。"
 }

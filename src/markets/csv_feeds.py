@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import csv
 import io
+import time
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -151,6 +152,14 @@ class FeedImportResult:
     received: int = 0
     parse_errors: int = 0
     detail: str | None = None
+    # Transport-aware verdict (maintainer-ruled 2026-06-12): "refused over
+    # Tor" ≠ "robots disallows" ≠ "unreachable" ≠ "dead series". The verdict
+    # is a taxonomy over the REAL error (type + message), never an inference
+    # beyond it; retryable says whether another attempt can honestly help.
+    verdict: str = "ok"
+    verdict_note: str | None = None
+    retryable: bool = False
+    attempts: int = 1
 
     def to_dict(self) -> dict:
         return {
@@ -161,7 +170,62 @@ class FeedImportResult:
             "received": self.received,
             "parse_errors": self.parse_errors,
             "detail": self.detail,
+            "verdict": self.verdict,
+            "verdict_note": self.verdict_note,
+            "retryable": self.retryable,
+            "attempts": self.attempts,
         }
+
+
+def classify_fetch_failure(exc: Exception) -> tuple[str, str, bool]:
+    """(verdict, honest note, retryable) for a fetch failure.
+
+    The taxonomy distinguishes host POLICY (robots — the host's choice,
+    honored, never retried or evaded), DEAD upstream series (HTTP 404/410 —
+    the catalog needs a replacement; retrying cannot help), per-connection
+    REFUSALS (over Tor commonly one exit's refusal — a retry often lands a
+    different circuit; the live 2026-06-12 log: 21/28 FRED series imported
+    while others failed in the same run), and plain unreachability.
+    """
+    from src.ingest import RobotsDisallowed, RobotsUnavailable
+
+    msg = f"{type(exc).__name__}: {exc}"
+    low = str(exc).lower()
+    if isinstance(exc, RobotsDisallowed):
+        return (
+            "robots-disallowed",
+            "the host's robots.txt disallows this path — the host's choice, honored",
+            False,
+        )
+    if isinstance(exc, RobotsUnavailable):
+        return (
+            "robots-unavailable",
+            "robots.txt could not be determined — fail-closed, not fetched",
+            False,
+        )
+    if "kill switch" in low:
+        return ("offline", "the network kill switch is engaged — go online first", False)
+    if "http 404" in low or "http 410" in low:
+        return (
+            "dead-series",
+            "the series no longer exists upstream — the catalog entry needs a "
+            "verified replacement; retrying cannot help",
+            False,
+        )
+    if "http 429" in low or "http 5" in low:
+        return ("http-error", f"upstream error ({msg}) — usually transient", True)
+    if "http " in low:
+        return ("http-error", f"upstream refused the request ({msg})", False)
+    if "refused" in low or "reset" in low or "aborted" in low:
+        return (
+            "refused",
+            "connection refused/reset — over Tor this is often a single exit's "
+            "refusal; a retry frequently lands a different circuit",
+            True,
+        )
+    if "cannot resolve" in low or "timed out" in low or "timeout" in low:
+        return ("unreachable", f"host unreachable ({msg})", True)
+    return ("fetch-failed", msg, True)
 
 
 def import_feed(
@@ -184,19 +248,45 @@ def import_feed(
     so a single bad feed can't 500 a batch import. Only ``FetchError`` was caught
     before, which let raw network exceptions escape and crash the whole run.
     """
-    try:
-        fetched = fetcher.fetch(url, require_html=False)
-    except FetchError as exc:
-        return FeedImportResult(symbol, "fetch_failed", detail=str(exc))
-    except Exception as exc:  # noqa: BLE001 - any fetch failure is a feed problem, not a crash
-        return FeedImportResult(symbol, "fetch_failed", detail=f"{type(exc).__name__}: {exc}")
+    attempts = 0
+    fetched = None
+    while True:
+        attempts += 1
+        try:
+            fetched = fetcher.fetch(url, require_html=False)
+            break
+        except Exception as exc:  # noqa: BLE001 - any fetch failure is a feed problem, not a crash
+            verdict, note, retryable = classify_fetch_failure(exc)
+            # ONE bounded feed-level retry for transient verdicts, on top of
+            # the fetcher's own backoff (a different moment often means a
+            # different Tor circuit). Policy verdicts are never retried.
+            if retryable and attempts <= 1:
+                time.sleep(1.5)
+                continue
+            detail = str(exc) if isinstance(exc, FetchError) else f"{type(exc).__name__}: {exc}"
+            return FeedImportResult(
+                symbol,
+                "fetch_failed",
+                detail=detail,
+                verdict=verdict,
+                verdict_note=note,
+                retryable=retryable,
+                attempts=attempts,
+            )
 
     try:
         parsed = parse_series_csv(
             fetched.content, date_column=date_column, value_column=value_column
         )
     except Exception as exc:  # noqa: BLE001 - a malformed feed must not abort the batch
-        return FeedImportResult(symbol, "parse_failed", detail=f"{type(exc).__name__}: {exc}")
+        return FeedImportResult(
+            symbol,
+            "parse_failed",
+            detail=f"{type(exc).__name__}: {exc}",
+            verdict="parse-failed",
+            verdict_note="the feed was fetched but its content was not a usable series",
+            attempts=attempts,
+        )
     if not parsed.points:
         return FeedImportResult(
             symbol,
@@ -227,4 +317,5 @@ def import_feed(
         skipped_existing=res["skipped_existing"],
         received=res["received"],
         parse_errors=len(parsed.errors),
+        attempts=attempts,
     )

@@ -389,5 +389,10 @@
   "Download a Wikipedia dump": "Descargar un volcado de Wikipedia",
   "Add a watched Wikipedia page (fetches its current revision)": "Añadir una página de Wikipedia vigilada (obtiene su revisión actual)",
   "Download performance report (.json)": "Descargar informe de rendimiento (.json)",
-  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "El informe de rendimiento contiene pruebas reales de esta máquina: tiempos de respuesta por endpoint de su uso real desde el arranque, datos del almacenamiento y la memoria, y una autoprueba cronometrada de las vistas pesadas sobre su corpus real. Solo local; tarda unos segundos y no se transmite nada."
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "El informe de rendimiento contiene pruebas reales de esta máquina: tiempos de respuesta por endpoint de su uso real desde el arranque, datos del almacenamiento y la memoria, y una autoprueba cronometrada de las vistas pesadas sobre su corpus real. Solo local; tarda unos segundos y no se transmite nada.",
+  "Retry failed feeds": "Reintentar los canales fallidos",
+  "Retrying failed feeds…": "Reintentando los canales fallidos…",
+  "Retry finished:": "Reintento terminado:",
+  "new point(s);": "punto(s) nuevo(s);",
+  "still failing.": "siguen fallando."
 }
