@@ -113,13 +113,21 @@ def list_jobs() -> dict:
     if f:
         jobs.append(f)
     running = [j for j in jobs if j["state"] == "running"]
+    # PARALLEL ACROSS KINDS (maintainer-amended 2026-06-12): collecting
+    # articles WHILE a Wikipedia dump downloads is by design — a dump writes
+    # to a FILE, collection writes to the DATABASE; they share neither the
+    # writer lock nor (usually) hosts. The arbitration ASK therefore fires
+    # only for DB-WRITER collisions (collect/import kinds); bulk downloads
+    # keep their own single-download, reorderable queue among themselves.
+    db_writers = [j for j in running if j["kind"] in ("collect", "import")]
     return {
         "jobs": jobs,
         "running": len(running),
         "queued": len([j for j in jobs if j["state"] == "queued"]),
-        # The arbitration summary the UI asks with BEFORE starting new work.
         "network_busy": bool(running),
-        "busy_with": [f"{j['kind']}: {j['label']}" for j in running],
+        "db_writers_busy": bool(db_writers),
+        "busy_with": [f"{j['kind']}: {j['label']}" for j in db_writers],
+        "running_with": [f"{j['kind']}: {j['label']}" for j in running],
         "method": (
             "Aggregated live from the scheduler, the dump manager and the "
             "fetcher's own activity monitor — no shadow state, so this view "

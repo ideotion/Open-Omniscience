@@ -2391,7 +2391,10 @@
     async function arbitrate(actionLabel) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       let d; try { d = await api("/api/jobs"); } catch { return true; }
-      if (!d.network_busy) return true;
+      // Parallel across kinds is the DEFAULT (maintainer-amended): a wiki
+      // dump downloading never blocks or nags article collection — only a
+      // real DB-writer collision asks.
+      if (!d.db_writers_busy) return true;
       const busy = (d.busy_with || []).join(", ");
       return confirm(`${t("Another network task is running:")} ${busy}\n\n${t("Start anyway? (Cancel waits — the running task keeps the bandwidth and the database writer to itself.)")} ${actionLabel}`);
     }
