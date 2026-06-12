@@ -1002,6 +1002,42 @@ rule applies to archives too):**
   federation answers that, and even it bows to coordinated force. The
   claim is "tampering is detectable and expensive", never "impossible".
 
+### Blockchain — the maintainer's initial intention (recorded 2026-06-12)
+
+**Recorded:** the long-term server approach was initially conceived on
+**blockchain technology**, for tamper-proof reliability. The instinct is
+right — and the honest engineering read keeps it useful:
+
+- **The math above already IS blockchain-class.** Hash chains, Merkle
+  trees, signed append-only logs, agreement on the current head — a
+  permissioned blockchain and a witness-cosigned transparency log are
+  close cousins; Certificate Transparency is essentially "a blockchain
+  without the token": named, accountable witnesses instead of anonymous
+  consensus. Choosing the transparency-log formulation is choosing the
+  same cryptography with fewer moving parts, not rejecting the idea.
+- **The strongest, cheapest blockchain use: ANCHOR INTO one, don't run
+  one.** OpenTimestamps-style commitment of the log's root hash into
+  Bitcoin (and optionally other public chains) buys existence-before-T
+  proofs backed by a security budget (the chain's accumulated work) this
+  project could never fund itself — no tokens, no validators to govern,
+  one cheap transaction anchoring unlimited documents per batch, and the
+  proof verifies forever without trusting us OR the timestamping service.
+- **A DEDICATED chain is the option that must justify itself, not the
+  default.** The data cannot live on-chain either way (terabytes — every
+  chain design stores hashes and keeps bytes off-chain, which is exactly
+  the content-addressed store + log above). Proof-of-work at small scale
+  buys no security; proof-of-stake imports governance-by-wealth; a
+  permissioned BFT chain among known institutions ≈ witness cosigning
+  with extra machinery. The scenario that would genuinely demand a chain
+  — Byzantine agreement among mutually-distrusting anonymous operators —
+  is not the federation described here (named libraries, universities,
+  press organizations). Revisit if that changes.
+- **Wording discipline regardless of substrate** (the no-fabricated-
+  security rule applies to marketing too): the public claim is "tampering
+  is publicly DETECTABLE — proofs anyone can recheck — and practically
+  infeasible to hide", never "tamper-proof"/"impossible". No real system,
+  blockchain included, earns the absolute.
+
 ### Relation to this app (the bridge, both directions)
 
 - This app's users form the distributed library: opt-in, consented
@@ -1095,3 +1131,9 @@ surprises:
    quiet-origin+public-mirrors; the air-gap rotation cadence (how many
    disks, how often, stored where); and what "current project is mature"
    means concretely — the V0.1 RC gate, or a later milestone?
+8. **Blockchain anchoring (added with the blockchain intention):** which
+   public chain(s) to anchor log roots into and at what cadence
+   (OpenTimestamps batches make daily anchoring ~free); and is there any
+   concrete federation scenario — mutually-distrusting anonymous
+   operators — that would justify a dedicated chain over witness-cosigned
+   transparency logs?
