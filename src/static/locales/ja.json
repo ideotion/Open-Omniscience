@@ -485,5 +485,12 @@
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "どのメンバー記事が外部リンクを共有しているか — 共有出所を可視化：経路が出所を共有する場合、引用数は決して独立した確認になりません。",
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "このキーワードをコーパスウィンドウとして開く：トレンド、メンバー記事、共有外部リンク（情報源の情報源）。",
   "Full moon": "満月",
-  "New moon": "新月"
+  "New moon": "新月",
+  "Fetch weather context": "気象コンテキストを取得",
+  "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "この場所と期間に限定した Open-Meteo データを取得します — あなたの同意後にのみ実行されます。",
+  "Fetch weather context for one place and time window (Open-Meteo)": "1 つの場所と期間の気象コンテキストを取得（Open-Meteo）",
+  "Weather fetch refused:": "気象データ取得が拒否されました：",
+  "cached copy": "キャッシュ済みコピー",
+  "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Open-Meteo 再解析（CC BY 4.0）：この場所と期間のモデル推定値 — 裏付けであり、証明では決してありません。",
+  "No values were returned for this variable and window.": "この変数と期間に対して値は返されませんでした。"
 }

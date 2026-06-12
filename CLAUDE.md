@@ -42,6 +42,11 @@ ruling, a contingency, or a deliberate-omission note.
 - **Hosting stance (ruled 2026-06-10, PR #37 memo):** give the software away
   free; NEVER host the users' data. No SaaS, no central server, no accounts,
   no telemetry — the forward path is PWA + one-click self-host.
+  **CLARIFIED 2026-06-12 (maintainer): the Open Commons Mirror vision is a
+  SEPARATE SISTER PROJECT** hosting PUBLIC OPEN data (archive.org-scale
+  ambition); it does NOT amend this app's stance — user corpora stay local
+  forever and the mirror must never see them (queue entry + the
+  FUTURE_DEVELOPMENTS section hold the design + the reliable-memory pillar).
 - **At-rest encryption threat model, stated wherever shown:** protects a
   seized/off machine or a copied file — NEVER a compromised running session.
   **No recovery, no decryption alternative** for THE passphrase (maintainer
@@ -494,7 +499,41 @@ ruling, a contingency, or a deliberate-omission note.
   stated baselines; signal-keywords from explicit threshold rules with
   (date,place) anchors by construction, kind="signal", never silently mixed
   with text keywords; reader weather-context row + Home co-occurrence
-  producer; opt-in, consented, visible jobs).**
+  producer; opt-in, consented, visible jobs).** **SLICE 1 SHIPPED
+  (2026-06-12, maintainer-asked "if this then suggest user to fetch"):**
+  suggest-to-fetch corroboration cards — curated 12-language climate-event
+  vocabulary (configs/corroboration_rules.yml, provenance in-file) ×
+  T12 places × article dates, scanned LOCALLY (src/signals/corroboration);
+  ≥3-article clusters emit an *investigate* card stating "this card made no
+  network call"; the fetch is the card's button → consent popup → ONE
+  bounded slice via POST /api/weather/context through make_fetcher (kill
+  switch/robots/proxy inherited), T4 verdicts on failure, disk cache
+  disclosed, CC BY 4.0 attribution + reanalysis-not-station-truth shown,
+  one chart per variable (never mixed units on one axis). +7 strings ×12.
+  REMAINING: anomaly baselines, signal-keywords, reader row, temporal-map
+  overlay (the designed layer).
+- **OPEN COMMONS MIRROR — SISTER PROJECT (maintainer vision 2026-06-12,
+  recorded in FUTURE_DEVELOPMENTS with the full design + 6 questions; NOT
+  committed work):** server-scale preservation of PUBLIC open data,
+  archive.org-scale ambition, separate project branched from this one;
+  web UI + this local-first app over the same corpus; business plan /
+  fund-raising acceptable if permanence requires it (nonprofit/grant
+  models recorded as aligned; VC recorded as misaligned). **THE
+  RELIABLE-MEMORY PILLAR (maintainer, same day — the project's stated
+  deepest intention):** digital data is editable by nature; History
+  (capital H) must not be silently rewritten — "history is written by
+  those who win wars" must stop being true; the local/offline design was
+  always the untold half (a copy outside anyone's reach, able to confront
+  the web). Formalized math-first: tamper-EVIDENT (content addressing,
+  signed manifests, RFC-6962-style transparency logs with inclusion +
+  consistency proofs), tamper-RESISTANT (LOCKSS-style independent
+  replication, witness cosigning, multi-jurisdiction), existence-before-T
+  anchoring, fixity audits vs bit rot, VINTAGES never overwrites. HONEST
+  REFRAME RECORDED: not "the one and only source" (a single authority =
+  single point of capture — the app's own anti-single-origin ethics) but
+  the most VERIFIABLE mirror in a clonable federation; provenance ≠
+  veracity, stated forever. User corpora NEVER touch the mirror
+  (hosting-stance clarification under Non-negotiables).
 - **Parked (designed-only):** event-family merge/split UI (#53), saved-filter
   "smart calendars" (#50), offline vector map, two-hop keyword graphs (#43),
   autonomous onboarding track (#49), **voice-only mode (maintainer input

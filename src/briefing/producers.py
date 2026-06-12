@@ -1238,6 +1238,98 @@ def coverage_advisor(session) -> list[Card]:
     ]
 
 
+# --------------------------------------------------------------------------- #
+#  Weather corroboration — "if this, then SUGGEST user to fetch" (2026-06-12)
+# --------------------------------------------------------------------------- #
+def weather_corroboration(session) -> list[Card]:
+    """Clusters of climate-event terms × deduced places => an OFFER to check
+    independent weather data. The producer itself NEVER touches the network:
+    the bounded Open-Meteo fetch happens only from the card's button, behind
+    the one consent popup (informed consent, maintainer-ruled 2026-06-12)."""
+    try:
+        from src.signals.corroboration import find_weather_opportunities
+
+        found = find_weather_opportunities(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("weather corroboration scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for op in found.get("opportunities", []):
+        ev_rows = (
+            session.query(Article.id, Article.title, Article.url, Article.published_at)
+            .filter(Article.id.in_(op["article_ids"][:4]))
+            .all()
+        )
+        evidence = [
+            {
+                "article_id": aid,
+                "title": title or url,
+                "url": url,
+                "published_at": pub.isoformat() if pub else None,
+            }
+            for aid, title, url, pub in ev_rows
+        ]
+        place_label = op["place"] + (f" ({op['place_country'].upper()})" if op["place_country"] else "")
+        cards.append(
+            Card(
+                type="weather_corroboration",
+                title=f"{op['rule_label']} near {op['place']}: independent weather check available",
+                summary=(
+                    f"{op['n_articles']} articles mention {', '.join(op['terms_matched'])} "
+                    f"together with {place_label} between {op['window_start']} and "
+                    f"{op['window_end']}. Open-Meteo reanalysis for that place and window "
+                    f"can corroborate or challenge the narrative — it is fetched only if you ask."
+                ),
+                bucket="investigate",
+                method=(
+                    "exact lexical match of the curated multilingual climate-event vocabulary "
+                    "(configs/corroboration_rules.yml) against indexed keywords, joined to "
+                    "deduced place mentions (lexical-v1) and article dates; computed locally — "
+                    "this card made no network call"
+                ),
+                caveat=(
+                    "Word–place co-occurrence is not a confirmed event: articles may discuss "
+                    "past, forecast or figurative weather. The window is built from article "
+                    "publication dates, not the event's own dates. Reanalysis is a model "
+                    "estimate, not a station record; corroboration is never proof. "
+                    f"Place precision: {op['geocode']}."
+                ),
+                signal={
+                    "metric": "articles_in_cluster",
+                    "value": op["n_articles"],
+                    "rule": op["rule"],
+                    "rule_label": op["rule_label"],
+                    "place": op["place"],
+                    "place_country": op["place_country"],
+                    "lat": op["lat"],
+                    "lon": op["lon"],
+                    "geocode": op["geocode"],
+                    "window_start": op["window_start"],
+                    "window_end": op["window_end"],
+                    "variables": ",".join(op["variables"]),
+                    "languages": ",".join(op["languages"]),
+                    "clusters_total": found.get("clusters_total", 0),
+                },
+                evidence=evidence,
+                n=op["n_articles"],
+                key=f"{op['rule']}|{op['place_country'] or ''}|{op['place']}|{op['window_start']}",
+                trigger=_trigger(
+                    "Several collected articles mention the same weather-event word and the "
+                    "same place inside one time window.",
+                    [
+                        ("Articles in the cluster", str(op["n_articles"])),
+                        ("Matched terms", ", ".join(op["terms_matched"])),
+                        ("Place (as deduced)", place_label),
+                        ("Window (article dates ± 3 days)",
+                         f"{op['window_start']} → {op['window_end']}"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -1255,6 +1347,9 @@ _DEFAULT_PRODUCERS = (
     ("model_legislation", model_legislation),
     ("story_lineage", story_lineage),
     ("coverage_advisor", coverage_advisor),
+    # Registered last (fail-safe order): the newest producer must never cost
+    # the operator the established feed.
+    ("weather_corroboration", weather_corroboration),
 )
 
 

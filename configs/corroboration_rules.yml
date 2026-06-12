@@ -1,0 +1,119 @@
+# Corroboration rules — "if THIS appears in the corpus, then SUGGEST fetching
+# an independent check" (maintainer-asked 2026-06-12; slice 1: weather).
+#
+# Open Omniscience — Global Intelligence Platform for Investigative Journalism
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# HONESTY NOTES (travel with the data, like configs/climate_events.yml):
+#   * This is a CURATED SEED vocabulary drafted 2026-06-12 from general
+#     knowledge. It is a lexical EXACT-MATCH list against the keyword index's
+#     normalized terms — no stemming, no inference. Extend it freely; absence
+#     of a language here only means no suggestion fires for it, never an error.
+#   * Matching a rule produces a SUGGESTION card, never a fetch: the network
+#     call happens only when the user clicks it, behind the one consent popup.
+#   * `variables` are Open-Meteo ERA5-family DAILY reanalysis variables that
+#     could corroborate or challenge the narrative — reanalysis is a model
+#     estimate, not a station record, and corroboration is never proof.
+as_of: "2026-06-12"
+provenance: >-
+  Curated seed list, drafted 2026-06-12 from training knowledge; lexical
+  exact-match against normalized keywords. Languages covered: the app's 12
+  UI locales. CJK terms are included for forward-compatibility even though
+  the current space-based extractor rarely produces them.
+rules:
+  - id: drought
+    label: "Drought"
+    variables: [precipitation_sum, temperature_2m_max]
+    terms:
+      en: [drought]
+      fr: [sécheresse]
+      de: [dürre]
+      es: [sequía]
+      pt: [seca]
+      ru: [засуха]
+      ar: [جفاف]
+      zh: [干旱]
+      ja: [干ばつ]
+      hi: [सूखा]
+      bn: [খরা]
+      id: [kekeringan]
+  - id: flood
+    label: "Flood"
+    variables: [precipitation_sum, rain_sum]
+    terms:
+      en: [flood, floods, flooding]
+      fr: [inondation, inondations, crue]
+      de: [hochwasser, überschwemmung]
+      es: [inundación, inundaciones]
+      pt: [inundação, enchente, cheia]
+      ru: [наводнение]
+      ar: [فيضان, فيضانات]
+      zh: [洪水, 水灾]
+      ja: [洪水]
+      hi: [बाढ़]
+      bn: [বন্যা]
+      id: [banjir]
+  - id: heatwave
+    label: "Heatwave"
+    variables: [temperature_2m_max, temperature_2m_min]
+    terms:
+      en: [heatwave, heat wave]
+      fr: [canicule, vague de chaleur]
+      de: [hitzewelle]
+      es: [ola de calor]
+      pt: [onda de calor]
+      ru: [аномальная жара]
+      ar: [موجة حر]
+      zh: [热浪, 高温]
+      ja: [熱波, 猛暑]
+      hi: [लू, गर्मी की लहर]
+      bn: [তাপপ্রবাহ]
+      id: [gelombang panas]
+  - id: wildfire
+    label: "Wildfire"
+    variables: [temperature_2m_max, precipitation_sum, wind_speed_10m_max]
+    terms:
+      en: [wildfire, wildfires, forest fire, bushfire]
+      fr: [incendie de forêt, feu de forêt]
+      de: [waldbrand]
+      es: [incendio forestal]
+      pt: [incêndio florestal, queimada]
+      ru: [лесной пожар]
+      ar: [حريق غابات, حرائق الغابات]
+      zh: [山火, 森林大火]
+      ja: [山火事]
+      hi: [जंगल की आग]
+      bn: [দাবানল]
+      id: [kebakaran hutan]
+  - id: storm
+    label: "Storm / cyclone"
+    variables: [wind_speed_10m_max, wind_gusts_10m_max, precipitation_sum]
+    terms:
+      en: [hurricane, cyclone, typhoon, storm]
+      fr: [ouragan, cyclone, tempête]
+      de: [hurrikan, wirbelsturm, taifun, sturm]
+      es: [huracán, ciclón, tifón, tormenta]
+      pt: [furacão, ciclone, tufão, tempestade]
+      ru: [ураган, циклон, тайфун, шторм]
+      ar: [إعصار, عاصفة]
+      zh: [台风, 飓风, 风暴]
+      ja: [台風, ハリケーン, 暴風]
+      hi: [तूफान, चक्रवात]
+      bn: [ঘূর্ণিঝড়]
+      id: [topan, siklon, badai]
+  - id: cold_wave
+    label: "Cold wave"
+    variables: [temperature_2m_min, temperature_2m_max, snowfall_sum]
+    terms:
+      en: [cold snap, cold wave, blizzard]
+      fr: [vague de froid, blizzard]
+      de: [kältewelle]
+      es: [ola de frío]
+      pt: [onda de frio]
+      ru: [волна холода, морозы]
+      ar: [موجة برد]
+      zh: [寒潮]
+      ja: [寒波]
+      hi: [शीत लहर]
+      bn: [শৈত্যপ্রবাহ]
+      id: [gelombang dingin]

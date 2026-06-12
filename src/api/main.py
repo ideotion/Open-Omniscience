@@ -151,6 +151,9 @@ from src.api.timemap import router as timemap_router
 # Import verification router (honest image metadata/EXIF)
 from src.api.verification import router as verification_router
 
+# Import weather router (consented, bounded Open-Meteo reanalysis slices)
+from src.api.weather import router as weather_router
+
 # Import Wikipedia change-tracking router
 from src.api.wiki import router as wiki_router
 from src.database.fts import SearchQueryError, search_ids
@@ -426,6 +429,7 @@ from src.api.unlock import router as unlock_router  # noqa: E402 - after app exi
 app.include_router(unlock_router)
 app.include_router(hazards_router)
 app.include_router(events_router)
+app.include_router(weather_router)
 app.include_router(personality_router)
 
 # Include temporal-map router (offline by default; hazards layer opt-in)

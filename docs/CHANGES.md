@@ -11,6 +11,26 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Weather corroboration cards — "if this, then SUGGEST user to fetch"
+  (maintainer-asked 2026-06-12).** When ≥3 collected articles mention the same
+  climate-event word (curated 12-language seed vocabulary,
+  `configs/corroboration_rules.yml`, provenance in-file) together with the same
+  deduced place inside one time window, a Home card in the *investigate* bucket
+  OFFERS an independent check — it is computed locally and states "this card
+  made no network call". The fetch is one bounded (place, window) Open-Meteo
+  ERA5 reanalysis slice (`POST /api/weather/context`), triggered only from the
+  card's button behind the one consent popup, through the single ethical fetch
+  path (kill switch, robots fail-closed, protected-mode proxy inherited);
+  results render one chart per variable (mixed units on one axis would be a
+  fabricated comparison) with CC BY 4.0 attribution, the
+  reanalysis-not-station-truth note and the disk cache disclosed; transport
+  failures return the honest verdict taxonomy. +7 chrome strings ×12 locales.
+  Slice 1 of the Open-Meteo layer (see FUTURE_DEVELOPMENTS). Alongside it, the
+  **Open Commons Mirror sister project** (server-scale open-data preservation,
+  the "reliable memory" pillar — tamper-evident by hashes and transparency
+  logs, tamper-resistant by independent replication) is recorded as a designed
+  concept with the maintainer's intent and open questions.
+
 - **Performance batch (maintainer field report 2026-06-12: 6.4k articles /
   228k keywords / 243 MB corpus got "very slow"; the keyword export failed).**
   Measured on a synthetic corpus of exactly that shape (`scripts/perf_harness.py`,

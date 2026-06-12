@@ -485,5 +485,12 @@
   "Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.": "Artikel anggota mana yang berbagi tautan keluar — asal bersama terlihat: jumlah kutipan tidak pernah menjadi konfirmasi independen bila jalurnya berbagi asal.",
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Buka kata kunci ini sebagai jendela korpus: tren, artikel anggota, dan tautan keluar bersama (sumber dari sumber).",
   "Full moon": "Bulan purnama",
-  "New moon": "Bulan baru"
+  "New moon": "Bulan baru",
+  "Fetch weather context": "Ambil konteks cuaca",
+  "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "Mengambil potongan Open-Meteo terbatas untuk tempat dan jendela waktu ini — hanya setelah persetujuan Anda.",
+  "Fetch weather context for one place and time window (Open-Meteo)": "Ambil konteks cuaca untuk satu tempat dan jendela waktu (Open-Meteo)",
+  "Weather fetch refused:": "Pengambilan cuaca ditolak:",
+  "cached copy": "salinan tersimpan",
+  "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Reanalisis Open-Meteo (CC BY 4.0): estimasi model untuk tempat dan jendela ini — penguat, bukan bukti.",
+  "No values were returned for this variable and window.": "Tidak ada nilai yang dikembalikan untuk variabel dan jendela ini."
 }
