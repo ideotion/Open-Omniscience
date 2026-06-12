@@ -1537,6 +1537,11 @@ class WikiRevision(Base):
     minor: Mapped[bool | None] = mapped_column(Boolean, default=False)
     bot: Mapped[bool | None] = mapped_column(Boolean, default=False)
     diff: Mapped[str | None] = mapped_column(CompressedText)  # added/removed text for this edit
+    # The revision's FULL TEXT (maintainer-agreed 2026-06-12, the storage
+    # ruling for the living-source engine): exact, locally-materializable
+    # versions — analytics can anchor to the precise text a revid had.
+    # Compressed; storage grows with edit activity, and the UI SAYS so.
+    full_text: Mapped[str | None] = mapped_column(CompressedText)
 
     # ORES (Wikimedia) model scores -- attributed, optional enrichment.
     ores_damaging: Mapped[float | None] = mapped_column(Float)

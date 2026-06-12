@@ -24,8 +24,12 @@ depends_on = None
 def upgrade() -> None:
     op.add_column("wiki_pages", sa.Column("latest_text", sa.LargeBinary(), nullable=True))
     op.add_column("wiki_pages", sa.Column("latest_text_revid", sa.Integer(), nullable=True))
+    # Per-revision FULL TEXT (maintainer-agreed storage ruling): exact local
+    # version materialization; compressed; nullable (older rows stay summary-only).
+    op.add_column("wiki_revisions", sa.Column("full_text", sa.LargeBinary(), nullable=True))
 
 
 def downgrade() -> None:
+    op.drop_column("wiki_revisions", "full_text")
     op.drop_column("wiki_pages", "latest_text_revid")
     op.drop_column("wiki_pages", "latest_text")

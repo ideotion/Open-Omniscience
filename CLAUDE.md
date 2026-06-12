@@ -473,10 +473,16 @@ ruling, a contingency, or a deliberate-omission note.
   migration b6c7d8e9f0a1. **HONEST GAP NOW BLOCKING the full engine: stored
   revision diffs are TRUNCATED 2000-char summaries (diff_summary), NOT
   reconstructable patches — past versions cannot be materialized locally.
-  Storage question (#3) is therefore ELEVATED: per-revision full text
-  (CompressedText; simple, version-anchored analytics for free) vs real
-  patches + checkpoints (lean, replay engine needed). DEFAULT per-revision
-  full text unless the maintainer objects.** REMAINING: the dedicated
+  Storage question (#3) ANSWERED (maintainer-agreed 2026-06-12): PER-
+  REVISION FULL TEXT — SHIPPED same day (WikiRevision.full_text, batched
+  fetch_revision_texts ≤50 revids/call, failure stores revisions without
+  text rather than dropping them; latest_text fed from the batch). PLUS the
+  maintainer's disclosure mandate ("make everything so that the user is
+  fully informed of our choices"): the Wikipedia tab states the three
+  choices visibly (newest-version default + revid recorded; full text per
+  revision stored locally with the storage cost said; stripped-wikitext
+  honesty) with the why in the hover long-form, ×12 locales; USER_MANUAL
+  §3.7 documents them.** REMAINING: the dedicated
   tracked-changes TAB (the full-attention GUI — own slice, browser-verified);
   per-mention revid anchoring; dumps→corpus ingestion path.
   Earlier honest gap stands: downloaded dumps are FILES only (T14 reads one

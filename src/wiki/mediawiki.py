@@ -138,6 +138,37 @@ def build_current_text_params(title: str) -> dict:
     }
 
 
+def build_revision_texts_params(revids: list[int]) -> dict:
+    """Params for the FULL TEXT of specific revisions (batched, <=50 per call).
+
+    The per-revision full-text store (maintainer-agreed 2026-06-12): exact
+    version materialization beats reconstructing from diffs — revisions are
+    fetched in one batched call when the tracker stores them.
+    """
+    return {
+        "action": "query",
+        "prop": "revisions",
+        "revids": "|".join(str(r) for r in revids[:50]),
+        "rvprop": "ids|content",
+        "rvslots": "main",
+        "format": "json",
+        "formatversion": 2,
+    }
+
+
+def parse_revision_texts(payload: dict) -> dict[int, str]:
+    """Parse a batched revision-content response -> {revid: wikitext}."""
+    out: dict[int, str] = {}
+    for pg in (payload or {}).get("query", {}).get("pages", []) or []:
+        for r in pg.get("revisions", []) or []:
+            revid = r.get("revid")
+            slot = (r.get("slots", {}) or {}).get("main", {})
+            text = slot.get("content")
+            if revid and text is not None:
+                out[int(revid)] = text
+    return out
+
+
 def parse_current_text(payload: dict) -> dict:
     """Parse a current-text response -> {revid, text, size, pageid, title} or {}.
 

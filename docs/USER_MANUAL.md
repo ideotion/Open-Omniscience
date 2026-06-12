@@ -447,6 +447,20 @@ edits** — the *edits* are the data, not a copy of the article.
   Reasons · ORES), with a **Diff** viewer and a **live** link to Wikipedia.
   Filter by *flagged only* and by edition.
 
+**Watched pages are corpus articles (the living-source choices, stated):**
+every page you watch also joins your corpus as an article under a per-edition
+source ("Wikipedia (en)"), so it appears in **general search, keywords and
+When×Where×Who like any other article**. The choices the app makes for you,
+visibly: (1) what search and analytics see is always the **newest version**
+the tracker has fetched, and the exact revision id it corresponds to is
+recorded; (2) the **full text of every tracked revision is stored on this
+machine** — past versions stay exactly reconstructable (version-anchored
+analytics, no diff replay), at the honest cost of storage growing with edit
+activity; (3) the analyzed text is wikitext reduced to plain text — never
+passed off as the rendered article. Everything stays local; the change
+history remains available per page, and a dedicated tracked-changes view is
+the named next step.
+
 Heavy **offline full-text baselines** (whole-edition dumps) are *separate* and live
 in **Settings → Wikipedia** — you don't need them for change-tracking. See
 [`docs/USER_MANUAL.md`](USER_MANUAL.md).

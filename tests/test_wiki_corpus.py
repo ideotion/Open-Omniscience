@@ -158,3 +158,94 @@ def test_missing_and_textless_pages_are_skipped_honestly():
 def test_backfill_endpoint_runs(client):
     d = client.post("/api/wiki/corpus/sync").json()
     assert {"pages", "created", "updated", "unchanged", "skipped"} <= set(d.keys())
+
+
+def test_tracker_stores_per_revision_full_text():
+    """The storage ruling (maintainer-agreed 2026-06-12): every tracked
+    revision keeps its FULL TEXT, batched in one call; latest_text comes from
+    the newest revision of the batch — exact versions, no diff replay."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base, WikiRevision
+    from src.wiki.track import ensure_page, update_page
+
+    engine = create_engine("sqlite:///:memory:", future=True,
+                           connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, future=True)()
+
+    class TextClient:
+        def __init__(self):
+            self.batched_revids = None
+
+        def fetch_current_text(self, wiki, title):
+            return {"revid": 100, "text": "v100 text", "size": 9, "pageid": 1}
+
+        def fetch_revisions(self, wiki, title, *, limit=20, older_than=None):
+            return [
+                {"revid": 102, "parent_revid": 101, "size": 12},
+                {"revid": 101, "parent_revid": 100, "size": 10},
+            ]
+
+        def fetch_compare(self, wiki, a, b):
+            return {"added": "x", "removed": "", "added_bytes": 1, "removed_bytes": 0}
+
+        def fetch_revision_texts(self, wiki, revids):
+            self.batched_revids = list(revids)
+            return {101: "v101 text", 102: "v102 newest text"}
+
+    client = TextClient()
+    page = ensure_page(db, "en", "Versioned")
+    update_page(db, client, page)  # baseline at 100
+    res = update_page(db, client, page)  # two new revisions
+    assert res["new"] == 2
+    assert client.batched_revids == [101, 102]  # ONE batched call, ordered
+
+    texts = {r.revid: r.full_text for r in db.query(WikiRevision).all()}
+    assert texts == {101: "v101 text", 102: "v102 newest text"}
+    assert page.latest_text == "v102 newest text"
+    assert page.latest_text_revid == 102
+
+
+def test_revision_text_fetch_failure_keeps_revisions():
+    """A text-fetch failure stores the revisions WITHOUT text (NULL says so)
+    and falls back to fetch_current_text for the latest — never drops edits."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base, WikiRevision
+    from src.wiki.track import ensure_page, update_page
+
+    engine = create_engine("sqlite:///:memory:", future=True,
+                           connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, future=True)()
+
+    class FailingTextClient:
+        def __init__(self):
+            self.calls = 0
+
+        def fetch_current_text(self, wiki, title):
+            self.calls += 1
+            rev = 100 if self.calls == 1 else 101
+            return {"revid": rev, "text": f"v{rev} current", "size": 9, "pageid": 1}
+
+        def fetch_revisions(self, wiki, title, *, limit=20, older_than=None):
+            return [{"revid": 101, "parent_revid": 100, "size": 10}]
+
+        def fetch_compare(self, wiki, a, b):
+            return {"added": "", "removed": "", "added_bytes": 0, "removed_bytes": 0}
+
+        def fetch_revision_texts(self, wiki, revids):
+            raise RuntimeError("upstream hiccup")
+
+    page = ensure_page(db, "en", "Flaky")
+    client = FailingTextClient()
+    update_page(db, client, page)  # baseline
+    res = update_page(db, client, page)
+    assert res["new"] == 1
+    row = db.query(WikiRevision).one()
+    assert row.full_text is None  # honest partial, not a fabricated text
+    assert page.latest_text == "v101 current"  # the fallback still refreshed
+    assert page.latest_text_revid == 101
