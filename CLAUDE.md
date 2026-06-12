@@ -177,8 +177,12 @@ ruling, a contingency, or a deliberate-omission note.
   delivered 2026-06-11; several items already fixed in-audit):** top: qualify
   the "stays on this machine" claim ×12 locales (AWAITS MAINTAINER RULING);
   caveats-visible-by-default vs calm UI (AWAITS RULING — U3);
-  reliability_score=5 + language="en" defaults removal; inline-onclick
-  retirement; a11y batch; ETHICS.md tense rewrite.
+  ~~reliability_score=5 + language="en" defaults removal~~ (SHIPPED T5,
+  2026-06-12, + political_bias=0.0; migration f4b5c6d7e8a9 NULLs the
+  fabricated 5s; languages stay — catalog-asserted); ~~ETHICS.md tense~~
+  (verified closed: the one "will" is the doc's own review cadence);
+  REMAINING: inline-onclick retirement (199×, needs a browser-verified
+  sweep); a11y batch.
 - **De-US-centring — REMAINING (first batch shipped 2026-06-11: ISO-2
   canonical storage via src/catalog/countries.py, migration a3b4c5d6e7f8
   fixed the fabricated US default + the `[:2]` country-truncation corruption;
