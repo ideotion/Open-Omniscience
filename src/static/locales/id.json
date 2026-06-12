@@ -516,5 +516,17 @@
   "Found via case-insensitive match.": "Ditemukan lewat kecocokan tanpa membedakan kapital.",
   "dump revision of": "revisi dump per",
   "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "Wikiteks mentah (tanpa render), diekstrak secara lokal dari dump unduhan Anda — tanpa panggilan jaringan.",
-  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "Daftar dibatasi pada bahasa-bahasa aplikasi — edisi yang dapat dibaca dan dianalisis aplikasi ini. Dikelompokkan per benua;"
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "Daftar dibatasi pada bahasa-bahasa aplikasi — edisi yang dapat dibaca dan dianalisis aplikasi ini. Dikelompokkan per benua;",
+  "Before you leave — what this app knows": "Sebelum pergi — yang diketahui aplikasi ini",
+  "A stored local copy exists — read it without going online:": "Salinan lokal tersimpan — baca tanpa daring:",
+  "Known source in your catalog:": "Sumber dikenal di katalog Anda:",
+  "Articles in your corpus citing this URL:": "Artikel di korpus Anda yang mengutip URL ini:",
+  "Tracked law document:": "Dokumen hukum terpantau:",
+  "Watched Wikipedia page:": "Halaman Wikipedia terpantau:",
+  "Top keywords of the local copy:": "Kata kunci utama salinan lokal:",
+  "No local record of this link yet.": "Belum ada catatan lokal untuk tautan ini.",
+  "Built from your local database only — no network call.": "Dibangun hanya dari basis data lokal Anda — tanpa panggilan jaringan.",
+  "The transparent outbound link — its text is the full address; opening it leaves this machine:": "Tautan keluar transparan — teksnya adalah alamat lengkap; membukanya berarti meninggalkan mesin ini:",
+  "Opens the local preview first — what your database knows about this link": "Membuka pratinjau lokal dulu — yang diketahui basis data Anda tentang tautan ini",
+  "Close": "Tutup"
 }

@@ -516,5 +516,17 @@
   "Found via case-insensitive match.": "Über eine Übereinstimmung ohne Groß-/Kleinschreibung gefunden.",
   "dump revision of": "Dump-Revision vom",
   "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "Roher Wikitext (ungerendert), lokal aus Ihrem heruntergeladenen Dump extrahiert — kein Netzwerkzugriff.",
-  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "Die Liste ist auf die Sprachen der App beschränkt — die Ausgaben, die diese App lesen und auswerten kann. Nach Kontinent gruppiert;"
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "Die Liste ist auf die Sprachen der App beschränkt — die Ausgaben, die diese App lesen und auswerten kann. Nach Kontinent gruppiert;",
+  "Before you leave — what this app knows": "Bevor Sie gehen — was diese App weiß",
+  "A stored local copy exists — read it without going online:": "Eine lokale Kopie existiert — lesen Sie sie, ohne online zu gehen:",
+  "Known source in your catalog:": "Bekannte Quelle in Ihrem Katalog:",
+  "Articles in your corpus citing this URL:": "Artikel in Ihrem Korpus, die diese URL zitieren:",
+  "Tracked law document:": "Verfolgtes Rechtsdokument:",
+  "Watched Wikipedia page:": "Beobachtete Wikipedia-Seite:",
+  "Top keywords of the local copy:": "Top-Schlüsselwörter der lokalen Kopie:",
+  "No local record of this link yet.": "Noch kein lokaler Eintrag zu diesem Link.",
+  "Built from your local database only — no network call.": "Nur aus Ihrer lokalen Datenbank erstellt — kein Netzwerkzugriff.",
+  "The transparent outbound link — its text is the full address; opening it leaves this machine:": "Der transparente ausgehende Link — sein Text ist die vollständige Adresse; ihn zu öffnen verlässt diesen Rechner:",
+  "Opens the local preview first — what your database knows about this link": "Öffnet zuerst die lokale Vorschau — was Ihre Datenbank über diesen Link weiß",
+  "Close": "Schließen"
 }

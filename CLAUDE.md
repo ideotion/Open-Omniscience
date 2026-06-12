@@ -83,12 +83,19 @@ ruling, a contingency, or a deliberate-omission note.
 6. Article links in analytics/insights lead to the LOCAL reader
    (`/api/articles/{id}/view`) first; the external original is a secondary
    "source ↗" link. The reader shows "Related in your corpus".
-   **EXTENDED (ruled 2026-06-10, PENDING implementation): no bare "official
-   source ↗" shortcuts ANYWHERE** — every such link opens a local popup page
-   first (the database extraction: metadata + keywords) carrying a transparent
-   outbound link whose visible text IS the full URL. Applies to every section.
-   **FIRST TARGET (maintainer repeat): Home-card evidence links** (wiki-diff +
-   law cards deep-link externally when no local article exists).
+   **EXTENDED (ruled 2026-06-10): no bare "official source ↗" shortcuts
+   ANYWHERE** — every such link opens a local popup page first (the database
+   extraction: metadata + keywords) carrying a transparent outbound link
+   whose visible text IS the full URL. Applies to every section.
+   **FIRST TARGET SHIPPED (T16 slice 1, 2026-06-12):** Home-card external
+   evidence now opens the LOCAL preview dialog (#link-preview) fed by
+   /api/links/preview — known source, local copy (reader first), corpus
+   citation count + examples, tracked law/wiki matches, local-copy keywords,
+   "no network call" stated — with the outbound anchor's visible text = the
+   FULL URL (clicking it still passes the invariant-#7 confirm; layered).
+   Enforced in test_ui_invariants (#6e). REMAINING: the ANYWHERE sweep
+   (reader source↗, search rows, markets/law/wiki tabs) onto the same
+   openLinkPreview path.
 7. **External links ALWAYS confirmed with a popup before opening** (ruled
    2026-06-10): capture-phase `_externalLinkGuard` in BOTH UIs; loopback
    exempt; message via `OOI18N.t`.

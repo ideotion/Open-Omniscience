@@ -516,5 +516,17 @@
   "Found via case-insensitive match.": "কেস-অসংবেদনশীল মিলের মাধ্যমে পাওয়া গেছে।",
   "dump revision of": "ডাম্প সংস্করণের তারিখ",
   "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "কাঁচা উইকিটেক্সট (রেন্ডার-বিহীন), আপনার ডাউনলোড করা ডাম্প থেকে স্থানীয়ভাবে আহরিত — কোনো নেটওয়ার্ক কল নেই।",
-  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "তালিকাটি অ্যাপের ভাষাগুলোতে সীমিত — যে সংস্করণগুলো এই অ্যাপ পড়তে ও বিশ্লেষণ করতে পারে। মহাদেশ অনুযায়ী দলবদ্ধ;"
+  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "তালিকাটি অ্যাপের ভাষাগুলোতে সীমিত — যে সংস্করণগুলো এই অ্যাপ পড়তে ও বিশ্লেষণ করতে পারে। মহাদেশ অনুযায়ী দলবদ্ধ;",
+  "Before you leave — what this app knows": "যাওয়ার আগে — এই অ্যাপ যা জানে",
+  "A stored local copy exists — read it without going online:": "একটি সংরক্ষিত স্থানীয় কপি আছে — অনলাইনে না গিয়ে পড়ুন:",
+  "Known source in your catalog:": "আপনার ক্যাটালগে পরিচিত উৎস:",
+  "Articles in your corpus citing this URL:": "আপনার কর্পাসে এই URL উদ্ধৃতকারী নিবন্ধ:",
+  "Tracked law document:": "অনুসৃত আইনি নথি:",
+  "Watched Wikipedia page:": "নজরে রাখা উইকিপিডিয়া পাতা:",
+  "Top keywords of the local copy:": "স্থানীয় কপির শীর্ষ কীওয়ার্ড:",
+  "No local record of this link yet.": "এই লিংকের কোনো স্থানীয় রেকর্ড এখনো নেই।",
+  "Built from your local database only — no network call.": "শুধু আপনার স্থানীয় ডেটাবেস থেকে তৈরি — কোনো নেটওয়ার্ক কল নেই।",
+  "The transparent outbound link — its text is the full address; opening it leaves this machine:": "স্বচ্ছ বহির্গামী লিংক — এর লেখাটিই সম্পূর্ণ ঠিকানা; এটি খুললে এই মেশিন ছেড়ে যাবেন:",
+  "Opens the local preview first — what your database knows about this link": "প্রথমে স্থানীয় প্রিভিউ খোলে — আপনার ডেটাবেস এই লিংক সম্পর্কে যা জানে",
+  "Close": "বন্ধ করুন"
 }

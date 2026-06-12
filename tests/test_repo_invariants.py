@@ -307,3 +307,13 @@ def test_ui_invariants():
     assert "ooTipInit" in html and "touchstart" in html, (
         "the enhancer must be universal (auto-mark + touch long-press)"
     )
+    # 6-EXTENDED (first target SHIPPED 2026-06-12): Home-card external evidence
+    #    opens the LOCAL preview popup first — never a bare outbound jump — and
+    #    the popup's outbound anchor shows the FULL URL as its visible text.
+    assert 'id="link-preview"' in html, "the local link-preview dialog must exist (CLAUDE.md #6e)"
+    assert "openLinkPreview('${esc(safeUrl(e.url))}')" in html, (
+        "card evidence must route external links through the local preview (CLAUDE.md #6e)"
+    )
+    assert ">${esc(d.url)}</a>" in html, (
+        "the outbound anchor's visible text must BE the full URL (CLAUDE.md #6e)"
+    )
