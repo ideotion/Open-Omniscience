@@ -288,3 +288,12 @@ def test_ui_invariants():
         assert native in html or native in open(
             _SRC / "static" / "index.html", encoding="utf-8"
         ).read(), f"native name {native!r} must appear in the menu data"
+    # 16. ONE chart toolkit, detailed-curves SYSTEMATIC (ruled 2026-06-12):
+    #     full series always (no thinning), sparse renders as honest points
+    #     with the early-corpus caveat; wheel zoom / drag pan / pinned readout.
+    assert "function ooChart(" in html, "the one chart toolkit must exist (CLAUDE.md #16)"
+    assert "never downsampled" in html and "early corpus" in html, (
+        "the toolkit must state and implement the detailed-curves rules"
+    )
+    for surface in ('ooChart($("mkt-chart-oo")', 'ooChart($("ins-trend-oo")'):
+        assert surface in html, f"chart surface must use THE toolkit: {surface}"

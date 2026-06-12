@@ -449,5 +449,9 @@
   "Русский": "Русский",
   "Português": "Português",
   "Bahasa Indonesia": "Bahasa Indonesia",
-  "日本語": "日本語"
+  "日本語": "日本語",
+  "no data points yet": "no data points yet",
+  "no points in this window — zoom out (double-click)": "no points in this window — zoom out (double-click)",
+  "early corpus: dots shown, no curve interpolated through sparse points": "early corpus: dots shown, no curve interpolated through sparse points",
+  "(pinned — click empty space or re-click to move)": "(pinned — click empty space or re-click to move)"
 }

@@ -107,6 +107,18 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   and persists locally. Constant top-bar footprint; RTL-aware menu placement.
   UI invariant #15 enforces it.
 
+- **The one chart toolkit (`ooChart`), slice 1.** Interactive charts as
+  ruled: cursor-anchored **wheel zoom through time**, **drag-pan**,
+  hover/click → exact **pinned X/Y readout**, double-click reset, legend
+  chips that toggle series — with the detailed-curves rules built into the
+  component: the **full-resolution series always renders** within the visible
+  window (never downsampled), and **sparse series render as honest points**
+  (n shown, early-corpus caveat, a line only when ≥8 points support it — no
+  curve interpolated through 3 dots). Labelled discrete gridlines via the
+  shared formatter; ISO week/month buckets parsed natively. Wired first onto
+  the markets symbol chart and the Insights keyword trend; UI invariant #16
+  enforces the rules. +4 chrome strings ×12.
+
 - **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled

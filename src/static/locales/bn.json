@@ -449,5 +449,9 @@
   "Русский": "Русский",
   "Português": "Português",
   "Bahasa Indonesia": "Bahasa Indonesia",
-  "日本語": "日本語"
+  "日本語": "日本語",
+  "no data points yet": "এখনও কোনো ডেটা পয়েন্ট নেই",
+  "no points in this window — zoom out (double-click)": "এই উইন্ডোতে কোনো পয়েন্ট নেই — জুম আউট করুন (ডাবল-ক্লিক)",
+  "early corpus: dots shown, no curve interpolated through sparse points": "প্রাথমিক কর্পাস: বিন্দু দেখানো হয়েছে; বিরল বিন্দুর মধ্যে কোনো বক্ররেখা আঁকা হয়নি",
+  "(pinned — click empty space or re-click to move)": "(পিন করা — সরাতে খালি জায়গায় বা আবার ক্লিক করুন)"
 }
