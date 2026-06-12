@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "数字のみの語を除外",
   "Use built-in multilingual stoplist": "内蔵の多言語ストップリストを使用",
   "Excluded keywords": "除外キーワード",
-  "Search the app, jump anywhere, run an action…": "アプリ内を検索、どこへでも移動、操作を実行…",
   "Backup & restore": "バックアップと復元",
   "Download backup (.db)": "バックアップをダウンロード (.db)",
   "Restore from a backup file": "バックアップファイルから復元",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "気象データ取得が拒否されました：",
   "cached copy": "キャッシュ済みコピー",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Open-Meteo 再解析（CC BY 4.0）：この場所と期間のモデル推定値 — 裏付けであり、証明では決してありません。",
-  "No values were returned for this variable and window.": "この変数と期間に対して値は返されませんでした。"
+  "No values were returned for this variable and window.": "この変数と期間に対して値は返されませんでした。",
+  "Search your data, jump to a tool, run an action…": "データを検索、ツールへ移動、アクションを実行…",
+  "Search everything — data, tools, actions, docs…": "すべてを検索 — データ・ツール・アクション・ドキュメント…",
+  "Run the full Boolean search for": "次の語で完全なブール検索を実行：",
+  "opens its corpus window": "そのコーパスウィンドウを開きます",
+  "article": "記事",
+  "matches in total": "件（合計）",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "ここではブール演算子が使えます：AND、OR、NOT、「引用句」。",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND、OR、NOT、「引用句」、（括弧）で記事検索を絞り込めます。検索はこのマシン内のみで行われ、ここでの入力がネットワークに触れることはありません。"
 }

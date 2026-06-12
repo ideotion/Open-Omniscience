@@ -11,6 +11,19 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **The omnibar (T13 slice 1).** The Ctrl/⌘-K command palette now federates
+  over the corpus itself: `/api/search/omni` serves the first three hits per
+  group — articles (FTS5, relevance-ordered), keywords (indexed prefix),
+  sources, watched Wikipedia pages, tracked law documents — **with the true
+  totals disclosed in each group header** (the display bound never hides the
+  magnitude). Index-backed only, never scan-on-type; a half-typed Boolean
+  ("drought AND") falls back to a phrase match instead of erroring
+  mid-keystroke. Article hits open the LOCAL reader first; keyword hits open
+  their corpus window; "Run the full Boolean search" hands off to the Search
+  tab prefilled — nothing the Search tab does is lost. A discreet Boolean
+  reminder sits at the palette's foot (hover carries the long form). +8
+  chrome strings ×12.
+
 - **Weather corroboration cards — "if this, then SUGGEST user to fetch"
   (maintainer-asked 2026-06-12).** When ≥3 collected articles mention the same
   climate-event word (curated 12-language seed vocabulary,

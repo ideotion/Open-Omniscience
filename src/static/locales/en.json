@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "Drop purely numeric terms",
   "Use built-in multilingual stoplist": "Use built-in multilingual stoplist",
   "Excluded keywords": "Excluded keywords",
-  "Search the app, jump anywhere, run an action…": "Search the app, jump anywhere, run an action…",
   "Backup & restore": "Backup & restore",
   "Download backup (.db)": "Download backup (.db)",
   "Restore from a backup file": "Restore from a backup file",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "Weather fetch refused:",
   "cached copy": "cached copy",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.",
-  "No values were returned for this variable and window.": "No values were returned for this variable and window."
+  "No values were returned for this variable and window.": "No values were returned for this variable and window.",
+  "Search your data, jump to a tool, run an action…": "Search your data, jump to a tool, run an action…",
+  "Search everything — data, tools, actions, docs…": "Search everything — data, tools, actions, docs…",
+  "Run the full Boolean search for": "Run the full Boolean search for",
+  "opens its corpus window": "opens its corpus window",
+  "article": "article",
+  "matches in total": "matches in total",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "Boolean operators work here: AND, OR, NOT, “quoted phrases”.",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network."
 }

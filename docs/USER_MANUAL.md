@@ -257,6 +257,16 @@ tool with the command palette (Ctrl/⌘-K).
   tamper-evident, signed bundle of exactly the articles matching your query (see
   [Evidence & custody](#38-evidence--custody)).
 
+**The omnibar (Ctrl/⌘-K), from anywhere:** the command palette is also a
+federated search over your data. From two typed characters it shows the first
+three hits per group — **articles** (full Boolean FTS), **keywords** (each opens
+its corpus window), **sources**, **watched Wikipedia pages** and **tracked law
+documents** — with the *true total* behind each group stated in its header.
+Everything is index-backed and searched on this machine only; a half-typed
+query is never an error. Choosing *"Run the full Boolean search"* lands you in
+this tab with the query prefilled, so every capability above stays one step
+away.
+
 ### 3.2 Collect
 
 **What it's for:** getting articles into the corpus — automatically or manually.

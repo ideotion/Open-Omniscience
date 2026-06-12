@@ -199,7 +199,6 @@
   "Drop purely numeric terms": "استبعاد المصطلحات الرقمية البحتة",
   "Use built-in multilingual stoplist": "استخدام قائمة الإيقاف متعددة اللغات المدمجة",
   "Excluded keywords": "الكلمات المفتاحية المستبعدة",
-  "Search the app, jump anywhere, run an action…": "ابحث في التطبيق، انتقل إلى أي مكان، نفّذ إجراءً…",
   "Backup & restore": "النسخ الاحتياطي والاستعادة",
   "Download backup (.db)": "تنزيل النسخة الاحتياطية (.db)",
   "Restore from a backup file": "الاستعادة من ملف نسخة احتياطية",
@@ -492,5 +491,13 @@
   "Weather fetch refused:": "رُفض جلب بيانات الطقس:",
   "cached copy": "نسخة مخزّنة مؤقتاً",
   "Open-Meteo reanalysis (CC BY 4.0): a model estimate for this place and window — corroboration, never proof.": "إعادة تحليل Open-Meteo (CC BY 4.0): تقدير نموذجي لهذا المكان والنافذة — تعزيز، وليس إثباتاً أبداً.",
-  "No values were returned for this variable and window.": "لم تُرجَع أي قيم لهذا المتغيّر وهذه النافذة."
+  "No values were returned for this variable and window.": "لم تُرجَع أي قيم لهذا المتغيّر وهذه النافذة.",
+  "Search your data, jump to a tool, run an action…": "ابحث في بياناتك، وافتح أداة، وشغّل إجراءً…",
+  "Search everything — data, tools, actions, docs…": "ابحث في كل شيء — البيانات والأدوات والإجراءات والوثائق…",
+  "Run the full Boolean search for": "تشغيل البحث البولياني الكامل عن",
+  "opens its corpus window": "يفتح نافذة المدونة الخاصة به",
+  "article": "مقال",
+  "matches in total": "نتيجة إجمالاً",
+  "Boolean operators work here: AND, OR, NOT, “quoted phrases”.": "تعمل المعاملات البوليانية هنا: AND وOR وNOT و\"العبارات المقتبسة\".",
+  "AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.": "AND وOR وNOT و\"العبارات المقتبسة\" و(الأقواس) تدقّق بحث المقالات. يجري البحث على هذا الجهاز فقط — الكتابة هنا لا تلمس الشبكة أبداً."
 }

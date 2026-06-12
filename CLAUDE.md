@@ -375,6 +375,20 @@ ruling, a contingency, or a deliberate-omission note.
   the sidebar ONLY after the Enter-popup absorbs every Search-tab capability
   (boolean queries, filters, result export, signed-evidence export, LLM
   synthesize) — the Desk lesson: never silently lose a tool.**
+  **SLICE 1 SHIPPED (T13, 2026-06-12):** /api/search/omni — index-backed
+  federation (articles FTS5 relevance-ordered, keywords via the
+  normalized-term prefix index, sources/wiki/law bounded catalogs), first
+  THREE per group with TRUE totals disclosed in the group header; half-typed
+  Booleans fall back to a phrase match (never a 400 mid-keystroke); LIKE
+  wildcards escaped. The Ctrl/⌘-K palette IS the omnibar: static
+  pages/actions/docs stay instant, live data groups append debounced +
+  sequence-guarded; article→LOCAL reader (invariant #6), keyword→the T10
+  corpus window, "Run the full Boolean search" leads to the Search tab
+  prefilled (nothing lost); discreet Boolean hint with the hover long-form;
+  +8 strings ×12 (2 placeholders reworded). REMAINING: Enter→corpus-of-
+  articles window + Advanced-search tab (absorption gate), date/period
+  search with the calendar picker, typo tolerance with honest did-you-mean,
+  events/docs-content groups.
 - **i18n & LANGUAGE UX (field report #3 + standing; SWITCHER SHIPPED T7 —
   invariant #15):** the chrome-audit burn-down is ELEVATED
   (`scripts/i18n_report.py --audit-chrome` per tab, every session, until ~0
