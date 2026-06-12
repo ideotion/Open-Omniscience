@@ -655,6 +655,18 @@ Before fearing loss from an archive-size change, run
 - **Interactive charts** (maintainer, live test): commodity/markets graphs need
   zoom (wheel/drag) + discrete per-graph adjustable legends — "the user should
   feel closer to the data". Same treatment for the Insights trend graph.
+  **GENERALIZED (maintainer 2026-06-12): DETAILED CURVES ARE SYSTEMATIC,
+  APP-WIDE.** Commodities currently render the full curve at only ONE
+  timeframe (the >6-month 5-point downsampling) — every chart on every
+  surface (commodities, markets, indices, keyword/trend graphs, future
+  corpus/keyword-window charts) renders the FULL-RESOLUTION series; no
+  arbitrary downsampling anywhere ("this is rich data, leverage it").
+  COROLLARY for sparse series (the maintainer's "3-data-point curve looks
+  sloppy"): the fix is honest rendering, never fabrication — sparse data
+  draws as POINTS/bars with the early-corpus caveat (n shown), a line only
+  when density supports it, and NEVER interpolation that fakes a smooth
+  curve through 3 points; binning (day→week) only when data supports it
+  and always labeled. One chart toolkit enforces both rules everywhere.
 - **Commodities cards detail (maintainer 2026-06-10, NEXT UP):** initial cards'
   graphs show only 5 points — they must render a detailed curve (then DROP the
   "· 5 pts" suffix as useless); detailed both axes + a legend + very discrete
