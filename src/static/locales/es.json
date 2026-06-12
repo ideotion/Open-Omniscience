@@ -436,5 +436,18 @@
   "snapshot:": "instantánea:",
   "Merge refused:": "Fusión rechazada:",
   "Merge failed:": "La fusión falló:",
-  "Preview discarded; nothing was changed.": "Vista previa descartada; no se cambió nada."
+  "Preview discarded; nothing was changed.": "Vista previa descartada; no se cambió nada.",
+  "Change language": "Cambiar idioma",
+  "English": "English",
+  "Français": "Français",
+  "Español": "Español",
+  "Deutsch": "Deutsch",
+  "中文": "中文",
+  "हिन्दी": "हिन्दी",
+  "العربية": "العربية",
+  "বাংলা": "বাংলা",
+  "Русский": "Русский",
+  "Português": "Português",
+  "Bahasa Indonesia": "Bahasa Indonesia",
+  "日本語": "日本語"
 }

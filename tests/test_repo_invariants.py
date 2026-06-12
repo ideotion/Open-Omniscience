@@ -277,3 +277,14 @@ def test_ui_invariants():
     assert "st.online" in html, (
         "scheduler responses carry network state for the immediate repaint"
     )
+    # 15. a PERMANENT language switcher lives in the top bar (ruled, RC gate):
+    #     flag = visual convention only, the NATIVE NAME is the identifier;
+    #     one click switches the whole UI via the one i18n engine.
+    assert 'id="lang-switch"' in html and 'id="lang-menu"' in html, (
+        "the permanent top-bar language switcher must exist (CLAUDE.md #15)"
+    )
+    assert "OOI18N.setLang(code)" in html, "the switcher must use THE i18n engine"
+    for native in ("Français", "中文", "العربية", "Русский", "日本語"):
+        assert native in html or native in open(
+            _SRC / "static" / "index.html", encoding="utf-8"
+        ).read(), f"native name {native!r} must appear in the menu data"

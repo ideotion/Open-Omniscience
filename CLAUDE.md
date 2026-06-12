@@ -88,6 +88,12 @@ ruling, a contingency, or a deliberate-omission note.
    markets/indices imports, wiki page add, dump start. Enforced in
    test_ui_invariants + tests/test_network_consent.py (incl. the
    socket-importer RATCHET: no new module may import requests/httpx).
+15. **A PERMANENT language switcher lives in the top bar (ruled, SHIPPED T7
+   2026-06-12):** flag = visual convention ONLY, the NATIVE NAME is the
+   identifier (flags ≠ languages); all 12 in one menu; one click switches the
+   ENTIRE UI through THE i18n engine (OOI18N.setLang); Settings select stays
+   in sync; constant footprint; RTL-aware placement. Enforced in
+   test_ui_invariants (#15).
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First
@@ -300,10 +306,8 @@ ruling, a contingency, or a deliberate-omission note.
   the sidebar ONLY after the Enter-popup absorbs every Search-tab capability
   (boolean queries, filters, result export, signed-evidence export, LLM
   synthesize) — the Desk lesson: never silently lose a tool.**
-- **i18n & LANGUAGE UX (field report #3 + standing):** a PERMANENT language
-  switcher in the top bar (top-right) — flag-styled button, all-12 menu, one
-  click translates the ENTIRE UI; flags ≠ languages ⇒ conventional flag +
-  NATIVE NAME pairs. The chrome-audit burn-down is ELEVATED
+- **i18n & LANGUAGE UX (field report #3 + standing; SWITCHER SHIPPED T7 —
+  invariant #15):** the chrome-audit burn-down is ELEVATED
   (`scripts/i18n_report.py --audit-chrome` per tab, every session, until ~0
   — the maintainer keeps hitting untranslated surfaces and "cannot test
   EVERYTHING" alone; long tail was ~473 fragments at last count). URL anchors

@@ -100,6 +100,13 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   article language (the de-tagged-English attribution noise) — evidence for
   the operator, never a silent correction.
 
+- **A permanent language switcher in the top bar.** All 12 locales in one
+  menu — conventional flag as a visual cue only, the **native name** is the
+  identifier (flags ≠ languages); one click re-translates the entire UI
+  through the one exact-match engine, keeps the Settings selector in sync,
+  and persists locally. Constant top-bar footprint; RTL-aware menu placement.
+  UI invariant #15 enforces it.
+
 - **De-US-centring the source catalog (the cycle's KEY POINT, first batch).**
   Three real defects fixed at the root: (1) `Source.country` had a silent
   `default="US"` — every source created without an explicit country was labelled
