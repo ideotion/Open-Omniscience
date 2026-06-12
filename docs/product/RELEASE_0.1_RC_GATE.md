@@ -66,6 +66,10 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 | French easter eggs (transnational, translatable) | ⬜ | SHOULD | personality.yml |
 | Tor transport-awareness in per-host verdicts + "running over Tor" manual chapter (logs pending from maintainer) | ⬜ | SHOULD | verdicts distinguish robots/Tor-refused/down |
 | Global search rework (omnibar absorbs Search tab — only after parity) | ⬜ | POST | the Desk lesson: never lose a tool |
+| Audit-07 arbitration (B0) + disclosure sweep (B1: VADER EN-only, LLM labels, lexical limits, modality, CJK honesty) | ⬜ | BLOCKING-proposed | `docs/audit/07_TRANSVERSAL_AUDIT_V01.md`; severities await maintainer |
+| Local fixity audit tool (B2 — reliable-memory turned inward) | ⬜ | SHOULD-proposed | re-hash corpus vs stored hashes, loud report |
+| 100k-article scale proof + consented-archiving design (B3) | ⬜ | SHOULD-proposed | perf-harness profile; measure first |
+| "Your lens" dashboard v1 + corpus passport (B4/A3/A2) | ⬜ | SHOULD-proposed | plural declared baselines; descriptive never corrective |
 | Indices/commodities reclassification + #commodities alias; more feeds (rare earths, LNG, cereals…) | ⬜ | SHOULD | per-index verdicts in UI |
 | Home cards → per-type investigate views | ⬜ | SHOULD | every card clickable |
 | Evidence-tiered cards remaining slices; corpus tier header | ⬜ | SHOULD | plain sentence + math, translated |
