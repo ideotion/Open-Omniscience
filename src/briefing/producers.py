@@ -1247,7 +1247,7 @@ def weather_corroboration(session) -> list[Card]:
     the bounded Open-Meteo fetch happens only from the card's button, behind
     the one consent popup (informed consent, maintainer-ruled 2026-06-12)."""
     try:
-        from src.signals.corroboration import find_weather_opportunities
+        from src.analytics.corroboration import find_weather_opportunities
 
         found = find_weather_opportunities(session)
     except Exception:  # noqa: BLE001 - a scan problem must never blank the feed

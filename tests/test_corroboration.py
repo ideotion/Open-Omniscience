@@ -84,7 +84,7 @@ def drought_cluster(client):
 def test_rules_file_is_honest_and_consistent():
     """Curated vocabulary: provenance stated, 12 languages on every rule, and
     every requested variable is one the endpoint actually allows."""
-    from src.signals.corroboration import load_rules
+    from src.analytics.corroboration import load_rules
     from src.weather.openmeteo import ALLOWED_DAILY
 
     cfg = load_rules()
@@ -101,8 +101,8 @@ def test_rules_file_is_honest_and_consistent():
 
 
 def test_engine_finds_cluster_discloses_totals(drought_cluster):
+    from src.analytics.corroboration import find_weather_opportunities
     from src.database.session import session_scope
-    from src.signals.corroboration import find_weather_opportunities
 
     with session_scope() as s:
         found = find_weather_opportunities(s, min_articles=3)
@@ -121,8 +121,8 @@ def test_engine_finds_cluster_discloses_totals(drought_cluster):
 
 
 def test_engine_below_threshold_is_silent(drought_cluster):
+    from src.analytics.corroboration import find_weather_opportunities
     from src.database.session import session_scope
-    from src.signals.corroboration import find_weather_opportunities
 
     with session_scope() as s:
         found = find_weather_opportunities(s, min_articles=4)
@@ -133,6 +133,7 @@ def test_engine_geocode_fallback_states_country_precision(client):
     """A place row with no coordinates and an unknown name falls back to the
     country stand-in point with precision 'country' — or is skipped, never
     pinned to an invented coordinate."""
+    from src.analytics.corroboration import find_weather_opportunities
     from src.database.models import (
         Article,
         ArticleMentionedPlace,
@@ -141,7 +142,6 @@ def test_engine_geocode_fallback_states_country_precision(client):
         Source,
     )
     from src.database.session import session_scope
-    from src.signals.corroboration import find_weather_opportunities
 
     today = date.today()
     with session_scope() as s:
@@ -178,7 +178,7 @@ def test_engine_geocode_fallback_states_country_precision(client):
         if ops:  # gazetteer resolved the country stand-in
             assert ops[0]["geocode"] == "country"
             assert ops[0]["rule"] == "flood"
-            assert "fr" == ops[0]["place_country"]
+            assert ops[0]["place_country"] == "fr"
         else:  # no resolvable coordinate -> honestly skipped and counted
             assert found["skipped_no_coords"] >= 1
     finally:

@@ -971,7 +971,7 @@ why** (loud degradation); it never fabricates a card.
 | **Ownership change** | investigate | deal-verb language (acquired/merger/divested) in recent news | thin |
 | **Story lineage** | context | `signals.lineage` — a near-dup cluster ordered by publication time + wire attribution | new |
 | **Coverage advisor** | context | `signals.concentration` over your sources' country/language (skew, not a cap) | new |
-| **Weather check available** | investigate | `signals.corroboration` — climate-event terms × deduced places × article dates | new |
+| **Weather check available** | investigate | `analytics.corroboration` — climate-event terms × deduced places × article dates | new |
 
 ¹ Needs the `[analysis]` extra (VADER / scipy). Without it those cards simply don't
 appear — the rest of the briefing still works.

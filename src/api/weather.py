@@ -52,7 +52,7 @@ class WeatherContextRequest(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _window_bounds(self) -> "WeatherContextRequest":
+    def _window_bounds(self) -> WeatherContextRequest:
         if self.end_date < self.start_date:
             raise ValueError("end_date must not precede start_date")
         if (self.end_date - self.start_date).days > MAX_WINDOW_DAYS:

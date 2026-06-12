@@ -503,7 +503,7 @@ ruling, a contingency, or a deliberate-omission note.
   (2026-06-12, maintainer-asked "if this then suggest user to fetch"):**
   suggest-to-fetch corroboration cards — curated 12-language climate-event
   vocabulary (configs/corroboration_rules.yml, provenance in-file) ×
-  T12 places × article dates, scanned LOCALLY (src/signals/corroboration);
+  T12 places × article dates, scanned LOCALLY (src/analytics/corroboration);
   ≥3-article clusters emit an *investigate* card stating "this card made no
   network call"; the fetch is the card's button → consent popup → ONE
   bounded slice via POST /api/weather/context through make_fetcher (kill
