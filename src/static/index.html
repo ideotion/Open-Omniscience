@@ -627,6 +627,10 @@
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
         </div>
+        <button class="icon-btn" id="lang-switch" onclick="toggleLangMenu(event)" title="Change language"
+                aria-label="Change language" aria-haspopup="menu" style="min-width:64px;gap:5px">
+          <span id="lang-flag" aria-hidden="true">🌐</span><span id="lang-code" style="font-size:12px;letter-spacing:.4px"></span>
+        </button>
         <button class="icon-btn" onclick="showTab('help')" title="Help &amp; documentation" aria-label="Help and documentation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></button>
         <a class="icon-btn" href="/docs" target="_blank" rel="noopener" title="Raw API reference (Swagger)" aria-label="Raw API reference (opens in a new tab)">
@@ -1950,6 +1954,12 @@
   <!-- Online-consent popup (maintainer-ruled): EVERY transition to online is
        consented. Lists the machine's LOCAL interface addresses (kernel tables,
        never a network call) and states honestly what the public IP is. -->
+  <!-- Permanent language switcher menu (maintainer-ruled: flags are a visual
+       convention only — the NATIVE NAME is the identifier; one click translates
+       the entire UI via the existing exact-match engine). -->
+  <div id="lang-menu" role="menu" hidden
+       style="position:fixed;z-index:300;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:70vh;overflow:auto"></div>
+
   <dialog id="net-consent" style="max-width:440px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
     <h3 style="margin:0 0 8px">Go online?</h3>
     <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
@@ -2029,6 +2039,51 @@
       if (!_bg) _bumpInflight(0);   // re-evaluate any still-pending in-flight spinner
       _ensureVitalsPoll();
     }
+    // ---- Permanent top-bar language switcher (flag = convention, native name = truth) ---- //
+    const LANGS_12 = [
+      ["en", "\u{1F1EC}\u{1F1E7}", "English"],   ["fr", "\u{1F1EB}\u{1F1F7}", "Fran\u00e7ais"],
+      ["es", "\u{1F1EA}\u{1F1F8}", "Espa\u00f1ol"],   ["de", "\u{1F1E9}\u{1F1EA}", "Deutsch"],
+      ["zh", "\u{1F1E8}\u{1F1F3}", "\u4e2d\u6587"],       ["hi", "\u{1F1EE}\u{1F1F3}", "\u0939\u093f\u0928\u094d\u0926\u0940"],
+      ["ar", "\u{1F1F8}\u{1F1E6}", "\u0627\u0644\u0639\u0631\u0628\u064a\u0629"],  ["bn", "\u{1F1E7}\u{1F1E9}", "\u09ac\u09be\u0982\u09b2\u09be"],
+      ["ru", "\u{1F1F7}\u{1F1FA}", "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"],  ["pt", "\u{1F1F5}\u{1F1F9}", "Portugu\u00eas"],
+      ["id", "\u{1F1EE}\u{1F1E9}", "Bahasa Indonesia"], ["ja", "\u{1F1EF}\u{1F1F5}", "\u65e5\u672c\u8a9e"],
+    ];
+    function _paintLangButton() {
+      const c = (window.OOI18N && OOI18N.current()) || "en";
+      const row = LANGS_12.find(l => l[0] === c) || LANGS_12[0];
+      const f = document.getElementById("lang-flag"), k = document.getElementById("lang-code");
+      if (f) f.textContent = row[1];
+      if (k) k.textContent = row[0].toUpperCase();
+    }
+    function toggleLangMenu(ev) {
+      ev.stopPropagation();
+      const menu = document.getElementById("lang-menu");
+      if (!menu.hidden) { menu.hidden = true; return; }
+      const cur = (window.OOI18N && OOI18N.current()) || "en";
+      menu.innerHTML = LANGS_12.map(([code, flag, native]) =>
+        `<div role="menuitem" tabindex="0" data-lang="${code}"
+              style="display:flex;align-items:center;gap:9px;padding:7px 12px;border-radius:7px;cursor:pointer${code === cur ? ";font-weight:700" : ""}"
+              onmouseover="this.style.background='var(--line)'" onmouseout="this.style.background=''"
+              onclick="pickLang('${code}')" onkeydown="if(event.key==='Enter'){pickLang('${code}')}">
+           <span aria-hidden="true">${flag}</span><span>${esc(native)}</span>
+           ${code === cur ? '<span style="margin-inline-start:auto">\u2713</span>' : ""}</div>`).join("");
+      const r = ev.currentTarget.getBoundingClientRect();
+      menu.style.top = (r.bottom + 6) + "px";
+      const rtl = document.documentElement.dir === "rtl";
+      menu.style.left = rtl ? (r.left) + "px" : "";
+      menu.style.right = rtl ? "" : (window.innerWidth - r.right) + "px";
+      menu.hidden = false;
+      const closer = (e) => { if (!menu.contains(e.target)) { menu.hidden = true; document.removeEventListener("click", closer, true); } };
+      document.addEventListener("click", closer, true);
+    }
+    async function pickLang(code) {
+      document.getElementById("lang-menu").hidden = true;
+      if (window.OOI18N) await OOI18N.setLang(code);
+      const sel = document.getElementById("oo-lang-select");
+      if (sel) sel.value = code;   // Settings stays in sync
+      _paintLangButton();
+    }
+    _paintLangButton();
     async function toggleNetwork() {
       const btn = $("net-toggle");
       const goingOnline = btn.classList.contains("off");

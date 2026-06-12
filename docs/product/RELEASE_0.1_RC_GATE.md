@@ -61,7 +61,7 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 | Continuous collection (per-country round-robin + first-run approval + onboarding country/language picker; explainable schedule) | ⬜ | SHOULD | consent design shared with network popup |
 | When×Where×Who extraction at ingest + backfill (confirmed GO) | ⬜ | SHOULD (substrate for convergence) | reader stops recomputing; map gains event-places |
 | Convergence detection + watch rules (the 0.0.9 flagship, layers 3+4) | ⬜ | POST (honest: too large to rush into an RC; ships in 0.1.x with its own design) | maintainer veto point |
-| Permanent top-bar language switcher (flag + native name) | ⬜ | RC-BLOCKING (reputation ×12 languages) | one click translates everything incl. dynamic strings |
+| Permanent top-bar language switcher (flag + native name) | ✅ 2026-06-12 (T7) | RC-BLOCKING (reputation ×12 languages) | shipped: 12-language menu (flag = cue, native name = identifier), one click through OOI18N.setLang (DOM re-walk + t() for dynamic strings), Settings sync, invariant #15 |
 | i18n long tail → ~0 (audit-chrome per tab) + Home-card title translation design | ⬜ | RC-BLOCKING | `i18n_report.py --audit-chrome` ≈ 0 per tab |
 | French easter eggs (transnational, translatable) | ⬜ | SHOULD | personality.yml |
 | Tor transport-awareness in per-host verdicts + "running over Tor" manual chapter (logs pending from maintainer) | ⬜ | SHOULD | verdicts distinguish robots/Tor-refused/down |
