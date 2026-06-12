@@ -164,13 +164,13 @@ ruling, a contingency, or a deliberate-omission note.
   of a 32 s wall; read small denormalisable facts via covering indexes or a
   one-pass Python map instead. FastAPI JSONResponse uses COMPACT JSON
   separators — streamed JSON must pass separators=(",",":") for byte parity.
-- **DB-RELIABILITY BATCH — REMAINING RIDERS (core SHIPPED, see batch log):**
-  D1/D4 state-into-DB migrations (settings/annotations/event-imports →
-  tables; agenda subs server-side), Settings restore-preview UI on the
-  /api/backup/v2 endpoints (+locale keys), signing-key re-wrap inside the
-  encrypt tool, launcher/installer passphrase prompt wiring (whiptail box +
-  plain fallback, confirm twice, honest lost-passphrase warning, optional
-  plaintext skip with stated risk). Legacy endpoints stay until the UI swaps.
+- **DB-RELIABILITY BATCH — REMAINING RIDERS (core SHIPPED; the Settings
+  restore-preview UI SHIPPED in T6, 2026-06-12 — v2 flow primary, legacy
+  demoted-not-removed):** D1/D4 state-into-DB migrations (settings/
+  annotations/event-imports → tables; agenda subs server-side), signing-key
+  re-wrap inside the encrypt tool, launcher/installer passphrase prompt
+  wiring (whiptail box + plain fallback, confirm twice, honest
+  lost-passphrase warning, optional plaintext skip with stated risk).
   **The NEWSLETTER SCRAPER stays blocked until these riders ship AND the
   no-recovery contingency is revisited** (see Non-negotiables).
 - **FULL-AUDIT REMEDIATION QUEUE (from `docs/audit/06_FULL_AUDIT_0_0_9.md`,
