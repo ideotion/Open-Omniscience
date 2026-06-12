@@ -371,5 +371,7 @@
   "Compacting… this can take a while on a large corpus.": "कॉम्पैक्ट हो रहा है… बड़े कॉर्पस पर समय लग सकता है।",
   "Compacted.": "कॉम्पैक्ट पूर्ण।",
   "Space freed:": "खाली हुआ स्थान:",
-  "Compaction failed:": "कॉम्पैक्ट विफल:"
+  "Compaction failed:": "कॉम्पैक्ट विफल:",
+  "Download performance report (.json)": "प्रदर्शन रिपोर्ट डाउनलोड करें (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "प्रदर्शन रिपोर्ट में इस मशीन के वास्तविक प्रमाण होते हैं: ऐप शुरू होने के बाद से आपके वास्तविक उपयोग के प्रति-एंडपॉइंट प्रतिक्रिया समय, संग्रहण और मेमोरी तथ्य, और आपके वास्तविक कॉर्पस के भारी दृश्यों का एक त्वरित समयबद्ध स्व-परीक्षण। केवल स्थानीय; कुछ सेकंड लगते हैं और कुछ भी प्रेषित नहीं होता।"
 }

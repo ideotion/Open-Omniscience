@@ -64,6 +64,13 @@ jobs:
         continue-on-error: true  # advisory until the legacy style debt is burned down
 
       - name: Migration drift (models vs Alembic baseline)
+        # The CI database is a fresh throwaway file; since at-rest encryption
+        # became the default (PR-E), creating a store without a passphrase
+        # requires the EXPLICIT plaintext opt-out — which is exactly what this
+        # is. Real installs are unaffected (the unlock flow supplies THE
+        # passphrase). This step was the silent red on 0.09 since 2026-06-11.
+        env:
+          OO_DB_PLAINTEXT: "1"
         run: |
           alembic upgrade head
           alembic check

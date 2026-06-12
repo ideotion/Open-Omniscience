@@ -371,5 +371,7 @@
   "Compacting… this can take a while on a large corpus.": "Compacting… this can take a while on a large corpus.",
   "Compacted.": "Compacted.",
   "Space freed:": "Space freed:",
-  "Compaction failed:": "Compaction failed:"
+  "Compaction failed:": "Compaction failed:",
+  "Download performance report (.json)": "Download performance report (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted."
 }

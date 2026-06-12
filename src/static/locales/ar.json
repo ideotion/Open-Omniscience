@@ -371,5 +371,7 @@
   "Compacting… this can take a while on a large corpus.": "جارٍ الضغط… قد يستغرق وقتًا مع مجموعة كبيرة.",
   "Compacted.": "اكتمل الضغط.",
   "Space freed:": "المساحة المحررة:",
-  "Compaction failed:": "فشل الضغط:"
+  "Compaction failed:": "فشل الضغط:",
+  "Download performance report (.json)": "تنزيل تقرير الأداء (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "يحمل تقرير الأداء أدلة حقيقية من هذا الجهاز: أزمنة الاستجابة لكل نقطة وصول من استخدامك الفعلي منذ بدء التطبيق، وحقائق التخزين والذاكرة، واختبارًا ذاتيًا موقوتًا سريعًا للعروض الثقيلة على مجموعتك الحقيقية. محلي فقط؛ يستغرق ثوانٍ ولا يُرسل شيء."
 }

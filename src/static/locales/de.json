@@ -371,5 +371,7 @@
   "Compacting… this can take a while on a large corpus.": "Kompaktierung… bei einem großen Korpus kann das dauern.",
   "Compacted.": "Kompaktiert.",
   "Space freed:": "Freigegebener Speicherplatz:",
-  "Compaction failed:": "Kompaktierung fehlgeschlagen:"
+  "Compaction failed:": "Kompaktierung fehlgeschlagen:",
+  "Download performance report (.json)": "Performance-Bericht herunterladen (.json)",
+  "The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.": "Der Performance-Bericht enthält echte Belege dieser Maschine: Antwortzeiten pro Endpoint aus Ihrer tatsächlichen Nutzung seit dem Start, Speicher- und Datenbankfakten sowie einen kurzen, gemessenen Selbsttest der schweren Ansichten über Ihren echten Korpus. Nur lokal; dauert wenige Sekunden, nichts wird übertragen."
 }
