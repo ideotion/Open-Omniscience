@@ -813,3 +813,64 @@ first (a starter set: CPI, unemployment, GDP, population from ~10 producers
 across 5 continents?); vintage depth (all revisions vs first+latest);
 SDMX needs an XML/JSON parser dependency — acceptable; storage budget at
 the reference VM scale.
+
+---
+
+## Open-Meteo weather context — the When×Where corroboration layer (maintainer concept 2026-06-12; designed-only)
+
+**The ask (recorded):** ingest Open-Meteo data into the when/where/who
+approach — when articles talk about a drought, the claim might be checked
+against this additional source. Keywords extracted from the DATA
+automatically, associated with dates and locations; present in the back,
+brought to the user's attention.
+
+**HONEST OPINION FIRST (assistant, as asked):** "ingest the entire dataset"
+is the one part to amend. Open-Meteo's historical archive is a global,
+hourly, multi-variable GRIDDED REANALYSIS (ECMWF ERA5-based) — terabytes;
+mirroring it contradicts local-first on the reference 2-core VM and would
+duplicate a public archive for no analytical gain. The RATIONAL inversion:
+**the corpus drives the weather, not the reverse.** T12 just persisted
+exactly the keys needed — article_mentioned_places × mentioned dates — so
+the app fetches bounded (place, window) SLICES on demand, caches them
+locally, and grows its weather shadow only where the corpus looks. Value
+stays, cost collapses, and every cached slice is provenanced.
+
+**Honesty constraints specific to this source:**
+- Open-Meteo historical = REANALYSIS: a model assimilating observations,
+  not raw station readings — provenance must say "ERA5 reanalysis via
+  Open-Meteo, grid ~25 km (11 km ERA5-Land)", and grid-cell vs city-point
+  mismatch is stated.
+- **"Confirm" is the wrong verb** — the layer CORROBORATES or shows
+  tension, never confirms: "12 articles mention drought in X during May;
+  the reanalysis shows precipitation at 31% of the 1991–2020 baseline over
+  the prior 90 days (method, n)". Consistency of evidence, not truth.
+- Anomalies, not raw values: drought-like signals need a STATED baseline
+  (e.g., 1991–2020 climatology) and window; raw millimetres mislead.
+
+**Keywords FROM data (the automatic extraction, ruled by explicit rules):**
+threshold crossings on anomaly series generate DEDUCED signal-keywords —
+"drought-conditions", "heat-anomaly", "extreme-precipitation" — each
+carrying the exact rule note ("precip < 40% of baseline over 90 d"), the
+(date, place) anchor BY CONSTRUCTION, extractor="open-meteo-derived", and a
+distinct kind ("signal") so they never silently mix with text-extracted
+keywords; ×12 display names via the locale mechanism. The When×Where×Who
+joins then come free: text says drought (WHO said it) × data shows deficit
+(measured) — the convergence engine's first cross-domain corroboration pair.
+
+**Surfacing (back-stage by default, attention when it earns it):**
+- The READER's deduced block gains a "weather context" row for articles
+  with place+date (cached slice; consented fetch when absent).
+- A Home producer: corpus-claim × data-signal co-occurrences ("drought
+  mentions cluster in X while the deficit signal is active") — counts, n,
+  method, the correlation≠causation line; CardSchemaError discipline.
+- The temporal map can overlay the signal layer; the corpus window's Trend
+  tab can overlay the anomaly series (ooChart multi-series exists).
+- Never auto-fetched at boot; the collect pass gains an OPT-IN weather
+  layer; every fetch is a visible job under the consent framework; the
+  socket perimeter extends via the guarded path, not a new importer.
+
+**QUESTIONS FOR THE MAINTAINER (answer later):** variables first
+(precipitation, temperature, soil moisture?); baseline period (1991–2020?);
+cache budget per corpus place; ToS posture (Open-Meteo is free
+non-commercial, no key — fits, but stated); should signal-keywords feed
+trends by default or as a toggleable layer (the wiki-mixing question again)?
