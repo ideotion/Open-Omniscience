@@ -565,6 +565,28 @@ locally; no telemetry.
   counts and structures only, never scores.
 - **Safety & at-risk use:** tools for journalists working under pressure, each
   labelled with its **honest limit**:
+  - **At-rest encryption (default for new corpora).** New databases are
+    SQLCipher-4-encrypted on disk: at every start the app asks for **THE
+    passphrase** — one stable secret, like a user ID (`OO_DB_PASSPHRASE` for
+    scripted/headless runs). **There is no recovery and no decryption
+    alternative**: a lost passphrase costs re-collection time, because the
+    corpus is rebuilt from the web — it holds nothing personal beyond what was
+    scraped and deduced from public sources. Existing plaintext corpora keep
+    working untouched; **Settings → Safety → "Encrypt this corpus…"** converts
+    one *in place* (explicit consent, full verification before the swap, and a
+    deliberate plaintext snapshot kept as your escape hatch — delete it once
+    you've unlocked successfully). The **doctor** (`GET /api/system/doctor`,
+    and the same panel) attests the *real* state of every store by reading the
+    file headers — corpus, custody log, signing keys — never by assumption.
+    **The honest limit:** at-rest encryption protects a *seized or copied
+    file*. It cannot protect a compromised running session (the key lives in
+    memory while the app runs), and it is independent of full-disk encryption
+    only if the two passphrases differ. Plaintext operation remains available
+    as an explicit choice (`OO_DB_PLAINTEXT=1`) — the app never shows a lock
+    screen over a plaintext file, because that would be fabricated security.
+    Backups from an encrypted corpus work unchanged: artifact members are
+    portable, the encrypted artifact's own envelope protects them at rest,
+    and restores preserve your corpus's encryption (verified by tests).
   - **Encrypted backup** — a passphrase-protected snapshot (AES-256-GCM + scrypt).
     A lost or wrong passphrase means the file cannot be opened: there is no recovery.
     **Encrypted restore** decrypts, validates and replaces the corpus (a tampered or

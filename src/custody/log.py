@@ -137,7 +137,20 @@ class CustodyLog:
                 anchoring_mode = prefs.anchoring_mode
         self.signer = signer
         self.anchoring_mode = anchoring_mode
-        self.conn = sqlite3.connect(db_path)
+        # The one connection factory: opens encrypted custody logs with THE
+        # passphrase (D6 -- one secret covers both stores), plaintext ones as
+        # before. A FRESH custody log follows the main store's at-rest state,
+        # so a plaintext-opt-out setup never hits a lock on first custody use.
+        from src.database.connect import connect as _db_connect
+        from src.database.connect import get_passphrase, is_encrypted_file
+
+        create_enc: bool | None = None
+        if get_passphrase() is None:
+            from src.paths import data_dir as _dd
+
+            if is_encrypted_file(_dd() / "open_omniscience.db") is False:
+                create_enc = False
+        self.conn = _db_connect(self.db_path, create_encrypted=create_enc)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self._init_db()
 

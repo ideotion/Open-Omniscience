@@ -48,13 +48,21 @@ _IS_SQLITE = DATABASE_URL.startswith("sqlite")
 def _build_engine() -> Engine:
     """Create the SQLAlchemy engine with backend-appropriate settings."""
     if _IS_SQLITE:
-        # check_same_thread=False is safe here because sessions are request/operation
-        # scoped (see module docstring), not shared globally across threads.
-        return create_engine(
-            DATABASE_URL,
-            future=True,
-            connect_args={"check_same_thread": False, "timeout": 30},
-        )
+        # Every connection comes from the ONE factory (src/database/connect.py),
+        # which opens the file per its real at-rest state: SQLCipher + PRAGMA key
+        # when encrypted (the ruled default), stdlib sqlite3 when plaintext, and
+        # a loud DatabaseLockedError while an encrypted store awaits its
+        # passphrase. The URL is kept so engine.url.database stays truthful.
+        # check_same_thread=False is safe here because sessions are
+        # request/operation scoped (see module docstring), not shared globally.
+        db_path = DATABASE_URL.removeprefix("sqlite:///")
+
+        def _creator():
+            from src.database.connect import connect
+
+            return connect(db_path, check_same_thread=False, timeout=30)
+
+        return create_engine(DATABASE_URL, future=True, creator=_creator)
     # PostgreSQL / other: modest pool suitable for a single-user server.
     return create_engine(
         DATABASE_URL,

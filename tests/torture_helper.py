@@ -136,7 +136,9 @@ def cmd_build(args) -> None:
             log.record("article:shared", _h(SHARED_BODY), "ingest", actor="op")
             log.record("article:uniq", _h(f"unique-to-{mode} body text"), "ingest", actor="op")
         if args.custody == "tampered":
-            con = sqlite3.connect(str(data_dir() / "custody_log.db"))
+            from src.database.connect import connect as db_connect
+
+            con = db_connect(data_dir() / "custody_log.db")
             con.execute("UPDATE custody_entries SET item_hash = ? WHERE seq = 1", ("f" * 64,))
             con.commit()
             con.close()
@@ -215,10 +217,11 @@ _DUMP_SIGNATURES = {
 
 def cmd_dump(_args) -> None:
     from src.backup.sqlite_backup import live_db_path
+    from src.database.connect import connect as db_connect
     from src.database.session import init_db
 
     init_db()
-    con = sqlite3.connect(str(live_db_path()))
+    con = db_connect(live_db_path())  # factory: opens encrypted stores too
     out = {}
     for table, sql in _DUMP_SIGNATURES.items():
         rows = sorted(r[0] for r in con.execute(sql).fetchall())
@@ -230,10 +233,11 @@ def cmd_dump(_args) -> None:
 
 def cmd_fts_find(args) -> None:
     from src.backup.sqlite_backup import live_db_path
+    from src.database.connect import connect as db_connect
     from src.database.session import init_db
 
     init_db()
-    con = sqlite3.connect(str(live_db_path()))
+    con = db_connect(live_db_path())
     n = con.execute(
         "SELECT COUNT(*) FROM article_fts WHERE article_fts MATCH ?", (args.token,)
     ).fetchone()[0]
@@ -249,7 +253,9 @@ def cmd_verify_custody(_args) -> None:
         ok, problems = log.verify()
     imported = []
     db = data_dir() / "custody_log.db"
-    con = sqlite3.connect(str(db))
+    from src.database.connect import connect as db_connect
+
+    con = db_connect(db)
     try:
         has = con.execute(
             "SELECT 1 FROM sqlite_master WHERE name='custody_imported_entries'"

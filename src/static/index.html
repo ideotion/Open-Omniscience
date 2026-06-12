@@ -1737,6 +1737,32 @@
       <p class="muted" style="margin-top:0">For journalists working under pressure. These tools are
         honest about their limits — read each note. Everything stays on this machine.</p>
 
+      <h3 style="margin-bottom:6px">At-rest encryption</h3>
+      <div id="atrest-state" class="hint">Checking…</div>
+      <p class="muted" style="margin-top:6px"><span>At-rest encryption protects a seized or copied file.</span>
+        <span>It cannot protect a compromised running session.</span></p>
+      <details id="atrest-encrypt" style="display:none">
+        <summary>Encrypt this corpus…</summary>
+        <div class="note-amber" style="border:1px dashed var(--warn);border-radius:8px;padding:8px 10px;margin:8px 0">
+          <b>Choose something unique and remember it.</b>
+          <span>There is no recovery and no decryption alternative.</span>
+          <span>A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.</span>
+        </div>
+        <div class="row">
+          <div style="flex:1"><label for="atrest-pw1">Passphrase</label>
+            <input id="atrest-pw1" type="password" autocomplete="new-password"></div>
+          <div style="flex:1"><label for="atrest-pw2">Confirm passphrase</label>
+            <input id="atrest-pw2" type="password" autocomplete="new-password"></div>
+        </div>
+        <label class="switch" style="margin-top:8px"><input type="checkbox" id="atrest-consent">
+          I understand there is no recovery</label>
+        <div class="row" style="margin-top:8px">
+          <button class="danger" onclick="encryptCorpus(this)">Encrypt corpus &amp; custody log</button>
+          <div id="atrest-msg" class="hint" style="align-self:center"></div>
+        </div>
+      </details>
+
+      <hr>
       <h3 style="margin-bottom:6px">Encrypted backup</h3>
       <p class="muted" style="margin-top:0">An encrypted snapshot of the whole corpus
         (AES-256-GCM + scrypt). A lost or wrong passphrase means the file cannot be opened —
@@ -2084,6 +2110,7 @@
         });
         const text = await res.text();
         let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+        if (res.status === 503 && data && data.locked) { location.href = "/unlock"; throw new Error(data.detail); }
         if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
         return data;
       } finally { _bumpInflight(-1); }
@@ -2250,6 +2277,7 @@
         v.style.display = (v.id === "set-" + cat) ? "" : "none");
       if (cat === "appearance") buildDrawer();      // (re)paint theme/accent/module state
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
+      if (cat === "safety") loadAtRestState();       // honest at-rest attestation (doctor)
     }
     function buildDrawer() {
       const ui = getUi();
@@ -3349,6 +3377,36 @@
         toast("Save failed: " + e.message, "err");
       }
     }
+    // -- At-rest encryption (PR-E): doctor attestation + one-way encrypt ----- //
+    async function loadAtRestState() {
+      const box = $("atrest-state"); if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const d = await api("/api/system/doctor");
+        const word = (s) => s.state === "encrypted" ? t("Encrypted (SQLCipher 4)")
+                          : s.state === "plaintext" ? t("NOT encrypted") : t("not created yet");
+        box.innerHTML =
+          `<div>${esc(t("Corpus"))}: <b>${esc(word(d.corpus))}</b>` +
+          (d.corpus.cipher ? ` <span class="muted">${esc(d.corpus.cipher)}</span>` : "") + `</div>` +
+          `<div>${esc(t("Custody log"))}: <b>${esc(word(d.custody_log))}</b></div>`;
+        $("atrest-encrypt").style.display = d.corpus.state === "plaintext" ? "" : "none";
+      } catch (e) { box.textContent = e.message; }
+    }
+    async function encryptCorpus(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const msg = $("atrest-msg");
+      if (!$("atrest-consent").checked) { msg.textContent = t("Tick the consent box first."); return; }
+      btn.disabled = true; msg.textContent = t("Encrypting — this rewrites the whole database…");
+      try {
+        const r = await api("/api/system/encrypt-db", { method: "POST", body: JSON.stringify({
+          passphrase: $("atrest-pw1").value, confirm: $("atrest-pw2").value, consent: true })});
+        msg.textContent = "";
+        toast(t("Encrypted. Your passphrase is now required at every start — there is no recovery."), "ok");
+        loadAtRestState();
+      } catch (e) { msg.textContent = e.message; }
+      finally { btn.disabled = false; }
+    }
+
     async function encryptedBackup() {
       const pass = $("enc-pass").value;
       if (!pass) { toast("Enter a passphrase first.", "err"); return; }

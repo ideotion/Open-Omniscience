@@ -42,6 +42,11 @@ dependencies = [
     # Data / ORM
     "sqlalchemy>=2.0.30",
     "alembic>=1.13",
+    # At-rest encryption (maintainer-ruled default): SQLCipher 4 via self-
+    # contained wheels on Linux/Windows/macOS (verified: gate zero + the 3-OS
+    # CI smoke job). Plaintext stores still open via stdlib sqlite3 -- the
+    # driver engages only for encrypted files (src/database/connect.py).
+    "sqlcipher3>=0.6.2",
     # Ingestion
     "requests>=2.31",
     "httpx>=0.27",

@@ -456,7 +456,26 @@ Before fearing loss from an archive-size change, run
   (3) TOR FIELD TEST (DispVM, Tor-only connection): only DJIA imported —
   NARROWS the world-indices item: provider Tor-exit blocking compounds
   robots fail-closed; maintainer sends logs (analyze per-host verdicts on
-  arrival). RULINGS RECORDED: NEVER silently downgrade transport (no
+  arrival). **LOGS ANALYZED (2026-06-12, preflight + debug bundle):** the
+  Tor story is SUBTLER than uniform blocking — (a) FRED is NOT Tor-hostile
+  as a class: in one run 21/28 commodity series imported 8,453 points
+  while 7 failed with connection errors, and an earlier run failed 28/28
+  then recovered ⇒ INTERMITTENT per-connection exit refusals ⇒ fix =
+  feed-level retry/backoff + a "retry failed feeds" affordance +
+  transport-aware verdict wording, NOT catalog removal; (b) GOLD/SILVER/
+  SAWNWOOD are HTTP 404 = DEAD FRED series ids (PGOLDUSDM/PSILVUSDM/
+  PSAWMUSDM discontinued upstream) ⇒ catalog replacement task, ids to be
+  verified on clearnet; (c) webcal.guru robots-DISALLOWS its download
+  paths — host policy, transport-independent, the honest verdict stands;
+  (d) raw.githubusercontent/space.floern robots fetches failed over Tor ⇒
+  fail-closed engaged exactly as designed; cantonbecker.com was a DNS
+  resolution failure; (e) sources: 32/50 OK OVER TOR, 9 robots_denied
+  (reuters/economist/lefigaro/cnbc… — policy, respected on any transport),
+  9 unreachable (bloomberg/ft/afp/elpais… — the CDN Tor-exit-refusal
+  class); (f) the overnight Tor run GREW the corpus to 6,398 articles /
+  227.7k keywords / 10,966 price points — the pipeline genuinely works
+  over Tor; 148 of 175 logged errors are routine trafilatura extraction
+  noise. RULINGS RECORDED: NEVER silently downgrade transport (no
   Tor→clearnet fallback without explicit consent — that is a
   deanonymization, not a retry); per-host verdicts gain TRANSPORT-
   AWARENESS ("refused over Tor" distinct from "robots disallows" and
@@ -480,7 +499,19 @@ Before fearing loss from an archive-size change, run
   stronger when When×Where×Who ingest persistence lands. Date-focused,
   event-focused AND agenda-focused approaches are all welcomed in the UI
   (maintainer's framing adopted).
-- **Agenda views (maintainer 2026-06-10; RECONFIRMED 2026-06-11; RULED AGAIN
+- **PERFORMANCE BATCH (maintainer 2026-06-12, live: "the app is getting very
+  slow, we should think of a better data management background"; the keyword
+  diagnostics download FAILED at real scale — 6.4k articles / 228k keywords /
+  243 MB):** prime suspect for the export failure is /api/diagnostics/
+  keywords' full GROUP-BY aggregation over keywords×mentions BEFORE the
+  per-language cap (the 5000 cap bounds output, not work). Queue: profile
+  the hot endpoints against a real-scale corpus (the maintainer's bundle
+  gives the shape); persist/precompute keyword totals or add a covering
+  index on keyword_mentions(keyword_id, count, article_id, observed_on);
+  stream/paginate the diagnostics export + statement timeouts; PRAGMA
+  optimize/ANALYZE at boot; cached counts for vitals/Library; VACUUM tool
+  in Settings. Sits naturally with the task-manager batch (one "data
+  management background" story, the maintainer's framing).
   same day — "I personally really don't like the agenda view"): FIRST SLICE
   SHIPPED 2026-06-11 under the new data-first principle (UI invariant #8):**
   the Agenda tab is now a pure data surface — MONTH GRID is the default view
@@ -747,10 +778,44 @@ Before fearing loss from an archive-size change, run
   (FK remap proven, XAU disagreement reported with both values); T8 FTS
   truth; T9 custody verified-not-trusted; T10 settings sanctity; symmetry
   holds outside reported conflicts BY DESIGN. Full suite 953 passed.
-  REMAINING IN BATCH: PR-E SQLCipher (NEXT, fresh session — crypto + unlock
-  UX + doctor + encrypt tool SHIP TOGETHER per the honesty gate) → then the
-  D1/D4 state-into-DB migrations, the Settings restore-preview UI + locale
-  keys ×12, USER_MANUAL chapter; legacy endpoints stay until the UI swaps.
+  **PR-E SQLCIPHER SHIPPED (2026-06-12, the dedicated session the ruling
+  reserved; crypto + unlock UX + doctor + encrypt tool in ONE PR per the
+  honesty gate):** sqlcipher3>=0.6.2 core dep; ONE connection factory
+  src/database/connect.py — per-FILE header detection (encrypted→driver+
+  PRAGMA key; plaintext→stdlib unchanged; fresh→ENCRYPTED BY DEFAULT;
+  precedence: explicit caller key > OO_DB_PLAINTEXT opt-out > holder
+  passphrase > LOCKED; WrongPassphraseError/DatabaseLockedError loud and
+  typed); engine creator, custody log (a fresh custody log FOLLOWS the
+  main store's state), merge engine, backups and torture helper all routed
+  through it. EMPIRICAL FACT RECORDED: SQLCipher's backup API cannot cross
+  key boundaries — sqlcipher_export does ⇒ TWO intentional snapshot
+  helpers: snapshot_to_plaintext (portable artifact members; the
+  artifact's own envelope is their protection) vs snapshot_preserving
+  (working copies + pre-restore nets STAY ciphertext — a restore must
+  never silently decrypt; the legacy replace-restore re-encrypts the
+  validated upload before the swap). Locked boot: lifespan defers startup;
+  middleware answers 503 {locked:true} and 307s / → /unlock; the Console
+  api() self-redirects; /unlock page (self-contained, offline, i18n'd)
+  carries the verbatim no-recovery note + threat model; endpoints
+  lock-state/unlock/create-db/encrypt-db + GET /api/system/doctor
+  (header-read attestation per store + cipher version + threat model);
+  one-way encrypt tool (src/database/encrypt_tool.py + scripts/
+  encrypt_db.py + Settings→Safety panel with consent + the DELIBERATE
+  plaintext escape-hatch snapshot); OO_DB_PASSPHRASE headless;
+  OO_DB_PLAINTEXT=1 explicit opt-out (the test suite's default — crypto
+  tests opt back in); D6 key-wrap fallback: OO_KEY_PASSPHRASE defaults to
+  THE passphrase, with STATE-TOLERANT key loading (legacy plaintext keys
+  keep loading after encryption — wrapped only by explicit re-key;
+  key_protection reports the FILE's real state); +29 locale keys ×12 (359
+  total); USER_MANUAL §Safety chapter. TESTS: 8-test PR-E suite incl.
+  subprocess boot states (fresh→create→locked→wrong-403→unlock→env
+  headless) and THE CROWN: an encrypted corpus backs up (plaintext members
+  inside the encrypted artifact), merges a foreign artifact, and is STILL
+  ciphertext after the swap with ciphertext pre-restore nets.
+  REMAINING IN BATCH: D1/D4 state-into-DB migrations, Settings
+  restore-preview UI on the v2 endpoints, signing-key re-wrap inside the
+  encrypt tool, launcher/installer passphrase prompt wiring; legacy
+  endpoints stay until the UI swaps.
 - **Backup redesign** (maintainer, ruled): encryption is the DEFAULT flow
   (Download backup -> passphrase -> download; Browse -> passphrase -> restore);
   restore must be NON-DESTRUCTIVE (merge, never replace) with bit-level

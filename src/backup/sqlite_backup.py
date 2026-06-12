@@ -74,25 +74,17 @@ def live_db_path() -> Path:
 
 
 def backup_to(dest: Path) -> Path:
-    """Write a consistent snapshot of the live database to ``dest``.
+    """Write a consistent PLAINTEXT snapshot of the live database to ``dest``.
 
-    Uses the online backup API so the snapshot is valid even with concurrent
-    readers/writers and an active WAL. Returns ``dest``.
+    Plaintext source: the online backup API (WAL-safe, page-consistent).
+    Encrypted source: ``sqlcipher_export`` into a plaintext target -- the
+    backup API cannot cross an encryption boundary (verified empirically).
+    Callers that need the snapshot to KEEP the live encryption state (working
+    copies, pre-restore safety nets) use ``connect.snapshot_preserving``.
     """
-    src_path = live_db_path()
-    dest = Path(dest)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    # Connect to the real file (not through SQLAlchemy) for the backup API.
-    src_conn = sqlite3.connect(str(src_path))
-    try:
-        dst_conn = sqlite3.connect(str(dest))
-        try:
-            src_conn.backup(dst_conn)  # atomic, page-consistent copy
-        finally:
-            dst_conn.close()
-    finally:
-        src_conn.close()
-    return dest
+    from src.database.connect import snapshot_to_plaintext
+
+    return snapshot_to_plaintext(live_db_path(), Path(dest))
 
 
 def validate_sqlite_file(path: Path) -> int:
@@ -105,6 +97,14 @@ def validate_sqlite_file(path: Path) -> int:
     path = Path(path)
     if not path.exists() or path.stat().st_size == 0:
         raise BackupError("uploaded file is empty or missing")
+    from src.database.connect import is_encrypted_file
+
+    if is_encrypted_file(path):
+        raise BackupError(
+            "this file is an ENCRYPTED database (raw SQLCipher bytes). Restore the "
+            ".oobak.ooenc backup artifact instead -- raw encrypted files cannot be "
+            "validated or merged without their original context"
+        )
     try:
         # Read-only URI connection: never mutate the candidate file.
         conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
@@ -155,10 +155,29 @@ def restore_from_bytes(data: bytes) -> RestoreReport:
         # 2. Validate BEFORE touching the live file.
         tables_seen = validate_sqlite_file(tmp_path)
 
-        # 3. Snapshot the current corpus so a bad restore is recoverable.
+        # 2b. An encrypted corpus must STAY encrypted: re-encrypt the validated
+        # plaintext upload under THE passphrase before it can become the live
+        # file (a replace-restore must never silently decrypt the store).
+        from src.database.connect import is_encrypted_file, reencrypt_plain_to
+
+        if is_encrypted_file(target):
+            from src.database.connect import get_passphrase
+
+            key = get_passphrase()
+            if not key:
+                raise BackupError("the live database is encrypted and locked")
+            enc_tmp = tmp_path.with_name(tmp_path.name + ".enc")
+            reencrypt_plain_to(tmp_path, enc_tmp, key)
+            tmp_path.unlink()
+            tmp_path = enc_tmp
+
+        # 3. Snapshot the current corpus so a bad restore is recoverable --
+        # preserving its at-rest state (ciphertext stays ciphertext on disk).
+        from src.database.connect import snapshot_preserving
+
         ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         snapshot = data_dir / f"pre-restore-{ts}.db"
-        backup_to(snapshot)
+        snapshot_preserving(target, snapshot)
 
         # 4. Release pooled connections, then swap files atomically.
         dispose_engine()
