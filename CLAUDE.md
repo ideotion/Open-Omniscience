@@ -275,7 +275,12 @@ ruling, a contingency, or a deliberate-omission note.
   "Tasks & collection": jobs list with progress bars + Stop/Pause/Cancel
   (collect-stop states the kill-switch side effect — informed consent), the
   collection detail, vitals as the bottom row. ARBITRATION ASK shipped for
-  collect run-now (busy_with listed; proceed-or-wait). REMAINING from the
+  collect run-now (busy_with listed; proceed-or-wait). **PARALLEL ACROSS
+  KINDS (maintainer-amended same day): collecting articles WHILE a wiki dump
+  downloads is BY DESIGN — a dump writes a FILE, collection writes the DB;
+  no writer-lock contention — so the ask fires ONLY on DB-writer collisions
+  (collect/import kinds); dumps keep their own single-download reorderable
+  queue among themselves (bandwidth arbitration, not a cross-kind block).** REMAINING from the
   original ask (maintainer REPEAT ×2 context preserved): the
   vitals panel becomes minimized animated indicators; CLICK opens a dedicated
   OS-style task-manager window: what scrapes next, wiki-dump progress, queued

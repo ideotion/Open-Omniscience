@@ -149,6 +149,10 @@ def test_jobs_view_aggregates_dumps_with_queue_positions(client, monkeypatch, tm
     mgr.start("fr")
     body = client.get("/api/jobs").json()
     assert body["network_busy"] is True
+    # PARALLEL ACROSS KINDS: a downloading dump must NOT trigger the
+    # arbitration ask -- collection writes the DB, the dump writes a file.
+    assert body["db_writers_busy"] is False
+    assert body["busy_with"] == []
     by_id = {j["id"]: j for j in body["jobs"]}
     assert by_id["dump:en:pages-articles"]["state"] == "running"
     fr = by_id["dump:fr:pages-articles"]
