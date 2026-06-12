@@ -702,3 +702,40 @@ watched/ingested) or offers to WATCH the page (consented fetch) — never an
 silent external jump (invariant #6/#7 apply). Builds on the
 Wikipedia-as-living-source design; the event→page mapping ships as data
 (per-locale page titles where they exist), with the usual provenance.
+
+
+---
+
+## Lunar-effects testing framework (maintainer concept 2026-06-12; series shipped, framework designed)
+
+**The ask (recorded):** people around the maintainer are certain the moon
+affects mood; old agricultural practice plants/harvests by waxing/waning.
+The app should let users TEST such concepts against large datasets of
+potential correlations between astronomical events and earth events.
+
+**SHIPPED same day:** the daily lunar-phase series
+(`/api/events/astronomy/lunar-series`): synodic age, illuminated fraction
+(age approximation, ~2% — method stated), waxing/waning flag — one honest
+variable derived from the verified Meeus engine, carrying the
+correlation≠causation caveat in its own payload.
+
+**The framework (designed; the scientific discipline is the product):**
+- Correlate ANY daily series in the app (keyword mention volume, article
+  counts, hazard counts, commodity prices) against the lunar series:
+  Pearson/Spearman + a phase-bucket contrast (full±2d vs new±2d), always
+  with n, p-value, effect size, method — the existing /api/analysis tools.
+- **Multiple-comparisons control is NON-OPTIONAL for screening**: testing
+  many series against the moon guarantees spurious hits; a screening run
+  must apply Benjamini–Hochberg FDR (already queued for evidence tiers) and
+  SAY how many tests were run. One-off tests state the same risk.
+- **Pre-registration spirit**: the UI invites the user to state the
+  hypothesis (which series, which phase contrast, which window) BEFORE
+  running; the report records it verbatim (the methods-appendix pattern).
+- **The honest posture**: the app neither endorses nor debunks — it runs
+  the user's test on the user's data and reports real statistics. Published
+  large-N studies on lunar effects (sleep, mood, births) mostly find null
+  or tiny effects; the app must NOT bake that prior in — the user's corpus
+  speaks for itself, with the stats discipline keeping it honest.
+- Agricultural calendars (waxing/waning planting rules) become testable the
+  same way once yield/series data exists locally; the lunar series is the
+  shared substrate.

@@ -97,3 +97,29 @@ def test_climate_endpoint_carries_provenance_and_verification_flag():
         astro = c.get("/api/events/astronomy?year=2026").json()
         assert len(astro["seasons"]) == 4
         assert "hemispheres" in astro["seasons_naming"]
+
+
+def test_lunar_phase_series_is_honest_and_consistent():
+    from src.events.astronomy import lunar_phase_series, phases_for_year
+
+    out = lunar_phase_series("2024-01-01", "2024-03-31")
+    assert len(out["days"]) == 91
+    assert "never" in out["caveat"] and "causation" in out["caveat"]
+    assert "approximation" in out["method"]
+    by_date = {d["date"]: d for d in out["days"]}
+    # Consistency with the verified phase engine: on a known full-moon date
+    # (2024-01-25) the fraction must be near 1; on a new-moon date
+    # (2024-02-09, per the same engine) near 0.
+    fulls = {f["date"] for f in phases_for_year(2024)["full_moons"]}
+    news = {n["date"] for n in phases_for_year(2024)["new_moons"]}
+    assert "2024-01-25" in fulls
+    assert by_date["2024-01-25"]["illuminated_fraction"] > 0.97
+    nm = next(d for d in sorted(news) if d.startswith("2024-02"))
+    assert by_date[nm]["illuminated_fraction"] < 0.03
+    # Waxing/waning: a week AFTER a new moon is waxing; a week BEFORE is waning.
+    from datetime import date as _d
+    from datetime import timedelta as _td
+    after = (_d.fromisoformat(nm) + _td(days=7)).isoformat()
+    before = (_d.fromisoformat(nm) - _td(days=7)).isoformat()
+    assert by_date[after]["waxing"] is True
+    assert by_date[before]["waxing"] is False

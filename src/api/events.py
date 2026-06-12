@@ -181,3 +181,21 @@ def climate_events() -> dict:
         "el_nino_episodes": episodes,
         "count": len(episodes),
     }
+
+
+@router.get("/astronomy/lunar-series")
+def lunar_series(start: str, end: str) -> dict:
+    """Daily lunar-phase series (age, illuminated fraction, waxing flag) for
+    correlation studies — method + the correlation≠causation caveat ride the
+    payload. Bounded to 100 years per request."""
+    from datetime import date as _date
+
+    from src.events.astronomy import lunar_phase_series
+
+    try:
+        d0, d1 = _date.fromisoformat(start), _date.fromisoformat(end)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"bad date: {exc}") from exc
+    if abs((d1 - d0).days) > 36525:
+        raise HTTPException(status_code=400, detail="window exceeds 100 years")
+    return lunar_phase_series(start, end)

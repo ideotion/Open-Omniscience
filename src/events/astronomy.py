@@ -217,3 +217,66 @@ def seasons_for_year(year: int) -> dict:
             {"event": which, "date": dt.date().isoformat(), "time_utc": dt.strftime("%H:%M")}
         )
     return out
+
+
+def lunar_phase_series(start: str, end: str) -> dict:
+    """Daily lunar-phase series for correlation studies (maintainer concept
+    2026-06-12: let users TEST moon-effect beliefs against their own data).
+
+    Per day: synodic age (days since new moon), illuminated fraction by the
+    age approximation, and the waxing/waning flag. METHOD HONESTY: the
+    fraction uses (1 - cos(2π·age/29.53))/2 — the standard synodic-age
+    approximation, within ~2% of the true illuminated fraction; exact values
+    need the full solar/lunar position theory (Meeus ch. 48). Good enough
+    for daily-granularity correlation, and the method note says exactly this.
+    The SERIES asserts nothing about effects: it is one honest variable for
+    the analysis tools, which carry their own correlation≠causation and
+    multiple-comparisons caveats.
+    """
+    from datetime import date as _date
+    from math import cos
+
+    d0 = _date.fromisoformat(start)
+    d1 = _date.fromisoformat(end)
+    if d1 < d0:
+        d0, d1 = d1, d0
+    # New moons spanning the window (with margin), from the verified engine.
+    k0 = floor((d0.year - 2000) * 12.3685) - 2
+    k1 = floor((d1.year - 2000) * 12.3685) + 3
+    new_moons = [_jde_to_datetime(_jde_phase(float(k))) for k in range(k0, k1 + 1)]
+    days = []
+    cur = d0
+    syn = 29.530588861
+    while cur <= d1:
+        noon = datetime(cur.year, cur.month, cur.day, 12, tzinfo=UTC)
+        prev = max((nm for nm in new_moons if nm <= noon), default=None)
+        if prev is None:
+            cur += timedelta(days=1)
+            continue
+        age = (noon - prev).total_seconds() / 86400.0
+        frac = (1 - cos(2 * pi * age / syn)) / 2
+        days.append(
+            {
+                "date": cur.isoformat(),
+                "age_days": round(age, 2),
+                "illuminated_fraction": round(frac, 3),
+                "waxing": age <= syn / 2,
+            }
+        )
+        cur += timedelta(days=1)
+    return {
+        "start": d0.isoformat(),
+        "end": d1.isoformat(),
+        "days": days,
+        "method": (
+            "synodic age from Meeus-computed new moons; illuminated fraction "
+            "by the age approximation (1-cos(2π·age/29.53))/2, within ~2% of "
+            "the true fraction — exact values need full position theory "
+            "(Meeus ch. 48); waxing = first half of the synodic cycle"
+        ),
+        "caveat": (
+            "a variable for correlation studies — co-occurrence is never "
+            "causation, and screening many series against the moon WILL "
+            "produce spurious hits without multiple-comparisons control"
+        ),
+    }
