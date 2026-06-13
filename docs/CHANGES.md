@@ -11,6 +11,25 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Parallel collection: fetch many hosts at once, politely; write serially.**
+  The collect pass can now fetch **different hosts concurrently** via a bounded
+  worker pool (`collect_parallelism`, default **1 = sequential, unchanged**;
+  raise it to opt in). This is the remaining half of the Tor speedup (parallel
+  *dumps* shipped earlier): N concurrent fetches over Tor = N circuits = aggregate
+  throughput multiplies — and it composes with per-host stream isolation so each
+  concurrent host is on its **own circuit**. The binding guardrail holds by
+  construction: the `EthicalFetcher` now takes a **per-host lock** around the
+  robots check + rate-limit + GET + body read, so **one host is hit by at most
+  one request at a time** (politeness is never traded for speed) while different
+  hosts run in parallel. Writes stay safe — each worker uses its **own** DB
+  session and writes **serialise through the single-writer gate**, so "parallel
+  fetch, serial write" is achieved without a separate writer thread; aggregation
+  runs on the consuming thread (no shared-counter races). Kept **opt-in (default
+  1)** until field-validated; the task manager will tune it. Exposed in the
+  scheduler config API. `tests/test_parallel_collect.py` proves same-host
+  serialisation (the politeness guarantee), different-host concurrency, that the
+  pool covers every source, and the setting round-trip.
+
 - **Per-host Tor stream isolation: each source rides its own circuit.** Over a
   SOCKS (Tor) proxy, the `EthicalFetcher` now gives **each host its own Tor
   circuit** — a per-host SOCKS username triggers Tor's `IsolateSOCKSAuth`, the

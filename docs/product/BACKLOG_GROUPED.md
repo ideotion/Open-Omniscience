@@ -51,9 +51,12 @@ makes the rest fall out cheaply:
 
 ## B. The download / scraping subsystem (content-first)
 
-- 🔨 **Parallel downloads** (next) — dumps `max_concurrent` 1 → N (file writes,
-  no DB contention) + a bounded fetch worker pool for collect (parallel fetch,
-  single writer). The Tor-speed fix: N circuits, not one. (SCRAPING plan Step 2)
+- ✅ **Parallel downloads** — dumps `max_concurrent` 1 → N (shipped #110) **+ a
+  bounded fetch worker pool for collect** (`collect_parallelism`, default 1 =
+  opt-in): parallel fetch across hosts (each its own Tor circuit), single writer
+  via the gate, per-host lock keeps politeness. The Tor-speed fix: N circuits,
+  not one. (SCRAPING plan Step 2) REMAINING: raise the default after field
+  validation; the task manager surfaces/tunes it.
 - ✅ **Per-host Tor stream isolation for collect** — each host rides its own Tor
   circuit (`IsolateSOCKSAuth`, per-host SOCKS user) so no exit/observer links the
   user across sources; page + robots share the host circuit; on by default over

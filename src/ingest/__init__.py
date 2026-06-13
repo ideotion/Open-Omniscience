@@ -186,9 +186,25 @@ class EthicalFetcher:
         # host -> (decision_parser_or_None, expiry). None == "do not fetch this host".
         self._robots: dict[str, tuple[RobotFileParser | None, float]] = {}
         self._last_request: dict[str, float] = {}
+        # Per-host locks: one source/host is fetched by at most ONE thread at a
+        # time, so parallel collection (a bounded worker pool) is polite by
+        # construction — concurrency is ACROSS hosts, never within one host's
+        # rate-limit. The shared mutable state (_robots, _last_request) for a host
+        # is only touched under its lock. Different hosts run in parallel.
+        self._host_locks: dict[str, threading.Lock] = {}
+        self._host_locks_guard = threading.Lock()
         # sleep is indirected so tests can run without real delays.
         self._sleep = time.sleep
         self._now = time.monotonic
+
+    def _host_lock(self, netloc: str) -> threading.Lock:
+        """Return (creating if needed) the lock that serialises fetches to ``netloc``."""
+        with self._host_locks_guard:
+            lock = self._host_locks.get(netloc)
+            if lock is None:
+                lock = threading.Lock()
+                self._host_locks[netloc] = lock
+            return lock
 
     @property
     def _real_session(self) -> bool:
@@ -231,6 +247,25 @@ class EthicalFetcher:
         # robots check and every page/redirect hop for this host share it.
         iso_proxies = self._isolated_proxies(parsed.netloc)
 
+        # Serialise everything for this host under its per-host lock: robots +
+        # rate-limit + the (possibly retried) GET + body read. So a host is hit by
+        # AT MOST ONE request at a time (politeness is never traded for speed, even
+        # under parallel collection), while DIFFERENT hosts proceed in parallel —
+        # each on its own Tor circuit. The lock releases on return/raise.
+        with self._host_lock(parsed.netloc):
+            return self._fetch_locked(
+                url,
+                host_key=host_key,
+                parsed=parsed,
+                require_html=require_html,
+                extra_headers=extra_headers,
+                iso_proxies=iso_proxies,
+            )
+
+    def _fetch_locked(
+        self, url, *, host_key, parsed, require_html, extra_headers, iso_proxies
+    ) -> FetchResult:
+        """The per-host-serialised fetch body (caller holds the host lock)."""
         # robots.txt is checked once (not per retry): a disallow/unavailable is a
         # deliberate, non-transient refusal.
         if self.respect_robots:
