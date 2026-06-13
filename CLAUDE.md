@@ -644,6 +644,48 @@ ruling, a contingency, or a deliberate-omission note.
   desk…" block (index.html:688-690, #hero-greet at :2768) takes space, serves
   no purpose for an installed user, AND is hardcoded English (never keyed) —
   delete it; if any greeting survives it must be keyed ×12.
+  **HOME REDESIGN (ruled 2026-06-13; full design in
+  `docs/product/UI_SHELL_REDESIGN_PLAN.md` §5):** the "At a glance" stats
+  strip (index.html:731) moves PERMANENT + COMPACT to the very top of Home;
+  REMOVE the Quick actions section (index.html:738); cards take FULL width
+  (today ~3 wide because cards are too big — redesign denser, 4+ fit);
+  FAMILY-TYPE COLORS with families as VERTICAL SUBTABS + an "All cards"
+  default subtab (color = family hue accent; "All" stays a single prioritised
+  feed, families are a lens not a wall). My opinion recorded in the doc.
+- **UI SHELL REDESIGN (ruled 2026-06-13; full plan in
+  `docs/product/UI_SHELL_REDESIGN_PLAN.md`):** (1) ONE universal nav grammar
+  app-wide — LATERAL sidebar = main tabs, VERTICAL subtabs near the top =
+  subcategories (Home families, Insights sections, Settings, corpora window);
+  reusable subtab component, invariant-tested; sidebar invariant #2 intact.
+  (2) MINIMAL TOP BAR — above the subtabs ONLY: always-on search, status,
+  task-manager access, help, language picker, airplane button; vitals move
+  into the task-manager window's System tab (invariant #4 — version still not
+  in chrome). (3) AIRPLANE BUTTON moves to the top bar, NO text (hover
+  bubble enough, invariant #17); FILL=state stays (invariant #14) but the
+  transition uses DIFFERENT colors by direction, coherent with the icon's
+  on/off color (today one red transition conflates the two opposite
+  meanings). (4) SEARCH bigger + always-on; REMOVE the visible "Ctrl K" hint
+  (index.html:646); permanent "Advanced" button; shortcuts list → Help +
+  editable in Settings (a keybindings panel); small-screen overlaid text
+  dropped. (5) ENTER → the advanced-search WINDOW = the corpora flagship
+  (keyword/mindmap/link/source/WWW/sentiment/Advanced sub-tabs). HONEST
+  STATUS recorded (answers "I can't find this UI"): palette shipped T13 s1,
+  keyword→corpus window shipped T10 s1 (Trend/Articles/Links only); the FULL
+  Enter→corpus window with the analysis sub-tabs is the REMAINING slice — not
+  lost, not yet built; PROMOTE it. (6) INSIGHTS: auto-index in the
+  background, REMOVE the "Index corpus" button (index.html:1287) + its
+  palette action (index.html:2655); present Insights sections as subtabs.
+- **TWO BUGS found in the field session (ruled to fix, diagnosed in the UI
+  plan §7):** (a) the BACK BUTTON returns to the passphrase screen — tab nav
+  uses history.replaceState (index.html:2524, no history entries) and a
+  locked API response does location.href="/unlock" (index.html:2451), so
+  Back lands on /unlock; fix = pushState for tab nav + replaceState to "/"
+  after unlock. (b) "Scraping STOPPED" is NOT a crash — the scheduler idles
+  interval_minutes between passes (runner.py:326); the content-first
+  continuous-collection ruling makes the idle gap + the in-face arbitration
+  modal disappear (app boots in AIRPLANE MODE; permanent scraping when
+  online; new requests QUEUE into the task manager, never a modal — recorded
+  in SCRAPING_AUTOMATION_PLAN.md Step 5 refinements).
 - **Evidence-tiered cards — remaining slices:** instrument the other
   9+recipe producers; corpus tier header (early/developing/established);
   power-style "what's missing"; BH-FDR later. (Slice 1 shipped: plain

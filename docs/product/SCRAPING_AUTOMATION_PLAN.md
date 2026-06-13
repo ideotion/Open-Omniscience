@@ -139,6 +139,24 @@ ordering" — that design is adopted, this plan wires it as the default path.
   from the wizard, editable later) — but never *must*. Out of the box it
   just runs.
 
+**Refinements (maintainer field session 2026-06-13):**
+
+- **The app BOOTS in airplane mode (offline) every time.** Zero-network boot
+  is already the design; make it explicit and visible — nothing scrapes until
+  the user crosses online once. After that one consent, collection is
+  continuous.
+- **When online, scraping is PERMANENT/continuous.** Replace today's
+  run-once-then-idle interval (`src/scheduler/runner.py:326` waits
+  `interval_minutes` between passes — this is why the user saw scraping
+  "stop": it idles, it did not crash) with a continuous fair-ordering loop
+  that always has work in flight (within politeness).
+- **Demote the cross-kind arbitration MODAL.** Today a new scrape while a
+  pass runs pops "Another network task is running… Start anyway?". Instead a
+  new request **queues into the task manager** silently; DB-writer collisions
+  still serialise, but invisibly — the user sees a queued job, never a
+  question. (The modal was the right primitive for the manual era; continuous
+  + queue replaces it.)
+
 ## Step 6 — Move "Collect" into Settings → Download (hide the mechanics)
 
 - The Collect **tab leaves the sidebar.** Its mechanics move to an
