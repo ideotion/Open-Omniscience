@@ -36,7 +36,7 @@ jobs:
           python -m pip install -e .
       - name: SAST (bandit, medium+ severity)
         run: |
-          python -m pip install bandit
+          python -m pip install bandit==1.9.4  # pinned: unpinned SAST drift reddens PRs with no code change
           bandit -r src/ -ll -q
       - name: Dependency audit (pip-audit)
         run: |
@@ -82,9 +82,13 @@ jobs:
       # mypy from 303 to 128 errors. The gate fails only if the count RISES above
       # the baseline -- new code must not add type errors; tighten the number as
       # the long tail is paid down (target: 0, then a plain blocking `mypy src/`).
+      # mypy is PINNED (pyproject [dev]) so the count is deterministic: an
+      # unpinned floor let a newer mypy report 129 > 128 and redden every PR
+      # through no code change. Baseline lowered 128 -> 127 after fixing two
+      # real latent bugs (429 handler retry_after, escape(None)).
       - name: Type-check ratchet (mypy)
         env:
-          MYPY_BASELINE: "128"
+          MYPY_BASELINE: "127"
         run: |
           count=$(python -m mypy src/ 2>/dev/null | grep -c " error: " || true)
           echo "mypy errors: $count (baseline: $MYPY_BASELINE)"
@@ -98,7 +102,7 @@ jobs:
       # failure is a real regression or a freshly published CVE worth seeing.
       - name: SAST (bandit, medium+ severity)
         run: |
-          python -m pip install bandit
+          python -m pip install bandit==1.9.4  # pinned: unpinned SAST drift reddens PRs with no code change
           bandit -r src/ -ll -q
 
       - name: Dependency audit (pip-audit)
