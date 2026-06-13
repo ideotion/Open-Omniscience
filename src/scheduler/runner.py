@@ -20,6 +20,7 @@ is exactly as robots-respecting and rate-limited as a manual ingest.
 from __future__ import annotations
 
 import logging
+import random
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -27,6 +28,40 @@ from src.database.query import capped
 from src.scheduler.settings import SchedulerSettings, load_settings
 
 _LOG = logging.getLogger(__name__)
+
+# Inter-pass gap in CONTINUOUS mode: short enough that passes are effectively
+# back-to-back (a real pass takes minutes), long enough to yield CPU and let a
+# pathologically fast/empty pass (e.g. every feed answered 304) not hot-spin.
+# Interruptible (Event.wait), so stop() still returns promptly.
+_CONTINUOUS_GAP_S = 5.0
+
+
+def round_robin_interleave(sources: list, *, rng: random.Random | None = None) -> list:
+    """Reorder sources into a per-country round-robin: one source per country
+    per round, country order shuffled each call, within-country order preserved
+    (the incoming priority/id order).
+
+    This breaks the volume bias of source-rich countries structurally — every
+    country gets equal turns, not turns proportional to how many sources it has
+    (maintainer 2026-06-11). Sources without a country share one "unknown"
+    bucket. ``rng`` is injectable so tests are deterministic.
+    """
+    if not sources:
+        return []
+    chooser = rng or random
+    buckets: dict[str, list] = {}
+    for s in sources:
+        key = (getattr(s, "country", None) or "").strip().lower() or "·unknown"
+        buckets.setdefault(key, []).append(s)
+    order = list(buckets.keys())
+    chooser.shuffle(order)
+    queues = [list(buckets[k]) for k in order]
+    out: list = []
+    while queues:
+        # One full round: take the head of each still-nonempty country queue.
+        out.extend(q.pop(0) for q in queues)
+        queues = [q for q in queues if q]
+    return out
 
 
 def select_sources(session, settings: SchedulerSettings):
@@ -103,6 +138,9 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     if settings.mode in ("rss", "crawl"):
         rows = capped(select_sources(session, settings), settings.max_sources_per_run).all()
         total = len(rows)
+        # Preview the same per-country round-robin order the pass will use, so
+        # "next targets" honestly reflects what runs first (not priority order).
+        rows = round_robin_interleave(rows)
         targets = [r.domain for r in rows[:8]]
         delays = [max((r.rate_limit_ms or 1000) / 1000.0, 1.0) for r in rows] or [1.0]
         median_delay = sorted(delays)[len(delays) // 2]
@@ -222,6 +260,11 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         }
 
     sources = capped(select_sources(session, settings), settings.max_sources_per_run).all()
+    # Fair ordering: per-country round-robin so no source-rich country dominates
+    # a pass (maintainer 2026-06-11). With continuous passes this realises the
+    # ruled "one source per country, then repeat".
+    sources = round_robin_interleave(sources)
+    countries = len({(s.country or "").strip().lower() for s in sources if s.country})
 
     _progress_set(
         mode=settings.mode,
@@ -229,6 +272,8 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         done=0,
         current=None,
         pages=0,
+        countries=countries,
+        ordering="round-robin",
         started_at=started.isoformat(),
     )
     try:
@@ -295,6 +340,8 @@ class BackgroundScheduler:
         self._next_run: datetime | None = None
         self._last_result: dict | None = None
         self._last_error: str | None = None
+        # Inter-pass gap in continuous mode (instance attr so tests can shrink it).
+        self._continuous_gap_s = _CONTINUOUS_GAP_S
 
     # -- lifecycle --------------------------------------------------------- #
 
@@ -339,10 +386,20 @@ class BackgroundScheduler:
             self._do_run()
             if self._stop.is_set():
                 break
-            interval_s = max(1, self._settings_provider().interval_minutes) * 60
+            settings = self._settings_provider()
+            if getattr(settings, "continuous", True):
+                # Continuous (the default): passes run back-to-back with only a
+                # short, interruptible gap. While the operator is online the
+                # corpus fills permanently — "scraping never stops" (maintainer
+                # 2026-06-13). Going offline stops the thread (scheduler_stop),
+                # so the loop needs no separate online gate.
+                gap_s = max(0.0, self._continuous_gap_s)
+            else:
+                # Legacy cadence: one pass, then idle ``interval_minutes``.
+                gap_s = max(1, settings.interval_minutes) * 60
             with self._state_lock:
-                self._next_run = datetime.now(UTC) + timedelta(seconds=interval_s)
-            self._stop.wait(interval_s)
+                self._next_run = datetime.now(UTC) + timedelta(seconds=gap_s)
+            self._stop.wait(gap_s)
 
     def _do_run(self) -> None:
         # Skip if another run holds the lock (manual + scheduled racing).

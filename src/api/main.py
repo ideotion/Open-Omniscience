@@ -229,20 +229,22 @@ def run_deferred_startup() -> None:
     except Exception as exc:  # noqa: BLE001 - never block startup on metrics
         logger.warning(f"Could not initialise metrics at startup: {exc}")
 
-    # Optionally start the background ingester. Off by default and gated on a
-    # saved preference, so importing the app (e.g. in tests) never starts a thread
-    # or any network activity; OO_NO_SCHEDULER=1 hard-disables it regardless.
+    # Content-first (maintainer 2026-06-13): the app BOOTS IN AIRPLANE MODE
+    # (offline) every time — nothing scrapes until the operator crosses online
+    # once (the one consent, POST /api/scheduler/start), after which collection
+    # is continuous. Zero-network boot is preserved AND now explicit/visible: we
+    # engage the offline state at boot and never auto-start scraping (the old
+    # autostart-at-boot is retired by this ruling). Gated by OO_NO_SCHEDULER so
+    # tests/headless setups, which manage the kill switch themselves, are
+    # untouched.
     if os.getenv("OO_NO_SCHEDULER", "0") != "1":
         try:
-            from src.scheduler.settings import load_settings as _sched_settings
+            from src.ingest import activate_kill_switch
 
-            if _sched_settings().autostart:
-                from src.scheduler.runner import get_scheduler
-
-                get_scheduler().start()
-                logger.info("Background scheduler autostarted (autostart=true).")
-        except Exception as exc:  # noqa: BLE001 - never block startup on the scheduler
-            logger.warning(f"Could not autostart scheduler: {exc}")
+            activate_kill_switch()
+            logger.info("Booted in airplane mode (offline); awaiting the online consent to collect.")
+        except Exception as exc:  # noqa: BLE001 - never block startup
+            logger.warning(f"Could not engage airplane mode at boot: {exc}")
 
     logger.info(f"Open Omniscience API {APP_VERSION} started")
 
