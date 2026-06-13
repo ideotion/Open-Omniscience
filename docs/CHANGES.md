@@ -11,6 +11,24 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **One guarded socket factory: the kill switch and proxy now cover every
+  fetch path (closes a transport leak).** Four paths — Wikipedia dump
+  downloads, the MediaWiki API client, ORES scoring, and the gated DuckDuckGo
+  discovery — built their own bare `requests` sessions, so **airplane mode did
+  not stop them** and, worse, the in-app proxy was **not applied**: a user who
+  set Tor only in the app (not the OS) would have had multi-GB dump downloads
+  egress over **clearnet** — a silent transport downgrade the project forbids.
+  They now all route through `src.safety.fetcher.guarded_session`, a
+  `requests.Session` subclass that checks the global kill switch on **every**
+  verb (so it cannot be forgotten) and applies the protected-mode proxy. The
+  stale hardcoded `OpenOmniscienceBot/0.4` User-Agent is replaced by the honest
+  version from pyproject (Wikimedia's API mandates a descriptive bot UA, kept
+  even over Tor; the DuckDuckGo HTML endpoint keeps its browser UA). The
+  socket-importer ratchet allowlist shrinks **6 → 3** (only the EthicalFetcher,
+  loopback Ollama, and the factory itself may import an HTTP client now).
+  New `tests/test_guarded_session.py` pins the three guarantees and proves all
+  four consumers are wired through the factory.
+
 - **No fetched data is lost to a transient database lock.** A field session
   (2026-06-13) caught commodity prices that were **fetched successfully over
   Tor and then discarded** — copper, aluminum, nickel, zinc all stored with

@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import time
 
+from src.ingest import OO_VERSION
 from src.wiki import mediawiki as mw
 
 WIKI_USER_AGENT = (
-    "OpenOmniscienceBot/0.4 (+https://github.com/ideotion/Open-Omniscience; "
+    f"OpenOmniscienceBot/{OO_VERSION} (+https://github.com/ideotion/Open-Omniscience; "
     "Wikipedia change-tracker; contact open-omniscience@ideotion.com)"
 )
 
@@ -32,10 +33,16 @@ class WikiClient:
         timeout: float = 30.0,
         maxlag: int = 5,
     ):
-        import requests
+        # Route through the one guarded factory: the kill switch and the
+        # protected-mode proxy now apply to MediaWiki API calls too. ``session``
+        # stays injectable for tests (no network).
+        if session is None:
+            from src.safety.fetcher import guarded_session
 
-        self.session = session or requests.Session()
-        self.session.headers.update({"User-Agent": user_agent})
+            session = guarded_session(user_agent=user_agent)
+        else:
+            session.headers.update({"User-Agent": user_agent})
+        self.session = session
         self.min_interval_s = min_interval_s
         self.timeout = timeout
         self.maxlag = maxlag

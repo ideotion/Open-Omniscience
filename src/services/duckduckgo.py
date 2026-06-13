@@ -36,8 +36,6 @@ import re
 import time
 from urllib.parse import urljoin, urlparse
 
-import requests
-
 from src.utils.logging_config import setup_logging
 
 logger = setup_logging("duckduckgo")
@@ -148,18 +146,28 @@ class DuckDuckGoSearch:
             "Accept-Language": "en-US,en;q=0.5",
         }
 
+        # Through the one guarded session: the gated discovery channel now obeys
+        # the kill switch and the protected-mode proxy like every other path. The
+        # HTML endpoint expects a browser-like UA (cls.USER_AGENT), set on the
+        # session; per-request headers carry only Accept/Accept-Language.
+        from src.safety.fetcher import guarded_session
+
+        session = guarded_session(user_agent=cls.USER_AGENT)
         try:
             logger.info(f"Searching DuckDuckGo for: {query}")
-            response = requests.post(cls.BASE_URL, data=params, headers=headers, timeout=30)
+            response = session.post(cls.BASE_URL, data=params, headers=headers, timeout=30)
             response.raise_for_status()
 
             results = cls._parse_results(response.text, max_results)
             logger.info(f"Found {len(results)} results for query: {query}")
             return results
 
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
+            # Broad on purpose: catches transport errors AND NetworkBlocked (kill
+            # switch) without importing requests here -- keeps this module off the
+            # socket-importer allowlist. Surfaced honestly to the caller.
             logger.error(f"DuckDuckGo search failed: {e}")
-            raise Exception(f"DuckDuckGo search failed: {e}")
+            raise Exception(f"DuckDuckGo search failed: {e}") from e
 
     @classmethod
     def _parse_results(cls, html: str, max_results: int) -> list[dict]:

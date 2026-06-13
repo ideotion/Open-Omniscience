@@ -55,8 +55,14 @@ def _html(url: str, body: str) -> FetchResult:
     )
 
 
-def test_discovery_uses_injected_fetcher_not_raw_requests(monkeypatch):
-    """discover_rss_feeds must route the page fetch through the given fetcher."""
+def test_discovery_uses_injected_fetcher_not_raw_requests():
+    """discover_rss_feeds must route the page fetch through the given fetcher.
+
+    "Not raw requests" is now a STRUCTURAL guarantee: duckduckgo.py no longer
+    imports requests at all (routed through src.safety.fetcher.guarded_session),
+    pinned by tests/test_network_consent.py::test_no_new_socket_importers. This
+    test proves the injected fetcher is the one actually used.
+    """
     page = (
         "<html><head>"
         '<link rel="alternate" type="application/rss+xml" href="/feed.xml">'
@@ -76,12 +82,6 @@ def test_discovery_uses_injected_fetcher_not_raw_requests(monkeypatch):
             ),
         }
     )
-    # If discovery still used raw requests, this would make a real network call
-    # and never touch our fetcher.
-    monkeypatch.setattr(
-        "src.services.duckduckgo.requests",
-        _ForbiddenRequests(),
-    )
 
     feeds = DuckDuckGoSearch.discover_rss_feeds("https://example.com", fetcher=fetcher)
 
@@ -89,13 +89,12 @@ def test_discovery_uses_injected_fetcher_not_raw_requests(monkeypatch):
     assert "https://example.com/feed.xml" in feeds
 
 
-def test_discovery_respects_robots_fail_closed(monkeypatch):
+def test_discovery_respects_robots_fail_closed():
     """When the fetcher refuses (robots disallow), discovery yields no feeds and
     does not fall back to a raw request."""
     fetcher = _RecordingFetcher(
         {"https://blocked.example": RobotsDisallowed("robots.txt disallows")}
     )
-    monkeypatch.setattr("src.services.duckduckgo.requests", _ForbiddenRequests())
 
     feeds = DuckDuckGoSearch.discover_rss_feeds("https://blocked.example", fetcher=fetcher)
 
@@ -103,27 +102,10 @@ def test_discovery_respects_robots_fail_closed(monkeypatch):
     assert fetcher.calls == [("https://blocked.example", True)]
 
 
-def test_discovery_respects_ssrf_guard(monkeypatch):
+def test_discovery_respects_ssrf_guard():
     """A target the fetcher blocks for SSRF reasons must not be fetched raw."""
     fetcher = _RecordingFetcher({"http://169.254.169.254/": BlockedTarget("non-public address")})
-    monkeypatch.setattr("src.services.duckduckgo.requests", _ForbiddenRequests())
 
     feeds = DuckDuckGoSearch.discover_rss_feeds("http://169.254.169.254/", fetcher=fetcher)
 
     assert feeds == []
-
-
-class _ForbiddenRequests:
-    """Stand-in for the ``requests`` module that fails the test if any HTTP verb
-    is called -- proving discovery no longer reaches the network directly."""
-
-    def _boom(self, *a, **k):  # noqa: ANN001, ANN002, ANN003
-        raise AssertionError("discovery made a raw requests call, bypassing the EthicalFetcher")
-
-    get = property(lambda self: self._boom)
-    head = property(lambda self: self._boom)
-    post = property(lambda self: self._boom)
-
-    class exceptions:  # noqa: N801 - mimic requests.exceptions namespace
-        class RequestException(Exception):
-            pass

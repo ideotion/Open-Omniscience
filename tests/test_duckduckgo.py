@@ -43,10 +43,9 @@ from services.duckduckgo import DuckDuckGoSearch
 class TestDuckDuckGoSearch:
     """Test DuckDuckGo search functionality."""
 
-    @patch("services.duckduckgo.requests.post")
-    def test_search_success(self, mock_post):
-        """Test successful search."""
-        # Mock response
+    @patch("src.safety.fetcher.guarded_session")
+    def test_search_success(self, mock_guarded):
+        """Search goes through the guarded session (kill switch + proxy)."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = """
@@ -61,27 +60,29 @@ class TestDuckDuckGoSearch:
             </div>
         </html>
         """
-        mock_post.return_value = mock_response
+        mock_session = MagicMock()
+        mock_session.post.return_value = mock_response
+        mock_guarded.return_value = mock_session
 
         results = DuckDuckGoSearch.search("test query", max_results=10)
 
-        assert len(results) >= 0  # May not parse correctly due to HTML structure
-        mock_post.assert_called_once()
+        assert isinstance(results, list)
+        mock_session.post.assert_called_once()
 
-    @patch("services.duckduckgo.requests.post")
-    def test_search_failure(self, mock_post):
-        """Test search failure."""
-        mock_post.side_effect = Exception("Request failed")
+    @patch("src.safety.fetcher.guarded_session")
+    def test_search_failure(self, mock_guarded):
+        """A transport (or kill-switch) failure surfaces honestly to the caller."""
+        mock_session = MagicMock()
+        mock_session.post.side_effect = Exception("Request failed")
+        mock_guarded.return_value = mock_session
 
         with pytest.raises(Exception) as exc_info:
             DuckDuckGoSearch.search("test query")
 
         assert "Request failed" in str(exc_info.value)
 
-    @patch("services.duckduckgo.requests.get")
-    def test_discover_rss_feeds_success(self, mock_get):
-        """Test RSS feed discovery."""
-        # Mock HTML with RSS feed link
+    def test_discover_rss_feeds_success(self):
+        """RSS discovery parses the EthicalFetcher's content (injected, no network)."""
         mock_html = """
         <html>
             <head>
@@ -92,25 +93,28 @@ class TestDuckDuckGoSearch:
             </body>
         </html>
         """
+        fake_fetcher = MagicMock()
+        fake_fetcher.fetch.return_value = MagicMock(content=mock_html)
 
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.text = mock_html
-        mock_get.return_value = mock_response
-
-        # Mock validation
         with patch.object(DuckDuckGoSearch, "_validate_rss_feed", return_value=True):
-            feeds = DuckDuckGoSearch.discover_rss_feeds("https://example.com")
+            feeds = DuckDuckGoSearch.discover_rss_feeds(
+                "https://example.com", fetcher=fake_fetcher
+            )
 
-        # Should find at least the link tag
         assert isinstance(feeds, list)
+        assert "https://example.com/rss.xml" in feeds
+        # The page + each candidate feed are fetched through the injected fetcher
+        # (the ethical path), never a bare requests call.
+        assert fake_fetcher.fetch.called
 
-    @patch("services.duckduckgo.requests.get")
-    def test_discover_rss_feeds_failure(self, mock_get):
-        """Test RSS feed discovery failure."""
-        mock_get.side_effect = Exception("Request failed")
+    def test_discover_rss_feeds_failure(self):
+        """A fetch failure degrades to an empty list, never an exception."""
+        fake_fetcher = MagicMock()
+        fake_fetcher.fetch.side_effect = Exception("Request failed")
 
-        feeds = DuckDuckGoSearch.discover_rss_feeds("https://example.com")
+        feeds = DuckDuckGoSearch.discover_rss_feeds(
+            "https://example.com", fetcher=fake_fetcher
+        )
 
         assert feeds == []
 

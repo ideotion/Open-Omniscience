@@ -41,6 +41,10 @@ try:  # Single source of truth is pyproject; never hardcode a version literal.
 except PackageNotFoundError:  # raw checkout / not installed -> honest fallback
     _OO_VERSION = "0.0.0"
 
+# Public alias so other honest-UA builders (the wiki client, ORES, dumps) share
+# the one version source instead of hardcoding a stale literal.
+OO_VERSION = _OO_VERSION
+
 DEFAULT_USER_AGENT = (
     f"OpenOmniscienceBot/{_OO_VERSION} (+https://github.com/ideotion/Open-Omniscience; "
     "ethical research crawler)"

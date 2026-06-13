@@ -14,8 +14,63 @@ from __future__ import annotations
 
 import os
 
-from src.ingest import DEFAULT_USER_AGENT, EthicalFetcher
+import requests
+
+from src.ingest import DEFAULT_USER_AGENT, EthicalFetcher, kill_switch_active
 from src.safety.settings import GENERIC_USER_AGENT, load_settings
+
+
+class NetworkBlocked(RuntimeError):
+    """Raised by a guarded session when the global kill switch is engaged.
+
+    Distinct, named, and honest: the operator turned the network off, so a new
+    outbound request refuses rather than silently slipping past the switch.
+    """
+
+
+class GuardedSession(requests.Session):
+    """A ``requests.Session`` that consults the global kill switch on EVERY verb.
+
+    The non-EthicalFetcher network paths (Wikipedia dumps, the MediaWiki API
+    client, ORES, the gated DuckDuckGo discovery) historically built their own
+    bare ``requests`` sessions, so airplane-mode did NOT stop them and the
+    in-app proxy was NOT applied (a transport leak: Tor set only in-app meant
+    dumps egressed clearnet). Routing them through this one factory closes both
+    gaps by construction -- the check sits in ``request()``, which every
+    ``get``/``post``/``head`` funnels through, so it cannot be forgotten.
+    """
+
+    def request(self, method, url, *args, **kwargs) -> requests.Response:  # type: ignore[override]
+        if kill_switch_active():
+            raise NetworkBlocked(
+                "network kill switch is active -- collection stopped by operator"
+            )
+        return super().request(method, url, *args, **kwargs)
+
+
+def guarded_session(*, user_agent: str = DEFAULT_USER_AGENT) -> GuardedSession:
+    """Build a kill-switch-aware session that honours the protected-mode proxy.
+
+    Three guarantees, the same the EthicalFetcher gives article fetches:
+      * the global kill switch refuses new requests (airplane mode is real);
+      * protected mode routes through the user's proxy (e.g. Tor) -- transport
+        is NEVER silently downgraded to clearnet (a §0.5 non-negotiable);
+      * an explicit, honest User-Agent (callers pass the one their endpoint's
+        policy requires -- e.g. Wikimedia's API mandates a descriptive bot UA,
+        even over Tor, so a generic browser UA would be both dishonest and
+        against policy; the DuckDuckGo HTML endpoint wants a browser UA).
+
+    robots/politeness for these specific API/dump endpoints follows each
+    service's own etiquette (handled at the call sites), not generic crawl
+    robots -- blanket-applying it would wrongly block legitimate API use.
+    """
+    s = GuardedSession()
+    s.headers["User-Agent"] = user_agent
+    settings = load_settings()
+    proxy = settings.http_proxy if settings.is_protected else None
+    if proxy:
+        s.proxies = {"http": proxy, "https": proxy}
+    return s
 
 
 def make_fetcher(**overrides) -> EthicalFetcher:
