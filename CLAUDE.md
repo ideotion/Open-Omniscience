@@ -237,7 +237,10 @@ ruling, a contingency, or a deliberate-omission note.
   initial screen (the in-browser first-launch prompt becomes the PRIMARY
   path; the terminal prompt demotes to the headless/env fallback). Fits
   the shipped deferred-init design (option 3 already seeds at first
-  unlocked boot).**
+  unlocked boot). (c) The /unlock screen must carry THE canonical eye
+  (invariant #5, exact same vector as the GUI top-left) — today it draws
+  a DIFFERENT double-arc eye (unlock.html:44 vs index.html:578); extend
+  the invariant-#5 test to unlock.html when fixed.**
   **The NEWSLETTER SCRAPER stays blocked until these riders ship AND the
   no-recovery contingency is revisited** (see Non-negotiables).
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
