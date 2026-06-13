@@ -25,8 +25,14 @@ from __future__ import annotations
 import bz2
 import logging
 import time
-import xml.etree.ElementTree as ET  # noqa: S405 - parsing OUR OWN downloaded dump
+import xml.etree.ElementTree as ET  # noqa: S405 - ET.ParseError type only; parsing is defused
 from pathlib import Path
+
+# A downloaded dump arrives over the network: parse it as UNTRUSTED XML. defusedxml
+# blocks entity-expansion / external-entity attacks (billion laughs, XXE) that the
+# stdlib parser is vulnerable to -- a real defense, not a suppressed warning.
+from defusedxml.common import DefusedXmlException
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 
 from src.wiki.dumps import dump_filename
 
@@ -91,7 +97,7 @@ def _read_stream_block(data_path: Path, offset: int) -> bytes:
 
 def _extract_page(block_xml: bytes, pageid: int) -> dict | None:
     """Pull one ``<page>`` out of a decompressed block (bare page elements)."""
-    root = ET.fromstring(b"<root>" + block_xml + b"</root>")  # noqa: S314 - our own dump
+    root = _safe_fromstring(b"<root>" + block_xml + b"</root>")
     for page in root.iter("page"):
         pid = page.findtext("id")
         if pid is None or int(pid) != pageid:
@@ -137,7 +143,7 @@ def find_page(wiki: str, title: str, *, base_dir: Path | None = None) -> dict:
     try:
         block = _read_stream_block(paths["data"], hit["offset"])
         page = _extract_page(block, hit["pageid"])
-    except (OSError, ValueError, ET.ParseError) as exc:
+    except (OSError, ValueError, ET.ParseError, DefusedXmlException) as exc:
         _LOG.warning("dump block read failed for %s:%s", wiki, title, exc_info=True)
         return {"found": False, "reason": "block-unreadable", "error": str(exc),
                 "wiki": wiki.lower()}

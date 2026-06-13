@@ -62,6 +62,9 @@ dependencies = [
     # absent rather than silently degrading -- see src/utils/security.py).
     "bleach>=6.1",
     "bcrypt>=4.1",
+    # Untrusted-XML hardening: Wikipedia dumps are parsed as untrusted input
+    # (billion-laughs / XXE defense). Used by src/wiki/dumpread.py.
+    "defusedxml>=0.7.1",
     # Tamper-evident reporting (Ed25519 signatures + Merkle) is a core value
     # proposition of this tool, so its crypto lib ships in the core.
     "cryptography>=42.0",

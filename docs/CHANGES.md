@@ -11,14 +11,20 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
-- **CI: the type-check ratchet is deterministic again, + two real bug fixes.**
-  The mypy floor was unpinned, so a newer mypy reported one extra error
-  (129 > 128) and reddened **every** PR with no code change. mypy is now
-  **pinned** (`mypy==2.1.0`) and the baseline lowered to **127** after fixing
-  two genuine latent bugs the type errors pointed at: the HTTP 429 handler
-  read `exc.retry_after`, which `RateLimitExceeded` does not have (the
-  rate-limit handler would itself raise `AttributeError`), and an article
-  metadata row called `html.escape()` on a possibly-`None` region.
+- **CI made deterministically green again (pinned tools + real fixes).** Two
+  unpinned linters had drifted and were reddening **every** PR with no code
+  change, each masking the next:
+  - **mypy** (unpinned floor) reported one extra error (129 > 128). Pinned to
+    `mypy==2.1.0`; baseline lowered to **127** after fixing the two genuine
+    latent bugs the type errors flagged — the HTTP 429 handler read
+    `exc.retry_after`, absent on slowapi's `RateLimitExceeded` (the handler
+    meant to degrade gracefully would itself raise `AttributeError`), and an
+    article metadata row called `html.escape()` on a possibly-`None` region.
+  - **bandit** (unpinned) then failed on `B314`: `src/wiki/dumpread.py` parsed
+    Wikipedia dump XML with the stdlib parser, vulnerable to entity-expansion /
+    XXE attacks. Fixed for real — the dump (untrusted network input) is now
+    parsed with **`defusedxml`** (a genuine defense, not a suppressed warning),
+    and bandit is pinned (`bandit==1.9.4`).
 
 - **Installer: the passphrase moment, fixed live.** The one-line
   `curl | bash` install crashed at "Initialising the database" on a fresh
