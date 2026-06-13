@@ -156,6 +156,22 @@ ordering" — that design is adopted, this plan wires it as the default path.
   still serialise, but invisibly — the user sees a queued job, never a
   question. (The modal was the right primitive for the manual era; continuous
   + queue replaces it.)
+- **NO source cap — cover EACH AND EVERY source, ALL modes.** Remove
+  `max_sources_per_run` (the 1000 cap): any cap *selects* which sources to skip,
+  and that selection cannot be justified. The continuous per-country round-robin
+  already guarantees every source is reached over time without starvation, so
+  the cap is both unnecessary and unethical. All modes run (RSS + crawl +
+  markets + commodities + weather + wiki + DDG).
+- **Bandwidth PRIORITY LADDER (ordering ≠ exclusion).** Under constrained
+  bandwidth, decide what runs *first*, never what runs *at all*:
+  1. **commodities / markets / weather** — small payloads, cheap, high value;
+  2. **interactive DDG searches** — snappy UX (user-facing preempts background);
+  3. **RSS feeds**;
+  4. **recursive crawling** — heaviest, only with bandwidth headroom.
+  Weight by (freshness-due, cost, interactivity): periodic markets/weather fetch
+  when new data is due, not constantly. The **task manager surfaces and tunes**
+  this allocation (a bandwidth budget/meter across job kinds), tied to the
+  measured throughput and the Step-2 parallel-download concurrency.
 
 ## Step 6 — Move "Collect" into Settings → Download (hide the mechanics)
 

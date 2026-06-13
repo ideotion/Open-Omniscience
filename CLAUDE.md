@@ -423,6 +423,23 @@ ruling, a contingency, or a deliberate-omission note.
   worker; degrade loudly with T4 transport-aware verdicts. ROOT CAUSE recorded:
   today max_concurrent=1 (dumps.py:92) + sequential collect loop
   (runner.py:217) = exactly ONE circuit ever active = worst-case Tor.
+  **NO SOURCE CAP + BANDWIDTH PRIORITY LADDER (ruled 2026-06-13, maintainer):**
+  REMOVE max_sources_per_run (the 1000 cap) — ANY cap induces an unjustifiable
+  SELECTION of which sources to skip ("we cannot choose"); scraping must cover
+  EACH AND EVERY source, and ALL modes (RSS + crawl + markets + commodities +
+  weather + wiki + DDG). The cap was a per-run batch limit; the continuous
+  per-country round-robin replaces it — over time EVERYTHING is covered, no
+  source starved, no selection made. CRUCIAL DISTINCTION: ordering ≠ exclusion —
+  a bandwidth PRIORITY LADDER decides what runs FIRST under constrained
+  bandwidth, never what runs AT ALL. The ladder (maintainer): (1) commodities /
+  markets / weather FIRST — small payloads, cheap, high value; (2) interactive
+  DDG searches next — snappy UX (user-facing preempts background); (3) RSS
+  feeds; (4) recursive crawling ONLY with bandwidth headroom (heaviest). The
+  task manager surfaces + tunes this bandwidth allocation (a budget/meter across
+  job kinds), tied to the measured throughput and the parallel-download
+  concurrency. Weight by (freshness-due, cost, interactivity): periodic
+  markets/weather fetch when new data is due, not constantly. Folds into
+  SCRAPING_AUTOMATION_PLAN Steps 2/5/7.
 - **FIELD-LOG ANALYSIS 2026-06-13 (4 session exports crunched: perf report +
   debug bundle + network preflight + keyword diagnostics; live corpus ≈1.5k
   articles / 62k keywords / 155k mentions, 2-core/6 GB Qubes VM, over Tor):**
@@ -901,6 +918,21 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS BUILD 2026-06-13 (items 1-3, MERGED to 0.09 — PRs #106/#107/#108):**
+  (1) CI HYGIENE — pinned mypy==2.1.0 + bandit==1.9.4 (unpinned tools had
+  drifted: mypy 129>128 reddened EVERY PR; that masked a bandit B314); fixed 2
+  real latent bugs (429 handler exc.retry_after AttributeError; escape(None));
+  fixed B314 with defusedxml (real XXE/billion-laughs defense on dump XML);
+  baseline 128→127. (2) DATA-LOSS — run_write_with_retry (src/database/write.py)
+  wraps import_points: a transient "database is locked" rolls back + re-runs the
+  idempotent work (backoff+jitter) instead of DISCARDING fetched-over-Tor prices
+  (the field-log copper/aluminum/nickel/zinc loss). (3) GUARDED SOCKET FACTORY —
+  src/safety/fetcher.guarded_session routes dumps/wiki-client/ores/DDG through
+  the kill switch + protected-mode proxy + honest versioned UA (closed a
+  TRANSPORT LEAK: dumps bypassed the in-app proxy → could egress clearnet);
+  socket-importer ratchet allowlist 6→3; +15 tests. Full suite 1056 passed.
+  REMAINING from these foundations: the single-writer QUEUE (supersedes the
+  retry), parallel downloads (item 4), task manager window (Group C).
 - **PERFORMANCE BATCH T1 (2026-06-12, this session):** measure→fix→re-measure
   at the live shape (6.4k articles / 228k keywords / 317 MB synthetic;
   `scripts/perf_harness.py`, zero network). Keyword export 14.1→4.0 s

@@ -56,6 +56,12 @@ makes the rest fall out cheaply:
 - ⬜ **Dump mirror selection**. (Step 4)
 - ⬜ **Auto-collect after one consent; boot in airplane mode; permanent when
   online**; demote the cross-kind arbitration modal → silent queue. (Step 5)
+- ⬜ **No source cap — remove `max_sources_per_run`** (any cap = unjustifiable
+  selection); cover every source + all modes via continuous round-robin.
+  (maintainer 2026-06-13; Step 5)
+- ⬜ **Bandwidth priority ladder** (ordering ≠ exclusion): markets/commodities/
+  weather → interactive DDG → RSS → recursive crawl (headroom only); surfaced +
+  tunable in the task manager. (maintainer 2026-06-13; Steps 2/5/7)
 - ⬜ **Collect tab → Settings → Download** (test-gated removal). (Step 6)
 - ⬜ **Drop guaranteed-fail default feeds** (Google holiday calendars 100%
   robots-denied, webcal.guru, etc.). (log E)
