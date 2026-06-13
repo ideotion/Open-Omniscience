@@ -548,10 +548,15 @@ async def monitor_requests(request: Request, call_next):
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     logger.warning(f"Rate limit exceeded for {get_remote_address(request)}: {request.url}")
     REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, http_status=429).inc()
+    # slowapi's RateLimitExceeded does not expose a public `retry_after`; only
+    # emit the header when an explicit value is present (avoids an AttributeError
+    # inside the very handler meant to degrade gracefully).
+    retry_after = getattr(exc, "retry_after", None)
+    headers = {"Retry-After": str(retry_after)} if retry_after is not None else {}
     return JSONResponse(
         status_code=429,
         content={"detail": "Too many requests. Please try again later."},
-        headers={"Retry-After": str(exc.retry_after)},
+        headers=headers,
     )
 
 
@@ -991,7 +996,7 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
             _row("Captured (downloaded)", _html.escape(captured) if captured else None),
             _row(
                 "Region (from the source's catalog entry)",
-                _html.escape(a.country or a.region) if (a.country or a.region) else None,
+                _html.escape(a.country or a.region or "") if (a.country or a.region) else None,
             ),
             *deduced_extra,
             _row(
