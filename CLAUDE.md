@@ -511,7 +511,28 @@ ruling, a contingency, or a deliberate-omission note.
   invariant #16; REMAINING: roll ooChart onto commodity-card enlarge,
   indices board detail, timemap-adjacent charts):** Commodities cards render the real curve at every
   timeframe (drop the "· 5 pts" suffix); axes detailed; discrete gridlines.
-  S&P500 is an INDEX, not a commodity — reclassify; expand feeds (rare
+  **COMMODITIES TAB REWORK (ruled 2026-06-13, field session):** (1) split the
+  board GRAPHS INTO CATEGORY TABS (the universal subtab grammar — UI plan §1);
+  data-oriented presentation. (2) REPLACE the 5-choice time-scale select
+  (index.html:1207-1208 — 1mo/6mo/1yr/5yr/all) with the SAME sophisticated
+  begin/end/timescale TIME-SCOPE control built once for corpora/search — a
+  real, intuitive range UI, not 5 buttons. (3) DATA-POINT BUG diagnosed: the
+  per-card SVG is full-resolution within the window (windowPrices date-filter,
+  no downsampling — good), BUT the sparse-series fallback (index.html:4951-4954)
+  silently shows the ENTIRE history when a window holds <2 points, so a NARROW
+  window (1 month) on a sparse monthly series dumps the full 5-yr history while
+  "1 year" shows only ~12 points — that is why the smallest scale paradoxically
+  shows the MOST points. FIX per invariant #16: respect the window; render
+  sparse series as honest POINTS with n + early-corpus caveat (never silently
+  expand the window). Precision limited ONLY by gathered data + renderer.
+  (4) CLICK A GRAPH → a DEDICATED WINDOW/TAB (like search results), NOT the
+  bottom-of-page #mkt-chart (index.html:1214, current onclick chartSymbol →
+  detail+correlation at the bottom). The window IS the corpora flagship with
+  the coherent sub-tabs: keywords · When/Where/Who · mindmap · corpus
+  analytics · source analytics · links · the price curve with the article
+  timeline OVERLAID (commodity-click → keyword-family corpus, already ruled in
+  the corpora entry; co-occurrence NEVER causation). S&P500 is an INDEX, not a
+  commodity — reclassify; expand feeds (rare
   earths, oil, gas, LNG, sand, cereals, sugar…). **Tor/indices diagnosis
   (logs analyzed 2026-06-12) — SHIPPED in T4:** transport-aware verdict
   taxonomy (refused ≠ robots-disallowed ≠ dead-series ≠ unreachable ≠
