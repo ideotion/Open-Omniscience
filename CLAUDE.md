@@ -211,6 +211,15 @@ ruling, a contingency, or a deliberate-omission note.
   of a 32 s wall; read small denormalisable facts via covering indexes or a
   one-pass Python map instead. FastAPI JSONResponse uses COMPACT JSON
   separators — streamed JSON must pass separators=(",",":") for byte parity.
+- **RESTORE IS ADDITIVE-ONLY (ruled 2026-06-13, field session):** restoring a
+  backup must NEVER replace the corpus — it ALWAYS complements it additively,
+  duplicate-lessly (the v2 merge engine's exact behaviour: nothing replaced or
+  deleted, bit-for-bit dedup, conflicts keep local + report both). The LEGACY
+  replace-restore path must be REMOVED/made unreachable (not merely demoted) so
+  no flow can ever overwrite the corpus; the merge is the ONLY restore. (The
+  chrome still showed legacy "replace your current corpus with the uploaded
+  file" wording — retire it.) Crown test already forbids silent decrypt across
+  restore; extend the absorption/guard so no replace path survives.
 - **DB-RELIABILITY BATCH — REMAINING RIDERS (core SHIPPED; the Settings
   restore-preview UI SHIPPED in T6, 2026-06-12 — v2 flow primary, legacy
   demoted-not-removed):** D1/D4 state-into-DB migrations (settings/
@@ -406,12 +415,56 @@ ruling, a contingency, or a deliberate-omission note.
   the guided wizard's ONE consent (continuous-collection design adopted,
   zero-network boot intact); (6) the Collect TAB LEAVES the sidebar → an
   elaborated Settings → Download section (nothing lost — invariant #8 + the
-  Desk lesson, gated by an absorption test); (7) the task-manager WINDOW
-  (item 4 above). GUARDRAILS: per-host politeness never traded for speed
+  Desk lesson, gated by an absorption test); **the SOURCES tab AND the
+  WIKIPEDIA tab ALSO leave the sidebar into Settings (ruled 2026-06-13) —
+  same content-first principle, same absorption-test guard;** (7) the
+  task-manager WINDOW (item 4 above). GUARDRAILS: per-host politeness never traded for speed
   (parallel across hosts/circuits, bounded per host); kill switch gates every
   worker; degrade loudly with T4 transport-aware verdicts. ROOT CAUSE recorded:
   today max_concurrent=1 (dumps.py:92) + sequential collect loop
   (runner.py:217) = exactly ONE circuit ever active = worst-case Tor.
+- **FIELD-LOG ANALYSIS 2026-06-13 (4 session exports crunched: perf report +
+  debug bundle + network preflight + keyword diagnostics; live corpus ≈1.5k
+  articles / 62k keywords / 155k mentions, 2-core/6 GB Qubes VM, over Tor):**
+  findings ranked —
+  (A) **DATA LOSS — "database is locked" (HIGH):** the commodity import
+  collided with the active scrape on the single SQLite writer; copper/aluminum/
+  nickel/zinc… FETCHED OK over Tor then FAILED TO STORE ("store error:
+  OperationalError: database is locked", verdict ok, retryable:false) — real
+  downloaded data DISCARDED. WAL lets readers pass but two WRITERS still
+  conflict; the import path lacks busy_timeout / write-queue. FIX = the
+  single-writer QUEUE from SCRAPING_AUTOMATION_PLAN Step 2 (all writes enqueue;
+  import + scrape never collide) + busy_timeout + retry-on-locked. This is the
+  field-log-#1 'database is locked' item, now with proof of data loss — ELEVATE.
+  (B) **UI POLLING STORM (MED):** ~2 h uptime drove /api/system/vitals ×4120,
+  /api/scheduler/activity ×2747, /api/scheduler/status ×1846,
+  /api/system/network ×1388, /api/jobs ×248 = ~10k polls contending with the
+  encrypted DB. FIX = consolidate into ONE status poll or SSE/push; adaptive
+  backoff when idle; the airplane/scheduler already push state — lean on that.
+  (C) **keyword_export 29.6 s then 65.2 s (MED):** run2 SLOWER than run1 = not
+  cache, it is CONTENTION with the live scrape over the single SQLCipher
+  connection (T1 measured ~7.8 s encrypted on a BIGGER synthetic corpus). Same
+  root as (A)/(B): one connection, pure-Python serialized. Revisit after the
+  writer queue + a read snapshot for exports.
+  (D) **DISCOVERY creates COMMERCE sources (MED honesty):** the citation
+  discovery created shop.popsci.com, store.popsci.com, popularscienceprints.com
+  — merch/storefronts, not journalism. FIX = filter obvious commerce
+  (shop./store./buy./*prints.com) from discovery candidates; never auto-enable.
+  (E) **DEAD DEFAULT FEEDS waste preflight (LOW):** every google-hol-* calendar
+  is robots-disallowed (100% fail), webcal.guru religious feeds disallowed,
+  raw.githubusercontent/space.floern/cantonbecker robots-undetermined → all
+  dead; the WORKING set is worldpublicholiday.com (wph-*), monkeyness moons,
+  ose-calendar. FIX = drop the guaranteed-fail feeds from defaults (honest
+  fail-closed is correct, but shipping them as defaults wastes cycles).
+  (F) **RSS DUP RATE ~93% (LOW):** last passes 284/305 and 179/305 duplicate at
+  interval_minutes=1. FIX = conditional GET (ETag/If-Modified-Since) + per-feed
+  backoff when all-duplicate; continuous-collection should not re-pull unchanged
+  feeds every minute. (G) NOTE: Tor 403s on premium news (reuters/ft/bloomberg/
+  economist/lefigaro…) are the Tor-population reality, already surfaced via T4
+  transport verdicts — not a bug. FRED timeouts over Tor confirm the
+  parallel/official-endpoint direction. keyword diagnostics: language_mismatch
+  flagging WORKS (515 flagged, e.g. ANS en→fr:60); "services" tagged kind=entity
+  is the ongoing keyword-quality tail, not new.
 - **IN-APP OLLAMA/MODEL INSTALLER + APP SELF-UPDATE (ruled 2026-06-13;
   designed in FUTURE_DEVELOPMENTS):** Settings → LLM panel installs Ollama +
   pulls models from the GUI (checksum-verified through the guarded factory,
@@ -618,6 +671,21 @@ ruling, a contingency, or a deliberate-omission note.
   reference VM; the dump-as-baseline + recentchanges-as-delta architecture;
   tiered depth proposal; what consent/visibility the auto-tracking needs).
   Ask/comment WHEN THE TIME COMES, per the maintainer — not now.
+  **WIKIPEDIA AS A SETTINGS-MANAGED, AUTO-WATCHED SOURCE (ruled 2026-06-13,
+  field session):** (1) Wikipedia is watched ENTIRELY and BY DEFAULT in ALL
+  12 UI-language editions — auto-watch is the default, not a per-page opt-in;
+  (2) the WIKIPEDIA TAB MOVES INTO SETTINGS (content-first; the watched
+  corpus surfaces in general search/analysis like any article — invariant #8);
+  (3) WHICH dumps to download is DECIDED AT FIRST RUN (the guided wizard #24 —
+  language-dataset choice folds in there, honest size guidance per edition);
+  (4) a Wikipedia DUMP DOWNLOAD MUST NOT DELAY scraping or other downloads —
+  it is its own task-manager job (files, no DB-writer contention; parallel by
+  the T9 ruling); (5) FULL download CONTROLS live in the task manager: rate,
+  percentage, speed, BANDWIDTH CAP, ETA at current average speed, pause,
+  resume, prioritize, de-prioritize. Builds on the SUPERSEDING auto-track
+  ruling above (dump-as-baseline + recentchanges-delta) and the
+  SCRAPING_AUTOMATION_PLAN download subsystem. Scale honesty still applies
+  (enwiki ≈ 100k edits/day vs the 2-core VM) — tiered depth + visible consent.
 - **WIKIPEDIA (field report #4; T14 SLICE 1 SHIPPED 2026-06-12):** the RULED
   dump-list limit SHIPPED (/api/wiki/languages?scope=dumps serves only
   APP_LANGUAGE_CODES = 12 UI locales + 5 stoplist-evidenced corpus languages;
