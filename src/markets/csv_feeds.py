@@ -33,6 +33,7 @@ from dateutil import parser as date_parser
 from sqlalchemy.orm import Session
 
 from src.database.models import CommodityPrice
+from src.database.write import run_write_with_retry
 from src.ingest import EthicalFetcher, FetchError
 from src.markets.extract import parse_number
 
@@ -109,38 +110,48 @@ def import_points(
     """Insert price points, skipping any that already exist for the same day.
 
     Idempotent on ``(symbol, market, observed_on)``: re-running an import adds only
-    genuinely new dates rather than duplicating the series.
+    genuinely new dates rather than duplicating the series. That idempotence is
+    also what makes the write safe to RETRY on transient lock contention -- a
+    long collection pass can hold the single writer past ``busy_timeout``, and
+    without a retry the already-fetched points were silently discarded with
+    "database is locked" (field log 2026-06-13). The whole unit of work runs
+    under ``run_write_with_retry``: on a lock it rolls back and re-runs from
+    scratch (re-querying ``existing``), so no fetched data is lost to a lock.
     """
-    existing = {
-        d
-        for (d,) in session.query(CommodityPrice.observed_on)
-        .filter_by(symbol=symbol, market=market)
-        .all()
-    }
-    imported = 0
-    for observed, value in points:
-        if observed in existing:
-            continue
-        existing.add(observed)
-        session.add(
-            CommodityPrice(
-                symbol=symbol,
-                market=market,
-                observed_on=observed,
-                price=value,
-                currency=currency,
-                unit=unit,
-                source=source,
+
+    def _work() -> dict:
+        existing = {
+            d
+            for (d,) in session.query(CommodityPrice.observed_on)
+            .filter_by(symbol=symbol, market=market)
+            .all()
+        }
+        imported = 0
+        for observed, value in points:
+            if observed in existing:
+                continue
+            existing.add(observed)
+            session.add(
+                CommodityPrice(
+                    symbol=symbol,
+                    market=market,
+                    observed_on=observed,
+                    price=value,
+                    currency=currency,
+                    unit=unit,
+                    source=source,
+                )
             )
-        )
-        imported += 1
-    session.commit()
-    return {
-        "symbol": symbol,
-        "imported": imported,
-        "skipped_existing": len(points) - imported,
-        "received": len(points),
-    }
+            imported += 1
+        session.commit()
+        return {
+            "symbol": symbol,
+            "imported": imported,
+            "skipped_existing": len(points) - imported,
+            "received": len(points),
+        }
+
+    return run_write_with_retry(_work, session=session, label=f"import_points[{symbol}]")
 
 
 @dataclass
