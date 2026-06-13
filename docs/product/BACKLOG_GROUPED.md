@@ -57,8 +57,14 @@ makes the rest fall out cheaply:
 - ⬜ **Segmented HTTP-Range** over multiple circuits + `IsolateSOCKSAuth` (one
   big dump, fast). (Step 3)
 - ⬜ **Dump mirror selection**. (Step 4)
-- ⬜ **Auto-collect after one consent; boot in airplane mode; permanent when
+- 🔨 **Auto-collect after one consent; boot in airplane mode; permanent when
   online**; demote the cross-kind arbitration modal → silent queue. (Step 5)
+  SHIPPED: boot-in-airplane-mode (offline every boot, autostart-at-boot retired),
+  CONTINUOUS collection loop (`continuous` default on — back-to-back passes, no
+  interval idle: the "scraping stopped" fix), per-country round-robin ordering
+  (`round_robin_interleave` — breaks the US-volume bias). REMAINING: the
+  onboarding country/language picker, the explainable "cycle N, X/Y countries,
+  next: cc" detail, and demoting the arbitration modal (frontend).
 - ⬜ **No source cap — remove `max_sources_per_run`** (any cap = unjustifiable
   selection); cover every source + all modes via continuous round-robin.
   (maintainer 2026-06-13; Step 5)

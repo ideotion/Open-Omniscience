@@ -32,6 +32,12 @@ class SchedulerSettings:
 
     autostart: bool = False
     interval_minutes: int = 60
+    # Continuous collection (maintainer 2026-06-13: "scraping should never
+    # stop"). When True (the default), the scheduler runs passes back-to-back
+    # with only a short inter-pass gap instead of idling ``interval_minutes``
+    # between them — so when the operator is online, collection is permanent.
+    # Set False to restore the old run-once-then-wait-``interval_minutes`` cadence.
+    continuous: bool = True
     mode: str = "rss"  # "rss" (feeds) or "crawl" (bounded recursion)
     # 0 = UNBOUNDED (cover every source / watched item) -- the default. Any cap
     # silently SELECTS which sources to skip, which cannot be justified
@@ -116,6 +122,7 @@ def load_settings() -> SchedulerSettings:
         interval_minutes=_coerce_int(
             raw.get("interval_minutes"), d.interval_minutes, _MIN_INTERVAL, _MAX_INTERVAL
         ),
+        continuous=_coerce_bool(raw.get("continuous"), d.continuous),
         mode=mode,
         # lo=0 allows the unbounded default; hi is a generous safety ceiling for
         # an explicit soft cap, never a selection imposed by us.
@@ -145,6 +152,8 @@ def save_settings(updates: dict) -> SchedulerSettings:
         current.mode = mode
     if "autostart" in updates and updates["autostart"] is not None:
         current.autostart = _coerce_bool(updates["autostart"], current.autostart)
+    if "continuous" in updates and updates["continuous"] is not None:
+        current.continuous = _coerce_bool(updates["continuous"], current.continuous)
 
     def _ranged(key: str, lo: int, hi: int, label: str) -> None:
         if key in updates and updates[key] is not None:

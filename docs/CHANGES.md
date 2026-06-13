@@ -60,6 +60,31 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
     `…prints` name. Discovery candidates are never auto-enabled, so the only
     cost of a rare false positive is one un-suggested domain.
 
+- **Continuous collection + airplane-mode boot + per-country fair ordering
+  (content-first, the field-test "scraping stopped" fix).** Three linked changes
+  realise the maintainer's ruling that *"scraping should never stop"* and the app
+  should *"boot offline, then collect continuously once the operator says go"*:
+  - **The app now boots in AIRPLANE MODE (offline) every time** — startup engages
+    the offline state explicitly, so nothing scrapes until the operator crosses
+    online once (the one consent, `POST /api/scheduler/start`). Zero-network boot
+    was already a non-negotiable; it is now *explicit and visible* in the airplane
+    toggle. The old "autostart at boot" is retired by this ruling (boot is always
+    offline). Gated by `OO_NO_SCHEDULER`, so tests/headless setups are untouched.
+  - **When online, collection is CONTINUOUS.** The scheduler no longer runs one
+    pass and then idles `interval_minutes` (which is exactly why a field tester
+    saw scraping "stop" — it was idling, not crashing). With `continuous=true`
+    (the new default) passes run back-to-back with only a short, interruptible
+    gap, so while online the corpus fills permanently. `continuous=false` restores
+    the old run-once-then-wait cadence.
+  - **Per-country round-robin ordering** (`round_robin_interleave`) reorders each
+    pass so every country gets a turn before any country gets a second — one
+    source per country, then repeat. This breaks the US-volume bias *structurally*
+    (equal turns per country, not turns proportional to how many sources a country
+    has). Within-country order is preserved; sources without a country share one
+    bucket; nothing is ever dropped. The activity/plan preview reflects this order
+    honestly. (Parallel fetch, the onboarding country/language picker, and demoting
+    the cross-kind arbitration modal to a silent queue are the next Group-B slices.)
+
 - **Parallel, circuit-isolated dump downloads (the Tor speed fix for dumps).**
   Dump downloads ran strictly one at a time (`max_concurrent = 1`), so over Tor
   a single slow circuit was the ceiling — 56K-modem speeds. Now up to
