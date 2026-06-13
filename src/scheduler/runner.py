@@ -23,6 +23,7 @@ import logging
 import threading
 from datetime import UTC, datetime, timedelta
 
+from src.database.query import capped
 from src.scheduler.settings import SchedulerSettings, load_settings
 
 _LOG = logging.getLogger(__name__)
@@ -47,6 +48,23 @@ def select_sources(session, settings: SchedulerSettings):
     if settings.select_tags:
         q = q.filter(or_(*[Source.tags.ilike(f"%{t}%") for t in settings.select_tags]))
     return q.order_by(Source.priority.asc(), Source.id.asc())
+
+
+def _item_mode_count(session, settings: SchedulerSettings) -> int:
+    """How many watched items a wiki/law/markets pass will cover (for the preview
+    estimate). With no per-run cap this is the true count; a soft cap clamps it."""
+    from src.database.models import LawDocument, MarketExtractionRule, WikiPage
+
+    if settings.mode == "wiki":
+        n = session.query(WikiPage).filter_by(watched=True).count()
+    elif settings.mode == "law":
+        n = session.query(LawDocument).filter_by(watched=True).count()
+    elif settings.mode == "markets":
+        n = session.query(MarketExtractionRule).filter_by(enabled=True).count()
+    else:
+        return 0
+    cap = settings.max_sources_per_run
+    return min(n, cap) if cap and cap > 0 else n
 
 
 # --- Live run progress (maintainer-ruled 2026-06-10: the activity chip opens -- #
@@ -83,7 +101,7 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     targets: list[str] = []
     total = 0
     if settings.mode in ("rss", "crawl"):
-        rows = select_sources(session, settings).limit(settings.max_sources_per_run).all()
+        rows = capped(select_sources(session, settings), settings.max_sources_per_run).all()
         total = len(rows)
         targets = [r.domain for r in rows[:8]]
         delays = [max((r.rate_limit_ms or 1000) / 1000.0, 1.0) for r in rows] or [1.0]
@@ -103,8 +121,9 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
             "not a promise; robots crawl-delays can stretch it."
         )
     else:
-        # wiki / law / markets iterate watched items, not sources.
-        total = settings.max_sources_per_run
+        # wiki / law / markets iterate watched items, not sources. With no cap
+        # (the default), report the REAL count of items this pass will cover.
+        total = _item_mode_count(session, settings)
         est = None
         method = "item-mode pass (wiki/law/markets): duration depends on the remote service."
     return {
@@ -181,13 +200,12 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     if settings.mode == "markets":
         from src.markets.pipeline import run_rules
 
-        rules = (
+        rules = capped(
             session.query(MarketExtractionRule)
             .filter_by(enabled=True)
-            .order_by(MarketExtractionRule.id.asc())
-            .limit(settings.max_sources_per_run)
-            .all()
-        )
+            .order_by(MarketExtractionRule.id.asc()),
+            settings.max_sources_per_run,
+        ).all()
         result = run_rules(session, rules, fetcher=fetcher)
         _add(result["tally"])
         finished = datetime.now(UTC)
@@ -203,7 +221,7 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
             "duration_s": round((finished - started).total_seconds(), 2),
         }
 
-    sources = select_sources(session, settings).limit(settings.max_sources_per_run).all()
+    sources = capped(select_sources(session, settings), settings.max_sources_per_run).all()
 
     _progress_set(
         mode=settings.mode,
