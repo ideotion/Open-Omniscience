@@ -35,6 +35,31 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   New `tests/test_write_gate.py` proves the contract and that six threads
   writing a real file-backed store concurrently never lock and are serialised.
 
+- **Collection efficiency & honesty from the field log (RSS conditional GET +
+  discovery commerce filter).** Two fixes from the 2026-06-13 field analysis:
+  - **RSS conditional GET (finding F).** At 1-minute collection intervals ~93%
+    of feed items were duplicates — the feeds had not changed, yet each was
+    re-downloaded and re-parsed every pass. The fetcher now sends
+    `If-None-Match` / `If-Modified-Since` (from per-feed validators) and treats
+    **`304 Not Modified` as a valid result** (empty body, not a `FetchError`);
+    `ingest_source` stores the `ETag`/`Last-Modified` per feed in a new
+    `feed_fetch_state` table and **skips parsing entirely on a 304**. The table
+    is separate from `sources` on purpose — `create_all` materialises a missing
+    *table* on every existing database at boot, so there is no ADD COLUMN
+    migration to run and no "no such column" risk in the collection hot path
+    (validators are opaque HTTP tokens, stored and echoed verbatim, never
+    parsed). Backward compatible: a plain fetch sends no conditional headers and
+    behaves exactly as before. (Per-feed *backoff* for feeds that never send an
+    ETag is deferred to the continuous-collection batch, where the scheduling
+    lives.)
+  - **Discovery no longer suggests storefronts (finding D).** Citation discovery
+    had surfaced `shop.popsci.com`, `store.popsci.com` and
+    `popularscienceprints.com` — merch, not journalism. A conservative,
+    explainable filter (`is_commerce_domain`) drops candidates with a leftmost
+    `shop.`/`store.`/`buy.` label, a `.shop`/`.store` commercial gTLD, or a
+    `…prints` name. Discovery candidates are never auto-enabled, so the only
+    cost of a rare false positive is one un-suggested domain.
+
 - **Parallel, circuit-isolated dump downloads (the Tor speed fix for dumps).**
   Dump downloads ran strictly one at a time (`max_concurrent = 1`), so over Tor
   a single slow circuit was the ceiling — 56K-modem speeds. Now up to

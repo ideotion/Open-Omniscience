@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from src.api.main import app
 from src.database.models import Article, ArticleLink, Source, SourceCandidate
 from src.database.session import SessionLocal, init_db
-from src.discovery.channels import citation_channel, run_discovery
+from src.discovery.channels import citation_channel, is_commerce_domain, run_discovery
 
 
 @pytest.fixture()
@@ -80,6 +80,39 @@ def test_citation_channel_skips_known_and_dismissed_domains(db):
     created = citation_channel(db, cap=50)
     assert known not in created
     assert dismissed not in created  # dismissal is remembered, never re-suggested
+
+
+def test_is_commerce_domain_filter():
+    # The field-log offenders (2026-06-13) and kindred storefronts.
+    assert is_commerce_domain("shop.popsci.com")
+    assert is_commerce_domain("store.popsci.com")
+    assert is_commerce_domain("popularscienceprints.com")
+    assert is_commerce_domain("buy.example.com")
+    assert is_commerce_domain("acme.shop")  # commercial gTLD
+    assert is_commerce_domain("brand.store")
+    # Journalism / ordinary domains must pass through.
+    assert not is_commerce_domain("popsci.com")
+    assert not is_commerce_domain("nation.africa")
+    assert not is_commerce_domain("theguardian.com")
+    assert not is_commerce_domain("en.wikipedia.org")
+    assert not is_commerce_domain("")
+    assert not is_commerce_domain(None)
+
+
+def test_citation_channel_skips_commerce_storefronts(db):
+    # A frequently-cited storefront is still not a journalism source.
+    shop = "shop.popsci.example"  # leftmost storefront label
+    prints = "popularscienceprints.example"  # …prints name
+    legit = f"news-{uuid.uuid4().hex[:6]}.example"
+    for d in (shop, prints, legit):
+        _seed_citations(db, d, 4)  # all above the min
+    created = citation_channel(db, cap=50)
+    assert legit in created
+    assert shop not in created
+    assert prints not in created
+    # And nothing commercial was staged as a candidate.
+    assert db.query(SourceCandidate).filter_by(domain=shop).first() is None
+    assert db.query(SourceCandidate).filter_by(domain=prints).first() is None
 
 
 def test_citation_channel_honours_the_cap(db):

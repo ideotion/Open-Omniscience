@@ -11,6 +11,37 @@ _LOG = logging.getLogger(__name__)
 
 _CITATION_MIN = 3  # distinct citing articles before a domain becomes a candidate
 
+# Commerce/storefront filter for the citation channel (field log 2026-06-13:
+# citation discovery surfaced shop.popsci.com, store.popsci.com and
+# popularscienceprints.com — merch, not journalism). Conservative + explainable:
+# a leftmost storefront subdomain, a commercial gTLD, or a print-shop name.
+# Discovery candidates are never auto-enabled, so the only cost of a rare
+# false positive is one un-suggested domain; the win is not nudging the operator
+# toward a brand's shop as if it were a source.
+_COMMERCE_LABELS = frozenset(
+    {
+        "shop", "shops", "store", "stores", "buy", "cart", "checkout",
+        "merch", "shopping", "deals", "coupons", "ecommerce", "basket", "boutique",
+    }
+)
+_COMMERCE_TLDS = frozenset({"shop", "store", "buy", "deals", "tickets", "boutique"})
+
+
+def is_commerce_domain(host: str | None) -> bool:
+    """True for a storefront/merch domain a journalism source-discovery should
+    not suggest (a leftmost shop./store./buy. label, a .shop/.store gTLD, or a
+    ``…prints`` second-level name). Heuristic, conservative, label-based."""
+    if not host:
+        return False
+    labels = host.lower().split(".")
+    if len(labels) < 2:
+        return False
+    if labels[0] in _COMMERCE_LABELS:  # shop./store./buy.<domain>
+        return True
+    if labels[-1] in _COMMERCE_TLDS:  # <name>.shop / <name>.store gTLD
+        return True
+    return labels[-2].endswith("prints")  # popularscienceprints.com and kin
+
 
 def _existing_domains(session) -> set[str]:
     from src.database.models import Source, SourceCandidate
@@ -38,8 +69,8 @@ def _add_candidate(session, *, domain: str, name: str | None, channel: str, evid
 
 def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -> list[str]:
     """Suggest external domains that >= min_citations distinct stored articles cite."""
-    from src.database.models import ArticleLink
     from src.catalog.normalize import registrable_domain
+    from src.database.models import ArticleLink
 
     known = _existing_domains(session)
     pairs = session.query(ArticleLink.normalized_url, ArticleLink.article_id).distinct().all()
@@ -50,10 +81,16 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
             by_domain[dom.lower()].add(aid)
 
     created: list[str] = []
+    skipped_commerce = 0
     for dom, ids in sorted(by_domain.items(), key=lambda kv: -len(kv[1])):
         if len(created) >= cap:
             break
         if len(ids) < min_citations or dom in known:
+            continue
+        if is_commerce_domain(dom):
+            # A storefront/merch domain frequently cited by articles is still not
+            # a journalism source — never suggest it (field log 2026-06-13).
+            skipped_commerce += 1
             continue
         _add_candidate(
             session,
@@ -69,6 +106,8 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
         created.append(dom)
     if created:
         session.flush()  # autoflush is off app-wide; make the rows visible to callers
+    if skipped_commerce:
+        _LOG.debug("citation discovery skipped %d commerce/storefront domain(s)", skipped_commerce)
     return created
 
 
