@@ -146,13 +146,12 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
 
 def track_watched(session, fetcher, *, limit_documents: int = 50) -> dict:
     """Track all watched legal documents, returning an aggregate tally."""
-    docs = (
-        session.query(LawDocument)
-        .filter_by(watched=True)
-        .order_by(LawDocument.id.asc())
-        .limit(limit_documents)
-        .all()
-    )
+    from src.database.query import capped
+
+    docs = capped(
+        session.query(LawDocument).filter_by(watched=True).order_by(LawDocument.id.asc()),
+        limit_documents,  # 0 = every watched document (no cap)
+    ).all()
     tally = {
         "documents": 0,
         "baselines": 0,

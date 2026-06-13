@@ -812,8 +812,6 @@
             <option value="markets">Markets (price rules)</option>
             <option value="wiki">Wikipedia (watched pages)</option>
           </select></div>
-        <div><label for="sch-maxsrc">Max sources / run</label>
-          <input id="sch-maxsrc" type="number" min="1" max="1000" step="1"></div>
       </div>
       <div class="row" id="crawl-fields" style="display:none">
         <div><label for="sch-depth">Crawl depth</label>
@@ -4671,7 +4669,6 @@
     function applySchedConfig(c) {
       $("sch-interval").value = c.interval_minutes;
       $("sch-mode").value = c.mode;
-      $("sch-maxsrc").value = c.max_sources_per_run;
       $("sch-depth").value = c.crawl_max_depth;
       $("sch-pages").value = c.crawl_max_pages;
       $("sch-autostart").checked = !!c.autostart;
@@ -4739,7 +4736,6 @@
       const body = {
         interval_minutes: Number($("sch-interval").value),
         mode: $("sch-mode").value,
-        max_sources_per_run: Number($("sch-maxsrc").value),
         crawl_max_depth: Number($("sch-depth").value),
         crawl_max_pages: Number($("sch-pages").value),
         autostart: $("sch-autostart").checked,

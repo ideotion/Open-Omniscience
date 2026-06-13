@@ -11,6 +11,17 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **No per-run source cap — collection covers EVERY source.** The scheduler
+  capped each pass at `max_sources_per_run` (clamped 1–1000), which silently
+  *selected* which sources to skip — a selection that can't be justified
+  (maintainer 2026-06-13). The cap now defaults to **0 = unbounded**: rss/crawl
+  passes, market rules, and watched wiki/law items all cover everything, every
+  pass; a positive value is still honoured as an explicit soft cap. The
+  "Max sources / run" control is removed from the UI. (Ordering still decides
+  what runs *first* — the bandwidth priority ladder — but nothing is excluded.)
+  Implemented via a shared `capped()` guard (`src/database/query.py`) because
+  SQLite `LIMIT 0` returns nothing, the opposite of "no limit".
+
 - **One guarded socket factory: the kill switch and proxy now cover every
   fetch path (closes a transport leak).** Four paths — Wikipedia dump
   downloads, the MediaWiki API client, ORES scoring, and the gated DuckDuckGo

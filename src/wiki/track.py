@@ -207,13 +207,14 @@ def track_watched(
     session: Session, client, *, ores_client=None, limit_pages: int = 50, max_new: int = 50
 ) -> dict:
     """Update all watched pages. Returns an aggregated tally."""
-    pages = (
+    from src.database.query import capped
+
+    pages = capped(
         session.query(WikiPage)
         .filter_by(watched=True)
-        .order_by(WikiPage.last_checked_at.is_(None).desc(), WikiPage.last_checked_at.asc())
-        .limit(limit_pages)
-        .all()
-    )
+        .order_by(WikiPage.last_checked_at.is_(None).desc(), WikiPage.last_checked_at.asc()),
+        limit_pages,  # 0 = every watched page (no cap)
+    ).all()
     total_new = total_flagged = pages_done = 0
     for page in pages:
         try:

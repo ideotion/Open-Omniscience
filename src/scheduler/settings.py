@@ -33,7 +33,10 @@ class SchedulerSettings:
     autostart: bool = False
     interval_minutes: int = 60
     mode: str = "rss"  # "rss" (feeds) or "crawl" (bounded recursion)
-    max_sources_per_run: int = 25
+    # 0 = UNBOUNDED (cover every source / watched item) -- the default. Any cap
+    # silently SELECTS which sources to skip, which cannot be justified
+    # (maintainer 2026-06-13). A positive value is honoured as a soft cap.
+    max_sources_per_run: int = 0
     crawl_max_depth: int = 2
     crawl_max_pages: int = 50
 
@@ -114,8 +117,10 @@ def load_settings() -> SchedulerSettings:
             raw.get("interval_minutes"), d.interval_minutes, _MIN_INTERVAL, _MAX_INTERVAL
         ),
         mode=mode,
+        # lo=0 allows the unbounded default; hi is a generous safety ceiling for
+        # an explicit soft cap, never a selection imposed by us.
         max_sources_per_run=_coerce_int(
-            raw.get("max_sources_per_run"), d.max_sources_per_run, 1, 1000
+            raw.get("max_sources_per_run"), d.max_sources_per_run, 0, 1_000_000
         ),
         crawl_max_depth=_coerce_int(raw.get("crawl_max_depth"), d.crawl_max_depth, 0, 6),
         crawl_max_pages=_coerce_int(raw.get("crawl_max_pages"), d.crawl_max_pages, 1, 500),
