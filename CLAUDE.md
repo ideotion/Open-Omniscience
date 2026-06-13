@@ -240,7 +240,20 @@ ruling, a contingency, or a deliberate-omission note.
   unlocked boot). (c) The /unlock screen must carry THE canonical eye
   (invariant #5, exact same vector as the GUI top-left) — today it draws
   a DIFFERENT double-arc eye (unlock.html:44 vs index.html:578); extend
-  the invariant-#5 test to unlock.html when fixed.**
+  the invariant-#5 test to unlock.html when fixed. (d) FIRST-LAUNCH
+  GUIDED SETUP (ruled 2026-06-13): a ONE-TIME, uniquely-designed guided
+  GUI walks the user through every initial step to a WORKING scraping
+  app — language selection, the encryption choice (absorbs (b)), then
+  scraping-source setup BY THEME (drive it from the catalog's real tag
+  taxonomy: news/history/investigative/science/financial/state-media…),
+  folding in the ruled country/language-emphasis picker (field report
+  #2 item 3 — BOTH stands) and ending at the consented first collect
+  (the ONE consent design; zero-network boot preserved). It REPLACES
+  the #onboard welcome card (index.html:675-684) — whose h2/p + both
+  buttons are hardcoded English, never keyed (the maintainer flagged
+  this 2026-06-13: card strings must enter the UI translations).
+  Wizard ships ×12, informed-consent layering, and the one-time state
+  is a user-visible setting, not a hidden flag.**
   **The NEWSLETTER SCRAPER stays blocked until these riders ship AND the
   no-recovery contingency is revisited** (see Non-negotiables).
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
@@ -452,7 +465,9 @@ ruling, a contingency, or a deliberate-omission note.
   (alias pattern like #database→#library). Easter eggs gain FRENCH references
   while staying transnational/translatable (personality.yml). Home-card
   TITLES are still server-built English — template-based title translation
-  needs a design (titles carry data values).
+  needs a design (titles carry data values). **ELEVATED (maintainer REPEAT
+  2026-06-13, via the untranslated #onboard card: "like other cards" —
+  card strings must enter the UI translations).**
 - **MARKETS/INDICES/COMMODITIES (consolidated; TOOLKIT SHIPPED T8 slice 1 —
   invariant #16; REMAINING: roll ooChart onto commodity-card enlarge,
   indices board detail, timemap-adjacent charts):** Commodities cards render the real curve at every
