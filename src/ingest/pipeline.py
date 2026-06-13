@@ -20,7 +20,7 @@ import feedparser
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.database.models import Article, Source
+from src.database.models import Article, FeedFetchState, Source
 from src.ingest import (
     EthicalFetcher,
     FetchError,
@@ -265,14 +265,30 @@ def ingest_source(
     """
     tally = {r.value: 0 for r in IngestResult}
     tally["entries"] = 0
+    tally["not_modified"] = 0  # feeds answered 304 Not Modified (skipped cheaply)
 
     if not source.rss_url:
         return tally
 
+    # Conditional GET: reuse the stored ETag / Last-Modified so an UNCHANGED feed
+    # comes back as a cheap 304 instead of a full re-download + re-parse (field
+    # log 2026-06-13: ~93% duplicate rate at 1-minute intervals). Best-effort:
+    # any bookkeeping hiccup degrades to a normal fetch, never blocks collection.
+    extra_headers = _feed_conditional_headers(session, source.id)
+
     try:
-        feed_resp = fetcher.fetch(source.rss_url, require_html=False)
+        feed_resp = fetcher.fetch(
+            source.rss_url, require_html=False, extra_headers=extra_headers or None
+        )
     except FetchError:
         # Feed itself blocked/unavailable: nothing to ingest, but not an article failure.
+        return tally
+
+    _record_feed_state(session, source.id, feed_resp)
+
+    if feed_resp.status_code == 304:
+        # Unchanged since last pass — nothing new to parse or ingest.
+        tally["not_modified"] = 1
         return tally
 
     parsed = feedparser.parse(feed_resp.content)
@@ -284,6 +300,50 @@ def ingest_source(
         tally[outcome.result.value] += 1
 
     return tally
+
+
+def _feed_conditional_headers(session: Session, source_id: int) -> dict[str, str]:
+    """Build If-None-Match / If-Modified-Since from the stored feed validators.
+
+    Best-effort: returns ``{}`` on any error (a fresh DB, a missing row) so a
+    bookkeeping problem can never stop a feed from being fetched normally.
+    """
+    headers: dict[str, str] = {}
+    try:
+        state = session.get(FeedFetchState, source_id)
+        if state is not None:
+            if state.etag:
+                headers["If-None-Match"] = state.etag
+            if state.last_modified:
+                headers["If-Modified-Since"] = state.last_modified
+    except Exception:  # noqa: BLE001 - conditional GET is an optimisation, never required
+        import logging
+
+        logging.getLogger(__name__).debug("feed conditional-GET lookup failed", exc_info=True)
+    return headers
+
+
+def _record_feed_state(session: Session, source_id: int, resp) -> None:
+    """Persist the feed's latest HTTP validators + status for the next pass.
+
+    On a 304 the server may omit the ETag; the existing validator is then kept
+    (only non-None values overwrite). Best-effort and isolated from ingestion.
+    """
+    try:
+        state = session.get(FeedFetchState, source_id)
+        if state is None:
+            state = FeedFetchState(source_id=source_id)
+            session.add(state)
+        if resp.etag is not None:
+            state.etag = resp.etag
+        if resp.last_modified is not None:
+            state.last_modified = resp.last_modified
+        state.last_status = resp.status_code
+        state.last_checked_at = datetime.now(UTC)
+    except Exception:  # noqa: BLE001 - never let feed bookkeeping break ingestion
+        import logging
+
+        logging.getLogger(__name__).debug("recording feed fetch state failed", exc_info=True)
 
 
 def _exists(session: Session, **filters) -> bool:

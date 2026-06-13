@@ -450,6 +450,35 @@ class Source(Base):
         return f"<Source(name='{self.name}', domain='{self.domain}')>"
 
 
+class FeedFetchState(Base):
+    """Per-feed HTTP conditional-GET validators (ETag / Last-Modified).
+
+    Lets an unchanged RSS/Atom feed be answered with a cheap ``304 Not Modified``
+    instead of being re-downloaded and re-parsed every collection pass (field log
+    2026-06-13: ~93% of feed items were duplicates at 1-minute intervals — the
+    feeds had not changed). One row per source feed.
+
+    A SEPARATE table rather than columns on ``sources`` on purpose: ``create_all``
+    materialises a missing TABLE on every existing database at boot, so there is
+    no ADD COLUMN migration to run and no 'no such column' risk in the collection
+    hot path (the project self-heals indexes but not columns). Validators are
+    opaque HTTP tokens, stored verbatim and sent back verbatim — never parsed.
+    """
+
+    __tablename__ = "feed_fetch_state"
+
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("sources.id", ondelete="CASCADE"), primary_key=True
+    )
+    etag: Mapped[str | None] = mapped_column(String(512))  # opaque If-None-Match token
+    last_modified: Mapped[str | None] = mapped_column(String(128))  # opaque If-Modified-Since
+    last_status: Mapped[int | None] = mapped_column(Integer)  # last feed HTTP status seen
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    def __repr__(self):
+        return f"<FeedFetchState(source_id={self.source_id}, status={self.last_status})>"
+
+
 class Article(Base):
     """
     Represents a scraped article.

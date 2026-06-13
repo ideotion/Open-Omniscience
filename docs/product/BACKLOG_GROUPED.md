@@ -68,9 +68,12 @@ makes the rest fall out cheaply:
 - ⬜ **Collect tab → Settings → Download** (test-gated removal). (Step 6)
 - ⬜ **Drop guaranteed-fail default feeds** (Google holiday calendars 100%
   robots-denied, webcal.guru, etc.). (log E)
-- ⬜ **RSS conditional GET** (ETag/If-Modified-Since) + per-feed backoff (93%
-  duplicate rate). (log F)
-- ⬜ **Discovery: filter commerce/storefront candidates** (shop./store./*prints).
+- 🔨 **RSS conditional GET** (ETag/If-Modified-Since) — shipped: `feed_fetch_state`
+  table + fetcher sends conditional headers + 304 handled as a valid result, so
+  unchanged feeds are skipped (93% duplicate rate). (log F) REMAINING: per-feed
+  backoff for feeds that never send an ETag → folds into continuous collection.
+- ✅ **Discovery: filter commerce/storefront candidates** (shop./store./*prints)
+  — `is_commerce_domain` drops storefront candidates from the citation channel.
   (log D)
 - ⬜ **DDG-discovered ingest from Advanced search** (maintainer 2026-06-13) —
   "search + scrape the top X DuckDuckGo results", ingested as articles + an

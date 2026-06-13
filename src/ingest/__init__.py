@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
+from typing import Any
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -53,7 +54,14 @@ DEFAULT_USER_AGENT = (
 
 @dataclass
 class FetchResult:
-    """A successfully fetched HTML page with provenance."""
+    """A successfully fetched page with provenance.
+
+    ``status_code`` may be 304 (Not Modified) when the caller passed
+    conditional-GET headers and the resource is unchanged; in that case
+    ``content`` is empty and the caller should reuse what it already has. ``etag``
+    and ``last_modified`` carry the response's validators (when present) so the
+    caller can persist them for the next conditional request.
+    """
 
     requested_url: str
     final_url: str  # after redirects
@@ -61,6 +69,8 @@ class FetchResult:
     content: str  # decoded HTML
     content_type: str
     fetched_at: datetime
+    etag: str | None = None  # response ETag (opaque validator), if sent
+    last_modified: str | None = None  # response Last-Modified, if sent
 
 
 class FetchError(Exception):
@@ -182,11 +192,23 @@ class EthicalFetcher:
 
     # -- public API -------------------------------------------------------- #
 
-    def fetch(self, url: str, *, require_html: bool = True) -> FetchResult:
+    def fetch(
+        self,
+        url: str,
+        *,
+        require_html: bool = True,
+        extra_headers: dict[str, str] | None = None,
+    ) -> FetchResult:
         """Fetch ``url`` ethically. Raises a ``FetchError`` subclass on any refusal.
 
         ``require_html`` rejects non-HTML responses (used for article pages). Set it
         False to fetch feeds (RSS/Atom XML) through the same robots/rate-limit path.
+
+        ``extra_headers`` adds request headers (e.g. conditional-GET
+        ``If-None-Match`` / ``If-Modified-Since`` for feeds). When the server
+        answers ``304 Not Modified`` the returned ``FetchResult`` has
+        ``status_code == 304`` and empty content — a valid, non-error result, so
+        the caller can skip re-parsing an unchanged feed.
         """
         if _KILL.is_set():
             raise FetchFailed("network kill switch is active -- collection stopped by operator")
@@ -215,7 +237,7 @@ class EthicalFetcher:
                 transient: Exception | None = None
                 response = final_url = None
                 try:
-                    response, final_url = self._http_get(url)
+                    response, final_url = self._http_get(url, extra_headers=extra_headers)
                 except requests.RequestException as exc:
                     transient = FetchFailed(f"request error for {url}: {exc}")
                 finally:
@@ -235,6 +257,26 @@ class EthicalFetcher:
             # the loop exits with either a definitive response or a raised error
             assert response is not None and final_url is not None
 
+            etag = response.headers.get("ETag")
+            last_modified = response.headers.get("Last-Modified")
+
+            # 304 Not Modified: a VALID conditional-GET answer, not a failure.
+            # The resource is unchanged; return an empty-bodied result carrying
+            # the (echoed) validators so the caller can refresh its bookkeeping.
+            if response.status_code == 304:
+                if hasattr(response, "close"):
+                    response.close()
+                return FetchResult(
+                    requested_url=url,
+                    final_url=final_url,
+                    status_code=304,
+                    content="",
+                    content_type=response.headers.get("Content-Type", ""),
+                    fetched_at=datetime.now(UTC),
+                    etag=etag,
+                    last_modified=last_modified,
+                )
+
             if response.status_code != 200:
                 raise FetchFailed(f"HTTP {response.status_code} for {url}")
 
@@ -251,6 +293,8 @@ class EthicalFetcher:
                 content=content,
                 content_type=content_type,
                 fetched_at=datetime.now(UTC),
+                etag=etag,
+                last_modified=last_modified,
             )
         finally:
             activity_monitor.fetch_finished()
@@ -286,11 +330,17 @@ class EthicalFetcher:
             if _is_blocked_ip(ip):
                 raise BlockedTarget(f"{host} resolves to a non-public address ({ip})")
 
-    def _http_get(self, url: str):
-        """GET with manual, bounded redirects, re-validating every hop (SSRF)."""
+    def _http_get(self, url: str, *, extra_headers: dict[str, str] | None = None):
+        """GET with manual, bounded redirects, re-validating every hop (SSRF).
+
+        ``extra_headers`` (e.g. conditional-GET validators) are sent on each hop;
+        the final resource is the one that validates them.
+        """
         current = url
         for _ in range(self._max_redirects + 1):
-            kwargs = {"timeout": self.timeout, "allow_redirects": False}
+            kwargs: dict[str, Any] = {"timeout": self.timeout, "allow_redirects": False}
+            if extra_headers:
+                kwargs["headers"] = extra_headers
             if self._real_session:
                 kwargs["stream"] = True
             resp = self.session.get(current, **kwargs)
