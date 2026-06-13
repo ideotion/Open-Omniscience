@@ -309,19 +309,19 @@ class DumpDownloadManager:
 
 
 def _default_get(url: str, headers: dict):
-    import requests
+    # Through the guarded factory: a multi-GB dump download now refuses while the
+    # kill switch is engaged and rides the protected-mode proxy (no clearnet
+    # leak). The honest versioned UA comes from the session; ``headers`` carries
+    # only request-specific fields (e.g. a Range header for resume).
+    from src.safety.fetcher import guarded_session
 
-    return requests.get(
-        url, headers={**headers, "User-Agent": "OpenOmniscienceBot/0.4"}, stream=True, timeout=60
-    )
+    return guarded_session().get(url, headers=headers, stream=True, timeout=60)
 
 
 def _default_head(url: str):
-    import requests
+    from src.safety.fetcher import guarded_session
 
-    return requests.head(
-        url, headers={"User-Agent": "OpenOmniscienceBot/0.4"}, allow_redirects=True, timeout=30
-    )
+    return guarded_session().head(url, allow_redirects=True, timeout=30)
 
 
 _manager: DumpDownloadManager | None = None

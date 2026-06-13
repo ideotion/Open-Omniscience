@@ -16,9 +16,12 @@ from __future__ import annotations
 
 import logging
 
+from src.ingest import OO_VERSION
+
 _LOG = logging.getLogger(__name__)
 ORES_ENDPOINT = "https://ores.wikimedia.org/v3/scores"
 PROVENANCE = "ores:damaging,goodfaith"
+ORES_USER_AGENT = f"OpenOmniscienceBot/{OO_VERSION} (+https://github.com/ideotion/Open-Omniscience)"
 
 
 def dbname(wiki: str) -> str:
@@ -58,12 +61,17 @@ class OresClient:
         *,
         session=None,
         timeout: float = 20.0,
-        user_agent: str = "OpenOmniscienceBot/0.4 (+https://github.com/ideotion/Open-Omniscience)",
+        user_agent: str = ORES_USER_AGENT,
     ):
-        import requests
+        # Through the guarded factory: kill switch + protected-mode proxy apply
+        # to ORES too. ``session`` stays injectable for the pure-parser tests.
+        if session is None:
+            from src.safety.fetcher import guarded_session
 
-        self.session = session or requests.Session()
-        self.session.headers.update({"User-Agent": user_agent})
+            session = guarded_session(user_agent=user_agent)
+        else:
+            session.headers.update({"User-Agent": user_agent})
+        self.session = session
         self.timeout = timeout
 
     def score(self, wiki: str, revids: list[int]) -> dict:
