@@ -11,6 +11,26 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Per-host Tor stream isolation: each source rides its own circuit.** Over a
+  SOCKS (Tor) proxy, the `EthicalFetcher` now gives **each host its own Tor
+  circuit** — a per-host SOCKS username triggers Tor's `IsolateSOCKSAuth`, the
+  same primitive the parallel dump downloads use (#110), now applied to ordinary
+  collection. This is the safe answer to "protect the user from other sources":
+  no exit node or circuit observer can link the user's activity **across**
+  different sources, and it needs **no clearnet exposure** (it's Tor Browser's
+  "isolate by first-party domain" model). A host's page fetch **and** its
+  `robots.txt` share that host's circuit, so the isolation is complete (robots
+  is never leaked onto a shared base circuit). It's automatic and on by default
+  when a SOCKS proxy is configured (`OO_TOR_STREAM_ISOLATION=0` disables it), and
+  a **no-op** for an HTTP proxy or no proxy — the isolation is computed once from
+  the *original* host so every redirect hop stays on the one circuit. No new
+  anonymity is claimed; this only compartmentalises what the user's proxy already
+  provides. The complementary clearnet-for-Tor-hostile-sources hybrid stays an
+  explicit, consented, per-source choice (never automatic) — see
+  `FUTURE_DEVELOPMENTS.md` → "Reliable Tor & per-source transport".
+  `tests/test_tor_stream_isolation.py` proves per-host circuits, distinct
+  circuits per host, the robots+page sharing, and the disabled/non-SOCKS no-ops.
+
 - **The single-writer gate: writers serialise, so two never collide on the
   SQLite lock (keystone #1).** The store is single-writer by design, but two
   *writers* still race at the SQLite layer, and a long collection pass could

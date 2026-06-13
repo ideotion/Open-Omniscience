@@ -22,6 +22,7 @@ There is exactly one network path and no raw-requests bypass.
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 import threading
 import time
@@ -174,6 +175,13 @@ class EthicalFetcher:
         # the optional [safety] extra (PySocks); HTTP/HTTPS proxies work out of the box.
         if self.proxy:
             self.session.proxies = {"http": self.proxy, "https": self.proxy}
+        # Per-HOST Tor stream isolation (on by default; OO_TOR_STREAM_ISOLATION=0
+        # disables). Over a SOCKS proxy, each host's requests ride their OWN Tor
+        # circuit (IsolateSOCKSAuth), so no exit node or circuit observer can link
+        # the user's activity across different sources — Tor Browser's "isolate by
+        # first-party domain" model. A no-op for non-SOCKS/no proxy. We still never
+        # claim anonymity; this only compartmentalises what the proxy already gives.
+        self._stream_isolation = os.environ.get("OO_TOR_STREAM_ISOLATION", "1") != "0"
         self._max_redirects = _MAX_REDIRECTS
         # host -> (decision_parser_or_None, expiry). None == "do not fetch this host".
         self._robots: dict[str, tuple[RobotFileParser | None, float]] = {}
@@ -219,6 +227,9 @@ class EthicalFetcher:
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
 
         host_key = f"{parsed.scheme}://{parsed.netloc}"
+        # Per-host Tor circuit (computed once, from the ORIGINAL host) so the
+        # robots check and every page/redirect hop for this host share it.
+        iso_proxies = self._isolated_proxies(parsed.netloc)
 
         # robots.txt is checked once (not per retry): a disallow/unavailable is a
         # deliberate, non-transient refusal.
@@ -237,7 +248,9 @@ class EthicalFetcher:
                 transient: Exception | None = None
                 response = final_url = None
                 try:
-                    response, final_url = self._http_get(url, extra_headers=extra_headers)
+                    response, final_url = self._http_get(
+                        url, extra_headers=extra_headers, proxies=iso_proxies
+                    )
                 except requests.RequestException as exc:
                     transient = FetchFailed(f"request error for {url}: {exc}")
                 finally:
@@ -330,17 +343,49 @@ class EthicalFetcher:
             if _is_blocked_ip(ip):
                 raise BlockedTarget(f"{host} resolves to a non-public address ({ip})")
 
-    def _http_get(self, url: str, *, extra_headers: dict[str, str] | None = None):
+    def _isolated_proxies(self, netloc: str | None) -> dict[str, str] | None:
+        """Per-HOST Tor stream-isolation proxies for ``netloc`` (or ``None`` to
+        use the session's base proxy).
+
+        Returns a ``{"http":…, "https":…}`` dict whose SOCKS URL carries a
+        per-host username so Tor's ``IsolateSOCKSAuth`` builds a dedicated circuit
+        for this host. A no-op (returns ``None``) when isolation is disabled,
+        there is no proxy, or the proxy is not SOCKS. The page fetch and its
+        robots.txt both route through this, so a host's traffic shares one circuit
+        and is unlinkable to other hosts' circuits.
+        """
+        if not self._stream_isolation or not self.proxy or not netloc:
+            return None
+        # Lazy import: src.safety.fetcher imports from src.ingest, so a top-level
+        # import here would be circular. The helper is pure string work.
+        from src.safety.fetcher import _with_stream_isolation
+
+        isolated = _with_stream_isolation(self.proxy, netloc)
+        if isolated == self.proxy:
+            return None  # non-SOCKS proxy (or creds already set): nothing to isolate
+        return {"http": isolated, "https": isolated}
+
+    def _http_get(
+        self,
+        url: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        proxies: dict[str, str] | None = None,
+    ):
         """GET with manual, bounded redirects, re-validating every hop (SSRF).
 
         ``extra_headers`` (e.g. conditional-GET validators) are sent on each hop;
-        the final resource is the one that validates them.
+        the final resource is the one that validates them. ``proxies`` (per-host
+        Tor stream isolation) overrides the session proxy for THIS fetch, keyed on
+        the ORIGINAL host so every redirect hop stays on the same circuit.
         """
         current = url
         for _ in range(self._max_redirects + 1):
             kwargs: dict[str, Any] = {"timeout": self.timeout, "allow_redirects": False}
             if extra_headers:
                 kwargs["headers"] = extra_headers
+            if proxies:
+                kwargs["proxies"] = proxies
             if self._real_session:
                 kwargs["stream"] = True
             resp = self.session.get(current, **kwargs)
@@ -427,9 +472,15 @@ class EthicalFetcher:
             return cached[0]
 
         robots_url = f"{host_key}/robots.txt"
+        # Same per-host Tor circuit as the page fetch, so a host's robots.txt is
+        # not leaked onto the shared base circuit (complete per-host isolation).
+        iso = self._isolated_proxies(getattr(parsed, "netloc", None))
         decision: RobotFileParser | None
         try:
-            resp = self.session.get(robots_url, timeout=self.timeout, allow_redirects=True)
+            robots_kwargs: dict[str, Any] = {"timeout": self.timeout, "allow_redirects": True}
+            if iso:
+                robots_kwargs["proxies"] = iso
+            resp = self.session.get(robots_url, **robots_kwargs)
             status = resp.status_code
             if status == 200:
                 rp = RobotFileParser()
