@@ -366,10 +366,15 @@ ruling, a contingency, or a deliberate-omission note.
   no writer-lock contention — so the ask fires ONLY on DB-writer collisions
   (collect/import kinds); dumps keep their own single-download reorderable
   queue among themselves (bandwidth arbitration, not a cross-kind block).** REMAINING from the
-  original ask (maintainer REPEAT ×2 context preserved): the
-  vitals panel becomes minimized animated indicators; CLICK opens a dedicated
-  OS-style task-manager window: what scrapes next, wiki-dump progress, queued
-  jobs with tweak/cancel/reorder. Acceptance examples: reorder fr wiki dump
+  original ask (maintainer REPEAT ×3, the 2026-06-13 field test elevated it
+  again — "the task manager is absent, I thought we'd had it done"): the
+  vitals BUBBLE graduates to a DEDICATED WINDOW/TAB, not a popover — minimized
+  animated indicators in the chrome, CLICK opens an OS-style task-manager
+  window with TABS for categories (proposed: Active · Queue · Sources/Schedule
+  · History · System) where the user can understand, explore, manage,
+  organize, sort, prioritize, QUEUE every download/scrape and any other job.
+  Full spec + tab design in `docs/product/SCRAPING_AUTOMATION_PLAN.md` Step 7.
+  Acceptance examples: reorder fr wiki dump
   before the much bigger en; per-country scrape priority; every background
   process visible & tweakable. Build together with DOWNLOAD-MANAGER
   ARBITRATION (ruled 2026-06-10): every network task is a VISIBLE JOB; a new
@@ -384,6 +389,40 @@ ruling, a contingency, or a deliberate-omission note.
   batch it like calendars.
   (5)–(7) folded into the corpora/reader entry below (tag-click entry; date
   extraction at ingest = When×Where×Who CONFIRMED GO; reader tabs REPEAT ×2).
+- **CONTENT-FIRST SCRAPING + THE DOWNLOAD SUBSYSTEM (ruled 2026-06-13; full
+  action plan in `docs/product/SCRAPING_AUTOMATION_PLAN.md`):** the maintainer
+  principle — "the UI should focus on CONTENT, not the scraping mechanics;
+  setting everything up is cumbersome; after consent the app scrapes
+  automatically." Seven steps, sequenced in the doc: (1) ONE guarded socket
+  factory — closes the kill-switch gap + the stale UA + a LATENT TRANSPORT
+  LEAK found 2026-06-13 (dump/wiki use raw requests with NO proxies=, so Tor
+  set only in-app would egress clearnet — never silently downgrade transport),
+  ELEVATE RC §1 to RC-BLOCKING; (2) PARALLEL downloads — dumps max_concurrent
+  1→N (files, no DB-writer contention) + a bounded fetch worker pool for
+  collect (parallel FETCH, single SQLite WRITER) — THE Tor speed fix: Tor's
+  bottleneck is per-circuit so N downloads = N circuits = aggregate speedup;
+  (3) segmented HTTP-Range over multiple circuits + IsolateSOCKSAuth for one
+  big dump; (4) dump mirror selection; (5) auto-collect ON by default after
+  the guided wizard's ONE consent (continuous-collection design adopted,
+  zero-network boot intact); (6) the Collect TAB LEAVES the sidebar → an
+  elaborated Settings → Download section (nothing lost — invariant #8 + the
+  Desk lesson, gated by an absorption test); (7) the task-manager WINDOW
+  (item 4 above). GUARDRAILS: per-host politeness never traded for speed
+  (parallel across hosts/circuits, bounded per host); kill switch gates every
+  worker; degrade loudly with T4 transport-aware verdicts. ROOT CAUSE recorded:
+  today max_concurrent=1 (dumps.py:92) + sequential collect loop
+  (runner.py:217) = exactly ONE circuit ever active = worst-case Tor.
+- **IN-APP OLLAMA/MODEL INSTALLER + APP SELF-UPDATE (ruled 2026-06-13;
+  designed in FUTURE_DEVELOPMENTS):** Settings → LLM panel installs Ollama +
+  pulls models from the GUI (checksum-verified through the guarded factory,
+  catalog picker with size/RAM/license shown never a score, pulls are
+  task-manager jobs, clearnet stated prerequisite, hardware fit MEASURED).
+  SELF-UPDATE via GUI: consented check vs GitHub releases → signed
+  oo-backup-2 + install-tree snapshot BEFORE anything → verified release →
+  migrations on a STAGED copy → atomic swap + relaunch → rollback on failure;
+  data dir lives outside the code tree so the corpus/settings/keys survive by
+  construction; never silently decrypt across an update. 5 open questions filed
+  (channel, trust root, cadence, curl|bash-vs-git, mirror-anchoring).
 - **THE ONE CORPORA SYSTEM + READER TABS (the flagship analysis object;
   ruled 2026-06-11, extended through 2026-06-12):** one window architecture
   with consistent sub-tabs — **Mindmap · Related articles · Source
@@ -600,7 +639,11 @@ ruling, a contingency, or a deliberate-omission note.
 - **Home cards remainder:** per-card-TYPE /investigate views so EVERY card
   is clickable (rising→trend+associations; diet/coverage→sources;
   echo→integrity; law/wiki→reader). Card-feed visual/UX remake still wanted
-  (flagship surface).
+  (flagship surface). **REMOVE the home HERO card (ruled 2026-06-13):** the
+  "Understand the world as it really is. / Your private, offline research
+  desk…" block (index.html:688-690, #hero-greet at :2768) takes space, serves
+  no purpose for an installed user, AND is hardcoded English (never keyed) —
+  delete it; if any greeting survives it must be keyed ×12.
 - **Evidence-tiered cards — remaining slices:** instrument the other
   9+recipe producers; corpus tier header (early/developing/established);
   power-style "what's missing"; BH-FDR later. (Slice 1 shipped: plain
