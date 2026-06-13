@@ -54,6 +54,11 @@ makes the rest fall out cheaply:
 - 🔨 **Parallel downloads** (next) — dumps `max_concurrent` 1 → N (file writes,
   no DB contention) + a bounded fetch worker pool for collect (parallel fetch,
   single writer). The Tor-speed fix: N circuits, not one. (SCRAPING plan Step 2)
+- ✅ **Per-host Tor stream isolation for collect** — each host rides its own Tor
+  circuit (`IsolateSOCKSAuth`, per-host SOCKS user) so no exit/observer links the
+  user across sources; page + robots share the host circuit; on by default over
+  SOCKS, no-op otherwise (`OO_TOR_STREAM_ISOLATION=0` disables). The safe answer
+  to "protect from other sources" — no clearnet exposure. (Tor concept 2026-06-13)
 - ⬜ **Segmented HTTP-Range** over multiple circuits + `IsolateSOCKSAuth` (one
   big dump, fast). (Step 3)
 - ⬜ **Dump mirror selection**. (Step 4)
