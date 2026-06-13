@@ -13,6 +13,7 @@ sends a generic User-Agent; the robots/rate-limit/SSRF guards are unchanged.
 from __future__ import annotations
 
 import os
+import re
 
 import requests
 
@@ -48,7 +49,29 @@ class GuardedSession(requests.Session):
         return super().request(method, url, *args, **kwargs)
 
 
-def guarded_session(*, user_agent: str = DEFAULT_USER_AGENT) -> GuardedSession:
+def _with_stream_isolation(proxy_url: str, token: str | None) -> str:
+    """For a SOCKS proxy, inject a per-stream username/password so Tor's
+    ``IsolateSOCKSAuth`` (on by default) builds a SEPARATE circuit per token.
+
+    Parallel downloads to the SAME host (e.g. several Wikipedia dumps) would
+    otherwise share one Tor circuit and gain nothing; distinct SOCKS auth gives
+    each its own circuit, so aggregate throughput actually multiplies over Tor.
+    No-op for non-SOCKS proxies and when the caller already set credentials.
+    """
+    if not token or "://" not in proxy_url:
+        return proxy_url
+    scheme, rest = proxy_url.split("://", 1)
+    if scheme.lower() not in ("socks5", "socks5h", "socks4", "socks4a"):
+        return proxy_url
+    if "@" in rest:  # caller already chose credentials -- respect them
+        return proxy_url
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "", token)[:32] or "oo"
+    return f"{scheme}://{safe}:{safe}@{rest}"
+
+
+def guarded_session(
+    *, user_agent: str = DEFAULT_USER_AGENT, isolation_token: str | None = None
+) -> GuardedSession:
     """Build a kill-switch-aware session that honours the protected-mode proxy.
 
     Three guarantees, the same the EthicalFetcher gives article fetches:
@@ -60,15 +83,18 @@ def guarded_session(*, user_agent: str = DEFAULT_USER_AGENT) -> GuardedSession:
         even over Tor, so a generic browser UA would be both dishonest and
         against policy; the DuckDuckGo HTML endpoint wants a browser UA).
 
-    robots/politeness for these specific API/dump endpoints follows each
-    service's own etiquette (handled at the call sites), not generic crawl
-    robots -- blanket-applying it would wrongly block legitimate API use.
+    ``isolation_token`` requests a dedicated Tor circuit for this session (see
+    ``_with_stream_isolation``) so parallel downloads to one host don't share a
+    single slow circuit. robots/politeness for these specific API/dump endpoints
+    follows each service's own etiquette (handled at the call sites), not generic
+    crawl robots -- blanket-applying it would wrongly block legitimate API use.
     """
     s = GuardedSession()
     s.headers["User-Agent"] = user_agent
     settings = load_settings()
     proxy = settings.http_proxy if settings.is_protected else None
     if proxy:
+        proxy = _with_stream_isolation(proxy, isolation_token)
         s.proxies = {"http": proxy, "https": proxy}
     return s
 

@@ -56,7 +56,13 @@ def slow_manager(tmp_path):
     from src.wiki.dumps import DumpDownloadManager
 
     gate = threading.Event()
-    mgr = DumpDownloadManager(base_dir=tmp_path, http_get=lambda url, headers: _SlowResp(gate))
+    # max_concurrent=1 pins the SERIAL queue/reorder semantics these tests cover
+    # (the T9 fr-before-en acceptance case): the second+ request must QUEUE.
+    # Parallelism (default capacity) is exercised by tests/test_parallel_dumps.py;
+    # the reorderable queue still applies whenever requests exceed capacity.
+    mgr = DumpDownloadManager(
+        base_dir=tmp_path, http_get=lambda url, headers: _SlowResp(gate), max_concurrent=1
+    )
     return mgr, gate
 
 
@@ -138,7 +144,12 @@ def test_jobs_view_aggregates_dumps_with_queue_positions(client, monkeypatch, tm
     from src.wiki.dumps import DumpDownloadManager
 
     gate = threading.Event()
-    mgr = DumpDownloadManager(base_dir=tmp_path, http_get=lambda url, headers: _SlowResp(gate))
+    # max_concurrent=1 so the second dump QUEUES -- this test asserts the queued
+    # dump's queue_position in the /api/jobs view (parallelism is covered in
+    # test_parallel_dumps.py; the reorderable queue still applies over capacity).
+    mgr = DumpDownloadManager(
+        base_dir=tmp_path, http_get=lambda url, headers: _SlowResp(gate), max_concurrent=1
+    )
     monkeypatch.setattr(dumps_mod, "_manager", mgr, raising=False)
     monkeypatch.setattr(dumps_mod, "get_manager", lambda: mgr)
     mgr.start("en")

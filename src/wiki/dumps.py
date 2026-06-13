@@ -20,12 +20,20 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 _LOG = logging.getLogger(__name__)
 _CHUNK = 1024 * 1024  # 1 MiB
+# Parallel dump downloads (maintainer 2026-06-13). Dumps write FILES, not the
+# DB, so concurrency has no single-writer contention; over Tor each download
+# rides its own circuit (per-stream SOCKS isolation) so aggregate throughput
+# multiplies. Bounded + conservative because dumps share ONE host
+# (dumps.wikimedia.org) and per-host politeness is never traded for speed; a
+# few parallel streams is normal for a bulk dump mirror. Operator-tunable.
+_DEFAULT_DUMP_CONCURRENCY = max(1, int(os.getenv("OO_DUMP_CONCURRENCY", "3")))
 # "pages-articles-multistream" is the DEFAULT for new downloads (T14): its
 # companion index makes pages readable OFFLINE by direct seek — the plain
 # single-stream dump is kept for legacy files but cannot be random-accessed.
@@ -72,7 +80,14 @@ class DownloadEntry:
 class DumpDownloadManager:
     """Manages resumable dump downloads with persisted state under the data dir."""
 
-    def __init__(self, *, base_dir: Path | None = None, http_get=None, http_head=None):
+    def __init__(
+        self,
+        *,
+        base_dir: Path | None = None,
+        http_get=None,
+        http_head=None,
+        max_concurrent: int | None = None,
+    ):
         from src.paths import data_dir
 
         self.base_dir = Path(base_dir) if base_dir else (data_dir() / "wiki_dumps")
@@ -85,11 +100,14 @@ class DumpDownloadManager:
         self._stops: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
         self._save_lock = threading.Lock()  # state-file writes only (see _save)
-        # ONE download at a time (T9 download-arbitration ruling): later
-        # requests become a REAL, reorderable queue instead of competing
-        # threads -- the operator can put the small fr dump before the huge
-        # en one (the ledger's acceptance case). Persisted with the entries.
-        self.max_concurrent = 1
+        # Up to ``max_concurrent`` downloads run in PARALLEL (maintainer
+        # 2026-06-13). When MORE dumps are requested than the capacity, the
+        # excess becomes a REAL, reorderable queue (the T9 fr-before-en
+        # acceptance case still holds) -- parallelism adds speed without losing
+        # prioritisation. Persisted with the entries.
+        self.max_concurrent = (
+            max_concurrent if max_concurrent and max_concurrent > 0 else _DEFAULT_DUMP_CONCURRENCY
+        )
         self._order: list[str] = []
         self._load()
 
@@ -108,6 +126,14 @@ class DumpDownloadManager:
                     )
             except Exception:  # noqa: BLE001 - a bad state file must not crash startup
                 _LOG.warning("wiki dumps state unreadable; ignoring", exc_info=True)
+        # No worker thread survives a process restart, so a persisted
+        # "downloading" status is stale -- demote it to "paused" (the partial
+        # file is kept and resumable) rather than leaving a phantom that would
+        # block a parallel slot forever. Honest state after a restart; nothing
+        # re-fetches here (zero-network boot stands).
+        for e in self._entries.values():
+            if e.status == "downloading":
+                e.status = "paused"
 
     def _save(self) -> None:
         # Serialized: the worker thread saves progress while the API thread
@@ -130,11 +156,13 @@ class DumpDownloadManager:
             tmp.replace(self.state_path)
 
     def _downloading_now(self) -> int:
-        return sum(
-            1
-            for k, t in self._threads.items()
-            if t.is_alive() and self._entries.get(k) and self._entries[k].status == "downloading"
-        )
+        # Count by STATUS, not thread liveness: a slot is claimed (status set to
+        # "downloading" under the lock) the instant it is selected, BEFORE its
+        # thread starts -- so concurrent _pump/start calls can never over-launch
+        # past max_concurrent. _download always reaches a terminal status
+        # (done/error/paused), and _load demotes any stale "downloading", so this
+        # never sticks.
+        return sum(1 for e in self._entries.values() if e.status == "downloading")
 
     def _launch(self, entry: DownloadEntry) -> None:
         stop = threading.Event()
@@ -149,25 +177,29 @@ class DumpDownloadManager:
         t.start()
 
     def _pump(self) -> None:
-        """Start the next QUEUED entry when a download slot is free (FIFO over
-        the operator-reorderable queue_order)."""
+        """Start QUEUED entries until ``max_concurrent`` are in flight, FIFO over
+        the operator-reorderable queue. PARALLEL by design: each selected entry
+        claims its slot (status -> "downloading") UNDER THE LOCK before launch, so
+        two concurrent pumps can never exceed the capacity; the launch itself runs
+        outside the lock."""
+        to_launch: list[DownloadEntry] = []
         with self._lock:
-            if self._downloading_now() >= self.max_concurrent:
-                return
-            next_key = None
+            free = self.max_concurrent - self._downloading_now()
             for k in list(self._order):
+                if free <= 0:
+                    break
                 e = self._entries.get(k)
                 if e is None or e.status != "queued":
                     self._order.remove(k)
                     continue
-                next_key = k
-                break
-            if next_key is None:
-                return
-            self._order.remove(next_key)
-            entry = self._entries[next_key]
-            self._save()
-        self._launch(entry)
+                self._order.remove(k)
+                e.status = "downloading"  # claim the slot atomically
+                to_launch.append(e)
+                free -= 1
+            if to_launch:
+                self._save()
+        for entry in to_launch:
+            self._launch(entry)
 
     def reorder(self, keys: list[str]) -> list[str]:
         """Reorder the QUEUED downloads (the fr-before-en acceptance case).
@@ -267,15 +299,21 @@ class DumpDownloadManager:
         if self._threads.get(entry.key) and self._threads[entry.key].is_alive():
             return entry.to_dict()
         with self._lock:
-            busy = self._downloading_now() >= self.max_concurrent
-            if busy:
-                # Honest arbitration: a visible queue, never a competing thread.
+            if self._downloading_now() >= self.max_concurrent:
+                # Capacity full: a visible, reorderable queue, never a competing
+                # thread (T9 arbitration). The excess waits its turn.
                 entry.status = "queued"
                 entry.error = None
                 if entry.key not in self._order:
                     self._order.append(entry.key)
                 self._save()
                 return entry.to_dict()
+            # Claim the slot atomically (status set under the lock) so a rapid
+            # second start() cannot race past max_concurrent before the worker
+            # thread marks it downloading.
+            entry.status = "downloading"
+            entry.error = None
+            self._save()
         self._launch(entry)
         return entry.to_dict()
 
@@ -312,16 +350,20 @@ def _default_get(url: str, headers: dict):
     # Through the guarded factory: a multi-GB dump download now refuses while the
     # kill switch is engaged and rides the protected-mode proxy (no clearnet
     # leak). The honest versioned UA comes from the session; ``headers`` carries
-    # only request-specific fields (e.g. a Range header for resume).
+    # only request-specific fields (e.g. a Range header for resume). The URL is
+    # the isolation token, so parallel downloads of DIFFERENT dumps each get
+    # their own Tor circuit (over a SOCKS proxy) instead of sharing one.
     from src.safety.fetcher import guarded_session
 
-    return guarded_session().get(url, headers=headers, stream=True, timeout=60)
+    return guarded_session(isolation_token=url).get(
+        url, headers=headers, stream=True, timeout=60
+    )
 
 
 def _default_head(url: str):
     from src.safety.fetcher import guarded_session
 
-    return guarded_session().head(url, allow_redirects=True, timeout=30)
+    return guarded_session(isolation_token=url).head(url, allow_redirects=True, timeout=30)
 
 
 _manager: DumpDownloadManager | None = None
