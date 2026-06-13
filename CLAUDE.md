@@ -229,6 +229,15 @@ ruling, a contingency, or a deliberate-omission note.
   default. EMPIRICAL: under curl|bash stdin is the pipe — prompts MUST
   read /dev/tty. The launcher half = the in-app /unlock create flow
   (already shipped); whiptail stays optional polish.
+  **INSTALL-FLOW NEXT SLICE (maintainer field test 2026-06-13 — the tty
+  prompt VERIFIED WORKING live end-to-end: encrypted store created,
+  short-passphrase warn honored, 2978/3205 sources seeded): (a) install.sh
+  AUTO-LAUNCHES the app when install completes — the install ends fluid,
+  inside the running app; (b) the encryption choice MOVES to the app's
+  initial screen (the in-browser first-launch prompt becomes the PRIMARY
+  path; the terminal prompt demotes to the headless/env fallback). Fits
+  the shipped deferred-init design (option 3 already seeds at first
+  unlocked boot).**
   **The NEWSLETTER SCRAPER stays blocked until these riders ship AND the
   no-recovery contingency is revisited** (see Non-negotiables).
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
