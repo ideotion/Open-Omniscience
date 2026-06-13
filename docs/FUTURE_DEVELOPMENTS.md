@@ -524,6 +524,41 @@ TEXT (compressed; version-anchored analytics for free), with checkpoints+
 patches as the lean alternative if storage proves heavy. The dedicated
 tracked-changes tab is the named next slice (own session-grade attention).
 
+**SUPERSEDING RULING (maintainer, 2026-06-12 — recorded for later, NOT
+current work):** once a user has downloaded a language dataset (a dump), the
+ENTIRE Wikipedia corpus of that edition is tracked **automatically — by
+design and by default**. Per-article tracking is to be **retired**: "it will
+not be used." The watch-a-page flow becomes unnecessary; downloading the
+resource IS the consent-and-scope act.
+
+*Filed comments & questions for when this is picked up (per instruction,
+not asked now):*
+1. **Scale honesty first.** "Track the entire edition" decomposes cleanly:
+   the dump is the BASELINE for every page; the MediaWiki `recentchanges`
+   feed is the DELTA stream (one polite poll covers the whole edition — no
+   per-page requests). enwiki runs ≈80–160k edits/day; storing *metadata*
+   for all of them is feasible on the reference VM (~tens of MB/day
+   compressed), but per-revision FULL TEXT for the whole firehose is not.
+   Proposed tiering (to confirm): metadata+flags for ALL edits; full text
+   per revision only for pages that are IN the analytical corpus (cited by
+   the user's articles, matching their keywords, or user-opened) — the
+   corpus-drives-depth principle already adopted for weather.
+2. **What does "tracked" mean for analytics?** All-pages keyword indexing
+   of an entire edition = millions of articles through the extractor —
+   likely a staged, visible, resumable job with disk/time estimates stated
+   up front (the dump reader already proves local page access; indexing is
+   the heavy half).
+3. **Consent surface:** the download consent popup should SAY "downloading
+   this edition starts automatic change-tracking for it" (one consent, the
+   T15 pattern); the task manager shows the tracker as a visible job.
+4. **Retirement path for per-article watching:** keep read-compatibility
+   for existing watchlists (their data migrates into the edition-wide
+   model); the Desk lesson applies — capabilities (flagged-edit review,
+   ORES enrichment) survive the UI that exposed them.
+5. **Politeness:** recentchanges polling cadence per edition, and whether
+   Wikimedia EventStreams (SSE) is acceptable within the single-fetch-path
+   ethics (it is HTTP, robots-checkable, one connection — likely yes).
+
 ## Offline LLM kit (RM-08 release artifact)
 
 A checksummed GitHub *release artifact* (never repo content): Ollama binary +
@@ -1161,3 +1196,116 @@ surprises:
    concrete federation scenario — mutually-distrusting anonymous
    operators — that would justify a dedicated chain over witness-cosigned
    transparency logs?
+
+---
+
+## User-centric reflections — scenarios, contradictions, deduced features (maintainer-asked 2026-06-12)
+
+> The brief: step back from the build queue, reason from USERS — especially
+> users *without* a scientifically sound approach — through contradictory,
+> critical reflection, and deduce what the app still owes them. Companion
+> piece: `docs/audit/07_TRANSVERSAL_AUDIT_V01.md` (the systems half).
+> **THE ACTION PLANS live canonically in
+> `docs/product/V01_ALPHA_ACTION_PLANS.md`** — both plans in full, every
+> step with its rationale + commentary + acceptance criteria, plus the
+> maintainer's verbatim commission for recall. This section keeps the
+> REFLECTIONS (scenarios + contradictions) the plan was deduced from.
+
+### The scenarios reasoned from
+
+- **S1 — The journalist** (the design persona): traces a claim to its
+  origin, exports signed evidence. Well served by custody/lineage/links;
+  still lacks a CLAIM-level workspace (the unit of an investigation is a
+  claim, not a keyword).
+- **S2 — The curious citizen** (the maintainer's stated focus): arrives
+  with "I saw X — is it true?", no method training, no patience for
+  statistics. TODAY the app answers with instruments (trends, cards,
+  corpora) but not with a GUIDED PATH from question to defensible answer.
+  This persona carries the app's biggest risk AND its mission.
+- **S3 — The researcher/analyst:** wants reproducibility, method notes,
+  exports, multiple-comparison discipline. Mostly served; needs versioned/
+  saved analyses ("what I ran, on which corpus state").
+- **S4 — The at-risk user:** safety mode, Tor honesty, at-rest encryption
+  exist; needs workflow-level guidance more than more switches.
+- **S5 — The educator/student:** the app is a media-literacy instrument
+  that doesn't yet know it — guided comparative exercises are one recipe
+  away.
+- **S6 — The non-Anglophone / Global-South user:** 12 locales and
+  de-US-centring help; the deeper gaps are analytical (see audit: tone
+  analysis is English-only; CJK keywords effectively absent).
+
+### The contradictions faced honestly
+
+- **C1 · A sample sold as a world.** Local-first means every corpus is a
+  SAMPLE shaped by one person's choices, while the app's promise sounds
+  like "the world as it really is." The tension is permanent; the cure is
+  not more data but PERMANENT VISIBILITY of the sample's shape.
+- **C2 · A bubble-amplifier wearing honesty labels.** The user picks the
+  sources; the analytics then faithfully describe the bubble. Method
+  labels do not break the loop — only making the corpus's skew IMPOSSIBLE
+  TO MISS does (and even then, gently: selection stays the user's).
+- **C3 · No verdicts, but users came for verdicts.** Refusing trust scores
+  is right and non-negotiable; S2 still deserves an ANSWER-SHAPED output.
+  The resolution: answer with a structured EVIDENCE TRAIL (who claims,
+  how independent the paths are, what corroborates, what tenses, what is
+  missing) — a verdict's rigor without a verdict's arrogance.
+- **C4 · Caveats by design vs cognitive room.** Already ruled (layering,
+  hover bubbles); the remaining duty is rhythm: first-contact surfaces
+  must breathe, depth one hover away.
+- **C5 · Words are not meaning.** Lexical extraction counts "no drought"
+  as a drought mention, counts quotation as endorsement, and misses
+  sarcasm entirely. Cheap fixes don't exist; HONEST LABELING and modest
+  heuristics (negation windows, quoted-speech flags) do.
+- **C6 · Every consented fetch is also a disclosure.** Fetching weather
+  for the places your corpus mentions tells the weather host what your
+  corpus mentions. The consent popup names the action; it should also
+  name THE SHADOW (what the queried host could infer).
+
+### Deduced features (Action Plan A — the user-guidance track)
+
+A1. **The Claim Workspace** *(flagship; S2/S1; resolves C3).* One entry:
+    paste/select a claim → the app walks a stated pipeline: ① find related
+    corpus articles (FTS) → ② group them by INDEPENDENCE (lineage + shared-
+    origin links: three echoes of one wire = one path, said) → ③ timeline
+    of who-said-what-when → ④ corroboration offers (weather now;
+    statistics/IPCC later; each consented) → ⑤ the "what's missing"
+    checklist (which countries/languages/source types are silent; what
+    data WOULD discriminate the claim) → ⑥ export the trail (signed).
+    Every step carries its method sentence; the output is an evidence
+    trail, never a verdict. Most of the machinery exists — this is
+    composition, not invention.
+A2. **The corpus passport.** A constant compact strip on every analytics
+    surface: n articles · sources · countries · languages · date-span of
+    WHAT THIS VIEW WAS COMPUTED ON (resolves C1; extends the n-shown
+    discipline from numbers to identity).
+A3. **"Your lens" view** *(resolves C2).* One dedicated surface unifying
+    the existing diet/coverage signals: composition vs DECLARED baselines,
+    single-origin share (links substrate), wire-dependence share
+    (lineage), echo share, collection-time regularity — descriptive,
+    never auto-corrective, with one-click "broaden" suggestions from the
+    catalog's under-represented regions.
+A4. **Guided investigations as TEACHING recipes** *(S5/S2).* Narrated
+    multi-step recipes chaining real tools ("Follow a story to its
+    origin", "Watch one event through five countries", "Test a folk
+    belief with FDR discipline" — the lunar framework as curriculum).
+A5. **The Socratic empty state.** Wherever data cannot answer, say what
+    WOULD be needed (sources, time, places) instead of showing thin
+    results that invite over-reading; generalizes the power-style
+    "what's missing" already queued for evidence-tiered cards.
+A6. **Mention-context honesty** *(C5).* Slice 1: a stated lexical-limits
+    caveat on keyword surfaces (cheap, ×12). Slice 2: negation-window and
+    quoted-speech FLAGS on mentions (heuristic, per-language, labeled as
+    heuristics; counts shown split). Research note filed for further.
+A7. **The metadata-shadow line in consent popups** *(C6):* one sentence
+    naming what the queried host could infer from the request pattern.
+A8. **Saved analyses with corpus-state stamps** *(S3):* a re-runnable
+    record (query, params, corpus passport at run time) — reproducibility
+    for one's own past conclusions; pairs with the signed evidence path.
+A9. **"What changed since I last looked"** *(S2 retention, honestly):* a
+    since-last-visit diff of the corpus (new sources' first articles, new
+    flagged edits, watch-rule hits when those land) — facts, not a feed
+    of opinions.
+
+*The full ACTION PLAN built from these features — step order, rationale
+per decision, my commentary, acceptance criteria, dependencies — lives in
+`docs/product/V01_ALPHA_ACTION_PLANS.md` (Plan A).*

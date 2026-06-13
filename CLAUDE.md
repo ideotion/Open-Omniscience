@@ -215,11 +215,45 @@ ruling, a contingency, or a deliberate-omission note.
   restore-preview UI SHIPPED in T6, 2026-06-12 — v2 flow primary, legacy
   demoted-not-removed):** D1/D4 state-into-DB migrations (settings/
   annotations/event-imports → tables; agenda subs server-side), signing-key
-  re-wrap inside the encrypt tool, launcher/installer passphrase prompt
-  wiring (whiptail box + plain fallback, confirm twice, honest
-  lost-passphrase warning, optional plaintext skip with stated risk).
+  re-wrap inside the encrypt tool. ~~launcher/installer passphrase prompt~~
+  **INSTALLER HALF SHIPPED (2026-06-12, caught LIVE: the curl|bash
+  bootstrap crashed with DatabaseLockedError at "Initialising the
+  database" on a fresh machine — encryption-by-default needs a passphrase
+  choice no non-interactive init can make):** install.sh now tries env-
+  driven init first (covers existing stores + OO_DB_PLAINTEXT/PASSPHRASE),
+  then PROMPTS on a real terminal via /dev/tty (works under curl|bash:
+  encrypted with confirm-twice + no-recovery + length guidance / PLAINTEXT
+  typed-confirmation with stated risk / defer), else DEFERS honestly to
+  the in-app first-launch prompt (deferred startup seeds at first
+  unlocked boot, so nothing is lost) — never a traceback, never a silent
+  default. EMPIRICAL: under curl|bash stdin is the pipe — prompts MUST
+  read /dev/tty. The launcher half = the in-app /unlock create flow
+  (already shipped); whiptail stays optional polish.
   **The NEWSLETTER SCRAPER stays blocked until these riders ship AND the
   no-recovery contingency is revisited** (see Non-negotiables).
+- **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
+  2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
+  "User-centric reflections": 6 scenarios, 6 contradictions faced, features
+  A1–A9 — flagship A1 CLAIM WORKSPACE: evidence-trail-instead-of-verdict
+  guided pipeline for non-scientific users; A2 corpus passport; A3 "Your
+  lens"; A6 mention-context honesty…) **+ (B) the transversal audit**
+  (`docs/audit/07_TRANSVERSAL_AUDIT_V01.md`: tool-by-tool M/T/G table —
+  two ❌ disclosure gaps found: VADER English-only unsaid, LLM-output
+  unlabeled; tamperability incl. the source-side cloaking vector + the
+  local FIXITY tool; 100k-scale unknowns; ranked missing sources incl.
+  retractions + fact-checks-as-stanced-sources + PR-wires-as-origin-
+  detectors; neutrality = representation vs DECLARED PLURAL baselines,
+  never auto-corrected; 10 named aggregator biases with which are
+  update-fixable vs disclosure-permanent — notably CJK segmentation absent
+  = zh/ja keywords nonfunctional while the UI ships those locales; steps
+  B0–B7). **THE CANONICAL ACTION PLANS (maintainer-asked re-issue
+  2026-06-12 "I haven't seen any action plans"): both plans live IN FULL in
+  `docs/product/V01_ALPHA_ACTION_PLANS.md`** — every step with rationale +
+  my commentary + acceptance criteria + dependencies + sequencing
+  rationale, AND the maintainer's verbatim commission stored for recall;
+  FUTURE_DEVELOPMENTS/audit-07/RC-gate all point at it. AWAITS B0:
+  maintainer arbitration of severities into the RC gate (B1 disclosure
+  sweep proposed RC-BLOCKING).
 - **FULL-AUDIT REMEDIATION QUEUE (from `docs/audit/06_FULL_AUDIT_0_0_9.md`,
   delivered 2026-06-11; several items already fixed in-audit):** top: qualify
   the "stays on this machine" claim ×12 locales (AWAITS MAINTAINER RULING);
@@ -487,6 +521,16 @@ ruling, a contingency, or a deliberate-omission note.
   per-mention revid anchoring; dumps→corpus ingestion path.
   Earlier honest gap stands: downloaded dumps are FILES only (T14 reads one
   page; never yet parsed into the corpus).
+  **SUPERSEDING RULING (maintainer 2026-06-12, RECORD-ONLY — "don't
+  implement this right now"): once a user downloads a LANGUAGE DATASET
+  (dump), the ENTIRE Wikipedia corpus of that edition is tracked
+  AUTOMATICALLY — per-article tracking is to be RETIRED ("it will not be
+  used"); tracking becomes by-design-and-by-default after a Wikipedia
+  resource download.** Design + filed questions/comments live in
+  FUTURE_DEVELOPMENTS (scale honesty: enwiki ≈ 100k edits/day vs the 2-core
+  reference VM; the dump-as-baseline + recentchanges-as-delta architecture;
+  tiered depth proposal; what consent/visibility the auto-tracking needs).
+  Ask/comment WHEN THE TIME COMES, per the maintainer — not now.
 - **WIKIPEDIA (field report #4; T14 SLICE 1 SHIPPED 2026-06-12):** the RULED
   dump-list limit SHIPPED (/api/wiki/languages?scope=dumps serves only
   APP_LANGUAGE_CODES = 12 UI locales + 5 stoplist-evidenced corpus languages;

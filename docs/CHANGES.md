@@ -11,6 +11,35 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Installer: the passphrase moment, fixed live.** The one-line
+  `curl | bash` install crashed at "Initialising the database" on a fresh
+  machine — encryption-by-default means a new store NEEDS the user's
+  passphrase choice, which a blind non-interactive init cannot make. The
+  installer now: tries env-driven init first (existing stores,
+  `OO_DB_PLAINTEXT`/`OO_DB_PASSPHRASE`); otherwise **asks on a real
+  terminal** (reading `/dev/tty`, so it works under `curl | bash`):
+  encrypted with confirm-twice, the honest no-recovery warning and length
+  guidance, or plaintext behind a typed `PLAINTEXT` confirmation with the
+  risk stated, or defer; with no terminal it **defers honestly to the
+  in-app first-launch prompt** — starter sources seed themselves at the
+  first unlocked boot, so nothing is lost. Never a traceback, never a
+  silent default.
+
+- **V0.1 alpha preparation: the reflective plans (docs).** Two
+  maintainer-commissioned analyses landed: **user-centric reflections**
+  (FUTURE_DEVELOPMENTS — six personas, six contradictions faced honestly,
+  deduced features A1–A9 with the Claim Workspace as flagship: a guided
+  evidence-trail pipeline answering "is this true?" without ever issuing a
+  verdict) and the **transversal audit 07**
+  (`docs/audit/07_TRANSVERSAL_AUDIT_V01.md` — tool-by-tool science/truth/
+  disclosure table, tamperability incl. source-side cloaking, long-use
+  performance unknowns, ranked missing sources, neutrality as
+  representation-vs-declared-baselines, ten named aggregator biases and
+  which updates can fix, steps B0–B7). Plus the recorded superseding
+  Wikipedia ruling: edition-wide automatic tracking after a dump download
+  (per-article tracking to be retired) — design + filed questions, not yet
+  implemented, per instruction.
+
 - **Wikipedia pages become first-class corpus articles (the living-source
   bridge, maintainer-ruled 2026-06-12).** Watched pages now enter THE corpus:
   one article per page (canonical wiki URL) under a per-edition "Wikipedia

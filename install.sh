@@ -203,9 +203,91 @@ pip_install() {
 init_database() {
     if [ "${OO_SKIP_DB:-0}" = "1" ]; then warn "OO_SKIP_DB=1 -- skipping database init"; return; fi
     step "Initialising the database"
-    python -c "from src.database.session import init_db; init_db(); print('  database ready')"
+    # Encryption is ON BY DEFAULT (SQLCipher): a FRESH store needs the user's
+    # passphrase choice, so a blind non-interactive init must not run -- it
+    # would crash (field-tested 2026-06-12) or silently decide for the user.
+    # Order of honesty: try (covers existing stores and explicit env choices),
+    # then ASK on a real terminal, then DEFER to the in-app first-launch
+    # prompt -- never a traceback, never a silent default.
+    if _try_db_init; then
+        _seed_sources
+        return 0
+    fi
+    if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+        _prompt_db_protection
+        if _try_db_init; then
+            _seed_sources
+            return 0
+        fi
+    fi
+    warn "Database initialisation deferred."
+    echo "     At first launch the app asks you to choose THE passphrase in your"
+    echo "     browser (encrypted at rest by default; there is NO recovery -- the"
+    echo "     app explains before you confirm). Starter sources seed themselves"
+    echo "     at that first unlocked start; nothing is lost by deferring."
+}
+
+_try_db_init() {
+    python -c "from src.database.session import init_db; init_db(); print('  database ready')" 2>/dev/null
+}
+
+_seed_sources() {
     step "Seeding curated starter sources (idempotent; nothing is fetched)"
     python scripts/seed_sources.py || warn "seeding skipped; you can add sources in the UI"
+}
+
+# The installer half of the DB-reliability rider (CLAUDE.md): choose the
+# at-rest protection HERE when a terminal exists. Reads /dev/tty directly so
+# it also works under 'curl | bash' (where stdin is the pipe).
+_prompt_db_protection() {
+    {
+        echo ""
+        echo "Your local database is ENCRYPTED AT REST by default (SQLCipher)."
+        echo "Choose how to set it up:"
+        echo "  [1] Encrypted -- choose THE passphrase now (recommended)"
+        echo "      One stable secret, asked at every start. There is NO recovery and"
+        echo "      no decryption alternative: a lost passphrase means re-collecting"
+        echo "      the corpus from the web. Length beats complexity."
+        echo "  [2] Plaintext -- NOT recommended: anyone with access to this machine"
+        echo "      (or a copy of the file) can read everything."
+        echo "  [3] Decide at first launch (the app asks in your browser)."
+        printf "Select 1/2/3 [default: 3]: "
+    } >/dev/tty
+    local choice pass1 pass2
+    IFS= read -r choice </dev/tty || choice=""
+    case "${choice:-3}" in
+        1)
+            while :; do
+                printf "Passphrase (input hidden): " >/dev/tty
+                IFS= read -rs pass1 </dev/tty; echo "" >/dev/tty
+                printf "Confirm passphrase: " >/dev/tty
+                IFS= read -rs pass2 </dev/tty; echo "" >/dev/tty
+                if [ -z "$pass1" ]; then warn "Empty passphrase -- deferring to first launch."; return 0; fi
+                if [ "$pass1" != "$pass2" ]; then echo "  They differ -- try again (empty to defer)." >/dev/tty; continue; fi
+                if [ "${#pass1}" -lt 12 ]; then
+                    printf "Shorter than 12 characters -- length is the honest defence. Keep it anyway? [y/N]: " >/dev/tty
+                    IFS= read -r keep </dev/tty || keep=""
+                    case "$keep" in [yY]*) : ;; *) continue ;; esac
+                fi
+                export OO_DB_PASSPHRASE="$pass1"
+                ok "Encrypted store will be created. The app asks for this SAME passphrase at every start."
+                return 0
+            done
+            ;;
+        2)
+            printf "Type PLAINTEXT to confirm an unencrypted database: " >/dev/tty
+            IFS= read -r confirm </dev/tty || confirm=""
+            if [ "$confirm" = "PLAINTEXT" ]; then
+                export OO_DB_PLAINTEXT=1
+                warn "Plaintext store chosen -- the at-rest protection is OFF, at your request."
+            else
+                warn "Not confirmed -- deferring to first launch."
+            fi
+            ;;
+        *)
+            : # defer -- the in-app first-launch prompt is the consent surface
+            ;;
+    esac
 }
 
 # --------------------------------------------------------------------------- #
