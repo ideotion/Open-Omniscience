@@ -11,6 +11,21 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Parallel, circuit-isolated dump downloads (the Tor speed fix for dumps).**
+  Dump downloads ran strictly one at a time (`max_concurrent = 1`), so over Tor
+  a single slow circuit was the ceiling — 56K-modem speeds. Now up to
+  `max_concurrent` dumps download **in parallel** (default 3, env-tunable via
+  `OO_DUMP_CONCURRENCY`); dumps write files, not the DB, so there's no
+  single-writer contention. Crucially, each download carries a **per-stream
+  SOCKS token** (its URL), so Tor's `IsolateSOCKSAuth` gives each its own
+  circuit instead of sharing one — aggregate throughput actually multiplies.
+  The T9 reorderable queue is **preserved**: when more dumps are requested than
+  the capacity, the excess queues and stays prioritisable (fr-before-en still
+  works). Slot accounting is race-safe (a slot is claimed under the lock before
+  launch), and a stale `downloading` status from a killed process is demoted to
+  `paused` (resumable) on reload. Bounded + conservative because dumps share one
+  host — per-host politeness is never traded for speed.
+
 - **No per-run source cap — collection covers EVERY source.** The scheduler
   capped each pass at `max_sources_per_run` (clamped 1–1000), which silently
   *selected* which sources to skip — a selection that can't be justified
