@@ -339,6 +339,67 @@ like a webcam light". The honest layering this becomes:
 
 ---
 
+## Reliable Tor & per-source transport (maintainer concept + question 2026-06-13)
+
+**The concept:** integrate a reliable, up-to-date Tor connection into the app
+via an open-source library, enabling *per-source transport* — clearnet for
+sources that block Tor, Tor for the rest — "to protect the user ID from other
+sources." My honest, critical, scientific assessment (recorded for memory):
+
+**1. The library landscape (honest maturity).** There is **no pure-Python
+Tor** — Tor is C (or Rust via Arti). Python libraries *control* a Tor process,
+they don't embed the network logic:
+- **Stem** — the **official** Tor Project controller library (LGPLv3). Mature,
+  reliable; can launch/manage a `tor` subprocess and read its bootstrap state.
+  You still need a `tor` binary (user-installed, or bundled ~few MB like Tor
+  Browser does). This is the pragmatic, reliable path **today**.
+- **txtorcon** — Twisted/async Tor controller; same "controls a process" model.
+- **Arti** — the Tor Project's **Rust rewrite**, an *embeddable* client crate
+  (`arti-client`). This is the long-term answer to "embed Tor as a library."
+  **But** as of the Jan-2026 knowledge cutoff its **Python bindings are
+  nascent** and not a widely-used, battle-tested dependency — *verify current
+  maturity before betting on it* (do not assert it's production-ready).
+- **PySocks** (already a dependency) is only the SOCKS5 *client* — it talks to
+  a Tor proxy, it is not Tor.
+
+**2. The current model is the correct ethical baseline.** Today the user runs
+and *trusts* a SOCKS proxy (e.g. Tor at `127.0.0.1:9050`); the app *uses* and
+*verifies* it but **never claims to provide anonymity**. Embedding/managing Tor
+would only **lower the setup barrier** (a real UX win) — it would NOT change the
+guarantees, which still depend on Tor's properties + the user's opsec.
+
+**3. The hybrid intuition — partly right, with caveats that forbid fabricated
+security.** Per-source compartmentalisation is real: a clearnet source sees the
+user; a Tor source does not. BUT clearnet for source A reveals, irreducibly:
+the user's **real IP**, that they **run this specific app** (our honest bot UA
+fingerprints it), and **their topic interest** — to A, to A's CDN/trackers, and
+to the **ISP/network observer**. Cross-transport behaviour can also be
+**correlated/linked**. So "protect the user from other sources" is only true for
+the *Tor* sources; the *clearnet* sources fully identify the user. This is
+exactly why **"never silently downgrade transport"** is a non-negotiable:
+clearnet-for-some must be **explicit, per-source, consented, last-resort**, with
+the UI **brutally honest** about what each choice exposes — never automatic,
+never the default, never the headline feature.
+
+**4. The superior alternative for "protect from other sources":** per-source
+**Tor stream/circuit isolation** (`IsolateSOCKSAuth` — already our primitive,
+used for parallel dumps) gives each source its own circuit, compartmentalising
+*without any clearnet exposure*. Prefer this; it achieves the user's protective
+intent without the deanonymisation cost.
+
+**Direction (proposed, not yet scheduled):** (a) make Tor *easier* — an optional
+in-app Tor setup (Stem-controlled `tor` process, à la the planned Ollama
+installer), bootstrap progress shown, still "we use+verify, never guarantee";
+(b) per-source circuit isolation **by default** when on Tor; (c) clearnet for
+Tor-hostile sources only as an **explicit, per-source, consented opt-in** with
+the full exposure stated; (d) keep the transport-aware verdict taxonomy (T4) so
+a Tor block is surfaced honestly rather than auto-evaded. **Open questions:**
+bundle `tor` vs require it vs wait for Arti's Python bindings to mature; whether
+the honest bot UA should differ on a user-consented clearnet fetch; how to
+visualise per-source transport state without implying anonymity we can't give.
+
+---
+
 ## Continuous collection & fair ordering (field report #2, 2026-06-11)
 
 "The intent of this app is to scrap everything. Scraping should never stop"

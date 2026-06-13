@@ -833,6 +833,53 @@ ruling, a contingency, or a deliberate-omission note.
   modal disappear (app boots in AIRPLANE MODE; permanent scraping when
   online; new requests QUEUE into the task manager, never a modal — recorded
   in SCRAPING_AUTOMATION_PLAN.md Step 5 refinements).
+- **AIRPLANE-MODE ONBOARDING INVITATION (ruled 2026-06-13):** boot-offline
+  (SHIPPED #114) needs a teaching affordance — at startup, a simple UI
+  BUBBLE/coachmark points at the ONE airplane button and INVITES "switch
+  airplane mode off to go online and start collecting." It teaches the single
+  online/offline control intuitively (no manual). CONSTRAINT (binding, informed
+  consent is non-negotiable / invariant #14): the bubble is the INVITATION layer
+  ONLY — the offline→online transition STILL passes the ONE consent popup
+  (`ensureOnline`: names the action, local interface IPs, honest public-IP
+  wording); the bubble does NOT replace consent. So the flow reframes from a
+  "grant permission?" gate to "here's the one switch, flip it when ready" while
+  consent stays by-construction (informed-consent-by-LAYERING). Bubble ships ×12,
+  dismissible, prominent on first launches / subtle for returning users, never
+  naggy; uses the #oo-tip hover convention; folds into the guided wizard's final
+  consented-first-collect step. Complementary angles recorded (maintainer invited
+  ideas): a faint "offline — tap to collect" affordance on the button itself; a
+  Home empty-state CTA. FRONTEND slice (lands with the UI-shell airplane-to-top-bar
+  move). My recorded opinion: strong yes.
+- **TOR INTEGRATION + PER-SOURCE TRANSPORT (maintainer concept + question
+  2026-06-13; my critical assessment recorded, full design in
+  FUTURE_DEVELOPMENTS "Reliable Tor & per-source transport"):** concept = embed/
+  manage a reliable, up-to-date Tor via an open-source library, enabling
+  per-source transport (clearnet for Tor-hostile sources, Tor for the rest, "to
+  protect the user ID from other sources"). MY HONEST/SCIENTIFIC VERDICT: (1)
+  LIBRARIES — there is NO pure-Python Tor; the mature path is CONTROLLING a `tor`
+  process via **Stem** (the official Tor Project lib, LGPL) or txtorcon — you
+  still need the `tor` binary (user-installed, or bundled ~few MB à la Tor
+  Browser). **Arti** (Tor's Rust rewrite, an embeddable client crate) is the
+  future, but its PYTHON bindings are NASCENT as of the Jan-2026 knowledge cutoff
+  — VERIFY maturity before betting on it. PySocks (already used) is only the SOCKS
+  client. (2) The current model — user runs+trusts the SOCKS proxy; the app
+  USES+verifies it and NEVER CLAIMS anonymity — is the correct ethical baseline;
+  embedding only lowers the setup barrier, it does not change the guarantees. (3)
+  The hybrid intuition is PARTLY right (per-source compartmentalisation: a
+  clearnet source sees you, a Tor source does not) BUT carries caveats that must
+  be surfaced with NO fabricated security: clearnet for source A reveals the
+  user's REAL IP + (via our honest bot UA) that they run THIS app + their topic
+  interest — to A, A's CDN/trackers, AND the ISP; cross-transport correlation can
+  link behaviour. This is EXACTLY the "NEVER silently downgrade transport"
+  non-negotiable, so clearnet-for-some must be EXPLICIT, PER-SOURCE, CONSENTED,
+  last-resort, with the UI brutally honest about what each choice exposes — never
+  automatic, never the headline. (4) SUPERIOR alternative for "protect from other
+  sources": per-source TOR STREAM/CIRCUIT ISOLATION (`IsolateSOCKSAuth` — already
+  our primitive, used for parallel dumps #110) compartmentalises WITHOUT any
+  clearnet exposure; prefer it. DIRECTION: ease Tor (optional in-app Stem-controlled
+  setup, like the planned Ollama installer) + per-source circuit isolation by
+  default; treat clearnet-for-Tor-hostile-sources as an explicit consented opt-in.
+  Filed with open questions in FUTURE_DEVELOPMENTS.
 - **Evidence-tiered cards — remaining slices:** instrument the other
   9+recipe producers; corpus tier header (early/developing/established);
   power-style "what's missing"; BH-FDR later. (Slice 1 shipped: plain
