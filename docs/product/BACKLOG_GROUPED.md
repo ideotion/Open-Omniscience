@@ -63,6 +63,14 @@ makes the rest fall out cheaply:
   duplicate rate). (log F)
 - ⬜ **Discovery: filter commerce/storefront candidates** (shop./store./*prints).
   (log D)
+- ⬜ **DDG-discovered ingest from Advanced search** (maintainer 2026-06-13) —
+  "search + scrape the top X DuckDuckGo results", ingested as articles + an
+  indirect-source provenance record (query · date · rank · region · "via DDG").
+  Guardrails: EthicalFetcher per result (robots fail-closed, kill switch,
+  proxy), consent + visible job, a distinct filterable provenance class, rank
+  as a first-class signal, bit-for-bit de-dup (already-present ⇒ multi-path
+  provenance), and the ranking-bias disclosure. Entry lives in Group F's
+  Advanced-search tab. (CLAUDE.md ledger has the full ruling.)
 
 ## C. The task manager (a window, not a bubble)
 

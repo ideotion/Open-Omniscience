@@ -547,6 +547,31 @@ ruling, a contingency, or a deliberate-omission note.
   articles window + Advanced-search tab (absorption gate), date/period
   search with the calendar picker, typo tolerance with honest did-you-mean,
   events/docs-content groups.
+- **DDG-DISCOVERED INGEST FROM ADVANCED SEARCH (ruled 2026-06-13, maintainer
+  concept):** the Advanced-search tab of the analysis window gains an opt-in
+  "search + scrape the top X DuckDuckGo results" action. Results are ingested
+  AS ARTICLES through the normal path (real source = the actual domain,
+  metadata, links, keywords, When×Where×Who) PLUS an INDIRECT-SOURCE provenance
+  record: discovered-via-DDG + exact query + search date + result RANK + DDG
+  region. GUARDRAILS (binding): (1) every result fetched through the
+  EthicalFetcher — robots fail-closed, per-host rate limit, kill switch, proxy
+  (the guarded path, shipped item 3); results that robots-disallow are skipped
+  with the honest transport-aware verdict; (2) network action ⇒ ONE consent
+  popup + a VISIBLE task-manager job, off by default; (3) DDG-discovered
+  articles are a DISTINCT, FILTERABLE provenance class (like per-edition wiki
+  sources) — never silently blended into trust-sensitive views, so the user
+  sees and can exclude DDG's ranking bias; (4) RANK is a first-class stored
+  signal (DDG ranking is an algorithmic bias, not noise); (5) DE-DUP against
+  the corpus bit-for-bit — an already-present result GAINS the discovery
+  provenance (multi-path), never a duplicate; (6) DISCLOSE the aggregator bias:
+  "top X DDG results" skews toward what ranks well (SEO/popular/often
+  English/commercial) — convenience discovery, NOT a representative sample;
+  stated in the UI so it cannot quietly undo the de-US-centring balance work.
+  BONUS FUTURE SIGNAL (recorded, not now): re-running a stored query over time
+  and diffing ranks = ranking-drift / promoted-vs-buried detection — free from
+  the (query,date,rank) provenance already stored. Fits DDG = the ONE
+  sanctioned external channel (extends discover-sources to discover+ingest,
+  user-driven). Lands in Group F (entry) + Group B (ingest mechanics).
 - **i18n & LANGUAGE UX (field report #3 + standing; SWITCHER SHIPPED T7 —
   invariant #15):** the chrome-audit burn-down is ELEVATED
   (`scripts/i18n_report.py --audit-chrome` per tab, every session, until ~0
