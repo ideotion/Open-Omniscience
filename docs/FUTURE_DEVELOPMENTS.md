@@ -566,6 +566,73 @@ one small model, provisioned on a connected machine, carried by USB to
 `~/.ollama/models`. The principled path for Tor/air-gapped operators (model
 downloads don't work over Tor; inference is loopback and unaffected).
 
+### In-app Ollama + model installer (maintainer ask 2026-06-13)
+
+Settings should let the user **install Ollama and pull models from the GUI**
+— no terminal. Design intent:
+
+- A **Settings → LLM** panel: detect whether Ollama is installed and running
+  (loopback probe, already done by `src/llm/ollama.py`); if absent, offer a
+  guided install (download the official binary per-OS, checksum-verified,
+  consented like any network action), then a model **catalog picker** (the
+  existing date-stamped `CATALOG_AS_OF` catalog: size, RAM need, license,
+  language coverage shown per model — never a quality score).
+- **Pull progress is a task-manager job** (reuse the download subsystem /
+  task-manager window from SCRAPING_AUTOMATION_PLAN.md — model pulls are just
+  another download kind: queue, pause, progress, honest verdicts).
+- **Honesty:** clearnet is a stated prerequisite for model downloads
+  (non-negotiable: no bundling models in the repo, 100 MB limit); the
+  Tor/air-gapped path stays the USB kit above. Hardware fit is **measured,
+  never asserted** (probe RAM/cores, warn honestly before a too-big pull).
+- **Guardrails:** the Ollama binary is fetched through the one guarded
+  socket factory (consent + kill switch + checksum); inference stays
+  loopback-only; nothing auto-installs.
+
+---
+
+## In-app self-update — keep the corpus and settings safe (maintainer ask 2026-06-13)
+
+"Can the app update itself through the GUI — download the updated GitHub
+repo, launch the reinstall, keep the database and all settings safe?"
+Yes, and it fits the existing reliability machinery. Designed-only; the
+data-safety bar is the same as the backup/restore mandate ("if it's not
+entirely reliable, it should not exist").
+
+**The shape:**
+
+- **Check** (consented, on-click, never silent): query the GitHub Releases
+  API / the repo's tags for a newer version than the running one (version is
+  single-sourced from pyproject — the comparison is honest). Show the
+  changelog (`docs/CHANGES.md`) for what would change. Through the one
+  guarded socket factory; off by default; zero-network boot preserved.
+- **Pre-update safety net (non-negotiable):** before touching code, take the
+  **signed oo-backup-2 artifact** (the shipped backup engine) of the corpus
+  + custody + settings, and snapshot the current install (so a failed update
+  rolls back to the exact prior tree). The user's data dir lives *outside*
+  the code tree already, so code replacement never touches it.
+- **Apply:** fetch the new release (checksum/signature-verified — we already
+  sign artifacts; verifying our own releases is the same Ed25519 path),
+  install into a new tree, run DB migrations **on a staged copy first** (the
+  alembic-on-staged-files discipline already shipped — never migrate the live
+  DB in place), verify (schema + FTS count + a boot smoke), then atomic-swap
+  and relaunch. On any failure: roll back to the snapshot, surface the honest
+  verdict, never leave a half-updated tree.
+- **Settings & keys survive by construction:** settings/annotations/events
+  are being migrated into DB tables (D1/D4 riders) which the backup already
+  captures; signing keys are re-wrapped by the encrypt tool. The encrypted
+  corpus is never silently decrypted across an update (the crown invariant).
+- **Migration direction is forward-only and reversible-by-snapshot:** we do
+  not promise down-migrations; we promise the pre-update snapshot restores
+  the prior version byte-for-byte.
+
+**Open questions (for maintainer):** (1) update channel — track the default
+branch, tagged releases only, or a user choice? (2) signature trust root —
+ship the maintainer's public key in-tree so releases are verified offline?
+(3) auto-check cadence vs. fully manual? (4) for `curl|bash` installs vs.
+git clones, does update re-run `install.sh` or do an in-place tree swap? (5)
+how does self-update interact with the Open Commons Mirror's tamper-evident
+ethos — should each update anchor its release hash?
+
 ---
 
 ## Diagnostics channel — future slices

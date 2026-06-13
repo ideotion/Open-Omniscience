@@ -211,6 +211,15 @@ ruling, a contingency, or a deliberate-omission note.
   of a 32 s wall; read small denormalisable facts via covering indexes or a
   one-pass Python map instead. FastAPI JSONResponse uses COMPACT JSON
   separators — streamed JSON must pass separators=(",",":") for byte parity.
+- **RESTORE IS ADDITIVE-ONLY (ruled 2026-06-13, field session):** restoring a
+  backup must NEVER replace the corpus — it ALWAYS complements it additively,
+  duplicate-lessly (the v2 merge engine's exact behaviour: nothing replaced or
+  deleted, bit-for-bit dedup, conflicts keep local + report both). The LEGACY
+  replace-restore path must be REMOVED/made unreachable (not merely demoted) so
+  no flow can ever overwrite the corpus; the merge is the ONLY restore. (The
+  chrome still showed legacy "replace your current corpus with the uploaded
+  file" wording — retire it.) Crown test already forbids silent decrypt across
+  restore; extend the absorption/guard so no replace path survives.
 - **DB-RELIABILITY BATCH — REMAINING RIDERS (core SHIPPED; the Settings
   restore-preview UI SHIPPED in T6, 2026-06-12 — v2 flow primary, legacy
   demoted-not-removed):** D1/D4 state-into-DB migrations (settings/
@@ -229,6 +238,31 @@ ruling, a contingency, or a deliberate-omission note.
   default. EMPIRICAL: under curl|bash stdin is the pipe — prompts MUST
   read /dev/tty. The launcher half = the in-app /unlock create flow
   (already shipped); whiptail stays optional polish.
+  **INSTALL-FLOW NEXT SLICE (maintainer field test 2026-06-13 — the tty
+  prompt VERIFIED WORKING live end-to-end: encrypted store created,
+  short-passphrase warn honored, 2978/3205 sources seeded): (a) install.sh
+  AUTO-LAUNCHES the app when install completes — the install ends fluid,
+  inside the running app; (b) the encryption choice MOVES to the app's
+  initial screen (the in-browser first-launch prompt becomes the PRIMARY
+  path; the terminal prompt demotes to the headless/env fallback). Fits
+  the shipped deferred-init design (option 3 already seeds at first
+  unlocked boot). (c) The /unlock screen must carry THE canonical eye
+  (invariant #5, exact same vector as the GUI top-left) — today it draws
+  a DIFFERENT double-arc eye (unlock.html:44 vs index.html:578); extend
+  the invariant-#5 test to unlock.html when fixed. (d) FIRST-LAUNCH
+  GUIDED SETUP (ruled 2026-06-13): a ONE-TIME, uniquely-designed guided
+  GUI walks the user through every initial step to a WORKING scraping
+  app — language selection, the encryption choice (absorbs (b)), then
+  scraping-source setup BY THEME (drive it from the catalog's real tag
+  taxonomy: news/history/investigative/science/financial/state-media…),
+  folding in the ruled country/language-emphasis picker (field report
+  #2 item 3 — BOTH stands) and ending at the consented first collect
+  (the ONE consent design; zero-network boot preserved). It REPLACES
+  the #onboard welcome card (index.html:675-684) — whose h2/p + both
+  buttons are hardcoded English, never keyed (the maintainer flagged
+  this 2026-06-13: card strings must enter the UI translations).
+  Wizard ships ×12, informed-consent layering, and the one-time state
+  is a user-visible setting, not a hidden flag.**
   **The NEWSLETTER SCRAPER stays blocked until these riders ship AND the
   no-recovery contingency is revisited** (see Non-negotiables).
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
@@ -341,10 +375,15 @@ ruling, a contingency, or a deliberate-omission note.
   no writer-lock contention — so the ask fires ONLY on DB-writer collisions
   (collect/import kinds); dumps keep their own single-download reorderable
   queue among themselves (bandwidth arbitration, not a cross-kind block).** REMAINING from the
-  original ask (maintainer REPEAT ×2 context preserved): the
-  vitals panel becomes minimized animated indicators; CLICK opens a dedicated
-  OS-style task-manager window: what scrapes next, wiki-dump progress, queued
-  jobs with tweak/cancel/reorder. Acceptance examples: reorder fr wiki dump
+  original ask (maintainer REPEAT ×3, the 2026-06-13 field test elevated it
+  again — "the task manager is absent, I thought we'd had it done"): the
+  vitals BUBBLE graduates to a DEDICATED WINDOW/TAB, not a popover — minimized
+  animated indicators in the chrome, CLICK opens an OS-style task-manager
+  window with TABS for categories (proposed: Active · Queue · Sources/Schedule
+  · History · System) where the user can understand, explore, manage,
+  organize, sort, prioritize, QUEUE every download/scrape and any other job.
+  Full spec + tab design in `docs/product/SCRAPING_AUTOMATION_PLAN.md` Step 7.
+  Acceptance examples: reorder fr wiki dump
   before the much bigger en; per-country scrape priority; every background
   process visible & tweakable. Build together with DOWNLOAD-MANAGER
   ARBITRATION (ruled 2026-06-10): every network task is a VISIBLE JOB; a new
@@ -359,6 +398,101 @@ ruling, a contingency, or a deliberate-omission note.
   batch it like calendars.
   (5)–(7) folded into the corpora/reader entry below (tag-click entry; date
   extraction at ingest = When×Where×Who CONFIRMED GO; reader tabs REPEAT ×2).
+- **CONTENT-FIRST SCRAPING + THE DOWNLOAD SUBSYSTEM (ruled 2026-06-13; full
+  action plan in `docs/product/SCRAPING_AUTOMATION_PLAN.md`):** the maintainer
+  principle — "the UI should focus on CONTENT, not the scraping mechanics;
+  setting everything up is cumbersome; after consent the app scrapes
+  automatically." Seven steps, sequenced in the doc: (1) ONE guarded socket
+  factory — closes the kill-switch gap + the stale UA + a LATENT TRANSPORT
+  LEAK found 2026-06-13 (dump/wiki use raw requests with NO proxies=, so Tor
+  set only in-app would egress clearnet — never silently downgrade transport),
+  ELEVATE RC §1 to RC-BLOCKING; (2) PARALLEL downloads — dumps max_concurrent
+  1→N (files, no DB-writer contention) + a bounded fetch worker pool for
+  collect (parallel FETCH, single SQLite WRITER) — THE Tor speed fix: Tor's
+  bottleneck is per-circuit so N downloads = N circuits = aggregate speedup;
+  (3) segmented HTTP-Range over multiple circuits + IsolateSOCKSAuth for one
+  big dump; (4) dump mirror selection; (5) auto-collect ON by default after
+  the guided wizard's ONE consent (continuous-collection design adopted,
+  zero-network boot intact); (6) the Collect TAB LEAVES the sidebar → an
+  elaborated Settings → Download section (nothing lost — invariant #8 + the
+  Desk lesson, gated by an absorption test); **the SOURCES tab AND the
+  WIKIPEDIA tab ALSO leave the sidebar into Settings (ruled 2026-06-13) —
+  same content-first principle, same absorption-test guard;** (7) the
+  task-manager WINDOW (item 4 above). GUARDRAILS: per-host politeness never traded for speed
+  (parallel across hosts/circuits, bounded per host); kill switch gates every
+  worker; degrade loudly with T4 transport-aware verdicts. ROOT CAUSE recorded:
+  today max_concurrent=1 (dumps.py:92) + sequential collect loop
+  (runner.py:217) = exactly ONE circuit ever active = worst-case Tor.
+  **NO SOURCE CAP + BANDWIDTH PRIORITY LADDER (ruled 2026-06-13, maintainer):**
+  REMOVE max_sources_per_run (the 1000 cap) — ANY cap induces an unjustifiable
+  SELECTION of which sources to skip ("we cannot choose"); scraping must cover
+  EACH AND EVERY source, and ALL modes (RSS + crawl + markets + commodities +
+  weather + wiki + DDG). The cap was a per-run batch limit; the continuous
+  per-country round-robin replaces it — over time EVERYTHING is covered, no
+  source starved, no selection made. CRUCIAL DISTINCTION: ordering ≠ exclusion —
+  a bandwidth PRIORITY LADDER decides what runs FIRST under constrained
+  bandwidth, never what runs AT ALL. The ladder (maintainer): (1) commodities /
+  markets / weather FIRST — small payloads, cheap, high value; (2) interactive
+  DDG searches next — snappy UX (user-facing preempts background); (3) RSS
+  feeds; (4) recursive crawling ONLY with bandwidth headroom (heaviest). The
+  task manager surfaces + tunes this bandwidth allocation (a budget/meter across
+  job kinds), tied to the measured throughput and the parallel-download
+  concurrency. Weight by (freshness-due, cost, interactivity): periodic
+  markets/weather fetch when new data is due, not constantly. Folds into
+  SCRAPING_AUTOMATION_PLAN Steps 2/5/7.
+- **FIELD-LOG ANALYSIS 2026-06-13 (4 session exports crunched: perf report +
+  debug bundle + network preflight + keyword diagnostics; live corpus ≈1.5k
+  articles / 62k keywords / 155k mentions, 2-core/6 GB Qubes VM, over Tor):**
+  findings ranked —
+  (A) **DATA LOSS — "database is locked" (HIGH):** the commodity import
+  collided with the active scrape on the single SQLite writer; copper/aluminum/
+  nickel/zinc… FETCHED OK over Tor then FAILED TO STORE ("store error:
+  OperationalError: database is locked", verdict ok, retryable:false) — real
+  downloaded data DISCARDED. WAL lets readers pass but two WRITERS still
+  conflict; the import path lacks busy_timeout / write-queue. FIX = the
+  single-writer QUEUE from SCRAPING_AUTOMATION_PLAN Step 2 (all writes enqueue;
+  import + scrape never collide) + busy_timeout + retry-on-locked. This is the
+  field-log-#1 'database is locked' item, now with proof of data loss — ELEVATE.
+  (B) **UI POLLING STORM (MED):** ~2 h uptime drove /api/system/vitals ×4120,
+  /api/scheduler/activity ×2747, /api/scheduler/status ×1846,
+  /api/system/network ×1388, /api/jobs ×248 = ~10k polls contending with the
+  encrypted DB. FIX = consolidate into ONE status poll or SSE/push; adaptive
+  backoff when idle; the airplane/scheduler already push state — lean on that.
+  (C) **keyword_export 29.6 s then 65.2 s (MED):** run2 SLOWER than run1 = not
+  cache, it is CONTENTION with the live scrape over the single SQLCipher
+  connection (T1 measured ~7.8 s encrypted on a BIGGER synthetic corpus). Same
+  root as (A)/(B): one connection, pure-Python serialized. Revisit after the
+  writer queue + a read snapshot for exports.
+  (D) **DISCOVERY creates COMMERCE sources (MED honesty):** the citation
+  discovery created shop.popsci.com, store.popsci.com, popularscienceprints.com
+  — merch/storefronts, not journalism. FIX = filter obvious commerce
+  (shop./store./buy./*prints.com) from discovery candidates; never auto-enable.
+  (E) **DEAD DEFAULT FEEDS waste preflight (LOW):** every google-hol-* calendar
+  is robots-disallowed (100% fail), webcal.guru religious feeds disallowed,
+  raw.githubusercontent/space.floern/cantonbecker robots-undetermined → all
+  dead; the WORKING set is worldpublicholiday.com (wph-*), monkeyness moons,
+  ose-calendar. FIX = drop the guaranteed-fail feeds from defaults (honest
+  fail-closed is correct, but shipping them as defaults wastes cycles).
+  (F) **RSS DUP RATE ~93% (LOW):** last passes 284/305 and 179/305 duplicate at
+  interval_minutes=1. FIX = conditional GET (ETag/If-Modified-Since) + per-feed
+  backoff when all-duplicate; continuous-collection should not re-pull unchanged
+  feeds every minute. (G) NOTE: Tor 403s on premium news (reuters/ft/bloomberg/
+  economist/lefigaro…) are the Tor-population reality, already surfaced via T4
+  transport verdicts — not a bug. FRED timeouts over Tor confirm the
+  parallel/official-endpoint direction. keyword diagnostics: language_mismatch
+  flagging WORKS (515 flagged, e.g. ANS en→fr:60); "services" tagged kind=entity
+  is the ongoing keyword-quality tail, not new.
+- **IN-APP OLLAMA/MODEL INSTALLER + APP SELF-UPDATE (ruled 2026-06-13;
+  designed in FUTURE_DEVELOPMENTS):** Settings → LLM panel installs Ollama +
+  pulls models from the GUI (checksum-verified through the guarded factory,
+  catalog picker with size/RAM/license shown never a score, pulls are
+  task-manager jobs, clearnet stated prerequisite, hardware fit MEASURED).
+  SELF-UPDATE via GUI: consented check vs GitHub releases → signed
+  oo-backup-2 + install-tree snapshot BEFORE anything → verified release →
+  migrations on a STAGED copy → atomic swap + relaunch → rollback on failure;
+  data dir lives outside the code tree so the corpus/settings/keys survive by
+  construction; never silently decrypt across an update. 5 open questions filed
+  (channel, trust root, cadence, curl|bash-vs-git, mirror-anchoring).
 - **THE ONE CORPORA SYSTEM + READER TABS (the flagship analysis object;
   ruled 2026-06-11, extended through 2026-06-12):** one window architecture
   with consistent sub-tabs — **Mindmap · Related articles · Source
@@ -430,6 +564,31 @@ ruling, a contingency, or a deliberate-omission note.
   articles window + Advanced-search tab (absorption gate), date/period
   search with the calendar picker, typo tolerance with honest did-you-mean,
   events/docs-content groups.
+- **DDG-DISCOVERED INGEST FROM ADVANCED SEARCH (ruled 2026-06-13, maintainer
+  concept):** the Advanced-search tab of the analysis window gains an opt-in
+  "search + scrape the top X DuckDuckGo results" action. Results are ingested
+  AS ARTICLES through the normal path (real source = the actual domain,
+  metadata, links, keywords, When×Where×Who) PLUS an INDIRECT-SOURCE provenance
+  record: discovered-via-DDG + exact query + search date + result RANK + DDG
+  region. GUARDRAILS (binding): (1) every result fetched through the
+  EthicalFetcher — robots fail-closed, per-host rate limit, kill switch, proxy
+  (the guarded path, shipped item 3); results that robots-disallow are skipped
+  with the honest transport-aware verdict; (2) network action ⇒ ONE consent
+  popup + a VISIBLE task-manager job, off by default; (3) DDG-discovered
+  articles are a DISTINCT, FILTERABLE provenance class (like per-edition wiki
+  sources) — never silently blended into trust-sensitive views, so the user
+  sees and can exclude DDG's ranking bias; (4) RANK is a first-class stored
+  signal (DDG ranking is an algorithmic bias, not noise); (5) DE-DUP against
+  the corpus bit-for-bit — an already-present result GAINS the discovery
+  provenance (multi-path), never a duplicate; (6) DISCLOSE the aggregator bias:
+  "top X DDG results" skews toward what ranks well (SEO/popular/often
+  English/commercial) — convenience discovery, NOT a representative sample;
+  stated in the UI so it cannot quietly undo the de-US-centring balance work.
+  BONUS FUTURE SIGNAL (recorded, not now): re-running a stored query over time
+  and diffing ranks = ranking-drift / promoted-vs-buried detection — free from
+  the (query,date,rank) provenance already stored. Fits DDG = the ONE
+  sanctioned external channel (extends discover-sources to discover+ingest,
+  user-driven). Lands in Group F (entry) + Group B (ingest mechanics).
 - **i18n & LANGUAGE UX (field report #3 + standing; SWITCHER SHIPPED T7 —
   invariant #15):** the chrome-audit burn-down is ELEVATED
   (`scripts/i18n_report.py --audit-chrome` per tab, every session, until ~0
@@ -440,12 +599,35 @@ ruling, a contingency, or a deliberate-omission note.
   (alias pattern like #database→#library). Easter eggs gain FRENCH references
   while staying transnational/translatable (personality.yml). Home-card
   TITLES are still server-built English — template-based title translation
-  needs a design (titles carry data values).
+  needs a design (titles carry data values). **ELEVATED (maintainer REPEAT
+  2026-06-13, via the untranslated #onboard card: "like other cards" —
+  card strings must enter the UI translations).**
 - **MARKETS/INDICES/COMMODITIES (consolidated; TOOLKIT SHIPPED T8 slice 1 —
   invariant #16; REMAINING: roll ooChart onto commodity-card enlarge,
   indices board detail, timemap-adjacent charts):** Commodities cards render the real curve at every
   timeframe (drop the "· 5 pts" suffix); axes detailed; discrete gridlines.
-  S&P500 is an INDEX, not a commodity — reclassify; expand feeds (rare
+  **COMMODITIES TAB REWORK (ruled 2026-06-13, field session):** (1) split the
+  board GRAPHS INTO CATEGORY TABS (the universal subtab grammar — UI plan §1);
+  data-oriented presentation. (2) REPLACE the 5-choice time-scale select
+  (index.html:1207-1208 — 1mo/6mo/1yr/5yr/all) with the SAME sophisticated
+  begin/end/timescale TIME-SCOPE control built once for corpora/search — a
+  real, intuitive range UI, not 5 buttons. (3) DATA-POINT BUG diagnosed: the
+  per-card SVG is full-resolution within the window (windowPrices date-filter,
+  no downsampling — good), BUT the sparse-series fallback (index.html:4951-4954)
+  silently shows the ENTIRE history when a window holds <2 points, so a NARROW
+  window (1 month) on a sparse monthly series dumps the full 5-yr history while
+  "1 year" shows only ~12 points — that is why the smallest scale paradoxically
+  shows the MOST points. FIX per invariant #16: respect the window; render
+  sparse series as honest POINTS with n + early-corpus caveat (never silently
+  expand the window). Precision limited ONLY by gathered data + renderer.
+  (4) CLICK A GRAPH → a DEDICATED WINDOW/TAB (like search results), NOT the
+  bottom-of-page #mkt-chart (index.html:1214, current onclick chartSymbol →
+  detail+correlation at the bottom). The window IS the corpora flagship with
+  the coherent sub-tabs: keywords · When/Where/Who · mindmap · corpus
+  analytics · source analytics · links · the price curve with the article
+  timeline OVERLAID (commodity-click → keyword-family corpus, already ruled in
+  the corpora entry; co-occurrence NEVER causation). S&P500 is an INDEX, not a
+  commodity — reclassify; expand feeds (rare
   earths, oil, gas, LNG, sand, cereals, sugar…). **Tor/indices diagnosis
   (logs analyzed 2026-06-12) — SHIPPED in T4:** transport-aware verdict
   taxonomy (refused ≠ robots-disallowed ≠ dead-series ≠ unreachable ≠
@@ -531,6 +713,21 @@ ruling, a contingency, or a deliberate-omission note.
   reference VM; the dump-as-baseline + recentchanges-as-delta architecture;
   tiered depth proposal; what consent/visibility the auto-tracking needs).
   Ask/comment WHEN THE TIME COMES, per the maintainer — not now.
+  **WIKIPEDIA AS A SETTINGS-MANAGED, AUTO-WATCHED SOURCE (ruled 2026-06-13,
+  field session):** (1) Wikipedia is watched ENTIRELY and BY DEFAULT in ALL
+  12 UI-language editions — auto-watch is the default, not a per-page opt-in;
+  (2) the WIKIPEDIA TAB MOVES INTO SETTINGS (content-first; the watched
+  corpus surfaces in general search/analysis like any article — invariant #8);
+  (3) WHICH dumps to download is DECIDED AT FIRST RUN (the guided wizard #24 —
+  language-dataset choice folds in there, honest size guidance per edition);
+  (4) a Wikipedia DUMP DOWNLOAD MUST NOT DELAY scraping or other downloads —
+  it is its own task-manager job (files, no DB-writer contention; parallel by
+  the T9 ruling); (5) FULL download CONTROLS live in the task manager: rate,
+  percentage, speed, BANDWIDTH CAP, ETA at current average speed, pause,
+  resume, prioritize, de-prioritize. Builds on the SUPERSEDING auto-track
+  ruling above (dump-as-baseline + recentchanges-delta) and the
+  SCRAPING_AUTOMATION_PLAN download subsystem. Scale honesty still applies
+  (enwiki ≈ 100k edits/day vs the 2-core VM) — tiered depth + visible consent.
 - **WIKIPEDIA (field report #4; T14 SLICE 1 SHIPPED 2026-06-12):** the RULED
   dump-list limit SHIPPED (/api/wiki/languages?scope=dumps serves only
   APP_LANGUAGE_CODES = 12 UI locales + 5 stoplist-evidenced corpus languages;
@@ -573,7 +770,53 @@ ruling, a contingency, or a deliberate-omission note.
 - **Home cards remainder:** per-card-TYPE /investigate views so EVERY card
   is clickable (rising→trend+associations; diet/coverage→sources;
   echo→integrity; law/wiki→reader). Card-feed visual/UX remake still wanted
-  (flagship surface).
+  (flagship surface). **REMOVE the home HERO card (ruled 2026-06-13):** the
+  "Understand the world as it really is. / Your private, offline research
+  desk…" block (index.html:688-690, #hero-greet at :2768) takes space, serves
+  no purpose for an installed user, AND is hardcoded English (never keyed) —
+  delete it; if any greeting survives it must be keyed ×12.
+  **HOME REDESIGN (ruled 2026-06-13; full design in
+  `docs/product/UI_SHELL_REDESIGN_PLAN.md` §5):** the "At a glance" stats
+  strip (index.html:731) moves PERMANENT + COMPACT to the very top of Home;
+  REMOVE the Quick actions section (index.html:738); cards take FULL width
+  (today ~3 wide because cards are too big — redesign denser, 4+ fit);
+  FAMILY-TYPE COLORS with families as VERTICAL SUBTABS + an "All cards"
+  default subtab (color = family hue accent; "All" stays a single prioritised
+  feed, families are a lens not a wall). My opinion recorded in the doc.
+- **UI SHELL REDESIGN (ruled 2026-06-13; full plan in
+  `docs/product/UI_SHELL_REDESIGN_PLAN.md`):** (1) ONE universal nav grammar
+  app-wide — LATERAL sidebar = main tabs, VERTICAL subtabs near the top =
+  subcategories (Home families, Insights sections, Settings, corpora window);
+  reusable subtab component, invariant-tested; sidebar invariant #2 intact.
+  (2) MINIMAL TOP BAR — above the subtabs ONLY: always-on search, status,
+  task-manager access, help, language picker, airplane button; vitals move
+  into the task-manager window's System tab (invariant #4 — version still not
+  in chrome). (3) AIRPLANE BUTTON moves to the top bar, NO text (hover
+  bubble enough, invariant #17); FILL=state stays (invariant #14) but the
+  transition uses DIFFERENT colors by direction, coherent with the icon's
+  on/off color (today one red transition conflates the two opposite
+  meanings). (4) SEARCH bigger + always-on; REMOVE the visible "Ctrl K" hint
+  (index.html:646); permanent "Advanced" button; shortcuts list → Help +
+  editable in Settings (a keybindings panel); small-screen overlaid text
+  dropped. (5) ENTER → the advanced-search WINDOW = the corpora flagship
+  (keyword/mindmap/link/source/WWW/sentiment/Advanced sub-tabs). HONEST
+  STATUS recorded (answers "I can't find this UI"): palette shipped T13 s1,
+  keyword→corpus window shipped T10 s1 (Trend/Articles/Links only); the FULL
+  Enter→corpus window with the analysis sub-tabs is the REMAINING slice — not
+  lost, not yet built; PROMOTE it. (6) INSIGHTS: auto-index in the
+  background, REMOVE the "Index corpus" button (index.html:1287) + its
+  palette action (index.html:2655); present Insights sections as subtabs.
+- **TWO BUGS found in the field session (ruled to fix, diagnosed in the UI
+  plan §7):** (a) the BACK BUTTON returns to the passphrase screen — tab nav
+  uses history.replaceState (index.html:2524, no history entries) and a
+  locked API response does location.href="/unlock" (index.html:2451), so
+  Back lands on /unlock; fix = pushState for tab nav + replaceState to "/"
+  after unlock. (b) "Scraping STOPPED" is NOT a crash — the scheduler idles
+  interval_minutes between passes (runner.py:326); the content-first
+  continuous-collection ruling makes the idle gap + the in-face arbitration
+  modal disappear (app boots in AIRPLANE MODE; permanent scraping when
+  online; new requests QUEUE into the task manager, never a modal — recorded
+  in SCRAPING_AUTOMATION_PLAN.md Step 5 refinements).
 - **Evidence-tiered cards — remaining slices:** instrument the other
   9+recipe producers; corpus tier header (early/developing/established);
   power-style "what's missing"; BH-FDR later. (Slice 1 shipped: plain
@@ -675,6 +918,21 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS BUILD 2026-06-13 (items 1-3, MERGED to 0.09 — PRs #106/#107/#108):**
+  (1) CI HYGIENE — pinned mypy==2.1.0 + bandit==1.9.4 (unpinned tools had
+  drifted: mypy 129>128 reddened EVERY PR; that masked a bandit B314); fixed 2
+  real latent bugs (429 handler exc.retry_after AttributeError; escape(None));
+  fixed B314 with defusedxml (real XXE/billion-laughs defense on dump XML);
+  baseline 128→127. (2) DATA-LOSS — run_write_with_retry (src/database/write.py)
+  wraps import_points: a transient "database is locked" rolls back + re-runs the
+  idempotent work (backoff+jitter) instead of DISCARDING fetched-over-Tor prices
+  (the field-log copper/aluminum/nickel/zinc loss). (3) GUARDED SOCKET FACTORY —
+  src/safety/fetcher.guarded_session routes dumps/wiki-client/ores/DDG through
+  the kill switch + protected-mode proxy + honest versioned UA (closed a
+  TRANSPORT LEAK: dumps bypassed the in-app proxy → could egress clearnet);
+  socket-importer ratchet allowlist 6→3; +15 tests. Full suite 1056 passed.
+  REMAINING from these foundations: the single-writer QUEUE (supersedes the
+  retry), parallel downloads (item 4), task manager window (Group C).
 - **PERFORMANCE BATCH T1 (2026-06-12, this session):** measure→fix→re-measure
   at the live shape (6.4k articles / 228k keywords / 317 MB synthetic;
   `scripts/perf_harness.py`, zero network). Keyword export 14.1→4.0 s
