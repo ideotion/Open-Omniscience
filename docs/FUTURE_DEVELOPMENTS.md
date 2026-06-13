@@ -57,6 +57,26 @@
   merge, dedup and verification do not cover every domain**, and side files
   (keys, configs/overrides, data/*.jsonl logs) live outside it. The gap analysis
   is the first deliverable.
+  - **Backups MUST include the downloaded Wikipedia dumps (ruled 2026-06-13,
+    maintainer — REVERSES design D3).** The offline Wikipedia downloads in
+    `data_dir()/wiki_dumps/` are today DELIBERATELY EXCLUDED from oo-backup-2
+    (D3 "re-downloadable", listed in `_excluded_inventory()`,
+    `src/backup/artifact.py`). That is now overruled: a restoring user must NOT
+    have to re-download an entire Wikipedia library (multi-GB to tens of GB,
+    brutal over Tor). MARKED FOR FUTURE DEVELOPMENTS — not implemented this
+    session, per the maintainer's "implement now or mark it". Open design
+    decisions when built: (a) **dedup by checksum** across backups so an
+    unchanged dump is never re-stored, and decide whether dumps ride the MAIN
+    artifact or a **separate companion artifact** so a user can still take a
+    small/quick state-only backup honestly (the manifest stating which it is);
+    (b) the **additive-restore merge must place FILE members** into `wiki_dumps`
+    (the merge engine today merges DB tables, not on-disk files) — bit-identical
+    dedup, never overwrite a differing local dump; (c) the **encrypted-artifact
+    key rule still holds** (members protected by the artifact's OOENC1 envelope);
+    (d) the manifest keeps listing what IS and ISN'T carried. Cross-refs: the
+    superseding "edition-wide auto-track after a dump download" ruling (a dump is
+    becoming the corpus BASELINE, which strengthens the case to preserve it) and
+    the additive-only restore ruling.
 - **Import with duplicate handling that cannot corrupt.** Merge-import (never
   replace), bit-level duplicate detection (content hash + byte comparison), FK
   remapping, a dry-run preview before commit, and a post-merge integrity

@@ -220,6 +220,22 @@ ruling, a contingency, or a deliberate-omission note.
   chrome still showed legacy "replace your current corpus with the uploaded
   file" wording — retire it.) Crown test already forbids silent decrypt across
   restore; extend the absorption/guard so no replace path survives.
+- **BACKUPS MUST INCLUDE DOWNLOADED WIKIPEDIA DUMPS (ruled 2026-06-13, maintainer
+  — REVERSES design D3):** a backup must carry the offline Wikipedia downloads
+  (`data_dir()/wiki_dumps/`) so a restoring user NEVER has to re-download an
+  entire Wikipedia library (multi-GB to tens of GB, painful over Tor). Today
+  these are DELIBERATELY EXCLUDED from oo-backup-2 (D3, "re-downloadable", listed
+  in `_excluded_inventory()` at src/backup/artifact.py) — that exclusion is now
+  overruled: include them. MARKED FOR FUTURE DEVELOPMENTS (not implemented this
+  session, per the maintainer's "implement now or mark it"). Design points to
+  settle when built: (a) dumps are huge ⇒ DEDUP by checksum across backups (never
+  re-store an unchanged dump) and consider whether dumps ride the main artifact
+  vs a SEPARATE companion artifact so small/quick backups can still opt out
+  honestly; (b) the additive-restore MERGE must place FILE members into
+  wiki_dumps (not just merge DB tables) — bit-identical dedup, never overwrite a
+  differing local dump; (c) the encrypted-artifact key rule still holds (members
+  protected by the artifact envelope); (d) manifest still lists what IS and ISN'T
+  carried. See FUTURE_DEVELOPMENTS "Backups include Wikipedia dumps".
 - **DB-RELIABILITY BATCH — REMAINING RIDERS (core SHIPPED; the Settings
   restore-preview UI SHIPPED in T6, 2026-06-12 — v2 flow primary, legacy
   demoted-not-removed):** D1/D4 state-into-DB migrations (settings/
