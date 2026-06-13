@@ -36,8 +36,11 @@ makes the rest fall out cheaply:
   locked".
 - ✅ **Guarded socket factory** (PR #108) — kill switch + proxy + honest UA on
   every fetch path; ratchet allowlist 6 → 3; closes the clearnet transport leak.
-- ⬜ **Single-writer queue** (keystone #1) — supersedes the retry; serialises
-  writes; prerequisite for safe parallel collection.
+- ✅ **Single-writer queue** (keystone #1) — `src/database/writer.py`: a
+  reentrant, observable write gate wired via SQLAlchemy session events (zero
+  call-site churn); writers queue in-process so two never collide on the SQLite
+  lock (no "database is locked", no lost data). Prerequisite for safe parallel
+  collection — now in place.
 - ⬜ **UI polling storm** — ~10k polls / 2 h (vitals ×4120, activity ×2747…)
   contend with the encrypted DB; consolidate to one status poll / SSE + adaptive
   backoff. (log finding B)

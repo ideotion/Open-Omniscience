@@ -112,6 +112,16 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, futu
 # Back-compat alias: a lot of existing code does ``from ...models import Session``.
 Session = SessionLocal
 
+# The single-writer gate (keystone #1): serialise every write through one
+# in-process queue so two writers never collide on the SQLite write lock. Wired
+# via session events so ORM write paths need no call-site change; SQLite only
+# (a server PostgreSQL backend has its own concurrency control). See
+# src/database/writer.py for the full rationale.
+if _IS_SQLITE:
+    from src.database.writer import register_write_gate
+
+    register_write_gate(SessionLocal)
+
 
 def init_db() -> None:
     """
@@ -177,6 +187,7 @@ def session_scope() -> Iterator[SASession]:
         raise
     finally:
         session.close()
+        _release_write_gate(session)
 
 
 def get_db() -> Iterator[SASession]:
@@ -191,6 +202,22 @@ def get_db() -> Iterator[SASession]:
         yield session
     finally:
         session.close()
+        _release_write_gate(session)
+
+
+def _release_write_gate(session: SASession) -> None:
+    """Safety net: release the single-writer gate if this session still holds it
+    after close (the implicit rollback on close has already resolved any open
+    write transaction). A no-op when the gate is off or already released by an
+    event — never lets the gate leak past a session's lifetime."""
+    if not _IS_SQLITE:
+        return
+    try:
+        from src.database.writer import release_if_held
+
+        release_if_held(session)
+    except Exception:  # noqa: BLE001 - cleanup must never raise
+        _LOG.debug("write-gate safety release failed", exc_info=True)
 
 
 def dispose_engine() -> None:

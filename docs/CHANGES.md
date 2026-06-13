@@ -11,6 +11,30 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **The single-writer gate: writers serialise, so two never collide on the
+  SQLite lock (keystone #1).** The store is single-writer by design, but two
+  *writers* still race at the SQLite layer, and a long collection pass could
+  hold the writer past `busy_timeout` — the loser then raised "database is
+  locked" and historically discarded fetched data (the field-log copper/nickel
+  loss; `run_write_with_retry` was the surgical band-aid). The proper fix is now
+  in place: a process-wide, reentrant write gate (`src/database/writer.py`)
+  through which every write queues *in Python* — only one thread is ever inside
+  a write transaction, so SQLite never sees two concurrent writers and the
+  timeout never fires. It is wired automatically via SQLAlchemy session events
+  (acquire on a session's first `flush`, release on `commit`/`rollback`), so the
+  ORM write paths — ingest, markets, wiki, law, the API write endpoints — need
+  **no call-site change**; the handful of raw-SQL writes that bypass the ORM
+  (VACUUM) take the gate explicitly. The gate is reentrant (a thread can hold it
+  across nested sessions), observable (honest `grants`/`contended`/wait-time
+  counters that will feed the task-manager System view), SQLite-only (a server
+  PostgreSQL backend keeps its own MVCC), and disableable via `OO_WRITE_GATE=0`
+  as a field escape hatch. Readers are untouched — a read-only transaction never
+  takes the gate, so WAL concurrency is preserved. This supersedes the retry as
+  the primary mechanism (the retry stays as defense-in-depth) and is the
+  prerequisite for safe **parallel collection** (parallel fetch, serial write).
+  New `tests/test_write_gate.py` proves the contract and that six threads
+  writing a real file-backed store concurrently never lock and are serialised.
+
 - **Parallel, circuit-isolated dump downloads (the Tor speed fix for dumps).**
   Dump downloads ran strictly one at a time (`max_concurrent = 1`), so over Tor
   a single slow circuit was the ceiling — 56K-modem speeds. Now up to

@@ -156,7 +156,12 @@ def vacuum_database(engine: Engine) -> dict:
     db_path = engine.url.database
     size_before = os.path.getsize(db_path) if db_path and os.path.exists(db_path) else None
     t0 = time.perf_counter()
-    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+    # VACUUM is a raw-SQL write that takes an exclusive lock; route it through
+    # the single-writer gate so it queues with collection/import writers instead
+    # of racing them on the SQLite lock (it bypasses the ORM-flush hook).
+    from src.database.writer import write_lock
+
+    with write_lock(), engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         freelist_before = conn.execute(text("PRAGMA freelist_count")).scalar() or 0
         conn.execute(text("VACUUM"))
         conn.execute(text("PRAGMA analysis_limit=1000"))
