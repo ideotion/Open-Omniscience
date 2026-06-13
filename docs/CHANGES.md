@@ -11,6 +11,19 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **No fetched data is lost to a transient database lock.** A field session
+  (2026-06-13) caught commodity prices that were **fetched successfully over
+  Tor and then discarded** — copper, aluminum, nickel, zinc all stored with
+  `OperationalError: database is locked` because the import's commit lost the
+  single-writer race against a long-running collection pass (which can hold the
+  writer past the 30 s `busy_timeout`), and the import gave up on the first
+  error. The write is now wrapped in `run_write_with_retry`
+  (`src/database/write.py`): on a transient lock it rolls back and re-runs the
+  idempotent unit of work with exponential backoff + jitter, so the points
+  persist instead of vanishing. Non-lock errors still surface immediately;
+  this is the safety net ahead of the single-writer queue that will remove the
+  contention entirely.
+
 - **CI made deterministically green again (pinned tools + real fixes).** Two
   unpinned linters had drifted and were reddening **every** PR with no code
   change, each masking the next:
