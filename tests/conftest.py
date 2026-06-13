@@ -57,7 +57,7 @@ if not ANALYSIS_AVAILABLE:
     ]
 
 
-import pytest
+import pytest  # noqa: E402 - must follow the OO_DATA_DIR/plaintext env setup above
 
 
 @pytest.fixture(autouse=True)
@@ -69,3 +69,21 @@ def _clear_network_kill_switch():
     clear_kill_switch()
     yield
     clear_kill_switch()
+
+
+@pytest.fixture(autouse=True)
+def _write_gate_not_leaked(request):
+    """Guard against the gate-leak HANG class of bug: a test must never leave the
+    single-writer gate held — the next writer would block forever (it once did,
+    silently, until faulthandler pinned it). Recover the gate, then fail the
+    offending test by name so a leak surfaces as a clear failure, never a hang."""
+    from src.database.writer import write_gate as _g
+
+    yield
+    if _g.stats()["held"]:
+        _g._reset_for_tests()  # recover so the rest of the suite still runs
+        raise AssertionError(
+            f"{request.node.nodeid} left the single-writer write gate HELD "
+            "(would hang the next writer): a session was flushed but never "
+            "committed/rolled-back/closed. Use session_scope()/get_db, or close()."
+        )
