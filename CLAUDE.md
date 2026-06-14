@@ -335,6 +335,23 @@ ruling, a contingency, or a deliberate-omission note.
   this 2026-06-13: card strings must enter the UI translations).
   Wizard ships ×12, informed-consent layering, and the one-time state
   is a user-visible setting, not a hidden flag.**
+  **SLICE 1 SHIPPED (#150, 2026-06-14): wizard SHELL + Language step +
+  Finish/collect step.** Stepped `<dialog id="guide-wizard">` (canonical-eye
+  header, dot step indicator, Back/Next/Finish, RTL-aware); Language step
+  renders the existing LANGS_12 (native name = identifier, invariant #15) and
+  switches the whole UI live via pickLang→OOI18N.setLang; Finish states the
+  app boots OFFLINE and offers "Go online" as the INVITATION layer ONLY — it
+  NEVER POSTs the network, routing through firstRun()/toggleNetwork()→
+  ensureOnline so the ONE consent popup (invariant #14) always fires (test
+  asserts no /api/system/network POST in the handler). REPLACES #onboard as
+  the first-run entry (card kept as the lightweight fallback so firstRun is
+  never lost). One-time state = a USER-VISIBLE Settings toggle "Re-run the
+  first-launch guide" + localStorage oo_guide_v1 (never hidden). +22 strings
+  ×12 real translations (RTL Arabic), zero-network boot preserved.
+  test_first_launch_guide_wizard enforces. DEFERRED to next slices (inert
+  "Coming soon" placeholders left in place): the ENCRYPTION-CHOICE step
+  (touches the DB unlock layer) and the SOURCES-BY-THEME step (needs the
+  catalog tag taxonomy + the country/language-emphasis picker).
   **The NEWSLETTER SCRAPER stays blocked until these riders ship AND the
   no-recovery contingency is revisited** (see Non-negotiables).
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
