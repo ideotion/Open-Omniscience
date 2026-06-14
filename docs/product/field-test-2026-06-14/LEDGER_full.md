@@ -1154,3 +1154,66 @@ the corpus or article contains geographic data, etc."
 **Action:** Backbone (Item 22) proceeds. Map-analytics UI = PROPOSALS ONLY; do NOT implement
 until the maintainer reviews and adds input. Revamp the existing (un-useful) world-map as part
 of this. Reliability over speed, no feature-class cap.
+
+---
+
+## MAINTAINER ANSWERS — round 1 (2026-06-14)
+
+- **Q1 (Item 5) RESOLVED → 3-way quit dialog:** "Are you sure you want to quit?" →
+  (a) Yes, quit entirely · (b) Quit the browser but let the engine continue background
+  scraping/downloads · (c) No. This is informed CHOICE (not friction theater) — closing has a
+  non-obvious consequence (the background engine), so offering the choice IS the honest design.
+  Implies the server can run headless after the browser closes (option b).
+- **Q2 (Item 9 durable format) CONFIRMED → proceed.** Users will scrape; their DB must stay
+  usable across app version changes (migrations + the stable forward-compatible interchange
+  format + content-addressed identity).
+- **Q3 (Item 9 tamper-evidence) DECIDED (inverts my proposal):** FOCUS on signed-manifest
+  auto-verify + public-chain anchoring + witness cosigning; DEFER local fixity (background
+  at-rest re-hash audit) to later. Reconcile w/ Item 21: salvage-import + per-record content
+  hashes (existing) + synchronous=FULL + safe-eject STAY; only the dedicated continuous
+  fixity-audit feature is deferred. Honest: witness cosigning needs peers (a federation) —
+  partly gated on the network; anchoring needs consented network (opt-in).
+- **Q4 (Item 9 per-journalist key) — maintainer PROPOSAL:** auto-create a key from
+  (passphrase + DB-creation timestamp), no-PII, background, pseudonymous. MY RECOMMENDATION:
+  endorse the GOAL, but DON'T derive the key from the passphrase ((i) a passphrase change loses
+  the identity; (ii) couples the encryption secret to signing — poor hygiene; (iii) timestamp =
+  low entropy). BETTER + already present: the app ALREADY has a random hybrid signing keypair
+  (Ed25519 + ML-DSA — the CI "PQC signing path"; keys in data_dir/keys). Use THAT public
+  fingerprint as the pseudonymous identity, DB-creation timestamp as identity METADATA (not key
+  material), private key stored encrypted under the passphrase. AWAITS nod.
+- **Q5 (Item 8 scope) — CLARIFY requested.** Re-ask sent (A: Wikipedia per-article tab on a
+  general substrate now → full transversal tool later; vs B: full transversal tool now; + OK
+  that either adds provenance/version DB tables?). PENDING.
+- **Q6 (Items 12/13) CONFIRMED → both routes coexist.** Priority unspecified; proposed default
+  Route B (translate→extract, user-driven) first, Route A (equivalence/Wikidata overlay) after.
+- **Q7 (Item 20) CONFIRMED → Yes.** EXTENSION: the download subsystem + oo-backup-2 artifact
+  (checksum-deduped) must cover BOTH Wikipedia dumps AND OpenStreetMap (OSM PBF) files (Item 22)
+  — OSM treated like wiki dumps (retrieval + artifact inclusion + dedup). Extends
+  BACKUPS-INCLUDE-WIKIPEDIA-DUMPS to OSM.
+- **Q8 (Item 17 keys) — CLARIFY requested ("which keys?").** Re-ask sent: the SIGNING keys
+  (Ed25519+ML-DSA in data_dir/keys), NOT the encryption passphrase (never stored). Tradeoff:
+  keys-with-data (self-contained portable; encrypt-under-passphrase mitigates stolen-drive) vs
+  keys-on-host (stolen data drive can't sign as you). Default today = keys in data_dir (travel
+  with data). PENDING.
+- **Q9 (Item 15 uv Python) CONFIRMED → Yes,** provided it doesn't break other distro installs or
+  app internals (additive/fallback, guarded; existing distro Python paths keep working).
+- **Q10 (Item 7 dubious entries) — CLARIFY/EXAMPLE requested.** Example sent ("World Klassik
+  Day / DON SANTO's birthday" under invented "Klassikanity" [citation needed] = likely
+  vandalism). A: include tagged "Wikipedia, unverified", visible + filterable; B: exclude such
+  [cn]/vandalism from the default seed. Legit entries (IWD/Diwali/Christmas) unaffected. PENDING.
+- **Q11 (Item 19 datacenter) REFRAMED:** the datacenter map is a CONSEQUENCE of OSM (Item 22),
+  NOT a predefined feature; datacenter analytics = USER-DRIVEN search/filter over OSM feature
+  classes (Item 23, no cap), not an app-predefined angle. ⇒ Item 19 Pillars 1-2 (commodity
+  breadth + energy feeds) proceed; Pillar 3 folds into Items 22/23 as a user-driven OSM view.
+- **Q12 (Item 23 UI) → STORE ALL (A-G); not deciding yet;** complementary not contradictory;
+  "maybe missing the big picture." Item 23 stays GATED. Seed for later (my hypothesis, not a
+  decision): SPATIAL as a transversal LENS across the whole app (every data type geo-anchorable),
+  paralleling the temporal/time-scope dimension — a dedicated design pass when ready.
+- **Q13 (Items 13/3 translation + Ollama-absent UX) DECIDED →** touching ANY translation (LLM)
+  UI while Ollama isn't installed → elegant "install LLM support?" prompt → Yes opens a NEW
+  window/tab directly at the Settings LLM panel (preserve current work; no back-nav for now).
+  Generalizes to any LLM-requiring UI; captures the Item-3 → Item-13 dependency as a UX flow.
+
+**STILL PENDING (maintainer to answer round 2):** Q5 (change-tracking scope), Q8 (which
+keys / location), Q10 (dubious-entry example decision), Q4 (nod on using the existing hybrid
+key vs passphrase-derived).

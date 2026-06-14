@@ -247,3 +247,54 @@ question #) · 🔒 GATED (needs maintainer UI input before implementation) ·
   (Groups D/J/A/B/G); the net-new clusters are Translation (E), Database federation/portability
   (C), the transversal audit tool (D/Item 8), and the energy/geographic data domains (H).
 - Do not start ❓ items before answers; do not implement 🔒 Item 23's UI before input.
+
+---
+
+## Maintainer answers — round 1 (2026-06-14)
+
+✅ **Resolved / proceed:**
+- **Q1 (Item 5):** 3-way quit dialog — *Yes, quit entirely* / *Quit the browser but keep the
+  engine scraping in the background* / *No*. (Informed choice, not friction theater; the server
+  can run headless after the browser closes.)
+- **Q2 (Item 9):** Proceed. A user's scraped DB must remain usable across app version upgrades
+  (migrations + the stable, forward-compatible interchange format).
+- **Q3 (Item 9):** FOCUS on signed-manifest auto-verify + **public-chain anchoring + witness
+  cosigning**; **defer local fixity** (background re-hash audit) to later. (Item 21's
+  salvage-import + content hashes + synchronous=FULL + safe-eject stay; only the standalone
+  fixity-audit defers.)
+- **Q6 (Items 12/13):** Both cross-language routes coexist (proposed order: Route B
+  translate→extract first, Route A equivalence/Wikidata overlay after).
+- **Q7 (Item 20):** Yes — and the download subsystem + oo-backup-2 artifact must cover **both
+  Wikipedia dumps AND OpenStreetMap (OSM PBF)** retrieval, checksum-deduped (extends
+  BACKUPS-INCLUDE-WIKIPEDIA-DUMPS to OSM).
+- **Q9 (Item 15):** Yes to a distro-agnostic Python (uv / python-build-standalone), *provided*
+  it breaks no other distro install and no app internals (additive/fallback, guarded).
+- **Q11 (Item 19):** The datacenter map is a **consequence of OSM** (Items 22/23), not a
+  predefined feature — datacenter analytics become **user-driven** search/filter over OSM
+  feature classes. Item 19 keeps Pillars 1–2 (commodity breadth + energy feeds); Pillar 3 folds
+  into the OSM/map work.
+- **Q12 (Item 23):** Store ALL UI propositions (A–G); not deciding yet (complementary, not
+  contradictory; "maybe missing the big picture"). Stays 🔒 GATED. Big-picture seed to explore
+  later: **spatial as a transversal lens** across all data (parallel to the temporal dimension).
+- **Q13 (Items 13/3):** Touching any LLM/translation UI while Ollama is absent → an elegant
+  "install LLM support?" prompt → Yes opens a **new window** straight to the Settings LLM panel
+  (current work preserved; no back-nav for now). Generalizes to any LLM-requiring UI.
+
+🟡 **Maintainer proposal — my counter-recommendation (awaiting nod):**
+- **Q4 (Item 9 keys):** Maintainer proposed deriving the identity key from passphrase +
+  DB-creation timestamp (no-PII, background, pseudonymous). I endorse the **goal** but recommend
+  **not deriving from the passphrase** (a passphrase change would lose the identity; it couples
+  the encryption secret to signing; the timestamp is low-entropy). The app **already** has a
+  random hybrid signing keypair (Ed25519 + ML-DSA — the CI "PQC signing path"); use its public
+  **fingerprint** as the pseudonymous identity, the DB-creation timestamp as identity *metadata*,
+  the private key stored encrypted under the passphrase.
+
+❓ **Still pending (round 2 — clarifications sent):**
+- **Q5 (Item 8):** Scope — (A) Wikipedia per-article tracked-changes tab on a transversal-ready
+  substrate now, full transversal "Changes" subtab later; or (B) full transversal tool now? And
+  OK that either adds provenance/version DB tables?
+- **Q8 (Item 17):** "Which keys?" — the **signing** keys (not the never-stored passphrase):
+  travel *with* the data (portable, encrypt-under-passphrase mitigates theft) or stay on the
+  *trusted host*?
+- **Q10 (Item 7):** Keep-or-exclude decision pending an example (e.g. "World Klassik Day / DON
+  SANTO's birthday", an apparent vandalism entry).

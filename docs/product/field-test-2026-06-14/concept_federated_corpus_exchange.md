@@ -135,3 +135,19 @@ the T6 restore-preview area; preview=commit on a disposable copy, the preview ca
   substrate — design together.
 - Reliable-memory pillar / Open Commons Mirror — this is the LOCAL, peer-to-peer half
   of the same math; the mirror is the server-scale half. User corpora stay local.
+
+## Maintainer rulings (2026-06-14, round 1)
+- **Q2:** PROCEED — a scraped DB must survive app version upgrades (migrations + this
+  forward-compatible interchange format + content-addressed identity).
+- **Q3:** FOCUS the tamper-evidence stack on signed-manifest auto-verify + **public-chain
+  anchoring** (OpenTimestamps-style) + **witness cosigning**; **defer local fixity** (the
+  background re-hash audit) to later. (Honest: witness cosigning needs peers/a federation;
+  anchoring needs consented network.)
+- **Q4 (keys/identity):** GOAL = automatic, no-PII, background, pseudonymous "journalist"
+  anchor. RECOMMENDATION: do NOT derive the key from passphrase+timestamp; reuse the app's
+  existing RANDOM hybrid signing keypair (Ed25519 + ML-DSA), public **fingerprint** = the
+  pseudonymous identity, DB-creation timestamp = identity metadata, private key encrypted
+  under the passphrase. (Awaiting nod.)
+- **Q7:** the artifact + retrieval must cover BOTH Wikipedia dumps AND OpenStreetMap (OSM
+  PBF), checksum-deduped.
+- **Q8 (external-drive key location):** PENDING — signing keys travel-with-data vs on-host.

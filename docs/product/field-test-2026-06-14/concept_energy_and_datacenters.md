@@ -82,3 +82,11 @@ secret. Flag honestly; robots/ToS/ethics stand (don't scrape ToS-violating direc
 - Data licensing (OSM = ODbL; commercial DC directories = ToS-restricted → avoid).
 - Estimation methodology for undisclosed GPU/power (publish the method; never assert).
 - Sensitivity/ethics review of the infrastructure map (public-source-only; provenance-forward).
+
+## Maintainer ruling (2026-06-14, Q11)
+The datacenter map is a **consequence of the OSM ingestion** (the Pillar-3 backbone = OSM PBF;
+see ledger Item 22), NOT a predefined app feature. Datacenter analytics become **user-driven**
+search/filter over OSM feature classes (no feature-class cap — ledger Item 23), not an
+app-predefined "datacenter map" angle. ⇒ For alpha keep **Pillars 1–2** (commodity breadth via
+World Bank/IMF + the energy theme/feeds); **Pillar 3 folds into the OSM/map-analytics work**
+(Items 22/23) as a user-driven view, gated on the map-UI input.
