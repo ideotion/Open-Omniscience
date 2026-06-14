@@ -146,8 +146,12 @@ makes the rest fall out cheaply:
   adopters: Home families, Markets categories, the analysis window.
 - ⬜ **Minimal top bar** — only: search · status · task-manager · help ·
   language · airplane (everything else below the subtabs).
-- ⬜ **Airplane button → top bar**, no text (hover only), distinct online/offline
-  transition colors coherent with the icon state.
+- 🔨 **Airplane button → top bar**, no text (hover only), distinct online/offline
+  transition colors coherent with the icon state. DONE (#133): direction-aware
+  transition flash (go-on = live accent, go-off = calm/grounded; no more single
+  red flash) — `test_ui_invariants` #14c. REMAINING: the button MOVE to the top
+  bar + dropping the text label (with the full minimal-top-bar §2 redesign +
+  visual review; touches invariant #14's label, so deferred).
 - ✅ **Airplane-mode onboarding coachmark** — `#net-coach`: a dismissible bubble
   anchored to the airplane button inviting "switch off airplane mode to go online
   and start collecting"; invitation layer only (routes through the consent popup,

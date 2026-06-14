@@ -277,6 +277,15 @@ def test_ui_invariants():
     assert "st.online" in html, (
         "scheduler responses carry network state for the immediate repaint"
     )
+    # 14c. direction-aware transition color (UI_SHELL_REDESIGN §3): the online/
+    #      offline transition uses DIFFERENT colors by direction (go-on vs go-off),
+    #      not one red flash that conflates the two opposite meanings.
+    assert "#net-flash.go-on" in html and "#net-flash.go-off" in html, (
+        "the network transition flash must be direction-aware (§3)"
+    )
+    assert 'classList.add(online ? "go-on" : "go-off")' in html, (
+        "going online vs offline must flash different colors (§3)"
+    )
     # 14b. airplane-mode onboarding coachmark (ruled 2026-06-13): the INVITATION
     #      layer only — it teaches the ONE network switch but must NEVER bypass
     #      consent. Its "Go online" action routes through toggleNetwork() (which
