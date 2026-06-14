@@ -619,7 +619,6 @@
           <button class="nav-item" data-tab="analyze"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M8 11h6M11 8v6"/></svg><span>Analysis</span></button>
           <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
           <button class="nav-item" data-tab="timemap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/><circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg><span>Temporal map</span></button>
-          <button class="nav-item" data-tab="wiki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19H6a2 2 0 0 0-2 2"/></svg><span>Wikipedia</span></button>
           <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
           <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
           <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
@@ -1373,54 +1372,6 @@
     </div>
 
     <!-- ============================ WIKIPEDIA ======================== -->
-    <div class="tab-page" id="tab-wiki">
-    <section class="panel">
-      <h2>Wikipedia change-tracking</h2>
-      <p class="muted" style="margin-top:0">Track watched pages per <strong>language edition</strong>
-        (editions are per-language, not per-country). We store one baseline snapshot per page, then only
-        <em>diffs/deltas</em> of new edits — so cosmetic changes cost almost nothing — and flag large /
-        suspicious edits (size delta, revert/blank tags, anonymous, bursts, optional ORES). Candidates
-        are surfaced for you to judge; nothing is labelled "disinformation".</p>
-      <div id="wiki-status" class="hint">Loading…</div>
-      <div class="row" style="margin-top:6px">
-        <button onclick="trackWikiNow()">Track now</button>
-        <label style="display:flex;align-items:center;gap:6px;align-self:center;cursor:pointer">
-          <input type="checkbox" id="wiki-ores" style="width:auto" checked> use ORES scores
-        </label>
-        <span id="wiki-progress" class="hint" style="align-self:center"></span>
-      </div>
-      <div class="hint" style="margin-top:6px">Optional, heavy <strong>offline full-text baselines</strong>
-        (per-language dumps) live in <a href="#settings" onclick="showTab('settings')">Settings → Wikipedia</a>,
-        where you can pick an edition from the list and download it. Not needed for change-tracking above.</div>
-    </section>
-
-    <section class="panel">
-      <h2>Watch a page</h2>
-      <div class="row">
-        <div><label for="wiki-lang">Edition</label><select id="wiki-lang"><option value="en">English (en)</option></select></div>
-        <div style="flex:3"><label for="wiki-title">Article title or URL</label><input id="wiki-title" placeholder="e.g. Climate change — or paste https://en.wikipedia.org/wiki/…"></div>
-        <div><label for="wiki-cat">Watchlist</label><input id="wiki-cat" placeholder="optional"></div>
-        <div style="flex:0 0 auto;align-self:end"><button onclick="addWikiPage()">Add</button></div>
-      </div>
-      <div class="hint" title="Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.">Watched pages join your corpus as articles: the newest version is what search and analytics see (the exact revision id is recorded), the full text of every tracked revision is stored on this machine — so past versions stay reconstructable, at the cost of storage growing with edit activity — and the change history remains available per page.</div>
-      <div style="overflow:auto;margin-top:10px"><table id="wiki-pages"></table></div>
-    </section>
-
-    <section class="panel">
-      <h2>Flagged changes</h2>
-      <div class="row">
-        <label style="display:flex;align-items:center;gap:6px;align-self:end;cursor:pointer">
-          <input type="checkbox" id="wiki-flagged-only" style="width:auto" checked onchange="loadWikiChanges()"> flagged only
-        </label>
-        <div><label for="wiki-filter-lang">Edition filter</label><input id="wiki-filter-lang" placeholder="(any)" oninput="loadWikiChanges()"></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadWikiChanges()">Refresh</button></div>
-      </div>
-      <div style="overflow:auto;margin-top:10px"><table id="wiki-changes"></table></div>
-      <div id="wiki-diff" style="margin-top:10px"></div>
-    </section>
-
-    </div>
-
     <!-- ============================ SETTINGS ========================= -->
     <div class="tab-page" id="tab-settings">
     <section class="panel">
@@ -1546,12 +1497,57 @@
 
     <div class="set-view" id="set-wikipedia" style="display:none">
     <section class="panel">
+      <h2>Wikipedia change-tracking</h2>
+      <p class="muted" style="margin-top:0">Track watched pages per <strong>language edition</strong>
+        (editions are per-language, not per-country). We store one baseline snapshot per page, then only
+        <em>diffs/deltas</em> of new edits — so cosmetic changes cost almost nothing — and flag large /
+        suspicious edits (size delta, revert/blank tags, anonymous, bursts, optional ORES). Candidates
+        are surfaced for you to judge; nothing is labelled "disinformation".</p>
+      <div id="wiki-status" class="hint">Loading…</div>
+      <div class="row" style="margin-top:6px">
+        <button onclick="trackWikiNow()">Track now</button>
+        <label style="display:flex;align-items:center;gap:6px;align-self:center;cursor:pointer">
+          <input type="checkbox" id="wiki-ores" style="width:auto" checked> use ORES scores
+        </label>
+        <span id="wiki-progress" class="hint" style="align-self:center"></span>
+      </div>
+      <div class="hint" style="margin-top:6px">Optional, heavy <strong>offline full-text baselines</strong>
+        (per-language dumps) are configured <strong>further down in this panel</strong> — pick an edition
+        from the list and download it. Not needed for the change-tracking above.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Watch a page</h2>
+      <div class="row">
+        <div><label for="wiki-lang">Edition</label><select id="wiki-lang"><option value="en">English (en)</option></select></div>
+        <div style="flex:3"><label for="wiki-title">Article title or URL</label><input id="wiki-title" placeholder="e.g. Climate change — or paste https://en.wikipedia.org/wiki/…"></div>
+        <div><label for="wiki-cat">Watchlist</label><input id="wiki-cat" placeholder="optional"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="addWikiPage()">Add</button></div>
+      </div>
+      <div class="hint" title="Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.">Watched pages join your corpus as articles: the newest version is what search and analytics see (the exact revision id is recorded), the full text of every tracked revision is stored on this machine — so past versions stay reconstructable, at the cost of storage growing with edit activity — and the change history remains available per page.</div>
+      <div style="overflow:auto;margin-top:10px"><table id="wiki-pages"></table></div>
+    </section>
+
+    <section class="panel">
+      <h2>Flagged changes</h2>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;align-self:end;cursor:pointer">
+          <input type="checkbox" id="wiki-flagged-only" style="width:auto" checked onchange="loadWikiChanges()"> flagged only
+        </label>
+        <div><label for="wiki-filter-lang">Edition filter</label><input id="wiki-filter-lang" placeholder="(any)" oninput="loadWikiChanges()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadWikiChanges()">Refresh</button></div>
+      </div>
+      <div style="overflow:auto;margin-top:10px"><table id="wiki-changes"></table></div>
+      <div id="wiki-diff" style="margin-top:10px"></div>
+    </section>
+
+    <section class="panel">
       <h2>Wikipedia offline baselines</h2>
       <p class="muted" style="margin-top:0">Optional, heavy, and separate from live change-tracking. Pick a
         language edition below and download the official Wikimedia <em>current-text</em> dump (resumable, with
         pause/resume). Editions are grouped by continent (largest-first within each); the real download size is read from the server when you
         click <em>Estimate size</em> — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller.
-        Baselines are only for offline reading/search — change-tracking (Wikipedia tab) does not need them.</p>
+        Baselines are only for offline reading/search — the change-tracking above does not need them.</p>
       <div class="row">
         <div style="flex:2">
           <label for="dump-lang">Language edition</label>
@@ -2595,7 +2591,6 @@
       markets: loadMarkets,
       insights: loadInsights,
       timemap: loadTimemap,
-      wiki: loadWiki,
       law: loadLaw,
       agenda: loadAgenda,
       library: () => { loadCoverage(); },    // stats handled by the live poller (startLive)
@@ -2616,6 +2611,11 @@
       if (name === "sources") {  // Sources moved into Settings → Sources (content-first §6)
         showTab("settings", push);
         try { _setSubtabs.select("sources"); } catch (e) { showSetCat("sources"); }
+        return;
+      }
+      if (name === "wiki") {  // Wikipedia moved into Settings → Wikipedia (content-first §6)
+        showTab("settings", push);
+        try { _setSubtabs.select("wikipedia"); } catch (e) { showSetCat("wikipedia"); }
         return;
       }
       if (!document.getElementById("tab-" + name)) name = "home";
@@ -2739,6 +2739,7 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow
+      if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "safety") loadAtRestState();       // honest at-rest attestation (doctor)
     }
     function buildDrawer() {

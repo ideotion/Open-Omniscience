@@ -504,6 +504,32 @@ def test_sources_tab_moved_into_settings():
     )
 
 
+def test_wikipedia_tab_moved_into_settings():
+    """Content-first (§6, ruled 2026-06-13): the Wikipedia tab LEFT the sidebar. Unlike
+    Collect/Sources this was a MERGE — Settings already had a Wikipedia subtab
+    (#set-wikipedia, the offline dumps), so #tab-wiki's change-tracking / watch-a-page /
+    flagged-changes sections folded INTO that one panel. Nothing lost: both feature sets
+    now live under #set-wikipedia, reachable via the existing Wikipedia subtab AND the
+    showTab('wiki') redirect; the sidebar drops it. The invariant-#1 #wiki-lang <select>
+    moved intact (also pinned by the edition-picker invariant)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert '<button class="nav-item" data-tab="wiki"' not in html, (
+        "Wikipedia must leave the sidebar (content-first)"
+    )
+    assert 'id="tab-wiki"' not in html, "the standalone Wikipedia tab-page must be gone"
+    # both feature sets must coexist inside the single #set-wikipedia panel
+    seg = html[html.index('id="set-wikipedia"'):html.index('id="set-agenda"')]
+    for needle in ('Wikipedia change-tracking', 'id="wiki-pages"', 'id="wiki-changes"',
+                   'id="wiki-lang"', 'Wikipedia offline baselines', 'id="dump-lang"'):
+        assert needle in seg, f"Settings → Wikipedia missing merged content: {needle}"
+    assert 'if (name === "wiki")' in html and '_setSubtabs.select("wikipedia")' in html, (
+        "showTab('wiki') must redirect to Settings → Wikipedia"
+    )
+    assert 'if (cat === "wikipedia") loadWiki()' in html, (
+        "the Wikipedia subtab must run loadWiki (tracking) on show"
+    )
+
+
 def test_sp500_is_classified_as_index():
     """The S&P 500 is an INDEX, not a commodity (maintainer-ruled): it must live
     in the index catalog and never in the commodity catalog, so the Commodities
