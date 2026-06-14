@@ -11,6 +11,13 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Airplane-mode transition now shows which way you're crossing.** Toggling the
+  network flashed a single red wash for *both* directions — conflating the two
+  opposite meanings. Now the flash is **direction-aware**: going **offline** (the
+  safe, grounded action) flashes a calm hue (never an alarming red); going
+  **online** (the consented one) flashes the live accent. The consent popup and
+  airplane semantics are unchanged. Guarded by `test_ui_invariants` #14c.
+
 - **Insights indexes itself — the "Index corpus" button is gone.** Indexing
   already follows ingestion automatically (every new article is indexed as it's
   collected). Now any *legacy* backlog of not-yet-indexed articles is cleared by a

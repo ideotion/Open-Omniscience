@@ -109,6 +109,10 @@ ruling, a contingency, or a deliberate-omission note.
    markets/indices imports, wiki page add, dump start. Enforced in
    test_ui_invariants + tests/test_network_consent.py (incl. the
    socket-importer RATCHET: no new module may import requests/httpx).
+   **REFINED #14c (UI_SHELL §3, SHIPPED #133):** the transition flash is now
+   DIRECTION-AWARE — go-on = live accent, go-off = calm/grounded (never the old
+   single red wash that conflated both meanings); consent/semantics unchanged.
+   The button MOVE to the top bar + label-drop is deferred to the §2 redesign.
 15. **A PERMANENT language switcher lives in the top bar (ruled, SHIPPED T7
    2026-06-12):** flag = visual convention ONLY, the NATIVE NAME is the
    identifier (flags ≠ languages); all 12 in one menu; one click switches the
