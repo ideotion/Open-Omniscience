@@ -66,6 +66,27 @@ def test_upsert_creates_then_updates():
     s.close()
 
 
+def test_upsert_midbatch_error_preserves_prior_rows():
+    """OO-D7-001: a row that fails (here a NOT-NULL violation on ``name``) must
+    undo ONLY itself via its savepoint -- rows staged BEFORE it survive and rows
+    AFTER it still apply. The old single ``session.rollback()`` discarded the whole
+    commit window (every good row before the bad one), silently losing data."""
+    s = _db()
+    rows = [
+        {"name": "Good One", "domain": "good1.example"},
+        {"name": None, "domain": "bad.example"},  # name is NOT NULL -> flush error
+        {"name": "Good Two", "domain": "good2.example"},
+    ]
+    result = upsert_sources(s, rows)
+    assert result["created"] == 2, result
+    assert result["skipped"] == 1 and any("bad.example" in e for e in result["errors"])
+    domains = {d for (d,) in s.query(Source.domain).all()}
+    assert "good1.example" in domains  # the row BEFORE the failure survived
+    assert "good2.example" in domains  # the row AFTER the failure applied
+    assert "bad.example" not in domains  # only the bad row was undone
+    s.close()
+
+
 def test_template_round_trips_through_parser():
     rows, errors = parse_sources_csv(template_csv())
     assert not errors

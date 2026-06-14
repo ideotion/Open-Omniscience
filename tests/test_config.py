@@ -190,11 +190,9 @@ class TestConfig:
 
         # These should create directories if they don't exist
         data_dir = config.get_data_dir()
-        audit_dir = config.get_audit_dir()
         logs_dir = config.get_logs_dir()
 
         assert isinstance(data_dir, Path)
-        assert isinstance(audit_dir, Path)
         assert isinstance(logs_dir, Path)
 
 

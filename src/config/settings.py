@@ -84,8 +84,10 @@ class Config:
     log_file: str = "logs/open_omniscience.log"
     max_log_size: int = 10485760  # 10MB
     backup_count: int = 5
-    audit_enabled: bool = True
-    audit_log_dir: str = "audit"
+    # (finding OO-D5-002) audit_enabled / audit_log_dir removed: no live code wrote
+    # to that directory. The operative audit trail is the tamper-evident custody
+    # log (src/custody, opt-in via custody_on_ingest) plus structured logging --
+    # the dead config no longer advertises an action log that does not exist.
 
     # LLM configuration.
     # Secure-by-default (finding SEC-05): bind Ollama to loopback and scope its
@@ -95,10 +97,11 @@ class Config:
     ollama_host: str = "127.0.0.1"
     ollama_origins: str = "http://127.0.0.1:11434"
     ollama_base_url: str = "http://127.0.0.1:11434"
-    # No code path auto-downloads models (the API returns "run: ollama pull ..."
-    # when a model is missing); default False so the field cannot misrepresent it.
-    auto_download_models: bool = False
-    download_default_models: bool = False
+    # (finding OO-D3-001) auto_download_models / download_default_models removed:
+    # no code path auto-downloads models -- the API returns "run: ollama pull ..."
+    # when a model is missing. The fields read an env knob that did nothing, which
+    # misled operators into thinking models would be fetched silently. The planned
+    # in-app installer will be an explicit, consented, task-manager-visible action.
     llm_timeout: int = 120
     llm_max_tokens: int = 4096
     llm_max_context_length: int = 8192
@@ -174,10 +177,6 @@ class Config:
             self.log_level = log_level
         if log_file := os.getenv("LOG_FILE"):
             self.log_file = log_file
-        if audit_enabled := os.getenv("AUDIT_ENABLED"):
-            self.audit_enabled = audit_enabled.lower() == "true"
-        if audit_log_dir := os.getenv("AUDIT_LOG_DIR"):
-            self.audit_log_dir = audit_log_dir
         if custody_on_ingest := os.getenv("OO_CUSTODY_ON_INGEST"):
             self.custody_on_ingest = custody_on_ingest.lower() in ("1", "true", "yes")
 
@@ -188,10 +187,6 @@ class Config:
             self.ollama_origins = ollama_origins
         if ollama_base_url := os.getenv("OLLAMA_BASE_URL"):
             self.ollama_base_url = ollama_base_url
-        if auto_download := os.getenv("AUTO_DOWNLOAD_MODELS"):
-            self.auto_download_models = auto_download.lower() == "true"
-        if download_default := os.getenv("DOWNLOAD_DEFAULT_MODELS"):
-            self.download_default_models = download_default.lower() == "true"
         if llm_timeout := os.getenv("LLM_TIMEOUT"):
             self.llm_timeout = int(llm_timeout)
         if llm_max_tokens := os.getenv("LLM_MAX_TOKENS"):
@@ -262,15 +257,11 @@ class Config:
             "logging": {
                 "level": "log_level",
                 "log_file": "log_file",
-                "audit_enabled": "audit_enabled",
-                "audit_log_dir": "audit_log_dir",
             },
             "llm": {
                 "host": "ollama_host",
                 "origins": "ollama_origins",
                 "base_url": "ollama_base_url",
-                "auto_download_models": "auto_download_models",
-                "download_default_models": "download_default_models",
             },
             "app": {
                 "name": "app_name",
@@ -315,16 +306,16 @@ class Config:
         return self.repo_root / "configs" / "sources.yml"
 
     def get_data_dir(self) -> Path:
-        """Get the data directory path."""
-        data_dir = self.repo_root / "data"
-        data_dir.mkdir(exist_ok=True, parents=True)
-        return data_dir
+        """Get the data directory path.
 
-    def get_audit_dir(self) -> Path:
-        """Get the audit directory path."""
-        audit_dir = self.repo_root / self.audit_log_dir
-        audit_dir.mkdir(exist_ok=True, parents=True)
-        return audit_dir
+        Delegates to ``src.paths.data_dir()`` -- the single source of truth that
+        honours ``OO_DATA_DIR`` and the source-checkout vs installed-wheel
+        precedence (finding OO-D10-001). Previously this returned ``repo_root/data``
+        unconditionally, which diverged from where the app actually reads/writes.
+        """
+        from src.paths import data_dir
+
+        return data_dir()
 
     def get_logs_dir(self) -> Path:
         """Get the logs directory path."""
