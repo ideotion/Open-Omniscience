@@ -163,7 +163,12 @@ makes the rest fall out cheaply:
 - ⬜ **Dumps decided at first run; non-blocking; task-manager controls**
   (rate/%/speed/cap/ETA/pause/resume/prioritize).
 - ⬜ **Dedicated tracked-changes tab** (the full-attention GUI).
-- ⬜ **Dumps → corpus ingestion path** (the living-source design).
+- 🔨 **Dumps → corpus ingestion path** (the living-source design) — shipped a
+  bounded slice: `ingest_dump_pages(wiki, titles)` + `POST /api/wiki/dumps/
+  corpus-ingest` read an operator-chosen title list from the local dump (offline)
+  and upsert via the shared `upsert_wiki_corpus_article` (one index hook; canonical
+  URL keys it so live sync updates the same row). REMAINING: whole-dump streaming
+  ingest (the millions-of-pages baseline) + the auto-track-after-download design.
 
 ## I. Backup / restore
 

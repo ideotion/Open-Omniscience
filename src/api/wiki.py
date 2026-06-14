@@ -342,6 +342,33 @@ def dumps_page(wiki: str, title: str) -> dict:
     return find_page(wiki.strip(), title.strip())
 
 
+class IngestDumpPages(BaseModel):
+    wiki: str
+    titles: list[str]
+
+
+@router.post("/dumps/corpus-ingest")
+def dumps_corpus_ingest(payload: IngestDumpPages, db: Session = Depends(get_db)) -> dict:
+    """Ingest a bounded list of titles FROM a downloaded dump into the corpus.
+
+    LOCAL ONLY — reads the local multistream dump, never the network. Each page
+    becomes a corpus article (a snapshot as of the dump date) through the one
+    ``index_article`` hook (keywords + When×Where×Who), keyed on the canonical
+    wiki URL so a later live sync of the same page updates the SAME row (no
+    duplicate). The title list is operator-chosen — a full edition is millions of
+    pages, so whole-dump streaming is a future slice.
+    """
+    from src.wiki.corpus import ingest_dump_pages
+
+    wiki = (payload.wiki or "").strip()
+    titles = [t.strip() for t in (payload.titles or []) if t and t.strip()]
+    if not wiki or not titles:
+        raise HTTPException(
+            status_code=400, detail="wiki and a non-empty titles list are required."
+        )
+    return ingest_dump_pages(db, wiki, titles)
+
+
 @router.get("/revisions/{rev_id}")
 def revision_detail(rev_id: int, db: Session = Depends(get_db)) -> dict:
     r = db.query(WikiRevision).filter_by(id=rev_id).first()

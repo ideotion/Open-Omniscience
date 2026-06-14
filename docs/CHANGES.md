@@ -29,6 +29,23 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   The torture suite (SIGKILL-mid-merge, atomic swap, crown no-silent-decrypt) is
   unchanged and green — the merge restore it covers is untouched.
 
+- **Downloaded Wikipedia dumps can feed the corpus (the living-source path).**
+  Until now a downloaded multistream dump could be *read* one page at a time but
+  never *entered the corpus*. `ingest_dump_pages(wiki, titles)` (and the
+  `POST /api/wiki/dumps/corpus-ingest` endpoint) now read a **bounded,
+  operator-chosen list of titles** from the local dump (offline — no network) and
+  upsert each as a corpus article through the **same `index_article` hook** the
+  watched-page sync uses (keywords + When×Where×Who follow). Articles are keyed
+  on the canonical wiki URL, so a page ingested from a dump and later refreshed by
+  the live tracker update the **same row** — no duplicate; per-edition source
+  (`Wikipedia (xx)`, `xx.wikipedia.org`) keeps them filterable. The shared upsert
+  is factored out of the watched-page sync (`upsert_wiki_corpus_article`), so both
+  paths are identical by construction. The list is bounded on purpose — a full
+  edition is millions of pages, so whole-dump streaming stays a later slice; honest
+  per-title reasons (`no-multistream-dump`, `title-not-in-index`) come straight from
+  the reader. `tests/test_dump_corpus.py` builds a tiny, format-faithful dump and
+  proves create / idempotent-unchanged / honest-skip.
+
 - **Parallel collection: fetch many hosts at once, politely; write serially.**
   The collect pass can now fetch **different hosts concurrently** via a bounded
   worker pool (`collect_parallelism`, default **1 = sequential, unchanged**;
