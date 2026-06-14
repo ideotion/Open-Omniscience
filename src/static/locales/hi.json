@@ -533,5 +533,8 @@
   "Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.": "ये विकल्प क्यों: नवीनतम संस्करण दिखाने से विश्लेषण वही रहता है जो पाठक आज देखते हैं; हर संशोधन का पूरा पाठ संग्रहीत करने से कोई भी पिछला संस्करण इस मशीन पर सटीक रूप से पुनर्निर्मित हो सकता है (संस्करण-स्थिर विश्लेषण — न डिफ़ रीप्ले, न अनुमान); पाठ कीवर्ड हेतु सादे पाठ में घटाया गया विकिटेक्स्ट है, उसे कभी रेंडर किया गया लेख नहीं बताया जाता; सब कुछ स्थानीय रहता है।",
   "You're offline. Switch off airplane mode to go online and start collecting.": "आप ऑफ़लाइन हैं। ऑनलाइन होकर संग्रह शुरू करने के लिए हवाई जहाज़ मोड बंद करें।",
   "You'll confirm before anything connects.": "किसी भी कनेक्शन से पहले आप पुष्टि करेंगे।",
-  "Not now": "अभी नहीं"
+  "Not now": "अभी नहीं",
+  "Welcome — your corpus is empty": "स्वागत है — आपका संग्रह खाली है",
+  "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "शुरू करने के लिए चयनित स्रोत कैटलॉग पंजीकृत करें और पहला संग्रह चलाएँ। सब कुछ नैतिक (robots.txt डिफ़ॉल्ट रूप से बंद, दर-सीमित) और स्थानीय है।",
+  "Seed sources & run a first ingestion": "स्रोत आरंभ करें और पहला संग्रह चलाएँ"
 }

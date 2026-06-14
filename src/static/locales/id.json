@@ -533,5 +533,8 @@
   "Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.": "Mengapa pilihan ini: menampilkan versi terbaru menjaga analisis selaras dengan yang dilihat pembaca hari ini; menyimpan teks lengkap setiap revisi membuat versi lampau mana pun dapat direkonstruksi persis di mesin ini (analitik berlabuh versi — tanpa pemutaran ulang diff, tanpa menebak); teksnya adalah wikiteks yang disederhanakan menjadi teks polos untuk kata kunci, tidak pernah disajikan sebagai artikel yang dirender; semuanya tetap lokal.",
   "You're offline. Switch off airplane mode to go online and start collecting.": "Anda sedang offline. Matikan mode pesawat untuk online dan mulai mengumpulkan.",
   "You'll confirm before anything connects.": "Anda akan mengonfirmasi sebelum ada koneksi.",
-  "Not now": "Nanti saja"
+  "Not now": "Nanti saja",
+  "Welcome — your corpus is empty": "Selamat datang — korpus Anda kosong",
+  "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "Mulailah dengan mendaftarkan katalog sumber pilihan dan menjalankan pengumpulan pertama. Semuanya etis (robots.txt tertutup secara default, dibatasi laju) dan lokal.",
+  "Seed sources & run a first ingestion": "Siapkan sumber & jalankan pengumpulan pertama"
 }

@@ -617,7 +617,9 @@ ruling, a contingency, or a deliberate-omission note.
   TITLES are still server-built English — template-based title translation
   needs a design (titles carry data values). **ELEVATED (maintainer REPEAT
   2026-06-13, via the untranslated #onboard card: "like other cards" —
-  card strings must enter the UI translations).**
+  card strings must enter the UI translations).** #onboard CARD DONE
+  2026-06-14 (h2/p/button keyed ×12; the engine auto-translates the static
+  card once keyed); REMAINING here = the server-built home-card TITLES.
 - **MARKETS/INDICES/COMMODITIES (consolidated; TOOLKIT SHIPPED T8 slice 1 —
   invariant #16; REMAINING: roll ooChart onto commodity-card enlarge,
   indices board detail, timemap-adjacent charts):** Commodities cards render the real curve at every
@@ -798,11 +800,12 @@ ruling, a contingency, or a deliberate-omission note.
 - **Home cards remainder:** per-card-TYPE /investigate views so EVERY card
   is clickable (rising→trend+associations; diet/coverage→sources;
   echo→integrity; law/wiki→reader). Card-feed visual/UX remake still wanted
-  (flagship surface). **REMOVE the home HERO card (ruled 2026-06-13):** the
+  (flagship surface). **REMOVE the home HERO card — SHIPPED 2026-06-14:** the
   "Understand the world as it really is. / Your private, offline research
-  desk…" block (index.html:688-690, #hero-greet at :2768) takes space, serves
-  no purpose for an installed user, AND is hardcoded English (never keyed) —
-  delete it; if any greeting survives it must be keyed ×12.
+  desk…" hero block + its #hero-greet time-of-day greeting JS (in loadHome) +
+  the dedicated `.hero` CSS are DELETED; no greeting survives (none to key).
+  Home now opens on the Briefing. Same PR keyed the #onboard "Welcome — your
+  corpus is empty" card (h2/p/button) ×12 (resolves the i18n REPEAT below).
   **HOME REDESIGN (ruled 2026-06-13; full design in
   `docs/product/UI_SHELL_REDESIGN_PLAN.md` §5):** the "At a glance" stats
   strip (index.html:731) moves PERMANENT + COMPACT to the very top of Home;

@@ -533,5 +533,8 @@
   "Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.": "Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.",
   "You're offline. Switch off airplane mode to go online and start collecting.": "You're offline. Switch off airplane mode to go online and start collecting.",
   "You'll confirm before anything connects.": "You'll confirm before anything connects.",
-  "Not now": "Not now"
+  "Not now": "Not now",
+  "Welcome — your corpus is empty": "Welcome — your corpus is empty",
+  "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.",
+  "Seed sources & run a first ingestion": "Seed sources & run a first ingestion"
 }

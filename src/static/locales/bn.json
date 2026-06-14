@@ -533,5 +533,8 @@
   "Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.": "কেন এই সিদ্ধান্তগুলি: নবীনতম সংস্করণ দেখানো বিশ্লেষণকে পাঠকেরা আজ যা দেখেন তার সঙ্গে সামঞ্জস্যপূর্ণ রাখে; প্রতিটি সংশোধনের সম্পূর্ণ লেখা সংরক্ষণ যেকোনো অতীত সংস্করণকে এই মেশিনে নিখুঁতভাবে পুনর্গঠনযোগ্য করে (সংস্করণ-নোঙর করা বিশ্লেষণ — ডিফ রিপ্লে নেই, অনুমান নেই); লেখাটি কীওয়ার্ডের জন্য সরল লেখায় রূপান্তরিত উইকিটেক্সট, একে কখনো রেন্ডার করা নিবন্ধ বলা হয় না; সবকিছু স্থানীয় থাকে।",
   "You're offline. Switch off airplane mode to go online and start collecting.": "আপনি অফলাইন আছেন। অনলাইনে গিয়ে সংগ্রহ শুরু করতে এয়ারপ্লেন মোড বন্ধ করুন।",
   "You'll confirm before anything connects.": "যেকোনো সংযোগের আগে আপনি নিশ্চিত করবেন।",
-  "Not now": "এখন নয়"
+  "Not now": "এখন নয়",
+  "Welcome — your corpus is empty": "স্বাগতম — আপনার কর্পাস খালি",
+  "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "শুরু করতে নির্বাচিত উৎস ক্যাটালগ নিবন্ধন করুন এবং প্রথম সংগ্রহ চালান। সবকিছু নৈতিক (robots.txt ডিফল্টভাবে বন্ধ, রেট-সীমিত) এবং স্থানীয়।",
+  "Seed sources & run a first ingestion": "উৎস প্রস্তুত করুন এবং প্রথম সংগ্রহ চালান"
 }

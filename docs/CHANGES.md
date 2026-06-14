@@ -11,6 +11,15 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Home: the hero card is gone; the onboarding card now speaks 12 languages.**
+  The full-width hero ("Understand the world as it really is." + the research-desk
+  blurb + three nav buttons, with a time-of-day greeting) took space, served no
+  purpose for an installed user, and was hardcoded English — it's **removed**
+  (block + greeting JS + the dedicated `.hero` CSS), so Home opens straight on the
+  Briefing. The **"Welcome — your corpus is empty" onboarding card** (heading,
+  explanation, and "Seed sources" button) is now **keyed ×12 locales**, so it
+  translates with the rest of the UI instead of staying English.
+
 - **Commodity cards: the narrow-window data-point bug is fixed (honest sparsity).**
   A commodity card's mini-chart silently swapped in the **entire price history**
   whenever the selected window held fewer than two points — so the *smallest*
