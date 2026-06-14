@@ -276,15 +276,15 @@ ruling, a contingency, or a deliberate-omission note.
   of a 32 s wall; read small denormalisable facts via covering indexes or a
   one-pass Python map instead. FastAPI JSONResponse uses COMPACT JSON
   separators — streamed JSON must pass separators=(",",":") for byte parity.
-- **RESTORE IS ADDITIVE-ONLY (ruled 2026-06-13, field session):** restoring a
-  backup must NEVER replace the corpus — it ALWAYS complements it additively,
-  duplicate-lessly (the v2 merge engine's exact behaviour: nothing replaced or
-  deleted, bit-for-bit dedup, conflicts keep local + report both). The LEGACY
-  replace-restore path must be REMOVED/made unreachable (not merely demoted) so
-  no flow can ever overwrite the corpus; the merge is the ONLY restore. (The
-  chrome still showed legacy "replace your current corpus with the uploaded
-  file" wording — retire it.) Crown test already forbids silent decrypt across
-  restore; extend the absorption/guard so no replace path survives.
+- **RESTORE IS ADDITIVE-ONLY (ruled 2026-06-13; SHIPPED):** restoring a backup
+  NEVER replaces the corpus — it complements additively, duplicate-lessly (v2
+  merge engine: nothing replaced/deleted, bit-for-bit dedup, conflicts keep
+  local + report both). The destructive replace paths are GONE, not merely
+  demoted: `restore_from_bytes` / `restore_encrypted_backup` /
+  `/api/database/restore` / `/api/safety/restore/encrypted` removed; `/v2/restore`
+  merge is the ONLY restore. Guarded by `tests/test_additive_restore_only.py`
+  (anchored to immutable router.routes sources per the CI-flake lesson); crown
+  test still forbids silent decrypt; torture 10/10. (RC gate §1 row ✅.)
 - **BACKUPS MUST INCLUDE DOWNLOADED WIKIPEDIA DUMPS (ruled 2026-06-13, maintainer
   — REVERSES design D3):** a backup must carry the offline Wikipedia downloads
   (`data_dir()/wiki_dumps/`) so a restoring user NEVER has to re-download an
@@ -389,7 +389,9 @@ ruling, a contingency, or a deliberate-omission note.
 - **FULL-AUDIT REMEDIATION QUEUE (from `docs/audit/06_FULL_AUDIT_0_0_9.md`,
   delivered 2026-06-11; several items already fixed in-audit):** top: qualify
   the "stays on this machine" claim ×12 locales (AWAITS MAINTAINER RULING);
-  caveats-visible-by-default vs calm UI (AWAITS RULING — U3);
+  ~~caveats-visible-by-default vs calm UI (U3)~~ (RULED 2026-06-12 as "caveats
+  by design" — see the INFORMED CONSENT non-negotiable; no longer awaiting a
+  ruling, it is the app-wide rule);
   ~~reliability_score=5 + language="en" defaults removal~~ (SHIPPED T5,
   2026-06-12, + political_bias=0.0; migration f4b5c6d7e8a9 NULLs the
   fabricated 5s; languages stay — catalog-asserted); ~~ETHICS.md tense~~
@@ -407,10 +409,13 @@ ruling, a contingency, or a deliberate-omission note.
   (1) NETWORK TOGGLE — UI SEMANTICS + CONSENT SHIPPED (T2, invariant #14):
   airplane glyph FILL=state, ONE consent popup with local IPs, immediate
   repaint via scheduler responses, gates on collect/markets/wiki/dumps, +
-  socket-importer ratchet test. REMAINING from this item: refactor the six
-  allowed HTTP importers onto ONE guarded socket factory (gate §1 SHOULD;
-  the ratchet pins them meanwhile); the OPT-IN privileged OS layer
-  (oo-netcut) stays POST — INTERFACE-AGNOSTIC (no dom0 privileges from an
+  socket-importer ratchet test. **GUARDED SOCKET FACTORY SHIPPED (PR #108):**
+  the HTTP importers were routed onto ONE guarded session
+  (`src/safety/fetcher.guarded_session`); the ratchet allowlist dropped 6→3 and
+  the 3 that remain are by-design (the EthicalFetcher fetch path, loopback-only
+  Ollama, and the factory itself). REMAINING from this item: the OPT-IN
+  privileged OS layer (oo-netcut) stays POST — INTERFACE-AGNOSTIC (no dom0
+  privileges from an
   AppVM/DispVM; don't focus on Qubes): (a) firewall drop-all both directions
   incl. inbound, (b) `ip link down` on non-loopback interfaces, (c) rfkill a
   bare-metal radio bonus; Windows netsh / macOS networksetup behind ONE
@@ -472,18 +477,19 @@ ruling, a contingency, or a deliberate-omission note.
   downloads is BY DESIGN — a dump writes a FILE, collection writes the DB;
   no writer-lock contention — so the ask fires ONLY on DB-writer collisions
   (collect/import kinds); dumps keep their own single-download reorderable
-  queue among themselves (bandwidth arbitration, not a cross-kind block).** REMAINING from the
-  original ask (maintainer REPEAT ×3, the 2026-06-13 field test elevated it
-  again — "the task manager is absent, I thought we'd had it done"): the
-  vitals BUBBLE graduates to a DEDICATED WINDOW/TAB, not a popover — minimized
-  animated indicators in the chrome, CLICK opens an OS-style task-manager
-  window with TABS for categories (proposed: Active · Queue · Sources/Schedule
-  · History · System) where the user can understand, explore, manage,
-  organize, sort, prioritize, QUEUE every download/scrape and any other job.
-  Full spec + tab design in `docs/product/SCRAPING_AUTOMATION_PLAN.md` Step 7.
-  Acceptance examples: reorder fr wiki dump
-  before the much bigger en; per-country scrape priority; every background
-  process visible & tweakable. Build together with DOWNLOAD-MANAGER
+  queue among themselves (bandwidth arbitration, not a cross-kind block).**
+  **WINDOW SHIPPED (#130 + #149 + #151):** the vitals bubble graduated to a
+  DEDICATED tabbed WINDOW (`#vitals-pop.taskmgr`, `#tm-open` access) with
+  ooSubtabs — Active (`#tm-tasks`) · Queue (`#tm-queue`) · Schedule
+  (`#tm-schedule`/`_renderSchedule`) · System (`#tm-system`, vitals); one shared
+  `_jobRow` renderer; the fr-before-en dump reorder works end-to-end (↑/↓ →
+  /api/jobs/dumps/reorder). Enforced in test_ui_invariants (#20/#20b/#20c).
+  REMAINING: the HISTORY tab; per-country SCRAPE priority; per-job
+  bandwidth/ETA controls + the bandwidth-ladder budget meter; arbitration ask
+  on the remaining starters. Full spec in
+  `docs/product/SCRAPING_AUTOMATION_PLAN.md` Step 7. Acceptance examples
+  (reorder fr-before-en ✅; per-country scrape priority REMAINING; every
+  background process visible & tweakable). Build together with DOWNLOAD-MANAGER
   ARBITRATION (ruled 2026-06-10): every network task is a VISIBLE JOB; a new
   fetch request while one runs ASKS queue/prioritize/cancel — never silently
   swallowed; a dedicated downloads view shows running/queue/history. And the
@@ -492,8 +498,9 @@ ruling, a contingency, or a deliberate-omission note.
   + next run, honest pass-time estimates with method, per-source ↓ rates from
   the fetcher's own responses), with hardware vitals only as a compact bottom
   row. ALSO from field log #1: 'database is locked' under concurrent
-  import+scrape = this arbitration item; preflight covers 50 sources/run —
-  batch it like calendars.
+  import+scrape — the DATA-LOSS root is now CLOSED by the single-writer gate
+  (`src/database/writer.py`, see field-log finding A below); preflight covers
+  50 sources/run — batch it like calendars.
   (5)–(7) folded into the corpora/reader entry below (tag-click entry; date
   extraction at ingest = When×Where×Who CONFIRMED GO; reader tabs REPEAT ×2).
 - **CONTENT-FIRST SCRAPING + THE DOWNLOAD SUBSYSTEM (ruled 2026-06-13; full
@@ -501,26 +508,27 @@ ruling, a contingency, or a deliberate-omission note.
   principle — "the UI should focus on CONTENT, not the scraping mechanics;
   setting everything up is cumbersome; after consent the app scrapes
   automatically." Seven steps, sequenced in the doc: (1) ONE guarded socket
-  factory — closes the kill-switch gap + the stale UA + a LATENT TRANSPORT
-  LEAK found 2026-06-13 (dump/wiki use raw requests with NO proxies=, so Tor
-  set only in-app would egress clearnet — never silently downgrade transport),
-  ELEVATE RC §1 to RC-BLOCKING; (2) PARALLEL downloads — dumps max_concurrent
-  1→N (files, no DB-writer contention) + a bounded fetch worker pool for
-  collect (parallel FETCH, single SQLite WRITER) — THE Tor speed fix: Tor's
-  bottleneck is per-circuit so N downloads = N circuits = aggregate speedup;
-  (3) segmented HTTP-Range over multiple circuits + IsolateSOCKSAuth for one
-  big dump; (4) dump mirror selection; (5) auto-collect ON by default after
-  the guided wizard's ONE consent (continuous-collection design adopted,
-  zero-network boot intact); (6) the Collect TAB LEAVES the sidebar → an
-  elaborated Settings → Download section (nothing lost — invariant #8 + the
-  Desk lesson, gated by an absorption test); **the SOURCES tab AND the
-  WIKIPEDIA tab ALSO leave the sidebar into Settings (ruled 2026-06-13) —
-  same content-first principle, same absorption-test guard;** (7) the
-  task-manager WINDOW (item 4 above). GUARDRAILS: per-host politeness never traded for speed
-  (parallel across hosts/circuits, bounded per host); kill switch gates every
-  worker; degrade loudly with T4 transport-aware verdicts. ROOT CAUSE recorded:
-  today max_concurrent=1 (dumps.py:92) + sequential collect loop
-  (runner.py:217) = exactly ONE circuit ever active = worst-case Tor.
+  factory — SHIPPED (PR #108, `src/safety/fetcher.guarded_session`; closed the
+  kill-switch gap + stale UA + the dump/wiki transport leak; ratchet 6→3); (2)
+  PARALLEL downloads — SHIPPED: dumps `max_concurrent` now 3
+  (`OO_DUMP_CONCURRENCY`, `src/wiki/dumps.py`) + a bounded fetch worker POOL for
+  collect (`collect_parallelism`/ThreadPoolExecutor in `src/scheduler/runner.py`,
+  parallel FETCH + single SQLite WRITER via the writer gate) — PARTIAL on the
+  collect side: `collect_parallelism` DEFAULTS TO 1 (opt-in, not yet
+  field-validated); raise the default once proven; (3) segmented HTTP-Range over
+  multiple circuits + IsolateSOCKSAuth for one big dump — REMAINING; (4) dump
+  mirror selection — REMAINING; (5) auto-collect ON after the wizard's ONE
+  consent — SHIPPED slice 1 (boot-offline + continuous loop + per-country
+  round-robin, zero-network boot intact; REMAINING: wizard final-collect step,
+  bandwidth ladder); (6) the Collect/Sources/Wikipedia TABS LEAVE the sidebar →
+  Settings — SHIPPED (PRs #145/#146/#147; Settings subtabs `set-collect`/
+  `set-sources`/`set-wikipedia`); (7) the task-manager WINDOW (item 4 above) —
+  SHIPPED (window with Active/Queue/System/Schedule subtabs). GUARDRAILS
+  (binding): per-host politeness never traded for speed (parallel across
+  hosts/circuits, bounded per host); kill switch gates every worker; degrade
+  loudly with T4 transport-aware verdicts. ROOT CAUSE (now addressed): the old
+  max_concurrent=1 + sequential collect loop = one circuit ever active = worst-
+  case Tor; the parallel-downloads + worker-pool work above lifts that.
   **NO SOURCE CAP + BANDWIDTH PRIORITY LADDER (ruled 2026-06-13, maintainer):**
   REMOVE max_sources_per_run (the 1000 cap) — ANY cap induces an unjustifiable
   SELECTION of which sources to skip ("we cannot choose"); scraping must cover
@@ -678,10 +686,17 @@ ruling, a contingency, or a deliberate-omission note.
   sequence-guarded; article→LOCAL reader (invariant #6), keyword→the T10
   corpus window, "Run the full Boolean search" leads to the Search tab
   prefilled (nothing lost); discreet Boolean hint with the hover long-form;
-  +8 strings ×12 (2 placeholders reworded). REMAINING: Enter→corpus-of-
-  articles window + Advanced-search tab (absorption gate), date/period
-  search with the calendar picker, typo tolerance with honest did-you-mean,
-  events/docs-content groups.
+  +8 strings ×12 (2 placeholders reworded).
+  **ANALYSIS WINDOW SHIPPED (Group F slice 1, PRs #137/#138/#141/#142/#144):**
+  `openAnalysis()` opens a corpus-of-articles window over the matched set with
+  subtabs When/Where/Who (`an-www`) · Sentiment (`an-sentiment`, VADER EN-only
+  caveat) · Links (`an-links`) · Sources (`an-sources`) · Advanced
+  (`an-advanced`/`anRunAdvanced` — refine by terms/source/language/date in
+  place). REMAINING: the FULL corpora sub-tab set on this window (mindmap,
+  source-competitive), date/period search with the calendar picker, typo
+  tolerance with honest did-you-mean, events/docs-content groups; the Search
+  tab leaves the sidebar only after the Enter-popup absorbs every Search-tab
+  capability (absorption gate — the Desk lesson).
 - **DDG-DISCOVERED INGEST FROM ADVANCED SEARCH (ruled 2026-06-13, maintainer
   concept):** the Advanced-search tab of the analysis window gains an opt-in
   "search + scrape the top X DuckDuckGo results" action. Results are ingested
@@ -921,38 +936,34 @@ ruling, a contingency, or a deliberate-omission note.
   pin it. Home empty-state fail-safe preserved (subtab bar only when >1 bucket).
 - **UI SHELL REDESIGN (ruled 2026-06-13; full plan in
   `docs/product/UI_SHELL_REDESIGN_PLAN.md`):** (1) ONE universal nav grammar
-  app-wide — LATERAL sidebar = main tabs, VERTICAL subtabs near the top =
-  subcategories (Home families, Insights sections, Settings, corpora window);
-  reusable subtab component, invariant-tested; sidebar invariant #2 intact.
-  (2) MINIMAL TOP BAR — above the subtabs ONLY: always-on search, status,
-  task-manager access, help, language picker, airplane button; vitals move
-  into the task-manager window's System tab (invariant #4 — version still not
-  in chrome). (3) AIRPLANE BUTTON moves to the top bar, NO text (hover
-  bubble enough, invariant #17); FILL=state stays (invariant #14) but the
-  transition uses DIFFERENT colors by direction, coherent with the icon's
-  on/off color (today one red transition conflates the two opposite
-  meanings). (4) SEARCH bigger + always-on; REMOVE the visible "Ctrl K" hint
-  (index.html:646); permanent "Advanced" button; shortcuts list → Help +
-  editable in Settings (a keybindings panel); small-screen overlaid text
-  dropped. (5) ENTER → the advanced-search WINDOW = the corpora flagship
-  (keyword/mindmap/link/source/WWW/sentiment/Advanced sub-tabs). HONEST
-  STATUS recorded (answers "I can't find this UI"): palette shipped T13 s1,
-  keyword→corpus window shipped T10 s1 (Trend/Articles/Links only); the FULL
-  Enter→corpus window with the analysis sub-tabs is the REMAINING slice — not
-  lost, not yet built; PROMOTE it. (6) INSIGHTS: auto-index in the
-  background, REMOVE the "Index corpus" button (index.html:1287) + its
-  palette action (index.html:2655); present Insights sections as subtabs.
+  app-wide — SHIPPED (ooSubtabs component, invariant #18; adopters: Insights,
+  Settings, corpus window, Home families, task-manager; sidebar invariant #2
+  intact). (2) MINIMAL TOP BAR — SHIPPED (#143): always-on search, status,
+  task-manager access (`#tm-open`), help, language picker, airplane button;
+  vitals moved into the task-manager System tab (invariant #4; version still
+  not in chrome). (3) AIRPLANE BUTTON to the top bar, NO text — SHIPPED (#139,
+  icon-only, invariant #14d) + direction-aware transition colors (#133,
+  invariant #14c). (4) SEARCH bigger + always-on with a permanent "Advanced"
+  button (`openAnalysis()`) — PARTIAL: the visible "Ctrl K" hint
+  (`<span class="kbd">Ctrl K</span>`, index.html:686) is STILL PRESENT —
+  REMAINING: remove it + the shortcuts→Help/Settings keybindings panel +
+  drop the small-screen overlaid text. (5) ENTER → the advanced-search WINDOW
+  = the corpora flagship — SLICE SHIPPED (Group F: `openAnalysis()` window with
+  WWW/Sentiment/Links/Sources/Advanced sub-tabs; palette T13 s1; keyword→corpus
+  window T10 s1 with Trend/Articles/Links); REMAINING: mindmap + source-
+  competitive sub-tabs on the window. (6) INSIGHTS: auto-index in the
+  background + "Index corpus" button removed + sections as subtabs — SHIPPED
+  (#132/#127, invariant #21).
 - **TWO BUGS found in the field session (ruled to fix, diagnosed in the UI
-  plan §7):** (a) the BACK BUTTON returns to the passphrase screen — tab nav
-  uses history.replaceState (index.html:2524, no history entries) and a
-  locked API response does location.href="/unlock" (index.html:2451), so
-  Back lands on /unlock; fix = pushState for tab nav + replaceState to "/"
-  after unlock. (b) "Scraping STOPPED" is NOT a crash — the scheduler idles
-  interval_minutes between passes (runner.py:326); the content-first
-  continuous-collection ruling makes the idle gap + the in-face arbitration
-  modal disappear (app boots in AIRPLANE MODE; permanent scraping when
-  online; new requests QUEUE into the task manager, never a modal — recorded
-  in SCRAPING_AUTOMATION_PLAN.md Step 5 refinements).
+  plan §7):** (a) the BACK BUTTON returned to the passphrase screen — FIXED:
+  tab nav now uses `history.pushState` (index.html:2958, comment records the
+  old replaceState-no-entries bug) so Back walks visited tabs instead of
+  landing on /unlock. (b) "Scraping STOPPED" is NOT a crash — the scheduler
+  idles between passes; the content-first continuous-collection ruling makes
+  the idle gap disappear — SHIPPED slice 1: app boots in AIRPLANE MODE +
+  continuous back-to-back passes when online (see continuous-collection above).
+  REMAINING: the in-face arbitration modal → queue into the task manager,
+  never a modal (recorded in SCRAPING_AUTOMATION_PLAN.md Step 5 refinements).
 - **AIRPLANE-MODE ONBOARDING INVITATION — SHIPPED 2026-06-14 (frontend
   coachmark):** `#net-coach` in index.html — a dismissible bubble that anchors
   to the airplane button (`#net-toggle`, via getBoundingClientRect, so it follows
@@ -1110,9 +1121,12 @@ ruling, a contingency, or a deliberate-omission note.
   the Ollama path; mic = a consent surface; hardware tiers MEASURED never
   asserted; full map in FUTURE_DEVELOPMENTS)**. All in FUTURE_DEVELOPMENTS.
 - **PROPOSED SEQUENCE (standing, maintainer may veto):** ~~performance batch~~
-  (T1 shipped) → network toggle+consent → task manager+download arbitration →
-  reader tabs + corpora system → agenda content batch → continuous-collection
-  ordering+onboarding → convergence flagship.
+  (T1 shipped) → ~~network toggle+consent~~ (T2 shipped) → ~~task manager
+  window~~ (shipped; download-arbitration ladder + History tab remain) →
+  reader tabs + corpora system (analysis-window slice shipped; READER tabs +
+  full corpora sub-tabs remain) → agenda content batch → ~~continuous-
+  collection ordering~~ (slice 1 shipped: boot-airplane + round-robin;
+  onboarding picker remains) → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 - **QUARANTINE REMOVED TO AN ARCHIVE BRANCH (2026-06-14, maintainer-chosen):** the
