@@ -713,6 +713,7 @@
         <nav class="tabs" id="tm-subtabs">
           <button class="active" data-tab="tasks">Active</button>
           <button data-tab="queue">Queue</button>
+          <button data-tab="schedule">Schedule</button>
           <button data-tab="system">System</button>
         </nav>
         <div class="tm-panel" id="tm-tasks">
@@ -720,6 +721,9 @@
         </div>
         <div class="tm-panel" id="tm-queue" style="display:none">
           <div id="queue-body"></div>
+        </div>
+        <div class="tm-panel" id="tm-schedule" style="display:none">
+          <div id="sched-tm-body"></div>
         </div>
         <div class="tm-panel" id="tm-system" style="display:none">
           <div id="vitals-body"></div>
@@ -2607,7 +2611,7 @@
         }
         _paintActivity();
       }
-      if (_vitalsOpen) { _renderVitals(v); _renderJobs(); }
+      if (_vitalsOpen) { _renderVitals(v); _renderJobs(); _renderSchedule(); }
       _vitalsPrev = v;
     }
     function _fmtDur(s) {
@@ -2735,6 +2739,91 @@
       try { await api("/api/jobs/dumps/reorder", {method: "POST", body: JSON.stringify({keys: queued})}); _renderJobs(); }
       catch (e) { toast(e.message, "err"); }
     }
+    // ---- Schedule tab (CLAUDE.md #20 REMAINING "Sources/Schedule") ---- //
+    // Reads the SAME _actData that _pollVitals already fetched from
+    // /api/scheduler/activity (no new endpoint, no extra poll). Renders only
+    // REAL scheduler facts: whether collection is running/idle/stopped, the
+    // current pass progress (DOMAIN only — never a full URL), the cadence
+    // (continuous vs every interval_minutes), the last run, and the backend's
+    // OWN next_run timestamp. The next-pass time is NEVER fabricated as a
+    // precise countdown — its method (last run + the inter-pass gap) is stated
+    // in the #oo-tip hover bubble. Honest empty state when nothing is scheduled.
+    function _renderSchedule() {
+      const el = $("sched-tm-body");
+      if (!el) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const a = _actData;
+      if (!a) {  // the activity poll has not landed yet (or failed transiently)
+        el.innerHTML = `<div class="muted" style="font-size:12px;padding:2px 0 6px">` +
+          `${esc(t("No collection scheduled or running right now — when collection is on, the schedule appears here."))}</div>`;
+        return;
+      }
+      const s = a.settings || {};
+      const pg = a.progress;
+      const row = (k, val) => `<div class="vr"><span>${k}</span><b>${val}</b></div>`;
+      const sect = (x) => `<div class="vsect">${x}</div>`;
+      // -- State: the real thread state, never a simulated "healthy" ---------- //
+      let stateHtml;
+      if (a.active) {
+        stateHtml = `<span class="pill ok">${esc(t("running — collection in progress"))}</span>`;
+      } else if (a.running) {
+        stateHtml = `<span class="pill ok">${esc(t("running"))}</span>`;
+      } else {
+        stateHtml = `<span class="pill">${esc(t("stopped"))}</span>`;
+      }
+      // -- Current pass progress (domains only, the real bar) ----------------- //
+      let nowHtml;
+      if (pg && pg.total) {
+        const pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
+        nowHtml = row(t("Current pass"),
+            `${esc(pg.current || "…")} <span class="muted">· ${esc(pg.mode || "")}</span>`) +
+          `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">` +
+          `<div class="cap-fill" style="width:${pct}%"></div><span class="cap-txt">${pg.done}/${pg.total} · ${pct}%</span></div>`;
+      } else {
+        nowHtml = row(t("Current pass"), `<span class="muted">${esc(t("idle — no pass in flight"))}</span>`);
+      }
+      // -- Cadence: continuous (the default) vs a fixed interval -------------- //
+      // No bare "every"/"min" fragments (the i18n engine does not interpolate):
+      // each branch is ONE complete translatable phrase; the real interval is
+      // shown as a separate number so the figure stays honest and locale-clean.
+      let cadence;
+      if (s.continuous) {
+        cadence = `<span title="${esc(t("Continuous: passes run back-to-back with only a short gap while online. Going offline stops the loop."))}">${esc(t("continuous (back-to-back passes)"))}</span>`;
+      } else {
+        const mins = s.interval_minutes != null ? esc(String(s.interval_minutes)) : "—";
+        cadence = `<span title="${esc(t("Legacy cadence: one pass, then wait the interval before the next."))}">` +
+          `<b>${mins}</b> ${esc(t("minutes between passes"))}</span>`;
+      }
+      // -- Next pass: the backend's REAL next_run; method stated, not faked --- //
+      let nextHtml;
+      if (!a.running) {
+        nextHtml = row(t("Next pass"), `<span class="muted">${esc(t("not scheduled — collection is stopped"))}</span>`);
+      } else if (a.active) {
+        nextHtml = row(t("Next pass"), `<span class="muted">${esc(t("a pass is running now"))}</span>`);
+      } else if (a.next_run) {
+        // next_run is a real server timestamp (last run + the inter-pass gap).
+        // We show the honest relative time; the exact local moment + the method
+        // live in the hover bubble — never a precise live countdown we invent.
+        nextHtml = row(t("Next pass"),
+          `<span title="${esc(fmtLocal(a.next_run))} · ${esc(t("Computed as the last run plus the inter-pass gap; robots delays can stretch it."))}">` +
+          `${esc(fmtRelative(a.next_run))}</span>`);
+      } else {
+        nextHtml = row(t("Next pass"), `<span class="muted">${esc(t("scheduled — timing not yet known"))}</span>`);
+      }
+      // -- Last run (read straight from the scheduler) ------------------------ //
+      const lastHtml = a.last_run
+        ? row(t("Last run"), `<span title="${esc(fmtLocal(a.last_run))}">${esc(fmtRelative(a.last_run))}</span>`)
+        : row(t("Last run"), `<span class="muted">${esc(t("no run yet"))}</span>`);
+      const modeHtml = row(t("Mode"), `<span class="muted">${esc(s.mode || a.mode || "")}</span>`);
+      el.innerHTML =
+        sect(t("Collection")) +
+        `<div class="vr"><span>${esc(t("State"))}</span><b>${stateHtml}</b></div>` +
+        nowHtml +
+        sect(t("Schedule")) +
+        `<div class="vr"><span>${esc(t("Cadence"))}</span><b>${cadence}</b></div>` +
+        nextHtml + lastHtml + modeHtml +
+        `<div class="vnote">${esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method."))}</div>`;
+    }
     // The arbitration ASK (ruled): a new heavy task while one runs is offered
     // a choice, never silently piled up. Dumps queue automatically (real
     // queue); collect/import ask proceed-or-wait.
@@ -2755,6 +2844,9 @@
     function tmSelectTab(key) {
       document.querySelectorAll("#vitals-pop .tm-panel").forEach(p =>
         p.style.display = (p.id === "tm-" + key) ? "" : "none");
+      // Repaint the Schedule panel from the data the poll ALREADY cached, so
+      // switching to it is instant (no new fetch); the 2 s poll keeps it fresh.
+      if (key === "schedule") _renderSchedule();
     }
     function toggleVitals() {
       const pop = $("vitals-pop"); if (!pop) return;

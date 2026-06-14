@@ -175,8 +175,17 @@ ruling, a contingency, or a deliberate-omission note.
    shared `_jobRow` renderer feeds both panels so the controls (Stop=kill switch,
    Pause/Cancel, reorder) stay identical; no new backend; no fabricated ETA/rate
    (only the real byte progress the owner reports); honest empty states ×12.
-   Enforced in test_ui_invariants (#20 + #20b). REMAINING: History,
-   Sources/Schedule, per-job bandwidth/ETA controls.
+   **SCHEDULE SUBTAB SHIPPED (slice 3, draft PR):** a 4th subtab (`#tm-schedule`
+   / `#sched-tm-body`, `data-tab="schedule"` via ooSubtabs) surfaces the REAL
+   scheduler facts — state (running/idle/stopped), current-pass progress (DOMAIN
+   only, never a URL), cadence (continuous vs interval_minutes), last run, and
+   the backend's OWN next_run timestamp shown as honest relative time with the
+   method (last run + inter-pass gap) in the #oo-tip hover, NEVER a fabricated
+   countdown. `_renderSchedule` reuses the `_actData` the window ALREADY polls
+   from /api/scheduler/activity (no new endpoint, no extra poll; only while the
+   window is open); honest empty state ×12; +20 strings ×12. Enforced in
+   test_ui_invariants (#20 + #20b + #20c). REMAINING: History, per-job
+   bandwidth/ETA controls.
 21. **INSIGHTS auto-indexes; no "Index corpus" button (UI_SHELL §6, SHIPPED
    #132):** indexing follows ingest (the index_article hook) + a SILENT
    background top-up (`autoIndexInsights`) clears any legacy backlog when
