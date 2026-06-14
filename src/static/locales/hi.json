@@ -565,5 +565,9 @@
   "Run analysis": "विश्लेषण चलाएँ",
   "Refine which articles this window analyzes.": "इस विंडो द्वारा विश्लेषित लेखों को परिष्कृत करें।",
   "Analysis updated — see the other tabs.": "विश्लेषण अपडेट हुआ — अन्य टैब देखें।",
-  "Tasks & system": "कार्य और सिस्टम"
+  "Tasks & system": "कार्य और सिस्टम",
+  "Active": "सक्रिय",
+  "Queue": "कतार",
+  "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "अभी कुछ नहीं चल रहा — सक्रिय कार्य (एक संग्रह चक्र, डाउनलोड, चालू अनुरोध) यहाँ दिखते हैं।",
+  "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "कतार खाली है — अपनी बारी की प्रतीक्षा कर रहे डाउनलोड यहाँ क्रम में दिखते हैं; क्रम बदलने के लिए तीरों का उपयोग करें।"
 }

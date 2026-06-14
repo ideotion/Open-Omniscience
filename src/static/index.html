@@ -688,11 +688,15 @@
           <button class="icon-btn" style="width:24px;height:24px" onclick="toggleVitals()" aria-label="Close" title="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
         <nav class="tabs" id="tm-subtabs">
-          <button class="active" data-tab="tasks">Tasks</button>
+          <button class="active" data-tab="tasks">Active</button>
+          <button data-tab="queue">Queue</button>
           <button data-tab="system">System</button>
         </nav>
         <div class="tm-panel" id="tm-tasks">
           <div id="jobs-body"></div>
+        </div>
+        <div class="tm-panel" id="tm-queue" style="display:none">
+          <div id="queue-body"></div>
         </div>
         <div class="tm-panel" id="tm-system" style="display:none">
           <div id="vitals-body"></div>
@@ -2456,16 +2460,7 @@
     }
     // ---- T9: the visible-jobs section of the task manager ---- //
     let _jobsData = null;
-    async function _renderJobs() {
-      const el = $("jobs-body"); if (!el) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      try { _jobsData = await api("/api/jobs"); } catch { el.innerHTML = ""; return; }
-      const jobs = (_jobsData.jobs || []).filter(j => j.state !== "done");
-      if (!jobs.length) { el.innerHTML = `<div class="vsect">${esc(t("Jobs"))}</div><div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("No background jobs — every network task appears here when it runs."))}</div>`; return; }
-      const queuedKeys = jobs.filter(j => j.state === "queued" && j.kind === "wiki-dump")
-                             .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0))
-                             .map(j => j.id.slice(5));
-      const rows = jobs.map(j => {
+    function _jobRow(j, queuedKeys, t) {
         const pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
         let prog = "";
         if (j.progress && j.progress.total) {
@@ -2487,8 +2482,31 @@
           `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(j.label)}</b>${qpos}` +
           `<span style="margin-inline-start:auto;display:flex;gap:4px">${acts.join("")}</span>` +
           `<div style="flex-basis:100%">${prog}</div></div>`;
-      }).join("");
-      el.innerHTML = `<div class="vsect">${esc(t("Jobs"))}</div>` + rows;
+    }
+    async function _renderJobs() {
+      const elA = $("jobs-body"), elQ = $("queue-body");
+      if (!elA && !elQ) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      try { _jobsData = await api("/api/jobs"); }
+      catch { if (elA) elA.innerHTML = ""; if (elQ) elQ.innerHTML = ""; return; }
+      const jobs = (_jobsData.jobs || []).filter(j => j.state !== "done");
+      // Queue = jobs waiting their turn (the single-download dump queue, in order).
+      const queued = jobs.filter(j => j.state === "queued")
+                         .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0));
+      const queuedKeys = queued.filter(j => j.kind === "wiki-dump").map(j => j.id.slice(5));
+      // Active = everything else that is not done (a running pass, downloading
+      // dumps, the in-flight fetch, the idle loop, paused/failed downloads).
+      const active = jobs.filter(j => j.state !== "queued");
+      if (elA) {
+        elA.innerHTML = `<div class="vsect">${esc(t("Active"))}</div>` + (active.length
+          ? active.map(j => _jobRow(j, queuedKeys, t)).join("")
+          : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here."))}</div>`);
+      }
+      if (elQ) {
+        elQ.innerHTML = `<div class="vsect">${esc(t("Queue"))}</div>` + (queued.length
+          ? queued.map(j => _jobRow(j, queuedKeys, t)).join("")
+          : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them."))}</div>`);
+      }
     }
     async function jobCancel(id) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);

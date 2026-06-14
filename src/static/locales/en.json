@@ -565,5 +565,9 @@
   "Run analysis": "Run analysis",
   "Refine which articles this window analyzes.": "Refine which articles this window analyzes.",
   "Analysis updated — see the other tabs.": "Analysis updated — see the other tabs.",
-  "Tasks & system": "Tasks & system"
+  "Tasks & system": "Tasks & system",
+  "Active": "Active",
+  "Queue": "Queue",
+  "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.",
+  "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them."
 }

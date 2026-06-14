@@ -565,5 +565,9 @@
   "Run analysis": "Executar análise",
   "Refine which articles this window analyzes.": "Refine quais artigos esta janela analisa.",
   "Analysis updated — see the other tabs.": "Análise atualizada — veja as outras abas.",
-  "Tasks & system": "Tarefas e sistema"
+  "Tasks & system": "Tarefas e sistema",
+  "Active": "Em curso",
+  "Queue": "Fila",
+  "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "Nada em execução agora — as tarefas ativas (uma passagem de recolha, transferências, o pedido em curso) aparecem aqui.",
+  "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "A fila está vazia — as transferências em espera aparecem aqui, por ordem; use as setas para reordená-las."
 }

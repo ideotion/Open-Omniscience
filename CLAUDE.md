@@ -165,10 +165,18 @@ ruling, a contingency, or a deliberate-omission note.
    SUBTABS (ooSubtabs) with an "All cards" default lens + per-family hue accent.
    Enforced in test_ui_invariants (#19/#19b).
 20. **The task-manager is a WINDOW, not a bubble (SHIPPED #130, slice 1):** the
-   vitals popover is a wider tabbed window via ooSubtabs (Tasks · System; the
-   live job controls + vitals reused unchanged). Enforced in test_ui_invariants
-   (#20). REMAINING: Active/Queue split, History, Sources/Schedule, per-job
-   bandwidth/ETA controls.
+   vitals popover is a wider tabbed window via ooSubtabs (now Active · Queue ·
+   System; the live job controls + vitals reused unchanged). **ACTIVE/QUEUE
+   SPLIT SHIPPED (slice 2, draft PR):** the jobs view is now two subtabs — Active
+   (running pass, downloading dumps, the in-flight fetch, the idle loop,
+   paused/failed downloads) and Queue (jobs waiting their turn = the
+   single-download wiki-dump queue, in `queue_position` order, with its existing
+   ↑/↓ reorder controls POSTing the unchanged /api/jobs/dumps/reorder). ONE
+   shared `_jobRow` renderer feeds both panels so the controls (Stop=kill switch,
+   Pause/Cancel, reorder) stay identical; no new backend; no fabricated ETA/rate
+   (only the real byte progress the owner reports); honest empty states ×12.
+   Enforced in test_ui_invariants (#20 + #20b). REMAINING: History,
+   Sources/Schedule, per-job bandwidth/ETA controls.
 21. **INSIGHTS auto-indexes; no "Index corpus" button (UI_SHELL §6, SHIPPED
    #132):** indexing follows ingest (the index_article hook) + a SILENT
    background top-up (`autoIndexInsights`) clears any legacy backlog when

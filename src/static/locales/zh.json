@@ -565,5 +565,9 @@
   "Run analysis": "运行分析",
   "Refine which articles this window analyzes.": "细化此窗口分析的文章。",
   "Analysis updated — see the other tabs.": "分析已更新——请查看其他标签页。",
-  "Tasks & system": "任务与系统"
+  "Tasks & system": "任务与系统",
+  "Active": "进行中",
+  "Queue": "队列",
+  "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "当前没有正在运行的任务——活动任务（采集流程、下载、正在进行的抓取）会显示在这里。",
+  "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "队列为空——等待中的下载会按顺序显示在这里；用箭头可以重新排序。"
 }

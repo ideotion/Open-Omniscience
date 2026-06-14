@@ -419,6 +419,28 @@ def test_ui_invariants():
     assert 'id="tm-tasks"' in html and 'id="tm-system"' in html, (
         "the task-manager window needs Tasks + System panels"
     )
+    # 20b. Active/Queue split (CLAUDE.md #20 REMAINING): running work and work
+    #      waiting its turn are distinct subtabs of the SAME window, driven by
+    #      the universal subtab component (data-tab, no inline onclick). The
+    #      Queue panel surfaces the wiki-dump download queue with its reorder
+    #      controls; both panels reuse ONE row renderer so the controls stay
+    #      identical. Labels are DOM text (auto-translated x12).
+    assert '<button data-tab="queue">Queue</button>' in html, (
+        "the task-manager window needs a Queue subtab button (data-tab, DOM-text label; CLAUDE.md #20)"
+    )
+    assert 'id="tm-queue"' in html and 'id="queue-body"' in html, (
+        "the task-manager Queue panel (#tm-queue / #queue-body) must exist (CLAUDE.md #20)"
+    )
+    assert 'data-tab="queue"' in html and "onclick" not in (
+        html.split('id="tm-subtabs"', 1)[1].split("</nav>", 1)[0]
+    ), "the Queue subtab must use data-tab via ooSubtabs, never inline onclick (CLAUDE.md #18)"
+    assert "function _jobRow(" in html and "_jobRow(j, queuedKeys, t)" in html, (
+        "Active and Queue must share ONE job-row renderer (_jobRow) so controls stay identical"
+    )
+    # The Queue must still drive the real reorder endpoint (no invented backend).
+    assert "/api/jobs/dumps/reorder" in html, (
+        "the Queue reorder must POST the existing /api/jobs/dumps/reorder endpoint"
+    )
     # 21. Insights auto-indexes in the background (UI_SHELL_REDESIGN §6): the
     #     manual "Index corpus" button + palette action are gone; indexing follows
     #     ingest and a silent top-up clears any legacy backlog when Insights opens.
