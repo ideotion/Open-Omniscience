@@ -537,5 +537,7 @@
   "Welcome — your corpus is empty": "ようこそ — コーパスは空です",
   "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "まずは厳選した情報源カタログを登録し、最初の収集を実行して始めましょう。すべて倫理的（robots.txt は既定で拒否、レート制限あり）で、ローカルで完結します。",
   "Seed sources & run a first ingestion": "情報源を初期化して最初の収集を実行",
-  "All cards": "すべてのカード"
+  "All cards": "すべてのカード",
+  "Task manager": "タスクマネージャー",
+  "Tasks": "タスク"
 }

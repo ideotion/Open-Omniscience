@@ -11,6 +11,16 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **The vitals bubble graduates to a Task-manager window.** The activity/vitals
+  popover is now a wider, dedicated **tabbed window** (the same universal subtab
+  component, its 5th surface) with **Tasks** and **System** tabs — the first slice
+  of the long-requested task manager. The proven live job list (Stop/Pause/Cancel,
+  dump-queue reorder) and the vitals readout are unchanged underneath; they're
+  just organised under tabs in a real window instead of one long bubble. Title is
+  now "Task manager". Next slices split Tasks → Active/Queue and add History +
+  Sources/Schedule with per-job bandwidth/ETA controls. Guarded by
+  `test_ui_invariants` #20. (×12: "Task manager", "Tasks".)
+
 - **Home card families are now a lens, not a wall.** The briefing's card groups
   render a **vertical subtab bar** (the same universal `ooSubtabs` component, now
   on a 4th surface) with **"All cards" as the default** — a single prioritised

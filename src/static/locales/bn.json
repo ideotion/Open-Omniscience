@@ -537,5 +537,7 @@
   "Welcome — your corpus is empty": "স্বাগতম — আপনার কর্পাস খালি",
   "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "শুরু করতে নির্বাচিত উৎস ক্যাটালগ নিবন্ধন করুন এবং প্রথম সংগ্রহ চালান। সবকিছু নৈতিক (robots.txt ডিফল্টভাবে বন্ধ, রেট-সীমিত) এবং স্থানীয়।",
   "Seed sources & run a first ingestion": "উৎস প্রস্তুত করুন এবং প্রথম সংগ্রহ চালান",
-  "All cards": "সব কার্ড"
+  "All cards": "সব কার্ড",
+  "Task manager": "টাস্ক ম্যানেজার",
+  "Tasks": "কাজ"
 }
