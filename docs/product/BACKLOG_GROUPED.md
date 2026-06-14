@@ -90,7 +90,11 @@ makes the rest fall out cheaply:
 - ⬜ **Bandwidth priority ladder** (ordering ≠ exclusion): markets/commodities/
   weather → interactive DDG → RSS → recursive crawl (headroom only); surfaced +
   tunable in the task manager. (maintainer 2026-06-13; Steps 2/5/7)
-- ⬜ **Collect tab → Settings → Download** (test-gated removal). (Step 6)
+- ✅ **Collect tab → Settings (PR #145)** — the Collect tab left the sidebar; its
+  scheduler/manual/batch controls now live under **Settings → Collect** (`#set-collect`).
+  `showTab('ingest')` redirects → Settings + the Collect subtab, so the palette, the
+  "Collect now" buttons, and old `#ingest` links keep working. Absorption-tested
+  (`test_collect_tab_moved_into_settings`). NEXT: Sources, then Wikipedia. (Step 6)
 - ✅ **Drop guaranteed-fail default feeds** — resolved BY DESIGN (verified
   2026-06-14): the preflight checks robots ONCE per host and never samples where
   robots said no (`feed_preflight._sample`), so `google-hol-*` (all on
