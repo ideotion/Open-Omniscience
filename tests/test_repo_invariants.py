@@ -441,6 +441,29 @@ def test_ui_invariants():
     assert "/api/jobs/dumps/reorder" in html, (
         "the Queue reorder must POST the existing /api/jobs/dumps/reorder endpoint"
     )
+    # 20c. Sources/Schedule (CLAUDE.md #20 REMAINING): the same window gains a
+    #      Schedule subtab surfacing the REAL collection schedule/activity. It is
+    #      driven by the universal subtab component (data-tab, no inline onclick),
+    #      its label is DOM text (auto-translated x12), and it reuses the EXISTING
+    #      scheduler endpoint (/api/scheduler/activity already polled by the
+    #      window) — never a new backend or a fabricated countdown.
+    assert '<button data-tab="schedule">Schedule</button>' in html, (
+        "the task-manager window needs a Schedule subtab button (data-tab, DOM-text label; CLAUDE.md #20)"
+    )
+    assert 'id="tm-schedule"' in html and 'id="sched-tm-body"' in html, (
+        "the task-manager Schedule panel (#tm-schedule / #sched-tm-body) must exist (CLAUDE.md #20)"
+    )
+    # The subtab nav must stay inline-onclick-free (driven by ooSubtabs/data-tab).
+    assert "onclick" not in (
+        html.split('id="tm-subtabs"', 1)[1].split("</nav>", 1)[0]
+    ), "the Schedule subtab must use data-tab via ooSubtabs, never inline onclick (CLAUDE.md #18)"
+    assert "function _renderSchedule(" in html, (
+        "the Schedule panel needs its renderer (_renderSchedule)"
+    )
+    # It must read the EXISTING scheduler-activity data, not invent a new endpoint.
+    assert "/api/scheduler/activity" in html, (
+        "the Schedule panel must reuse the existing /api/scheduler/activity data (no new backend; CLAUDE.md #20)"
+    )
     # 21. Insights auto-indexes in the background (UI_SHELL_REDESIGN §6): the
     #     manual "Index corpus" button + palette action are gone; indexing follows
     #     ingest and a silent top-up clears any legacy backlog when Insights opens.
