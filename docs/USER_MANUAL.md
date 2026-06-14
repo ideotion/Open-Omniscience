@@ -33,9 +33,11 @@ HTTP API) and troubleshooting.
 1. [Install & first run](#1-install--first-run)
 2. [The 60-second tour](#2-the-60-second-tour)
 3. [The tools, one by one](#3-the-tools-one-by-one)
-   - [Home](#30-home) · [Search](#31-search) · [Collect](#32-collect) ·
+   - [Home](#30-home) · [Activity & Task manager](#30a-activity--the-task-manager) ·
+     [Search](#31-search) · [Collect](#32-collect) ·
      [Sources](#33-sources) · [Library](#34-library) · [Markets](#35-markets) ·
-     [Insights](#36-insights) · [Temporal map](#36a-temporal-map) ·
+     [Indices](#35a-indices) · [Insights](#36-insights) ·
+     [Temporal map](#36a-temporal-map) · [Agenda](#36b-agenda) ·
      [Wikipedia](#37-wikipedia) ·
      [Evidence & custody](#38-evidence--custody) · [Settings](#39-settings) ·
      [Help & docs](#310-help--docs)
@@ -238,6 +240,25 @@ tool with the command palette (Ctrl/⌘-K).
   automatic collection is running), plus the first-run seeding banner when the corpus
   is empty.
 
+### 3.0a Activity & the Task manager
+
+**What it's for:** seeing — and steering — everything the app is doing in the
+background, from any tab.
+
+- The **activity chip** in the top bar lights up while work runs (a collect pass,
+  a Wikipedia dump, a market import); the compact **CPU · RAM · ↓ rate** strip
+  beside it is always live.
+- Click the chip to open the **Task manager** window, which has tabs:
+  - **Tasks** — every background job: the collect pass, each Wikipedia dump with
+    its real **queue position**, and the in-flight fetch (shown as a DOMAIN only).
+    Each job shows progress and the controls that apply — **Stop** a collect pass
+    (this also engages the network kill switch, so you go offline; the button says
+    so), **Pause/Cancel** a dump, and **↑ / ↓** to reorder queued dumps (pull a
+    small French dump ahead of a huge English one).
+  - **System** — live process vitals (CPU, RAM, download rate).
+- The window reads **live from the systems that own the work**, so it can never
+  disagree with what is actually happening — no shadow state.
+
 ### 3.1 Search
 
 **What it's for:** finding articles in your corpus.
@@ -363,6 +384,19 @@ relating them to news volume.
 
 See [`docs/USER_MANUAL.md`](USER_MANUAL.md) for the full extraction-rule reference.
 
+### 3.5a Indices
+
+**What it's for:** world stock-market **indices** (S&P 500, NASDAQ, Dow Jones,
+VIX, Nikkei 225 …) — kept **separate from Commodities**, because an index is an
+index, not a commodity.
+
+- A board of index series with the same detailed, full-resolution charts as
+  Markets. **Import / refresh** pulls the curated official feeds (FRED and friends).
+- Each feed carries an **honest per-feed verdict** when it can't be fetched —
+  *refused* ≠ *robots-disallowed* ≠ *dead series* ≠ *unreachable* ≠ *offline* — so
+  a blocked feed degrades loudly instead of showing a fake number. Over Tor some
+  feeds are blocked by the host; the verdict says exactly that (see §5.5).
+
 ### 3.6 Insights
 
 **What it's for:** keyword & entity analytics over the **text of ingested
@@ -429,6 +463,26 @@ missing one is simply absent, never dropped onto (0, 0), and the caveat says so.
 Country-level pins are flagged **approximate** (a stand-in point, not the exact
 spot); corpus pins mark **coverage origin on the publication date**, not the event
 site; scholarly date doubt (e.g. Pompeii's exact day) rides along in the pin's note.
+
+### 3.6b Agenda
+
+**What it's for:** a calendar of dated events — what's coming, sourced and honest.
+
+- A **month grid** (Monday-start; month/day names in your UI language) is the
+  default view, with a **List** view alongside. Days with events are marked; click
+  a day for the details.
+- **Astronomy, computed locally:** full/new moons and the equinoxes/solstices are
+  computed on this machine (Meeus' algorithms, verified against published almanac
+  values); each entry states its **method and accuracy** in the hover bubble.
+  Seasons are named **hemisphere-honestly** — never a bare "summer".
+- **Climate context:** a bundled El Niño / La Niña episode dataset (NOAA CPC ONI
+  convention); any entry still awaiting a clearnet cross-check carries a
+  verification-pending flag.
+- **Movable dates are marked as such** — the app never invents an exact day for an
+  event whose date shifts each year.
+- **Calendars & feeds** (holiday / religious / astronomy iCal sources) are managed
+  in **Settings → Agenda**, not here — the tab shows the data, the plumbing lives
+  in Settings; subscriptions stay **off by default** so the grid is never flooded.
 
 ### 3.7 Wikipedia
 
