@@ -547,5 +547,7 @@
   "No keywords indexed across the matched articles yet.": "মিলে যাওয়া নিবন্ধগুলোতে এখনও কোনো কীওয়ার্ড সূচিবদ্ধ হয়নি।",
   "Open this keyword's own analysis window": "এই কীওয়ার্ডের নিজস্ব বিশ্লেষণ উইন্ডো খুলুন",
   "Title": "শিরোনাম",
-  "Published": "প্রকাশিত"
+  "Published": "প্রকাশিত",
+  "Who": "কে",
+  "Where": "কোথায়"
 }

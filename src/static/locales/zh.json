@@ -547,5 +547,7 @@
   "No keywords indexed across the matched articles yet.": "匹配的文章中尚无已索引的关键词。",
   "Open this keyword's own analysis window": "打开此关键词自己的分析窗口",
   "Title": "标题",
-  "Published": "发布时间"
+  "Published": "发布时间",
+  "Who": "谁",
+  "Where": "何地"
 }

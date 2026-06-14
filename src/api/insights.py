@@ -124,6 +124,38 @@ def insights_corpus_keywords(
     return res
 
 
+@router.get("/corpus-www")
+def insights_corpus_www(
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
+    limit: int = Query(40, ge=1, le=200),
+    cap: int = Query(1000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Who (people/orgs) + Where (places) DEDUCED across the matched articles —
+    the analysis window's When/Where/Who. Deduced from text, never confirmed; no
+    score. Bounded to the top ``cap`` matched articles (disclosed)."""
+    from src.api.main import _query_articles
+
+    articles, total = _query_articles(
+        db, query=query, source=source, start_date=start_date, end_date=end_date,
+        language=language, tags=tags, limit=cap, offset=0,
+    )
+    ids = [a.id for a in articles]
+    return {
+        "who": q.corpus_who(db, article_ids=ids, limit=limit),
+        "where": q.corpus_where(db, article_ids=ids, limit=limit),
+        "n_articles": len(ids),
+        "total_matched": total,
+        "capped": total > len(ids),
+        "caveat": "Deduced from article text, never confirmed; counts only.",
+    }
+
+
 @router.get("/top")
 def insights_top(
     days: int | None = Query(None, ge=1, le=3650),

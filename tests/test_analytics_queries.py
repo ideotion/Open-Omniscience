@@ -193,3 +193,16 @@ def test_corpus_keywords_scopes_to_article_set(db):
     assert any(("tariff" in n) or ("steel" in n) or ("industry" in n) for n in norms), norms
     # empty set is handled
     assert q.corpus_keywords(db, article_ids=[], limit=10)["count"] == 0
+
+
+def test_corpus_who_and_where_scope_to_article_set(db):
+    a1 = _mk(db, "ww1", "President visited Paris with officials.", "2026-02-01")
+    a2 = _mk(db, "ww2", "Officials met in Paris.", "2026-02-02")
+    _mk(db, "ww3", "Quiet day in Tokyo.", "2026-02-03")
+    who = q.corpus_who(db, article_ids=[a1.id, a2.id], limit=20)
+    where = q.corpus_where(db, article_ids=[a1.id, a2.id], limit=20)
+    assert isinstance(who["entities"], list) and isinstance(where["places"], list)
+    # Tokyo (only in the excluded a3) must not appear in the {a1,a2} where-set
+    assert all(pl["name"].lower() != "tokyo" for pl in where["places"])
+    assert q.corpus_who(db, article_ids=[], limit=5)["count"] == 0
+    assert q.corpus_where(db, article_ids=[], limit=5)["count"] == 0

@@ -547,5 +547,7 @@
   "No keywords indexed across the matched articles yet.": "لا توجد بعد كلمات مفتاحية مفهرسة عبر المقالات المطابقة.",
   "Open this keyword's own analysis window": "افتح نافذة تحليل هذه الكلمة المفتاحية",
   "Title": "العنوان",
-  "Published": "نُشِر"
+  "Published": "نُشِر",
+  "Who": "مَن",
+  "Where": "أين"
 }

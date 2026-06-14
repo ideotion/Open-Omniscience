@@ -803,11 +803,13 @@
       <nav class="tabs" id="an-subtabs" style="position:static;padding:0;border:0;margin-top:6px">
         <button class="active" data-tab="keywords">Keywords</button>
         <button data-tab="articles">Articles</button>
+        <button data-tab="www">When/Where/Who</button>
       </nav>
       <div class="an-panel" id="an-keywords" style="margin-top:10px">
         <div class="muted">Run a search, then press Analyze to populate this window.</div>
       </div>
       <div class="an-panel" id="an-articles" style="display:none;margin-top:10px;overflow:auto"></div>
+      <div class="an-panel" id="an-www" style="display:none;margin-top:10px"></div>
     </section>
     </div>
 
@@ -6838,6 +6840,20 @@
           + `<table style="margin-top:6px"><tr><th>${esc(t("Title"))}</th><th>${esc(t("Source"))}</th>`
           + `<th>${esc(t("Published"))}</th><th></th></tr>${rows}</table>`;
       } catch (e) { arts.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      // When/Where/Who deduced across the matched articles (counts, never confirmed).
+      try {
+        const d = await api("/api/insights/corpus-www?" + p.toString());
+        const li = (arr, fmt) => (arr && arr.length) ? arr.map(fmt).join("") : `<li class="muted">—</li>`;
+        const who = li(d.who && d.who.entities, (e) =>
+          `<li>${esc(e.name)} <span class="muted">· ${esc(e.class || "")} · ${e.articles}</span></li>`);
+        const where = li(d.where && d.where.places, (pl) =>
+          `<li>${esc(pl.name)}${pl.country ? ` <span class="muted">(${esc(String(pl.country).toUpperCase())})</span>` : ""}`
+          + ` <span class="muted">· ${pl.articles}</span></li>`);
+        $("an-www").innerHTML = `<div class="hint muted">${esc(d.caveat || "")}</div>`
+          + `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:8px">`
+          + `<div style="min-width:200px"><div class="vsect">${esc(t("Who"))}</div><ul style="margin:4px 0">${who}</ul></div>`
+          + `<div style="min-width:200px"><div class="vsect">${esc(t("Where"))}</div><ul style="margin:4px 0">${where}</ul></div></div>`;
+      } catch (e) { $("an-www").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
 
     async function doSearch() {

@@ -18,8 +18,11 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   **matched articles** themselves, under one subtab bar. A new article-set endpoint
   (`/api/insights/corpus-keywords`) aggregates keywords over the matched set
   (bounded to the top N by relevance, **disclosed**; counts only, never a score or
-  verdict). Keyword-family / When-Where-Who / mindmap / links / sentiment subtabs
-  follow in later slices. ×12 locales; guarded by `test_ui_invariants` #22.
+  verdict). A **When/Where/Who** subtab shows the people/organisations and places
+  deduced across the matched articles (`/api/insights/corpus-www` →
+  `corpus_who`/`corpus_where`; deduced from text, never confirmed). Mindmap /
+  links / source-competitive / sentiment subtabs + the Advanced-search tab follow
+  in later slices. ×12 locales; guarded by `test_ui_invariants` #22.
 
 - **Every outbound "source ↗" link opens the local preview first — everywhere.**
   Previously only Home-card evidence routed through the local link preview; search

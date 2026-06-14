@@ -547,5 +547,7 @@
   "No keywords indexed across the matched articles yet.": "По найденным статьям ещё нет проиндексированных ключевых слов.",
   "Open this keyword's own analysis window": "Открыть окно анализа этого ключевого слова",
   "Title": "Заголовок",
-  "Published": "Опубликовано"
+  "Published": "Опубликовано",
+  "Who": "Кто",
+  "Where": "Где"
 }
