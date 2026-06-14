@@ -30,8 +30,11 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   English-scored share and warns that non-English scores are unreliable (closing a
   known disclosure gap). A **Sources** subtab shows how each source covers the
   matched set — article **volume**, mean tone, and the publication **span** — side
-  by side, stated as *coverage, never credibility* (no ranking, no verdict). Mindmap
-  subtab + the Advanced-search tab follow in later slices. ×12 locales; guarded by
+  by side, stated as *coverage, never credibility* (no ranking, no verdict). An
+  **Advanced** tab lets you refine the analyzed set in place — search terms, source,
+  language, and a date range — and re-runs every subtab at once (prefilled from your
+  search; the groundwork for folding the Search tab in). The Mindmap subtab follows
+  in a later slice. ×12 locales; guarded by
   `test_ui_invariants` #22.
 
 - **Every outbound "source ↗" link opens the local preview first — everywhere.**

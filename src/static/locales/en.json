@@ -560,5 +560,9 @@
   "English-scored (reliable)": "English-scored (reliable)",
   "No tone scores in this set.": "No tone scores in this set.",
   "Span": "Span",
-  "No sources in this set.": "No sources in this set."
+  "No sources in this set.": "No sources in this set.",
+  "Search terms": "Search terms",
+  "Run analysis": "Run analysis",
+  "Refine which articles this window analyzes.": "Refine which articles this window analyzes.",
+  "Analysis updated — see the other tabs.": "Analysis updated — see the other tabs."
 }

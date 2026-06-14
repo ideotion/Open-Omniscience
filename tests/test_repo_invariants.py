@@ -442,6 +442,10 @@ def test_ui_invariants():
     assert '/api/insights/corpus-sources' in html and 'id="an-sources"' in html, (
         "the analysis window must carry the source-coverage subtab (Group F)"
     )
+    assert 'id="an-advanced"' in html and "function anRunAdvanced(" in html, (
+        "the analysis window must carry the Advanced-search tab that re-runs the "
+        "analysis from refined filters (Group F, keystone #4)"
+    )
 
 
 def test_sp500_is_classified_as_index():

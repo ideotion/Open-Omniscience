@@ -560,5 +560,9 @@
   "English-scored (reliable)": "英文评分（可靠）",
   "No tone scores in this set.": "此集合中没有语调评分。",
   "Span": "时间跨度",
-  "No sources in this set.": "此集合中没有来源。"
+  "No sources in this set.": "此集合中没有来源。",
+  "Search terms": "搜索词",
+  "Run analysis": "运行分析",
+  "Refine which articles this window analyzes.": "细化此窗口分析的文章。",
+  "Analysis updated — see the other tabs.": "分析已更新——请查看其他标签页。"
 }

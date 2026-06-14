@@ -560,5 +560,9 @@
   "English-scored (reliable)": "Avaliado em inglês (confiável)",
   "No tone scores in this set.": "Sem pontuações de tom neste conjunto.",
   "Span": "Período",
-  "No sources in this set.": "Nenhuma fonte neste conjunto."
+  "No sources in this set.": "Nenhuma fonte neste conjunto.",
+  "Search terms": "Termos de busca",
+  "Run analysis": "Executar análise",
+  "Refine which articles this window analyzes.": "Refine quais artigos esta janela analisa.",
+  "Analysis updated — see the other tabs.": "Análise atualizada — veja as outras abas."
 }

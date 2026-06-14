@@ -807,6 +807,7 @@
         <button data-tab="links">Links</button>
         <button data-tab="sentiment">Sentiment</button>
         <button data-tab="sources">Sources</button>
+        <button data-tab="advanced">Advanced</button>
       </nav>
       <div class="an-panel" id="an-keywords" style="margin-top:10px">
         <div class="muted">Run a search, then press Analyze to populate this window.</div>
@@ -816,6 +817,23 @@
       <div class="an-panel" id="an-links" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-sentiment" style="display:none;margin-top:10px"></div>
       <div class="an-panel" id="an-sources" style="display:none;margin-top:10px;overflow:auto"></div>
+      <div class="an-panel" id="an-advanced" style="display:none;margin-top:10px">
+        <div class="hint muted">Refine which articles this window analyzes.</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:8px">
+          <label style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:180px"><span class="muted">Search terms</span>
+            <input id="an-adv-query" placeholder="Search terms" onkeydown="if(event.key==='Enter')anRunAdvanced()"></label>
+          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Source</span>
+            <input id="an-adv-source" style="max-width:150px"></label>
+          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Language</span>
+            <input id="an-adv-lang" style="max-width:80px" placeholder="en"></label>
+          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">From</span>
+            <input id="an-adv-from" type="date"></label>
+          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">To</span>
+            <input id="an-adv-to" type="date"></label>
+          <button class="primary" onclick="anRunAdvanced()">Run analysis</button>
+        </div>
+        <div id="an-adv-note" class="muted" style="margin-top:8px"></div>
+      </div>
     </section>
     </div>
 
@@ -6808,8 +6826,30 @@
     function openAnalysis() {
       const qtxt = $("q").value.trim();
       $("an-query").textContent = qtxt ? `“${qtxt}”` : "(all articles matching your filters)";
+      // Prefill the Advanced tab from the current search, so it reflects what is
+      // being analyzed and the user can refine from there (toward folding in Search).
+      $("an-adv-query").value = qtxt;
+      $("an-adv-source").value = $("f-source").value.trim();
+      $("an-adv-lang").value = $("f-lang").value.trim();
+      $("an-adv-from").value = $("f-from").value;
+      $("an-adv-to").value = $("f-to").value;
+      $("an-adv-note").textContent = "";
       showTab("analyze");
       loadAnalysis(searchParams());
+    }
+    // Advanced tab: refine the analyzed article set in-place. loadAnalysis re-runs
+    // EVERY subtab from the params, so this is the whole wiring.
+    function anRunAdvanced() {
+      const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const p = new URLSearchParams();
+      const q = $("an-adv-query").value.trim(); if (q) p.set("query", q);
+      const src = $("an-adv-source").value.trim(); if (src) p.set("source", src);
+      const lang = $("an-adv-lang").value.trim(); if (lang) p.set("language", lang);
+      if ($("an-adv-from").value) p.set("start_date", $("an-adv-from").value);
+      if ($("an-adv-to").value) p.set("end_date", $("an-adv-to").value);
+      $("an-query").textContent = q ? `“${q}”` : "(all articles matching your filters)";
+      $("an-adv-note").textContent = tt("Analysis updated — see the other tabs.");
+      loadAnalysis(p);
     }
     function anSelectTab(key) {
       document.querySelectorAll("#tab-analyze .an-panel").forEach(el =>

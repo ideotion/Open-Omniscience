@@ -560,5 +560,9 @@
   "English-scored (reliable)": "英語で採点（信頼可）",
   "No tone scores in this set.": "このセットにトーンスコアはありません。",
   "Span": "期間",
-  "No sources in this set.": "このセットにソースはありません。"
+  "No sources in this set.": "このセットにソースはありません。",
+  "Search terms": "検索語",
+  "Run analysis": "分析を実行",
+  "Refine which articles this window analyzes.": "このウィンドウが分析する記事を絞り込みます。",
+  "Analysis updated — see the other tabs.": "分析を更新しました — 他のタブをご覧ください。"
 }

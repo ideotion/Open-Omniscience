@@ -560,5 +560,9 @@
   "English-scored (reliable)": "अंग्रेज़ी में अंकित (विश्वसनीय)",
   "No tone scores in this set.": "इस सेट में कोई टोन स्कोर नहीं।",
   "Span": "अवधि",
-  "No sources in this set.": "इस सेट में कोई स्रोत नहीं।"
+  "No sources in this set.": "इस सेट में कोई स्रोत नहीं।",
+  "Search terms": "खोज शब्द",
+  "Run analysis": "विश्लेषण चलाएँ",
+  "Refine which articles this window analyzes.": "इस विंडो द्वारा विश्लेषित लेखों को परिष्कृत करें।",
+  "Analysis updated — see the other tabs.": "विश्लेषण अपडेट हुआ — अन्य टैब देखें।"
 }
