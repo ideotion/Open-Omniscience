@@ -157,8 +157,10 @@ makes the rest fall out cheaply:
   strip pinned at the TOP; Quick actions removed (#128); denser cards (4+) + card
   families as vertical subtabs via `ooSubtabs` with an "All cards" default lens +
   family-color accents (#129). `test_ui_invariants` #19/#19b.
-- ⬜ **Insights** — auto-index in the background (remove the "Index corpus"
-  button); present sections as subtabs.
+- ✅ **Insights** — sections already presented as subtabs (via `ooSubtabs`, #127);
+  the "Index corpus" button + palette action are removed and replaced by a silent
+  background top-up that runs on Insights open when behind (`autoIndexInsights`),
+  on top of the existing index-at-ingest hook (#132). `test_ui_invariants` #21.
 
 ## F. The analysis window (corpora system — the flagship)
 

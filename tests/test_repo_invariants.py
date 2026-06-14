@@ -379,6 +379,15 @@ def test_ui_invariants():
     assert 'id="tm-tasks"' in html and 'id="tm-system"' in html, (
         "the task-manager window needs Tasks + System panels"
     )
+    # 21. Insights auto-indexes in the background (UI_SHELL_REDESIGN §6): the
+    #     manual "Index corpus" button + palette action are gone; indexing follows
+    #     ingest and a silent top-up clears any legacy backlog when Insights opens.
+    assert "indexCorpus" not in html and ">Index corpus<" not in html, (
+        "the manual 'Index corpus' button/action must be removed (UI_SHELL §6)"
+    )
+    assert "function autoIndexInsights(" in html and "autoIndexInsights()" in html, (
+        "Insights must auto-index in the background (UI_SHELL §6)"
+    )
 
 
 def test_sp500_is_classified_as_index():
