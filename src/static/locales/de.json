@@ -533,5 +533,8 @@
   "Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.": "Warum diese Entscheidungen: die neueste Version zu zeigen hält die Analyse auf dem Stand dessen, was Leser heute sehen; den Volltext jeder Revision zu speichern macht jede frühere Version auf diesem Rechner exakt rekonstruierbar (versionsverankerte Analysen — kein Diff-Abspielen, kein Raten); der Text ist auf Klartext reduzierter Wikitext für Schlüsselwörter, nie als gerenderter Artikel ausgegeben; alles bleibt lokal.",
   "You're offline. Switch off airplane mode to go online and start collecting.": "Sie sind offline. Schalten Sie den Flugmodus aus, um online zu gehen und mit dem Sammeln zu beginnen.",
   "You'll confirm before anything connects.": "Sie bestätigen, bevor eine Verbindung hergestellt wird.",
-  "Not now": "Nicht jetzt"
+  "Not now": "Nicht jetzt",
+  "Welcome — your corpus is empty": "Willkommen — Ihr Korpus ist leer",
+  "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "Legen Sie los, indem Sie den kuratierten Quellenkatalog registrieren und eine erste Erfassung starten. Alles ist ethisch (robots.txt standardmäßig sperrend, ratenbegrenzt) und lokal.",
+  "Seed sources & run a first ingestion": "Quellen einrichten und erste Erfassung starten"
 }

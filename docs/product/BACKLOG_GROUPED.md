@@ -122,8 +122,9 @@ makes the rest fall out cheaply:
 - ⬜ **Guided setup wizard** (keystone #6) — language · encryption · sources by
   theme (from the catalog tag taxonomy) · country/language emphasis · consented
   first collect. Replaces the onboard card.
-- ⬜ **Card strings into i18n** — the onboard "corpus is empty" card and the
-  server-built card titles (template-translation design). ×12 locales.
+- 🔨 **Card strings into i18n** — onboard "corpus is empty" card DONE (h2/p/
+  button keyed ×12; the i18n engine auto-translates the static card once keyed).
+  REMAINING: the server-built card titles (template-translation design).
 
 ## E. The UI shell & navigation grammar
 
@@ -137,9 +138,10 @@ makes the rest fall out cheaply:
   and start collecting"; invitation layer only (routes through the consent popup,
   never bypasses it — `test_ui_invariants` #14b); prominent → subtle → retired,
   ×12 locales. Follows the button when the top-bar move lands. (ruling 2026-06-13)
-- ⬜ **Home redesign** — at-a-glance stats strip pinned on top; remove the hero
-  card; remove quick-actions; full-width denser cards (4+); family colors as
-  vertical subtabs with an "All cards" default.
+- 🔨 **Home redesign** — hero card REMOVED (✅ 2026-06-14: block + greeting JS +
+  `.hero` CSS deleted; Home opens on the Briefing). REMAINING: at-a-glance stats
+  strip pinned on top; remove quick-actions; full-width denser cards (4+); family
+  colors as vertical subtabs with an "All cards" default.
 - ⬜ **Insights** — auto-index in the background (remove the "Index corpus"
   button); present sections as subtabs.
 

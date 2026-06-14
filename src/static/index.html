@@ -441,13 +441,7 @@
     .note.warn { border-left:3px solid var(--warn); }
     @keyframes slidein { from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
 
-    /* ---- Hero / dashboard ------------------------------------------- */
-    .hero { background:
-        radial-gradient(120% 140% at 100% 0%, color-mix(in srgb,var(--accent) 22%, transparent), transparent 60%),
-        var(--panel); border:1px solid var(--border); border-radius:var(--radius);
-      padding:26px; box-shadow:var(--shadow); }
-    .hero h1 { margin:0 0 6px; font-size:24px; font-weight:700; letter-spacing:-.01em; }
-    .hero p { margin:0; color:var(--fg-soft); max-width:62ch; }
+    /* ---- Dashboard -------------------------------------------------- */
     .quick { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
     .qcard { display:flex; gap:13px; align-items:flex-start; text-align:left; background:var(--panel);
       border:1px solid var(--border); border-radius:var(--radius); padding:16px; cursor:pointer;
@@ -702,16 +696,6 @@
 
     <!-- ============================= HOME ============================= -->
     <div class="tab-page active" id="tab-home">
-      <div class="hero">
-        <h1 id="hero-greet">Understand the world as it really is.</h1>
-        <p>Your private, offline research desk — gather sources, find what matters, see how it
-          connects, and prove what you found. Nothing leaves this machine.</p>
-        <div class="row" style="margin-top:16px">
-          <button onclick="showTab('search')" style="margin-top:0">Search the corpus</button>
-          <button class="secondary" onclick="showTab('ingest')" style="margin-top:0">Collect new material</button>
-          <button class="secondary" onclick="showTab('help')" style="margin-top:0">Read the manual</button>
-        </div>
-      </div>
 
       <section class="panel">
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
@@ -2850,9 +2834,6 @@
 
     // -- Home dashboard ----------------------------------------------------- //
     async function loadHome() {
-      const hour = new Date().getHours();
-      const greet = hour < 5 ? "Working late." : hour < 12 ? "Good morning." : hour < 18 ? "Good afternoon." : "Good evening.";
-      const g = $("hero-greet"); if (g) g.textContent = greet + " Understand the world as it really is.";
       try {
         const s = await api("/api/database/stats");
         const entries = Object.entries(s.counts || {});
