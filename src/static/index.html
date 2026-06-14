@@ -590,6 +590,29 @@
     #net-coach .coach-actions button { padding: 5px 11px; font-size: 12px; }
     #net-coach .coach-arrow { position: absolute; width: 11px; height: 11px; background: var(--panel);
       border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    /* First-launch guided setup (maintainer-ruled 2026-06-13). RTL-aware:
+       logical properties + flex order follow document.dir, so the stepper and
+       footer mirror correctly for Arabic. */
+    #guide-wizard::backdrop { background: rgba(0,0,0,.5); }
+    #guide-wizard .gw-dots { display: flex; gap: 7px; align-items: center;
+      padding: 10px 18px 0; }
+    #guide-wizard .gw-dot { width: 9px; height: 9px; border-radius: 50%;
+      background: var(--line); transition: background .15s ease, transform .15s ease; }
+    #guide-wizard .gw-dot.on { background: var(--accent); }
+    #guide-wizard .gw-dot.cur { transform: scale(1.35); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent); }
+    #guide-wizard .gw-step { animation: gwFade .18s ease; }
+    @keyframes gwFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    #guide-wizard .gw-langs { display: grid; grid-template-columns: repeat(2, 1fr);
+      gap: 8px; margin-top: 10px; }
+    @media (max-width: 460px) { #guide-wizard .gw-langs { grid-template-columns: 1fr; } }
+    #guide-wizard .gw-lang { display: flex; align-items: center; gap: 9px;
+      padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px;
+      background: var(--bg); color: var(--fg); cursor: pointer; text-align: start;
+      font-size: 14px; }
+    #guide-wizard .gw-lang:hover { border-color: var(--accent); }
+    #guide-wizard .gw-lang[aria-selected="true"] { border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 600; }
+    #guide-wizard .gw-lang .gw-native { margin-inline-end: auto; }
   </style>
 </head>
 <body>
@@ -1464,6 +1487,17 @@
           <span class="muted">(a usually-covered country stopped arriving)</span></label>
       </div>
 
+      <h3 style="margin-bottom:6px">First-launch guide</h3>
+      <p class="muted" style="margin-top:0">The one-time guided setup that walks you through language, safety and
+        your first collection. You can re-open it anytime, or have it show again the next time the app loads.</p>
+      <div class="row">
+        <button class="secondary" type="button" onclick="openGuide()">Open the guide</button>
+        <label style="display:flex;align-items:center;gap:6px;align-self:center;cursor:pointer"
+               title="Show the one-time guided setup again the next time the app loads.">
+          <input type="checkbox" id="set-rerun-guide" style="width:auto" onchange="setRerunGuide(this.checked)">
+          Re-run the first-launch guide</label>
+      </div>
+
       <button onclick="saveSettings()">Save preferences</button>
       <div class="hint">Stored locally in <code>app_settings.json</code> under the data directory — no telemetry, nothing leaves the machine.</div>
     </section>
@@ -2090,6 +2124,64 @@
     </div>
   </div>
 
+  <!-- First-launch guided setup (maintainer-ruled 2026-06-13): a ONE-TIME,
+       stepped GUI that walks a new user to a working app. SLICE 1 = the shell +
+       the Language step + the Finish/start-collecting step. Encryption and
+       sources-by-theme are placeholder steps for the next slices. The wizard is
+       the INVITATION layer only: "Go online & start collecting" routes through
+       toggleNetwork()/ensureOnline, so the ONE consent popup still fires — the
+       wizard NEVER posts the network itself. Zero-network on load by construction
+       (it only reads localStorage and reuses the existing language list). -->
+  <dialog id="guide-wizard" style="width:min(560px,94vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)">
+      <svg class="mark" viewBox="0 0 32 32" width="22" height="22" fill="none" aria-hidden="true">
+        <path d="M2 16 C8 6.5, 24 6.5, 30 16 C24 25.5, 8 25.5, 2 16 Z" style="stroke:currentColor" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M11 12.5 H21 M11 16 H21 M11 19.5 H21 M13.4 10 V22 M16 10 V22 M18.6 10 V22" style="stroke:currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <b id="gw-title" style="font-size:15px">Welcome to Open Omniscience</b>
+      <span style="margin-inline-start:auto"></span>
+      <button class="icon-btn" id="gw-close" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div id="gw-dots" class="gw-dots" role="list" aria-label="Setup progress"></div>
+    <div id="gw-body" style="padding:16px 18px;min-height:160px;max-height:62vh;overflow:auto">
+      <!-- Step: Language -->
+      <section class="gw-step" data-step="lang">
+        <h3 style="margin:0 0 6px">Choose your language</h3>
+        <p class="muted" style="margin-top:0"
+           title="Pick the language for the whole interface. The native name is the real identifier — flags are only a visual cue.">
+          The whole interface switches as you pick. You can change this anytime in Settings.</p>
+        <div id="gw-langs" class="gw-langs" role="listbox" aria-label="Choose your language"></div>
+      </section>
+      <!-- Step: Encryption (DEFERRED — placeholder for the next slice) -->
+      <section class="gw-step" data-step="encryption" hidden>
+        <h3 style="margin:0 0 6px">Encryption &amp; data safety <span class="pill">Coming soon</span></h3>
+        <p class="muted" style="margin-top:0">Set up at-rest encryption — coming in a later step of this guide.</p>
+      </section>
+      <!-- Step: Sources by theme (DEFERRED — placeholder for the next slice) -->
+      <section class="gw-step" data-step="sources" hidden>
+        <h3 style="margin:0 0 6px">Choose your sources <span class="pill">Coming soon</span></h3>
+        <p class="muted" style="margin-top:0">Pick scraping sources by theme — coming in a later step of this guide.</p>
+      </section>
+      <!-- Step: Finish / start collecting -->
+      <section class="gw-step" data-step="finish" hidden>
+        <h3 style="margin:0 0 6px">Ready to begin</h3>
+        <p style="margin-top:0">The app starts offline. Nothing connects until you choose to go online — and you confirm before anything connects.</p>
+        <div class="row" style="margin-top:12px">
+          <button id="gw-go-online">Go online &amp; start collecting</button>
+          <button class="secondary" id="gw-stay-offline">Stay offline</button>
+        </div>
+        <div id="gw-finish-note" class="hint" style="margin-top:8px"></div>
+      </section>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid var(--line)">
+      <span id="gw-progress" class="muted" style="font-size:12.5px"></span>
+      <span style="margin-inline-start:auto"></span>
+      <button class="secondary" id="gw-back">Back</button>
+      <button id="gw-next">Next</button>
+      <button id="gw-finish" hidden>Finish</button>
+    </div>
+  </dialog>
+
   <script src="/static/i18n.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
@@ -2199,6 +2291,121 @@
       _paintLangButton();
     }
     _paintLangButton();
+
+    // -- First-launch guided setup (maintainer-ruled 2026-06-13) -------------- //
+    // A ONE-TIME, stepped GUI to a working app. SLICE 1: shell + Language step +
+    // Finish/start-collecting step; Encryption + sources-by-theme are placeholder
+    // steps for the next slices. INVITATION LAYER for the network: the wizard
+    // NEVER posts the network — "Go online & start collecting" closes the wizard
+    // and routes through the existing firstRun()/toggleNetwork() flow, so the ONE
+    // consent popup (ensureOnline) always fires. The one-time state is a
+    // user-visible setting (Settings → General) + a localStorage flag, never hidden.
+    // Zero-network on load by construction: it only reads localStorage and reuses
+    // the in-memory LANGS_12 list (no fetch).
+    const _GUIDE_KEY = "oo_guide_v1";
+    // The visible step order. "encryption" + "sources" are deferred placeholders
+    // (shown but inert) so the next slice slots its real UI straight in.
+    const _GW_STEPS = ["lang", "encryption", "sources", "finish"];
+    let _gwIdx = 0;
+    function _guideState() {
+      try { return JSON.parse(localStorage.getItem(_GUIDE_KEY)) || {}; } catch { return {}; }
+    }
+    function _guideSave(s) {
+      try { localStorage.setItem(_GUIDE_KEY, JSON.stringify(s)); } catch { /* private mode */ }
+    }
+    function guideDone() { return !!_guideState().done; }
+    function _gwT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+    function _gwRenderLangs() {
+      const box = $("gw-langs"); if (!box) return;
+      const cur = (window.OOI18N && OOI18N.current()) || "en";
+      // Native name = the identifier (invariant #15); flag is a visual cue only.
+      box.innerHTML = LANGS_12.map(([code, flag, native]) =>
+        `<button type="button" class="gw-lang" role="option" data-lang="${code}"
+                 aria-selected="${code === cur ? "true" : "false"}">
+           <span aria-hidden="true">${flag}</span>
+           <span class="gw-native">${esc(native)}</span>
+           ${code === cur ? '<span aria-hidden="true">✓</span>' : ""}</button>`).join("");
+      box.querySelectorAll(".gw-lang").forEach(b => {
+        b.onclick = async () => {
+          await pickLang(b.dataset.lang);   // switches the WHOLE UI via THE i18n engine
+          _gwRenderLangs();                 // repaint the selection + dir-aware layout
+        };
+      });
+    }
+    function _gwRenderDots() {
+      const dots = $("gw-dots"); if (!dots) return;
+      dots.innerHTML = _GW_STEPS.map((_, i) =>
+        `<span class="gw-dot${i < _gwIdx ? " on" : ""}${i === _gwIdx ? " cur" : ""}" role="listitem"></span>`).join("");
+    }
+    function _gwPaint() {
+      const step = _GW_STEPS[_gwIdx];
+      document.querySelectorAll("#guide-wizard .gw-step").forEach(s =>
+        s.hidden = s.dataset.step !== step);
+      _gwRenderDots();
+      // Step indicator "Step X / Y" — number-substituted at runtime so the keyed
+      // template string ("Step") stays translatable (no ${} baked into the key).
+      const prog = $("gw-progress");
+      if (prog) prog.textContent = _gwT("Step") + " " + (_gwIdx + 1) + " / " + _GW_STEPS.length;
+      const back = $("gw-back"), next = $("gw-next"), fin = $("gw-finish");
+      const last = _gwIdx === _GW_STEPS.length - 1;
+      if (back) back.disabled = _gwIdx === 0;
+      // On the final step, Next/Finish hide — the step itself carries the
+      // explicit "Go online & start collecting" / "Stay offline" choice, so the
+      // generic Finish never implies a network action by itself.
+      if (next) next.hidden = last;
+      if (fin) fin.hidden = !last;
+      if (step === "lang") _gwRenderLangs();
+    }
+    function openGuide() {
+      const dlg = $("guide-wizard"); if (!dlg) return;
+      _gwIdx = 0; _gwPaint();
+      if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
+      else dlg.setAttribute("open", "");
+      if (window.OOI18N && OOI18N.apply) OOI18N.apply(dlg);  // translate freshly-shown chrome
+    }
+    // Closing the wizard for good marks the one-time state done (the user-visible
+    // Settings toggle can flip it back on for the next load). It NEVER touches the
+    // network — that is the finish step's explicit, consented choice.
+    function closeGuide(markDone) {
+      const dlg = $("guide-wizard"); if (!dlg) return;
+      if (markDone !== false) { const s = _guideState(); s.done = true; _guideSave(s); }
+      try { dlg.close(); } catch { dlg.removeAttribute("open"); }
+      _syncRerunGuide();
+    }
+    // The Settings "Re-run the first-launch guide" toggle is the user-VISIBLE
+    // one-time state (not a hidden flag): ticking it clears `done` so the guide
+    // shows again next load; unticking marks it done. Checked == "will re-run".
+    function setRerunGuide(on) {
+      const s = _guideState(); s.done = !on; _guideSave(s);
+    }
+    function _syncRerunGuide() {
+      const cb = $("set-rerun-guide"); if (cb) cb.checked = !guideDone();
+    }
+    (function _wireGuide() {
+      const next = $("gw-next"), back = $("gw-back"), fin = $("gw-finish"),
+            close = $("gw-close"), go = $("gw-go-online"), stay = $("gw-stay-offline");
+      if (next) next.onclick = () => { if (_gwIdx < _GW_STEPS.length - 1) { _gwIdx++; _gwPaint(); } };
+      if (back) back.onclick = () => { if (_gwIdx > 0) { _gwIdx--; _gwPaint(); } };
+      if (fin) fin.onclick = () => closeGuide(true);
+      if (close) close.onclick = () => closeGuide(true);   // X also completes the one-time guide
+      if (stay) stay.onclick = () => closeGuide(true);
+      // The ONLY path to the network from the wizard: close, then run the existing
+      // first-run flow — which itself calls ensureOnline (the ONE consent popup).
+      // The wizard never POSTs /api/system/network; the finish note states this.
+      if (go) go.onclick = async () => {
+        const note = $("gw-finish-note");
+        if (note) note.textContent = _gwT("You'll confirm before anything connects.");
+        closeGuide(true);
+        const card = $("onboard");
+        if (card) card.style.display = "";   // show the first-run progress surface
+        const seedBtn = card ? card.querySelector("button") : null;
+        if (typeof firstRun === "function" && seedBtn) firstRun(seedBtn);   // -> ensureOnline
+        else if (typeof toggleNetwork === "function") toggleNetwork();       // fallback: still consents
+      };
+      const dlg = $("guide-wizard");
+      if (dlg) dlg.addEventListener("cancel", () => closeGuide(true));   // Esc completes it too
+    })();
+
     async function toggleNetwork() {
       const btn = $("net-toggle");
       const goingOnline = btn.classList.contains("off");
@@ -3926,6 +4133,7 @@
           setTheme({dark:"ink", light:"light", system:"system"}[s.theme] || "ink");
         }
         syncThemeSelect();
+        _syncRerunGuide();   // reflect the local one-time guide state in the toggle
       } catch (e) { toast("Could not load settings: " + e.message, "err"); }
       loadLlmModels();
       // Backup support is backend-dependent; reflect reality, never assume.
@@ -4278,10 +4486,18 @@
     }
 
     // -- First-run onboarding (empty corpus) -------------------------------- //
+    // The guided wizard REPLACES the #onboard welcome card as the first-run entry
+    // (maintainer-ruled 2026-06-13): on a fresh, empty corpus we open the one-time
+    // guide instead of the card. If the user already finished/skipped the guide,
+    // the card remains as the lightweight fallback (nothing lost — firstRun lives
+    // on it). Re-running the guide is a user-visible Settings toggle.
     async function checkEmptyCorpus() {
       try {
         const s = await api("/api/database/stats");
-        if ((s.counts && s.counts.articles === 0)) $("onboard").style.display = "";
+        if (s.counts && s.counts.articles === 0) {
+          if (!guideDone()) openGuide();            // first-run entry = the guided wizard
+          else $("onboard").style.display = "";     // returning empty user = the card fallback
+        }
       } catch (e) { /* stats unavailable -> no banner */ }
     }
 

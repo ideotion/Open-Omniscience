@@ -482,6 +482,68 @@ def test_ui_invariants():
     )
 
 
+def test_first_launch_guide_wizard():
+    """First-launch GUIDED SETUP (ruled 2026-06-13): a ONE-TIME stepped wizard
+    walks a new user to a working app. SLICE 1 = shell + Language step + Finish/
+    start-collecting step (encryption + sources-by-theme are deferred placeholder
+    steps). Binding constraints, pinned so they cannot regress between sessions:
+      * the wizard exists and REPLACES the #onboard welcome card as the first-run
+        entry (the empty-corpus check opens it instead of the card);
+      * the Language step switches the WHOLE UI through THE i18n engine
+        (invariant #15) — it reuses pickLang/OOI18N.setLang, never a new list;
+      * INFORMED CONSENT is never bypassed (invariant #14): the wizard is the
+        INVITATION layer only — its "Go online" path routes through the existing
+        firstRun()/toggleNetwork() flow (which calls ensureOnline); the wizard
+        must NOT POST /api/system/network itself;
+      * the one-time state is a USER-VISIBLE setting, not a hidden flag."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # 1. the wizard shell exists (stepped dialog with the standard nav).
+    assert 'id="guide-wizard"' in html, "the first-launch guided wizard must exist (CLAUDE.md)"
+    assert "function openGuide(" in html, "the wizard must be openable (openGuide)"
+    for ctrl in ('id="gw-back"', 'id="gw-next"', 'id="gw-finish"', 'id="gw-dots"'):
+        assert ctrl in html, f"the wizard shell control is missing: {ctrl}"
+    # the two SLICE-1 steps + the two DEFERRED placeholder steps (so the next
+    # slice slots its real UI in without re-deriving the structure).
+    for step in ('data-step="lang"', 'data-step="finish"',
+                 'data-step="encryption"', 'data-step="sources"'):
+        assert step in html, f"the wizard step is missing: {step}"
+    # 2. Language step uses THE i18n engine via the shared picker (no new list).
+    gw = html.split('id="guide-wizard"', 1)[1].split("</dialog>", 1)[0]
+    assert 'id="gw-langs"' in gw, "the wizard must carry the Language step's picker"
+    assert "function _gwRenderLangs(" in html and "pickLang(b.dataset.lang)" in html, (
+        "the Language step must switch the whole UI through pickLang()/OOI18N.setLang "
+        "(invariant #15) — it must not build a second language list"
+    )
+    # 3. INFORMED CONSENT — the wizard NEVER posts the network; "Go online & start
+    #    collecting" routes through the existing firstRun()/toggleNetwork() flow,
+    #    so ensureOnline (the ONE consent popup) always fires (invariant #14).
+    go_block = html.split('if (go) go.onclick', 1)[1].split("};", 1)[0]
+    assert 'api("/api/system/network"' not in go_block, (
+        "the wizard must NOT POST the network itself — it is the invitation layer "
+        "only; going online must pass ensureOnline (CLAUDE.md #14)"
+    )
+    assert ("firstRun(" in go_block) or ("toggleNetwork(" in go_block), (
+        "the wizard's 'Go online' must route through the existing firstRun()/"
+        "toggleNetwork() flow (which calls ensureOnline) (CLAUDE.md #14)"
+    )
+    # 4. the wizard REPLACES the #onboard card as the first-run entry: the empty-
+    #    corpus check opens the guide (and falls back to the card only afterwards).
+    empty = html.split("async function checkEmptyCorpus(", 1)[1].split("async function", 1)[0]
+    assert "openGuide()" in empty and "guideDone()" in empty, (
+        "the empty-corpus first-run must open the guided wizard, gated by its "
+        "one-time done state (the wizard REPLACES the #onboard card)"
+    )
+    # 5. the one-time state is a USER-VISIBLE setting (a Settings toggle), never
+    #    a hidden flag.
+    assert 'id="set-rerun-guide"' in html and "function setRerunGuide(" in html, (
+        "the one-time guide state must be a user-visible Settings toggle, not a "
+        "hidden flag (CLAUDE.md: 'a user-visible setting, not a hidden flag')"
+    )
+    assert "Re-run the first-launch guide" in html, (
+        "the Settings toggle label must exist (and be keyed for i18n)"
+    )
+
+
 def test_collect_tab_moved_into_settings():
     """Content-first (§6, ruled 2026-06-13): the Collect tab LEFT the sidebar for a
     Settings subtab. The Desk lesson, enforced — nothing is lost: the scheduler +
