@@ -151,8 +151,11 @@ makes the rest fall out cheaply:
   Reused on 3 surfaces (Insights, Settings, corpus window — the divergent
   data-ins/data-set/data-ctab impls unified). `test_ui_invariants` #18. Next
   adopters: Home families, Markets categories, the analysis window.
-- ⬜ **Minimal top bar** — only: search · status · task-manager · help ·
-  language · airplane (everything else below the subtabs).
+- ✅ **Minimal top bar (§2, #143)** — search · status (health/llm) · a PERSISTENT
+  task-manager button (#tm-open) · help · language · airplane. The always-visible
+  vitals strip moved into the task-manager window's System tab (amends invariant #4,
+  ruled 2026-06-14); the raw `/docs` link left the chrome (kept in the ⌘K palette +
+  the Help tab). The 5 s chrome poll is now network-only.
 - ✅ **Airplane button → top bar**, no text (hover only), distinct online/offline
   transition colors. #133: direction-aware transition flash (go-on = live accent,
   go-off = calm/grounded) — `test_ui_invariants` #14c. #139: the button MOVED to
