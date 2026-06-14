@@ -160,9 +160,11 @@ makes the rest fall out cheaply:
 - ⬜ **Split graphs into category tabs** (universal subtabs).
 - ⬜ **Time-scope picker** replaces the 5-choice range (begin/end/timescale,
   built once, shared with search).
-- 🐛 **Sparse-series data-point bug** — the <2-points fallback dumps full
-  history, so "1 month" paradoxically shows the most points; respect the window,
-  render sparse as honest points. (invariant #16)
+- ✅ **Sparse-series data-point bug** — the `<2`-points fallback that dumped full
+  history (so "1 month" paradoxically showed the most points) is gone:
+  `renderDashboard` respects the window and `dashChartSvg` renders honestly — a
+  line only when dense (`lineMin=8`), else discrete dots with `n` + the
+  early-corpus caveat. (invariant #16; `test_ui_invariants`)
 - ⬜ **Click a graph → the analysis window** (group F), not bottom-of-page;
   price curve with the article timeline overlaid.
 - ⬜ **S&P500 reclassify** as an index; expand feeds.

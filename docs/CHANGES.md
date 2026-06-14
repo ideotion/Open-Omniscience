@@ -11,6 +11,19 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Commodity cards: the narrow-window data-point bug is fixed (honest sparsity).**
+  A commodity card's mini-chart silently swapped in the **entire price history**
+  whenever the selected window held fewer than two points — so the *smallest*
+  time scale (e.g. "1 month" on a monthly series) paradoxically showed the **most**
+  points (the full 5-year curve), while "1 year" showed ~12. The card now
+  **respects the window**: `renderDashboard` no longer widens to full history, and
+  `dashChartSvg` renders **honestly per invariant #16** — a connecting line only
+  when the window is dense enough (`lineMin = 8`), otherwise **discrete dots** with
+  the point count `n` and the early-corpus caveat ("dots shown, no curve
+  interpolated through sparse points"); an empty window says so plainly. No more
+  curve faked through a handful of points, and the smallest scale shows exactly
+  the points that fall inside it. (No new strings — the caveat keys already ship ×12.)
+
 - **Airplane-mode onboarding coachmark — teach the one online/offline switch.**
   The app boots offline (airplane mode) by design, which left first-time users
   with no hint how to start. A dismissible bubble (`#net-coach`) now anchors to
