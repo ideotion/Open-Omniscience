@@ -226,3 +226,28 @@ def test_corpus_sentiment_distribution_and_english_disclosure(db):
     a4 = _mk(db, "se4", "No score.", "2026-03-04")
     assert q.corpus_sentiment(db, article_ids=[a1.id, a4.id])["n_scored"] == 1
     assert q.corpus_sentiment(db, article_ids=[])["n_scored"] == 0
+
+
+def test_corpus_sources_groups_matched_articles_by_source(db):
+    a1 = _mk(db, "sc1", "Story one.", "2026-04-01")
+    a2 = _mk(db, "sc2", "Story two.", "2026-04-05")
+    a1.sentiment_score, a2.sentiment_score = 0.5, -0.1
+    db.add(Source(name="S2", domain="y.test", country="us"))
+    db.commit()
+    a3 = Article(
+        url="https://y.test/1", canonical_url="https://y.test/1", source_id=2,
+        title="T", content="Story three.", hash="sc3", language="en",
+        published_at=datetime.fromisoformat("2026-04-03").replace(tzinfo=UTC),
+        created_at=datetime.now(UTC),
+    )
+    db.add(a3)
+    db.commit()
+    r = q.corpus_sources(db, article_ids=[a1.id, a2.id, a3.id])
+    assert r["count"] == 2
+    by = {s["name"]: s for s in r["sources"]}
+    assert by["S"]["articles"] == 2 and by["S2"]["articles"] == 1
+    assert r["sources"][0]["name"] == "S"  # ordered by volume desc (no ranking by quality)
+    assert by["S"]["mean_tone"] == round((0.5 - 0.1) / 2, 3)
+    assert by["S"]["first"] and by["S"]["last"]  # timing span present
+    assert "credibility" in r["caveat"]
+    assert q.corpus_sources(db, article_ids=[])["count"] == 0

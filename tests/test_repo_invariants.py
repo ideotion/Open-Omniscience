@@ -439,6 +439,9 @@ def test_ui_invariants():
     assert '/api/insights/corpus-sentiment' in html and 'id="an-sentiment"' in html, (
         "the analysis window must carry the Sentiment subtab (Group F)"
     )
+    assert '/api/insights/corpus-sources' in html and 'id="an-sources"' in html, (
+        "the analysis window must carry the source-coverage subtab (Group F)"
+    )
 
 
 def test_sp500_is_classified_as_index():

@@ -558,5 +558,7 @@
   "Neutral": "中立",
   "Mean tone": "平均トーン",
   "English-scored (reliable)": "英語で採点（信頼可）",
-  "No tone scores in this set.": "このセットにトーンスコアはありません。"
+  "No tone scores in this set.": "このセットにトーンスコアはありません。",
+  "Span": "期間",
+  "No sources in this set.": "このセットにソースはありません。"
 }

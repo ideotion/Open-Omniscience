@@ -558,5 +558,7 @@
   "Neutral": "Neutral",
   "Mean tone": "Mittlerer Ton",
   "English-scored (reliable)": "Englisch bewertet (zuverlässig)",
-  "No tone scores in this set.": "Keine Tonwerte in diesem Satz."
+  "No tone scores in this set.": "Keine Tonwerte in diesem Satz.",
+  "Span": "Zeitraum",
+  "No sources in this set.": "Keine Quellen in diesem Satz."
 }

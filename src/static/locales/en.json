@@ -558,5 +558,7 @@
   "Neutral": "Neutral",
   "Mean tone": "Mean tone",
   "English-scored (reliable)": "English-scored (reliable)",
-  "No tone scores in this set.": "No tone scores in this set."
+  "No tone scores in this set.": "No tone scores in this set.",
+  "Span": "Span",
+  "No sources in this set.": "No sources in this set."
 }

@@ -28,8 +28,11 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   the matched articles from the stored per-article score — and **states plainly**
   that the tone method (VADER) is **English-lexicon based**, so it reports the
   English-scored share and warns that non-English scores are unreliable (closing a
-  known disclosure gap). Mindmap / source-competitive subtabs + the Advanced-search
-  tab follow in later slices. ×12 locales; guarded by `test_ui_invariants` #22.
+  known disclosure gap). A **Sources** subtab shows how each source covers the
+  matched set — article **volume**, mean tone, and the publication **span** — side
+  by side, stated as *coverage, never credibility* (no ranking, no verdict). Mindmap
+  subtab + the Advanced-search tab follow in later slices. ×12 locales; guarded by
+  `test_ui_invariants` #22.
 
 - **Every outbound "source ↗" link opens the local preview first — everywhere.**
   Previously only Home-card evidence routed through the local link preview; search
