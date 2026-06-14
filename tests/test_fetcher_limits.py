@@ -17,11 +17,12 @@ session, so TEST-03 uses a real EthicalFetcher with socket.getaddrinfo patched.
 from __future__ import annotations
 
 import socket
+from urllib.parse import urlparse
 
 import pytest
 
 import src.ingest as ingest_mod
-from src.ingest import BlockedTarget, EthicalFetcher, FetchFailed
+from src.ingest import BlockedTarget, EthicalFetcher, FetchFailed, RobotsUnavailable
 
 # --------------------------------------------------------------------------- #
 # Fake session that supports redirects (Location) and explicit headers/content.
@@ -145,6 +146,60 @@ def test_hostname_resolving_to_metadata_ip_is_blocked(monkeypatch):
     f = EthicalFetcher(min_interval_s=0.0)
     with pytest.raises(BlockedTarget):
         f.fetch("https://metadata.example/")
+
+
+# --- OO-D2-001: robots.txt redirects are SSRF-guarded per hop ---------------- #
+
+
+def test_robots_redirect_to_internal_ip_is_refused(monkeypatch):
+    """A robots.txt that 30x-redirects to an internal address must be refused.
+
+    The robots fetch now follows redirects manually through the same guarded loop
+    as the page fetch, re-running the SSRF guard on each hop. Before the fix it
+    used ``allow_redirects=True``, so the redirect chain bypassed the guard and a
+    blind GET could reach ``169.254.169.254`` / ``127.0.0.1``.
+    """
+
+    def fake_getaddrinfo(host, *a, **k):
+        if host == "evil-internal.example":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", 0))]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]  # public
+
+    monkeypatch.setattr(ingest_mod.socket, "getaddrinfo", fake_getaddrinfo)
+    f = EthicalFetcher(min_interval_s=0.0)  # real session => guard active
+
+    def fake_get(url, timeout=None, allow_redirects=True, **kwargs):
+        if url == "https://news.example/robots.txt":
+            return _Resp(
+                status_code=301, location="https://evil-internal.example/robots.txt", url=url
+            )
+        # The guard fires on the redirect target before we ever fetch its body.
+        return _Resp(text="User-agent: *\nAllow: /", url=url, content_type="text/plain")
+
+    monkeypatch.setattr(f.session, "get", fake_get)
+    # robots cannot be safely determined -> fail closed -> refuse the page fetch.
+    with pytest.raises(RobotsUnavailable):
+        f.fetch("https://news.example/article")
+
+
+def test_robots_redirect_to_public_host_is_followed(monkeypatch):
+    """A robots.txt redirect to another PUBLIC host is still followed: the guard
+    blocks only internal targets, so legitimate robots redirects keep working."""
+
+    def fake_getaddrinfo(host, *a, **k):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]  # all public
+
+    monkeypatch.setattr(ingest_mod.socket, "getaddrinfo", fake_getaddrinfo)
+    f = EthicalFetcher(min_interval_s=0.0)
+
+    def fake_get(url, timeout=None, allow_redirects=True, **kwargs):
+        if url == "https://news.example/robots.txt":
+            return _Resp(status_code=301, location="https://cdn.example/robots.txt", url=url)
+        return _Resp(text="User-agent: *\nDisallow: /private", url=url, content_type="text/plain")
+
+    monkeypatch.setattr(f.session, "get", fake_get)
+    parser = f._get_robots("https://news.example", urlparse("https://news.example/x"))
+    assert parser is not None  # the public redirect was followed and robots parsed
 
 
 # --- the global network kill switch (§0.5; maintainer live-test feedback) ----- #
