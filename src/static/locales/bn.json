@@ -561,5 +561,9 @@
   "No tone scores in this set.": "এই সেটে কোনো সুর স্কোর নেই।",
   "Span": "ব্যাপ্তি",
   "No sources in this set.": "এই সেটে কোনো উৎস নেই।",
+  "Search terms": "অনুসন্ধান পদ",
+  "Run analysis": "বিশ্লেষণ চালান",
+  "Refine which articles this window analyzes.": "এই উইন্ডো কোন নিবন্ধ বিশ্লেষণ করে তা পরিমার্জন করুন।",
+  "Analysis updated — see the other tabs.": "বিশ্লেষণ হালনাগাদ — অন্য ট্যাবগুলো দেখুন।",
   "Tasks & system": "কাজ ও সিস্টেম"
 }

@@ -561,5 +561,9 @@
   "No tone scores in this set.": "لا توجد درجات نبرة في هذه المجموعة.",
   "Span": "المدى",
   "No sources in this set.": "لا مصادر في هذه المجموعة.",
+  "Search terms": "مصطلحات البحث",
+  "Run analysis": "تشغيل التحليل",
+  "Refine which articles this window analyzes.": "حدِّد المقالات التي تحللها هذه النافذة.",
+  "Analysis updated — see the other tabs.": "تم تحديث التحليل — راجع علامات التبويب الأخرى.",
   "Tasks & system": "المهام والنظام"
 }

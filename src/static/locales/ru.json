@@ -561,5 +561,9 @@
   "No tone scores in this set.": "В этом наборе нет оценок тона.",
   "Span": "Период",
   "No sources in this set.": "В этом наборе нет источников.",
+  "Search terms": "Поисковые запросы",
+  "Run analysis": "Запустить анализ",
+  "Refine which articles this window analyzes.": "Уточните, какие статьи анализирует это окно.",
+  "Analysis updated — see the other tabs.": "Анализ обновлён — см. другие вкладки.",
   "Tasks & system": "Задачи и система"
 }
