@@ -11,6 +11,13 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **The airplane (network) button moved to the top bar — icon-only.** It now lives
+  in the top-bar status cluster instead of the sidebar foot, as a compact
+  icon-only control (no text label): the airplane glyph's **fill** still encodes
+  the state and hovering explains it. **Nothing about the safety changes** — the
+  same one consent popup fires on every offline→online transition, and the
+  onboarding coachmark follows the button to its new home. (UI-shell §3.)
+
 - **New: an Analysis window over your search results (Group F, first slice).** A
   full-screen **Analysis** tab now opens from the Search tab's **Analyze →** button
   (and the sidebar): it shows the **keywords shared across the articles your search
