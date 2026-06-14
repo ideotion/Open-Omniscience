@@ -50,16 +50,24 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   honestly (see [docs/USER_MANUAL.md](docs/USER_MANUAL.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
 - ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust ·
-  System*) covering Home, Search, Insights, Temporal map, Wikipedia, Markets, Collect,
-  Sources, Library, Evidence &amp; custody, Settings and an in-app Help/docs reader. Includes a
-  command palette (Ctrl/⌘-K), appearance customization in **Settings → Appearance** (themes,
-  accent, density, text size, layout, which tools show), a **Library** panel (real row counts + on-disk size),
+  System*) covering Home, Search, **Analysis**, Insights, Temporal map, World law,
+  Agenda, Indices, Commodities, Library, Evidence &amp; custody, Source integrity and an
+  in-app Help/docs reader. A **minimal top bar** carries the search/command palette
+  (Ctrl/⌘-K), live status, a **task-manager** button, the **airplane-mode** network
+  toggle, a **language switcher** and Help; **Settings** opens from the top-bar gear.
+  *Content-first reorg:* the acquisition surfaces — **Collect**, **Sources** and
+  **Wikipedia** — now live as **Settings** sections (the sidebar shows the *data*).
+  Appearance customization in **Settings → Appearance** (themes, accent, density, text
+  size, layout, which tools show), a **Library** panel (real row counts + on-disk size),
   inline **source management** (enable/disable, priority, delete), and a
   **World coverage** view (countries covered vs not, sources + topic keywords per
   country). *(See [`docs/DESIGN.md`](docs/DESIGN.md) for the interface's design history.)*
-- ✅ **Settings**: theme (system/dark/light) and a SQLite **backup/restore**
-  — consistent online-backup download, and a *validated*, snapshotted restore
-  (refuses anything that isn't a genuine Open Omniscience database).
+- ✅ **Settings → Data &amp; backup**: a SQLite **backup** (consistent online-backup
+  download, plus a signed `oo-backup-2` archive) and an **additive-only restore** —
+  restoring a backup **complements** your corpus and **never replaces** it (a
+  preview-then-merge flow: nothing deleted, bit-for-bit dedup, conflicts keep your
+  local value and report both). The old destructive "replace your corpus" restore was
+  **removed**, so no flow can overwrite your data.
 - ✅ **Background scheduler**: start/stop + "scrape now", on an interval, in
   `rss`, `crawl`, or `markets` mode — all through the same ethical fetch path.
 - ✅ **Bounded recursive crawler**: same-domain article *discovery* (not
@@ -152,9 +160,12 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phasing.
 
 **Honesty note:** several previously-advertised "analysis" components (deepfake,
 propaganda, cognitive-bias, bot detection) were **fabricated** — returning
-hardcoded or heuristic scores while claiming real detection — and have been
-**quarantined** (`quarantine/`, see [docs/HISTORY.md](docs/HISTORY.md))
-rather than shipped as if they worked.
+hardcoded or heuristic scores while claiming real detection — and were
+**quarantined** (never imported, never shipped) rather than presented as if they
+worked. That legacy `quarantine/` tree has since been moved off the working tree to
+the `quarantine-archive` branch; the honesty record and retrieval steps are in
+[docs/QUARANTINE_ARCHIVE.md](docs/QUARANTINE_ARCHIVE.md) (history in
+[docs/HISTORY.md](docs/HISTORY.md)).
 
 ---
 
@@ -193,7 +204,7 @@ run `./install.sh` yourself.)*
 python3.13 -m venv .venv && . .venv/bin/activate
 pip install -e ".[analysis,dev]"
 pytest -q
-open-omniscience          # serves http://127.0.0.1:8000 (auto-seeds ~2,100+ sources)
+open-omniscience          # serves http://127.0.0.1:8000 (auto-seeds ~3,200 sources)
 ```
 
 On Qubes: `sudo ./install.sh --template` (in the TemplateVM, then reboot the AppVM)
@@ -226,7 +237,17 @@ The docs are consolidated into a small set of complete guides
 
 Single local user, loopback-only (`127.0.0.1`), no accounts/RBAC. No telemetry; no
 data leaves the machine (LLM is local via Ollama). Outbound only during scraping,
-and only through the ethical, robots-respecting fetcher.
+and only through the ethical, robots-respecting fetcher. App boot makes **zero**
+network calls, and a top-bar **airplane-mode** kill switch trips all outbound traffic.
+
+**At-rest encryption is on by default for new corpora** (SQLCipher 4): the app asks
+for one stable passphrase at every start. The honest limit is stated wherever it
+shows — it protects a *seized or copied file*, **not** a compromised running session
+(the key is in memory while the app runs) — and there is **no recovery** for a lost
+passphrase (the corpus is rebuilt from the web). Plaintext operation stays an explicit
+choice; the app never shows a lock screen over a plaintext file (that would be
+fabricated security). See [docs/USER_MANUAL.md](docs/USER_MANUAL.md) and
+[docs/SECURITY.md](docs/SECURITY.md).
 
 ## 📜 License
 

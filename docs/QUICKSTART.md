@@ -179,7 +179,8 @@ article-volume spikes by z-score. **Email:** `POST /api/sources/{id}/ingest-emai
 (upload an image) returns its format, dimensions, EXIF and GPS with plain factual
 observations (e.g. editing-software tag present, no capture timestamp). Scoped
 honestly as *metadata checks* — **not** deepfake/manipulation detection (that was
-fabricated and is quarantined).
+fabricated and was quarantined off the working tree; see
+[docs/QUARANTINE_ARCHIVE.md](QUARANTINE_ARCHIVE.md)).
 
 **Signed evidence bundles — Phase 5.** The search panel's **Export signed
 evidence** button (or `POST /api/reports/evidence`) produces a Merkle-rooted,
