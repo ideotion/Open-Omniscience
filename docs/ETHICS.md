@@ -298,7 +298,8 @@ Public License Version 3 (GPLv3). It applies to the working software as shipped.
 **Copyright:** © 2026 Ideotion  
 **License File:** [LICENSE](LICENSE)
 
-Open Omniscience is fully licensed under GPLv3, which would provide users with the following freedoms **when the software becomes functional**:
+Open Omniscience is fully licensed under GPLv3, which provides users with the
+following freedoms (the software is a working, tested pre-alpha — these apply now):
 
 1. **Freedom 0:** The freedom to run the program for any purpose
 2. **Freedom 1:** The freedom to study how the program works and change it

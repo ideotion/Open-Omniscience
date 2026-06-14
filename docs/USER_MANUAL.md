@@ -97,31 +97,58 @@ across news, markets, the political-spectrum set and official law/IP portals)** 
 have something to ingest immediately, initialises the SQLite database and FTS
 index, and (if enabled) starts the background scheduler.
 
-### What you'll see first
+### The passphrase screen (new corpora are encrypted)
 
-The app opens on a **Home** screen that orients you: a short greeting, big quick
-actions (Find something · Collect now · See the patterns · Prove it), and an
-at-a-glance count of what you've gathered. If your corpus is empty, a **welcome
-banner** offers a single button — **"Seed sources & run a first ingestion"** —
-which registers the curated catalog and runs one pass, after which **Search** has
-real articles in it.
+New databases are **SQLCipher-encrypted on disk by default**, so the very first
+thing you may see is an **unlock screen** at `/unlock`: pick **THE passphrase** for a
+brand-new corpus (or type the one you set). This is one stable secret with **no
+recovery** — full rationale and the honest threat model are under
+[Settings → Safety](#39-settings). Headless/scripted runs supply it with
+`OO_DB_PASSPHRASE`; plaintext operation stays an explicit choice (`OO_DB_PLAINTEXT=1`).
+The unlock page is self-contained and offline.
 
-**The shell (0.05).** Navigation lives in a **left sidebar**, grouped by what
-you're trying to do — *Investigate · Collect · Trust · System*. A slim **top bar**
-carries live status (a health dot, an **LLM** pill) and three affordances:
+### The first-launch guide & the Home screen
 
-- **⌘K / Ctrl-K — the command palette.** Type to jump to any tool, run a common
-  action, or open any document. The fastest way to get anywhere.
-- **Appearance** (**Settings → Appearance**) — themes (8 in Console), accent, density,
-  text size, sidebar collapse, and which tools appear. Stored locally only; nothing is
-  transmitted.
+On a fresh install a one-time **guided setup** (a stepped dialog) walks you through
+your first choices: it opens on a **Language** step (pick from the 12 interface
+languages — the whole UI switches live) and ends on a **Finish** step that states the
+app **boots offline** and offers a *"Go online & start collecting"* button. Going
+online always passes the network-consent popup (below) — the guide only invites you;
+it never connects on its own. *(An encryption-choice step and a sources-by-theme step
+are marked "Coming soon" in this build.)* You can re-run the guide any time from
+**Settings**.
+
+After that, the app opens on **Home**, which leads with your **Briefing** — a feed of
+honest "cards" (see [3.0 Home](#30-home)) — above a compact **at-a-glance** strip of
+live counts. When the corpus is empty a **welcome card** offers a single button to
+seed the curated catalog and run a first pass, after which **Search** has real
+articles in it.
+
+**The shell.** Navigation lives in a **left sidebar**, grouped by what you're trying
+to do — *Investigate · Collect · Trust · System* (it collapses to an icon rail on
+narrow windows but never disappears). A **minimal top bar** above the content carries:
+
+- **The search / command bar (⌘K / Ctrl-K).** Type to jump to any tool, run a common
+  action, open any document — or federated-search your data (see [3.1 Search](#31-search)).
+- **Live status** — a backend health dot and an **LLM** pill.
+- **Task manager** — a button that opens the [task-manager window](#30a-activity--the-task-manager).
+- **Airplane mode** — the one network on/off switch (a plane glyph whose *fill* is the
+  state; filled = offline). On first launch, while offline, a small coachmark points at
+  it and invites you to go online when ready.
+- **Language switcher** — all 12 languages in one menu (the flag is only a cue; the
+  native name is the identifier). One click re-translates the whole UI.
 - **Help (?)** — opens the in-app documentation reader (this manual and the other
-  guides), searchable and fully offline. There's also a link to the raw API page at
-  `/docs`.
+  guides), searchable and fully offline; the raw API page is at `/docs`.
+- **Settings (gear)** — preferences and the acquisition surfaces; see
+  [3.9 Settings](#39-settings). *(Settings is reached from the top bar, not the sidebar.)*
+
+**Appearance** (**Settings → Appearance**) offers **17 colour themes + System**,
+accent, density, text size, a bundled-typeface picker, sidebar collapse, and which
+tools appear. Everything is stored locally; nothing is transmitted.
 
 ### Recent additions (0.0.8 live-test cycle, June 2026)
 
-- **The network switch is an airplane-mode toggle (sidebar foot):** one constant
+- **The network switch is an airplane-mode toggle (top bar):** one constant
   airplane glyph whose **fill is the state** — filled means offline engaged
   (every new network request refused instantly; one in-flight request may
   finish). **Every transition back to online asks first**: a single consent
@@ -189,12 +216,12 @@ The core loop is:
 
 > **Pick/add a source → Collect → Search → (analyse) → Export / sign.**
 
-1. **Sources** — a worldwide catalog is already seeded; add your own if you like.
-2. **Collect** — fetch a source's RSS feed or paste a single article URL. Or let
-   the **scheduler** do it automatically on an interval.
+1. **Settings → Sources** — a worldwide catalog is already seeded; add your own if you like.
+2. **Settings → Collect** — fetch a source's RSS feed or paste a single article URL.
+   Or let the **scheduler** do it automatically on an interval.
 3. **Search** — Boolean full-text search across everything you've gathered.
-4. **Insights / Temporal map / Markets / Wikipedia** — optional analysis layers on top
-   of the corpus (patterns, space-time, prices, edit-tracking).
+4. **Analysis / Insights / Temporal map / Commodities / Indices** — optional analysis
+   layers on top of the corpus (the corpora window, patterns, space-time, prices).
 5. **Export** — CSV/JSON, or a **signed evidence bundle** anyone can verify
    offline.
 
@@ -209,15 +236,23 @@ Destructive actions always ask first.
 
 The sidebar groups the tools by intent:
 
-- **Investigate** — Home · Search · Insights · Temporal map · Wikipedia · Markets *(advanced)*
-- **Collect** — Collect · Sources · Library
-- **Trust** — Evidence & custody
-- **System** — Settings · Help & docs
+- **Investigate** — Home · Search · Analysis · Insights · Temporal map · World law ·
+  Agenda · Indices · Commodities *(advanced)*
+- **Collect** — Library
+- **Trust** — Evidence & custody · Source integrity
+- **System** — Help & docs
 
-A few names changed in 0.05 to be plainer (the controls are the same): **Ingest →
-Collect**, **Database → Library**, **Chain of custody → Evidence & custody**. You can
-hide tools you don't use (Settings → Appearance → "Tools shown"), and jump to any
-tool with the command palette (Ctrl/⌘-K).
+**Content-first (0.0.9).** The sidebar shows the *data*; the acquisition surfaces
+moved into **Settings**: **Collect** (the scheduler + manual ingest), **Sources** (the
+catalog) and **Wikipedia** (change-tracking + offline dumps) are now Settings sections,
+documented in their own subsections below. **Settings** itself opens from the **top-bar
+gear**, not the sidebar.
+
+A few names changed to be plainer (the controls are the same): **Ingest → Collect**,
+**Database → Library**, **Chain of custody → Evidence & custody**, **Markets →
+Commodities** (with **Indices** split out). You can hide tools you don't use
+(Settings → Appearance → "Tools shown"), and jump to any tool with the command palette
+(Ctrl/⌘-K).
 
 ### 3.0 Home
 
@@ -235,27 +270,37 @@ tool with the command palette (Ctrl/⌘-K).
 - **Newsletter draft:** pinned cards + your notes, exported as **Markdown** in which
   every claim already carries its source links, method and caveat — reproducible
   journalism. For a signed copy of the underlying articles, use Evidence & custody.
-- **Quick-action cards** (Find something, Collect now, See the patterns, Prove it,
-  Watch Wikipedia, Learn the tool) and an **at-a-glance** panel (live counts + whether
-  automatic collection is running), plus the first-run seeding banner when the corpus
-  is empty.
+- **Content-first layout:** a compact **at-a-glance** strip is pinned at the top (live
+  counts + whether automatic collection is running), and the cards below can be filtered
+  by **family** via vertical subtabs (an **"All cards"** default lens, plus one tab per
+  bucket with its own hue). When the corpus is empty a **welcome card** offers the
+  one-click first-run seeding. *(The old hero greeting and the "Quick actions" row were
+  removed — Home opens straight on the Briefing.)*
 
 ### 3.0a Activity & the Task manager
 
 **What it's for:** seeing — and steering — everything the app is doing in the
 background, from any tab.
 
-- The **activity chip** in the top bar lights up while work runs (a collect pass,
-  a Wikipedia dump, a market import); the compact **CPU · RAM · ↓ rate** strip
-  beside it is always live.
-- Click the chip to open the **Task manager** window, which has tabs:
-  - **Tasks** — every background job: the collect pass, each Wikipedia dump with
-    its real **queue position**, and the in-flight fetch (shown as a DOMAIN only).
-    Each job shows progress and the controls that apply — **Stop** a collect pass
-    (this also engages the network kill switch, so you go offline; the button says
-    so), **Pause/Cancel** a dump, and **↑ / ↓** to reorder queued dumps (pull a
-    small French dump ahead of a huge English one).
-  - **System** — live process vitals (CPU, RAM, download rate).
+- An **activity chip** in the top bar lights up while work runs (a collect pass, a
+  Wikipedia dump, a market import); a persistent **task-manager** button sits beside it
+  (it stays reachable even when the app is idle).
+- Open the **Task manager** — a proper window (not a popover) with four subtabs:
+  - **Active** — every running job: the collect pass, each downloading Wikipedia dump,
+    the in-flight fetch (shown as a DOMAIN only), the idle loop, and any paused/failed
+    download. Each job shows its real progress and the controls that apply — **Stop** a
+    collect pass (this also engages the network kill switch, so you go offline; the
+    button says so) and **Pause/Cancel** a dump. No fabricated ETA or rate — only the
+    real byte progress the owner reports.
+  - **Queue** — jobs waiting their turn: the single-download Wikipedia-dump queue in
+    order, with **↑ / ↓** controls to reorder it (pull a small French dump ahead of a
+    huge English one).
+  - **Schedule** — the real scheduler facts: state (running / idle / stopped),
+    current-pass progress (domain only), cadence, last run, and the backend's own
+    next-run time shown as honest relative time (the method is in the hover bubble —
+    never a fabricated countdown).
+  - **System** — live process vitals (CPU, RAM, download rate). *(Vitals moved here out
+    of the top bar.)*
 - The window reads **live from the systems that own the work**, so it can never
   disagree with what is actually happening — no shadow state.
 
@@ -288,7 +333,36 @@ query is never an error. Choosing *"Run the full Boolean search"* lands you in
 this tab with the query prefilled, so every capability above stays one step
 away.
 
-### 3.2 Collect
+### 3.1a Analysis — the corpora window
+
+**What it's for:** turning a *set* of articles, or a single keyword, into an analysis
+object you can read from several angles. A keyword is a corpus; a single article is a
+corpus of one. The same window opens from several places — clicking a keyword (e.g. in
+Insights or the omnibar opens its **⊞ Corpus** window) and the **Analysis** sidebar tab.
+
+The window is a tabbed dialog with a title and the **article count** it was computed
+over, and these subtabs (this build):
+
+- **Trend** — the mention/volume trend over time, drawn with the shared interactive
+  chart toolkit (zoom by wheel, drag to pan, hover for an exact readout; full-resolution
+  within the window, with sparse stretches shown honestly as points + an early-corpus
+  caveat rather than a faked curve).
+- **Articles** — the member articles, each opening in the offline reader.
+- **Links** — which member articles **share outbound links**. This surfaces
+  *shared-origin structure* on purpose: three articles citing one origin are one source
+  wearing three hats, so convergence counts as corroboration only when the paths are
+  independent (links carry an independence note). The goal is the *sources' sources*.
+
+> **Honest status.** This is the first slice of the planned flagship "corpora system."
+> The richer subtabs the project intends — mindmap, source/competitive analysis,
+> sentiment, When×Where×Who, and an Advanced-search tab on the Enter→window path — and a
+> shared time-scope (begin/end/timescale) control are **not yet built here**; see
+> [`docs/ROADMAP.md`](ROADMAP.md). What ships today is exactly the three subtabs above.
+
+### 3.2 Collect *(in Settings → Collect)*
+
+> **Where it lives now.** Collection is an acquisition surface, so it moved out of the
+> sidebar into **Settings → Collect** (content-first). The controls are unchanged.
 
 **What it's for:** getting articles into the corpus — automatically or manually.
 
@@ -317,7 +391,10 @@ timer. Controls:
 Either way the result line shows a tally: stored, duplicates skipped, blocked by
 robots, etc. Fetching is always ethical (robots fail-closed, rate-limited).
 
-### 3.3 Sources
+### 3.3 Sources *(in Settings → Sources)*
+
+> **Where it lives now.** Like Collect, the source catalog moved into **Settings →
+> Sources** (content-first). The controls are unchanged.
 
 **What it's for:** registering and curating the outlets you gather from.
 
@@ -404,9 +481,12 @@ articles**. *(Requires the `[analysis]` extra; real named-entity recognition is
 opt-in via the spaCy `[nlp]` extra.)*
 
 - **Status & indexing:** a pill shows `indexed/total articles · keywords (entities)
-  · mentions · remaining`. Click **Index corpus** to extract keywords/entities in
-  batches (people, organisations and places are kept as single units). Indexing is
-  resumable and the bar updates live.
+  · mentions · remaining`. **Indexing is automatic** — it follows ingest, and when you
+  open Insights a silent background top-up clears any leftover backlog (the "remaining"
+  count ticks down to 0 on its own). There is **no "Index corpus" button** — it was
+  removed in favour of auto-indexing. People, organisations and places are kept as
+  single units; indexing is resumable and the bar updates live. *(Disable the automatic
+  indexing with `OO_NO_INDEX=1`.)*
 - Three sub-tabs:
   - **Explore** — type a keyword or entity (e.g. *inflation*, *Emmanuel Macron*,
     *Rio Tinto*) to get: a **trend** line over time; an **associations mind-map**
@@ -484,7 +564,11 @@ site; scholarly date doubt (e.g. Pompeii's exact day) rides along in the pin's n
   in **Settings → Agenda**, not here — the tab shows the data, the plumbing lives
   in Settings; subscriptions stay **off by default** so the grid is never flooded.
 
-### 3.7 Wikipedia
+### 3.7 Wikipedia *(in Settings → Wikipedia)*
+
+> **Where it lives now.** Wikipedia change-tracking and the offline-dump tools moved
+> into **Settings → Wikipedia** (content-first); the watched pages still surface in
+> general search and analysis like any article. The controls are unchanged.
 
 **What it's for:** watching specific Wikipedia pages and **flagging suspicious
 edits** — the *edits* are the data, not a copy of the article.
@@ -618,15 +702,18 @@ bake in bias and silence small, foreign, new or dissident sources. Full guide:
 
 ### 3.9 Settings
 
-**What it's for:** preferences and maintenance, organized into sections via a sub-nav —
-**Appearance · General · Wikipedia · Data & backup · Safety**. Everything is stored
-locally; no telemetry.
+**What it's for:** preferences, the acquisition surfaces, and maintenance — organized
+into sections via a sub-nav: **Appearance · General · Collect · Sources · Wikipedia ·
+Agenda · Data & backup · Safety**. Open Settings from the **top-bar gear** (it is no
+longer a sidebar item); the command palette still jumps straight here. Everything is
+stored locally; no telemetry. **Collect**, **Sources** and **Wikipedia** are documented
+above ([3.2](#32-collect-in-settings--collect), [3.3](#33-sources-in-settings--sources),
+[3.7](#37-wikipedia-in-settings--wikipedia)); **Agenda** calendars are managed here too.
 
-- **Appearance:** themes, accent colour, density, **text size**, sidebar expanded/
-  collapsed, and **which tools show** in the sidebar. (This is the former floating
-  "Customize" drawer, now a first-class Settings section — the standalone Customize
-  buttons were removed to free up the chrome; the sidebar footer has a **Settings**
-  shortcut and the command palette still jumps straight here.)
+- **Appearance:** themes, accent colour, density, **text size**, **typeface**, sidebar
+  expanded/collapsed, and **which tools show** in the sidebar. (This is the former
+  floating "Customize" drawer, now a first-class Settings section — the standalone
+  Customize buttons were removed to free up the chrome.)
 - **Preferences (General):** **Theme** (System/Dark/Light), **language**, and **Default
   search results**.
 - **Keyword filtering:** "dumb" function words (the, you, not, …) are removed by a
@@ -644,11 +731,20 @@ locally; no telemetry.
   **Download** (resumable, with pause/resume and a progress table). These offline
   dumps are heavy and optional, and are only for offline reading/search — live
   change-tracking (the Wikipedia tab) doesn't need them.
-- **Backup & restore:** **Download backup (.db)** takes a consistent live snapshot
-  via SQLite's online-backup API. **Restore** *replaces* your corpus with an
-  uploaded file — but only after validating it's a genuine Open Omniscience
-  database, and after snapshotting your current corpus to a `pre-restore-*.db`
-  beside the database, so the operation is reversible.
+- **Backup & restore (Data & backup):** **Download backup (.db)** takes a consistent
+  live snapshot via SQLite's online-backup API; a **signed `oo-backup-2` archive**
+  carries the corpus plus custody and settings members under one manifest (per-member
+  sha256 + a Merkle root over article hashes, with any exclusions listed). **Restore is
+  additive-only** — it **complements** your corpus and **never replaces** it. You first
+  see a **preview**: how many records are new, how many are duplicates (skipped
+  bit-for-bit), and how many *conflict* — conflicts **keep your local value and report
+  both**, never averaged. **Apply** then runs the *same merge code* that produced the
+  preview (so the preview cannot lie), on a verified staged copy with an atomic swap and
+  a `pre-restore-*.db` snapshot kept beside the database.
+  > **The destructive "replace your corpus" restore was removed entirely** (it is
+  > unreachable — the old `/api/database/restore` and encrypted-replace endpoints are
+  > gone). No flow can overwrite your data; the merge is the only restore. Restoring an
+  > **encrypted** backup never silently decrypts your corpus.
 - **Temporary field-test instrumentation (0.0.8 live-test cycle).** During this
   cycle the app automatically exercises each network surface once *inside your
   own collect passes* (calendar-feed verification in polite batches, the market
@@ -692,8 +788,10 @@ locally; no telemetry.
     and restores preserve your corpus's encryption (verified by tests).
   - **Encrypted backup** — a passphrase-protected snapshot (AES-256-GCM + scrypt).
     A lost or wrong passphrase means the file cannot be opened: there is no recovery.
-    **Encrypted restore** decrypts, validates and replaces the corpus (a tampered or
-    wrong-passphrase file is refused before anything is overwritten).
+    To bring an encrypted backup back, use the **additive merge restore** in
+    **Data & backup** (above) — it previews, then complements your corpus without ever
+    replacing it, and never silently decrypts your live store. *(The old destructive
+    encrypted-replace restore was removed.)*
   - **Database maintenance** — *Compact database (VACUUM)* rebuilds the database
     file: it reclaims the space deletions leave behind (shown as “Reclaimable
     space”, a real `PRAGMA freelist_count` reading) and defragments the indexes.
@@ -760,9 +858,12 @@ palette ("Open the User Manual"). The raw, interactive API reference stays at
    **price-extraction rule** and **Test** it.
 2. Click the series card → read the chart and the **correlation** with a news query.
 
-**Move your corpus to another machine**
-1. **Settings → Download backup (.db)**.
-2. On the new machine, **Settings → Restore** that file.
+**Move (or merge) your corpus to another machine**
+1. **Settings → Data & backup → Download backup**.
+2. On the other machine, **Settings → Data & backup → Restore** that file: review the
+   **preview** (new / duplicate / conflict), then **Apply**. The restore is additive —
+   it complements that machine's corpus and never replaces it, so you can also use it to
+   *merge* two corpora.
 
 ---
 
@@ -838,8 +939,16 @@ catalog at `/api/catalog/sources`, `/export.csv`, `/template.csv`, `POST /import
 **Scheduler** — `GET /api/scheduler/status|config|targets`;
 `PUT /api/scheduler/config`; `POST /api/scheduler/start|stop|run-now`.
 
-**Database** — `GET /api/database/stats|coverage|countries`;
-`GET /api/database/backup`; `POST /api/database/restore`.
+**Database & backup** — `GET /api/database/stats|coverage|countries`;
+`GET /api/database/backup`. Restore is the **additive merge** under
+`/api/backup/v2`: `POST /api/backup/v2`, `POST /api/backup/v2/restore/preview`,
+`POST /api/backup/v2/restore/commit`, `GET /api/backup/v2/batches`. *(The destructive
+`POST /api/database/restore` and `/api/safety/restore/encrypted` were removed.)*
+
+**System & network** — `GET /api/system/vitals|network|interfaces`;
+`POST /api/system/network` (airplane toggle); `GET /api/system/doctor|lock-state`;
+`POST /api/system/unlock|create-db|encrypt-db`. **Jobs / task manager** —
+`GET /api/jobs`; `POST /api/jobs/dumps/reorder`; `POST /api/jobs/{id}/cancel`.
 
 **Temporal map** — `GET /api/timemap` (space-time signals; `?kinds`, `?start`/`?end`
 fractional-year window, `?hazards`, `?articles`, `?mentions`, `?days`); `GET /api/timemap/range`.
@@ -850,8 +959,20 @@ fractional-year window, `?hazards`, `?articles`, `?mentions`, `?days`); `GET /ap
 
 **Insights** — `GET/PUT /api/insights/filter`; `POST /api/insights/exclude|include`;
 `GET /api/insights/status`; `POST /api/insights/reindex`;
-`GET /api/insights/top|trending|trend|associations|context|map`.
+`GET /api/insights/top|trending|trend|associations|context|map`; corpus-wide
+**When×Where×Who** rollups at `GET /api/insights/who|where`.
 **Framing** — `GET /api/framing`.
+
+**Search (omnibar)** — `GET /api/search/omni` (index-backed federation over articles,
+keywords, sources, watched Wikipedia and tracked law).
+
+**Links** — `GET /api/links/shared` (which member articles share outbound links, with
+independence notes); `GET /api/links/preview` (local link-preview extraction).
+
+**Agenda events** — `GET /api/events/calendars|feeds|imported`;
+`GET /api/events/astronomy` (locally-computed moons + equinoxes/solstices, verified vs
+almanac) and `GET /api/events/climate` (bundled El Niño dataset). **Weather context** —
+`POST /api/weather/context` (corpus-driven Open-Meteo reanalysis slices, consented).
 
 **Markets & commodities** — `/api/markets/rules` (CRUD + `/run`),
 `/api/markets/overview|series|feeds`, `/api/markets/feeds/{key}/import`,
@@ -920,8 +1041,10 @@ default sources imported over Tor in one pass):
   `OLLAMA_BASE_URL`. Summarise/translate return a clear `503` when unavailable.
 - **Custody shows "requested, library not installed".** Install the `pqc` and/or
   `timestamping` extra; the effective state will flip once the library is present.
-- **Restore refused my file.** By design — it must be a genuine Open Omniscience
-  SQLite database. Your current corpus is untouched.
+- **Restore refused my file / the preview won't Apply.** By design — it must be a
+  genuine Open Omniscience backup, and **Apply** stays disabled if the staged
+  verification fails. Your current corpus is untouched either way; restore only ever
+  *adds*, never replaces.
 - **Wikipedia dump is huge.** `enwiki` is tens of GB. Use **Estimate size** first;
   most editions are far smaller, and you don't need a dump for change-tracking.
 
