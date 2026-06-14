@@ -86,8 +86,13 @@ makes the rest fall out cheaply:
   weather → interactive DDG → RSS → recursive crawl (headroom only); surfaced +
   tunable in the task manager. (maintainer 2026-06-13; Steps 2/5/7)
 - ⬜ **Collect tab → Settings → Download** (test-gated removal). (Step 6)
-- ⬜ **Drop guaranteed-fail default feeds** (Google holiday calendars 100%
-  robots-denied, webcal.guru, etc.). (log E)
+- ✅ **Drop guaranteed-fail default feeds** — resolved BY DESIGN (verified
+  2026-06-14): the preflight checks robots ONCE per host and never samples where
+  robots said no (`feed_preflight._sample`), so `google-hol-*` (all on
+  `calendar.google.com`) + `webcal.guru` cost one robots check each, not per-feed;
+  the directory still SHOWS every source with its honest verdict (the anti-hiding
+  principle — removing them would hide sources). No wasted per-feed cycles to
+  remove. (log E)
 - 🔨 **RSS conditional GET** (ETag/If-Modified-Since) — shipped: `feed_fetch_state`
   table + fetcher sends conditional headers + 304 handled as a valid result, so
   unchanged feeds are skipped (93% duplicate rate). (log F) REMAINING: per-feed
@@ -179,7 +184,12 @@ makes the rest fall out cheaply:
   early-corpus caveat. (invariant #16; `test_ui_invariants`)
 - ⬜ **Click a graph → the analysis window** (group F), not bottom-of-page;
   price curve with the article timeline overlaid.
-- ⬜ **S&P500 reclassify** as an index; expand feeds.
+- ✅ **S&P500 reclassify** — already an index: it lives in `index_feeds.yml`
+  (category `index`) and `list_series` excludes index symbols from the commodities
+  board; the dashboard filters `category !== "index"`. Test-guarded now. REMAINING
+  (separate): expand commodity feeds (rare earths, oil, gas, LNG, sand, cereals,
+  sugar…) — needs clearnet-verified, robots-permitting sources (maintainer-machine
+  step; dev sandbox blocks FRED).
 
 ## H. Wikipedia (content-first + living source)
 
@@ -226,9 +236,12 @@ makes the rest fall out cheaply:
 ## L. Docs ↔ app reciprocity
 
 - ⬜ **USER_MANUAL** gains Agenda, Indices, and Task-manager sections.
-- ⬜ **SECURITY.md** stale "v0.0.7" → current.
-- ⬜ **RC-gate** kill-switch row is stale (T2 shipped it) — sweep neighbours.
-- ⬜ **Ledger figure drift** (test count 961 → 1056; chrome tail 473 → 434).
+- ✅ **SECURITY.md** — the current-version line is now version-agnostic (no more
+  stale "v0.0.7"); the historical "v0.0.7 audit" reference is kept as a record.
+- ✅ **RC-gate** kill-switch row marked ✅ (T2 shipped it: invariant #14 +
+  tests/test_network_consent.py).
+- ✅ **Ledger figure drift** — test count → 1118 (collected 2026-06-14); chrome
+  tail → ~423 untranslatable (263 keyed of 686).
 
 ---
 
