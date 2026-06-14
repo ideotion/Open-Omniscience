@@ -2,7 +2,7 @@
 
 ## Model
 
-Open Omniscience v0.0.7 targets a **single local user** on a **Qubes OS Debian AppVM**:
+Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
 
 - Binds to **127.0.0.1 only** (loopback). It must never be exposed on a network
   interface; there is intentionally no authentication/RBAC for this deployment.

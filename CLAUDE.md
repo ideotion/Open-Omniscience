@@ -209,8 +209,9 @@ ruling, a contingency, or a deliberate-omission note.
   release-eng; the full plan lives in the session log + PR descriptions), then
   execute topic-by-topic — **ONE PR PER TOPIC**, draft onto `0.09`, CI
   subscribed, autonomously; ask only when a genuine ruling is needed.
-  Reality-check verdict recorded: the ledger and RC gate are ACCURATE (961
-  tests green; 28 gap claims verified in code; no shipped claim found false).
+  Reality-check verdict recorded: the ledger and RC gate are ACCURATE (1118
+  tests collected as of 2026-06-14; 28 gap claims verified in code; no shipped
+  claim found false).
 - **V0.1 ALPHA RC MANDATE (ruled 2026-06-11): "absolutely everything" from
   this ledger + FUTURE_DEVELOPMENTS built into 0.09 before the V0.1 alpha RC;
   Windows+macOS installs TESTED; docs↔app reciprocity; security impeccable;
@@ -631,7 +632,8 @@ ruling, a contingency, or a deliberate-omission note.
   invariant #15):** the chrome-audit burn-down is ELEVATED
   (`scripts/i18n_report.py --audit-chrome` per tab, every session, until ~0
   — the maintainer keeps hitting untranslated surfaces and "cannot test
-  EVERYTHING" alone; long tail was ~473 fragments at last count). URL anchors
+  EVERYTHING" alone; long tail ~423 untranslatable UI strings at 2026-06-14
+  count, 263 keyed of 686). URL anchors
   stay language-neutral code identifiers (labels translate, anchors don't);
   #markets-vs-#commodities folds into the index/commodity reclassification
   (alias pattern like #database→#library). Easter eggs gain FRENCH references

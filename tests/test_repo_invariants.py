@@ -379,3 +379,15 @@ def test_ui_invariants():
     assert 'id="tm-tasks"' in html and 'id="tm-system"' in html, (
         "the task-manager window needs Tasks + System panels"
     )
+
+
+def test_sp500_is_classified_as_index():
+    """The S&P 500 is an INDEX, not a commodity (maintainer-ruled): it must live
+    in the index catalog and never in the commodity catalog, so the Commodities
+    board excludes it. Locks the 2026-06-14 finding that this is already true."""
+    from src.markets.feed_catalog import load_feeds, load_index_feeds
+
+    idx = {f.symbol for f in load_index_feeds()}
+    com = {f.symbol for f in load_feeds()}
+    assert "SP500" in idx, "S&P 500 (SP500) must be in the index catalog"
+    assert "SP500" not in com, "S&P 500 must NOT be in the commodity catalog"
