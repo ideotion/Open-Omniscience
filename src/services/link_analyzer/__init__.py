@@ -7,8 +7,9 @@ Link analysis services.
 
 STATUS (v0.4): only the honest link *extractor* remains here. The classifier,
 credibility scorer, source scraper, network analyzer, source identifier,
-relationship tracker, and temporal analyzer were QUARANTINED
-(``quarantine/link_analyzer/``) because they produced fabricated or misleading
+relationship tracker, and temporal analyzer were QUARANTINED (archived on the
+``quarantine-archive`` branch; see docs/QUARANTINE_ARCHIVE.md) because they produced
+fabricated or misleading
 outputs -- e.g. the credibility scorer returned ~100 for every input, the source
 scraper claimed to respect robots.txt while the robots code was dead and its
 content cleaner destroyed any article mentioning a year. The ``link_analysis``

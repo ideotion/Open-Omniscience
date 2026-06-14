@@ -1100,6 +1100,16 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **QUARANTINE REMOVED TO AN ARCHIVE BRANCH (2026-06-14, maintainer-chosen):** the
+  ~79.5k-line `quarantine/` tree (legacy six-pillar trees + fabricated/dead modules,
+  never imported, excluded from package/ruff/mypy/coverage) was removed from the
+  working tree and preserved on the `quarantine-archive` branch. The honesty record
+  (what was there + why) + retrieval instructions live in `docs/QUARANTINE_ARCHIVE.md`;
+  live-code breadcrumbs (metadata.py, link_analyzer, src/__init__) were repointed there.
+  REVERSES the earlier "kept (not deleted)" note — salvage stays one
+  `git checkout quarantine-archive -- <path>` away; NO history rewrite (every SHA
+  intact). Chosen over a full filter-repo purge (which would break SHAs/forks/PRs for
+  only ~4 MB of full-clone savings).
 - **AUTONOMOUS BUILD 2026-06-13 (items 1-3, MERGED to 0.09 — PRs #106/#107/#108):**
   (1) CI HYGIENE — pinned mypy==2.1.0 + bandit==1.9.4 (unpinned tools had
   drifted: mypy 129>128 reddened EVERY PR; that masked a bandit B314); fixed 2
