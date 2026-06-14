@@ -96,7 +96,7 @@ def test_shipped_catalogs_use_canonical_country_codes():
         path = _ROOT / "configs" / fname
         if not path.exists():
             continue
-        data = yaml.safe_load(path.read_text()) or {}
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         for key in ("sources", "documents"):
             for entry in data.get(key) or []:
                 c = entry.get("country")
