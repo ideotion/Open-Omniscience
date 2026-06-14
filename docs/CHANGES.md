@@ -11,6 +11,15 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Home card families are now a lens, not a wall.** The briefing's card groups
+  render a **vertical subtab bar** (the same universal `ooSubtabs` component, now
+  on a 4th surface) with **"All cards" as the default** — a single prioritised
+  feed — and one tab per family. Each family carries a **color hue**, shown as a
+  dot on its tab and a **left accent on every card**, so the feed stays scannable
+  even in "All". Cards are also **denser** (4+ fit per row). Completes the Home
+  redesign (UI_SHELL_REDESIGN §5). Guarded by `test_ui_invariants` #19b. (×12: the
+  one new string, "All cards".)
+
 - **Home opens on its content: a compact stats strip on top, Quick actions gone.**
   The "At a glance" counts (articles · sources · keywords · …) are now a **slim,
   permanent strip pinned to the very top** of Home instead of a large panel pushed

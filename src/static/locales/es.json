@@ -536,5 +536,6 @@
   "Not now": "Ahora no",
   "Welcome — your corpus is empty": "Bienvenido — tu corpus está vacío",
   "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "Empieza registrando el catálogo de fuentes seleccionadas y ejecutando una primera recopilación. Todo es ético (robots.txt cerrado por defecto, con límite de velocidad) y local.",
-  "Seed sources & run a first ingestion": "Inicializar fuentes y ejecutar una primera recopilación"
+  "Seed sources & run a first ingestion": "Inicializar fuentes y ejecutar una primera recopilación",
+  "All cards": "Todas las tarjetas"
 }

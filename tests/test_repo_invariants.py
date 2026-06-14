@@ -357,3 +357,13 @@ def test_ui_invariants():
     assert home.index("home-glance") < home.index("Briefing</h2>"), (
         "the at-a-glance strip must sit at the TOP of Home, above the Briefing"
     )
+    # 19b. Home card families as vertical subtabs (§5): the briefing renders a
+    #      family subtab bar driven by THE universal component, with an "All cards"
+    #      default lens and a per-family hue accent on cards.
+    assert 'ooSubtabs($("home-fam-subtabs")' in html and "selectHomeFamily" in html, (
+        "Home card families must use the universal subtab component (CLAUDE.md #18/#19)"
+    )
+    assert 'data-tab="__all"' in html and "All cards" in html, (
+        "the family lens must default to an 'All cards' subtab (§5)"
+    )
+    assert "--fam:" in html, "cards must carry the family-hue left accent (§5)"

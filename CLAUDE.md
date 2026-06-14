@@ -818,16 +818,16 @@ ruling, a contingency, or a deliberate-omission note.
   the dedicated `.hero` CSS are DELETED; no greeting survives (none to key).
   Home now opens on the Briefing. Same PR keyed the #onboard "Welcome — your
   corpus is empty" card (h2/p/button) ×12 (resolves the i18n REPEAT below).
-  **HOME REDESIGN (ruled 2026-06-13; full design in
-  `docs/product/UI_SHELL_REDESIGN_PLAN.md` §5):** SLICE 1 SHIPPED 2026-06-14 —
-  the "At a glance" stats strip is now PERMANENT + COMPACT at the very top of
-  Home (`.home-glance`/`.stat-strip`, loadHome renders compact chips) and the
-  Quick actions section is REMOVED (+ its dead `.quick`/`.qcard` CSS);
-  test_ui_invariants #19 pins both. REMAINING: cards take FULL width (denser,
-  4+ fit); FAMILY-TYPE COLORS with families as VERTICAL SUBTABS (via the
-  ooSubtabs component) + an "All cards" default subtab (color = family hue
-  accent; "All" stays a single prioritised feed, families are a lens not a
-  wall) — own slice over renderBriefing. My opinion recorded in the doc.
+  **HOME REDESIGN (ruled 2026-06-13; §5) — COMPLETE 2026-06-14:** SLICE 1
+  (#128) — "At a glance" is now a PERMANENT + COMPACT strip at the very top
+  (`.home-glance`/`.stat-strip`, loadHome renders compact chips); Quick actions
+  REMOVED (+ dead `.quick`/`.qcard` CSS). SLICE 2 (#129) — cards DENSER (grid
+  minmax 300→240px, 4+ fit); card FAMILIES are VERTICAL SUBTABS built in
+  renderBriefing via the ooSubtabs component (now a 4th surface) with an "All
+  cards" DEFAULT lens (selectHomeFamily filters by data-fam) + a deterministic
+  per-family HUE shown as a tab dot and a card left-accent (--fam); "All" stays
+  the single prioritised feed (lens not a wall). test_ui_invariants #19/#19b
+  pin it. Home empty-state fail-safe preserved (subtab bar only when >1 bucket).
 - **UI SHELL REDESIGN (ruled 2026-06-13; full plan in
   `docs/product/UI_SHELL_REDESIGN_PLAN.md`):** (1) ONE universal nav grammar
   app-wide — LATERAL sidebar = main tabs, VERTICAL subtabs near the top =

@@ -536,5 +536,6 @@
   "Not now": "暂不",
   "Welcome — your corpus is empty": "欢迎 — 您的语料库为空",
   "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "先注册精选的来源目录并运行一次首轮采集即可开始。一切都符合伦理（robots.txt 默认拒绝、限速）且在本地进行。",
-  "Seed sources & run a first ingestion": "初始化来源并运行首轮采集"
+  "Seed sources & run a first ingestion": "初始化来源并运行首轮采集",
+  "All cards": "全部卡片"
 }
