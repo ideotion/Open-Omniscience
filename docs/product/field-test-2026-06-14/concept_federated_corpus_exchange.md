@@ -164,5 +164,8 @@ the T6 restore-preview area; preview=commit on a disposable copy, the preview ca
   connection. Signed-manifest verify + witness cosigning are OFFLINE (cosignatures ride
   physically-circulating artifacts, accumulating as recipients verify). Public-chain anchoring is
   the ONLY networked piece and is NOT user-to-user networking — it's an OPTIONAL, consented ping
-  to a public timestamp notary. OPEN: keep optional anchoring (off by default) or drop networking
-  entirely for now.
+  to a public timestamp notary.
+- **Q3 anchoring RESOLVED (round 3):** public-chain anchoring is ON by default + a Settings toggle
+  to disable; RESPECTS airplane mode (no call while offline; only when online via the ensureOnline
+  consent); routed through the guarded fetcher (kill switch/proxy/Tor); sends ONLY the manifest
+  hash root (no content); on Tails rides Tor.

@@ -312,5 +312,7 @@ question #) · 🔒 GATED (needs maintainer UI input before implementation) ·
 - **Q3 clarification:** sharing is **physical** (drive hand-off), NOT user-to-user networking.
   Signed-manifest verify + witness cosigning work fully **offline** (cosignatures ride
   physically-circulating artifacts). Public-chain anchoring is the only networked piece — an
-  optional, consented ping to a public timestamp notary. **Open sub-question:** keep that
-  optional anchoring, or drop networking entirely for now?
+  optional, consented ping to a public timestamp notary. **Resolved (round 3):** anchoring is
+  **ON by default** + a Settings toggle to disable; **respects airplane mode** (only fires when
+  online, via the consent flow); routed through the guarded fetcher (kill switch/proxy/Tor);
+  sends only the manifest hash root; on Tails rides Tor.

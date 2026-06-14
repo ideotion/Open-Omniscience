@@ -1249,3 +1249,14 @@ key vs passphrase-derived).
   (off by default, one consented call; on Tails it'd ride Tor) or DROP networking entirely for
   now (rely on signed manifests + physically-circulated witness cosignatures)?
 - **Q11 / Q12 FYI:** confirmed OK (no change).
+
+---
+
+## MAINTAINER ANSWERS — round 3 (2026-06-14)
+
+- **Q3 anchoring RESOLVED → public-chain anchoring is ON by default,** with a Settings toggle to
+  turn it off, and it **RESPECTS AIRPLANE MODE** (invariant #14): no anchoring network call while
+  offline; it only fires when the user is online (which already passes the ensureOnline consent).
+  Guardrails: route through the guarded fetcher (kill switch + proxy/Tor); send ONLY the manifest
+  hash root (never corpus content); on Tails it rides Tor. (Supersedes my earlier "off by default"
+  suggestion.)
