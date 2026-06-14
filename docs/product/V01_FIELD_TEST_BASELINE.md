@@ -298,3 +298,19 @@ question #) · 🔒 GATED (needs maintainer UI input before implementation) ·
   *trusted host*?
 - **Q10 (Item 7):** Keep-or-exclude decision pending an example (e.g. "World Klassik Day / DON
   SANTO's birthday", an apparent vandalism entry).
+
+✅ **Round 2 — resolved:**
+- **Q4:** Use the existing **random hybrid signing key** (collision worry resolved — random keys
+  never collide even on a shared passphrase; timestamp = metadata only).
+- **Q5:** **Option B** — build the **FULL transversal change-tracking / audit tool across all
+  data now** (schema additions accepted). It's the shared substrate behind Items 9/14/21/22, so
+  it becomes a foundational flagship.
+- **Q8:** Keys travel **with the data, encrypted** (provisional) — to be finalized via a
+  **separate threat-model + security audit**.
+- **Q10:** **Exclude** suspicious / `[citation needed]` / invented / promotional entries from the
+  seed (curation filter).
+- **Q3 clarification:** sharing is **physical** (drive hand-off), NOT user-to-user networking.
+  Signed-manifest verify + witness cosigning work fully **offline** (cosignatures ride
+  physically-circulating artifacts). Public-chain anchoring is the only networked piece — an
+  optional, consented ping to a public timestamp notary. **Open sub-question:** keep that
+  optional anchoring, or drop networking entirely for now?

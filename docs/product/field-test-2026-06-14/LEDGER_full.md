@@ -1217,3 +1217,35 @@ of this. Reliability over speed, no feature-class cap.
 **STILL PENDING (maintainer to answer round 2):** Q5 (change-tracking scope), Q8 (which
 keys / location), Q10 (dubious-entry example decision), Q4 (nod on using the existing hybrid
 key vs passphrase-derived).
+
+---
+
+## MAINTAINER ANSWERS — round 2 (2026-06-14)
+
+- **Q4 (Item 9 key) CONFIRMED → use the existing random hybrid signing key.** Maintainer's
+  collision worry (two people, same passphrase → same key — why they wanted the timestamp) is
+  FULLY RESOLVED by a RANDOM key: a random Ed25519+ML-DSA keypair has ~256-bit entropy, so
+  independent keys never collide regardless of passphrase. (A passphrase-DERIVED key WOULD
+  collide on a shared passphrase — exactly why random beats derived.) Timestamp = identity
+  metadata only, not for uniqueness.
+- **Q5 (Item 8 scope) DECIDED → OPTION B, 100%.** Build the FULL transversal change-tracking /
+  audit-trail tool across ALL data now ("track everything, anything possible"). DB schema
+  additions accepted. SYNERGY: this transversal provenance/version substrate is the SAME one
+  consumed by Items 9 (federation/fixity), 14 (translation derivations), 21 (salvage), 22 (OSM
+  versioning) — build it first to de-risk all of them. Becomes a foundational flagship.
+- **Q8 (Item 17 keys) PROVISIONAL → keys travel WITH the data, ENCRYPTED (under passphrase);**
+  maintainer still unsure → FLAG for a SEPARATE dedicated THREAT-MODEL + cybersecurity audit
+  before finalizing. Not final.
+- **Q10 (Item 7) DECIDED → EXCLUDE suspicious entries.** Drop [citation needed] / invented /
+  promotional / self-insert / likely-vandalism entries from the default seed (a curation filter).
+  Exclude anything suspicious; keep clearly-notable holidays.
+- **Q3 CLARIFICATION (maintainer):** sharing is PHYSICAL (copy a backup on a drive, hand it
+  over) — NOT user-to-user network connections. "This is a local app." RECONCILE: signed-manifest
+  auto-verify = fully LOCAL; witness cosigning = works over PHYSICALLY-circulating artifacts
+  accumulating cosignatures (each recipient who verifies can cosign; it rides the next copy) — NO
+  live network; public-chain ANCHORING = the ONLY networked piece, and it is NOT user-to-user
+  networking — it's an OPTIONAL, consented ping to a PUBLIC timestamp notary (OpenTimestamps-
+  style) for existence-before-T. OPEN sub-question: keep that optional public-notary anchoring
+  (off by default, one consented call; on Tails it'd ride Tor) or DROP networking entirely for
+  now (rely on signed manifests + physically-circulated witness cosignatures)?
+- **Q11 / Q12 FYI:** confirmed OK (no change).

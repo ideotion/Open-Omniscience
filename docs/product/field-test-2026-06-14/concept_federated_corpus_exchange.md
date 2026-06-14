@@ -151,3 +151,18 @@ the T6 restore-preview area; preview=commit on a disposable copy, the preview ca
 - **Q7:** the artifact + retrieval must cover BOTH Wikipedia dumps AND OpenStreetMap (OSM
   PBF), checksum-deduped.
 - **Q8 (external-drive key location):** PENDING — signing keys travel-with-data vs on-host.
+
+### Round 2 (2026-06-14)
+- **Q4 CONFIRMED:** use the existing RANDOM hybrid signing key (no passphrase derivation).
+  Collision is impossible by entropy (~256-bit) even if two users share a passphrase; the
+  timestamp is identity metadata, not a uniqueness device.
+- **Q5 = B:** build the FULL transversal audit/version substrate NOW — it is the shared base for
+  federation/fixity (Item 9/21), translation derivations (14), and OSM versioning (22).
+- **Q8 PROVISIONAL:** keys travel WITH the data, ENCRYPTED under the passphrase; finalize via a
+  SEPARATE threat-model + cybersecurity audit.
+- **Q3 SHARING MODEL (important):** PHYSICAL artifact hand-off only — NO user-to-user network
+  connection. Signed-manifest verify + witness cosigning are OFFLINE (cosignatures ride
+  physically-circulating artifacts, accumulating as recipients verify). Public-chain anchoring is
+  the ONLY networked piece and is NOT user-to-user networking — it's an OPTIONAL, consented ping
+  to a public timestamp notary. OPEN: keep optional anchoring (off by default) or drop networking
+  entirely for now.
