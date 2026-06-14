@@ -128,7 +128,13 @@ makes the rest fall out cheaply:
 
 ## E. The UI shell & navigation grammar
 
-- ⬜ **Universal subtab component** (keystone #3).
+- ✅ **Universal subtab component** (keystone #3) — `ooSubtabs(nav, onSelect)`:
+  one reusable `<nav.tabs>`+`data-tab` helper owning ARIA (tablist/tab/aria-selected),
+  keyboard nav + roving tabindex, click, and `{select,paint}` for programmatic
+  switches; no inline onclick; labels auto-translated ×12; hover-bubble aware.
+  Reused on 3 surfaces (Insights, Settings, corpus window — the divergent
+  data-ins/data-set/data-ctab impls unified). `test_ui_invariants` #18. Next
+  adopters: Home families, Markets categories, the analysis window.
 - ⬜ **Minimal top bar** — only: search · status · task-manager · help ·
   language · airplane (everything else below the subtabs).
 - ⬜ **Airplane button → top bar**, no text (hover only), distinct online/offline

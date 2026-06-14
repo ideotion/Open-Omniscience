@@ -11,6 +11,17 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **One universal subtab grammar across the app.** Insights, Settings and the
+  corpus/analysis window each had their own hand-rolled subtab code (different
+  markup, different active-state tricks, inline `onclick`s). They now share **one
+  reusable component** (`ooSubtabs`): a `<nav class="tabs">` of `data-tab` buttons
+  that the component drives with proper **ARIA** (`role=tablist/tab`,
+  `aria-selected`), **keyboard** navigation (←/→/↑/↓/Home/End with roving
+  tabindex), and the existing hover-bubble + ×12 translation conventions — no
+  inline handlers. Same look and behaviour everywhere, and the next surfaces
+  (Home families, Markets categories) get it for free. Guarded by
+  `test_ui_invariants` #18.
+
 - **Home: the hero card is gone; the onboarding card now speaks 12 languages.**
   The full-width hero ("Understand the world as it really is." + the research-desk
   blurb + three nav buttons, with a time-of-day greeting) took space, served no

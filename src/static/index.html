@@ -432,6 +432,8 @@
       border-radius:8px; margin:0; padding:7px 13px; font:inherit; cursor:pointer; font-weight:500; }
     nav.tabs button:hover { color:var(--fg); background:var(--panel2); }
     nav.tabs button.active { color:var(--fg); background:var(--panel2); border-color:var(--border); }
+    nav.tabs button[aria-selected="true"] { color:var(--fg); background:var(--panel2); border-color:var(--border); }
+    nav.tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
     #toast { position:fixed; right:18px; bottom:18px; display:grid; gap:8px; z-index:200; }
     .note { padding:11px 15px; border-radius:var(--radius-sm); background:var(--panel);
@@ -1158,7 +1160,7 @@
           <option value="month">month</option><option value="calendar">calendar</option><option value="country">country</option></select></div>
         <div style="flex:0 0 auto;align-self:end"><label class="switch" style="margin-top:0"><input type="checkbox" id="agenda-subonly" checked onchange="renderAgenda()"> subscribed only</label></div>
         <div style="flex:1"></div>
-        <div class="hint" style="align-self:end"><a href="#settings" onclick="showTab('settings');showSetCat('agenda');return false">Manage calendars &amp; sources in Settings → Agenda.</a></div>
+        <div class="hint" style="align-self:end"><a href="#settings" onclick="showTab('settings');(_setSubtabs||{select:showSetCat}).select('agenda');return false">Manage calendars &amp; sources in Settings → Agenda.</a></div>
       </div>
       <div id="agenda-monthbar" class="row" style="margin-top:10px;align-items:center;gap:8px;flex-wrap:nowrap">
         <button class="secondary" onclick="agMonthShift(-1)" title="previous month" style="min-width:34px">‹</button>
@@ -1286,13 +1288,13 @@
         <button class="secondary" onclick="indexCorpus()">Index corpus</button>
         <span id="ins-progress" class="hint" style="align-self:center"></span>
       </div>
-      <nav class="tabs" style="position:static;padding:0;border:0;margin-top:10px">
-        <button class="active" data-ins="explore" onclick="showInsightCat('explore')">Explore</button>
-        <button data-ins="trends" onclick="showInsightCat('trends')">Trends</button>
-        <button data-ins="sources" onclick="showInsightCat('sources')">Sources</button>
-        <button data-ins="families" onclick="showInsightCat('families')">Families</button>
-        <button data-ins="supergroups" onclick="showInsightCat('supergroups')">Groups</button>
-        <button data-ins="map" onclick="showInsightCat('map')">Map</button>
+      <nav class="tabs" id="ins-subtabs" style="position:static;padding:0;border:0;margin-top:10px">
+        <button class="active" data-tab="explore">Explore</button>
+        <button data-tab="trends">Trends</button>
+        <button data-tab="sources">Sources</button>
+        <button data-tab="families">Families</button>
+        <button data-tab="supergroups">Groups</button>
+        <button data-tab="map">Map</button>
       </nav>
     </section>
 
@@ -1563,13 +1565,13 @@
       <h2>Settings</h2>
       <p class="muted" style="margin-top:0">Everything that shapes how the app looks and behaves on this
         machine. Pick a section — your choices stay local.</p>
-      <nav class="tabs" style="position:static;padding:0;border:0;margin-top:8px">
-        <button class="active" data-set="appearance" onclick="showSetCat('appearance')">Appearance</button>
-        <button data-set="general" onclick="showSetCat('general')">General</button>
-        <button data-set="wikipedia" onclick="showSetCat('wikipedia')">Wikipedia</button>
-        <button data-set="agenda" onclick="showSetCat('agenda')">Agenda</button>
-        <button data-set="data" onclick="showSetCat('data')">Data &amp; backup</button>
-        <button data-set="safety" onclick="showSetCat('safety')">Safety</button>
+      <nav class="tabs" id="set-subtabs" style="position:static;padding:0;border:0;margin-top:8px">
+        <button class="active" data-tab="appearance">Appearance</button>
+        <button data-tab="general">General</button>
+        <button data-tab="wikipedia">Wikipedia</button>
+        <button data-tab="agenda">Agenda</button>
+        <button data-tab="data">Data &amp; backup</button>
+        <button data-tab="safety">Safety</button>
       </nav>
     </section>
 
@@ -1997,12 +1999,12 @@
       <button class="icon-btn" onclick="document.getElementById('corpus-win').close()" aria-label="Close" title="Close">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
-    <div style="display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--line)">
-      <button class="tiny secondary" data-ctab="trend" onclick="corpusTab('trend')">Trend</button>
-      <button class="tiny secondary" data-ctab="articles" onclick="corpusTab('articles')">Articles</button>
-      <button class="tiny secondary" data-ctab="links" onclick="corpusTab('links')"
+    <nav class="tabs" id="corpus-subtabs" style="padding:8px 16px;border-bottom:1px solid var(--line)">
+      <button class="active" data-tab="trend">Trend</button>
+      <button data-tab="articles">Articles</button>
+      <button data-tab="links"
         title="Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.">Links</button>
-    </div>
+    </nav>
     <div id="corpus-body" style="padding:12px 16px;max-height:64vh;overflow:auto"></div>
   </dialog>
 
@@ -2675,13 +2677,13 @@
     // Appearance now lives in Settings → Appearance (the old drawer is gone).
     // openDrawer() is kept as the single "take me to appearance" entry point so the
     // command palette and any deep link still work; closeDrawer() is a safe no-op.
-    function openDrawer()  { showTab("settings"); showSetCat("appearance"); }
+    function openDrawer()  { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("appearance"); }
     function closeDrawer() { /* drawer removed — appearance is a Settings section */ }
 
     // Settings sections (Appearance · General · Wikipedia · Data · Safety).
     function showSetCat(cat) {
-      document.querySelectorAll("#tab-settings [data-set]").forEach(b =>
-        b.classList.toggle("active", b.dataset.set === cat));
+      // Button/ARIA state is owned by the ooSubtabs component; this callback
+      // switches the panel + does the section's one-time setup.
       document.querySelectorAll("#tab-settings .set-view").forEach(v =>
         v.style.display = (v.id === "set-" + cat) ? "" : "none");
       if (cat === "appearance") buildDrawer();      // (re)paint theme/accent/module state
@@ -5377,12 +5379,73 @@
       }
     }
 
+    // ===== Universal subtab component (keystone, maintainer-ruled 2026-06-13) ==
+    // ONE navigation grammar everywhere: a <nav class="tabs"> of buttons each
+    // carrying data-tab="KEY". Click OR arrow-keys/Home/End select; the component
+    // owns the visible state (.active + role=tab/aria-selected + roving tabindex),
+    // labels are plain DOM text (auto-translated ×12), and titled buttons get the
+    // hover-bubble convention for free. onSelect(key) does the per-surface panel
+    // switch. Returns { select, paint } for programmatic switching (e.g. opening a
+    // modal on a given tab). Reused by Insights, Settings and the corpus window.
+    function ooSubtabs(nav, onSelect, opts) {
+      if (!nav) return null;
+      opts = opts || {};
+      const btns = Array.prototype.slice.call(nav.querySelectorAll("[data-tab]"));
+      if (!btns.length) return null;
+      nav.setAttribute("role", "tablist");
+      btns.forEach(b => { b.setAttribute("role", "tab"); if (!b.getAttribute("type")) b.type = "button"; });
+      function paint(key) {            // visuals + a11y only — never fires onSelect
+        let hit = null;
+        btns.forEach(b => {
+          const on = b.dataset.tab === key;
+          b.classList.toggle("active", on);
+          b.setAttribute("aria-selected", on ? "true" : "false");
+          b.tabIndex = on ? 0 : -1;
+          if (on) hit = b;
+        });
+        return hit;
+      }
+      function select(key, focus) {    // the canonical switch: paint + callback
+        const b = paint(key);
+        if (!b) return false;
+        if (focus) b.focus();
+        if (typeof onSelect === "function") onSelect(key);
+        return true;
+      }
+      if (!nav._ooWired) {
+        nav._ooWired = true;
+        nav.addEventListener("click", e => {
+          const b = e.target.closest("[data-tab]");
+          if (b && nav.contains(b)) select(b.dataset.tab);
+        });
+        nav.addEventListener("keydown", e => {
+          const i = btns.indexOf(document.activeElement);
+          if (i < 0) return;
+          let j = i;
+          if (e.key === "ArrowRight" || e.key === "ArrowDown") j = (i + 1) % btns.length;
+          else if (e.key === "ArrowLeft" || e.key === "ArrowUp") j = (i - 1 + btns.length) % btns.length;
+          else if (e.key === "Home") j = 0;
+          else if (e.key === "End") j = btns.length - 1;
+          else return;
+          e.preventDefault();
+          select(btns[j].dataset.tab, true);
+        });
+      }
+      // Initial state: sync ARIA/roving-tabindex to the HTML-marked active button
+      // WITHOUT firing onSelect (each surface already renders its default panel),
+      // unless opts.initial explicitly asks to switch+fire.
+      if (opts.initial !== undefined) select(opts.initial);
+      else paint((btns.filter(b => b.classList.contains("active"))[0] || btns[0]).dataset.tab);
+      return { select: select, paint: paint };
+    }
+    let _insSubtabs = null, _setSubtabs = null, _corpusSubtabs = null;
+
     // -- Insights (keyword & entity analytics) ------------------------------ //
     const _insLoaded = new Set();
 
     function showInsightCat(cat) {
-      document.querySelectorAll("#tab-insights [data-ins]").forEach(b =>
-        b.classList.toggle("active", b.dataset.ins === cat));
+      // Button/ARIA state is owned by the ooSubtabs component (universal grammar);
+      // this callback only switches the panel + lazy-loads the section once.
       document.querySelectorAll("#tab-insights .ins-view").forEach(v =>
         v.style.display = (v.id === "ins-" + cat) ? "" : "none");
       if (!_insLoaded.has(cat)) {
@@ -5663,13 +5726,12 @@
       $("corpus-title").textContent = term;
       $("corpus-n").textContent = "";
       document.getElementById("corpus-win").showModal();
-      corpusTab(_corpusTab);
+      (_corpusSubtabs || {select: corpusTab}).select(_corpusTab);
     }
     async function corpusTab(which) {
       _corpusTab = which;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      document.querySelectorAll("#corpus-win [data-ctab]").forEach(b =>
-        b.classList.toggle("secondary", b.dataset.ctab !== which));
+      // Button/ARIA state is owned by the ooSubtabs component.
       const el = $("corpus-body"); el.innerHTML = `<div class="muted">…</div>`;
       try {
         if (which === "trend") {
@@ -5703,7 +5765,7 @@
       } catch (e) { el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
 
-    function pickTerm(t) { $("ins-term").value = t; showInsightCat("explore"); exploreTerm(); }
+    function pickTerm(t) { $("ins-term").value = t; (_insSubtabs || {select: showInsightCat}).select("explore"); exploreTerm(); }
 
     function trendSvg(points) {
       if (!points.length) return '<div class="muted">No mentions over time yet — index the corpus first.</div>';
@@ -7070,6 +7132,13 @@
     // Honour a deep-link like /#sources on first load; otherwise land on Home.
     // showTab itself maps legacy aliases (#database -> #library) and falls back.
     showTab((location.hash || "#home").slice(1), false);  // initial render: replace, don't push
+
+    // Wire the universal subtab grammar on every multi-section surface (one
+    // component, three surfaces). No opts.initial: each surface keeps its
+    // HTML-default panel; the component just adopts ARIA + keyboard + click.
+    _insSubtabs = ooSubtabs($("ins-subtabs"), showInsightCat);
+    _setSubtabs = ooSubtabs($("set-subtabs"), showSetCat);
+    _corpusSubtabs = ooSubtabs($("corpus-subtabs"), corpusTab);
   </script>
 </body>
 </html>
