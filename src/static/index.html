@@ -3029,6 +3029,18 @@
     // The database extraction for an outbound URL, shown BEFORE leaving the
     // machine; the outbound anchor's text IS the full address, and clicking it
     // still passes the external-link confirm (invariant #7) — layered consent.
+    //
+    // extLink(): the ONE way to render an outbound "source ↗" link anywhere
+    // (invariant #6e — search rows, markets, law, events, insights, reader…).
+    // It never jumps straight out: it opens the local preview first. Use this
+    // for every external source link so none can regress to a bare jump.
+    function extLink(url, label, cls, style) {
+      const u = safeUrl(url);
+      return `<a${cls ? ` class="${cls}"` : ""}${style ? ` style="${style}"` : ""} href="${esc(u)}" rel="noopener" `
+        + `onclick="event.preventDefault();openLinkPreview('${esc(u)}')" `
+        + `title="Opens the local preview first — what your database knows about this link">`
+        + `${esc(label)}</a>`;
+    }
     async function openLinkPreview(url) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const dlg = $("link-preview"), body = $("lp-body"), out = $("lp-out");
@@ -3456,7 +3468,7 @@
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
         <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}</div>
           ${variants}
-          <div class="hint">${tags} ${e.note?"· "+esc(e.note):""} · <a href="${esc(safeUrl(e.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div></div></div>`;
+          <div class="hint">${tags} ${e.note?"· "+esc(e.note):""} · ${extLink(e.official_url, "official source ↗")}</div></div></div>`;
     }
     // -- Agenda views: MONTH grid (the ruled default) + the original list ----- //
     // The tab shows DATA only (maintainer principle 2026-06-11): calendar
@@ -3622,7 +3634,7 @@
             ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(esc).join(', ')+'</span>':''}
             <div class="hint" style="margin-top:4px">${ch.observed_at?new Date(ch.observed_at).toLocaleString():''} ·
               <a href="/api/law/documents/${ch.document_id}/view" target="_blank" rel="noopener" title="offline stored copy + history">open reader</a> ·
-              <a class="muted" href="${esc(safeUrl(ch.official_url))}" target="_blank" rel="noopener noreferrer">official source ↗</a></div>
+              ${extLink(ch.official_url, "official source ↗", "muted")}</div>
             ${renderDiff(ch.diff)}
           </div>`).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load changes.</div>'; }
@@ -3637,7 +3649,7 @@
               <td>${x.has_baseline?'<span class="pill ok">yes</span>':'<span class="pill">no</span>'}</td>
               <td>${x.revisions}${x.flagged?` (${x.flagged} flagged)`:''}</td>
               <td><a href="/api/law/documents/${x.id}/view" target="_blank" rel="noopener" title="offline stored copy + history">reader</a>
-                · <a class="muted" href="${esc(safeUrl(x.official_url||x.url))}" target="_blank" rel="noopener noreferrer">official ↗</a></td></tr>`).join("") +
+                · ${extLink(x.official_url||x.url, "official ↗", "muted")}</td></tr>`).join("") +
           "</tbody>";
       } catch (e) { /* table optional */ }
     }
@@ -4849,7 +4861,7 @@
         </div>
         ${idxSpark(c.spark, chg)}
         <div class="idx-foot muted">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
-          · ${esc(c.currency || "")} · <a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">source</a></div>
+          · ${esc(c.currency || "")} · ${extLink(c.url, "source")}</div>
       </div>`;
     }
 
@@ -5689,7 +5701,7 @@
           d.articles.map(a => `<div class="cs-art">
             <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">${esc(a.title || a.url)}</a>
             <span class="muted"> — ${esc(a.source || "")}${a.published_at?" · "+esc(a.published_at.slice(0,10)):""}</span>
-            ${a.url?` · <a class="muted" href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener noreferrer">source&nbsp;↗</a>`:""}</div>`).join("");
+            ${a.url?` · ${extLink(a.url, "source ↗", "muted")}`:""}</div>`).join("");
       } catch (e) { tgt.innerHTML = `<div class="muted" style="padding:6px 0">Could not load: ${esc(e.message)}</div>`; }
     }
 
@@ -6041,7 +6053,7 @@
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
                <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(m.country):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
-                 ${m.article_id?`· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>`:""}${m.url?`· <a class="muted" href="${esc(safeUrl(m.url))}" target="_blank" rel="noopener" title="original online source">source&nbsp;↗</a>`:""}</div>
+                 ${m.article_id?`· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>`:""}${m.url?`· ${extLink(m.url, "source ↗", "muted")}`:""}</div>
                <div>${esc(m.snippet)}</div></div>`).join("")
           : '<div class="muted">No context snippets.</div>';
       } catch (e) { $("ins-trend").innerHTML = ""; toast("Explore failed: " + e.message, "err"); }
@@ -6459,7 +6471,7 @@
         </div>
         ${s.note?`<div class="hint" style="margin-top:5px">${esc(s.note)}</div>`:""}
         <div class="row" style="margin-top:7px;gap:8px">
-          ${url?`<a class="tiny secondary" href="${url}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;align-self:center">Official / reference source ↗</a>`:""}
+          ${url?extLink(url, "Official / reference source ↗", "tiny secondary", "text-decoration:none;align-self:center"):""}
           ${cov?`<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>`:""}
         </div>
         ${(() => {
@@ -6773,7 +6785,7 @@
              <td>${esc(a.source)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
              <td>${esc(a.language||"")}</td>
              <td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>
-                 ${a.url ? `· <a class="muted" href="${esc(safeUrl(a.url))}" target="_blank" rel="noopener" title="original online source">source&nbsp;↗</a>` : ""}
+                 ${a.url ? `· ${extLink(a.url, "source ↗", "muted")}` : ""}
                  <button class="secondary tiny" style="margin-top:4px"
                    onclick="summarize(${a.id}, this)">Summarize</button>
                  <button class="secondary tiny" style="margin-top:4px"

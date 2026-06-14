@@ -11,6 +11,14 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Every outbound "source ↗" link opens the local preview first — everywhere.**
+  Previously only Home-card evidence routed through the local link preview; search
+  rows, the markets board, world-law, the agenda/events, and insights context still
+  jumped straight out. They now all use one `extLink()` helper that opens the
+  preview popup (what your corpus knows about the URL + a transparent outbound link
+  whose text is the full address) before leaving the machine. No surface can
+  regress to a bare jump (invariant #6e sweep; `test_ui_invariants`).
+
 - **Windows: backups no longer fail with a file-in-use error.** Creating a backup
   (download, or an encrypted snapshot) made a temp `.db` via `mkstemp` but left its
   file descriptor open while unlinking the path — harmless on Linux/macOS, but

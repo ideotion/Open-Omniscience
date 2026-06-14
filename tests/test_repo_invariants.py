@@ -345,6 +345,17 @@ def test_ui_invariants():
     assert ">${esc(d.url)}</a>" in html, (
         "the outbound anchor's visible text must BE the full URL (CLAUDE.md #6e)"
     )
+    # 6e-SWEEP (ruled "no bare source ↗ ANYWHERE"): one extLink() helper renders
+    # every outbound source link via the local preview; no surface jumps straight
+    # out. Guard the helper exists and that the bare target=_blank source↗ pattern
+    # is gone from the data surfaces (search rows, markets, law, events, insights).
+    assert "function extLink(url, label" in html, (
+        "the extLink() outbound-link helper must exist (CLAUDE.md #6e sweep)"
+    )
+    import re as _re
+    bare = _re.findall(r'target="_blank"[^>]*>(?:source|official source|official|'
+                       r'Official[^<]*source)(?:&nbsp;|\s)?↗?</a>', html)
+    assert not bare, f"bare external source↗ links must route through extLink (#6e): {bare[:3]}"
     # 18. ONE universal subtab component (keystone, ruled 2026-06-13): a single
     #     reusable helper drives the vertical subtab grammar everywhere — lateral
     #     sidebar = main tabs, vertical subtabs = facets. It owns ARIA + keyboard
