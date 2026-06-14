@@ -29,7 +29,7 @@ def load_legal_catalog(path: Path | None = None) -> dict:
     path = path or LEGAL_CATALOG_PATH
     if not path.exists():
         return {"sources": [], "documents": []}
-    data = yaml.safe_load(path.read_text()) or {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return {
         "sources": [
             s

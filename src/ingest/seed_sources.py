@@ -69,7 +69,7 @@ _PASSTHROUGH_FIELDS = (
 def load_sources_from_yaml(path: Path | None = None) -> list[dict]:
     """Read and validate source definitions from a YAML catalog."""
     path = path or DEFAULT_SOURCES_PATH
-    data = yaml.safe_load(path.read_text()) or {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     sources = data.get("sources", [])
     valid = []
     for s in sources:

@@ -47,7 +47,13 @@ makes the rest fall out cheaply:
 - ⬜ **keyword_export under contention** — 29→65 s during a live scrape; read
   snapshot for exports. (log finding C)
 - ⬜ **mypy ratchet pay-down** toward 0 (ongoing); **Win/macOS portability
-  lanes → green** then graduate to required.
+  lanes → green** then graduate to required. 🔨 IN PROGRESS: the Windows
+  `UnicodeDecodeError` class (text `open()` without `encoding="utf-8"`) is fixed
+  + ratcheted (`tests/test_utf8_file_io.py`). REMAINING Windows classes:
+  `install.sh` tests run `bash` under WSL (no distro on the runner — should skip
+  on native Windows), `WinError 32` file-in-use on SQLite temp unlinks, and the
+  `/tmp`↔`/private/tmp` / `D:\tmp` path-canonicalization tests (also the macOS
+  pair). Tackle per-class; not locally verifiable on the Linux box.
 
 ## B. The download / scraping subsystem (content-first)
 

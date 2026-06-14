@@ -1000,7 +1000,7 @@ class SourceManager:
         Returns:
             Dictionary with counts of added, updated, and skipped sources
         """
-        with open(file_path) as f:
+        with open(file_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         sources_data = data.get("sources", [])
@@ -1079,7 +1079,7 @@ class SourceManager:
             "sources": sources_data,
         }
 
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
 
         logger.info(f"Exported {len(sources_data)} sources to {file_path}")
