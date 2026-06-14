@@ -17,7 +17,13 @@ from datetime import date, timedelta
 
 from sqlalchemy import func
 
-from src.database.models import Article, Keyword, KeywordFamilyOverride, KeywordMention
+from src.database.models import (
+    Article,
+    ArticleEntity,
+    Keyword,
+    KeywordFamilyOverride,
+    KeywordMention,
+)
 
 
 def kind_of(kw: Keyword) -> str:
@@ -574,6 +580,89 @@ def status(session) -> dict:
         "keywords": int(keywords),
         "entities": int(entities),
         "mentions": int(mentions),
+    }
+
+
+def who_aggregate(
+    session,
+    *,
+    entity_class: str | None = None,
+    days: int | None = None,
+    country: str | None = None,
+    limit: int = 50,
+    min_articles: int = 1,
+) -> dict:
+    """Corpus-wide WHO: people and organizations DEDUCED from article text
+    (the When/Where/Who substrate, T12), aggregated by surface name + class.
+
+    Honest counts only — there is NO score. Each row reports the number of
+    DISTINCT articles the name appears in (``articles``) and the summed
+    in-article occurrence count (``mentions``). Names are lexical surface
+    forms: the extractor does not disambiguate identities (two different
+    people sharing a name merge into one row; an organisation name that is
+    also a common word is not separated), so every figure is DEDUCED from
+    text, never a confirmed identity. Rows are ordered by article spread, then
+    by mentions. ``coverage`` states the denominator honestly: how many
+    articles carry any who-extraction at all.
+    """
+    cls = entity_class if entity_class in ("person", "organization") else None
+    since = date.today() - timedelta(days=days) if days else None
+    cc = country.lower() if country else None
+
+    def _scoped(query):
+        if cls:
+            query = query.filter(ArticleEntity.entity_class == cls)
+        if since is not None or cc is not None:
+            query = query.join(Article, Article.id == ArticleEntity.article_id)
+            if since is not None:
+                query = query.filter(Article.published_at >= since)
+            if cc is not None:
+                query = query.filter(Article.country == cc)
+        return query
+
+    arts_expr = func.count(func.distinct(ArticleEntity.article_id))
+    men_expr = func.sum(ArticleEntity.mentions)
+    q = _scoped(
+        session.query(
+            ArticleEntity.name,
+            ArticleEntity.entity_class,
+            arts_expr.label("arts"),
+            men_expr.label("m"),
+        )
+    ).group_by(ArticleEntity.name, ArticleEntity.entity_class)
+    if min_articles > 1:
+        q = q.having(arts_expr >= min_articles)
+    rows = q.order_by(arts_expr.desc(), men_expr.desc()).limit(limit).all()
+
+    coverage = (
+        _scoped(session.query(func.count(func.distinct(ArticleEntity.article_id)))).scalar() or 0
+    )
+
+    entities = [
+        {
+            "name": name,
+            "class": ecls,
+            "articles": int(arts or 0),
+            "mentions": int(m or 0),
+        }
+        for name, ecls, arts, m in rows
+    ]
+    return {
+        "count": len(entities),
+        "entity_class": cls,
+        "days": days,
+        "country": cc,
+        "min_articles": min_articles,
+        "coverage_articles": int(coverage),
+        "method": (
+            "Lexical surface names deduced from article text at ingest "
+            "(extractor lexical-v1), aggregated by exact name + class. Names "
+            "are NOT disambiguated: same-name people merge and a name is not "
+            "a confirmed identity. Figures are distinct-article spread and "
+            "summed in-text mentions; there is no score."
+        ),
+        "caveat": "Deduced from text, never confirmed.",
+        "entities": entities,
     }
 
 

@@ -770,12 +770,17 @@ ruling, a contingency, or a deliberate-omission note.
   article_mentioned_places + article_entities tables (migration
   a5b6c7d8e9f0), snippet provenance + rule notes on every row, idempotent
   per article, failures never block keyword indexing (tested). Deduced
-  stays labelled deduced. REMAINING: reader switches to reading the stored
-  rows (stops recomputing); temporal map's mention layer consumes
-  event-places; corpus-wide WHO aggregation endpoint; wiki articles join
-  when the living-source design lands. NEXT for
-  the extractors themselves: feed the temporal map's mention layer with text
-  locations; extend the country table; aggregate entities corpus-wide.
+  stays labelled deduced. CORPUS-WIDE WHO SHIPPED (2026-06-14):
+  queries.who_aggregate + GET /api/insights/who roll article_entities up to the
+  whole corpus — distinct-article spread + summed mentions, ordered by spread;
+  class/days/country filters, min_articles HAVING, coverage_articles denominator;
+  NO score, method+caveat "Deduced from text, never confirmed."
+  (tests/test_who_aggregate.py). REMAINING: reader switches to reading the
+  stored rows (stops recomputing); temporal map's mention layer consumes
+  event-places; corpus-wide WHERE (places) aggregation the same way; wiki
+  articles join when the living-source design lands. NEXT for the extractors
+  themselves: feed the temporal map's mention layer with text locations;
+  extend the country table.
 - **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51):**
   space-time co-occurrence (never causation) + the user-defined
   "if-this-then-WATCH" alert engine (explainable, off by default,
