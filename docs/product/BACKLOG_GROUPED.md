@@ -182,8 +182,11 @@ makes the rest fall out cheaply:
   permanent **Advanced** button; shortcuts list → Help + editable in Settings.
 - ⬜ **The seven entries** into the same window (hand-select, tag-click,
   keyword-click, date-keyword, commodity-click, search-enter, …).
-- ⬜ **Invariant #6e sweep** — external links open the local preview everywhere
-  (reader, search rows, markets/law/wiki), not just Home cards.
+- 🔨 **Invariant #6e sweep** — one `extLink()` helper now routes EVERY outbound
+  source link through the local preview: search rows, markets board, world-law,
+  agenda/events, insights context (8 sites converted; `test_ui_invariants`
+  guards no bare `source ↗` remains). REMAINING: the standalone reader page
+  (`/api/articles/{id}/view`) if it renders its own external links server-side.
 
 ## G. Markets / commodities
 
