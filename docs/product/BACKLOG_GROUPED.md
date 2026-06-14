@@ -106,8 +106,12 @@ makes the rest fall out cheaply:
 
 ## C. The task manager (a window, not a bubble)
 
-- ⬜ **Dedicated tabbed window** (Active · Queue · Sources/Schedule · History ·
+- 🔨 **Dedicated tabbed window** (Active · Queue · Sources/Schedule · History ·
   System), replacing the vitals popover; minimized animated indicator opens it.
+  SLICE 1 SHIPPED (#130): the popover is now a wider tabbed WINDOW via `ooSubtabs`
+  (Tasks + System) opened from the activity chip; render/poll reused unchanged
+  (`test_ui_invariants` #20). REMAINING: split Tasks → Active/Queue, add
+  History + Sources/Schedule, and the per-job controls below.
 - ⬜ **Per-job controls**: rate · % · speed · bandwidth cap · ETA · pause ·
   resume · prioritize · de-prioritize.
 - ⬜ **Download-manager arbitration**: every network task a visible job;

@@ -240,6 +240,10 @@
       box-shadow:0 10px 34px rgba(0,0,0,.38); padding:10px 12px; font-size:12px;
       max-height:75vh; overflow:auto; }
     .vitals-pop[hidden] { display:none; }
+    /* Task-manager WINDOW (graduates the vitals bubble to a dedicated tabbed
+       window — maintainer-ruled): wider, with the universal subtab grammar. */
+    .vitals-pop.taskmgr { width:460px; max-width:calc(100vw - 28px); }
+    .vitals-pop.taskmgr nav.tabs { margin:6px 0 8px; }
     /* Section micro-headers (activity panel, the grouped Commodities board…) */
     .vsect { margin:9px 0 2px; font-size:10.5px; font-weight:700;
       letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
@@ -679,13 +683,21 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></a>
       </header>
 
-      <div id="vitals-pop" class="vitals-pop" hidden role="dialog" aria-label="Collection activity">
-        <div class="vitals-head"><b>Tasks &amp; collection</b>
+      <div id="vitals-pop" class="vitals-pop taskmgr" hidden role="dialog" aria-label="Task manager">
+        <div class="vitals-head"><b>Task manager</b>
           <button class="icon-btn" style="width:24px;height:24px" onclick="toggleVitals()" aria-label="Close" title="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
-        <div id="jobs-body"></div>
-        <div id="vitals-body"></div>
-        <div id="vitals-note"></div>
+        <nav class="tabs" id="tm-subtabs">
+          <button class="active" data-tab="tasks">Tasks</button>
+          <button data-tab="system">System</button>
+        </nav>
+        <div class="tm-panel" id="tm-tasks">
+          <div id="jobs-body"></div>
+        </div>
+        <div class="tm-panel" id="tm-system" style="display:none">
+          <div id="vitals-body"></div>
+          <div id="vitals-note"></div>
+        </div>
       </div>
 
       <main id="main" tabindex="-1">
@@ -2473,6 +2485,13 @@
       return confirm(`${t("Another network task is running:")} ${busy}\n\n${t("Start anyway? (Cancel waits — the running task keeps the bandwidth and the database writer to itself.)")} ${actionLabel}`);
     }
 
+    // Task-manager window subtab switch (Tasks / System). The render targets
+    // (#jobs-body, #vitals-body) are unchanged — the poll keeps filling them; we
+    // only show/hide the panel that wraps each.
+    function tmSelectTab(key) {
+      document.querySelectorAll("#vitals-pop .tm-panel").forEach(p =>
+        p.style.display = (p.id === "tm-" + key) ? "" : "none");
+    }
     function toggleVitals() {
       const pop = $("vitals-pop"); if (!pop) return;
       _vitalsOpen = !_vitalsOpen;
@@ -7136,6 +7155,7 @@
     _insSubtabs = ooSubtabs($("ins-subtabs"), showInsightCat);
     _setSubtabs = ooSubtabs($("set-subtabs"), showSetCat);
     _corpusSubtabs = ooSubtabs($("corpus-subtabs"), corpusTab);
+    ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
   </script>
 </body>
 </html>

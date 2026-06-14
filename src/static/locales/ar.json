@@ -537,5 +537,7 @@
   "Welcome — your corpus is empty": "مرحبًا — مجموعتك فارغة",
   "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "ابدأ بتسجيل كتالوج المصادر المنسَّق وتشغيل أول عملية جمع. كل شيء أخلاقي (robots.txt مغلق افتراضيًا، مع تحديد للمعدل) ومحلي.",
   "Seed sources & run a first ingestion": "تهيئة المصادر وتشغيل أول عملية جمع",
-  "All cards": "كل البطاقات"
+  "All cards": "كل البطاقات",
+  "Task manager": "مدير المهام",
+  "Tasks": "المهام"
 }

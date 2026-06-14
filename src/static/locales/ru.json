@@ -537,5 +537,7 @@
   "Welcome — your corpus is empty": "Добро пожаловать — ваш корпус пуст",
   "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "Чтобы начать, зарегистрируйте подобранный каталог источников и запустите первый сбор. Всё этично (robots.txt по умолчанию запрещает, с ограничением частоты запросов) и локально.",
   "Seed sources & run a first ingestion": "Подготовить источники и запустить первый сбор",
-  "All cards": "Все карточки"
+  "All cards": "Все карточки",
+  "Task manager": "Диспетчер задач",
+  "Tasks": "Задачи"
 }

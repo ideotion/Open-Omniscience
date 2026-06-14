@@ -367,3 +367,15 @@ def test_ui_invariants():
         "the family lens must default to an 'All cards' subtab (§5)"
     )
     assert "--fam:" in html, "cards must carry the family-hue left accent (§5)"
+    # 20. Task-manager window (ruled ×3): the vitals BUBBLE graduates to a
+    #     dedicated tabbed WINDOW driven by the universal subtab component, with
+    #     at least Tasks + System tabs. (Slice 1 — reuses the proven render/poll.)
+    assert 'class="vitals-pop taskmgr"' in html and 'id="tm-subtabs"' in html, (
+        "the task-manager window + its subtab bar must exist (CLAUDE.md)"
+    )
+    assert 'ooSubtabs($("tm-subtabs")' in html, (
+        "the task-manager window must use THE universal subtab component"
+    )
+    assert 'id="tm-tasks"' in html and 'id="tm-system"' in html, (
+        "the task-manager window needs Tasks + System panels"
+    )

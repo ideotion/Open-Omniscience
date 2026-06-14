@@ -145,8 +145,18 @@ ruling, a contingency, or a deliberate-omission note.
    text (auto-translated ×12); titled buttons inherit the #oo-tip convention.
    Reused on 3 surfaces at ship (Insights, Settings, the corpus window — the
    divergent data-ins/data-set/data-ctab impls are unified onto data-tab).
-   Enforced in test_ui_invariants (#18). NEXT adopters: Home card families,
+   Enforced in test_ui_invariants (#18). ADOPTERS so far: Insights, Settings,
+   corpus window, Home families (#129), the task-manager window (#130). NEXT:
    Markets category tabs, the analysis window.
+19. **HOME is content-first (SHIPPED #128/#129):** compact at-a-glance strip
+   pinned at the TOP; no Quick actions; denser cards; card families as VERTICAL
+   SUBTABS (ooSubtabs) with an "All cards" default lens + per-family hue accent.
+   Enforced in test_ui_invariants (#19/#19b).
+20. **The task-manager is a WINDOW, not a bubble (SHIPPED #130, slice 1):** the
+   vitals popover is a wider tabbed window via ooSubtabs (Tasks · System; the
+   live job controls + vitals reused unchanged). Enforced in test_ui_invariants
+   (#20). REMAINING: Active/Queue split, History, Sources/Schedule, per-job
+   bandwidth/ETA controls.
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First
