@@ -1,0 +1,54 @@
+# AUDIT_TRAIL.md
+
+Append-only ledger of audit runs against this repository. Newest first.
+Each entry: date, commit, scope, headline findings, and a pointer to the full log.
+
+---
+
+## 2026-06-14 · Comprehensive read-only audit & handoff (0.09 / v0.0.9)
+
+- **Commit:** `ba61162fedd02bd1787c7c15bc957526da2909d7`
+- **Branch:** `claude/vibrant-fermi-15pxby` (tip of the `0.09` line)
+- **As of:** 2026-06-14, 15:36 Central European Time
+- **Auditor:** Claude Code (read-only role) — static-first; the app could not be
+  run dynamically (sandbox Python 3.11 vs the project's >=3.13; deps not installed),
+  so all dynamic checks are marked Unverified and replaced with static verification,
+  a `compileall` syntax sweep, CI-as-evidence, and the existing test corpus.
+- **Scope:** all 16 audit dimensions (D1–D16) across the core (`src/api`, ingest/
+  fetcher, database/migrations, backup, llm, custody, safety), the frontend
+  (`src/static`), config/installer (`install.sh`, `scripts/bootstrap.sh`,
+  `pyproject.toml`, `.env.example`), CI (`.github/workflows/ci.yml`), and docs; plus
+  the five constitution invariants. Five parallel sub-audits + hand-verification of
+  the security/privacy/ethics-critical paths.
+
+- **Headline findings:**
+  - **The application is FUNCTIONAL and mature at 0.09.** Every stale `0.04` lead
+    (non-functional build; `pillar2…6` fragmentation; competing `requirements*.txt`;
+    dual master-index docs; `OLLAMA_HOST=0.0.0.0` / `OLLAMA_ORIGINS=*` /
+    `AUTO_DOWNLOAD_MODELS=true`; curl|bash stale `0.03` branch; muddled Python target)
+    was checked and found **resolved**. The pillars were deliberately **quarantined**
+    (honest `quarantine/README.md`) for "pretending to work."
+  - **No S0 blockers and no outright constitution violations.** All five invariants
+    conform (auditability conforms *with caveat* — the tamper-evident custody trail
+    is opt-in by default).
+  - **Top open items:** ETHICS.md still future-tense ("when the software becomes
+    functional" / "when implemented") — OO-D14-001 (S1); the unqualified "stays on
+    this machine" claim vs proxy/Tor modes — OO-D3-002 (S1, awaits ruling); robots.txt
+    redirects not SSRF-re-validated — OO-D2-001 (S2); docs describe a removed
+    `POST /api/database/restore` — OO-D14-003 (S2); no i18n gate in CI — OO-D15-001
+    (S2); 199 inline handlers + `unsafe-inline` CSP — OO-D12-001/OO-D2-002 (S2);
+    palette/task-manager dialogs miss aria-modal/focus — OO-D13-001 (S2).
+  - **Verified-strong:** the single mandatory `EthicalFetcher` (robots fail-closed,
+    SSRF guard, kill switch, honest UA, Tor isolation); the import-time no-composite-
+    score enforcement; CSV formula-injection defense + SQL parameterization + linear
+    migration chain + single-writer transaction safety; loopback CORS/CSRF/bind;
+    fully-local Ollama (no auto-download); zero-network airplane-mode boot; the gated,
+    off-by-default DuckDuckGo channel.
+  - 30 findings filed (mostly S2/S3; two S1 honesty items; one S0 = none). 8 themed
+    remediation work packages, sequenced and dependency-aware.
+
+- **Full log:** [`docs/audit/AUDIT_LOG_2026-06-14.md`](docs/audit/AUDIT_LOG_2026-06-14.md)
+- **Note:** This run modified no source file. Only this trail entry and the audit log
+  were written (and committed as audit-artifacts-only to persist in the ephemeral
+  environment). In-flight PRs #150 (guided wizard) and #151 (task-manager Schedule
+  subtab) were noted and excluded from the roadmap.
