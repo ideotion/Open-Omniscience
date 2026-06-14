@@ -559,5 +559,7 @@
   "Mean tone": "Средний тон",
   "English-scored (reliable)": "Оценено по-английски (надёжно)",
   "No tone scores in this set.": "В этом наборе нет оценок тона.",
+  "Span": "Период",
+  "No sources in this set.": "В этом наборе нет источников.",
   "Tasks & system": "Задачи и система"
 }

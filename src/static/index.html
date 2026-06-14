@@ -803,6 +803,7 @@
         <button data-tab="www">When/Where/Who</button>
         <button data-tab="links">Links</button>
         <button data-tab="sentiment">Sentiment</button>
+        <button data-tab="sources">Sources</button>
       </nav>
       <div class="an-panel" id="an-keywords" style="margin-top:10px">
         <div class="muted">Run a search, then press Analyze to populate this window.</div>
@@ -811,6 +812,7 @@
       <div class="an-panel" id="an-www" style="display:none;margin-top:10px"></div>
       <div class="an-panel" id="an-links" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-sentiment" style="display:none;margin-top:10px"></div>
+      <div class="an-panel" id="an-sources" style="display:none;margin-top:10px;overflow:auto"></div>
     </section>
     </div>
 
@@ -6884,6 +6886,26 @@
             + ` · n=${d.n_scored}/${d.n_articles} · ${esc(t("English-scored (reliable)"))}: ${d.english_scored} (${engPct}%)</div>`;
         }
       } catch (e) { $("an-sentiment").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      // Sources: how each source covers the matched set -- volume, mean tone, span.
+      // Coverage, never credibility; no ranking (ordered by volume only).
+      try {
+        const d = await api("/api/insights/corpus-sources?" + p.toString());
+        const rows = (d.sources || []).map((s) => {
+          const span = (s.first && s.last) ? `${String(s.first).slice(0, 10)} – ${String(s.last).slice(0, 10)}` : "—";
+          const tone = (s.mean_tone === null || s.mean_tone === undefined) ? "—" : s.mean_tone;
+          return `<tr><td>${esc(s.name || s.domain || "")}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${s.articles}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${tone}</td>`
+            + `<td class="muted">${esc(span)}</td></tr>`;
+        }).join("");
+        $("an-sources").innerHTML = `<div class="hint muted">${esc(d.caveat || "")}</div>`
+          + (rows
+            ? `<table class="data" style="margin-top:8px"><thead><tr><th>${esc(t("Source"))}</th>`
+              + `<th style="text-align:right">${esc(t("Articles"))}</th>`
+              + `<th style="text-align:right">${esc(t("Mean tone"))}</th><th>${esc(t("Span"))}</th></tr></thead>`
+              + `<tbody>${rows}</tbody></table>`
+            : `<div class="muted" style="margin-top:8px">${esc(t("No sources in this set."))}</div>`);
+      } catch (e) { $("an-sources").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
 
     async function doSearch() {

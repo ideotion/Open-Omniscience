@@ -24,6 +24,7 @@ from src.database.models import (
     Keyword,
     KeywordFamilyOverride,
     KeywordMention,
+    Source,
 )
 
 
@@ -347,6 +348,51 @@ def corpus_sentiment(session, *, article_ids: list[int]) -> dict:
         "english_scored": english_scored,
         "method": "Per-article VADER valence (stored at ingest), aggregated over the matched set.",
         "caveat": _SENTIMENT_CAVEAT,
+    }
+
+
+def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
+    """How each SOURCE covers the matched set (the analysis window's source view):
+    per source, the article VOLUME, mean VADER tone, and the TIMING span (first/last
+    published) -- so different angles by volume/tone/timing are visible side by side.
+    Counts + dates are exact; mean tone inherits the VADER English-only caveat. NO
+    ranking, NO verdict -- presence here is coverage, not credibility."""
+    if not article_ids:
+        return {"count": 0, "sources": []}
+    rows = (
+        session.query(
+            Source.name, Source.domain,
+            func.count(Article.id).label("n"),
+            func.avg(Article.sentiment_score),
+            func.min(Article.published_at),
+            func.max(Article.published_at),
+        )
+        .join(Source, Source.id == Article.source_id)
+        .filter(Article.id.in_(article_ids))
+        .group_by(Source.id)
+        .order_by(func.count(Article.id).desc())
+        .limit(limit)
+        .all()
+    )
+    sources = [
+        {
+            "name": name,
+            "domain": dom,
+            "articles": int(n or 0),
+            "mean_tone": round(float(avg), 3) if avg is not None else None,
+            "first": fp.isoformat() if fp else None,
+            "last": lp.isoformat() if lp else None,
+        }
+        for name, dom, n, avg, fp, lp in rows
+    ]
+    return {
+        "count": len(sources),
+        "sources": sources,
+        "method": "Matched articles grouped by source: exact volume + publication span; mean tone is VADER.",
+        "caveat": (
+            "Volume and timing are exact counts; mean tone is VADER (English-lexicon, "
+            "unreliable for non-English). No ranking and no verdict -- coverage, not credibility."
+        ),
     }
 
 
