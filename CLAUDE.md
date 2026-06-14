@@ -525,6 +525,21 @@ ruling, a contingency, or a deliberate-omission note.
   single-writer QUEUE from SCRAPING_AUTOMATION_PLAN Step 2 (all writes enqueue;
   import + scrape never collide) + busy_timeout + retry-on-locked. This is the
   field-log-#1 'database is locked' item, now with proof of data loss — ELEVATE.
+  **SHIPPED (single-writer gate, keystone #1 — commit 3268922, merged to 0.09):**
+  src/database/writer.py = a process-wide reentrant write mutex; every ORM write
+  takes it on first flush (session events on SessionLocal) and releases on the
+  outermost transaction END (after_transaction_end — the leak-proof hook); raw-SQL
+  writes (VACUUM) take it via write_lock(); SQLite-only, OO_WRITE_GATE=0 escape
+  hatch; reads NEVER gate (WAL untouched). import_points keeps run_write_with_retry
+  + busy_timeout=30000 as defence-in-depth backstops. END-TO-END PROOF added this
+  session (tests/test_write_gate_dataloss.py): the real SessionLocal + real
+  import_points racing a scrape Article store loses ZERO rows; an ISOLATION
+  experiment proves the gate is load-bearing (control without it = 47 'database is
+  locked' on the field-log condition; with it = 0); + a reads-not-blocked WAL
+  check. The boot-time raw writes (ensure_fts/ensure_hot_indexes/optimize_at_boot)
+  run pre-scheduler so they cannot collide. REMAINING (Step 2 cont.): the bounded
+  fetch worker pool for parallel collection (the gate is its prerequisite) +
+  parallel dumps; the gate's stats() feeds the task-manager System view later.
   (B) **UI POLLING STORM (MED):** ~2 h uptime drove /api/system/vitals ×4120,
   /api/scheduler/activity ×2747, /api/scheduler/status ×1846,
   /api/system/network ×1388, /api/jobs ×248 = ~10k polls contending with the
@@ -1082,8 +1097,10 @@ ruling, a contingency, or a deliberate-omission note.
   the kill switch + protected-mode proxy + honest versioned UA (closed a
   TRANSPORT LEAK: dumps bypassed the in-app proxy → could egress clearnet);
   socket-importer ratchet allowlist 6→3; +15 tests. Full suite 1056 passed.
-  REMAINING from these foundations: the single-writer QUEUE (supersedes the
-  retry), parallel downloads (item 4), task manager window (Group C).
+  REMAINING from these foundations: ~~the single-writer QUEUE (supersedes the
+  retry)~~ SHIPPED as the single-writer GATE (commit 3268922, src/database/writer.py;
+  end-to-end data-loss + gate-isolation proof in tests/test_write_gate_dataloss.py —
+  see field-log finding A); parallel downloads (item 4), task manager window (Group C).
 - **PERFORMANCE BATCH T1 (2026-06-12, this session):** measure→fix→re-measure
   at the live shape (6.4k articles / 228k keywords / 317 MB synthetic;
   `scripts/perf_harness.py`, zero network). Keyword export 14.1→4.0 s
