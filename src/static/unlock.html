@@ -40,9 +40,12 @@
 </head>
 <body>
 <div class="card">
-  <div class="eye"><svg width="56" height="34" viewBox="0 0 48 28" fill="none" stroke="currentColor" stroke-width="1.6">
-    <path d="M2 14 C8 6.5, 24 6.5, 30 16 M2 14 C8 21.5, 24 21.5, 30 12 M18 14 C24 6.5, 40 6.5, 46 14 C40 21.5, 24 21.5, 18 14"/>
-    <circle cx="32" cy="14" r="5.5"/><path d="M32 8.5v11M26.5 14h11"/>
+  <!-- THE canonical brand eye (invariant #5): pointed-oval lid + #-grid iris,
+       identical to index.html / assets/icon.svg. -->
+  <div class="eye"><svg width="44" height="44" viewBox="0 0 32 32" fill="none" stroke="currentColor" aria-hidden="true">
+    <path d="M2 16 C8 6.5, 24 6.5, 30 16 C24 25.5, 8 25.5, 2 16 Z" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M11 12.5 H21 M11 16 H21 M11 19.5 H21 M13.4 10 V22 M16 10 V22 M18.6 10 V22" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M6.5 11.5 L4.6 9.9 M25.5 11.5 L27.4 9.9 M6.5 20.5 L4.6 22.1 M25.5 20.5 L27.4 22.1" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
   </svg></div>
 
   <div id="view-unlock" class="hidden">

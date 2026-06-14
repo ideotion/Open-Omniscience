@@ -295,10 +295,10 @@ ruling, a contingency, or a deliberate-omission note.
   initial screen (the in-browser first-launch prompt becomes the PRIMARY
   path; the terminal prompt demotes to the headless/env fallback). Fits
   the shipped deferred-init design (option 3 already seeds at first
-  unlocked boot). (c) The /unlock screen must carry THE canonical eye
-  (invariant #5, exact same vector as the GUI top-left) — today it draws
-  a DIFFERENT double-arc eye (unlock.html:44 vs index.html:578); extend
-  the invariant-#5 test to unlock.html when fixed. (d) FIRST-LAUNCH
+  unlocked boot). (c) The /unlock screen carries THE canonical eye —
+  SHIPPED #134: unlock.html now draws the pointed-oval + #-grid iris (exact
+  same vector as the GUI top-left), the old double-arc eye is gone, and the
+  invariant-#5 test now covers unlock.html. (d) FIRST-LAUNCH
   GUIDED SETUP (ruled 2026-06-13): a ONE-TIME, uniquely-designed guided
   GUI walks the user through every initial step to a WORKING scraping
   app — language selection, the encryption choice (absorbs (b)), then

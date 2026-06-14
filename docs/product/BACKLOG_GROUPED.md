@@ -127,7 +127,9 @@ makes the rest fall out cheaply:
 - ⬜ **Auto-launch the app** when install completes (fluid finish).
 - ⬜ **Encryption choice → the app's initial screen** (primary path; terminal
   prompt demotes to headless fallback).
-- ⬜ **Unlock screen uses THE canonical eye** (invariant #5; extend the test).
+- ✅ **Unlock screen uses THE canonical eye** (#134) — `unlock.html` now draws the
+  pointed-oval + #-grid iris, identical to index.html / `assets/icon.svg`; the old
+  double-arc eye is gone. `test_ui_invariants` #5 extended to `unlock.html`.
 - ⬜ **Guided setup wizard** (keystone #6) — language · encryption · sources by
   theme (from the catalog tag taxonomy) · country/language emphasis · consented
   first collect. Replaces the onboard card.
