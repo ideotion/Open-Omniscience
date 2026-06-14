@@ -20,9 +20,13 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   (bounded to the top N by relevance, **disclosed**; counts only, never a score or
   verdict). A **When/Where/Who** subtab shows the people/organisations and places
   deduced across the matched articles (`/api/insights/corpus-www` →
-  `corpus_who`/`corpus_where`; deduced from text, never confirmed). Mindmap /
-  links / source-competitive / sentiment subtabs + the Advanced-search tab follow
-  in later slices. ×12 locales; guarded by `test_ui_invariants` #22.
+  `corpus_who`/`corpus_where`; deduced from text, never confirmed). A **Links**
+  subtab surfaces the outbound URLs **shared by two or more** of the matched
+  articles (`/api/links/corpus`) — *shared-origin structure*, stated plainly:
+  several articles citing the **same** link are one origin echoed, **not**
+  independent confirmation. Mindmap / source-competitive / sentiment subtabs + the
+  Advanced-search tab follow in later slices. ×12 locales; guarded by
+  `test_ui_invariants` #22.
 
 - **Every outbound "source ↗" link opens the local preview first — everywhere.**
   Previously only Home-card evidence routed through the local link preview; search

@@ -549,5 +549,8 @@
   "Title": "Заголовок",
   "Published": "Опубликовано",
   "Who": "Кто",
-  "Where": "Где"
+  "Where": "Где",
+  "Link": "Ссылка",
+  "Cited by": "Цитируется в",
+  "No links shared by 2+ matched articles.": "Нет ссылок, общих для 2+ найденных статей."
 }

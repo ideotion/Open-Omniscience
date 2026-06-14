@@ -113,6 +113,76 @@ def top_cited(
     return {"by": "domain", "window_days": window_days, "items": items}
 
 
+@router.get("/corpus")
+def corpus_links(
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
+    min_citations: int = Query(2, ge=1, le=100),
+    limit: int = Query(40, ge=1, le=200),
+    cap: int = Query(1000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Outbound links SHARED across the matched article set (the analysis window's
+    Links tab). Surfaces shared-ORIGIN structure: a URL cited by several of the
+    matched articles. Convergence corroborates ONLY when the paths are independent
+    -- several articles citing the SAME origin are one source wearing several hats,
+    NOT independent confirmation. Counts only; bounded to the top ``cap`` matched
+    articles (disclosed via ``total_matched``/``capped``)."""
+    from src.api.main import _query_articles
+
+    articles, total = _query_articles(
+        db, query=query, source=source, start_date=start_date, end_date=end_date,
+        language=language, tags=tags, limit=cap, offset=0,
+    )
+    ids = [a.id for a in articles]
+    items: list[dict] = []
+    if ids:
+        cit = func.count(func.distinct(ArticleLink.article_id))
+        rows = (
+            db.query(
+                ArticleLink.normalized_url.label("nu"),
+                cit.label("citations"),
+                func.max(ArticleLink.url).label("sample_url"),
+                func.max(ArticleLink.link_text).label("sample_text"),
+            )
+            .filter(ArticleLink.article_id.in_(ids))
+            .group_by(ArticleLink.normalized_url)
+            .having(cit >= min_citations)
+            .order_by(desc("citations"))
+            .limit(limit)
+            .all()
+        )
+        items = [
+            {
+                "normalized_url": r.nu,
+                "sample_url": r.sample_url,
+                "link_text": r.sample_text,
+                "domain": registrable_domain(r.nu),
+                "citations": int(r.citations),
+            }
+            for r in rows
+        ]
+    return {
+        "n_articles": len(ids),
+        "total_matched": total,
+        "capped": total > len(ids),
+        "min_citations": min_citations,
+        "items": items,
+        "method": (
+            "Outbound URLs cited by at least min_citations of the matched articles "
+            "(distinct-article counts)."
+        ),
+        "caveat": (
+            "Shared-origin structure, counts only. Several articles citing the SAME "
+            "link are not independent confirmation -- one origin, several echoes."
+        ),
+    }
+
+
 @router.get("/articles-by-link")
 def articles_by_link(
     url: str | None = Query(None, description="a cited link (raw or normalized)"),

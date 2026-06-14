@@ -549,5 +549,8 @@
   "Title": "Title",
   "Published": "Published",
   "Who": "Who",
-  "Where": "Where"
+  "Where": "Where",
+  "Link": "Link",
+  "Cited by": "Cited by",
+  "No links shared by 2+ matched articles.": "No links shared by 2+ matched articles."
 }

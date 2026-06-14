@@ -549,5 +549,8 @@
   "Title": "标题",
   "Published": "发布时间",
   "Who": "谁",
-  "Where": "何地"
+  "Where": "何地",
+  "Link": "链接",
+  "Cited by": "被引用",
+  "No links shared by 2+ matched articles.": "没有被2篇及以上匹配文章共享的链接。"
 }

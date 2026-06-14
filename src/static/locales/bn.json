@@ -549,5 +549,8 @@
   "Title": "শিরোনাম",
   "Published": "প্রকাশিত",
   "Who": "কে",
-  "Where": "কোথায়"
+  "Where": "কোথায়",
+  "Link": "লিঙ্ক",
+  "Cited by": "উদ্ধৃত",
+  "No links shared by 2+ matched articles.": "২+ মিল থাকা নিবন্ধ দ্বারা ভাগ করা কোনো লিঙ্ক নেই।"
 }

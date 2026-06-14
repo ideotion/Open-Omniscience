@@ -549,5 +549,8 @@
   "Title": "タイトル",
   "Published": "公開日",
   "Who": "誰",
-  "Where": "どこ"
+  "Where": "どこ",
+  "Link": "リンク",
+  "Cited by": "引用元",
+  "No links shared by 2+ matched articles.": "一致した2件以上の記事で共有されるリンクはありません。"
 }

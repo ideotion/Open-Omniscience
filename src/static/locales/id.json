@@ -549,5 +549,8 @@
   "Title": "Judul",
   "Published": "Diterbitkan",
   "Who": "Siapa",
-  "Where": "Di mana"
+  "Where": "Di mana",
+  "Link": "Tautan",
+  "Cited by": "Dikutip oleh",
+  "No links shared by 2+ matched articles.": "Tidak ada tautan yang dibagikan oleh 2+ artikel yang cocok."
 }

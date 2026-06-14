@@ -549,5 +549,8 @@
   "Title": "शीर्षक",
   "Published": "प्रकाशित",
   "Who": "कौन",
-  "Where": "कहाँ"
+  "Where": "कहाँ",
+  "Link": "लिंक",
+  "Cited by": "द्वारा उद्धृत",
+  "No links shared by 2+ matched articles.": "2+ मिलान लेखों द्वारा साझा कोई लिंक नहीं।"
 }

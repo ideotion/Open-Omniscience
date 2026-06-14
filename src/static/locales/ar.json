@@ -549,5 +549,8 @@
   "Title": "العنوان",
   "Published": "نُشِر",
   "Who": "مَن",
-  "Where": "أين"
+  "Where": "أين",
+  "Link": "رابط",
+  "Cited by": "مُستشهَد به",
+  "No links shared by 2+ matched articles.": "لا روابط مشتركة بين مقالتين أو أكثر من المطابقة."
 }
