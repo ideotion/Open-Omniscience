@@ -627,15 +627,19 @@ ruling, a contingency, or a deliberate-omission note.
   data-oriented presentation. (2) REPLACE the 5-choice time-scale select
   (index.html:1207-1208 — 1mo/6mo/1yr/5yr/all) with the SAME sophisticated
   begin/end/timescale TIME-SCOPE control built once for corpora/search — a
-  real, intuitive range UI, not 5 buttons. (3) DATA-POINT BUG diagnosed: the
-  per-card SVG is full-resolution within the window (windowPrices date-filter,
-  no downsampling — good), BUT the sparse-series fallback (index.html:4951-4954)
-  silently shows the ENTIRE history when a window holds <2 points, so a NARROW
-  window (1 month) on a sparse monthly series dumps the full 5-yr history while
-  "1 year" shows only ~12 points — that is why the smallest scale paradoxically
-  shows the MOST points. FIX per invariant #16: respect the window; render
-  sparse series as honest POINTS with n + early-corpus caveat (never silently
-  expand the window). Precision limited ONLY by gathered data + renderer.
+  real, intuitive range UI, not 5 buttons. (3) DATA-POINT BUG — FIXED 2026-06-14:
+  the per-card SVG was full-resolution within the window (good), BUT a
+  sparse-series fallback silently swapped in the ENTIRE history when a window
+  held <2 points, so a NARROW window (1 month) on a sparse monthly series dumped
+  the full 5-yr history while "1 year" showed ~12 — the smallest scale
+  paradoxically showed the MOST points. FIXED per invariant #16: renderDashboard
+  now RESPECTS the window (the pts=all expansion is gone) and dashChartSvg renders
+  honestly — a connecting line ONLY when dense (lineMin=8), otherwise discrete
+  DOTS with n + the early-corpus caveat (reused keyed string, ×12), 0 points =
+  "not enough points in this window"; never a curve faked through a handful of
+  points. Enforced by test_ui_invariants #16. REMAINING in this commodities item:
+  (1) category subtabs, (2) the time-scope range control, (4) click-a-graph →
+  the analysis window. Precision limited ONLY by gathered data + renderer.
   (4) CLICK A GRAPH → a DEDICATED WINDOW/TAB (like search results), NOT the
   bottom-of-page #mkt-chart (index.html:1214, current onclick chartSymbol →
   detail+correlation at the bottom). The window IS the corpora flagship with
