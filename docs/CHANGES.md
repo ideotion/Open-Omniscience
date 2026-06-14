@@ -73,20 +73,23 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   `tests/test_who_aggregate.py` proves the counts, ordering, class/window/country
   filters, the `min_articles` HAVING, and the honesty (no score, method+caveat).
 
-- **Windows portability: explicit UTF-8 on every text file read/write.** Five
-  text-mode `open()` calls relied on the platform default encoding — harmless on
-  Linux/macOS (UTF-8) but a hard crash on Windows (cp1252), where loading the
-  seed catalog (`configs/sources.yml`, with accented source names), the settings
-  YAML, an exported sources file, or serving `index.html` died with
-  `UnicodeDecodeError: 'charmap' codec can't decode byte …`. All five now pass
-  `encoding="utf-8"` (matching the rest of the codebase, which already uses
-  `read_text("utf-8")`). This is a **real runtime bug** for Windows users, not
-  just a test-lane artifact — it was surfaced by the Windows portability
-  observation lane. A new **static ratchet** (`tests/test_utf8_file_io.py`)
-  scans `src/` and fails the build if any text-mode `open()` ever ships without
+- **Windows portability: explicit UTF-8 on every text file read/write.** Eight
+  text reads/writes relied on the platform default encoding — harmless on
+  Linux/macOS (UTF-8) but a hard crash on Windows (cp1252) with
+  `UnicodeDecodeError: 'charmap' codec can't decode byte …` the moment a file
+  holds a non-ASCII byte. The primary culprit was the **seed-catalog loader**
+  (`yaml.safe_load(path.read_text())` over `configs/sources.yml`, which carries
+  accented source names) — plus the law catalog, the coverage targets, the
+  settings/sources YAML, an exported sources file, and serving `index.html`.
+  All now pass `encoding="utf-8"`, covering **both** the builtin `open()` and
+  pathlib's `Path.read_text()`/`write_text()`. This is a **real runtime bug**
+  for Windows users, not just a test-lane artifact — surfaced by the Windows
+  portability observation lane. A new **static ratchet**
+  (`tests/test_utf8_file_io.py`) scans `src/` and fails the build if any text
+  read/write (builtin `open` **or** `read_text`/`write_text`) ever ships without
   an explicit encoding again — necessary because the bug is invisible on the
-  Linux CI that gates merges (Linux already defaults to UTF-8). Binary opens are
-  exempt by construction.
+  Linux CI that gates merges (Linux already defaults to UTF-8). Binary opens and
+  computed-mode opens are exempt by construction.
 
 - **Parallel collection: fetch many hosts at once, politely; write serially.**
   The collect pass can now fetch **different hosts concurrently** via a bounded

@@ -75,7 +75,7 @@ def load_targets(path: Path | None = None) -> dict:
     """
     p = path or _TARGETS_PATH
     try:
-        data = yaml.safe_load(p.read_text()) or {}
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     except OSError:
         return {"regions": {}, "concentration": {}}
     return {
