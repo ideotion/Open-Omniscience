@@ -466,6 +466,26 @@ def test_collect_tab_moved_into_settings():
     )
 
 
+def test_sources_tab_moved_into_settings():
+    """Content-first (§6, ruled 2026-06-13): the Sources tab LEFT the sidebar for a
+    Settings subtab, same pattern as Collect. Nothing lost — the managed-sources
+    table, candidates panel, and add-source form live under #set-sources, reachable
+    via the Sources subtab AND the showTab('sources') redirect; the sidebar drops it."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert '<button class="nav-item" data-tab="sources"' not in html, (
+        "Sources must leave the sidebar (content-first)"
+    )
+    assert 'id="set-sources"' in html, "Sources must exist as a Settings subtab panel"
+    for ctrl in ('id="src-table"', 'id="candidates-list"', "addSource(", 'id="src-search"'):
+        assert ctrl in html, f"moved Sources control missing after the move: {ctrl}"
+    assert 'if (name === "sources")' in html and '_setSubtabs.select("sources")' in html, (
+        "showTab('sources') must redirect to Settings → Sources"
+    )
+    assert 'if (cat === "sources") { loadManagedSources(); loadCandidates(); }' in html, (
+        "the Sources subtab must run the managed-sources + candidates onShow loads"
+    )
+
+
 def test_sp500_is_classified_as_index():
     """The S&P 500 is an INDEX, not a commodity (maintainer-ruled): it must live
     in the index catalog and never in the commodity catalog, so the Commodities

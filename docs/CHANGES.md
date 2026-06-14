@@ -11,11 +11,13 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
-- **Collect moved into Settings (content-first).** The **Collect** tab left the
-  sidebar; its scheduler, manual-ingest, and batch-source controls now live under
-  **Settings → Collect**. The sidebar is for *content* — acquisition setup belongs
-  in Settings. Nothing is lost: the ⌘K palette, the "Collect now" buttons, and any
-  old `#ingest` link all route to Settings → Collect automatically.
+- **Collect and Sources moved into Settings (content-first).** The **Collect** and
+  **Sources** tabs left the sidebar; their controls now live under **Settings →
+  Collect** (scheduler, manual ingest, batch picker) and **Settings → Sources**
+  (the managed-source list, candidates, add-source form). The sidebar is for
+  *content* — acquisition/configuration belongs in Settings. Nothing is lost: the
+  ⌘K palette, the "Collect now"/"manage sources" buttons, and any old `#ingest` /
+  `#sources` link all route into Settings automatically.
 
 - **A leaner top bar.** The always-on CPU·RAM·↓ vitals strip moved off the top bar
   into the **task-manager window's System tab** (open it with the new task-manager
