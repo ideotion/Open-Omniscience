@@ -565,5 +565,9 @@
   "Run analysis": "Analyse starten",
   "Refine which articles this window analyzes.": "Verfeinern Sie, welche Artikel dieses Fenster analysiert.",
   "Analysis updated — see the other tabs.": "Analyse aktualisiert — siehe die anderen Tabs.",
-  "Tasks & system": "Aufgaben & System"
+  "Tasks & system": "Aufgaben & System",
+  "Active": "Aktiv",
+  "Queue": "Warteschlange",
+  "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "Gerade läuft nichts — aktive Aufgaben (ein Sammeldurchlauf, Downloads, der laufende Abruf) erscheinen hier.",
+  "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "Die Warteschlange ist leer — wartende Downloads erscheinen hier, der Reihe nach; mit den Pfeilen umsortieren."
 }

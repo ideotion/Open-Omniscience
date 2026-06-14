@@ -565,5 +565,9 @@
   "Run analysis": "Jalankan analisis",
   "Refine which articles this window analyzes.": "Saring artikel yang dianalisis jendela ini.",
   "Analysis updated — see the other tabs.": "Analisis diperbarui — lihat tab lainnya.",
-  "Tasks & system": "Tugas & sistem"
+  "Tasks & system": "Tugas & sistem",
+  "Active": "Aktif",
+  "Queue": "Antrean",
+  "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "Tidak ada yang berjalan saat ini — tugas aktif (satu putaran pengumpulan, unduhan, permintaan yang sedang berlangsung) muncul di sini.",
+  "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "Antrean kosong — unduhan yang menunggu giliran muncul di sini, berurutan; gunakan panah untuk menyusun ulang."
 }

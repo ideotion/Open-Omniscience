@@ -565,5 +565,9 @@
   "Run analysis": "分析を実行",
   "Refine which articles this window analyzes.": "このウィンドウが分析する記事を絞り込みます。",
   "Analysis updated — see the other tabs.": "分析を更新しました — 他のタブをご覧ください。",
-  "Tasks & system": "タスクとシステム"
+  "Tasks & system": "タスクとシステム",
+  "Active": "実行中",
+  "Queue": "待機列",
+  "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "現在実行中のものはありません。アクティブなタスク（収集パス、ダウンロード、通信中の取得）はここに表示されます。",
+  "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "待機列は空です。順番待ちのダウンロードはここに順に表示されます。矢印で並べ替えできます。"
 }

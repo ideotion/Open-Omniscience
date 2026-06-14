@@ -565,5 +565,9 @@
   "Run analysis": "تشغيل التحليل",
   "Refine which articles this window analyzes.": "حدِّد المقالات التي تحللها هذه النافذة.",
   "Analysis updated — see the other tabs.": "تم تحديث التحليل — راجع علامات التبويب الأخرى.",
-  "Tasks & system": "المهام والنظام"
+  "Tasks & system": "المهام والنظام",
+  "Active": "نشط",
+  "Queue": "قائمة الانتظار",
+  "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "لا شيء قيد التشغيل الآن — تظهر هنا المهام النشطة (جولة جمع، تنزيلات، الطلب الجاري).",
+  "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "قائمة الانتظار فارغة — تظهر هنا التنزيلات المنتظرة بالترتيب؛ استخدم الأسهم لإعادة ترتيبها."
 }
