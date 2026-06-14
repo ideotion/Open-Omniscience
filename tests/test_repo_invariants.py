@@ -328,3 +328,20 @@ def test_ui_invariants():
     assert ">${esc(d.url)}</a>" in html, (
         "the outbound anchor's visible text must BE the full URL (CLAUDE.md #6e)"
     )
+    # 18. ONE universal subtab component (keystone, ruled 2026-06-13): a single
+    #     reusable helper drives the vertical subtab grammar everywhere — lateral
+    #     sidebar = main tabs, vertical subtabs = facets. It owns ARIA + keyboard
+    #     + roving tabindex; it must be reused on >=3 surfaces (Insights, Settings,
+    #     corpus window) and the old per-surface attributes must be gone.
+    assert "function ooSubtabs(" in html, (
+        "the universal subtab component must exist (CLAUDE.md #18)"
+    )
+    assert 'aria-selected' in html and 'setAttribute("role", "tab")' in html, (
+        "the subtab component must set ARIA roles/selection (accessibility)"
+    )
+    for surface in ('ooSubtabs($("ins-subtabs")', 'ooSubtabs($("set-subtabs")',
+                    'ooSubtabs($("corpus-subtabs")'):
+        assert surface in html, f"the subtab component must drive: {surface} (>=3 surfaces)"
+    assert "data-ins" not in html and "data-set=" not in html and "data-ctab" not in html, (
+        "divergent per-surface subtab attributes must be unified onto data-tab (CLAUDE.md #18)"
+    )

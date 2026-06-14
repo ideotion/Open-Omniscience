@@ -135,6 +135,18 @@ ruling, a contingency, or a deliberate-omission note.
    listener + CSS only (no per-element handlers, no animation loops); a
    MutationObserver marks future surfaces, so the convention cannot be
    forgotten. Enforced in test_ui_invariants (#17).
+18. **ONE universal subtab component (keystone #3, ruled 2026-06-13; SHIPPED
+   2026-06-14):** the vertical-subtab grammar (lateral sidebar = main tabs,
+   vertical subtabs near the top = facets) is driven by ONE reusable helper
+   `ooSubtabs(nav, onSelect)` — a `<nav class="tabs">` of `data-tab` buttons; the
+   component owns visible state (.active + role=tablist/tab + aria-selected +
+   roving tabindex), keyboard nav (←/→/↑/↓/Home/End), click, and exposes
+   {select,paint} for programmatic switching. NO inline onclick; labels are DOM
+   text (auto-translated ×12); titled buttons inherit the #oo-tip convention.
+   Reused on 3 surfaces at ship (Insights, Settings, the corpus window — the
+   divergent data-ins/data-set/data-ctab impls are unified onto data-tab).
+   Enforced in test_ui_invariants (#18). NEXT adopters: Home card families,
+   Markets category tabs, the analysis window.
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First
