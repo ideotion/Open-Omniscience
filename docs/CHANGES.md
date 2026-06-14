@@ -11,6 +11,14 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Home opens on its content: a compact stats strip on top, Quick actions gone.**
+  The "At a glance" counts (articles · sources · keywords · …) are now a **slim,
+  permanent strip pinned to the very top** of Home instead of a large panel pushed
+  below the fold, and the **Quick actions** card grid is removed (everything it
+  linked to is one click away in the sidebar). Home now leads with the at-a-glance
+  strip then the Briefing — denser and content-first (UI_SHELL_REDESIGN §5; the
+  card-families-as-subtabs slice follows). Guarded by `test_ui_invariants` #19.
+
 - **One universal subtab grammar across the app.** Insights, Settings and the
   corpus/analysis window each had their own hand-rolled subtab code (different
   markup, different active-state tricks, inline `onclick`s). They now share **one
