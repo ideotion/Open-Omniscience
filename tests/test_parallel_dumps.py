@@ -99,6 +99,12 @@ def test_stale_downloading_status_is_reset_on_reload(tmp_path):
         assert _wait_until(lambda: _downloading(mgr) == 1)
     finally:
         gate.set()
+    # Join the worker so its own completion (status="done" + _save) fully lands
+    # BEFORE we overwrite the persisted state below -- otherwise the worker races
+    # our _save() and the reload can read "done" (a flake caught on the macOS lane).
+    worker = mgr._threads.get("en:pages-articles")
+    if worker is not None:
+        worker.join(timeout=5)
     # Simulate a restart from the SAME persisted state, mid-download.
     mgr._entries["en:pages-articles"].status = "downloading"
     mgr._save()

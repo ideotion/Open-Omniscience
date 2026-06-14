@@ -195,8 +195,14 @@ def test_ui_invariants():
     # 3. constant top-bar footprints
     assert ".act-host:empty { visibility:hidden; }" in html, "act-host slot must stay reserved"
     assert "#llm { min-width" in html, "LLM pill needs a fixed footprint"
-    # 4. persistent vitals strip; no version in the chrome
-    assert 'id="vitals-mini"' in html, "the compact vitals strip must exist"
+    # 4. §2 (ruled 2026-06-14, amends #4): vitals moved OUT of the chrome into the
+    #    task-manager window's System tab; the chrome keeps a PERSISTENT task-manager
+    #    access (#activity is hidden when idle); version still not in the chrome.
+    assert 'id="vitals-mini"' not in html, "the vitals strip must NOT live in the chrome (§2 amends #4)"
+    assert 'id="tm-open"' in html and 'id="tm-system"' in html, (
+        "a persistent task-manager access (#tm-open) + the System tab (#tm-system, where "
+        "vitals now live) must both exist (CLAUDE.md #4, §2)"
+    )
     assert '<span id="version" hidden>' in html, "version stays out of the visible chrome"
     # 2. sidebar: medium widths collapse to a rail, not off-canvas
     assert "@media (max-width:860px) and (min-width:601px)" in html
@@ -270,8 +276,14 @@ def test_ui_invariants():
     #     glyph whose FILL is the state — never ▶/⏸ action glyphs — and EVERY
     #     offline→online transition passes the ONE consent popup (local
     #     interface addresses; no public-IP echo before consent).
-    assert 'id="net-plane"' in html and 'id="net-label"' in html, (
-        "the network toggle must be the constant airplane glyph + label"
+    # The toggle is the constant airplane GLYPH whose FILL is the state. The text
+    # label was dropped when the button moved to the top bar (§3, ruled): hover +
+    # FILL convey state now — but the glyph + the FILL-painting must stay.
+    assert 'id="net-plane"' in html and 'id="net-toggle"' in html, (
+        "the network toggle must be the constant airplane glyph (CLAUDE.md #14)"
+    )
+    assert 'plane.setAttribute("fill"' in html, (
+        "the airplane glyph's FILL must encode the network state (CLAUDE.md #14)"
     )
     assert "▶ Online" not in html and "⏸ Offline" not in html, (
         "action glyphs must not label network STATE (CLAUDE.md #14)"
