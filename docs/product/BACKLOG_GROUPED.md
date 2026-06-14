@@ -46,14 +46,19 @@ makes the rest fall out cheaply:
   backoff. (log finding B)
 - ⬜ **keyword_export under contention** — 29→65 s during a live scrape; read
   snapshot for exports. (log finding C)
-- ⬜ **mypy ratchet pay-down** toward 0 (ongoing); **Win/macOS portability
-  lanes → green** then graduate to required. 🔨 IN PROGRESS: the Windows
-  `UnicodeDecodeError` class (text `open()` without `encoding="utf-8"`) is fixed
-  + ratcheted (`tests/test_utf8_file_io.py`). REMAINING Windows classes:
-  `install.sh` tests run `bash` under WSL (no distro on the runner — should skip
-  on native Windows), `WinError 32` file-in-use on SQLite temp unlinks, and the
-  `/tmp`↔`/private/tmp` / `D:\tmp` path-canonicalization tests (also the macOS
-  pair). Tackle per-class; not locally verifiable on the Linux box.
+- 🔨 **mypy ratchet pay-down** toward 0 (ongoing); **Win/macOS portability
+  lanes → green** then graduate to required. SHIPPED so far: `UnicodeDecodeError`
+  (text `open()` without `encoding`) + ratchet. **#136 fixes the three remaining
+  failure classes (diagnosed from the live observation-lane logs):** (1) the
+  `/tmp`↔`/private/tmp` (macOS) / `D:/tmp` (Windows) **path-canonicalization** test
+  now compares against `Path(base).resolve()` (no-op on Linux); (2) **`install.sh`
+  under the Windows WSL stub** — `test_installer.py` skips on `win32` (a POSIX
+  script; the runner only has a distro-less WSL `bash`), and the Linux-only XDG
+  `.desktop` launcher test skips on non-Linux; `test_uninstall` launcher-discovery
+  skips on `win32`; (3) **`WinError 32`** (delete-open-file) — the three backup
+  temp-`.db` sites (`database.py`, `safety/backup.py`, `backup_v2.py`) now
+  `os.close(fd)` from `mkstemp` **before** unlinking. Verified non-regressive on
+  Linux; should green both lanes (verify in CI, then graduate to required).
 
 ## B. The download / scraping subsystem (content-first)
 

@@ -11,6 +11,15 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Windows: backups no longer fail with a file-in-use error.** Creating a backup
+  (download, or an encrypted snapshot) made a temp `.db` via `mkstemp` but left its
+  file descriptor open while unlinking the path — harmless on Linux/macOS, but
+  Windows refuses to delete an open file (`WinError 32`). The three backup sites
+  now close the descriptor **before** touching the path. (Also greens the Windows
+  CI lane.) Plus CI portability fixes: the path-join test accounts for macOS
+  `/private/tmp` and Windows `D:/tmp`, and the POSIX `install.sh` tests skip on
+  native Windows (the runner only has a distro-less WSL `bash`).
+
 - **The unlock screen now shows THE brand eye.** The passphrase/unlock screen drew
   a *different* eye (a double-arc + circle) from the rest of the app. It now uses
   the **one canonical brand mark** — the pointed-oval lid + #-grid iris, identical

@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -24,7 +25,11 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = ["install.sh", "scripts/launch.sh", "scripts/bootstrap.sh"]
 
-pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="install.sh is a POSIX shell script; needs a real bash (the Windows "
+    "runner only exposes a distro-less WSL stub, so these don't apply there)",
+)
 
 
 @pytest.mark.parametrize("script", SCRIPTS)
@@ -51,6 +56,11 @@ def test_unknown_option_fails_loudly():
     assert "unknown option" in (r.stderr + r.stdout)
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="the XDG .desktop applications-menu launcher is Linux-only "
+    "(macOS uses a different mechanism)",
+)
 def test_unattended_install_creates_launcher(tmp_path):
     home = tmp_path / "home"
     (home / "Desktop").mkdir(parents=True)

@@ -28,10 +28,12 @@ def make_encrypted_backup(passphrase: str) -> bytes:
     from src.backup.sqlite_backup import backup_to
 
     fd, tmp = tempfile.mkstemp(prefix="oo-encbak-", suffix=".db")
-    Path(tmp).unlink(missing_ok=True)  # backup_to recreates cleanly
     import os
 
+    # Close the open descriptor BEFORE unlinking/reopening: Windows cannot
+    # delete a file that still has an open handle (WinError 32).
     os.close(fd)
+    Path(tmp).unlink(missing_ok=True)  # backup_to recreates cleanly
     try:
         backup_to(Path(tmp))
         plaintext = Path(tmp).read_bytes()

@@ -64,10 +64,12 @@ def backup_v2(body: BackupBody) -> FileResponse:
     ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     suffix = ".oobak" if body.plaintext else ".oobak.ooenc"
     fd, tmp = tempfile.mkstemp(prefix="oo-bak-", suffix=suffix)
-    Path(tmp).unlink(missing_ok=True)
     import os
 
+    # Close the open descriptor BEFORE unlinking/reopening: Windows cannot
+    # delete a file that still has an open handle (WinError 32).
     os.close(fd)
+    Path(tmp).unlink(missing_ok=True)
     dest = Path(tmp)
     try:
         write_backup_v2(dest, passphrase=None if body.plaintext else body.passphrase)

@@ -7,6 +7,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 
@@ -28,6 +29,11 @@ def _fake_install(tmp_path, monkeypatch):
     return app
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="uninstall discovers XDG .desktop launchers (Linux/macOS); install.sh "
+    "is not a Windows install path",
+)
 def test_plan_discovers_venv_and_launchers_but_never_data(tmp_path, monkeypatch):
     app = _fake_install(tmp_path, monkeypatch)
     plan = U.plan_uninstall(app)
