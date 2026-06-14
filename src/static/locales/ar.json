@@ -552,5 +552,11 @@
   "Where": "أين",
   "Link": "رابط",
   "Cited by": "مُستشهَد به",
-  "No links shared by 2+ matched articles.": "لا روابط مشتركة بين مقالتين أو أكثر من المطابقة."
+  "No links shared by 2+ matched articles.": "لا روابط مشتركة بين مقالتين أو أكثر من المطابقة.",
+  "Positive": "إيجابي",
+  "Negative": "سلبي",
+  "Neutral": "محايد",
+  "Mean tone": "النبرة المتوسطة",
+  "English-scored (reliable)": "مُقيَّم بالإنجليزية (موثوق)",
+  "No tone scores in this set.": "لا توجد درجات نبرة في هذه المجموعة."
 }

@@ -552,5 +552,11 @@
   "Where": "Где",
   "Link": "Ссылка",
   "Cited by": "Цитируется в",
-  "No links shared by 2+ matched articles.": "Нет ссылок, общих для 2+ найденных статей."
+  "No links shared by 2+ matched articles.": "Нет ссылок, общих для 2+ найденных статей.",
+  "Positive": "Позитивная",
+  "Negative": "Негативная",
+  "Neutral": "Нейтральная",
+  "Mean tone": "Средний тон",
+  "English-scored (reliable)": "Оценено по-английски (надёжно)",
+  "No tone scores in this set.": "В этом наборе нет оценок тона."
 }

@@ -552,5 +552,11 @@
   "Where": "কোথায়",
   "Link": "লিঙ্ক",
   "Cited by": "উদ্ধৃত",
-  "No links shared by 2+ matched articles.": "২+ মিল থাকা নিবন্ধ দ্বারা ভাগ করা কোনো লিঙ্ক নেই।"
+  "No links shared by 2+ matched articles.": "২+ মিল থাকা নিবন্ধ দ্বারা ভাগ করা কোনো লিঙ্ক নেই।",
+  "Positive": "ইতিবাচক",
+  "Negative": "নেতিবাচক",
+  "Neutral": "নিরপেক্ষ",
+  "Mean tone": "গড় সুর",
+  "English-scored (reliable)": "ইংরেজিতে স্কোরকৃত (নির্ভরযোগ্য)",
+  "No tone scores in this set.": "এই সেটে কোনো সুর স্কোর নেই।"
 }

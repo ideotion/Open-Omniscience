@@ -552,5 +552,11 @@
   "Where": "Di mana",
   "Link": "Tautan",
   "Cited by": "Dikutip oleh",
-  "No links shared by 2+ matched articles.": "Tidak ada tautan yang dibagikan oleh 2+ artikel yang cocok."
+  "No links shared by 2+ matched articles.": "Tidak ada tautan yang dibagikan oleh 2+ artikel yang cocok.",
+  "Positive": "Positif",
+  "Negative": "Negatif",
+  "Neutral": "Netral",
+  "Mean tone": "Nada rata-rata",
+  "English-scored (reliable)": "Dinilai dalam bahasa Inggris (andal)",
+  "No tone scores in this set.": "Tidak ada skor nada dalam kumpulan ini."
 }

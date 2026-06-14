@@ -552,5 +552,11 @@
   "Where": "Where",
   "Link": "Link",
   "Cited by": "Cited by",
-  "No links shared by 2+ matched articles.": "No links shared by 2+ matched articles."
+  "No links shared by 2+ matched articles.": "No links shared by 2+ matched articles.",
+  "Positive": "Positive",
+  "Negative": "Negative",
+  "Neutral": "Neutral",
+  "Mean tone": "Mean tone",
+  "English-scored (reliable)": "English-scored (reliable)",
+  "No tone scores in this set.": "No tone scores in this set."
 }

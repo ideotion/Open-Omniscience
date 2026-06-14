@@ -552,5 +552,11 @@
   "Where": "कहाँ",
   "Link": "लिंक",
   "Cited by": "द्वारा उद्धृत",
-  "No links shared by 2+ matched articles.": "2+ मिलान लेखों द्वारा साझा कोई लिंक नहीं।"
+  "No links shared by 2+ matched articles.": "2+ मिलान लेखों द्वारा साझा कोई लिंक नहीं।",
+  "Positive": "सकारात्मक",
+  "Negative": "नकारात्मक",
+  "Neutral": "तटस्थ",
+  "Mean tone": "औसत टोन",
+  "English-scored (reliable)": "अंग्रेज़ी में अंकित (विश्वसनीय)",
+  "No tone scores in this set.": "इस सेट में कोई टोन स्कोर नहीं।"
 }

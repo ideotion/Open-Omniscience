@@ -552,5 +552,11 @@
   "Where": "Dónde",
   "Link": "Enlace",
   "Cited by": "Citado por",
-  "No links shared by 2+ matched articles.": "Ningún enlace compartido por 2+ artículos coincidentes."
+  "No links shared by 2+ matched articles.": "Ningún enlace compartido por 2+ artículos coincidentes.",
+  "Positive": "Positivo",
+  "Negative": "Negativo",
+  "Neutral": "Neutral",
+  "Mean tone": "Tono medio",
+  "English-scored (reliable)": "Evaluado en inglés (fiable)",
+  "No tone scores in this set.": "Sin puntuaciones de tono en este conjunto."
 }
