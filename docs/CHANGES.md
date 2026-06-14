@@ -43,9 +43,22 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   (bounded to the top N by relevance, **disclosed**; counts only, never a score or
   verdict). A **When/Where/Who** subtab shows the people/organisations and places
   deduced across the matched articles (`/api/insights/corpus-www` →
-  `corpus_who`/`corpus_where`; deduced from text, never confirmed). Mindmap /
-  links / source-competitive / sentiment subtabs + the Advanced-search tab follow
-  in later slices. ×12 locales; guarded by `test_ui_invariants` #22.
+  `corpus_who`/`corpus_where`; deduced from text, never confirmed). A **Links**
+  subtab surfaces the outbound URLs **shared by two or more** of the matched
+  articles (`/api/links/corpus`) — *shared-origin structure*, stated plainly:
+  several articles citing the **same** link are one origin echoed, **not**
+  independent confirmation. A **Sentiment** subtab shows the tone distribution of
+  the matched articles from the stored per-article score — and **states plainly**
+  that the tone method (VADER) is **English-lexicon based**, so it reports the
+  English-scored share and warns that non-English scores are unreliable (closing a
+  known disclosure gap). A **Sources** subtab shows how each source covers the
+  matched set — article **volume**, mean tone, and the publication **span** — side
+  by side, stated as *coverage, never credibility* (no ranking, no verdict). An
+  **Advanced** tab lets you refine the analyzed set in place — search terms, source,
+  language, and a date range — and re-runs every subtab at once (prefilled from your
+  search; the groundwork for folding the Search tab in). The Mindmap subtab follows
+  in a later slice. ×12 locales; guarded by
+  `test_ui_invariants` #22.
 
 - **Every outbound "source ↗" link opens the local preview first — everywhere.**
   Previously only Home-card evidence routed through the local link preview; search

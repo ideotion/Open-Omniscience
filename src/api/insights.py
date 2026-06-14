@@ -156,6 +156,65 @@ def insights_corpus_www(
     }
 
 
+@router.get("/corpus-sentiment")
+def insights_corpus_sentiment(
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
+    cap: int = Query(1000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Tone distribution across the matched articles (the analysis window's Sentiment
+    tab), from the STORED per-article VADER valence. VADER is English-lexicon based,
+    so the response carries the English share + a caveat that non-English scores are
+    unreliable. Counts only; tone is a measured word-valence, never a verdict. Bounded
+    to the top ``cap`` matched articles (disclosed)."""
+    from src.api.main import _query_articles
+
+    articles, total = _query_articles(
+        db, query=query, source=source, start_date=start_date, end_date=end_date,
+        language=language, tags=tags, limit=cap, offset=0,
+    )
+    ids = [a.id for a in articles]
+    res = q.corpus_sentiment(db, article_ids=ids)
+    res["total_matched"] = total
+    res["capped"] = total > len(ids)
+    return res
+
+
+@router.get("/corpus-sources")
+def insights_corpus_sources(
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
+    limit: int = Query(40, ge=1, le=200),
+    cap: int = Query(1000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """How each SOURCE covers the matched set (the analysis window's source view):
+    per-source volume, mean tone, and publication span. Counts + dates exact; mean
+    tone inherits the VADER English caveat. No ranking, no verdict -- coverage, not
+    credibility. Bounded to the top ``cap`` matched articles (disclosed)."""
+    from src.api.main import _query_articles
+
+    articles, total = _query_articles(
+        db, query=query, source=source, start_date=start_date, end_date=end_date,
+        language=language, tags=tags, limit=cap, offset=0,
+    )
+    ids = [a.id for a in articles]
+    res = q.corpus_sources(db, article_ids=ids, limit=limit)
+    res["n_articles"] = len(ids)
+    res["total_matched"] = total
+    res["capped"] = total > len(ids)
+    return res
+
+
 @router.get("/top")
 def insights_top(
     days: int | None = Query(None, ge=1, le=3650),

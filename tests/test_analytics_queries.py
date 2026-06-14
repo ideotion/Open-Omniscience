@@ -206,3 +206,48 @@ def test_corpus_who_and_where_scope_to_article_set(db):
     assert all(pl["name"].lower() != "tokyo" for pl in where["places"])
     assert q.corpus_who(db, article_ids=[], limit=5)["count"] == 0
     assert q.corpus_where(db, article_ids=[], limit=5)["count"] == 0
+
+
+def test_corpus_sentiment_distribution_and_english_disclosure(db):
+    a1 = _mk(db, "se1", "Great news.", "2026-03-01")
+    a2 = _mk(db, "se2", "Terrible disaster.", "2026-03-02")
+    a3 = _mk(db, "se3", "Une nouvelle.", "2026-03-03")
+    a1.sentiment_score, a1.sentiment_label = 0.8, "positive"
+    a2.sentiment_score, a2.sentiment_label = -0.7, "negative"
+    a3.sentiment_score, a3.sentiment_label, a3.language = 0.1, "neutral", "fr"
+    db.commit()
+    r = q.corpus_sentiment(db, article_ids=[a1.id, a2.id, a3.id])
+    assert r["n_articles"] == 3 and r["n_scored"] == 3
+    assert r["labels"] == {"positive": 1, "negative": 1, "neutral": 1}
+    assert r["english_scored"] == 2  # a3 is fr -> outside the reliable (English) share
+    assert r["mean_score"] == round((0.8 - 0.7 + 0.1) / 3, 3)
+    assert "VADER" in r["caveat"]
+    # an article with no stored score is excluded from n_scored
+    a4 = _mk(db, "se4", "No score.", "2026-03-04")
+    assert q.corpus_sentiment(db, article_ids=[a1.id, a4.id])["n_scored"] == 1
+    assert q.corpus_sentiment(db, article_ids=[])["n_scored"] == 0
+
+
+def test_corpus_sources_groups_matched_articles_by_source(db):
+    a1 = _mk(db, "sc1", "Story one.", "2026-04-01")
+    a2 = _mk(db, "sc2", "Story two.", "2026-04-05")
+    a1.sentiment_score, a2.sentiment_score = 0.5, -0.1
+    db.add(Source(name="S2", domain="y.test", country="us"))
+    db.commit()
+    a3 = Article(
+        url="https://y.test/1", canonical_url="https://y.test/1", source_id=2,
+        title="T", content="Story three.", hash="sc3", language="en",
+        published_at=datetime.fromisoformat("2026-04-03").replace(tzinfo=UTC),
+        created_at=datetime.now(UTC),
+    )
+    db.add(a3)
+    db.commit()
+    r = q.corpus_sources(db, article_ids=[a1.id, a2.id, a3.id])
+    assert r["count"] == 2
+    by = {s["name"]: s for s in r["sources"]}
+    assert by["S"]["articles"] == 2 and by["S2"]["articles"] == 1
+    assert r["sources"][0]["name"] == "S"  # ordered by volume desc (no ranking by quality)
+    assert by["S"]["mean_tone"] == round((0.5 - 0.1) / 2, 3)
+    assert by["S"]["first"] and by["S"]["last"]  # timing span present
+    assert "credibility" in r["caveat"]
+    assert q.corpus_sources(db, article_ids=[])["count"] == 0
