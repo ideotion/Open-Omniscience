@@ -46,6 +46,17 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   the reader. `tests/test_dump_corpus.py` builds a tiny, format-faithful dump and
   proves create / idempotent-unchanged / honest-skip.
 
+- **The Back button navigates tabs instead of escaping to the passphrase
+  screen.** Tab switching used `history.replaceState`, so it left no history
+  entries; and a locked API response did `location.href = "/unlock"`. The only
+  prior entry was therefore `/unlock`, so the browser Back button landed the user
+  on the passphrase screen. Now each user tab-switch **pushes** a history entry
+  (a `popstate` handler re-renders the tab on Back/Forward; the initial load
+  still *replaces*, so the first tab isn't a dead Back), and every hop to/from
+  `/unlock` uses `location.replace` — the locked redirect and the post-unlock
+  return both replace — so the unlock screen never sits in the back stack.
+  `tests/test_back_button_nav.py` pins the contract.
+
 - **Parallel collection: fetch many hosts at once, politely; write serially.**
   The collect pass can now fetch **different hosts concurrently** via a bounded
   worker pool (`collect_parallelism`, default **1 = sequential, unchanged**;

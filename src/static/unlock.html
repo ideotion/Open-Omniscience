@@ -75,7 +75,7 @@
   <div id="view-open" class="hidden">
     <h1>Already unlocked</h1>
     <p>The corpus is open. You can return to the Console.</p>
-    <button onclick="location.href='/'">Open the Console</button>
+    <button onclick="location.replace('/')">Open the Console</button>
   </div>
 </div>
 
@@ -107,7 +107,9 @@
 
     async function go(btn, fn) {
       btn.disabled = true;
-      try { await fn(); location.href = "/"; }
+      // replace (not href) so /unlock never sits in history — Back from the app
+      // must not return to the unlock screen after a successful unlock.
+      try { await fn(); location.replace("/"); }
       catch (e) {
         const box = btn.id === "btn-unlock" ? $("msg") : $("msg2");
         box.textContent = e.message || t("Wrong passphrase — try again.");

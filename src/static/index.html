@@ -2429,7 +2429,7 @@
         });
         const text = await res.text();
         let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-        if (res.status === 503 && data && data.locked) { location.href = "/unlock"; throw new Error(data.detail); }
+        if (res.status === 503 && data && data.locked) { location.replace("/unlock"); throw new Error(data.detail); }
         if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
         return data;
       } finally { _bumpInflight(-1); }
@@ -2485,7 +2485,7 @@
     };
     const _loaded = new Set();
 
-    function showTab(name) {
+    function showTab(name, push = true) {
       if (name === "database") name = "library";  // legacy #database deep-links
       if (!document.getElementById("tab-" + name)) name = "home";
       document.querySelectorAll(".nav-item[data-tab]").forEach(b => {
@@ -2502,10 +2502,20 @@
       closePalette();
       const m = document.querySelector("main"); if (m) m.scrollTop = 0;
       window.scrollTo(0, 0);
-      if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+      // Each user tab-switch PUSHES a history entry so the browser Back button
+      // moves between visited tabs (it used to replaceState, leaving no entries —
+      // so Back escaped the app, landing on /unlock). popstate re-renders without
+      // re-pushing; the initial load (below) replaces, so /home isn't a dead Back.
+      if (location.hash !== "#" + name) {
+        if (push) history.pushState(null, "", "#" + name);
+        else history.replaceState(null, "", "#" + name);
+      }
     }
     document.querySelectorAll(".nav-item[data-tab]").forEach(b =>
       b.addEventListener("click", () => showTab(b.dataset.tab)));
+    // Back/Forward navigates the tab history (render only — the URL already moved).
+    window.addEventListener("popstate", () =>
+      showTab((location.hash || "#home").slice(1), false));
 
     // -- Appearance / customization (local-only, never transmitted) --------- //
     const UI_KEY = "oo.ui";
@@ -6967,7 +6977,7 @@
     }, true);
     // Honour a deep-link like /#sources on first load; otherwise land on Home.
     // showTab itself maps legacy aliases (#database -> #library) and falls back.
-    showTab((location.hash || "#home").slice(1));
+    showTab((location.hash || "#home").slice(1), false);  // initial render: replace, don't push
   </script>
 </body>
 </html>

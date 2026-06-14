@@ -191,9 +191,10 @@ makes the rest fall out cheaply:
 
 ## K. Bugs (diagnosed this session)
 
-- 🐛 **Back button → passphrase** — tab nav uses `replaceState` + a locked API
-  hard-navigates to `/unlock`; fix = `pushState` for tabs + `replaceState` to
-  "/" after unlock.
+- ✅ **Back button → passphrase** — FIXED: tab nav now `pushState`s (+ a popstate
+  handler re-renders; initial load replaces), and every hop to/from `/unlock`
+  uses `location.replace`, so Back navigates tabs and never returns to the
+  unlock screen. `tests/test_back_button_nav.py` pins it.
 - 🐛 **"Scraping stopped"** = the interval scheduler idling, not a crash —
   resolved by continuous collection (group B).
 
