@@ -644,13 +644,6 @@
       </nav>
 
       <div class="sb-foot">
-        <button class="secondary" id="net-toggle" onclick="toggleNetwork()"
-          title="Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish."
-          style="min-width:104px;display:flex;align-items:center;justify-content:center;gap:6px">
-          <svg id="net-plane" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
-               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-               style="flex:0 0 auto"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
-          <span id="net-label">Online</span></button>
         <button class="secondary" onclick="showTab('settings')" title="Open Settings (appearance, language, data, safety)"
                 style="display:flex;align-items:center;justify-content:center;gap:8px;flex:1">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.2A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 14H2.5a2 2 0 0 1 0-4h.2A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 2.6V2.5a2 2 0 0 1 4 0v.2A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H23a2 2 0 0 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg>
@@ -679,6 +672,11 @@
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
         </div>
+        <button class="icon-btn" id="net-toggle" onclick="toggleNetwork()"
+          title="Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish."
+          aria-label="Airplane mode (network on/off)">
+          <svg id="net-plane" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></button>
         <button class="icon-btn" id="lang-switch" onclick="toggleLangMenu(event)" title="Change language"
                 aria-label="Change language" aria-haspopup="menu" style="min-width:64px;gap:5px">
           <span id="lang-flag" aria-hidden="true">🌐</span><span id="lang-code" style="font-size:12px;letter-spacing:.4px"></span>

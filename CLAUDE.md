@@ -100,8 +100,12 @@ ruling, a contingency, or a deliberate-omission note.
    2026-06-10): capture-phase `_externalLinkGuard` in BOTH UIs; loopback
    exempt; message via `OOI18N.t`.
 14. **Network toggle is AIRPLANE-MODE (ruled 2026-06-12, SHIPPED T2):** one
-   constant plane glyph + label, FILL = state (filled = offline engaged);
-   never ▶/⏸ action glyphs. EVERY offline→online transition passes the ONE
+   constant plane glyph, FILL = state (filled = offline engaged); never ▶/⏸
+   action glyphs. **REFINED #14d (§3, SHIPPED #139):** the button MOVED to the
+   top bar and its text LABEL was DROPPED (icon-only; hover title + FILL convey
+   state) — the glyph + FILL-painting + the consent popup are unchanged; the
+   coachmark follows by getBoundingClientRect. Enforced in test_ui_invariants
+   (#14: glyph + FILL `plane.setAttribute("fill"`), no longer the label. EVERY offline→online transition passes the ONE
    consent popup (`ensureOnline`): names the action, lists LOCAL interface
    IPs from kernel tables (NEVER a public-IP echo pre-consent), honest
    public-IP wording. Scheduler responses carry `online` → immediate repaint,

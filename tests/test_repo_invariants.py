@@ -270,8 +270,14 @@ def test_ui_invariants():
     #     glyph whose FILL is the state — never ▶/⏸ action glyphs — and EVERY
     #     offline→online transition passes the ONE consent popup (local
     #     interface addresses; no public-IP echo before consent).
-    assert 'id="net-plane"' in html and 'id="net-label"' in html, (
-        "the network toggle must be the constant airplane glyph + label"
+    # The toggle is the constant airplane GLYPH whose FILL is the state. The text
+    # label was dropped when the button moved to the top bar (§3, ruled): hover +
+    # FILL convey state now — but the glyph + the FILL-painting must stay.
+    assert 'id="net-plane"' in html and 'id="net-toggle"' in html, (
+        "the network toggle must be the constant airplane glyph (CLAUDE.md #14)"
+    )
+    assert 'plane.setAttribute("fill"' in html, (
+        "the airplane glyph's FILL must encode the network state (CLAUDE.md #14)"
     )
     assert "▶ Online" not in html and "⏸ Offline" not in html, (
         "action glyphs must not label network STATE (CLAUDE.md #14)"
