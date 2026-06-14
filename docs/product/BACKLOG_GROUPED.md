@@ -243,7 +243,8 @@ makes the rest fall out cheaply:
 
 ## L. Docs ↔ app reciprocity
 
-- ⬜ **USER_MANUAL** gains Agenda, Indices, and Task-manager sections.
+- ✅ **USER_MANUAL** gains Agenda, Indices, and Task-manager sections (#135) —
+  §3.0a Activity & Task manager, §3.5a Indices, §3.6b Agenda + TOC links.
 - ✅ **SECURITY.md** — the current-version line is now version-agnostic (no more
   stale "v0.0.7"); the historical "v0.0.7 audit" reference is kept as a record.
 - ✅ **RC-gate** kill-switch row marked ✅ (T2 shipped it: invariant #14 +
