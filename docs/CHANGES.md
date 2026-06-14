@@ -11,6 +11,19 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Airplane-mode onboarding coachmark — teach the one online/offline switch.**
+  The app boots offline (airplane mode) by design, which left first-time users
+  with no hint how to start. A dismissible bubble (`#net-coach`) now anchors to
+  the airplane button and invites *"You're offline. Switch off airplane mode to
+  go online and start collecting,"* with a **Go online** and a **Not now**. It is
+  the **invitation layer only**: "Go online" routes through the normal
+  `toggleNetwork()` → **the ONE consent popup still fires** (`ensureOnline`); the
+  coach never flips the network itself (guarded by `test_ui_invariants` #14b). It
+  is **prominent on the first two launches, subtle after, capped, and retired for
+  good** once you go online or tap "Not now" (remembered locally — never naggy).
+  It anchors to the button by position, so it follows the button when the
+  top-bar move lands. Ships **×12 locales** (3 new strings; "Go online" reused).
+
 - **Restore is now ADDITIVE-ONLY — the destructive replace path is gone.** A
   journalist's corpus is evidence; a restore must never overwrite it (maintainer
   ruling 2026-06-13). The two destructive "replace the live database" restore

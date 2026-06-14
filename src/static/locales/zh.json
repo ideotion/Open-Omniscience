@@ -530,5 +530,8 @@
   "Opens the local preview first — what your database knows about this link": "先打开本地预览——您的数据库对此链接的了解",
   "Close": "关闭",
   "Watched pages join your corpus as articles: the newest version is what search and analytics see (the exact revision id is recorded), the full text of every tracked revision is stored on this machine — so past versions stay reconstructable, at the cost of storage growing with edit activity — and the change history remains available per page.": "被关注的页面将作为文章加入您的语料库：搜索和分析看到的是最新版本（精确的修订 ID 会被记录），每个被跟踪修订的全文都存储在本机——因此过去的版本始终可以精确重建，代价是存储随编辑活动增长——每个页面的修改历史也保持可用。",
-  "Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.": "为何如此选择：显示最新版本使分析与读者今天所见保持一致；存储每个修订的全文使任何过去版本都能在本机被精确重建（版本锚定的分析——无需重放差异、无需猜测）；文本是为关键词而化简为纯文本的维基文本，绝不冒充渲染后的条目；一切都保留在本地。"
+  "Why these choices: showing the newest version keeps analysis aligned with what readers see today; storing every revision's full text makes any past version exactly reconstructable on this machine (version-anchored analytics — no diff replay, no guessing); the page text is wikitext reduced to plain text for keywords, never passed off as the rendered article; everything stays local.": "为何如此选择：显示最新版本使分析与读者今天所见保持一致；存储每个修订的全文使任何过去版本都能在本机被精确重建（版本锚定的分析——无需重放差异、无需猜测）；文本是为关键词而化简为纯文本的维基文本，绝不冒充渲染后的条目；一切都保留在本地。",
+  "You're offline. Switch off airplane mode to go online and start collecting.": "您当前处于离线状态。关闭飞行模式以联网并开始采集。",
+  "You'll confirm before anything connects.": "在建立任何连接之前都会先征得您的确认。",
+  "Not now": "暂不"
 }

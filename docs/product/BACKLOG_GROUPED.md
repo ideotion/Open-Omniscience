@@ -132,6 +132,11 @@ makes the rest fall out cheaply:
   language · airplane (everything else below the subtabs).
 - ⬜ **Airplane button → top bar**, no text (hover only), distinct online/offline
   transition colors coherent with the icon state.
+- ✅ **Airplane-mode onboarding coachmark** — `#net-coach`: a dismissible bubble
+  anchored to the airplane button inviting "switch off airplane mode to go online
+  and start collecting"; invitation layer only (routes through the consent popup,
+  never bypasses it — `test_ui_invariants` #14b); prominent → subtle → retired,
+  ×12 locales. Follows the button when the top-bar move lands. (ruling 2026-06-13)
 - ⬜ **Home redesign** — at-a-glance stats strip pinned on top; remove the hero
   card; remove quick-actions; full-width denser cards (4+); family colors as
   vertical subtabs with an "All cards" default.

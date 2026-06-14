@@ -564,6 +564,23 @@
       box-shadow: 0 8px 24px rgba(0,0,0,.30); pointer-events: none; opacity: 0;
       transition: opacity .12s ease; }
     #oo-tip.show { opacity: 1; }
+    /* Airplane-mode onboarding coachmark (maintainer-ruled 2026-06-13): a
+       dismissible invitation that teaches the ONE online/offline switch. It is
+       the invitation layer only — going online still passes the consent popup
+       (ensureOnline). Prominent on first launches, subtle after, never naggy. */
+    #net-coach { position: fixed; z-index: 360; max-width: 270px; background: var(--panel);
+      color: var(--fg); border: 1px solid var(--line); border-inline-start: 3px solid var(--accent);
+      border-radius: 10px; padding: 12px 14px; font-size: 12.5px; line-height: 1.5;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35); display: none; }
+    #net-coach.show { display: block; }
+    #net-coach.prominent { animation: coachpulse 2.4s ease-in-out infinite; }
+    @keyframes coachpulse { 0%,100% { box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+      50% { box-shadow: 0 10px 30px rgba(0,0,0,.35), 0 0 0 4px color-mix(in srgb, var(--accent) 32%, transparent); } }
+    #net-coach .coach-sub { color: var(--muted); margin-top: 4px; }
+    #net-coach .coach-actions { display: flex; gap: 8px; margin-top: 11px; justify-content: flex-end; }
+    #net-coach .coach-actions button { padding: 5px 11px; font-size: 12px; }
+    #net-coach .coach-arrow { position: absolute; width: 11px; height: 11px; background: var(--panel);
+      border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   </style>
 </head>
 <body>
@@ -2033,6 +2050,19 @@
     </div>
   </dialog>
 
+  <!-- Airplane-mode onboarding coachmark: invites the user to flip the ONE
+       network switch. Going online still passes the consent popup (ensureOnline)
+       — this only teaches where the switch is. -->
+  <div id="net-coach" role="status" aria-live="polite">
+    <span class="coach-arrow" aria-hidden="true"></span>
+    <div class="coach-body">You're offline. Switch off airplane mode to go online and start collecting.</div>
+    <div class="coach-sub">You'll confirm before anything connects.</div>
+    <div class="coach-actions">
+      <button class="secondary" id="net-coach-dismiss">Not now</button>
+      <button id="net-coach-go">Go online</button>
+    </div>
+  </div>
+
   <script src="/static/i18n.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
@@ -2174,6 +2204,72 @@
       if (label) label.textContent = online ? t("Online") : t("Offline");
       btn.classList.toggle("off", !online);
       document.body.classList.toggle("net-offline", !online);
+      // Onboarding coachmark: invite once when we first learn we're offline;
+      // retire it for good once the user is online (they've learned the switch).
+      if (online) { _coachChecked = true; dismissNetCoach(true); }
+      else if (!_coachChecked) { _coachChecked = true; maybeShowNetCoach(); }
+    }
+    // -- Airplane-mode onboarding coachmark (maintainer-ruled 2026-06-13) ------
+    // Teaches the ONE online/offline switch. INVITATION LAYER ONLY: the "Go
+    // online" action routes through toggleNetwork() -> ensureOnline, so the ONE
+    // consent popup still fires; the coach NEVER calls the network API itself.
+    // Dismissal is remembered locally; prominent on first launches, then subtle,
+    // and never naggy (capped, and retired once the user goes online).
+    const _COACH_KEY = "oo_net_coach_v1";
+    let _coachChecked = false;
+    function _coachState() {
+      try { return JSON.parse(localStorage.getItem(_COACH_KEY)) || {}; } catch { return {}; }
+    }
+    function _coachSave(s) {
+      try { localStorage.setItem(_COACH_KEY, JSON.stringify(s)); } catch { /* private mode */ }
+    }
+    function _placeCoach() {
+      const el = $("net-coach"), btn = $("net-toggle");
+      if (!el || !btn || !el.classList.contains("show")) return;
+      const b = btn.getBoundingClientRect();
+      const w = el.offsetWidth, h = el.offsetHeight, gap = 12, pad = 8;
+      const arrow = el.querySelector(".coach-arrow");
+      let left, top, side;
+      if (b.right + gap + w <= window.innerWidth - pad) {   // prefer to the right of the button
+        left = b.right + gap; top = b.top + b.height / 2 - h / 2; side = "left";
+      } else {                                              // else float above it
+        left = b.left; top = b.top - gap - h; side = "bottom";
+      }
+      left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
+      top = Math.max(pad, Math.min(top, window.innerHeight - h - pad));
+      el.style.left = left + "px"; el.style.top = top + "px";
+      if (arrow) {
+        if (side === "left") {
+          arrow.style.left = "-6px"; arrow.style.right = "auto";
+          arrow.style.top = Math.max(8, Math.min(b.top + b.height / 2 - top - 5, h - 16)) + "px";
+          arrow.style.transform = "rotate(45deg)";
+        } else {
+          arrow.style.top = (h - 6) + "px";
+          arrow.style.left = Math.max(8, Math.min(b.left + b.width / 2 - left - 5, w - 16)) + "px";
+          arrow.style.transform = "rotate(-45deg)";
+        }
+      }
+    }
+    function dismissNetCoach(permanent) {
+      const el = $("net-coach"); if (el) el.classList.remove("show", "prominent");
+      if (permanent) { const s = _coachState(); s.dismissed = true; _coachSave(s); }
+      window.removeEventListener("resize", _placeCoach);
+    }
+    function maybeShowNetCoach() {
+      const el = $("net-coach"), btn = $("net-toggle"); if (!el || !btn) return;
+      const offline = document.body.classList.contains("net-offline") || btn.classList.contains("off");
+      if (!offline) return;                              // only invite when actually offline
+      const s = _coachState();
+      if (s.dismissed || (s.seen || 0) >= 6) return;     // respected + never naggy
+      s.seen = (s.seen || 0) + 1; _coachSave(s);
+      const go = $("net-coach-go"), no = $("net-coach-dismiss");
+      if (go) go.onclick = () => { dismissNetCoach(true); toggleNetwork(); };  // consent still fires
+      if (no) no.onclick = () => dismissNetCoach(true);
+      el.classList.add("show");
+      el.classList.toggle("prominent", s.seen <= 2);     // prominent first launches, subtle after
+      _placeCoach();
+      setTimeout(_placeCoach, 220);                      // reposition after i18n reflow
+      window.addEventListener("resize", _placeCoach);
     }
     // ONE consent design for every offline->online transition: what will
     // happen + the machine's LOCAL addresses (kernel tables; fetching a

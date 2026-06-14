@@ -841,6 +841,20 @@ ruling, a contingency, or a deliberate-omission note.
   modal disappear (app boots in AIRPLANE MODE; permanent scraping when
   online; new requests QUEUE into the task manager, never a modal — recorded
   in SCRAPING_AUTOMATION_PLAN.md Step 5 refinements).
+- **AIRPLANE-MODE ONBOARDING INVITATION — SHIPPED 2026-06-14 (frontend
+  coachmark):** `#net-coach` in index.html — a dismissible bubble that anchors
+  to the airplane button (`#net-toggle`, via getBoundingClientRect, so it follows
+  the button when the UI-shell top-bar move lands), shown once we first learn
+  we're offline. INVITATION LAYER ONLY by construction: the "Go online" action
+  runs `dismissNetCoach(true); toggleNetwork()` → `ensureOnline` (the ONE consent
+  popup still fires — the coach NEVER POSTs the network itself; enforced by
+  test_ui_invariants #14b). Prominent (pulse) on the first two launches, subtle
+  after, capped at 6 auto-shows, retired for good once the user goes online or
+  taps "Not now" (localStorage `oo_net_coach_v1`; never naggy). +3 strings ×12
+  (en + real translations; "Go online" reused). REMAINING from the ruling: fold
+  into the guided wizard's final consented-first-collect step; the optional
+  on-button "offline — tap to collect" affordance + Home empty-state CTA.
+  Original ruling below.
 - **AIRPLANE-MODE ONBOARDING INVITATION (ruled 2026-06-13):** boot-offline
   (SHIPPED #114) needs a teaching affordance — at startup, a simple UI
   BUBBLE/coachmark points at the ONE airplane button and INVITES "switch
