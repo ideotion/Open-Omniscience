@@ -11,6 +11,12 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **The unlock screen now shows THE brand eye.** The passphrase/unlock screen drew
+  a *different* eye (a double-arc + circle) from the rest of the app. It now uses
+  the **one canonical brand mark** — the pointed-oval lid + #-grid iris, identical
+  to the main UI and `assets/icon.svg`. One identity everywhere. Locked by
+  `test_ui_invariants` #5 (now covers `unlock.html`).
+
 - **Airplane-mode transition now shows which way you're crossing.** Toggling the
   network flashed a single red wash for *both* directions — conflating the two
   opposite meanings. Now the flash is **direction-aware**: going **offline** (the

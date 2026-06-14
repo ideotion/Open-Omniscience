@@ -200,8 +200,16 @@ def test_ui_invariants():
     assert '<span id="version" hidden>' in html, "version stays out of the visible chrome"
     # 2. sidebar: medium widths collapse to a rail, not off-canvas
     assert "@media (max-width:860px) and (min-width:601px)" in html
-    # 5. the eye brand mark (grid-iris path is its fingerprint)
+    # 5. the eye brand mark (grid-iris path is its fingerprint) — in index.html
+    #    AND the /unlock screen (must be THE SAME canonical eye, not a variant).
     assert "C8 6.5, 24 6.5, 30 16" in html, "brand mark must be the ASCII-eye vector"
+    unlock = (_SRC / "static" / "unlock.html").read_text(encoding="utf-8")
+    assert "C8 6.5, 24 6.5, 30 16" in unlock and "M11 12.5 H21" in unlock, (
+        "the /unlock screen must use THE canonical eye (pointed-oval + grid-iris)"
+    )
+    assert "C8 21.5, 24 21.5" not in unlock and 'circle cx="32"' not in unlock, (
+        "the old double-arc unlock eye must be gone (one canonical brand mark)"
+    )
     # 7. ONE interface (final verdict 2026-06-10): the Desk UI is retired —
     #    desk.html must stay deleted and the installer must create one launcher.
     assert not (_SRC / "static" / "desk.html").exists(), (
