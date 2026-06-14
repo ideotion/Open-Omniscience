@@ -345,3 +345,15 @@ def test_ui_invariants():
     assert "data-ins" not in html and "data-set=" not in html and "data-ctab" not in html, (
         "divergent per-surface subtab attributes must be unified onto data-tab (CLAUDE.md #18)"
     )
+    # 19. Home redesign (UI_SHELL_REDESIGN_PLAN §5): a compact at-a-glance stats
+    #     strip is pinned at the TOP of Home; the Quick actions section is gone.
+    home = html.split('id="tab-home"', 1)[1].split('id="tab-search"', 1)[0]
+    assert "home-glance" in home and 'id="home-stats"' in home and "stat-strip" in home, (
+        "Home must open with the compact at-a-glance strip (UI_SHELL_REDESIGN §5)"
+    )
+    assert "Quick actions" not in home and 'class="quick"' not in home, (
+        "the Home Quick actions section must be removed (UI_SHELL_REDESIGN §5)"
+    )
+    assert home.index("home-glance") < home.index("Briefing</h2>"), (
+        "the at-a-glance strip must sit at the TOP of Home, above the Briefing"
+    )

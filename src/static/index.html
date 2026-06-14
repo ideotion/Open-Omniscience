@@ -444,16 +444,14 @@
     @keyframes slidein { from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
 
     /* ---- Dashboard -------------------------------------------------- */
-    .quick { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
-    .qcard { display:flex; gap:13px; align-items:flex-start; text-align:left; background:var(--panel);
-      border:1px solid var(--border); border-radius:var(--radius); padding:16px; cursor:pointer;
-      margin:0; color:var(--fg); box-shadow:var(--shadow); transition:transform .1s, border-color .12s; }
-    .qcard:hover { transform:translateY(-2px); border-color:var(--accent); filter:none; }
-    .qcard .qi { width:34px; height:34px; flex:0 0 34px; border-radius:10px; display:grid; place-items:center;
-      background:color-mix(in srgb,var(--accent) 18%, transparent); color:var(--accent); }
-    .qcard .qi svg { width:19px; height:19px; }
-    .qcard b { display:block; font-size:14.5px; }
-    .qcard small { color:var(--muted); font-weight:400; }
+    /* Home "at a glance" — a slim, permanent stats strip pinned to the top
+       (UI_SHELL_REDESIGN_PLAN §5): compact, never a screenful. */
+    .home-glance { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px;
+      padding:11px 16px; margin-bottom:14px; }
+    .stat-strip { display:flex; flex-wrap:wrap; gap:5px 16px; align-items:baseline; flex:1 1 auto; }
+    .stat-strip .s { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
+    .stat-strip .s b { font-size:15px; font-weight:700; letter-spacing:-.01em; }
+    .stat-strip .s span { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
 
     /* ---- Command palette -------------------------------------------- */
     .overlay { position:fixed; inset:0; background:rgba(2,4,8,.55); backdrop-filter:blur(3px);
@@ -699,6 +697,14 @@
     <!-- ============================= HOME ============================= -->
     <div class="tab-page active" id="tab-home">
 
+      <!-- At-a-glance: a slim, permanent stats strip pinned to the top of Home
+           (UI_SHELL_REDESIGN_PLAN §5). Populated by loadHome(). -->
+      <div class="panel home-glance">
+        <div id="home-stats" class="stat-strip"><div class="muted">Loading…</div></div>
+        <span class="sp"></span>
+        <div id="home-status" class="hint" style="margin:0"></div>
+      </div>
+
       <section class="panel">
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
           <span id="brief-generated" class="hint" style="margin:0"></span>
@@ -730,39 +736,6 @@
           design. For a signed, tamper-evident copy of the underlying articles, use Evidence &amp; custody.</p>
       </section>
 
-      <section class="panel">
-        <div class="phead"><h2>At a glance</h2><span class="sp"></span>
-          <button class="secondary tiny" onclick="loadHome()">Refresh</button></div>
-        <div id="home-stats" class="stat-grid"><div class="muted">Loading…</div></div>
-        <div id="home-status" class="hint" style="margin-top:12px"></div>
-      </section>
-
-      <section class="panel">
-        <h2>Quick actions</h2>
-        <div class="quick">
-          <button class="qcard" onclick="showTab('search')">
-            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>
-            <span><b>Find something</b><small>Boolean search across everything you've gathered.</small></span></button>
-          <button class="qcard" onclick="showTab('ingest')">
-            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></span>
-            <span><b>Collect now</b><small>Pull fresh articles from your sources, ethically.</small></span></button>
-          <button class="qcard" onclick="showTab('insights')">
-            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg></span>
-            <span><b>See the patterns</b><small>Trends, who's mentioned with whom, where.</small></span></button>
-          <button class="qcard" onclick="showTab('timemap')">
-            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
-            <span><b>See it in space &amp; time</b><small>Events, hazards and your coverage on a world map with a time slider.</small></span></button>
-          <button class="qcard" onclick="showTab('custody')">
-            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
-            <span><b>Prove it</b><small>Tamper-evident, signed provenance for your evidence.</small></span></button>
-          <button class="qcard" onclick="showTab('wiki')">
-            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/></svg></span>
-            <span><b>Watch Wikipedia</b><small>Flag large or suspicious edits on pages you track.</small></span></button>
-          <button class="qcard" onclick="showTab('help')">
-            <span class="qi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></span>
-            <span><b>Learn the tool</b><small>The full manual, right here — no internet needed.</small></span></button>
-        </div>
-      </section>
     </div>
 
     <!-- ============================ SEARCH ============================ -->
@@ -2841,7 +2814,7 @@
         const entries = Object.entries(s.counts || {});
         $("home-stats").innerHTML = entries.length
           ? entries.map(([k, v]) =>
-              `<div class="stat"><div class="n">${(v || 0).toLocaleString()}</div><div class="k">${esc(k)}</div></div>`).join("")
+              `<span class="s"><b>${(v || 0).toLocaleString()}</b> <span>${esc(k)}</span></span>`).join("")
           : '<div class="muted">Your library is empty — head to Collect to gather your first material.</div>';
       } catch (e) { $("home-stats").innerHTML = '<div class="muted">Stats unavailable.</div>'; }
       try {

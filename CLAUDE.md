@@ -819,13 +819,15 @@ ruling, a contingency, or a deliberate-omission note.
   Home now opens on the Briefing. Same PR keyed the #onboard "Welcome — your
   corpus is empty" card (h2/p/button) ×12 (resolves the i18n REPEAT below).
   **HOME REDESIGN (ruled 2026-06-13; full design in
-  `docs/product/UI_SHELL_REDESIGN_PLAN.md` §5):** the "At a glance" stats
-  strip (index.html:731) moves PERMANENT + COMPACT to the very top of Home;
-  REMOVE the Quick actions section (index.html:738); cards take FULL width
-  (today ~3 wide because cards are too big — redesign denser, 4+ fit);
-  FAMILY-TYPE COLORS with families as VERTICAL SUBTABS + an "All cards"
-  default subtab (color = family hue accent; "All" stays a single prioritised
-  feed, families are a lens not a wall). My opinion recorded in the doc.
+  `docs/product/UI_SHELL_REDESIGN_PLAN.md` §5):** SLICE 1 SHIPPED 2026-06-14 —
+  the "At a glance" stats strip is now PERMANENT + COMPACT at the very top of
+  Home (`.home-glance`/`.stat-strip`, loadHome renders compact chips) and the
+  Quick actions section is REMOVED (+ its dead `.quick`/`.qcard` CSS);
+  test_ui_invariants #19 pins both. REMAINING: cards take FULL width (denser,
+  4+ fit); FAMILY-TYPE COLORS with families as VERTICAL SUBTABS (via the
+  ooSubtabs component) + an "All cards" default subtab (color = family hue
+  accent; "All" stays a single prioritised feed, families are a lens not a
+  wall) — own slice over renderBriefing. My opinion recorded in the doc.
 - **UI SHELL REDESIGN (ruled 2026-06-13; full plan in
   `docs/product/UI_SHELL_REDESIGN_PLAN.md`):** (1) ONE universal nav grammar
   app-wide — LATERAL sidebar = main tabs, VERTICAL subtabs near the top =
