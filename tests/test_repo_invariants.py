@@ -277,6 +277,17 @@ def test_ui_invariants():
     assert "st.online" in html, (
         "scheduler responses carry network state for the immediate repaint"
     )
+    # 14b. airplane-mode onboarding coachmark (ruled 2026-06-13): the INVITATION
+    #      layer only — it teaches the ONE network switch but must NEVER bypass
+    #      consent. Its "Go online" action routes through toggleNetwork() (which
+    #      calls ensureOnline), so the coach itself never flips the network.
+    assert 'id="net-coach"' in html, (
+        "the airplane-mode onboarding coachmark must exist (CLAUDE.md)"
+    )
+    assert "dismissNetCoach(true); toggleNetwork();" in html, (
+        "the coach 'Go online' must route through toggleNetwork()/ensureOnline — "
+        "the invitation layer must never bypass the consent popup (CLAUDE.md #14)"
+    )
     # 15. a PERMANENT language switcher lives in the top bar (ruled, RC gate):
     #     flag = visual convention only, the NATIVE NAME is the identifier;
     #     one click switches the whole UI via the one i18n engine.
