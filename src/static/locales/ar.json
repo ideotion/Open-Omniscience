@@ -539,5 +539,13 @@
   "Seed sources & run a first ingestion": "تهيئة المصادر وتشغيل أول عملية جمع",
   "All cards": "كل البطاقات",
   "Task manager": "مدير المهام",
-  "Tasks": "المهام"
+  "Tasks": "المهام",
+  "Analysis": "تحليل",
+  "Analyze →": "تحليل ←",
+  "Analytics over the articles your search matched — counts only, never a verdict.": "تحليلات للمقالات التي طابقها بحثك — أعداد فقط، وليست حكمًا أبدًا.",
+  "Run a search, then press Analyze to populate this window.": "ابدأ بحثًا ثم اضغط «تحليل» لملء هذه النافذة.",
+  "No keywords indexed across the matched articles yet.": "لا توجد بعد كلمات مفتاحية مفهرسة عبر المقالات المطابقة.",
+  "Open this keyword's own analysis window": "افتح نافذة تحليل هذه الكلمة المفتاحية",
+  "Title": "العنوان",
+  "Published": "نُشِر"
 }

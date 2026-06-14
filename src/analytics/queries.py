@@ -199,6 +199,61 @@ def top_terms(
     }
 
 
+def corpus_keywords(
+    session,
+    *,
+    article_ids: list[int],
+    kind: str | None = None,
+    limit: int = 30,
+) -> dict:
+    """Top keywords across a GIVEN set of articles (the analysis-window corpus).
+
+    Like ``top_terms`` but scoped to an explicit article set rather than a
+    time/country window — so the analysis window can show "the keywords of THESE
+    matched articles". Ordered by article SPREAD (how many of the set mention the
+    term), then mentions. Hidden/function words are dropped (the shared policy).
+    No score — counts only; the caller states the honest method + caveat + n.
+    """
+    if not article_ids:
+        return {"count": 0, "n_articles": 0, "terms": []}
+    q = (
+        session.query(
+            Keyword,
+            func.sum(KeywordMention.count).label("m"),
+            func.count(func.distinct(KeywordMention.article_id)).label("arts"),
+        )
+        .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        .filter(KeywordMention.article_id.in_(article_ids))
+    )
+    q = _apply_kind(q, kind)
+    rows = (
+        q.group_by(Keyword.id)
+        .order_by(
+            func.count(func.distinct(KeywordMention.article_id)).desc(),
+            func.sum(KeywordMention.count).desc(),
+        )
+        .limit(limit * 4)
+        .all()
+    )
+    is_hidden = _hidden_predicate()
+    terms = []
+    for k, m, a in rows:
+        if is_hidden(k.normalized_term):
+            continue
+        terms.append(
+            {
+                "term": k.term,
+                "normalized": k.normalized_term,
+                "kind": kind_of(k),
+                "mentions": int(m),
+                "articles": int(a),
+            }
+        )
+        if len(terms) >= limit:
+            break
+    return {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
+
+
 def trending(
     session,
     *,

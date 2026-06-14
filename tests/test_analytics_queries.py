@@ -176,3 +176,20 @@ def test_insights_api_status_and_reindex(tmp_path):
             assert any(t["normalized"] == "diplomacy" for t in top["terms"])
     finally:
         app.dependency_overrides.clear()
+
+
+def test_corpus_keywords_scopes_to_article_set(db):
+    """corpus_keywords aggregates over a GIVEN article set, not the whole corpus."""
+    a1 = _mk(db, "ck1", "tariff tariff steel industry policy", "2026-01-01")
+    a2 = _mk(db, "ck2", "tariff steel industry", "2026-01-02")
+    _mk(db, "ck3", "weather sunshine beaches holiday", "2026-01-03")  # excluded set
+    res = q.corpus_keywords(db, article_ids=[a1.id, a2.id], limit=20)
+    assert res["n_articles"] == 2
+    assert res["count"] > 0
+    norms = {t["normalized"] for t in res["terms"]}
+    # terms come only from the two selected articles, never the third
+    assert "weather" not in norms and "sunshine" not in norms and "beaches" not in norms
+    # the shared subject surfaces
+    assert any(("tariff" in n) or ("steel" in n) or ("industry" in n) for n in norms), norms
+    # empty set is handled
+    assert q.corpus_keywords(db, article_ids=[], limit=10)["count"] == 0

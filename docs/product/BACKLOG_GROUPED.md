@@ -175,9 +175,14 @@ makes the rest fall out cheaply:
 
 ## F. The analysis window (corpora system — the flagship)
 
-- ⬜ **Enter → corpus-of-articles window** with consistent sub-tabs (keyword ·
-  mindmap · link · source · When/Where/Who · sentiment · related) + the
-  search-only **Advanced search** tab. (keystone #4)
+- 🔨 **Enter → corpus-of-articles window** (keystone #4) — SLICE 1 SHIPPED: a
+  full-screen `#analyze` tab (sidebar + Search-tab "Analyze →" button) driven by
+  `ooSubtabs` with **Keywords** (new article-set endpoint
+  `/api/insights/corpus-keywords` → `queries.corpus_keywords`, bounded+disclosed,
+  counts-only) and **Articles** subtabs; keyword chips open the existing keyword
+  corpus window. `test_ui_invariants` #22 + `test_corpus_keywords`. REMAINING:
+  When/Where/Who · mindmap · links · source-competitive · sentiment subtabs (each
+  its own article-set aggregation), the Advanced-search tab, and search-Enter wiring.
 - ⬜ **Search bar** — bigger, always-on; remove the visible Ctrl-K hint;
   permanent **Advanced** button; shortcuts list → Help + editable in Settings.
 - ⬜ **The seven entries** into the same window (hand-select, tag-click,

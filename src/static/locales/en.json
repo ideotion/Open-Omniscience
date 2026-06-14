@@ -539,5 +539,13 @@
   "Seed sources & run a first ingestion": "Seed sources & run a first ingestion",
   "All cards": "All cards",
   "Task manager": "Task manager",
-  "Tasks": "Tasks"
+  "Tasks": "Tasks",
+  "Analysis": "Analysis",
+  "Analyze →": "Analyze →",
+  "Analytics over the articles your search matched — counts only, never a verdict.": "Analytics over the articles your search matched — counts only, never a verdict.",
+  "Run a search, then press Analyze to populate this window.": "Run a search, then press Analyze to populate this window.",
+  "No keywords indexed across the matched articles yet.": "No keywords indexed across the matched articles yet.",
+  "Open this keyword's own analysis window": "Open this keyword's own analysis window",
+  "Title": "Title",
+  "Published": "Published"
 }

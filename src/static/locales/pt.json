@@ -539,5 +539,13 @@
   "Seed sources & run a first ingestion": "Inicializar fontes e executar uma primeira coleta",
   "All cards": "Todos os cartões",
   "Task manager": "Gerenciador de tarefas",
-  "Tasks": "Tarefas"
+  "Tasks": "Tarefas",
+  "Analysis": "Análise",
+  "Analyze →": "Analisar →",
+  "Analytics over the articles your search matched — counts only, never a verdict.": "Análises sobre os artigos correspondentes à sua busca — apenas contagens, nunca um veredito.",
+  "Run a search, then press Analyze to populate this window.": "Faça uma busca e depois clique em Analisar para preencher esta janela.",
+  "No keywords indexed across the matched articles yet.": "Ainda não há palavras-chave indexadas nos artigos correspondentes.",
+  "Open this keyword's own analysis window": "Abrir a janela de análise desta palavra-chave",
+  "Title": "Título",
+  "Published": "Publicado"
 }

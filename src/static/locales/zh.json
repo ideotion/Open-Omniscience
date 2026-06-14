@@ -539,5 +539,13 @@
   "Seed sources & run a first ingestion": "初始化来源并运行首轮采集",
   "All cards": "全部卡片",
   "Task manager": "任务管理器",
-  "Tasks": "任务"
+  "Tasks": "任务",
+  "Analysis": "分析",
+  "Analyze →": "分析 →",
+  "Analytics over the articles your search matched — counts only, never a verdict.": "对搜索匹配到的文章的分析——仅为计数，绝非结论。",
+  "Run a search, then press Analyze to populate this window.": "先搜索，然后点击“分析”以填充此窗口。",
+  "No keywords indexed across the matched articles yet.": "匹配的文章中尚无已索引的关键词。",
+  "Open this keyword's own analysis window": "打开此关键词自己的分析窗口",
+  "Title": "标题",
+  "Published": "发布时间"
 }
