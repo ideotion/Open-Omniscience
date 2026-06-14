@@ -203,6 +203,31 @@ def insights_who(
     )
 
 
+@router.get("/where")
+def insights_where(
+    kind: str | None = Query(None, description="city | country (default: both)"),
+    days: int | None = Query(None, ge=1, le=3650),
+    country: str | None = None,
+    limit: int = Query(50, ge=1, le=500),
+    min_articles: int = Query(1, ge=1, le=10000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Corpus-wide WHERE — places deduced from article text at ingest,
+    aggregated with honest counts (distinct articles + summed mentions) and a
+    gazetteer coordinate when known. No scores; deduced, never confirmed.
+    ``country`` selects places located in that country. Optionally windowed
+    (``days``) or kind-filtered (``city`` | ``country``).
+    """
+    return q.where_aggregate(
+        db,
+        kind=kind,
+        days=days,
+        country=country,
+        limit=limit,
+        min_articles=min_articles,
+    )
+
+
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None
