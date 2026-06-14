@@ -206,3 +206,23 @@ def test_corpus_who_and_where_scope_to_article_set(db):
     assert all(pl["name"].lower() != "tokyo" for pl in where["places"])
     assert q.corpus_who(db, article_ids=[], limit=5)["count"] == 0
     assert q.corpus_where(db, article_ids=[], limit=5)["count"] == 0
+
+
+def test_corpus_sentiment_distribution_and_english_disclosure(db):
+    a1 = _mk(db, "se1", "Great news.", "2026-03-01")
+    a2 = _mk(db, "se2", "Terrible disaster.", "2026-03-02")
+    a3 = _mk(db, "se3", "Une nouvelle.", "2026-03-03")
+    a1.sentiment_score, a1.sentiment_label = 0.8, "positive"
+    a2.sentiment_score, a2.sentiment_label = -0.7, "negative"
+    a3.sentiment_score, a3.sentiment_label, a3.language = 0.1, "neutral", "fr"
+    db.commit()
+    r = q.corpus_sentiment(db, article_ids=[a1.id, a2.id, a3.id])
+    assert r["n_articles"] == 3 and r["n_scored"] == 3
+    assert r["labels"] == {"positive": 1, "negative": 1, "neutral": 1}
+    assert r["english_scored"] == 2  # a3 is fr -> outside the reliable (English) share
+    assert r["mean_score"] == round((0.8 - 0.7 + 0.1) / 3, 3)
+    assert "VADER" in r["caveat"]
+    # an article with no stored score is excluded from n_scored
+    a4 = _mk(db, "se4", "No score.", "2026-03-04")
+    assert q.corpus_sentiment(db, article_ids=[a1.id, a4.id])["n_scored"] == 1
+    assert q.corpus_sentiment(db, article_ids=[])["n_scored"] == 0

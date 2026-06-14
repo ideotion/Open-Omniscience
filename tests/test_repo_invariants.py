@@ -440,6 +440,17 @@ def test_ui_invariants():
     assert "/api/insights/corpus-keywords" in html and "function openAnalysis(" in html, (
         "the analysis window must query the article-set keyword endpoint (Group F)"
     )
+    # Its analysis subtabs over the matched set: When/Where/Who (deduced) + Links
+    # (shared-origin structure). Each is an article-SET aggregation, counts only.
+    assert '/api/insights/corpus-www' in html and 'id="an-www"' in html, (
+        "the analysis window must carry the When/Where/Who subtab (Group F)"
+    )
+    assert '/api/links/corpus' in html and 'id="an-links"' in html, (
+        "the analysis window must carry the shared-Links subtab (Group F)"
+    )
+    assert '/api/insights/corpus-sentiment' in html and 'id="an-sentiment"' in html, (
+        "the analysis window must carry the Sentiment subtab (Group F)"
+    )
 
 
 def test_sp500_is_classified_as_index():

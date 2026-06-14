@@ -88,6 +88,26 @@ def test_top_cited_and_articles_by_link(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_corpus_links_shared_origin_over_matched_articles(tmp_path):
+    # The analysis-window Links tab: outbound links SHARED across the matched set.
+    app = _client(tmp_path)
+    try:
+        with TestClient(app) as c:
+            # No filters -> all 3 articles matched. min_citations=2 keeps only the URL
+            # cited by >=2 of them (Reuters, by arts 1+2); the singleton AP is excluded.
+            d = c.get("/api/links/corpus?min_citations=2").json()
+            assert d["n_articles"] == 3 and d["total_matched"] == 3 and d["capped"] is False
+            cites = {i["normalized_url"]: i["citations"] for i in d["items"]}
+            assert cites.get("https://www.reuters.com/world/report") == 2
+            assert "https://apnews.com/x" not in cites
+            assert "not independent confirmation" in d["caveat"]
+            # min_citations=1 surfaces the single-cited link too (no shared-origin filter).
+            d1 = c.get("/api/links/corpus?min_citations=1").json()
+            assert "https://apnews.com/x" in {i["normalized_url"] for i in d1["items"]}
+    finally:
+        app.dependency_overrides.clear()
+
+
 # --- citation-graph export (0.0.8 part 2, WP2 / RM-15) ------------------------ #
 
 

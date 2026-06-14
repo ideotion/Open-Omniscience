@@ -801,12 +801,16 @@
         <button class="active" data-tab="keywords">Keywords</button>
         <button data-tab="articles">Articles</button>
         <button data-tab="www">When/Where/Who</button>
+        <button data-tab="links">Links</button>
+        <button data-tab="sentiment">Sentiment</button>
       </nav>
       <div class="an-panel" id="an-keywords" style="margin-top:10px">
         <div class="muted">Run a search, then press Analyze to populate this window.</div>
       </div>
       <div class="an-panel" id="an-articles" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-www" style="display:none;margin-top:10px"></div>
+      <div class="an-panel" id="an-links" style="display:none;margin-top:10px;overflow:auto"></div>
+      <div class="an-panel" id="an-sentiment" style="display:none;margin-top:10px"></div>
     </section>
     </div>
 
@@ -6843,6 +6847,43 @@
           + `<div style="min-width:200px"><div class="vsect">${esc(t("Who"))}</div><ul style="margin:4px 0">${who}</ul></div>`
           + `<div style="min-width:200px"><div class="vsect">${esc(t("Where"))}</div><ul style="margin:4px 0">${where}</ul></div></div>`;
       } catch (e) { $("an-www").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      // Links: outbound URLs SHARED by 2+ of the matched articles (shared-origin
+      // structure; convergence is corroboration only when paths are independent).
+      try {
+        const d = await api("/api/links/corpus?" + p.toString());
+        const rows = (d.items || []).map((it) =>
+          `<tr><td>${extLink(it.sample_url || it.normalized_url, esc(it.domain || it.link_text || it.normalized_url), "", "")}</td>`
+          + `<td style="text-align:right;font-variant-numeric:tabular-nums">${it.citations}</td></tr>`).join("");
+        $("an-links").innerHTML = `<div class="hint muted">${esc(d.caveat || "")}</div>`
+          + (rows
+            ? `<table class="data" style="margin-top:8px"><thead><tr><th>${esc(t("Link"))}</th>`
+              + `<th style="text-align:right">${esc(t("Cited by"))}</th></tr></thead><tbody>${rows}</tbody></table>`
+            : `<div class="muted" style="margin-top:8px">${esc(t("No links shared by 2+ matched articles."))}</div>`);
+      } catch (e) { $("an-links").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      // Sentiment: distribution of the STORED per-article VADER tone over the set,
+      // with the English-lexicon limitation disclosed (non-English scores unreliable).
+      try {
+        const d = await api("/api/insights/corpus-sentiment?" + p.toString());
+        const cav = `<div class="hint muted">${esc(d.caveat || "")}</div>`;
+        if (!d.n_scored) {
+          $("an-sentiment").innerHTML = cav
+            + `<div class="muted" style="margin-top:8px">${esc(t("No tone scores in this set."))}</div>`;
+        } else {
+          const lab = d.labels || {};
+          const LK = { positive: "Positive", neutral: "Neutral", negative: "Negative" };
+          const keys = ["positive", "neutral", "negative"].filter((k) => k in lab)
+            .concat(Object.keys(lab).filter((k) => !(k in LK)));
+          const rows = keys.map((k) => {
+            const pct = Math.round((100 * lab[k]) / d.n_scored);
+            return `<div style="display:flex;justify-content:space-between;max-width:320px">`
+              + `<span>${esc(LK[k] ? t(LK[k]) : k)}</span><span class="muted">${lab[k]} · ${pct}%</span></div>`;
+          }).join("");
+          const engPct = Math.round((100 * d.english_scored) / d.n_scored);
+          $("an-sentiment").innerHTML = cav + `<div style="margin-top:8px">${rows}</div>`
+            + `<div class="muted" style="margin-top:8px">${esc(t("Mean tone"))}: ${d.mean_score}`
+            + ` · n=${d.n_scored}/${d.n_articles} · ${esc(t("English-scored (reliable)"))}: ${d.english_scored} (${engPct}%)</div>`;
+        }
+      } catch (e) { $("an-sentiment").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
 
     async function doSearch() {

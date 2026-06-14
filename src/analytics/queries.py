@@ -307,6 +307,49 @@ def corpus_where(session, *, article_ids: list[int], limit: int = 40) -> dict:
             "caveat": "Deduced from text, never confirmed."}
 
 
+_SENTIMENT_CAVEAT = (
+    "Tone is measured by VADER, an ENGLISH-lexicon method; scores for non-English "
+    "articles are unreliable (see the English share). Counts only, never a verdict."
+)
+
+
+def corpus_sentiment(session, *, article_ids: list[int]) -> dict:
+    """Tone distribution across a GIVEN article set, from the STORED per-article
+    VADER valence (Article.sentiment_score/label). VADER is English-lexicon based, so
+    the ``english_scored`` share is returned and the caveat says non-English scores
+    are unreliable. Counts only; tone is a measured word-valence, not a verdict."""
+    from collections import Counter
+
+    if not article_ids:
+        return {"n_articles": 0, "n_scored": 0, "labels": {}, "mean_score": None,
+                "english_scored": 0, "caveat": _SENTIMENT_CAVEAT}
+    rows = (
+        session.query(Article.sentiment_label, Article.sentiment_score, Article.language)
+        .filter(Article.id.in_(article_ids))
+        .all()
+    )
+    labels: Counter = Counter()
+    scores: list[float] = []
+    english_scored = 0
+    for label, score, lang in rows:
+        if score is None:
+            continue
+        scores.append(float(score))
+        labels[(label or "unlabeled").lower()] += 1
+        if (lang or "").lower().startswith("en"):
+            english_scored += 1
+    n = len(scores)
+    return {
+        "n_articles": len(article_ids),
+        "n_scored": n,
+        "labels": dict(labels),
+        "mean_score": round(sum(scores) / n, 3) if n else None,
+        "english_scored": english_scored,
+        "method": "Per-article VADER valence (stored at ingest), aggregated over the matched set.",
+        "caveat": _SENTIMENT_CAVEAT,
+    }
+
+
 def trending(
     session,
     *,

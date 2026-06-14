@@ -550,5 +550,14 @@
   "Published": "Publicado",
   "Who": "Quem",
   "Where": "Onde",
+  "Link": "Link",
+  "Cited by": "Citado por",
+  "No links shared by 2+ matched articles.": "Nenhum link compartilhado por 2+ artigos correspondentes.",
+  "Positive": "Positivo",
+  "Negative": "Negativo",
+  "Neutral": "Neutro",
+  "Mean tone": "Tom médio",
+  "English-scored (reliable)": "Avaliado em inglês (confiável)",
+  "No tone scores in this set.": "Sem pontuações de tom neste conjunto.",
   "Tasks & system": "Tarefas e sistema"
 }
