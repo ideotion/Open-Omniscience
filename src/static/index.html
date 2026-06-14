@@ -389,7 +389,13 @@
     .brief-bucket > h3 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.06em;
       color:var(--muted); font-weight:700; display:flex; align-items:center; gap:8px; }
     .brief-bucket > h3 .ct { color:var(--fg-soft); font-weight:500; }
-    .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:12px; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:12px; }
+    /* Family-type accent (UI_SHELL_REDESIGN §5): each bucket sets --fam (a hue),
+       cards inherit it as a left accent so the feed stays scannable even in "All". */
+    .brief-bucket .card { border-left:3px solid var(--fam, var(--border)); }
+    nav.tabs.home-fam { margin:2px 0 4px; }
+    nav.tabs .fam-dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+      margin-inline-end:6px; vertical-align:middle; }
     .card { background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius-sm);
       padding:14px; display:flex; flex-direction:column; gap:8px; }
     .card.bk-rising { border-left:3px solid var(--accent); }
@@ -2872,14 +2878,32 @@
           </div></div>`;
         return;
       }
-      const html = data.buckets.map(b => {
+      // Family-type colors: a deterministic hue per bucket, applied as the card
+      // left-accent (--fam) so the feed stays scannable in "All", and echoed as a
+      // dot in the family subtab. "All cards" is the default lens (a single
+      // prioritised feed); the families are a lens, never a wall (§5).
+      const famHue = bi => `hsl(${(bi * 53) % 360} 60% 55%)`;
+      const html = data.buckets.map((b, bi) => {
         b.cards.forEach(c => { _briefCards[c.id] = c; });
         const cards = b.cards.map(cardHtml).join("");
-        return `<div class="brief-bucket"><h3>${esc(b.label)} <span class="ct">· ${b.cards.length}</span></h3>`
+        return `<div class="brief-bucket" data-fam="${bi}" style="--fam:${famHue(bi)}">`
+          + `<h3>${esc(b.label)} <span class="ct">· ${b.cards.length}</span></h3>`
           + `<div class="cards">${cards}</div></div>`;
       }).join("");
-      feed.innerHTML = html;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s => s);
+      const famTabs = `<button class="active" data-tab="__all">${esc(t("All cards"))}</button>`
+        + data.buckets.map((b, bi) =>
+            `<button data-tab="${bi}"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}</button>`).join("");
+      feed.innerHTML = (data.buckets.length > 1
+        ? `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>` : "") + html;
+      // "All" is the default; selecting a family shows only that bucket.
+      if (data.buckets.length > 1) ooSubtabs($("home-fam-subtabs"), selectHomeFamily, {initial: "__all"});
       applyMethodsToggle();
+    }
+    function selectHomeFamily(key) {
+      document.querySelectorAll("#briefing-feed .brief-bucket").forEach(el => {
+        el.style.display = (key === "__all" || el.dataset.fam === key) ? "" : "none";
+      });
     }
 
     function cardHtml(c) {

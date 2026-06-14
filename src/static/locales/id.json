@@ -536,5 +536,6 @@
   "Not now": "Nanti saja",
   "Welcome — your corpus is empty": "Selamat datang — korpus Anda kosong",
   "Get started by registering the curated source catalog and running a first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.": "Mulailah dengan mendaftarkan katalog sumber pilihan dan menjalankan pengumpulan pertama. Semuanya etis (robots.txt tertutup secara default, dibatasi laju) dan lokal.",
-  "Seed sources & run a first ingestion": "Siapkan sumber & jalankan pengumpulan pertama"
+  "Seed sources & run a first ingestion": "Siapkan sumber & jalankan pengumpulan pertama",
+  "All cards": "Semua kartu"
 }

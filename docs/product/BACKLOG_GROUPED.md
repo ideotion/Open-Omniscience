@@ -144,11 +144,10 @@ makes the rest fall out cheaply:
   and start collecting"; invitation layer only (routes through the consent popup,
   never bypasses it — `test_ui_invariants` #14b); prominent → subtle → retired,
   ×12 locales. Follows the button when the top-bar move lands. (ruling 2026-06-13)
-- 🔨 **Home redesign** — DONE so far (2026-06-14): hero card removed (#126);
-  at-a-glance stats now a compact strip pinned at the TOP; Quick actions section
-  removed (`test_ui_invariants` #19). REMAINING: full-width denser cards (4+);
-  card families as vertical subtabs (via `ooSubtabs`) with an "All cards" default
-  + family-color accents (touches `renderBriefing` — its own slice).
+- ✅ **Home redesign** (2026-06-14) — hero removed (#126); compact at-a-glance
+  strip pinned at the TOP; Quick actions removed (#128); denser cards (4+) + card
+  families as vertical subtabs via `ooSubtabs` with an "All cards" default lens +
+  family-color accents (#129). `test_ui_invariants` #19/#19b.
 - ⬜ **Insights** — auto-index in the background (remove the "Index corpus"
   button); present sections as subtabs.
 
