@@ -84,6 +84,78 @@ def insights_reindex(limit: int = Query(300, ge=1, le=5000), db: Session = Depen
     return backfill_corpus(db, extractor=get_extractor("baseline"), limit=limit)
 
 
+@router.get("/corpus-keywords")
+def insights_corpus_keywords(
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
+    kind: str | None = Query(None),
+    limit: int = Query(30, ge=1, le=100),
+    cap: int = Query(1000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Top keywords across the articles matched by a search — the analysis window.
+
+    Re-runs the SAME article search as /api/articles, bounded to the top ``cap``
+    matched articles (by relevance/recency), then aggregates their keywords. The
+    bound is DISCLOSED (``total_matched``/``capped``) — it scopes the analysis,
+    it is not a hidden cut. No score; counts only, with an honest caveat.
+    """
+    # Lazy import: main.py includes this router, so a module-level import would
+    # be circular.
+    from src.api.main import _query_articles
+
+    articles, total = _query_articles(
+        db, query=query, source=source, start_date=start_date, end_date=end_date,
+        language=language, tags=tags, limit=cap, offset=0,
+    )
+    ids = [a.id for a in articles]
+    res = q.corpus_keywords(db, article_ids=ids, kind=_kind(kind), limit=limit)
+    res["total_matched"] = total
+    res["capped"] = total > len(ids)
+    res["method"] = "Keyword counts across the matched articles, ordered by how many mention each term."
+    res["caveat"] = (
+        f"Counts only, never a score — scoped to the top {len(ids)} matched "
+        "article(s) by relevance."
+    )
+    return res
+
+
+@router.get("/corpus-www")
+def insights_corpus_www(
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
+    limit: int = Query(40, ge=1, le=200),
+    cap: int = Query(1000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Who (people/orgs) + Where (places) DEDUCED across the matched articles —
+    the analysis window's When/Where/Who. Deduced from text, never confirmed; no
+    score. Bounded to the top ``cap`` matched articles (disclosed)."""
+    from src.api.main import _query_articles
+
+    articles, total = _query_articles(
+        db, query=query, source=source, start_date=start_date, end_date=end_date,
+        language=language, tags=tags, limit=cap, offset=0,
+    )
+    ids = [a.id for a in articles]
+    return {
+        "who": q.corpus_who(db, article_ids=ids, limit=limit),
+        "where": q.corpus_where(db, article_ids=ids, limit=limit),
+        "n_articles": len(ids),
+        "total_matched": total,
+        "capped": total > len(ids),
+        "caveat": "Deduced from article text, never confirmed; counts only.",
+    }
+
+
 @router.get("/top")
 def insights_top(
     days: int | None = Query(None, ge=1, le=3650),

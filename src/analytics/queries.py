@@ -199,6 +199,114 @@ def top_terms(
     }
 
 
+def corpus_keywords(
+    session,
+    *,
+    article_ids: list[int],
+    kind: str | None = None,
+    limit: int = 30,
+) -> dict:
+    """Top keywords across a GIVEN set of articles (the analysis-window corpus).
+
+    Like ``top_terms`` but scoped to an explicit article set rather than a
+    time/country window — so the analysis window can show "the keywords of THESE
+    matched articles". Ordered by article SPREAD (how many of the set mention the
+    term), then mentions. Hidden/function words are dropped (the shared policy).
+    No score — counts only; the caller states the honest method + caveat + n.
+    """
+    if not article_ids:
+        return {"count": 0, "n_articles": 0, "terms": []}
+    q = (
+        session.query(
+            Keyword,
+            func.sum(KeywordMention.count).label("m"),
+            func.count(func.distinct(KeywordMention.article_id)).label("arts"),
+        )
+        .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        .filter(KeywordMention.article_id.in_(article_ids))
+    )
+    q = _apply_kind(q, kind)
+    rows = (
+        q.group_by(Keyword.id)
+        .order_by(
+            func.count(func.distinct(KeywordMention.article_id)).desc(),
+            func.sum(KeywordMention.count).desc(),
+        )
+        .limit(limit * 4)
+        .all()
+    )
+    is_hidden = _hidden_predicate()
+    terms = []
+    for k, m, a in rows:
+        if is_hidden(k.normalized_term):
+            continue
+        terms.append(
+            {
+                "term": k.term,
+                "normalized": k.normalized_term,
+                "kind": kind_of(k),
+                "mentions": int(m),
+                "articles": int(a),
+            }
+        )
+        if len(terms) >= limit:
+            break
+    return {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
+
+
+def corpus_who(session, *, article_ids: list[int], limit: int = 40) -> dict:
+    """WHO (people/orgs) deduced across a GIVEN article set — like who_aggregate
+    but scoped to the analysis window's matched articles. Counts only, deduced
+    from text, never a confirmed identity."""
+    if not article_ids:
+        return {"count": 0, "entities": []}
+    arts = func.count(func.distinct(ArticleEntity.article_id))
+    men = func.sum(ArticleEntity.mentions)
+    rows = (
+        session.query(ArticleEntity.name, ArticleEntity.entity_class, arts.label("a"), men.label("m"))
+        .filter(ArticleEntity.article_id.in_(article_ids))
+        .group_by(ArticleEntity.name, ArticleEntity.entity_class)
+        .order_by(arts.desc(), men.desc())
+        .limit(limit)
+        .all()
+    )
+    entities = [
+        {"name": n, "class": c, "articles": int(a or 0), "mentions": int(m or 0)}
+        for n, c, a, m in rows
+    ]
+    return {"count": len(entities), "entities": entities,
+            "caveat": "Deduced from text, never confirmed."}
+
+
+def corpus_where(session, *, article_ids: list[int], limit: int = 40) -> dict:
+    """WHERE (places) deduced across a GIVEN article set — like where_aggregate
+    but scoped to the matched articles. lat/lon when the gazetteer knows the
+    place (null otherwise — no fabricated position). Deduced, never confirmed."""
+    if not article_ids:
+        return {"count": 0, "places": []}
+    arts = func.count(func.distinct(ArticleMentionedPlace.article_id))
+    men = func.sum(ArticleMentionedPlace.mentions)
+    rows = (
+        session.query(
+            ArticleMentionedPlace.name, ArticleMentionedPlace.country,
+            ArticleMentionedPlace.kind, func.max(ArticleMentionedPlace.lat),
+            func.max(ArticleMentionedPlace.lon), arts.label("a"), men.label("m"),
+        )
+        .filter(ArticleMentionedPlace.article_id.in_(article_ids))
+        .group_by(ArticleMentionedPlace.name, ArticleMentionedPlace.country, ArticleMentionedPlace.kind)
+        .order_by(arts.desc(), men.desc())
+        .limit(limit)
+        .all()
+    )
+    places = [
+        {"name": n, "country": cc, "kind": k, "lat": lat, "lon": lon,
+         "articles": int(a or 0), "mentions": int(m or 0)}
+        for n, cc, k, lat, lon, a, m in rows
+    ]
+    return {"count": len(places), "places": places,
+            "caveat": "Deduced from text, never confirmed."}
+
+
 def trending(
     session,
     *,

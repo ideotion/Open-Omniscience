@@ -416,6 +416,18 @@ def test_ui_invariants():
     assert "function autoIndexInsights(" in html and "autoIndexInsights()" in html, (
         "Insights must auto-index in the background (UI_SHELL §6)"
     )
+    # 22. The analysis window (Group F, keystone #4): a full-screen #analyze tab
+    #     driven by the universal subtab component, fed by the article-SET keyword
+    #     endpoint, opened from the Search tab's Analyze button. Counts, no verdict.
+    assert 'id="tab-analyze"' in html and 'data-tab="analyze"' in html, (
+        "the analysis tab + its sidebar entry must exist (Group F)"
+    )
+    assert 'ooSubtabs($("an-subtabs")' in html, (
+        "the analysis window must use THE universal subtab component"
+    )
+    assert "/api/insights/corpus-keywords" in html and "function openAnalysis(" in html, (
+        "the analysis window must query the article-set keyword endpoint (Group F)"
+    )
 
 
 def test_sp500_is_classified_as_index():

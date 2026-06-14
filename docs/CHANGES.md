@@ -11,6 +11,19 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **New: an Analysis window over your search results (Group F, first slice).** A
+  full-screen **Analysis** tab now opens from the Search tab's **Analyze →** button
+  (and the sidebar): it shows the **keywords shared across the articles your search
+  matched** — each keyword clickable into its own analysis window — and the
+  **matched articles** themselves, under one subtab bar. A new article-set endpoint
+  (`/api/insights/corpus-keywords`) aggregates keywords over the matched set
+  (bounded to the top N by relevance, **disclosed**; counts only, never a score or
+  verdict). A **When/Where/Who** subtab shows the people/organisations and places
+  deduced across the matched articles (`/api/insights/corpus-www` →
+  `corpus_who`/`corpus_where`; deduced from text, never confirmed). Mindmap /
+  links / source-competitive / sentiment subtabs + the Advanced-search tab follow
+  in later slices. ×12 locales; guarded by `test_ui_invariants` #22.
+
 - **Every outbound "source ↗" link opens the local preview first — everywhere.**
   Previously only Home-card evidence routed through the local link preview; search
   rows, the markets board, world-law, the agenda/events, and insights context still

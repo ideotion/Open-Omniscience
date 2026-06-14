@@ -539,5 +539,15 @@
   "Seed sources & run a first ingestion": "Siapkan sumber & jalankan pengumpulan pertama",
   "All cards": "Semua kartu",
   "Task manager": "Pengelola tugas",
-  "Tasks": "Tugas"
+  "Tasks": "Tugas",
+  "Analysis": "Analisis",
+  "Analyze →": "Analisis →",
+  "Analytics over the articles your search matched — counts only, never a verdict.": "Analitik atas artikel yang cocok dengan pencarian Anda — hanya hitungan, bukan vonis.",
+  "Run a search, then press Analyze to populate this window.": "Lakukan pencarian, lalu tekan Analisis untuk mengisi jendela ini.",
+  "No keywords indexed across the matched articles yet.": "Belum ada kata kunci terindeks di artikel yang cocok.",
+  "Open this keyword's own analysis window": "Buka jendela analisis kata kunci ini",
+  "Title": "Judul",
+  "Published": "Diterbitkan",
+  "Who": "Siapa",
+  "Where": "Di mana"
 }

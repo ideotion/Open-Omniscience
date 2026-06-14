@@ -539,5 +539,15 @@
   "Seed sources & run a first ingestion": "উৎস প্রস্তুত করুন এবং প্রথম সংগ্রহ চালান",
   "All cards": "সব কার্ড",
   "Task manager": "টাস্ক ম্যানেজার",
-  "Tasks": "কাজ"
+  "Tasks": "কাজ",
+  "Analysis": "বিশ্লেষণ",
+  "Analyze →": "বিশ্লেষণ →",
+  "Analytics over the articles your search matched — counts only, never a verdict.": "আপনার অনুসন্ধানে মেলা নিবন্ধগুলোর বিশ্লেষণ — শুধু গণনা, কখনও রায় নয়।",
+  "Run a search, then press Analyze to populate this window.": "একটি অনুসন্ধান চালান, তারপর এই উইন্ডো পূরণ করতে বিশ্লেষণ চাপুন।",
+  "No keywords indexed across the matched articles yet.": "মিলে যাওয়া নিবন্ধগুলোতে এখনও কোনো কীওয়ার্ড সূচিবদ্ধ হয়নি।",
+  "Open this keyword's own analysis window": "এই কীওয়ার্ডের নিজস্ব বিশ্লেষণ উইন্ডো খুলুন",
+  "Title": "শিরোনাম",
+  "Published": "প্রকাশিত",
+  "Who": "কে",
+  "Where": "কোথায়"
 }

@@ -539,5 +539,15 @@
   "Seed sources & run a first ingestion": "情報源を初期化して最初の収集を実行",
   "All cards": "すべてのカード",
   "Task manager": "タスクマネージャー",
-  "Tasks": "タスク"
+  "Tasks": "タスク",
+  "Analysis": "分析",
+  "Analyze →": "分析 →",
+  "Analytics over the articles your search matched — counts only, never a verdict.": "検索に一致した記事の分析 — 件数のみで、判定ではありません。",
+  "Run a search, then press Analyze to populate this window.": "検索してから「分析」を押すと、このウィンドウに表示されます。",
+  "No keywords indexed across the matched articles yet.": "一致した記事にインデックス済みのキーワードはまだありません。",
+  "Open this keyword's own analysis window": "このキーワード自身の分析ウィンドウを開く",
+  "Title": "タイトル",
+  "Published": "公開日",
+  "Who": "誰",
+  "Where": "どこ"
 }

@@ -539,5 +539,15 @@
   "Seed sources & run a first ingestion": "Подготовить источники и запустить первый сбор",
   "All cards": "Все карточки",
   "Task manager": "Диспетчер задач",
-  "Tasks": "Задачи"
+  "Tasks": "Задачи",
+  "Analysis": "Анализ",
+  "Analyze →": "Анализ →",
+  "Analytics over the articles your search matched — counts only, never a verdict.": "Аналитика по статьям, найденным вашим поиском — только подсчёты, никогда не вердикт.",
+  "Run a search, then press Analyze to populate this window.": "Выполните поиск, затем нажмите «Анализ», чтобы заполнить это окно.",
+  "No keywords indexed across the matched articles yet.": "По найденным статьям ещё нет проиндексированных ключевых слов.",
+  "Open this keyword's own analysis window": "Открыть окно анализа этого ключевого слова",
+  "Title": "Заголовок",
+  "Published": "Опубликовано",
+  "Who": "Кто",
+  "Where": "Где"
 }
