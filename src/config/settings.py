@@ -215,7 +215,7 @@ class Config:
         settings_file = configs_dir / "settings.yaml"
         if settings_file.exists():
             try:
-                with open(settings_file) as f:
+                with open(settings_file, encoding="utf-8") as f:
                     settings = yaml.safe_load(f)
                     self._apply_yaml_config(settings)
             except Exception as e:
@@ -225,7 +225,7 @@ class Config:
         sources_file = configs_dir / "sources.yml"
         if sources_file.exists():
             try:
-                with open(sources_file) as f:
+                with open(sources_file, encoding="utf-8") as f:
                     sources_config = yaml.safe_load(f)
                     self.extra["sources"] = sources_config.get("sources", [])
             except Exception as e:

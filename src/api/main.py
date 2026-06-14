@@ -1367,7 +1367,7 @@ async def get_doc(slug: str, lang: str | None = None) -> PlainTextResponse:
 async def read_root():
     index_path = Path(__file__).parent.parent / "static" / "index.html"
     if index_path.exists():
-        with open(index_path) as f:
+        with open(index_path, encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), status_code=200)
     else:
         return HTMLResponse(
