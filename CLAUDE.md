@@ -227,7 +227,14 @@ ruling, a contingency, or a deliberate-omission note.
 - Lessons that cost a bug: duplicate top-level JS function names silently
   override — grep before declaring. Sizes lie, diffs don't (`git diff
   --numstat` before fearing loss). Agent findings get hand-re-verified before
-  shipping (the 06-audit false-positive lesson).
+  shipping (the 06-audit false-positive lesson). Tests must NEVER assert
+  POSITIVE facts against the shared mutable `src.api.main.app` singleton's
+  `.routes` — that process-global read made the additive-restore guard flaky in
+  CI (1 failed on `/v2/restore` absent, never reproducible locally even per a
+  full-suite per-test route watcher); anchor route guards to IMMUTABLE sources
+  (each router's own `router.routes` definitions + the `include_router` wiring
+  in `src/api/main.py` source). Negative `not in app.routes` checks stay safe (a
+  missing route can't fail them).
 
 ## Open queue (when maintainer says proceed)
 - **SESSION WORKING MODE (ruled 2026-06-12, this session):** reality-check the
