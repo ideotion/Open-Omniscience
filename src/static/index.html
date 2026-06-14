@@ -627,7 +627,6 @@
         </div>
         <div class="nav-group" data-grp="collect">
           <div class="gl">Collect</div>
-          <button class="nav-item" data-tab="ingest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg><span>Collect</span></button>
           <button class="nav-item" data-tab="sources"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5a14 14 0 0 1 14 14"/><path d="M5 12a7 7 0 0 1 7 7"/><circle cx="6" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg><span>Sources</span></button>
           <button class="nav-item" data-tab="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg><span>Library</span></button>
         </div>
@@ -811,114 +810,6 @@
     </div>
 
     <!-- ============================ INGEST ============================ -->
-    <div class="tab-page" id="tab-ingest">
-    <section class="panel">
-      <h2>Automatic ingestion (scheduler)</h2>
-      <div id="sched-status" class="hint">Loading scheduler status…</div>
-      <div class="row" style="margin-top:8px">
-        <button onclick="schedulerStart()">Start</button>
-        <button class="secondary" onclick="schedulerStop()">Stop</button>
-        <button class="secondary" onclick="schedulerRunNow()" title="Run one pass immediately">Scrape now</button>
-      </div>
-
-      <hr>
-
-      <div class="row">
-        <div><label for="sch-interval">Interval (minutes)</label>
-          <input id="sch-interval" type="number" min="1" max="10080" step="1"></div>
-        <div><label for="sch-mode">Mode</label>
-          <select id="sch-mode" onchange="toggleCrawlFields()">
-            <option value="rss">RSS feeds</option>
-            <option value="crawl">Recursive crawl</option>
-            <option value="markets">Markets (price rules)</option>
-            <option value="wiki">Wikipedia (watched pages)</option>
-          </select></div>
-      </div>
-      <div class="row" id="crawl-fields" style="display:none">
-        <div><label for="sch-depth">Crawl depth</label>
-          <input id="sch-depth" type="number" min="0" max="6" step="1"></div>
-        <div><label for="sch-pages">Max pages / source</label>
-          <input id="sch-pages" type="number" min="1" max="500" step="1"></div>
-      </div>
-      <div class="row">
-        <div style="flex:2"><label for="sch-export-dir">Drop-folder export
-          <span class="muted">(optional; blank = off)</span></label>
-          <input id="sch-export-dir" placeholder="/path/on/this/machine — each run drops the new-articles delta as JSON">
-        </div>
-      </div>
-
-      <h2 style="font-size:13px;margin:14px 0 4px">Which sources (rss / crawl modes)</h2>
-      <div class="row">
-        <div><label for="sch-langs">Languages</label><input id="sch-langs" placeholder="en, fr (blank = all)"></div>
-        <div><label for="sch-types">Source types</label><input id="sch-types" placeholder="news, financial …"></div>
-        <div style="flex:2"><label for="sch-tags">Tags / keywords (match any)</label><input id="sch-tags" placeholder="politics, markets, climate"></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="previewTargets()">Preview targets</button></div>
-      </div>
-      <div id="sched-targets" class="hint" style="margin-top:6px"></div>
-
-      <div class="row" style="margin-top:8px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="sch-autostart" style="width:auto"> Start automatically on launch
-        </label>
-      </div>
-      <button onclick="saveScheduler()">Save schedule</button>
-      <div class="hint">Recursive crawl stays inside each source's own domain, honours robots.txt
-        (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers
-        articles, it does not mirror sites.</div>
-      <div id="sched-last" class="hint" style="margin-top:8px"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Manual ingest</h2>
-      <div class="row">
-        <div>
-          <label for="ing-source">Ingest a source's RSS feed</label>
-          <select id="ing-source"></select>
-        </div>
-        <div style="flex:0 0 auto; align-self:end;">
-          <button onclick="ingestSource()">Fetch feed</button>
-        </div>
-      </div>
-      <label for="ing-url">…or ingest a single article URL</label>
-      <div class="row">
-        <div><input id="ing-url" placeholder="https://example.com/article"></div>
-        <div style="flex:0 0 auto;"><button onclick="ingestUrl()">Ingest URL</button></div>
-      </div>
-      <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
-      <div id="ingest-result" class="hint"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Batch ingest — pick sources</h2>
-      <p class="hint" style="margin-top:0">Select several sources and fetch all their feeds in one run. Filter by
-        language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed,
-        rate-limited); up to 50 per run.</p>
-      <div class="row">
-        <div style="flex:2"><label for="bi-search">Search</label>
-          <input id="bi-search" placeholder="name or domain" oninput="renderBatchPicker()"></div>
-        <div><label for="bi-lang">Language</label><input id="bi-lang" placeholder="en" oninput="renderBatchPicker()"></div>
-        <div><label for="bi-country">Country</label><input id="bi-country" placeholder="fr" oninput="renderBatchPicker()"></div>
-        <div><label for="bi-type">Type</label><input id="bi-type" placeholder="news" oninput="renderBatchPicker()"></div>
-        <div><label for="bi-enabled">Show</label>
-          <select id="bi-enabled" onchange="renderBatchPicker()">
-            <option value="">all</option><option value="1" selected>enabled</option><option value="0">disabled</option>
-          </select></div>
-      </div>
-      <div class="row" style="margin-top:6px;align-items:center">
-        <button class="ghost tiny" onclick="batchSelectAll(true)">Select all (filtered)</button>
-        <button class="ghost tiny" onclick="batchSelectAll(false)">Clear</button>
-        <span id="bi-count" class="hint"></span>
-      </div>
-      <div id="bi-list" class="bi-list"><div class="muted">Loading sources…</div></div>
-      <div class="row" style="margin-top:8px;align-items:center">
-        <button onclick="ingestBatch(this)">Ingest selected feeds</button>
-        <span id="bi-status" class="hint"></span>
-      </div>
-      <div id="bi-results" style="margin-top:8px"></div>
-    </section>
-    </div>
-
-    <!-- ===================== SOURCE MANAGEMENT ====================== -->
     <div class="tab-page" id="tab-sources">
     <section class="panel" id="candidates-panel" style="display:none">
       <h2>Discovery candidates <span class="muted" style="font-weight:400">(machine-suggested — nothing happens without you)</span></h2>
@@ -1582,6 +1473,7 @@
       <nav class="tabs" id="set-subtabs" style="position:static;padding:0;border:0;margin-top:8px">
         <button class="active" data-tab="appearance">Appearance</button>
         <button data-tab="general">General</button>
+        <button data-tab="collect">Collect</button>
         <button data-tab="wikipedia">Wikipedia</button>
         <button data-tab="agenda">Agenda</button>
         <button data-tab="data">Data &amp; backup</button>
@@ -1840,6 +1732,115 @@
       <div class="hint">The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.</div>
     </section>
     </div>
+
+    <div class="set-view" id="set-collect" style="display:none">
+    <section class="panel">
+      <h2>Automatic ingestion (scheduler)</h2>
+      <div id="sched-status" class="hint">Loading scheduler status…</div>
+      <div class="row" style="margin-top:8px">
+        <button onclick="schedulerStart()">Start</button>
+        <button class="secondary" onclick="schedulerStop()">Stop</button>
+        <button class="secondary" onclick="schedulerRunNow()" title="Run one pass immediately">Scrape now</button>
+      </div>
+
+      <hr>
+
+      <div class="row">
+        <div><label for="sch-interval">Interval (minutes)</label>
+          <input id="sch-interval" type="number" min="1" max="10080" step="1"></div>
+        <div><label for="sch-mode">Mode</label>
+          <select id="sch-mode" onchange="toggleCrawlFields()">
+            <option value="rss">RSS feeds</option>
+            <option value="crawl">Recursive crawl</option>
+            <option value="markets">Markets (price rules)</option>
+            <option value="wiki">Wikipedia (watched pages)</option>
+          </select></div>
+      </div>
+      <div class="row" id="crawl-fields" style="display:none">
+        <div><label for="sch-depth">Crawl depth</label>
+          <input id="sch-depth" type="number" min="0" max="6" step="1"></div>
+        <div><label for="sch-pages">Max pages / source</label>
+          <input id="sch-pages" type="number" min="1" max="500" step="1"></div>
+      </div>
+      <div class="row">
+        <div style="flex:2"><label for="sch-export-dir">Drop-folder export
+          <span class="muted">(optional; blank = off)</span></label>
+          <input id="sch-export-dir" placeholder="/path/on/this/machine — each run drops the new-articles delta as JSON">
+        </div>
+      </div>
+
+      <h2 style="font-size:13px;margin:14px 0 4px">Which sources (rss / crawl modes)</h2>
+      <div class="row">
+        <div><label for="sch-langs">Languages</label><input id="sch-langs" placeholder="en, fr (blank = all)"></div>
+        <div><label for="sch-types">Source types</label><input id="sch-types" placeholder="news, financial …"></div>
+        <div style="flex:2"><label for="sch-tags">Tags / keywords (match any)</label><input id="sch-tags" placeholder="politics, markets, climate"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="previewTargets()">Preview targets</button></div>
+      </div>
+      <div id="sched-targets" class="hint" style="margin-top:6px"></div>
+
+      <div class="row" style="margin-top:8px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="sch-autostart" style="width:auto"> Start automatically on launch
+        </label>
+      </div>
+      <button onclick="saveScheduler()">Save schedule</button>
+      <div class="hint">Recursive crawl stays inside each source's own domain, honours robots.txt
+        (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers
+        articles, it does not mirror sites.</div>
+      <div id="sched-last" class="hint" style="margin-top:8px"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Manual ingest</h2>
+      <div class="row">
+        <div>
+          <label for="ing-source">Ingest a source's RSS feed</label>
+          <select id="ing-source"></select>
+        </div>
+        <div style="flex:0 0 auto; align-self:end;">
+          <button onclick="ingestSource()">Fetch feed</button>
+        </div>
+      </div>
+      <label for="ing-url">…or ingest a single article URL</label>
+      <div class="row">
+        <div><input id="ing-url" placeholder="https://example.com/article"></div>
+        <div style="flex:0 0 auto;"><button onclick="ingestUrl()">Ingest URL</button></div>
+      </div>
+      <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
+      <div id="ingest-result" class="hint"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Batch ingest — pick sources</h2>
+      <p class="hint" style="margin-top:0">Select several sources and fetch all their feeds in one run. Filter by
+        language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed,
+        rate-limited); up to 50 per run.</p>
+      <div class="row">
+        <div style="flex:2"><label for="bi-search">Search</label>
+          <input id="bi-search" placeholder="name or domain" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-lang">Language</label><input id="bi-lang" placeholder="en" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-country">Country</label><input id="bi-country" placeholder="fr" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-type">Type</label><input id="bi-type" placeholder="news" oninput="renderBatchPicker()"></div>
+        <div><label for="bi-enabled">Show</label>
+          <select id="bi-enabled" onchange="renderBatchPicker()">
+            <option value="">all</option><option value="1" selected>enabled</option><option value="0">disabled</option>
+          </select></div>
+      </div>
+      <div class="row" style="margin-top:6px;align-items:center">
+        <button class="ghost tiny" onclick="batchSelectAll(true)">Select all (filtered)</button>
+        <button class="ghost tiny" onclick="batchSelectAll(false)">Clear</button>
+        <span id="bi-count" class="hint"></span>
+      </div>
+      <div id="bi-list" class="bi-list"><div class="muted">Loading sources…</div></div>
+      <div class="row" style="margin-top:8px;align-items:center">
+        <button onclick="ingestBatch(this)">Ingest selected feeds</button>
+        <span id="bi-status" class="hint"></span>
+      </div>
+      <div id="bi-results" style="margin-top:8px"></div>
+    </section>
+    </div>
+
+    <!-- ===================== SOURCE MANAGEMENT ====================== -->
 
     <div class="set-view" id="set-safety" style="display:none">
     <!-- ============================ SAFETY (Theme 2) ================= -->
@@ -2565,7 +2566,6 @@
     // -- Tab navigation ----------------------------------------------------- //
     const TAB_LOADERS = {
       home: loadHome,
-      ingest: loadScheduler,
       indices: loadIndices,
       markets: loadMarkets,
       insights: loadInsights,
@@ -2584,6 +2584,11 @@
 
     function showTab(name, push = true) {
       if (name === "database") name = "library";  // legacy #database deep-links
+      if (name === "ingest") {  // Collect moved into Settings → Collect (content-first §6)
+        showTab("settings", push);
+        try { _setSubtabs.select("collect"); } catch (e) { showSetCat("collect"); }
+        return;
+      }
       if (!document.getElementById("tab-" + name)) name = "home";
       document.querySelectorAll(".nav-item[data-tab]").forEach(b => {
         const on = b.dataset.tab === name;
@@ -2703,6 +2708,7 @@
         v.style.display = (v.id === "set-" + cat) ? "" : "none");
       if (cat === "appearance") buildDrawer();      // (re)paint theme/accent/module state
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
+      if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "safety") loadAtRestState();       // honest at-rest attestation (doctor)
     }
     function buildDrawer() {

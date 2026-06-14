@@ -442,6 +442,30 @@ def test_ui_invariants():
     )
 
 
+def test_collect_tab_moved_into_settings():
+    """Content-first (§6, ruled 2026-06-13): the Collect tab LEFT the sidebar for a
+    Settings subtab. The Desk lesson, enforced — nothing is lost: the scheduler +
+    manual-ingest + batch-picker controls now live under #set-collect, reachable via
+    the Collect subtab AND the showTab('ingest') redirect (so the palette + the
+    'Collect now' buttons still land); the sidebar no longer offers it."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    sidebar = html.split('id="set-subtabs"')[0]
+    assert 'data-tab="ingest"' not in sidebar, "Collect must leave the sidebar (content-first)"
+    assert 'id="set-collect"' in html and '<button data-tab="collect">' in html, (
+        "Collect must exist as a Settings subtab (#set-collect + its nav button)"
+    )
+    # absorption: the moved controls must all still exist (nothing lost in the move)
+    for ctrl in ('id="sched-status"', "saveScheduler(", 'id="ing-url"', 'id="bi-search"'):
+        assert ctrl in html, f"moved Collect control missing after the move: {ctrl}"
+    # the redirect keeps every showTab('ingest') reference working
+    assert 'if (name === "ingest")' in html and '_setSubtabs.select("collect")' in html, (
+        "showTab('ingest') must redirect to Settings → Collect"
+    )
+    assert 'if (cat === "collect") loadScheduler()' in html, (
+        "the Collect subtab must run the scheduler's onShow load"
+    )
+
+
 def test_sp500_is_classified_as_index():
     """The S&P 500 is an INDEX, not a commodity (maintainer-ruled): it must live
     in the index catalog and never in the commodity catalog, so the Commodities

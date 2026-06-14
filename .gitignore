@@ -128,3 +128,6 @@ tmp/
 /data/
 /audit/
 logs/
+
+# Claude Code local agent worktrees (ephemeral)
+.claude/
