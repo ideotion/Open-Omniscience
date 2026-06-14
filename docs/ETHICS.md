@@ -433,7 +433,7 @@ If you have questions or concerns about GPLv3 compliance:
 
 ---
 
-**Last Updated:** June 2025
+**Last Updated:** 2026-06-14
 
 
 ---
@@ -447,30 +447,73 @@ no HTTrack code remains.)
 
 ---
 
-### 📦 Python Dependencies (Intended)
+### 📦 Python Dependencies
 
-Open Omniscience is intended to use various Python packages, each with their own licenses **when implemented**. The following is a summary of the main dependencies and their licenses:
+Open Omniscience **uses** the following Python packages, each under its own
+license. The authoritative, single-sourced list is [`pyproject.toml`](../pyproject.toml);
+run `pip show <package>` (or `pip-licenses`) to confirm the license of any
+installed version. **Every dependency is FOSS and GPLv3-compatible** — that is an
+inclusion requirement (see the FOSS-only invariant in `docs/DESIGN.md`).
+
+**Core (always installed):**
 
 | Package | License | Purpose |
 |---------|---------|---------|
-| FastAPI | BSD-3-Clause | Web API framework |
+| FastAPI | MIT | Web API framework |
 | Uvicorn | BSD-3-Clause | ASGI server |
+| Jinja2 | BSD-3-Clause | Server-side templating |
+| SlowAPI | MIT | Rate limiting |
+| Prometheus Client | Apache-2.0 | Metrics endpoint |
 | SQLAlchemy | MIT | Database ORM |
-| Requests | Apache-2.0 | HTTP requests |
+| Alembic | MIT | Schema migrations |
+| sqlcipher3 | Zlib/BSD-style | At-rest SQLCipher encryption |
+| Requests | Apache-2.0 | HTTP client (ethical fetcher) |
+| httpx | BSD-3-Clause | HTTP client |
 | BeautifulSoup4 | MIT | HTML parsing |
-| Feedparser | BSD-3-Clause | RSS/Atom parsing |
+| lxml | BSD-3-Clause | XML/HTML parsing |
+| feedparser | BSD-2-Clause | RSS/Atom parsing |
+| trafilatura | Apache-2.0 | Article extraction |
 | Pydantic | MIT | Data validation |
-| SlowAPI | BSD-3-Clause | Rate limiting |
-| Prometheus Client | Apache-2.0 | Metrics monitoring |
+| PyYAML | MIT | Config parsing |
 | Bleach | Apache-2.0 | HTML sanitization |
-| Passlib | BSD-3-Clause | Password hashing |
+| bcrypt | Apache-2.0 | Password-hashing primitive |
+| defusedxml | PSF-2.0 | Untrusted-XML hardening (Wikipedia dumps) |
+| cryptography | Apache-2.0 OR BSD-3-Clause | Ed25519 signatures + Merkle trees |
+| Pillow | HPND (MIT-CMU) | EXIF / image metadata |
+| structlog | MIT OR Apache-2.0 | Structured logging |
+| python-dateutil | Apache-2.0 / BSD | Date parsing |
+| tenacity | Apache-2.0 | Retry / backoff |
+| cachetools | MIT | In-memory caching |
+| orjson | Apache-2.0 OR MIT (with an MPL-2.0 component) | Fast JSON |
+| psutil | BSD-3-Clause | Hardware vitals |
+
+**Optional extras (installed on demand):**
+
+| Extra | Packages | License | Purpose |
+|---|---|---|---|
+| `analysis` | numpy, pandas, scipy, scikit-learn, statsmodels, networkx | BSD-3-Clause | Statistics / graphs |
+| `analysis` | nltk | Apache-2.0 | Tokenization |
+| `analysis` | vaderSentiment | MIT | Lexicon sentiment (English-only) |
+| `nlp` | spaCy | MIT | NLP pipeline |
+| `crypto` | python-gnupg | LGPL-3.0 | GPG integration |
+| `pqc` | pqcrypto | MIT | Post-quantum (ML-DSA) signatures |
+| `timestamping` | opentimestamps | LGPL-3.0 | Bitcoin-anchored timestamps |
+| `compression` | zstandard, lz4 | BSD | Backup compression |
+
+The local LLM is the **external Ollama** binary (MIT), reached over loopback
+HTTP — no model weights or inference libraries are bundled or shipped.
 
 #### Compliance Notes
 
-- All Python dependencies would be **separate works** and would not be modified by Open Omniscience *when implemented*
-- Each dependency maintains its own license
-- Open Omniscience's GPLv3 license would not affect the licenses of these dependencies *when implemented*
-- Users would need to comply with each dependency's individual license when using them *when the software is functional*
+- Each dependency is a **separate work** under its own license; Open
+  Omniscience's GPLv3 does not extend to it, and its license does not restrict
+  Open Omniscience.
+- All listed licenses are **permissive or weak-copyleft and GPLv3-compatible**
+  (the LGPL-3.0 extras `python-gnupg`/`opentimestamps`, and the MPL-2.0 component
+  of `orjson`, are each compatible with GPL-3.0). FOSS + GPLv3-compatibility is a
+  hard inclusion requirement.
+- Users must comply with each dependency's individual license; `pip show <pkg>`
+  prints it.
 
 ---
 
@@ -512,5 +555,5 @@ For questions about third-party licenses or compliance:
 
 ---
 
-**Last Updated:** June 2025
+**Last Updated:** 2026-06-14
 
