@@ -14,7 +14,8 @@ _CITATION_MIN = 3  # distinct citing articles before a domain becomes a candidat
 # Commerce/storefront filter for the citation channel (field log 2026-06-13:
 # citation discovery surfaced shop.popsci.com, store.popsci.com and
 # popularscienceprints.com — merch, not journalism). Conservative + explainable:
-# a leftmost storefront subdomain, a commercial gTLD, or a print-shop name.
+# a leftmost storefront subdomain, a commercial gTLD, a print-shop name, or a
+# hyphen-delimited shop/store/merch suffix on the registrable name.
 # Discovery candidates are never auto-enabled, so the only cost of a rare
 # false positive is one un-suggested domain; the win is not nudging the operator
 # toward a brand's shop as if it were a source.
@@ -25,12 +26,32 @@ _COMMERCE_LABELS = frozenset(
     }
 )
 _COMMERCE_TLDS = frozenset({"shop", "store", "buy", "deals", "tickets", "boutique"})
+# Suffix tokens on the registrable name — matched ONLY after a hyphen boundary
+# ("acme-shop", "band-merch", "big-store"). A hyphen makes the token a deliberate
+# compound, so this stays clear of legitimate names that merely END in these
+# letters: restore.com, workshop.com, bookstore-review.org, superstore-news.com
+# all pass through. We deliberately do NOT match a bare (un-hyphenated) suffix
+# like "acmeshop"/"bigbrandstore" — without a dictionary it cannot be told from
+# "workshop"/"bishop"/"restore", and inventing that precision would be exactly
+# the kind of fabricated confidence this project forbids (provenance over guesses).
+_COMMERCE_NAME_SUFFIXES = ("-shop", "-shops", "-store", "-stores", "-merch", "-shopping")
 
 
 def is_commerce_domain(host: str | None) -> bool:
     """True for a storefront/merch domain a journalism source-discovery should
-    not suggest (a leftmost shop./store./buy. label, a .shop/.store gTLD, or a
-    ``…prints`` second-level name). Heuristic, conservative, label-based."""
+    not suggest. HEURISTIC, conservative, label/boundary-based — it catches the
+    OBVIOUS storefronts, never all commerce. It fires on:
+
+    * a leftmost ``shop.``/``store.``/``buy.`` (etc.) subdomain label;
+    * a ``.shop``/``.store`` (etc.) commercial gTLD;
+    * a ``…prints`` second-level name (popularscienceprints.com and kin);
+    * a hyphen-delimited ``-shop``/``-store``/``-merch`` suffix on the
+      registrable name (acme-shop.com).
+
+    It deliberately does NOT match a substring buried in an unrelated word
+    (restore.com, workshop.com, bookstore-review.org) — false positives only
+    cost one un-suggested domain (candidates are never auto-enabled), so we err
+    toward under-filtering rather than wrongly skipping a real source."""
     if not host:
         return False
     labels = host.lower().split(".")
@@ -40,7 +61,10 @@ def is_commerce_domain(host: str | None) -> bool:
         return True
     if labels[-1] in _COMMERCE_TLDS:  # <name>.shop / <name>.store gTLD
         return True
-    return labels[-2].endswith("prints")  # popularscienceprints.com and kin
+    name = labels[-2]  # the registrable name, e.g. "popularscienceprints"
+    if name.endswith("prints"):  # popularscienceprints.com and kin
+        return True
+    return name.endswith(_COMMERCE_NAME_SUFFIXES)  # acme-shop / band-merch
 
 
 def _existing_domains(session) -> set[str]:

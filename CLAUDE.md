@@ -535,10 +535,15 @@ ruling, a contingency, or a deliberate-omission note.
   connection (T1 measured ~7.8 s encrypted on a BIGGER synthetic corpus). Same
   root as (A)/(B): one connection, pure-Python serialized. Revisit after the
   writer queue + a read snapshot for exports.
-  (D) **DISCOVERY creates COMMERCE sources (MED honesty):** the citation
-  discovery created shop.popsci.com, store.popsci.com, popularscienceprints.com
-  — merch/storefronts, not journalism. FIX = filter obvious commerce
-  (shop./store./buy./*prints.com) from discovery candidates; never auto-enable.
+  (D) **DISCOVERY creates COMMERCE sources — SHIPPED:** `is_commerce_domain`
+  (src/discovery/channels.py) filters obvious storefronts at the ONE citation
+  chokepoint (leftmost shop./store./buy. label + .shop/.store gTLD + …prints +
+  hyphen-delimited -shop/-store/-merch suffix); candidates were already
+  never auto-enabled (promote ⇒ a DISABLED source). Conservative by design —
+  legit news + substring traps (restore/workshop/bookstore-review/superstore-news)
+  pass through; bare un-hyphenated suffixes left un-filtered on purpose (no
+  fabricated precision). Core in 5b6b753; suffix-rule extension + dedicated
+  tests/test_discovery_commerce_filter.py in the discovery-commerce-filter PR.
   (E) **DEAD DEFAULT FEEDS waste preflight (LOW):** every google-hol-* calendar
   is robots-disallowed (100% fail), webcal.guru religious feeds disallowed,
   raw.githubusercontent/space.floern/cantonbecker robots-undetermined → all
