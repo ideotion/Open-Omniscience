@@ -150,7 +150,7 @@ def test_migration_matches_model_index():
         if getattr(idx, "name", "") == "ix_mention_covering":
             model_cols = [c.name for c in idx.columns]
     assert model_cols == ["keyword_id", "article_id", "count", "observed_on"]
-    mig = Path("migrations/versions/e2f3a4b5c6d7_mention_covering_index.py").read_text()
+    mig = Path("migrations/versions/e2f3a4b5c6d7_mention_covering_index.py").read_text(encoding="utf-8")
     for col in model_cols:
         assert col in mig
 

@@ -7,6 +7,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 
@@ -20,14 +21,19 @@ def _fake_install(tmp_path, monkeypatch):
     (home / "Desktop").mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(U, "_desktop_dir", lambda: home / "Desktop")
-    (home / ".local" / "share" / "applications" / f"{U.APP_NAME}.desktop").write_text("x")
-    (home / "Desktop" / f"{U.APP_NAME}-desk.desktop").write_text("x")
+    (home / ".local" / "share" / "applications" / f"{U.APP_NAME}.desktop").write_text("x", encoding="utf-8")
+    (home / "Desktop" / f"{U.APP_NAME}-desk.desktop").write_text("x", encoding="utf-8")
     app = tmp_path / "app"
     (app / ".venv").mkdir(parents=True)
-    (app / "install.sh").write_text("#!/usr/bin/env bash\n")
+    (app / "install.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     return app
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="uninstall discovers XDG .desktop launchers (Linux/macOS); install.sh "
+    "is not a Windows install path",
+)
 def test_plan_discovers_venv_and_launchers_but_never_data(tmp_path, monkeypatch):
     app = _fake_install(tmp_path, monkeypatch)
     plan = U.plan_uninstall(app)

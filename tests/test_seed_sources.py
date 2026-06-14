@@ -46,14 +46,14 @@ def _session():
 
 def test_loader_skips_malformed(tmp_path):
     p = tmp_path / "s.yaml"
-    p.write_text(_YAML)
+    p.write_text(_YAML, encoding="utf-8")
     rows = load_sources_from_yaml(p)
     assert [r["name"] for r in rows] == ["Example One", "Example Two"]
 
 
 def test_seed_maps_rich_fields_and_tags_list(tmp_path):
     p = tmp_path / "s.yaml"
-    p.write_text(_YAML)
+    p.write_text(_YAML, encoding="utf-8")
     rows = load_sources_from_yaml(p)
     s = _session()
     seed_sources(s, rows)
@@ -69,7 +69,7 @@ def test_seed_maps_rich_fields_and_tags_list(tmp_path):
 
 def test_seed_is_idempotent(tmp_path):
     p = tmp_path / "s.yaml"
-    p.write_text(_YAML)
+    p.write_text(_YAML, encoding="utf-8")
     rows = load_sources_from_yaml(p)
     s = _session()
     first = seed_sources(s, rows)

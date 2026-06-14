@@ -290,10 +290,12 @@ def download_backup() -> FileResponse:
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     # Snapshot into a temp file, then hand it to FileResponse and delete after send.
     fd, tmp = tempfile.mkstemp(prefix="oo-backup-", suffix=".db")
-    Path(tmp).unlink(missing_ok=True)  # mkstemp created it; backup_to recreates cleanly
     import os as _os
 
+    # Close the open descriptor BEFORE unlinking/reopening the path: Windows
+    # cannot delete a file that still has an open handle (WinError 32).
     _os.close(fd)
+    Path(tmp).unlink(missing_ok=True)  # mkstemp created it; backup_to recreates cleanly
     try:
         backup_to(Path(tmp))
     except BackupError as exc:

@@ -61,7 +61,7 @@ def test_generate_catalog_dedups_and_excludes(tmp_path):
     out = write_catalog_yaml(tmp_path / "world.yml", res["sources"])
     import yaml
 
-    loaded = yaml.safe_load(out.read_text())["sources"]
+    loaded = yaml.safe_load(out.read_text(encoding="utf-8"))["sources"]
     assert {s["domain"] for s in loaded} == domains
 
 

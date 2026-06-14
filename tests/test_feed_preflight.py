@@ -73,7 +73,7 @@ def test_feed_preflight_writes_verdict_log():
         assert r["host"] != "worldpublicholiday.com"
     assert all(n <= 2 for n in by_host.values())
     # The JSONL is verbatim-parseable (the log IS the deliverable).
-    for line in (fpf._log_path()).read_text().splitlines():
+    for line in (fpf._log_path()).read_text(encoding="utf-8").splitlines():
         json.loads(line)
 
 

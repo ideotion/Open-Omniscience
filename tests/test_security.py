@@ -165,7 +165,10 @@ class TestSafePathJoin:
         """Test that normal path joining works."""
         base = "/tmp/base"
         result = safe_path_join(base, "subdir", "file.txt")
-        assert result == Path("/tmp/base/subdir/file.txt")
+        # safe_path_join resolves the base (symlinks + drive), so the expected
+        # value must resolve the same way — otherwise this fails on macOS
+        # (/tmp -> /private/tmp) and Windows (/tmp -> D:/tmp). No-op on Linux.
+        assert result == Path(base).resolve() / "subdir" / "file.txt"
 
     def test_safe_path_join_rejects_path_traversal(self):
         """Test that path traversal attempts are rejected."""

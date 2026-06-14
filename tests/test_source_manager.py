@@ -620,7 +620,7 @@ class TestImportExport:
         # Verify file exists and contains data
         import yaml
 
-        with open(yaml_path) as f:
+        with open(yaml_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         assert "sources" in data
@@ -657,7 +657,7 @@ class TestImportExport:
         yaml_path = str(tmp_path / "import.yml")
         import yaml
 
-        with open(yaml_path, "w") as f:
+        with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.dump(yaml_content, f)
 
         # Import the sources

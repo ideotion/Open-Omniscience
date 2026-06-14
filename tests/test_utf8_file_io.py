@@ -38,7 +38,10 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-_SRC = Path(__file__).resolve().parent.parent / "src"
+_ROOT = Path(__file__).resolve().parent.parent
+# The Windows lane RUNS the tests, so a test file's bare read_text() crashes it
+# just like production code — scan both trees.
+_SCANNED = ("src", "tests")
 
 
 def _builtin_open_offender(node: ast.Call) -> bool:
@@ -79,13 +82,14 @@ def _read_write_text_offender(node: ast.Call) -> bool:
 
 def _offenders() -> list[str]:
     bad: list[str] = []
-    for path in _SRC.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if _builtin_open_offender(node) or _read_write_text_offender(node):
-                bad.append(f"{path.relative_to(_SRC.parent)}:{node.lineno}")
+    for sub in _SCANNED:
+        for path in (_ROOT / sub).rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                if _builtin_open_offender(node) or _read_write_text_offender(node):
+                    bad.append(f"{path.relative_to(_ROOT)}:{node.lineno}")
     return bad
 
 
