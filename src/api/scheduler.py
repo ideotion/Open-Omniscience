@@ -33,6 +33,8 @@ class SchedulerConfigUpdate(BaseModel):
     interval_minutes: int | None = None
     # Continuous collection (default on): passes run back-to-back when online.
     continuous: bool | None = None
+    # Parallel fetch workers per pass (1 = sequential, the default).
+    collect_parallelism: int | None = None
     mode: str | None = None
     max_sources_per_run: int | None = None
     crawl_max_depth: int | None = None

@@ -38,6 +38,13 @@ class SchedulerSettings:
     # between them — so when the operator is online, collection is permanent.
     # Set False to restore the old run-once-then-wait-``interval_minutes`` cadence.
     continuous: bool = True
+    # Parallel collection: how many sources to FETCH concurrently in one pass.
+    # 1 (the default) = the sequential loop, unchanged. >1 = a bounded worker pool
+    # that fetches DIFFERENT hosts at once (each on its own Tor circuit) while the
+    # single SQLite writer keeps writes serialised. Per-host politeness is never
+    # traded for speed: one host is fetched by at most one worker at a time. Kept
+    # default 1 (opt-in) until field-validated; the task manager will tune it.
+    collect_parallelism: int = 1
     mode: str = "rss"  # "rss" (feeds) or "crawl" (bounded recursion)
     # 0 = UNBOUNDED (cover every source / watched item) -- the default. Any cap
     # silently SELECTS which sources to skip, which cannot be justified
@@ -123,6 +130,7 @@ def load_settings() -> SchedulerSettings:
             raw.get("interval_minutes"), d.interval_minutes, _MIN_INTERVAL, _MAX_INTERVAL
         ),
         continuous=_coerce_bool(raw.get("continuous"), d.continuous),
+        collect_parallelism=_coerce_int(raw.get("collect_parallelism"), d.collect_parallelism, 1, 16),
         mode=mode,
         # lo=0 allows the unbounded default; hi is a generous safety ceiling for
         # an explicit soft cap, never a selection imposed by us.
@@ -169,6 +177,7 @@ def save_settings(updates: dict) -> SchedulerSettings:
         current.export_dir = str(updates["export_dir"]).strip()
 
     _ranged("discovery_per_run", 0, 100, "discovery_per_run")
+    _ranged("collect_parallelism", 1, 16, "collect_parallelism")
     _ranged("interval_minutes", _MIN_INTERVAL, _MAX_INTERVAL, "interval_minutes")
     _ranged("max_sources_per_run", 1, 1000, "max_sources_per_run")
     _ranged("crawl_max_depth", 0, 6, "crawl_max_depth")

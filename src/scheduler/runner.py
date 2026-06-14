@@ -173,6 +173,29 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     }
 
 
+def _process_source(source, *, session, fetcher, mode: str, crawl_cfg) -> tuple[dict, int, int]:
+    """Scrape ONE source into ``session``; returns (tally, pages_fetched, processed).
+
+    Isolated and fail-safe: one bad source never aborts the pass — its error is
+    tallied and reported. Used by both the sequential loop and the parallel
+    worker pool; the pool gives each call its OWN session (SQLAlchemy sessions
+    are not thread-safe), while the fetcher is shared and per-host-locked.
+    """
+    from src.ingest.crawl import crawl_source
+    from src.ingest.pipeline import ingest_source
+
+    try:
+        if mode == "crawl":
+            report = crawl_source(session, source, fetcher=fetcher, config=crawl_cfg)
+            return report.tally, report.pages_fetched, 1
+        if not source.rss_url:
+            return {}, 0, 0
+        return ingest_source(session, source, fetcher=fetcher), 0, 1
+    except Exception:  # noqa: BLE001 - one bad source must not abort the batch
+        _LOG.warning("scrape run: source %r failed", getattr(source, "domain", "?"), exc_info=True)
+        return {"errors": 1}, 0, 0
+
+
 def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     """Run one ingestion pass over enabled sources and return an aggregated tally.
 
@@ -181,8 +204,7 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     Sources are taken highest-priority first, capped at ``max_sources_per_run``.
     """
     from src.database.models import MarketExtractionRule
-    from src.ingest.crawl import CrawlConfig, crawl_source
-    from src.ingest.pipeline import ingest_source
+    from src.ingest.crawl import CrawlConfig
 
     started = datetime.now(UTC)
 
@@ -276,32 +298,54 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         ordering="round-robin",
         started_at=started.isoformat(),
     )
+    crawl_cfg = (
+        CrawlConfig(max_depth=settings.crawl_max_depth, max_pages=settings.crawl_max_pages)
+        if settings.mode == "crawl"
+        else None
+    )
+    parallelism = max(1, getattr(settings, "collect_parallelism", 1) or 1)
     try:
-        for idx, source in enumerate(sources):
-            _progress_set(current=source.domain, done=idx, pages=pages_fetched)
-            try:
-                if settings.mode == "crawl":
-                    report = crawl_source(
-                        session,
+        if parallelism > 1:
+            # Parallel FETCH across DIFFERENT hosts (round-robin order already
+            # interleaves countries/hosts, so concurrent sources are different
+            # hosts → different Tor circuits). Each worker gets its OWN DB session;
+            # writes still serialise through the single-writer gate, and the shared
+            # fetcher's per-host lock keeps politeness intact. Results are
+            # aggregated in THIS thread (ex.map yields here), so no aggregation lock.
+            from concurrent.futures import ThreadPoolExecutor
+
+            from src.database.session import session_scope
+
+            def _worker(source):
+                with session_scope() as worker_session:
+                    return _process_source(
                         source,
+                        session=worker_session,
                         fetcher=fetcher,
-                        config=CrawlConfig(
-                            max_depth=settings.crawl_max_depth,
-                            max_pages=settings.crawl_max_pages,
-                        ),
+                        mode=settings.mode,
+                        crawl_cfg=crawl_cfg,
                     )
-                    _add(report.tally)
-                    pages_fetched += report.pages_fetched
-                    sources_processed += 1
-                else:  # rss
-                    if not source.rss_url:
-                        continue
-                    tally = ingest_source(session, source, fetcher=fetcher)
+
+            done = 0
+            with ThreadPoolExecutor(
+                max_workers=parallelism, thread_name_prefix="oo-collect"
+            ) as pool:
+                for tally, pages, processed in pool.map(_worker, sources):
                     _add(tally)
-                    sources_processed += 1
-            except Exception:  # noqa: BLE001 - one bad source must not abort the batch
-                _LOG.warning("scrape run: source %r failed", source.domain, exc_info=True)
-                agg["errors"] = agg.get("errors", 0) + 1
+                    pages_fetched += pages
+                    sources_processed += processed
+                    done += 1
+                    _progress_set(done=done, pages=pages_fetched)
+        else:
+            for idx, source in enumerate(sources):
+                _progress_set(current=source.domain, done=idx, pages=pages_fetched)
+                tally, pages, processed = _process_source(
+                    source, session=session, fetcher=fetcher,
+                    mode=settings.mode, crawl_cfg=crawl_cfg,
+                )
+                _add(tally)
+                pages_fetched += pages
+                sources_processed += processed
     finally:
         _progress_set(_clear=True)
 
