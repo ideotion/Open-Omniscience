@@ -76,8 +76,12 @@ ruling, a contingency, or a deliberate-omission note.
 3. **Top bar elements have constant footprints**: `.act-host` keeps its 160 px
    slot even when empty; `#llm` and `#health` have fixed min-widths; nothing on
    the right may shift as fetch hosts/labels change.
-4. **A persistent compact vitals strip** (`#vitals-mini`: CPU · RAM · ↓ rate)
-   lives in the top bar; the version number is NOT displayed in the chrome.
+4. **AMENDED by §2 (ruled 2026-06-14, SHIPPED #143): vitals moved OUT of the
+   chrome into the task-manager window's System tab** (`#tm-system`); the top bar
+   keeps a PERSISTENT task-manager access (`#tm-open`, since `#activity` is hidden
+   when idle). The version number is STILL NOT displayed in the chrome. (`#vitals-mini`
+   retired; the 5 s chrome poll is now network-only — a bonus against the
+   polling-storm finding.) Enforced in test_ui_invariants (#4).
 5. **The brand mark is the ASCII eye** (`assets/logo.txt`) as vector — the
    pointed-oval + grid-iris SVG in `index.html` and `assets/icon.svg`.
 6. Article links in analytics/insights lead to the LOCAL reader
@@ -100,8 +104,12 @@ ruling, a contingency, or a deliberate-omission note.
    2026-06-10): capture-phase `_externalLinkGuard` in BOTH UIs; loopback
    exempt; message via `OOI18N.t`.
 14. **Network toggle is AIRPLANE-MODE (ruled 2026-06-12, SHIPPED T2):** one
-   constant plane glyph + label, FILL = state (filled = offline engaged);
-   never ▶/⏸ action glyphs. EVERY offline→online transition passes the ONE
+   constant plane glyph, FILL = state (filled = offline engaged); never ▶/⏸
+   action glyphs. **REFINED #14d (§3, SHIPPED #139):** the button MOVED to the
+   top bar and its text LABEL was DROPPED (icon-only; hover title + FILL convey
+   state) — the glyph + FILL-painting + the consent popup are unchanged; the
+   coachmark follows by getBoundingClientRect. Enforced in test_ui_invariants
+   (#14: glyph + FILL `plane.setAttribute("fill"`), no longer the label. EVERY offline→online transition passes the ONE
    consent popup (`ensureOnline`): names the action, lists LOCAL interface
    IPs from kernel tables (NEVER a public-IP echo pre-consent), honest
    public-IP wording. Scheduler responses carry `online` → immediate repaint,

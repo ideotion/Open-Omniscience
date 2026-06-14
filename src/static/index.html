@@ -644,13 +644,6 @@
       </nav>
 
       <div class="sb-foot">
-        <button class="secondary" id="net-toggle" onclick="toggleNetwork()"
-          title="Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish."
-          style="min-width:104px;display:flex;align-items:center;justify-content:center;gap:6px">
-          <svg id="net-plane" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
-               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-               style="flex:0 0 auto"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
-          <span id="net-label">Online</span></button>
         <button class="secondary" onclick="showTab('settings')" title="Open Settings (appearance, language, data, safety)"
                 style="display:flex;align-items:center;justify-content:center;gap:8px;flex:1">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.2A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 14H2.5a2 2 0 0 1 0-4h.2A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 2.6V2.5a2 2 0 0 1 4 0v.2A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H23a2 2 0 0 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg>
@@ -675,18 +668,22 @@
         <div class="spacer"></div>
         <div class="status-cluster" id="statusCluster">
           <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click for details" tabindex="0" aria-expanded="false" aria-haspopup="dialog" style="cursor:pointer" onclick="toggleVitals()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleVitals();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span><span id="activity-host" class="act-host"></span></span>
-          <span id="vitals-mini" class="muted" title="Live process vitals — CPU · RAM · scrape throughput (click the activity chip for details)" style="font-size:11.5px;font-variant-numeric:tabular-nums;min-width:188px;text-align:right"></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
         </div>
+        <button class="icon-btn" id="tm-open" onclick="toggleVitals()" title="Tasks &amp; system" aria-label="Open the task manager" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 13 2-7h6"/></svg></button>
+        <button class="icon-btn" id="net-toggle" onclick="toggleNetwork()"
+          title="Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish."
+          aria-label="Airplane mode (network on/off)">
+          <svg id="net-plane" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></button>
         <button class="icon-btn" id="lang-switch" onclick="toggleLangMenu(event)" title="Change language"
                 aria-label="Change language" aria-haspopup="menu" style="min-width:64px;gap:5px">
           <span id="lang-flag" aria-hidden="true">🌐</span><span id="lang-code" style="font-size:12px;letter-spacing:.4px"></span>
         </button>
         <button class="icon-btn" onclick="showTab('help')" title="Help &amp; documentation" aria-label="Help and documentation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></button>
-        <a class="icon-btn" href="/docs" target="_blank" rel="noopener" title="Raw API reference (Swagger)" aria-label="Raw API reference (opens in a new tab)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></a>
       </header>
 
       <div id="vitals-pop" class="vitals-pop taskmgr" hidden role="dialog" aria-label="Task manager">
@@ -1976,7 +1973,8 @@
         <p class="hint" style="margin-top:0">Tabs opened from cards and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.</p>
         <p class="muted" style="margin-top:0">Everything you need to operate the tool — rendered here,
           offline. The <strong>User Manual</strong> is the detailed notice; the other guides go deeper on
-          specific subjects.</p>
+          specific subjects. Developers: the raw
+          <a href="/docs" target="_blank" rel="noopener">API reference (Swagger) ↗</a> is also available.</p>
         <div class="doc-layout">
           <div class="doc-nav" id="doc-nav"><div class="muted">Loading…</div></div>
           <div id="doc-prose" class="prose"><div class="muted">Pick a document on the left.</div></div>
@@ -2316,24 +2314,15 @@
         dlg.showModal();
       });
     }
-    async function _pollVitalsMini() {
+    // The 5 s background poll keeps the airplane state fresh as a FALLBACK (the
+    // primary repaint rides scheduler responses). Vitals are no longer polled here
+    // -- they live in the task-manager window's System tab, polled only while that
+    // window is open or a scrape is live (§2: vitals moved out of the chrome).
+    async function _pollNetwork() {
       if (document.hidden) return;
-      const el = $("vitals-mini"); if (!el) return;
-      try {
-        const v = await api("/api/system/vitals");
-        try { const nm = await api("/api/system/network"); _paintNetwork(nm.online); } catch (_e) {}
-        const parts = [];
-        if (v.cpu_percent != null) parts.push(`CPU ${v.cpu_percent.toFixed(0)}%`);
-        if (v.rss_bytes != null) parts.push(`RAM ${(v.rss_bytes/1048576).toFixed(0)} MB`);
-        if (v.fetch_bytes_total != null) {
-          const d = v.fetch_bytes_total - (_vmLast || 0); _vmLast = v.fetch_bytes_total;
-          parts.push(`↓ ${(Math.max(0,d)/5120).toFixed(0)} KB/s`);
-        }
-        el.textContent = parts.join(" · ");
-      } catch { /* keep last reading */ }
+      try { const nm = await api("/api/system/network"); _paintNetwork(nm.online); } catch (_e) {}
     }
-    let _vmLast = 0;
-    setInterval(_pollVitalsMini, 5000); _pollVitalsMini();
+    setInterval(_pollNetwork, 5000); _pollNetwork();
 
     async function _pollActivity() {
       try { const s = await api("/api/scheduler/status");

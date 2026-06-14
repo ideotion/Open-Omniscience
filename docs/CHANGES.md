@@ -11,6 +11,21 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **A leaner top bar.** The always-on CPU·RAM·↓ vitals strip moved off the top bar
+  into the **task-manager window's System tab** (open it with the new task-manager
+  button — vitals were already shown there); the raw API-reference (`/docs`) link
+  left the bar too (still in the ⌘K palette and the Help tab). The bar is now just
+  search · status · task-manager · help · language · airplane. A side benefit: the
+  background poll no longer fetches vitals every 5 seconds — only when the
+  task-manager window is open or a scrape is running.
+
+- **The airplane (network) button moved to the top bar — icon-only.** It now lives
+  in the top-bar status cluster instead of the sidebar foot, as a compact
+  icon-only control (no text label): the airplane glyph's **fill** still encodes
+  the state and hovering explains it. **Nothing about the safety changes** — the
+  same one consent popup fires on every offline→online transition, and the
+  onboarding coachmark follows the button to its new home. (UI-shell §3.)
+
 - **New: an Analysis window over your search results (Group F, first slice).** A
   full-screen **Analysis** tab now opens from the Search tab's **Analyze →** button
   (and the sidebar): it shows the **keywords shared across the articles your search
