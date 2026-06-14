@@ -1275,10 +1275,6 @@
         <em>ingested article text</em> (people, companies and places are single units). Trends,
         associations (PMI) and context are real aggregates with sample sizes — nothing is invented.</p>
       <div id="ins-status" class="hint">Loading…</div>
-      <div class="row" style="margin-top:6px">
-        <button class="secondary" onclick="indexCorpus()">Index corpus</button>
-        <span id="ins-progress" class="hint" style="align-self:center"></span>
-      </div>
       <nav class="tabs" id="ins-subtabs" style="position:static;padding:0;border:0;margin-top:10px">
         <button class="active" data-tab="explore">Explore</button>
         <button data-tab="trends">Trends</button>
@@ -2723,7 +2719,6 @@
       const actions = [
         {grp:"Actions", label:"Run a search", sub:"Search", run:() => { showTab("search"); setTimeout(() => $("q").focus(), 50); }},
         {grp:"Actions", label:"Collect now (one scraper pass)", sub:"Collect", run:() => { showTab("ingest"); schedulerRunNow(); }},
-        {grp:"Actions", label:"Index corpus for insights", sub:"Insights", run:() => { showTab("insights"); indexCorpus(); }},
         {grp:"Actions", label:"Track Wikipedia now", sub:"Wikipedia", run:() => { showTab("wiki"); trackWikiNow(); }},
         {grp:"Actions", label:"Download a backup", sub:"Library", run:() => downloadBackup()},
         {grp:"Actions", label:"Open the User Manual", sub:"Help", run:() => { showTab("help"); openDoc("user-manual"); }},
@@ -5712,25 +5707,29 @@
         animateCount($("ins-n-mentions"), s.mentions);
         $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
         $("ins-remaining").innerHTML = s.remaining ? `· <strong>${s.remaining.toLocaleString()}</strong> to index` : "";
+        if (s.remaining > 0 && !_indexing) autoIndexInsights();  // background top-up; no button (§6)
       } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = "Status unavailable: " + e.message; }
       loadLandscape();
     }
 
+    // Insights indexing follows ingest automatically (the index_article hook
+    // runs at ingest); this SILENT background top-up clears any legacy backlog of
+    // not-yet-indexed articles when Insights is viewed — no button, the user
+    // never thinks about it (UI_SHELL_REDESIGN §6). Best-effort + bounded; the
+    // visible "N to index" count ticks down to 0 on its own.
     let _indexing = false;
-    async function indexCorpus() {
+    async function autoIndexInsights() {
       if (_indexing) return;
       _indexing = true;
       try {
         let guard = 0;
         for (;;) {
           const r = await api("/api/insights/reindex?limit=300", {method: "POST"});
-          $("ins-progress").textContent = `indexed ${r.indexed}, ${r.remaining} remaining…`;
-          await loadInsights();
+          const rem = $("ins-remaining");
+          if (rem) rem.innerHTML = r.remaining ? `· <strong>${r.remaining.toLocaleString()}</strong> to index` : "";
           if (r.remaining === 0 || r.indexed === 0 || ++guard > 500) break;
         }
-        $("ins-progress").textContent = "Indexing complete.";
-        toast("Corpus indexed.");
-      } catch (e) { toast("Indexing failed: " + e.message, "err"); }
+      } catch (_e) { /* silent: background indexing is best-effort */ }
       finally { _indexing = false; }
     }
 

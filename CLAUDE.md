@@ -157,6 +157,12 @@ ruling, a contingency, or a deliberate-omission note.
    live job controls + vitals reused unchanged). Enforced in test_ui_invariants
    (#20). REMAINING: Active/Queue split, History, Sources/Schedule, per-job
    bandwidth/ETA controls.
+21. **INSIGHTS auto-indexes; no "Index corpus" button (UI_SHELL §6, SHIPPED
+   #132):** indexing follows ingest (the index_article hook) + a SILENT
+   background top-up (`autoIndexInsights`) clears any legacy backlog when
+   Insights opens (the "N to index" count ticks to 0 on its own); the button +
+   its palette action are removed. Insights sections were already subtabs (#127).
+   Enforced in test_ui_invariants (#21).
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First

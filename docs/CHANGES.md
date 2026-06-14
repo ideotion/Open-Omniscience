@@ -11,6 +11,15 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Insights indexes itself — the "Index corpus" button is gone.** Indexing
+  already follows ingestion automatically (every new article is indexed as it's
+  collected). Now any *legacy* backlog of not-yet-indexed articles is cleared by a
+  **silent background top-up** the moment you open Insights — the visible
+  "N to index" count simply ticks down to 0 on its own. No button, no manual
+  reindex, no waiting-for-a-click; the existing "N/M articles indexed" pill is the
+  honest freshness readout. (Removed the button + its command-palette action.)
+  Guarded by `test_ui_invariants` #21.
+
 - **The vitals bubble graduates to a Task-manager window.** The activity/vitals
   popover is now a wider, dedicated **tabbed window** (the same universal subtab
   component, its 5th surface) with **Tasks** and **System** tabs — the first slice
