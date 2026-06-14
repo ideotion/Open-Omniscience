@@ -1797,23 +1797,14 @@
 
       <hr>
       <details>
-        <summary class="muted">Older backup tools (replace-style, kept for compatibility)…</summary>
+        <summary class="muted">Older backup tool: download a raw .db snapshot…</summary>
       <div class="row" style="margin-top:6px">
         <button class="secondary" onclick="downloadBackup()">Download backup (.db)</button>
       </div>
       <div class="hint">A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.</div>
-
-      <hr>
-
-      <label for="restore-file">Restore from a backup file <span class="muted">(replaces the current corpus)</span></label>
-      <input type="file" id="restore-file" accept=".db,.sqlite,.sqlite3,application/x-sqlite3">
-      <button class="danger" onclick="restoreBackup()">Restore (destructive)</button>
-      <div class="hint" style="color:var(--warn)">
-        Restore <strong>replaces</strong> your current corpus with the uploaded file. The file is validated first
-        (must be a genuine Open Omniscience SQLite database), and your current corpus is snapshotted to a
-        <code>pre-restore-*.db</code> beside the database so the operation is reversible.
-      </div>
-      <div id="restore-result" class="hint"></div>
+      <div class="hint">Restore is <strong>additive-only</strong>: use the merge restore above — it complements your
+        corpus and never replaces it. (The destructive replace-restore was removed; a raw <code>.db</code>
+        download is a snapshot for manual/advanced use.)</div>
       </details>
     </section>
 
@@ -1877,17 +1868,9 @@
         <div style="flex:0 0 auto;align-self:end">
           <button class="secondary" onclick="encryptedBackup()">Download encrypted backup (.ooenc)</button></div>
       </div>
-
-      <hr>
-      <label for="enc-restore-file">Restore from an encrypted backup
-        <span class="muted">(replaces the current corpus)</span></label>
-      <input type="file" id="enc-restore-file" accept=".ooenc,application/octet-stream">
-      <div class="row" style="margin-top:6px">
-        <div style="flex:2"><input id="enc-restore-pass" type="password" autocomplete="off"
-                 placeholder="passphrase for this file"></div>
-        <div style="flex:0 0 auto"><button class="danger" onclick="encryptedRestore()">Restore (destructive)</button></div>
-      </div>
-      <div id="enc-restore-result" class="hint"></div>
+      <div class="hint">Restore is <strong>additive-only</strong> — the destructive replace-restore was removed.
+        Restore through the merge restore above (the signed backup artifact), which complements your corpus
+        and never overwrites it.</div>
 
       <hr>
       <h3 style="margin-bottom:6px">Database maintenance</h3>
@@ -3986,25 +3969,8 @@
       toast("Preparing backup download…");
     }
 
-    async function restoreBackup() {
-      const f = $("restore-file").files[0];
-      if (!f) { toast("Choose a backup file first.", "err"); return; }
-      if (!confirm(`Restore from "${f.name}"? This REPLACES your current corpus. ` +
-                   `A pre-restore snapshot will be saved beside the database.`)) return;
-      $("restore-result").textContent = "Validating and restoring…";
-      try {
-        const fd = new FormData(); fd.append("file", f);
-        // Let the browser set the multipart Content-Type/boundary (don't force JSON).
-        const res = await fetch("/api/database/restore", {method: "POST", body: fd});
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || res.statusText);
-        $("restore-result").innerHTML =
-          `<span class="pill ok">restored</span> ${data.tables_seen} tables, ${humanBytes(data.bytes)}. ` +
-          `Pre-restore snapshot: <code>${esc(data.pre_restore_snapshot)}</code>`;
-        toast("Corpus restored.");
-        loadDbStats(); loadSources(); doSearch();
-      } catch (e) { $("restore-result").textContent = ""; toast("Restore failed: " + e.message, "err"); }
-    }
+    // restoreBackup() (destructive replace-restore) was REMOVED 2026-06-13:
+    // restore is additive-only via the merge restore (Settings → Data & backup).
 
     // -- Safety (Theme 2): encrypted backup/restore, fetch mode, panic ------ //
     async function loadFetchMode() {
@@ -4091,25 +4057,8 @@
         toast("Encrypted backup downloaded.");
       } catch (e) { toast("Backup failed: " + e.message, "err"); }
     }
-    async function encryptedRestore() {
-      const f = $("enc-restore-file").files[0];
-      const pass = $("enc-restore-pass").value;
-      if (!f) { toast("Choose an encrypted backup file first.", "err"); return; }
-      if (!pass) { toast("Enter the file's passphrase.", "err"); return; }
-      if (!confirm(`Restore from "${f.name}"? This REPLACES your current corpus. ` +
-                   `A pre-restore snapshot will be saved beside the database.`)) return;
-      $("enc-restore-result").textContent = "Decrypting, validating and restoring…";
-      try {
-        const fd = new FormData(); fd.append("file", f); fd.append("passphrase", pass);
-        const res = await fetch("/api/safety/restore/encrypted", {method: "POST", body: fd});
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || res.statusText);
-        $("enc-restore-result").innerHTML = `<span class="pill ok">restored</span> corpus replaced.`;
-        $("enc-restore-pass").value = "";
-        toast("Corpus restored from encrypted backup.");
-        loadDbStats(); loadSources(); doSearch();
-      } catch (e) { $("enc-restore-result").textContent = ""; toast("Restore failed: " + e.message, "err"); }
-    }
+    // encryptedRestore() (destructive replace-restore) was REMOVED 2026-06-13:
+    // restore is additive-only via the merge restore (the signed backup artifact).
     async function panicWipe() {
       if (!confirm("PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?\n\n" +
                    "This cannot be undone. Type-confirm follows.")) return;

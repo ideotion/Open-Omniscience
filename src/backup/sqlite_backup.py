@@ -11,12 +11,13 @@ file that may be mid-write:
   * **Backup** uses SQLite's online backup API (``Connection.backup``), which
     produces a single, internally-consistent snapshot file even while the WAL is
     active and the app is running. No app downtime, no half-written page.
-  * **Restore** is destructive, so it is *defensive*: the uploaded file is first
-    validated (real SQLite header, ``quick_check`` passes, core tables present);
-    only then is the current database snapshotted to a timestamped
-    ``pre-restore-*.db`` and atomically replaced. If validation fails, nothing is
-    touched and an explicit error is raised -- we never overwrite a good corpus
-    with an unverified blob.
+  * **Restore is ADDITIVE-ONLY** (maintainer-ruled 2026-06-13): a restore must
+    NEVER replace the corpus. The ONLY restore is the merge engine
+    (:mod:`src.backup.merge` / the ``/api/database/v2/restore`` endpoints), which
+    complements the live corpus duplicate-lessly and can refuse, but never
+    overwrites. The old destructive "replace the live file" path has been
+    REMOVED from this module so no flow can clobber a journalist's evidence.
+    The validators below (``validate_sqlite_file``) are reused by the merge.
 
 This is SQLite-specific by design. For a PostgreSQL deployment the caller must
 refuse rather than pretend (see :func:`is_sqlite`); ``pg_dump`` is the right tool
@@ -25,11 +26,7 @@ there and is out of scope for this local-first build.
 
 from __future__ import annotations
 
-import os
 import sqlite3
-import tempfile
-from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 # Tables that any genuine Open Omniscience database must contain. Used to reject
@@ -40,13 +37,6 @@ _REQUIRED_TABLES = ("articles", "sources")
 
 class BackupError(RuntimeError):
     """Raised when a backup or restore cannot be performed safely."""
-
-
-@dataclass
-class RestoreReport:
-    restored_from_bytes: int
-    pre_restore_snapshot: str
-    tables_seen: int
 
 
 def is_sqlite() -> bool:
@@ -132,69 +122,9 @@ def validate_sqlite_file(path: Path) -> int:
     return len(names)
 
 
-def restore_from_bytes(data: bytes) -> RestoreReport:
-    """Atomically replace the live database with ``data`` after validating it.
-
-    Steps (fail-safe ordering): write to a temp file in the data dir, validate it,
-    snapshot the current DB to ``pre-restore-<ts>.db``, dispose the engine pool,
-    swap the file into place (removing stale -wal/-shm), then rebuild schema/FTS
-    state. The pre-restore snapshot path is returned so the operator can roll back.
-    """
-    from src.database.session import dispose_engine, init_db
-
-    target = live_db_path()
-    data_dir = target.parent
-
-    # 1. Stage the upload in the same directory (so os.replace is atomic).
-    fd, tmp_name = tempfile.mkstemp(prefix=".restore-", suffix=".db", dir=str(data_dir))
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(data)
-
-        # 2. Validate BEFORE touching the live file.
-        tables_seen = validate_sqlite_file(tmp_path)
-
-        # 2b. An encrypted corpus must STAY encrypted: re-encrypt the validated
-        # plaintext upload under THE passphrase before it can become the live
-        # file (a replace-restore must never silently decrypt the store).
-        from src.database.connect import is_encrypted_file, reencrypt_plain_to
-
-        if is_encrypted_file(target):
-            from src.database.connect import get_passphrase
-
-            key = get_passphrase()
-            if not key:
-                raise BackupError("the live database is encrypted and locked")
-            enc_tmp = tmp_path.with_name(tmp_path.name + ".enc")
-            reencrypt_plain_to(tmp_path, enc_tmp, key)
-            tmp_path.unlink()
-            tmp_path = enc_tmp
-
-        # 3. Snapshot the current corpus so a bad restore is recoverable --
-        # preserving its at-rest state (ciphertext stays ciphertext on disk).
-        from src.database.connect import snapshot_preserving
-
-        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        snapshot = data_dir / f"pre-restore-{ts}.db"
-        snapshot_preserving(target, snapshot)
-
-        # 4. Release pooled connections, then swap files atomically.
-        dispose_engine()
-        for suffix in ("-wal", "-shm"):
-            stale = target.with_name(target.name + suffix)
-            if stale.exists():
-                stale.unlink()
-        os.replace(tmp_path, target)  # atomic on the same filesystem
-        tmp_path = None  # consumed
-
-        # 5. Reconcile schema/FTS on the restored file (idempotent).
-        init_db()
-        return RestoreReport(
-            restored_from_bytes=len(data),
-            pre_restore_snapshot=str(snapshot),
-            tables_seen=tables_seen,
-        )
-    finally:
-        if tmp_path is not None and tmp_path.exists():
-            tmp_path.unlink()
+# NOTE: ``restore_from_bytes`` (the destructive "atomically replace the live
+# database" path) was REMOVED on 2026-06-13 (maintainer ruling: restore is
+# additive-only). Restoring now goes exclusively through the merge engine
+# (:mod:`src.backup.merge`), which complements the corpus and never overwrites it.
+# Do not reintroduce a replace-restore here — the guard test
+# tests/test_additive_restore_only.py fails the build if one reappears.

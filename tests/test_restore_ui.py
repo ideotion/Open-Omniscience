@@ -43,11 +43,13 @@ def test_v2_flow_is_the_primary_backup_path():
     legacy_pos = panel.find('onclick="downloadBackup()"')
     assert v2_pos != -1 and legacy_pos != -1
     assert v2_pos < legacy_pos, "the signed-archive flow must come before the legacy tools"
-    # Legacy replace-style tools live inside a collapsed details block.
-    legacy_block = panel[panel.find("Older backup tools"):]
-    assert 'onclick="restoreBackup()"' in legacy_block, (
-        "the destructive legacy restore must be inside the demoted legacy block"
+    # Additive-only restore (maintainer ruling 2026-06-13): the destructive
+    # replace-restore is REMOVED entirely (not merely demoted). The legacy block
+    # keeps only the raw .db snapshot DOWNLOAD; the merge is the ONLY restore.
+    assert 'onclick="restoreBackup()"' not in _HTML, (
+        "the destructive replace-restore must be GONE — restore is additive-only"
     )
+    assert 'onclick="encryptedRestore()"' not in _HTML
 
 
 def test_v2_preview_precedes_commit_and_warns_on_failed_verification():

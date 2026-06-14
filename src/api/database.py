@@ -17,7 +17,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
@@ -61,10 +61,6 @@ def _cached(key: str, compute, db: Session) -> dict:
     out["cache_ttl_s"] = _CACHE_TTL_S
     _cache.set(key, {"probe": probe, "payload": out})
     return out
-
-# Refuse to ingest an unreasonably large "backup" upload (defensive; the real
-# corpus for a single user is far smaller, and this caps memory use on restore).
-_MAX_RESTORE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
 
 
 # Human-facing label -> table name. Counted only if the table is present.
@@ -312,29 +308,8 @@ def download_backup() -> FileResponse:
     )
 
 
-@router.post("/restore")
-async def restore_backup(file: UploadFile) -> dict:
-    """Replace the live corpus with an uploaded SQLite backup (destructive).
-
-    The upload is validated (real SQLite, integrity check, core tables present)
-    before anything is overwritten, and the current corpus is snapshotted to a
-    ``pre-restore-*.db`` first so the operation is reversible.
-    """
-    from src.backup.sqlite_backup import BackupError, restore_from_bytes
-
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="uploaded file is empty")
-    if len(data) > _MAX_RESTORE_BYTES:
-        raise HTTPException(status_code=413, detail="backup file is too large to restore")
-    try:
-        report = restore_from_bytes(data)
-    except BackupError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {
-        "restored": True,
-        "bytes": report.restored_from_bytes,
-        "tables_seen": report.tables_seen,
-        "pre_restore_snapshot": report.pre_restore_snapshot,
-        "detail": "Corpus restored. A pre-restore snapshot was saved alongside the database.",
-    }
+# NOTE: the destructive POST /api/database/restore (replace the live corpus with
+# an uploaded SQLite file) was REMOVED on 2026-06-13 (maintainer ruling: restore
+# is ADDITIVE-ONLY). Restoring goes exclusively through the merge engine at
+# POST /api/database/v2/restore/{preview,commit}, which complements the corpus
+# and never overwrites it. (Backup CREATION — GET /api/database/backup — stays.)

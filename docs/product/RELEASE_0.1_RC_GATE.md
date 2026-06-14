@@ -24,6 +24,7 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 |---|---|---|---|
 | Backup carries EVERYTHING (oo-backup-2 artifact, signed manifest) | ✅ | RC-BLOCKING | torture suite T5/T6; manifest lists exclusions |
 | Merge-only restore (preview=commit code path, FK remap, conflicts reported, atomic swap) | ✅ | RC-BLOCKING | torture suite 10/10 green (is, today) |
+| Restore is ADDITIVE-ONLY: the destructive replace paths removed entirely (ruled 2026-06-13) | ✅ 2026-06-13 | RC-BLOCKING | `/api/database/restore` + `/api/safety/restore/encrypted` + `restore_from_bytes`/`restore_encrypted_backup` gone; merge is the only restore; `tests/test_additive_restore_only.py` guards regression; torture 10/10 |
 | Custody chains verified-not-trusted, never spliced | ✅ | RC-BLOCKING | T9 |
 | Cross-version restore floor + staged upgrade | ✅ | RC-BLOCKING | T4 |
 | Single-writer gate (no fetched data lost to writer contention; keystone #1) | ✅ 2026-06-13 | RC-BLOCKING | `src/database/writer.py` serialises every write via session events; `tests/test_write_gate.py`: 6 concurrent writers never "database is locked", reads never gated, safety-net release on close |

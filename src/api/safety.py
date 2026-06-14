@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import io
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -79,20 +79,11 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
     )
 
 
-@router.post("/restore/encrypted")
-async def restore_encrypted(file: UploadFile = File(...), passphrase: str = Form(...)) -> dict:
-    """Decrypt + validate + restore an encrypted backup (a tampered/wrong-passphrase file is refused)."""
-    from src.backup.sqlite_backup import BackupError
-    from src.safety import restore_encrypted_backup
-    from src.safety.crypto import EncryptionError
-
-    blob = await file.read()
-    try:
-        return restore_encrypted_backup(blob, passphrase)
-    except EncryptionError as exc:
-        raise HTTPException(status_code=400, detail=f"decryption failed: {exc}") from exc
-    except BackupError as exc:
-        raise HTTPException(status_code=400, detail=f"not a valid backup: {exc}") from exc
+# NOTE: POST /api/safety/restore/encrypted (decrypt + REPLACE the live corpus)
+# was REMOVED on 2026-06-13 (maintainer ruling: restore is additive-only).
+# Restoring goes exclusively through the merge engine (the oo-backup-2 artifact +
+# POST /api/database/v2/restore), which never overwrites the corpus. Encrypted
+# backup CREATION (POST /api/safety/backup/encrypted) stays.
 
 
 @router.post("/panic")

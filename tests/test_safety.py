@@ -57,50 +57,21 @@ def live_db(monkeypatch, tmp_path):
     return tmp_path
 
 
-def test_encrypted_backup_roundtrip(live_db):
-    from src.safety import make_encrypted_backup, restore_encrypted_backup
+def test_make_encrypted_backup_creates_a_valid_encrypted_snapshot(live_db):
+    """Backup CREATION still works (and stays): the blob is encrypted and decrypts
+    to a real SQLite snapshot. The destructive restore_encrypted_backup (which
+    REPLACED the corpus) was removed 2026-06-13 — restore is additive-only now,
+    exclusively via the merge engine (covered by the torture suite). The guard in
+    tests/test_additive_restore_only.py asserts no replace path comes back."""
+    from src.safety import make_encrypted_backup
+    from src.safety.crypto import _MAGIC, decrypt_bytes
 
     blob = make_encrypted_backup("pw1234")
-    from src.safety.crypto import _MAGIC
-
-    assert blob.startswith(_MAGIC)
-    report = restore_encrypted_backup(blob, "pw1234")
-    assert report["restored"] is True and report["validated_rows"] >= 0
-
-
-def test_encrypted_restore_uses_the_one_safe_path(live_db):
-    """Encrypted restore is an envelope over restore_from_bytes -- it must carry the
-    plain path's guarantees: a pre-restore snapshot taken via the online backup API
-    (itself a valid OO database) and a swapped-in file that opens cleanly."""
-    from pathlib import Path
-
-    from src.backup.sqlite_backup import validate_sqlite_file
-    from src.safety import make_encrypted_backup, restore_encrypted_backup
-
-    blob = make_encrypted_backup("pw1234")
-    report = restore_encrypted_backup(blob, "pw1234")
-    snap = Path(report["pre_restore_snapshot"])
-    assert snap.exists() and snap.stat().st_size > 0
-    assert validate_sqlite_file(snap) > 0  # consistent snapshot, not a naive byte copy
-    assert validate_sqlite_file(Path(report["path"])) > 0
-
-
-def test_restore_wrong_passphrase(live_db):
-    from src.safety import make_encrypted_backup, restore_encrypted_backup
-
-    blob = make_encrypted_backup("pw1234")
-    with pytest.raises(EncryptionError):
-        restore_encrypted_backup(blob, "nope")
-
-
-def test_restore_rejects_non_oo_payload(live_db):
-    from src.backup.sqlite_backup import BackupError
-    from src.safety import restore_encrypted_backup
-
-    # A correctly-encrypted but non-database payload must NOT overwrite the corpus.
-    blob = encrypt_bytes(b"this is not a sqlite database", "pw")
-    with pytest.raises(BackupError):
-        restore_encrypted_backup(blob, "pw")
+    assert blob.startswith(_MAGIC)  # encrypted envelope
+    plaintext = decrypt_bytes(blob, "pw1234")
+    assert plaintext.startswith(b"SQLite format 3\x00")  # a genuine SQLite snapshot
+    with pytest.raises(EncryptionError):  # wrong passphrase is refused loudly
+        decrypt_bytes(blob, "nope")
 
 
 # --- panic ------------------------------------------------------------------ #
@@ -179,23 +150,19 @@ def test_api_settings_get_and_protected_requires_proxy(client):
     assert ok.status_code == 200 and ok.json()["fetch_mode"] == "protected"
 
 
-def test_api_encrypted_backup_then_restore(client):
+def test_api_encrypted_backup_create_works_and_replace_restore_is_gone(client):
+    # Backup CREATION still works and stays.
     blob = client.post("/api/safety/backup/encrypted", json={"passphrase": "pw"}).content
     assert blob[:8] == b"OOENC1\x00\x00"
-    # restore via multipart
+    # The destructive replace-restore endpoint was REMOVED (additive-only ruling,
+    # 2026-06-13): restoring is exclusively the additive merge at
+    # /api/database/v2/restore. The old route no longer exists.
     r = client.post(
         "/api/safety/restore/encrypted",
         files={"file": ("b.ooenc", blob, "application/octet-stream")},
         data={"passphrase": "pw"},
     )
-    assert r.status_code == 200 and r.json()["restored"] is True
-    # wrong passphrase -> 400
-    bad = client.post(
-        "/api/safety/restore/encrypted",
-        files={"file": ("b.ooenc", blob, "application/octet-stream")},
-        data={"passphrase": "WRONG"},
-    )
-    assert bad.status_code == 400
+    assert r.status_code == 404
 
 
 def test_api_panic_requires_confirm(client):

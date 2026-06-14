@@ -11,6 +11,24 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Restore is now ADDITIVE-ONLY — the destructive replace path is gone.** A
+  journalist's corpus is evidence; a restore must never overwrite it (maintainer
+  ruling 2026-06-13). The two destructive "replace the live database" restore
+  paths — `POST /api/database/restore` and `POST /api/safety/restore/encrypted`,
+  both via `restore_from_bytes` (which did an `os.replace` of the live file) —
+  have been **removed entirely** (not merely demoted), along with the functions
+  behind them (`restore_from_bytes`, `restore_encrypted_backup`). The **merge
+  engine is now the ONLY restore** (`/api/backup/v2/restore/{preview,commit}`):
+  it complements the corpus duplicate-lessly, keeps your local version on a
+  conflict, and can refuse — but never replaces. The legacy "Restore
+  (destructive)" buttons and their "replaces the current corpus" wording are
+  retired from Settings (backup *creation* — the raw `.db` and encrypted
+  snapshot downloads — stays). A new guard test
+  (`tests/test_additive_restore_only.py`) fails the build if any replace-restore
+  endpoint or function ever reappears, so the guarantee can't silently regress.
+  The torture suite (SIGKILL-mid-merge, atomic swap, crown no-silent-decrypt) is
+  unchanged and green — the merge restore it covers is untouched.
+
 - **Parallel collection: fetch many hosts at once, politely; write serially.**
   The collect pass can now fetch **different hosts concurrently** via a bounded
   worker pool (`collect_parallelism`, default **1 = sequential, unchanged**;
