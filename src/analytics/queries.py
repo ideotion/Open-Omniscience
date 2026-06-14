@@ -20,6 +20,7 @@ from sqlalchemy import func
 from src.database.models import (
     Article,
     ArticleEntity,
+    ArticleMentionedPlace,
     Keyword,
     KeywordFamilyOverride,
     KeywordMention,
@@ -663,6 +664,107 @@ def who_aggregate(
         ),
         "caveat": "Deduced from text, never confirmed.",
         "entities": entities,
+    }
+
+
+def where_aggregate(
+    session,
+    *,
+    kind: str | None = None,
+    days: int | None = None,
+    country: str | None = None,
+    limit: int = 50,
+    min_articles: int = 1,
+) -> dict:
+    """Corpus-wide WHERE: places DEDUCED from article text (the When/Where/Who
+    substrate, T12), aggregated by name + country.
+
+    Honest counts only — there is NO score. Each row reports the number of
+    DISTINCT articles the place appears in (``articles``) and the summed
+    in-article occurrence count (``mentions``), ordered by article spread.
+    ``lat``/``lon`` carry the gazetteer coordinate when the place is known
+    (``null`` otherwise — no fabricated position; ``placed`` counts how many
+    rows are mappable). The ``country`` filter selects places LOCATED in that
+    country (the place's own ISO-2), not the source's country. Names are lexical
+    surface forms the extractor does not disambiguate beyond a source-country
+    hint, so every figure is DEDUCED from text, never a confirmed location.
+    ``coverage_articles`` states the denominator: how many articles carry any
+    place extraction at all.
+    """
+    k = kind if kind in ("city", "country") else None
+    since = date.today() - timedelta(days=days) if days else None
+    cc = country.lower() if country else None
+
+    def _scoped(query):
+        if k:
+            query = query.filter(ArticleMentionedPlace.kind == k)
+        if cc is not None:
+            query = query.filter(ArticleMentionedPlace.country == cc)
+        if since is not None:
+            query = query.join(Article, Article.id == ArticleMentionedPlace.article_id)
+            query = query.filter(Article.published_at >= since)
+        return query
+
+    arts_expr = func.count(func.distinct(ArticleMentionedPlace.article_id))
+    men_expr = func.sum(ArticleMentionedPlace.mentions)
+    q = _scoped(
+        session.query(
+            ArticleMentionedPlace.name,
+            ArticleMentionedPlace.country,
+            ArticleMentionedPlace.kind,
+            func.max(ArticleMentionedPlace.lat),
+            func.max(ArticleMentionedPlace.lon),
+            arts_expr.label("arts"),
+            men_expr.label("m"),
+        )
+    ).group_by(
+        ArticleMentionedPlace.name,
+        ArticleMentionedPlace.country,
+        ArticleMentionedPlace.kind,
+    )
+    if min_articles > 1:
+        q = q.having(arts_expr >= min_articles)
+    rows = q.order_by(arts_expr.desc(), men_expr.desc()).limit(limit).all()
+
+    coverage = (
+        _scoped(session.query(func.count(func.distinct(ArticleMentionedPlace.article_id)))).scalar()
+        or 0
+    )
+
+    placed = 0
+    places = []
+    for name, pcc, pkind, lat, lon, arts, m in rows:
+        mappable = lat is not None and lon is not None
+        if mappable:
+            placed += 1
+        places.append(
+            {
+                "name": name,
+                "country": pcc,
+                "kind": pkind,
+                "lat": lat,
+                "lon": lon,
+                "articles": int(arts or 0),
+                "mentions": int(m or 0),
+            }
+        )
+    return {
+        "count": len(places),
+        "kind": k,
+        "days": days,
+        "country": cc,
+        "min_articles": min_articles,
+        "coverage_articles": int(coverage),
+        "placed": placed,
+        "method": (
+            "Place names deduced from article text at ingest (extractor "
+            "lexical-v1), aggregated by name + ISO-2 country. Coordinates come "
+            "from the city/country gazetteer (null when unknown — no fabricated "
+            "position). Figures are distinct-article spread and summed in-text "
+            "mentions; there is no score."
+        ),
+        "caveat": "Deduced from text, never confirmed.",
+        "places": places,
     }
 
 

@@ -91,6 +91,21 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   Linux CI that gates merges (Linux already defaults to UTF-8). Binary opens and
   computed-mode opens are exempt by construction.
 
+- **Corpus-wide WHERE: places across the whole corpus.** The When/Where/Who
+  substrate (T12) persists the places deduced per article; a new aggregation
+  rolls them up to the **whole corpus** — `GET /api/insights/where` (and
+  `queries.where_aggregate`) returns the most-mentioned places with **honest
+  counts only**: distinct-article **spread** and summed in-text **mentions**,
+  ordered by spread, each carrying the gazetteer **lat/lon** when known (`null`
+  otherwise — no fabricated position; `placed` counts the mappable rows).
+  Filterable by `kind` (`city` | `country`), by window (`days`), and by the
+  place's own `country`; `min_articles` hides one-offs; `coverage_articles`
+  states the denominator. There is **no score**, and every figure ships with a
+  `method` string and the caveat *"Deduced from text, never confirmed."* — the
+  sibling of the corpus-wide WHO aggregation. `tests/test_where_aggregate.py`
+  proves the counts, ordering, coordinates, the kind/window/country filters, the
+  `min_articles` HAVING, and the honesty.
+
 - **Parallel collection: fetch many hosts at once, politely; write serially.**
   The collect pass can now fetch **different hosts concurrently** via a bounded
   worker pool (`collect_parallelism`, default **1 = sequential, unchanged**;
