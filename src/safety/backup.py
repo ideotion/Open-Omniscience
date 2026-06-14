@@ -6,9 +6,13 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Wraps the existing *online* SQLite backup (a consistent snapshot, valid even while the app
 runs) in passphrase encryption (:mod:`src.safety.crypto`), so a journalist can carry or
-stash their corpus across a border or a hostile network without exposing it. Restore
-decrypts, then *validates* the snapshot is a genuine Open Omniscience database before it is
-written — a wrong passphrase or a tampered file is rejected loudly.
+stash their corpus across a border or a hostile network without exposing it.
+
+Restore is ADDITIVE-ONLY (maintainer-ruled 2026-06-13): the destructive
+``restore_encrypted_backup`` that *replaced* the live corpus has been REMOVED.
+Restoring now goes exclusively through the merge engine (the oo-backup-2 artifact
++ the ``/api/database/v2/restore`` endpoints), which complements the corpus and
+never overwrites it. This module now only *creates* encrypted backups.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from src.safety.crypto import decrypt_bytes, encrypt_bytes
+from src.safety.crypto import encrypt_bytes
 
 
 def make_encrypted_backup(passphrase: str) -> bytes:
@@ -34,30 +38,3 @@ def make_encrypted_backup(passphrase: str) -> bytes:
         return encrypt_bytes(plaintext, passphrase)
     finally:
         Path(tmp).unlink(missing_ok=True)
-
-
-def restore_encrypted_backup(blob: bytes, passphrase: str) -> dict:
-    """Decrypt + validate an encrypted backup and restore it over the live DB.
-
-    Returns a small report. Raises ``EncryptionError`` on a bad passphrase/tamper and
-    ``BackupError`` if the decrypted payload is not a genuine Open Omniscience database
-    (so a hostile file can never overwrite the corpus).
-
-    The swap itself is delegated to :func:`src.backup.sqlite_backup.restore_from_bytes`
-    -- ONE restore path, encryption is only an envelope -- so this flow carries the
-    same guarantees as the plain one: validation on a staged copy, a pre-restore
-    snapshot via the online backup API, engine-pool disposal, stale ``-wal``/``-shm``
-    removal, an atomic ``os.replace`` and the schema/FTS reconcile. (Re-implementing
-    the swap by hand here had drifted into a non-atomic write with none of those
-    steps -- gap analysis `docs/design/DB_RELIABILITY_01_GAP_ANALYSIS.md` §4.)
-    """
-    from src.backup.sqlite_backup import live_db_path, restore_from_bytes
-
-    plaintext = decrypt_bytes(blob, passphrase)  # raises on wrong passphrase / tamper
-    report = restore_from_bytes(plaintext)  # raises BackupError before touching anything
-    return {
-        "restored": True,
-        "validated_rows": report.tables_seen,
-        "path": str(live_db_path()),
-        "pre_restore_snapshot": report.pre_restore_snapshot,
-    }

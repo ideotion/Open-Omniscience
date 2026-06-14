@@ -70,51 +70,8 @@ def test_validate_rejects_unrelated_sqlite(tmp_path):
         sqlite_backup.validate_sqlite_file(other)
 
 
-def test_restore_swaps_file_and_keeps_snapshot(temp_engine, tmp_path):
-    eng, data_dir = temp_engine
-
-    # Build a DIFFERENT valid OO database (two sources) to restore from.
-    incoming = tmp_path / "incoming.db"
-    ieng = create_engine(f"sqlite:///{incoming}", future=True)
-    Base.metadata.create_all(ieng)
-    with ieng.connect() as conn:
-        conn.exec_driver_sql(
-            "INSERT INTO sources (name, domain, enabled, priority) "
-            "VALUES ('A','a.test',1,2), ('B','b.test',1,2)"
-        )
-        conn.commit()
-    ieng.dispose()
-    payload = incoming.read_bytes()
-
-    report = sqlite_backup.restore_from_bytes(payload)
-
-    # Live DB now has the restored two rows.
-    live = sqlite_backup.live_db_path()
-    conn = sqlite3.connect(str(live))
-    try:
-        (n,) = conn.execute("SELECT COUNT(*) FROM sources").fetchone()
-    finally:
-        conn.close()
-    assert n == 2
-
-    # A recoverable pre-restore snapshot (the original single row) exists.
-    from pathlib import Path
-
-    snap = Path(report.pre_restore_snapshot)
-    assert snap.exists()
-    conn = sqlite3.connect(str(snap))
-    try:
-        (orig,) = conn.execute("SELECT COUNT(*) FROM sources").fetchone()
-    finally:
-        conn.close()
-    assert orig == 1
-
-
-def test_bad_restore_leaves_live_untouched(temp_engine, tmp_path):
-    eng, _ = temp_engine
-    live = sqlite_backup.live_db_path()
-    before = live.read_bytes()
-    with pytest.raises(sqlite_backup.BackupError):
-        sqlite_backup.restore_from_bytes(b"corrupt blob, not a database")
-    # Nothing was overwritten.
-    assert live.read_bytes() == before
+# The destructive restore_from_bytes (replace the live file) was REMOVED on
+# 2026-06-13 (restore is additive-only). Its two tests are gone with it; the
+# additive merge restore is covered by the torture suite + the merge tests, and
+# tests/test_additive_restore_only.py guards that no replace path comes back.
+# Backup CREATION + validation are still tested above (backup_to / validate_sqlite_file).

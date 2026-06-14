@@ -15,7 +15,7 @@ these add protection on top, not instead. See the "Next version — action plans
 
 from __future__ import annotations
 
-from src.safety.backup import make_encrypted_backup, restore_encrypted_backup
+from src.safety.backup import make_encrypted_backup
 from src.safety.crypto import EncryptionError, decrypt_bytes, encrypt_bytes
 from src.safety.fetcher import make_fetcher
 from src.safety.panic import panic_wipe
@@ -26,7 +26,6 @@ __all__ = [
     "decrypt_bytes",
     "EncryptionError",
     "make_encrypted_backup",
-    "restore_encrypted_backup",
     "panic_wipe",
     "make_fetcher",
     "SafetySettings",

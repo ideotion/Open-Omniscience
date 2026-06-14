@@ -167,8 +167,11 @@ makes the rest fall out cheaply:
 
 ## I. Backup / restore
 
-- ⬜ **Restore is additive-only** — never replaces the corpus; remove the legacy
-  replace path entirely (the merge engine already behaves additively).
+- ✅ **Restore is additive-only** — the destructive replace paths
+  (`/api/database/restore`, `/api/safety/restore/encrypted`, `restore_from_bytes`,
+  `restore_encrypted_backup`) are REMOVED; the merge engine is the ONLY restore.
+  Legacy "Restore (destructive)" UI retired; guard test forbids any replace path
+  returning. Torture suite still 10/10.
 
 ## J. Settings additions
 
