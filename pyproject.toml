@@ -159,9 +159,9 @@ Homepage = "https://github.com/ideotion/Open-Omniscience"
 Repository = "https://github.com/ideotion/Open-Omniscience.git"
 Issues = "https://github.com/ideotion/Open-Omniscience/issues"
 
-# src-layout preserved to keep git history/blame intact. Pillars are standalone
-# trees (not part of the installed core package) and are added back deliberately
-# as each is rebuilt for real.
+# src-layout preserved to keep git history/blame intact. The legacy six-pillar
+# trees were archived out of the working tree (docs/QUARANTINE_ARCHIVE.md + the
+# quarantine-archive branch); their honest intent was salvaged into src/.
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
@@ -173,7 +173,7 @@ include = ["src*"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-extend-exclude = ["migrations", "quarantine", "build", "dist", ".venv"]
+extend-exclude = ["migrations", "build", "dist", ".venv"]
 
 [tool.ruff.lint]
 # Sensible, non-pedantic default. E/F = pyflakes+pycodestyle, I = isort,
@@ -192,7 +192,7 @@ check_untyped_defs = true
 ignore_missing_imports = true
 # async_db is kept-for-future Postgres scaffolding (unused, 0 coverage) --
 # typed properly when it is actually wired in.
-exclude = ["quarantine/", "migrations/", "src/database/async_db.py"]
+exclude = ["migrations/", "src/database/async_db.py"]
 
 [tool.pytest.ini_options]
 python_files = ["test_*.py", "*_test.py"]
@@ -205,7 +205,7 @@ addopts = "--tb=short"
 [tool.coverage.run]
 source = ["src"]
 branch = true
-omit = ["src/*/migrations/*", "quarantine/*"]
+omit = ["src/*/migrations/*"]
 
 [tool.coverage.report]
 exclude_lines = [

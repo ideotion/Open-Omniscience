@@ -5,7 +5,7 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 This is the genuine, honest piece revived from the quarantined Pillar 3 (see
-quarantine/README.md). It reports the metadata that is *actually present* in an
+docs/QUARANTINE_ARCHIVE.md). It reports the metadata that is *actually present* in an
 image and raises plain, factual observations a journalist can verify themselves
 (e.g. "an editing-software tag is present", "no capture timestamp", "GPS coords
 present"). It does NOT claim to detect manipulation or output an "authenticity
