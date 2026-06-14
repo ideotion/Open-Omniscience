@@ -90,7 +90,7 @@ def test_export_then_offline_verify(client, tmp_path):
 
     # The standalone script verifies the same bundle with no app/DB.
     bundle_file = tmp_path / "custody.json"
-    bundle_file.write_text(json.dumps(bundle))
+    bundle_file.write_text(json.dumps(bundle), encoding="utf-8")
     repo = Path(__file__).resolve().parents[1]
     res = subprocess.run(
         [sys.executable, str(repo / "scripts" / "verify_custody.py"), str(bundle_file)],

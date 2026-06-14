@@ -87,7 +87,7 @@ def test_export_delta_writes_envelope_with_only_new_articles(tmp_path):
         started = datetime.now(UTC) - timedelta(minutes=30)
         out = export_delta(s, started_at=started, export_dir=str(tmp_path / "drop"))
         assert out is not None
-        doc = json.loads((tmp_path / "drop" / out.split("/")[-1]).read_text())
+        doc = json.loads((tmp_path / "drop" / out.split("/")[-1]).read_text(encoding="utf-8"))
         assert doc["export_schema"] == "oo-export-1"
         assert doc["kind"] == "scheduler-delta"
         # Membership, not global count: the suite shares one hermetic DB, so other

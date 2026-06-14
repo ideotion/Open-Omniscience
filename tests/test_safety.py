@@ -84,7 +84,7 @@ def test_panic_requires_confirm(tmp_path):
 def test_panic_wipes(tmp_path):
     (tmp_path / "a.db").write_bytes(b"x" * 100)
     (tmp_path / "sub").mkdir()
-    (tmp_path / "sub" / "b.json").write_text("{}")
+    (tmp_path / "sub" / "b.json").write_text("{}", encoding="utf-8")
     report = panic_wipe(tmp_path, confirm=True)
     assert report["files_seen"] == 2 and report["files_wiped"] == 2
     assert not tmp_path.exists()

@@ -79,7 +79,7 @@ def test_unattended_install_creates_launcher(tmp_path):
 
     desktop = home / ".local/share/applications/open-omniscience.desktop"
     assert desktop.is_file(), "applications-menu launcher not created"
-    body = desktop.read_text()
+    body = desktop.read_text(encoding="utf-8")
     assert f"Exec={REPO}/scripts/launch.sh" in body
     # Prefer the PNG (rendered more reliably than SVG across desktops); it is
     # committed, so the launcher should point at it.
@@ -139,7 +139,7 @@ def test_curl_pipe_install_does_not_leak_menu_into_pip_spec(tmp_path):
 
 
 def test_bootstrap_points_at_canonical_repo_and_hands_off():
-    body = (REPO / "scripts/bootstrap.sh").read_text()
+    body = (REPO / "scripts/bootstrap.sh").read_text(encoding="utf-8")
     assert "ideotion/Open-Omniscience" in body
     assert "exec ./install.sh" in body  # delegates to the inspectable in-repo installer
 
@@ -147,7 +147,7 @@ def test_bootstrap_points_at_canonical_repo_and_hands_off():
 def test_bootstrap_does_not_hardcode_nonexistent_main_branch():
     # The repo's default branch is not "main"; pinning to it would 404. The
     # bootstrap should track the default branch unless OO_BRANCH is set.
-    body = (REPO / "scripts/bootstrap.sh").read_text()
+    body = (REPO / "scripts/bootstrap.sh").read_text(encoding="utf-8")
     assert "OO_BRANCH:-main" not in body
     assert 'BRANCH="${OO_BRANCH:-}"' in body
 
@@ -156,7 +156,7 @@ def test_install_links_resolve_to_default_branch_via_head():
     # raw.githubusercontent .../HEAD/... always resolves to the default branch,
     # so the documented one-liner keeps working regardless of its name.
     for doc in ("README.md", "docs/QUICKSTART.md", "scripts/bootstrap.sh"):
-        text = (REPO / doc).read_text()
+        text = (REPO / doc).read_text(encoding="utf-8")
         assert "raw.githubusercontent.com/ideotion/Open-Omniscience/main/" not in text, (
             f"{doc} still points the curl install at a non-existent 'main' branch"
         )
@@ -189,7 +189,7 @@ def test_uninstall_removes_venv_and_launcher_but_keeps_data(tmp_path):
     shutil.copy(REPO / "assets/logo.txt", app / "assets/logo.txt")
     fake_venv = app / ".venv"
     fake_venv.mkdir()
-    (fake_venv / "marker").write_text("x")  # prove rm -rf removed the tree
+    (fake_venv / "marker").write_text("x", encoding="utf-8")  # prove rm -rf removed the tree
 
     home = tmp_path / "home"
     apps = home / ".local/share/applications"
@@ -197,8 +197,8 @@ def test_uninstall_removes_venv_and_launcher_but_keeps_data(tmp_path):
     (home / "Desktop").mkdir(parents=True)
     menu_launcher = apps / "open-omniscience.desktop"
     desk_launcher = home / "Desktop/open-omniscience.desktop"
-    menu_launcher.write_text("[Desktop Entry]\n")
-    desk_launcher.write_text("[Desktop Entry]\n")
+    menu_launcher.write_text("[Desktop Entry]\n", encoding="utf-8")
+    desk_launcher.write_text("[Desktop Entry]\n", encoding="utf-8")
 
     # No TTY here (piped stdin), so confirm non-interactively via OO_ASSUME_YES.
     # (Data deletion is never auto-confirmed; the fake venv has no python, so the

@@ -21,11 +21,11 @@ def _fake_install(tmp_path, monkeypatch):
     (home / "Desktop").mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(U, "_desktop_dir", lambda: home / "Desktop")
-    (home / ".local" / "share" / "applications" / f"{U.APP_NAME}.desktop").write_text("x")
-    (home / "Desktop" / f"{U.APP_NAME}-desk.desktop").write_text("x")
+    (home / ".local" / "share" / "applications" / f"{U.APP_NAME}.desktop").write_text("x", encoding="utf-8")
+    (home / "Desktop" / f"{U.APP_NAME}-desk.desktop").write_text("x", encoding="utf-8")
     app = tmp_path / "app"
     (app / ".venv").mkdir(parents=True)
-    (app / "install.sh").write_text("#!/usr/bin/env bash\n")
+    (app / "install.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     return app
 
 

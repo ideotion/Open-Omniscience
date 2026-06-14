@@ -36,12 +36,12 @@ def temp_config_dir():
             "scraping": {"max_workers": 10},
             "security": {"cors_origins": "http://test.com"},
         }
-        with open(configs_dir / "settings.yaml", "w") as f:
+        with open(configs_dir / "settings.yaml", "w", encoding="utf-8") as f:
             yaml.dump(settings, f)
 
         # Create sources.yml
         sources = {"sources": [{"name": "Test Source", "domain": "test.com"}]}
-        with open(configs_dir / "sources.yml", "w") as f:
+        with open(configs_dir / "sources.yml", "w", encoding="utf-8") as f:
             yaml.dump(sources, f)
 
         # Mock the repo_root

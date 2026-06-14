@@ -92,9 +92,9 @@ def test_t6_divergent_merge_full(corpora):
     assert report["verification"]["fts_matches_articles"] is True
     # T10: local settings are sacred.
     assert report["side_files"]["state"]["app_settings.json"]["action"] == "kept-local"
-    assert (json.loads((a / "app_settings.json").read_text())["theme"]) == "light"
+    assert (json.loads((a / "app_settings.json").read_text(encoding="utf-8"))["theme"]) == "light"
     # Events store unioned; both corpora's unique days present.
-    ev = json.loads((a / "calendar_feed_imports.json").read_text())["holidays"]["events"]
+    ev = json.loads((a / "calendar_feed_imports.json").read_text(encoding="utf-8"))["holidays"]["events"]
     assert {"fp-shared", "fp-A", "fp-B"} <= set(ev)
     assert sorted(ev["fp-shared"]["sources"]) == ["feedA", "feedB"]
     # T8: a token unique to B's corpus is findable through FTS in A afterwards.

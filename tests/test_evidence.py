@@ -122,7 +122,7 @@ def test_standalone_verifier_script(tmp_path):
     key = load_or_create_signing_key(tmp_path / "k.pem")
     bundle = build_signed_bundle([_Art(1, "alpha")], key)
     bundle_file = tmp_path / "bundle.json"
-    bundle_file.write_text(json.dumps(bundle))
+    bundle_file.write_text(json.dumps(bundle), encoding="utf-8")
     repo = Path(__file__).resolve().parents[1]
     res = subprocess.run(
         [sys.executable, str(repo / "scripts" / "verify_evidence.py"), str(bundle_file)],
@@ -133,7 +133,7 @@ def test_standalone_verifier_script(tmp_path):
     assert "VERIFIED       : True" in res.stdout
     # tamper -> nonzero exit
     bundle["manifest"]["items"][0]["content_sha256"] = "f" * 64
-    bundle_file.write_text(json.dumps(bundle))
+    bundle_file.write_text(json.dumps(bundle), encoding="utf-8")
     res2 = subprocess.run(
         [sys.executable, str(repo / "scripts" / "verify_evidence.py"), str(bundle_file)],
         capture_output=True,
