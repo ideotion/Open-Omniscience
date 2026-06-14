@@ -57,6 +57,22 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   return both replace — so the unlock screen never sits in the back stack.
   `tests/test_back_button_nav.py` pins the contract.
 
+- **Corpus-wide WHO: people & organisations across the whole corpus.** The
+  When/Where/Who substrate (T12) persists the deduced people and organisations
+  per article; a new aggregation now rolls them up to the **whole corpus** —
+  `GET /api/insights/who` (and `queries.who_aggregate`) returns the most-seen
+  names with **honest counts only**: distinct-article **spread** and summed
+  in-text **mentions**, ordered by spread. Filterable by class
+  (`person` | `organization`), by window (`days`), and by `country`; `min_articles`
+  hides one-offs; `coverage_articles` states the denominator (how many articles
+  carry any who-extraction at all). There is **no score** — names are lexical
+  surface forms the extractor does **not** disambiguate (same-name people merge;
+  a name is not a confirmed identity), so every figure ships with a `method`
+  string and the standing caveat *"Deduced from text, never confirmed."* This is
+  the ruled corpus-wide WHO aggregation remainder of When/Where/Who.
+  `tests/test_who_aggregate.py` proves the counts, ordering, class/window/country
+  filters, the `min_articles` HAVING, and the honesty (no score, method+caveat).
+
 - **Parallel collection: fetch many hosts at once, politely; write serially.**
   The collect pass can now fetch **different hosts concurrently** via a bounded
   worker pool (`collect_parallelism`, default **1 = sequential, unchanged**;

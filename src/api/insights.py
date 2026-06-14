@@ -177,6 +177,32 @@ def insights_map(
     return data
 
 
+@router.get("/who")
+def insights_who(
+    entity_class: str | None = Query(
+        None, description="person | organization (default: both)"
+    ),
+    days: int | None = Query(None, ge=1, le=3650),
+    country: str | None = None,
+    limit: int = Query(50, ge=1, le=500),
+    min_articles: int = Query(1, ge=1, le=10000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Corpus-wide WHO — people & organizations deduced from article text at
+    ingest, aggregated with honest counts (distinct articles + summed
+    mentions). No scores; names are lexical surface forms, deduced never
+    confirmed. Optionally windowed (``days``), per-country, or class-filtered.
+    """
+    return q.who_aggregate(
+        db,
+        entity_class=entity_class,
+        days=days,
+        country=country,
+        limit=limit,
+        min_articles=min_articles,
+    )
+
+
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None
