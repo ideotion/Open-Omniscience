@@ -504,12 +504,21 @@ ruling, a contingency, or a deliberate-omission note.
   factory — closes the kill-switch gap + the stale UA + a LATENT TRANSPORT
   LEAK found 2026-06-13 (dump/wiki use raw requests with NO proxies=, so Tor
   set only in-app would egress clearnet — never silently downgrade transport),
-  ELEVATE RC §1 to RC-BLOCKING; (2) PARALLEL downloads — dumps max_concurrent
-  1→N (files, no DB-writer contention) + a bounded fetch worker pool for
-  collect (parallel FETCH, single SQLite WRITER) — THE Tor speed fix: Tor's
-  bottleneck is per-circuit so N downloads = N circuits = aggregate speedup;
-  (3) segmented HTTP-Range over multiple circuits + IsolateSOCKSAuth for one
-  big dump; (4) dump mirror selection; (5) auto-collect ON by default after
+  ELEVATE RC §1 to RC-BLOCKING; **(2) PARALLEL downloads — SHIPPED (dumps
+  fc73e0f; collect 5f517ab; verified 2026-06-14): dumps max_concurrent 1→N
+  (default 3, OO_DUMP_CONCURRENCY; files, no DB-writer contention; excess still
+  QUEUES reorderably) + a bounded fetch worker pool for collect
+  (collect_parallelism, default 1/opt-in, 1..16; parallel FETCH across hosts,
+  each worker its OWN session, single-writer gate keeps writes serial) — THE Tor
+  speed fix: N downloads = N circuits = aggregate speedup. Guardrails proven
+  (tests/test_parallel_collect.py + test_parallel_dumps.py): per-host politeness
+  = EthicalFetcher._host_lock (one host = one in-flight request even under the
+  pool, different hosts in parallel); kill switch gates every worker (fetch()
+  _KILL check + GuardedSession.request); circuit isolation via
+  _with_stream_isolation/IsolateSOCKSAuth per host & per dump URL (never silently
+  downgrade transport);** (3) segmented HTTP-Range over multiple circuits +
+  IsolateSOCKSAuth for one big dump (REMAINING); (4) dump mirror selection
+  (REMAINING); (5) auto-collect ON by default after
   the guided wizard's ONE consent (continuous-collection design adopted,
   zero-network boot intact); (6) the Collect TAB LEAVES the sidebar → an
   elaborated Settings → Download section (nothing lost — invariant #8 + the
@@ -518,9 +527,9 @@ ruling, a contingency, or a deliberate-omission note.
   same content-first principle, same absorption-test guard;** (7) the
   task-manager WINDOW (item 4 above). GUARDRAILS: per-host politeness never traded for speed
   (parallel across hosts/circuits, bounded per host); kill switch gates every
-  worker; degrade loudly with T4 transport-aware verdicts. ROOT CAUSE recorded:
-  today max_concurrent=1 (dumps.py:92) + sequential collect loop
-  (runner.py:217) = exactly ONE circuit ever active = worst-case Tor.
+  worker; degrade loudly with T4 transport-aware verdicts. ROOT CAUSE (now
+  FIXED by Step 2): WAS max_concurrent=1 + a sequential collect loop = exactly
+  ONE circuit ever active = worst-case Tor; now N circuits run concurrently.
   **NO SOURCE CAP + BANDWIDTH PRIORITY LADDER (ruled 2026-06-13, maintainer):**
   REMOVE max_sources_per_run (the 1000 cap) — ANY cap induces an unjustifiable
   SELECTION of which sources to skip ("we cannot choose"); scraping must cover
@@ -1141,7 +1150,9 @@ ruling, a contingency, or a deliberate-omission note.
   REMAINING from these foundations: ~~the single-writer QUEUE (supersedes the
   retry)~~ SHIPPED as the single-writer GATE (commit 3268922, src/database/writer.py;
   end-to-end data-loss + gate-isolation proof in tests/test_write_gate_dataloss.py —
-  see field-log finding A); parallel downloads (item 4), task manager window (Group C).
+  see field-log finding A); ~~parallel downloads~~ SHIPPED (Step 2: collect worker
+  pool + dump max_concurrent=3; end-to-end guardrail tests in
+  tests/test_parallel_collect_guardrails.py); task manager window (Group C).
 - **PERFORMANCE BATCH T1 (2026-06-12, this session):** measure→fix→re-measure
   at the live shape (6.4k articles / 228k keywords / 317 MB synthetic;
   `scripts/perf_harness.py`, zero network). Keyword export 14.1→4.0 s
