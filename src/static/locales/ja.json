@@ -874,5 +874,9 @@
   "Find coverage in your corpus": "コーパス内のカバレッジを探す",
   "mentions": "言及",
   "📍 places": "📍 場所",
-  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "コーパスが言及する場所を表示します（記事本文から推定、未確認）。マーカーの面積は各場所に言及する記事数に比例します——生の件数で、スコアはありません。"
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "コーパスが言及する場所を表示します（記事本文から推定、未確認）。マーカーの面積は各場所に言及する記事数に比例します——生の件数で、スコアはありません。",
+  "open detailed chart": "詳細グラフを開く",
+  "open detail + correlation": "詳細＋相関を開く",
+  "point(s)": "ポイント",
+  "Chart unavailable:": "グラフを利用できません:"
 }

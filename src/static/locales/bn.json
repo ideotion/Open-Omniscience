@@ -874,5 +874,9 @@
   "Find coverage in your corpus": "আপনার কর্পাসে কভারেজ খুঁজুন",
   "mentions": "উল্লেখ",
   "📍 places": "📍 স্থান",
-  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "আপনার কর্পাস যে স্থানগুলি উল্লেখ করে তা দেখান, নিবন্ধের পাঠ্য থেকে অনুমিত (কখনও নিশ্চিত নয়)। প্রতিটি স্থান কতগুলি নিবন্ধ উল্লেখ করে তার সাথে মার্কারের ক্ষেত্রফল মাপ নেয় — কাঁচা গণনা, কোনো স্কোর নেই।"
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "আপনার কর্পাস যে স্থানগুলি উল্লেখ করে তা দেখান, নিবন্ধের পাঠ্য থেকে অনুমিত (কখনও নিশ্চিত নয়)। প্রতিটি স্থান কতগুলি নিবন্ধ উল্লেখ করে তার সাথে মার্কারের ক্ষেত্রফল মাপ নেয় — কাঁচা গণনা, কোনো স্কোর নেই।",
+  "open detailed chart": "বিস্তারিত চার্ট খুলুন",
+  "open detail + correlation": "বিস্তারিত + পারস্পরিক সম্পর্ক খুলুন",
+  "point(s)": "পয়েন্ট",
+  "Chart unavailable:": "চার্ট অনুপলব্ধ:"
 }

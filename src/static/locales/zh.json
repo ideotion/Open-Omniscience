@@ -874,5 +874,9 @@
   "Find coverage in your corpus": "在您的语料库中查找报道",
   "mentions": "提及",
   "📍 places": "📍 地点",
-  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "显示您的语料库提及的地点，由文章文本推断（从未确认）。标记面积随提及每个地点的文章数量而变化——原始计数，无评分。"
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "显示您的语料库提及的地点，由文章文本推断（从未确认）。标记面积随提及每个地点的文章数量而变化——原始计数，无评分。",
+  "open detailed chart": "打开详细图表",
+  "open detail + correlation": "打开详情 + 相关性",
+  "point(s)": "个点",
+  "Chart unavailable:": "图表不可用："
 }

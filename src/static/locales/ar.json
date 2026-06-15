@@ -874,5 +874,9 @@
   "Find coverage in your corpus": "ابحث عن التغطية في مجموعتك",
   "mentions": "إشارات",
   "📍 places": "📍 أماكن",
-  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "إظهار الأماكن التي تَذكرها مجموعتك، مُستنتَجة من نص المقالات (غير مؤكَّدة). تتناسب مساحة العلامة مع عدد المقالات التي تذكر كل مكان — أعداد خام، بلا درجة."
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "إظهار الأماكن التي تَذكرها مجموعتك، مُستنتَجة من نص المقالات (غير مؤكَّدة). تتناسب مساحة العلامة مع عدد المقالات التي تذكر كل مكان — أعداد خام، بلا درجة.",
+  "open detailed chart": "فتح رسم بياني مفصّل",
+  "open detail + correlation": "فتح التفاصيل + الارتباط",
+  "point(s)": "نقطة/نقاط",
+  "Chart unavailable:": "الرسم البياني غير متاح:"
 }
