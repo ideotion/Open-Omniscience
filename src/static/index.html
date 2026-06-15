@@ -678,12 +678,11 @@
       <header class="topbar">
         <button class="icon-btn" id="hamburger" onclick="document.body.classList.toggle('nav-open')" title="Menu" aria-label="Open navigation menu">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-        <div class="omni" onclick="openPalette()" title="Command palette" role="button" tabindex="0"
-             aria-label="Open command palette" aria-keyshortcuts="Control+K"
+        <div class="omni" onclick="openPalette()" title="Search everything — articles, dates, locations, settings, etc." role="button" tabindex="0"
+             aria-label="Search everything — articles, dates, locations, settings, etc." aria-keyshortcuts="Control+K"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openPalette();}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
           <span class="ph">Search everything — data, tools, actions, docs…</span>
-          <span class="kbd">Ctrl K</span>
         </div>
         <div class="spacer"></div>
         <div class="status-cluster" id="statusCluster">
@@ -2048,7 +2047,7 @@
 
   <!-- ====================== COMMAND PALETTE ========================== -->
   <div class="overlay" id="palOverlay" onclick="closePalette()"></div>
-  <div class="palette" id="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="palette" id="palette" role="dialog" aria-modal="true" aria-label="Search everything">
     <input id="pal-input" autocomplete="off" spellcheck="false"
            placeholder="Search your data, jump to a tool, run an action…"
            oninput="renderPalette()" onkeydown="palKey(event)">

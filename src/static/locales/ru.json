@@ -494,6 +494,8 @@
   "No values were returned for this variable and window.": "Для этой переменной и окна не было возвращено значений.",
   "Search your data, jump to a tool, run an action…": "Ищите в своих данных, открывайте инструмент, запускайте действие…",
   "Search everything — data, tools, actions, docs…": "Искать везде — данные, инструменты, действия, документы…",
+  "Search everything — articles, dates, locations, settings, etc.": "Искать везде — статьи, даты, места, настройки и т. д.",
+  "Search everything": "Искать везде",
   "Run the full Boolean search for": "Выполнить полный булев поиск по",
   "opens its corpus window": "открывает его окно корпуса",
   "article": "статья",

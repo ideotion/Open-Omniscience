@@ -494,6 +494,8 @@
   "No values were returned for this variable and window.": "该变量和时间窗口未返回任何数值。",
   "Search your data, jump to a tool, run an action…": "搜索您的数据、跳转到工具、运行操作……",
   "Search everything — data, tools, actions, docs…": "搜索一切——数据、工具、操作、文档……",
+  "Search everything — articles, dates, locations, settings, etc.": "搜索一切 — 文章、日期、地点、设置等",
+  "Search everything": "搜索一切",
   "Run the full Boolean search for": "对以下内容运行完整布尔搜索：",
   "opens its corpus window": "打开其语料库窗口",
   "article": "文章",

@@ -494,6 +494,8 @@
   "No values were returned for this variable and window.": "この変数と期間に対して値は返されませんでした。",
   "Search your data, jump to a tool, run an action…": "データを検索、ツールへ移動、アクションを実行…",
   "Search everything — data, tools, actions, docs…": "すべてを検索 — データ・ツール・アクション・ドキュメント…",
+  "Search everything — articles, dates, locations, settings, etc.": "すべてを検索 — 記事、日付、場所、設定など",
+  "Search everything": "すべてを検索",
   "Run the full Boolean search for": "次の語で完全なブール検索を実行：",
   "opens its corpus window": "そのコーパスウィンドウを開きます",
   "article": "記事",

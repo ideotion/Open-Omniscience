@@ -494,6 +494,8 @@
   "No values were returned for this variable and window.": "इस चर और समय-सीमा के लिए कोई मान नहीं लौटा।",
   "Search your data, jump to a tool, run an action…": "अपने डेटा में खोजें, किसी उपकरण पर जाएँ, कोई क्रिया चलाएँ…",
   "Search everything — data, tools, actions, docs…": "सब कुछ खोजें — डेटा, उपकरण, क्रियाएँ, दस्तावेज़…",
+  "Search everything — articles, dates, locations, settings, etc.": "सब कुछ खोजें — लेख, तिथियाँ, स्थान, सेटिंग्स इत्यादि",
+  "Search everything": "सब कुछ खोजें",
   "Run the full Boolean search for": "इसके लिए पूर्ण बूलियन खोज चलाएँ",
   "opens its corpus window": "इसकी कॉर्पस विंडो खोलता है",
   "article": "लेख",

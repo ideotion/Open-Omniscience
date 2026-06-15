@@ -494,6 +494,8 @@
   "No values were returned for this variable and window.": "এই চলক ও সময়-জানালার জন্য কোনো মান ফেরত আসেনি।",
   "Search your data, jump to a tool, run an action…": "আপনার ডেটায় খুঁজুন, কোনো সরঞ্জামে যান, কোনো কাজ চালান…",
   "Search everything — data, tools, actions, docs…": "সবকিছু খুঁজুন — ডেটা, সরঞ্জাম, কাজ, নথি…",
+  "Search everything — articles, dates, locations, settings, etc.": "সবকিছু খুঁজুন — নিবন্ধ, তারিখ, অবস্থান, সেটিংস ইত্যাদি",
+  "Search everything": "সবকিছু খুঁজুন",
   "Run the full Boolean search for": "এর জন্য সম্পূর্ণ বুলিয়ান অনুসন্ধান চালান",
   "opens its corpus window": "এর কর্পাস উইন্ডো খোলে",
   "article": "নিবন্ধ",

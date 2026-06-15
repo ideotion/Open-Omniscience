@@ -494,6 +494,8 @@
   "No values were returned for this variable and window.": "No values were returned for this variable and window.",
   "Search your data, jump to a tool, run an action…": "Search your data, jump to a tool, run an action…",
   "Search everything — data, tools, actions, docs…": "Search everything — data, tools, actions, docs…",
+  "Search everything — articles, dates, locations, settings, etc.": "Search everything — articles, dates, locations, settings, etc.",
+  "Search everything": "Search everything",
   "Run the full Boolean search for": "Run the full Boolean search for",
   "opens its corpus window": "opens its corpus window",
   "article": "article",
