@@ -1457,3 +1457,297 @@ A9. **"What changed since I last looked"** *(S2 retention, honestly):* a
 *The full ACTION PLAN built from these features — step order, rationale
 per decision, my commentary, acceptance criteria, dependencies — lives in
 `docs/product/V01_ALPHA_ACTION_PLANS.md` (Plan A).*
+
+---
+
+## Elections & the civic vertical — evidence trails, never a verdict (maintainer concept 2026-06-15; designed-only)
+
+**The concept (maintainer):** make elections the flagship civic use case for the
+everyday person — list upcoming election dates and campaign windows in the agenda,
+and a LOCAL, LLM-LESS analytics layer (keyword + When×Where×Who + the corpora
+flagship) to help a citizen detect trends and stories and broaden their OWN
+perspective on a vote (candidates, candidate-corpora, framing). Audience-widening;
+deeply on-mission (press-freedom, anti-single-origin, "History must not be silently
+rewritten"). Builds almost entirely on EXISTING substrate (agenda dates, WWW
+extraction, the corpora window, trends, links/lineage, source-competitive) — a
+COMPOSITION plus a curated data layer, not a new engine.
+
+**Three framing INVERSIONS (the honesty conditions; without them the feature
+betrays the constitution):**
+1. NOT "politically neutral" → **plural & transparent about its OWN bias.** The
+   transversal audit §5 already ruled neutrality undefinable; never claim it. An
+   election corpus inherits every known app bias (US-centric catalog, English-only
+   VADER, robots-permissive survivorship, install-time recency) and in elections
+   those can move votes. The banner is REPRESENTATION-against-declared-baselines —
+   the "Your lens" dashboard (feature A3) applied to the election corpus — never
+   "neutral". A tool that BELIEVES it is neutral stops disclosing: more dangerous
+   than one that knows it is biased.
+2. NOT "tell the user what's happening / their voting implications" → **evidence
+   trails they navigate themselves** (the Claim Workspace, feature A1). The app is
+   a lens, never a verdict, never voting advice. The LLM-less constraint is the
+   ASSET: no generated synthesis = no smuggled slant; the user synthesizes, the
+   app sources + does the math.
+3. NOT "detect candidates / sentiment / momentum" → **curated sourced scaffolding
+   + descriptive, caveated analytics.** NO horse-race number ever; NO auto-detected
+   candidate lists; NO per-candidate sentiment verdict; NO poll-of-polls forecast.
+
+**Mention-volume must be FOUGHT, not footnoted.** The analytics stack measures
+coverage volume + keyword momentum; an everyday reader reads "Candidate X has 3× the
+articles, rising" as "X is winning / better". That is popularity + recency bias
+weaponised — in elections even correlation misleads (more coverage = more
+controversy / media access / incumbency, not support). The honest line is **name the
+shape, never prescribe it**: show the distribution + concentration (Gini/entropy),
+single-origin-discounted, and explicitly DECLINE to divide by any "should" baseline,
+because none is honest for candidate coverage (poll share is circular; last-vote
+share bakes in incumbency; equal-time is the false-balance fallacy). Naming the
+refusal IS the honesty, not an omission.
+
+**Candidate rosters are CURATED, never deduced.** The entity extractor is lexical,
+no disambiguation, "deduced, never confirmed" — auto-listing candidates would merge
+same-names, surface pundits/family as candidates, over-rank the incumbent, hide
+minor candidates; omitting or mis-ranking a candidate is itself a political act. The
+roster is the SAME two-class model as the reader header: each candidate carries a
+STATUS (presumed / declared / officially-nominated / withdrawn / disqualified) +
+PROVENANCE (who says so, as of when, which source). Handles captured electoral
+commissions (the state source is ONE claim among several, never ground truth) and
+pre-nomination "presumed" runners (France 2027 today: zero officially nominated,
+obvious presumed runners). Candidacy itself becomes evidence, not fact.
+
+**The honest first slice (lowest risk, highest certainty, pure data):** a sourced
+**elections calendar** in `configs/world_events.yml` — a new `elections` calendar,
+`category: political`, `tags: [election, democracy, <ISO2>]`, each entry the
+electoral-commission `official_url`, `confirmed: false` + a `note` for not-yet-fixed
+exact dates (the summits pattern), movable-marked. Gives "France 2027 presidential —
+campaign window open" in the agenda today, subscribable as a smart-calendar tag query
+("all elections in Africa"), with zero fabrication. SCOPE DISCIPLINE: a wrong date
+the user trusts is worse than no date — ship a sourced DATE calendar before
+pretending to hold candidate registers for 190 countries; pilot ONE election
+end-to-end (France 2027) before generalising, because the per-country
+contested-source problem is exactly where honesty breaks.
+
+**"Election-window integrity desk" (the 10th scenario card) — DROP the branding,
+keep the capability.** "Integrity" presupposes integrity-to-measure and rings the
+bell for fraud-narrative crowds; the same data (reports of irregularities,
+single-origin-discounted, claims-as-claims) is SAFER served by the general
+claim-provenance / single-origin tooling (the manipulation-pattern cards below)
+applied to election claims, with NO special "integrity" label. The word is the
+liability.
+
+**The everyday-person PARADOX (recorded honestly):** the honest tool withholds the
+simple confident answer ("who's winning") the everyday audience walks in for — it is
+cognitively HEAVIER for exactly the audience the feature means to add. Resolution:
+CHANGE THE PROMISE from "tells you who's winning" to "shows you how to read the
+coverage yourself, and catches the manipulation aimed at you", delivered through the
+guided Claim-Workspace layer + informed-consent-by-layering. If that guided layer is
+not excellent the feature fails its own goal (the user reads the volume chart as a
+scoreboard anyway). The UX is the ethical load-bearing wall, not polish.
+
+---
+
+## Poll analysis — auditing METHOD (near-neutral), never adjudicating RESULTS (maintainer concept 2026-06-15; designed-only)
+
+**The seam that makes it tractable:** critiquing a poll's METHODOLOGY rests on survey
+science (Schuman & Presser, AAPOR), not political values — "double-barrelled" is a
+linguistic fact, "3 favourable options vs 1" is arithmetic, "a +2 'lead' inside ±3
+MoE" is statistics. So for METHOD the app gets closer to neutral than anywhere else.
+Touch RESULTS (is 42% right, who is "really" ahead) and neutrality is gone. The whole
+design stays strictly on the method side of that seam.
+
+**The build is a TIER STACK; build Tier 2 FIRST — it is the substrate the rest
+stands on** (Tier 4 can't judge a within-margin "lead" without the margin, which is a
+Tier-2 disclosure field; when the margin is absent, Tier 4's only honest output IS a
+Tier-2 finding):
+- **Tier 1 — Provenance & funding** (factual, high confidence): commissioner vs
+  field house; sponsor type (campaign / PAC / advocacy / media / academic); how many
+  outlets reported it and whether they trace to one press release (links/lineage
+  single-origin); house effects computed EMPIRICALLY from the corpus over time (the
+  trend/concentration machinery — measured, not asserted).
+- **Tier 2 — Transparency scorecard + verbatim question/answer DISPLAY** (the
+  foundation, the most-neutral layer, and its OWN everyday hook). A CHECKLIST (never
+  a composite score — CardSchemaError) against a bundled sourced standard (AAPOR
+  Transparency Initiative / British Polling Council / ESOMAR — provenance per rule):
+  sponsor, field house, n, frame, mode, field dates, MoE, FULL QUESTION WORDING,
+  ANSWER OPTIONS, weighting, crosstabs — each present/absent. AND, when the data
+  allows it (maintainer-prioritised 2026-06-15), DISPLAY the verbatim question + the
+  answer-set STRUCTURE: amount of options, type (binary / Likert / forced-choice),
+  balance (favourable vs unfavourable count), presence/absence of a neutral middle
+  and of "don't know". This is a FACT, not a judgement — countable, language-AGNOSTIC,
+  judgement-light — so it belongs in the foundation (displaying ≠ judging) and is the
+  strongest honest signal there is. Headline example: the missing "don't know" /
+  forced binary manufactures false certainty and almost nobody notices.
+- **Tier 3 — Wording semantics** (loaded language, leading frames, push-poll
+  signature): lexical, English-first (the same wall as VADER), HIGHER risk →
+  layered/deferred. Each flag = pattern + the cited methodological principle + the
+  exact text, "you judge"; never "this poll is biased".
+- **Tier 4 — Result-reporting integrity** (catch journalism over-reading a tie: a
+  within-MoE gap reported as "surges ahead"; a trend claimed from noise; a
+  cherry-picked crosstab). Pure statistics (|A−B| vs MoE), the most everyday-useful,
+  but it points the lens at JOURNALISTS not pollsters → build AFTER Tier 2 earns
+  even-handed-method-auditor credibility, on the same metadata extractor Tier 2
+  builds.
+
+**Load-bearing rules (the honesty spec):**
+- **No composite "poll quality score"** — a checklist + flags, never a number
+  (CardSchemaError).
+- **Non-disclosure ALWAYS outranks disclosed-imperfection.** The disqualifier is
+  OPACITY, never disclosed-ugliness: a pollster who PUBLISHES an embarrassingly
+  leading question is MORE useful than one who hides everything (you can SEE the
+  leading question). "Bring useless polls up front" = bring the OPAQUE/unprovenanced
+  ones up front, never the ones whose flaws we could only find because they were
+  honest enough to show their work. Otherwise we punish transparency and reward
+  hiding — exactly backwards.
+- **Never LABEL a poll "useless"** — surface a glanceable DISCLOSURE FLOOR (named
+  funder, published wording, stated MoE, real n, >1 independent report) and let the
+  user conclude in two seconds. The two halves cover every case: wording published →
+  lead with the verbatim question + answer-structure facts; wording absent → the
+  floor catches it and "wording not published" IS the front-and-centre finding.
+- **Per-language capability caveat** on anything semantic (Tier 3 / sentiment).
+- A "poll" is an INSTANCE of the worldwide official-statistics ingestion pattern
+  (methodology-ref per figure; VINTAGES = a pollster's series over time = its house
+  effect; comparability guards = never compare phone-vs-online silently;
+  triangulation side-by-side NEVER averaged = why there is no forecast). Not a
+  bespoke subsystem.
+
+---
+
+## Manipulation-pattern card models — detect STRUCTURE, never deception (maintainer ask 2026-06-15; designed-only)
+
+**The necessary reframe** (the literal premise "autonomously detect disinformation"
+is both impossible and unethical): you cannot detect manipulation/deception with
+keywords + sentiment — nor reliably with frontier AI — because it is a claim about
+INTENT + TRUTH, which are not in the text; any tool that LABELS content
+"disinformation" is a censorship engine that floods false positives (satire,
+advocacy, honest-but-emotional reporting) while missing every well-written lie. So
+the app NEVER detects deception. It detects STRUCTURE and PROPAGATION — observable,
+countable, reproducible facts about how content is shaped and how it moves — and
+shows them; the user supplies the interpretation. This single shift delivers three
+requirements at once:
+- **It is why this can be AI-FREE, and AI-free is the ETHICAL ASSET here:**
+  structural signals are fully explainable/auditable; an AI detector is a black box
+  encoding its trainers' bias. A centralised AI disinformation-detector is itself one
+  of the "superpowers" to fear (a single point deciding truth for everyone,
+  capturable). The local / transparent / reproducible / verdict-incapable
+  architecture IS the ethical answer to that threat.
+- **It is where NEUTRALITY actually comes from:** structural signals are politically
+  INVARIANT by construction (a double-barrelled question is double-barrelled whoever
+  wrote it; near-identical text from a hidden common origin is that regardless of
+  side). Forbid any detector that keys on a TOPIC or viewpoint word. SELF-AUDIT the
+  flag distribution (does it disproportionately fire on one country/language/side? =
+  a hidden detector bias) like the catalog-bias self-audit — neutrality MEASURED, not
+  asserted.
+- **A description cannot be a false accusation:** "47 sources, near-identical text,
+  common origin not disclosed, within 12 min" is simply true.
+
+Sentiment is the JUNIOR partner: English-only VADER, no negation/sarcasm → never a
+primary flag, only baseline-relative + secondary, useless outside English until
+per-language lexicons exist. Keywords + structure carry the load.
+
+**THE SHARED SPINE** (all nine cards reuse four statistics — few primitives =
+auditable, itself an FP/FN defence):
+1. **Effective independent origins `r`, never the article count `n`** (the maths
+   heart of the anti-false-triangulation ruling). Over a cluster's duplication +
+   citation graph, `r` = articles NOT reducible to the dominant origin (graph roots
+   with in-cluster in-degree 0, counted by distinct source). Corroboration strength =
+   `r`; the honest headline is "n=15 reports, r=1 origin". Cheap approximation
+   `r ≈ s·(1−ρ)` (s distinct sources, ρ single-origin share); exact from `lineage.py`.
+2. **Benjamini–Hochberg FDR control across the daily scan** (the load-bearing FP
+   defence at scale). Thousands of clusters/terms/phrases per day ⇒ the look-elsewhere
+   effect fires spurious hits at any fixed threshold; rank the day's candidate
+   p-values, apply BH at a stated q, surface only survivors, print "1 of N candidates
+   scanned".
+3. **Surprise vs the CORPUS'S OWN baseline — a tail probability or z-score, never an
+   absolute threshold** (the only honest baseline a local-first app has). Poisson
+   upper tail `P(X≥k | μ=λw)` for bursts; z for shares/sentiment; surprisal bits for
+   phrase rarity; wrap proportions in `proportion_ci_wilson` so small-n degrades
+   loudly.
+4. **Convergence is a logical GATE (AND of independent tests), not a multiplied
+   probability** (the signals correlate; multiplying p-values fabricates precision).
+   Require each independent test to clear its threshold; report the COMPONENTS, never
+   a joint "probability of manipulation" — the no-score rule enforced by maths.
+
+**THE NINE CARDS** (each: statistic → fires-when gate → `signal` components (no blend
+→ passes `assert_no_score_fields`) → bucket → caveat naming the innocent twin). New
+PRODUCERS feeding EXISTING buckets, not a new subsystem.
+1. **Manufactured consensus / astroturf** → `overtold`. MinHash/Jaccard cluster
+   (θ≥0.8) + Poisson burst surprise of k near-identical pieces in window w vs topic
+   rate λ + single-origin share ρ→r. Fires: k≥k_min ∧ w≤w_max ∧ r≤r_max ∧
+   origin ∉ disclosed-wire whitelist (BH-survived). signal{sources s, window_min w,
+   independent_origins r, jaccard θ}. Caveat: undeclared wire / shared press release.
+2. **Talking-point distribution (copypasta)** → `overtold`. Phrase surprisal
+   I(g)=−log₂P(g) from corpus k-gram freq (k=6–10), m distinct non-syndicated
+   sources, EXCLUDING quoted-attributed spans. Fires: I(g)≥τ ∧ m≥m_min.
+   signal{phrase_len k, sources m, surprisal_bits I}. Caveat: shared unquoted
+   statement / stock phrase; rarity from your corpus only.
+3. **Manufactured emergence (zero-to-everywhere)** → `rising` (recipe →
+   `investigate`). Born-wide ratio β=day1_sources/peak_sources, pre-onset 30-day
+   baseline≈0, anchoring-event check vs the WWW substrate. Fires: prior_30d≈0 ∧
+   β≥β_min ∧ no datable primary anchor. signal{first_day_sources a, peak_sources b,
+   breadth_ratio β, prior_30d 0}. Caveat: viral events also spike; a missing anchor
+   may = we didn't ingest it (FN honesty).
+4. **Flood / bury** → `overtold` / `undertold`. Flood: topic-share
+   z=(p_now−μ_p)/σ_p vs the source's OWN history (`concentration.py`). Bury: coverage
+   breadth = covering/active sources alongside a real external trigger. Fires: flood
+   z≥z_min; bury breadth≤b_min ∧ trigger. signal{share_zscore z, share_now p,
+   baseline μ}. Caveat: volume ≠ importance; big stories legitimately dominate.
+5. **Recycled / zombie claim** → `watch`. Temporal displacement
+   Δ=D_pub−median(mentioned_dates) (`dateextract.py`), tightness via IQR, optional
+   near-dup match >Δ months old. Fires: Δ≥T_months ∧ tight cluster.
+   signal{displacement_months Δ, mentioned_median d, published_at D_pub}. Caveat:
+   normal for retrospectives/anniversaries; flags age, not intent.
+6. **Source laundering / citogenesis** → `investigate` (FLAGSHIP — purest structure,
+   zero language dependence). Directed citation graph; independent origins r =
+   distinct-source roots; cycle detection (DFS) for news↔wiki loops. Fires: r=1
+   (single root) ∨ cycle present, n≥n_min. signal{articles n, independent_origins r,
+   cycle_present bool}. Caveat: single-origin is common for genuine scoops; it means
+   corroboration is weaker than the count, not that the claim is false.
+7. **Headline–body mismatch (clickbait)** → `debunk`. Lexical divergence
+   d_lex=1−|H∩B_top|/|H|; sentiment gap Δs=|sent(H)−sent(B)| (English only). Fires:
+   d_lex≥d_min ∨ Δs≥g. signal{lexical_div d_lex, sentiment_gap Δs, lang}. Caveat:
+   summarising/metaphorical headlines do this innocently; sentiment English-only.
+8. **Outrage intensity (sentiment anomaly)** → `investigate` (SECONDARY — annotates,
+   never fires alone). Baseline-relative z=(|sent|−μ_{|sent|,T})/σ_{|sent|,T} vs the
+   corpus's absolute-valence distribution for topic T; per-source volatility. Fires:
+   z≥z_min, English only, AND only attached to another card. signal{sentiment_zscore
+   z, lang en}. Caveat: atrocity reporting is also charged; emotion ≠ manipulation;
+   meaningless outside English.
+9. **Event-timed operation (October surprise)** → `watch` (COMPOSITION of #3+#6+the
+   agenda). Proximity E−O days (election date E, term onset O) gated by emergence
+   (#3) ∧ single-origin (#6) ∧ entity ∈ the agenda candidate roster. Fires:
+   O∈[E−d,E] ∧ #3 ∧ #6 ∧ agenda actor. signal{days_before_event E−O, breadth_ratio β,
+   independent_origins r}. Caveat: real late news exists; timing alone means nothing.
+
+**FALSE-POSITIVE / FALSE-NEGATIVE DISCIPLINE (what "ethically impeccable" means as a
+spec):**
+- ASYMMETRIC by design + STATED: a false positive here is a defamation that detonates
+  neutrality; a false negative leaves the user where they started ⇒ the SURFACING is
+  precision-biased (when in doubt, stay silent).
+- Recall is not sacrificed, it is RELOCATED: separate what the app PROACTIVELY
+  surfaces (high bar — the convergence gate) from what it lets you EXPLORE (full
+  recall — every similarity score, timestamp, graph drillable). High bar to push at
+  you; zero bar to go look.
+- No single-signal cards (the gate). Always show the base rate / denominator. Show
+  the INNOCENT EXPLANATION next to the pattern (state the null hypothesis; never
+  collapse to one reading). Reproducible-or-it-doesn't-ship (exact
+  articles/phrases/timestamps/edges shown). Target-blind + self-audited flag
+  distribution. n + caveats, never a probability (no "87% fake").
+
+**THE HONEST CEILING (state it as loudly as any flag):** a single well-written lie is
+invisible (no structural anomaly); the detectors are EVADABLE and the adversary
+adapts (vary phrasing beats near-dup, stagger timing beats bursts, fake origins beat
+single-origin) ⇒ print "the absence of a flag is not the absence of manipulation" on
+every producer; the language gap concentrates misses exactly where the app claims
+most coverage (sentiment English-only; CJK keyword extraction nonfunctional) ⇒
+disclose detector capability PER LANGUAGE (the audit §5/§6 honesty matrix). This is a
+manipulation-pattern MICROSCOPE (makes structure visible/explorable), never a
+DETECTOR (never certifies is/isn't manipulation).
+
+**BUILD ORDER:** card #6 (citation graph) + #1 (near-dup cluster) FIRST — purest,
+most language-agnostic, highest-signal, primitives already in `src/signals/`
+(`lineage.py`, `near_dup.py`, `concentration.py`); the rest are increments on the same
+four statistics.
+
+**OPEN QUESTIONS (parked, maintainer "not sure" 2026-06-15):** (a) how hard to lean
+on Tier 4 / the journalist-facing lens; (b) whether to ever use the words "push poll"
+or only describe the mechanic ("this item embeds a negative claim inside the
+question"); (c) whether the everyday-person promise should answer "who's winning"
+more directly than the evidence-trail-only stance.
