@@ -747,9 +747,15 @@ ruling, a contingency, or a deliberate-omission note.
   sends If-None-Match/If-Modified-Since and SHORT-CIRCUITS on 304 (tally
   "not_modified", no feedparser parse), refreshing validators on 200 only;
   tests/test_feed_conditional_get.py green (304 skips+preserves, 200 refreshes,
-  no-validator→plain GET). REMAINING: per-feed backoff when a 200 yields
-  all-duplicates (secondary; continuous-collection shouldn't re-pull churny feeds
-  every minute even when servers ignore validators). (G) NOTE: Tor 403s on premium news (reuters/ft/bloomberg/
+  no-validator→plain GET). BACKOFF SECONDARY SHIPPED (PR #208): for servers that
+  IGNORE conditional headers (full 200 every pass), a CAPPED self-resetting per-feed
+  backoff — a 200 storing zero new articles sets FeedFetchState.skip_until =
+  now+min(300s·2^n, 6h cap); resets on any new article, a 304, or a fetch error;
+  the scheduler's _filter_due_feeds skips backed-off RSS feeds THIS pass (RSS-only,
+  fail-open, counted as a distinct backed_off tally — visible, never hidden). NEVER
+  an exclusion: the 6h cap guarantees re-check, honoring "no source starved /
+  ordering ≠ exclusion" (env OO_FEED_BACKOFF_BASE_S/_CAP_S, =0 disables; migration
+  d2e3f4a5b6c7). Finding F now CLOSED. (G) NOTE: Tor 403s on premium news (reuters/ft/bloomberg/
   economist/lefigaro…) are the Tor-population reality, already surfaced via T4
   transport verdicts — not a bug. FRED timeouts over Tor confirm the
   parallel/official-endpoint direction. keyword diagnostics: language_mismatch
