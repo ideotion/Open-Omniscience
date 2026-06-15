@@ -1042,11 +1042,18 @@ ruling, a contingency, or a deliberate-omission note.
   for where) + days + country, min_articles HAVING, coverage_articles
   denominator; WHERE adds gazetteer lat/lon (null when unknown + placed count);
   NO score, method+caveat "Deduced from text, never confirmed."
-  (tests/test_who_aggregate.py, tests/test_where_aggregate.py). REMAINING:
-  reader switches to reading the stored rows (stops recomputing); temporal map's
-  mention layer consumes event-places; wiki articles join when the living-source
-  design lands. NEXT for the extractors themselves: feed the temporal map's
-  mention layer with text locations; extend the country table; aggregate
+  (tests/test_who_aggregate.py, tests/test_where_aggregate.py). READER NOW READS
+  STORED ROWS (SHIPPED 2026-06-15, PR #202): view_article serves the persisted
+  article_mentioned_dates/_places/_entities (datestore.for_article +
+  whostore.*_for_article) instead of recomputing — places/entities already did on
+  0.09; the dates path was the last recompute, now reads stored tags (user-rejected
+  excluded from the compact summary), live extractor kept only as the no-rows
+  fallback; response contract + two-class labeling + "never confirmed" caveat
+  unchanged; test proves the extractor is NOT called when rows exist. TEMPORAL-MAP
+  MENTION LAYER also SHIPPED (PR #200) — plots stored PLACES (article-mentions) on
+  the map; the EVENT-places feed remains. REMAINING: wiki articles join when the
+  living-source design lands. NEXT for the extractors themselves: feed the temporal
+  map's mention layer with event-places too; extend the country table; aggregate
   entities corpus-wide.
 - **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51):**
   space-time co-occurrence (never causation) + the user-defined
