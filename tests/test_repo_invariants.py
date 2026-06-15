@@ -1469,3 +1469,63 @@ def test_corpus_window_sentiment_subtab():
         "the framing renderer must surface the endpoint caveat (English-only VADER "
         "disclosure) on every surface that reuses it, including the corpus window"
     )
+
+
+def test_corpus_window_keywords_subtab():
+    """Keywords sub-tab on THE corpus analysis window (ledger "ONE CORPORA
+    SYSTEM": Keyword analysis is one of the ruled sub-tabs). It must REUSE the
+    existing associations data (/api/insights/associations -> q.associations,
+    the SAME data the mind-map plots) rendered as a ranked TABLE -- NOT a new
+    keyword engine, NOT a new endpoint -- and present REAL per-keyword numbers
+    with no composite score, distinct from the radial Mindmap. Pinned so it
+    cannot regress between sessions:
+      * a data-tab="keywords" button exists in the corpus window's ooSubtabs nav
+        (DOM-text label, no inline onclick) and the Trend/Articles/Links/Mindmap/
+        Sentiment siblings stay (nothing lost);
+      * corpusTab() handles "keywords" by calling the table renderer for the
+        window's _corpusTerm via the existing associations endpoint;
+      * each row opens that keyword as its own corpus (openCorpus reuse) and the
+        table is honest -- the endpoint method/caveat travel onto the surface,
+        and n is shown; no composite score is invented.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # 1. the Keywords button lives in the corpus window's subtab nav (DOM text).
+    nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
+    assert 'data-tab="keywords"' in nav, (
+        "the corpus window must carry a Keywords sub-tab button in its ooSubtabs nav"
+    )
+    assert "Keywords" in nav, "the sub-tab button label must be DOM text (auto-translated)"
+    # the Trend/Articles/Links/Mindmap/Sentiment siblings stay (nothing lost).
+    for sib in (
+        'data-tab="trend"',
+        'data-tab="articles"',
+        'data-tab="links"',
+        'data-tab="mindmap"',
+        'data-tab="sentiment"',
+    ):
+        assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
+    # 2. corpusTab dispatches "keywords" -> the ranked-table renderer for _corpusTerm.
+    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    assert 'which === "keywords"' in body, "corpusTab must handle the keywords sub-tab"
+    assert "renderCorpusKeywords(_corpusTerm" in body, (
+        "the Keywords sub-tab must render the ranked table for THIS window's corpus term"
+    )
+    # 3. the renderer reuses the EXISTING associations endpoint (no new keyword engine).
+    kfn = html.split("async function renderCorpusKeywords(", 1)[1].split(
+        "\n    function ", 1
+    )[0]
+    assert "/api/insights/associations?" in kfn, (
+        "the Keywords table must reuse the existing associations endpoint, not a new engine"
+    )
+    # 4. it renders a TABLE (distinct from the radial Mindmap graph).
+    assert "<table" in kfn, "the Keywords sub-tab must render a TABLE (not a graph)"
+    # 5. rows are clickable into that keyword's own corpus window (openCorpus reuse).
+    assert "openCorpus(" in kfn, (
+        "each Keywords row must open that keyword as its own corpus (openCorpus reuse)"
+    )
+    # 6. honesty: the endpoint method/caveat travel onto the surface and n is shown;
+    #    no composite score is invented.
+    assert "d.method" in kfn and "d.caveat" in kfn, (
+        "the Keywords table must surface the endpoint's method + caveat (PMI honesty)"
+    )
+    assert "n_articles_with_term" in kfn, "the Keywords table must show n (real corpus count)"

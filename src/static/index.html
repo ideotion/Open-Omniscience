@@ -2213,6 +2213,8 @@
     <nav class="tabs" id="corpus-subtabs" style="padding:8px 16px;border-bottom:1px solid var(--line)">
       <button class="active" data-tab="trend">Trend</button>
       <button data-tab="articles">Articles</button>
+      <button data-tab="keywords"
+        title="The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.">Keywords</button>
       <button data-tab="mindmap"
         title="Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.">Mindmap</button>
       <button data-tab="links"
@@ -7279,8 +7281,82 @@
           el.innerHTML = `<h2 style="margin:2px 0 6px;font-size:13px">${esc(t("How outlets frame this"))} <span class="muted">${esc(t("(VADER tone)"))}</span></h2>
             <div id="corpus-sentiment-host"></div>`;
           await loadFraming(_corpusTerm, "corpus-sentiment-host");
+        } else if (which === "keywords") {
+          // Reuse the EXACT Insights associations data (/api/insights/associations,
+          // the SAME endpoint q.associations that powers the mind-map graph) by
+          // rendering it as a ranked TABLE into a fresh host — the Sentiment
+          // pattern (function-call into a host, no DOM relocation). The Mindmap
+          // sub-tab shows the SAME relatives as a radial GRAPH (how they relate,
+          // visually); this answers "which terms define this corpus, with numbers".
+          // /api/insights/associations exposes no date params, so this is honest
+          // full-corpus — we do NOT fake a time-scope window (cf. Sentiment).
+          el.innerHTML = `<div id="corpus-keywords-host"><div class="muted">${esc(t("…"))}</div></div>`;
+          await renderCorpusKeywords(_corpusTerm, "corpus-keywords-host");
         }
       } catch (e) { el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+
+    // Keyword-analysis sub-tab: a ranked TABLE of the corpus's co-occurring
+    // keywords with REAL per-keyword numbers from /api/insights/associations
+    // (the same data the mind-map plots). No composite score — each column is a
+    // raw value; PMI carries the endpoint's own method + caveat. A row click
+    // opens that keyword as its own corpus (the existing openCorpus entry).
+    let _ckwSort = "pmi";
+    async function renderCorpusKeywords(term, hostId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const host = document.getElementById(hostId);
+      if (!host) return;
+      let d;
+      try {
+        d = await api(`/api/insights/associations?term=${encodeURIComponent(term)}&limit=100`);
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const pairs = (d.pairs || []).slice();
+      if (!pairs.length) {
+        host.innerHTML = `<div class="muted">${esc(t("No keywords indexed for this corpus yet."))}</div>`;
+        return;
+      }
+      const sorters = {
+        pmi: (a, b) => (b.pmi - a.pmi) || (b.cooccur - a.cooccur),
+        cooccur: (a, b) => (b.cooccur - a.cooccur) || (b.pmi - a.pmi),
+        n_b: (a, b) => (b.n_b - a.n_b) || (b.cooccur - a.cooccur),
+      };
+      pairs.sort(sorters[_ckwSort] || sorters.pmi);
+      const nA = d.n_articles_with_term || 0;
+      const fmt = (n) => (n || 0).toLocaleString();
+      // Headers carry honest method/caveat in the #oo-tip hover (translated title).
+      const th = (key, label, title) =>
+        `<th data-sort="${key}" role="button" tabindex="0" style="cursor:pointer;text-align:right;padding:4px 8px;white-space:nowrap"
+            title="${esc(title)}">${esc(label)}${_ckwSort === key ? " ▾" : ""}</th>`;
+      host.innerHTML =
+        `<div class="hint">${esc(t("Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score."))} ${esc(d.method || "")} ${esc(d.caveat || "")}</div>` +
+        `<table style="width:100%;border-collapse:collapse;font-size:13px">
+           <thead><tr style="border-bottom:1px solid var(--line)">
+             <th style="text-align:start;padding:4px 8px">${esc(t("Keyword"))}</th>
+             ${th("cooccur", t("In this corpus"), t("Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score."))}
+             ${th("n_b", t("Total articles"), t("Distinct articles across the whole corpus that mention this keyword. A real count, never a score."))}
+             ${th("pmi", t("Association"), t("Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts."))}
+           </tr></thead>
+           <tbody>${pairs.map(p => {
+             const members = (p.members && p.members.length > 1) ? p.members.join(", ") : "";
+             const titleAttr = members ? ` title="${esc(t("Entity family:"))} ${esc(members)}"` : "";
+             return `<tr class="ckw-row" data-term="${esc(p.normalized || p.term)}" style="cursor:pointer;border-bottom:1px solid var(--line)">
+               <td style="padding:4px 8px"><span${titleAttr}>${esc(p.term)}</span>${p.kind ? ` <span class="muted" style="font-size:11px">${esc(p.kind)}</span>` : ""}</td>
+               <td style="text-align:right;padding:4px 8px">${fmt(p.cooccur)}</td>
+               <td style="text-align:right;padding:4px 8px">${fmt(p.n_b)}</td>
+               <td style="text-align:right;padding:4px 8px">${(p.pmi != null ? p.pmi.toFixed(2) : "—")}</td>
+             </tr>`;
+           }).join("")}</tbody>
+         </table>` +
+        `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(nA)} ${esc(t("articles mention the corpus term."))} ${d.grouped ? esc(t("Surface variants are merged into entity families.")) : ""} ${esc(t("Click a row to open that keyword as its own corpus."))}</div>`;
+      // Row click → that keyword's corpus window (reuse the existing entry).
+      host.querySelectorAll(".ckw-row").forEach(tr =>
+        tr.addEventListener("click", () => openCorpus(tr.dataset.term)));
+      // Header click/Enter → re-sort (honest defaults first; PMI by default).
+      host.querySelectorAll("th[data-sort]").forEach(h => {
+        const go = () => { _ckwSort = h.dataset.sort; renderCorpusKeywords(term, hostId); };
+        h.addEventListener("click", go);
+        h.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+      });
     }
 
     function pickTerm(t) { $("ins-term").value = t; (_insSubtabs || {select: showInsightCat}).select("explore"); exploreTerm(); }
