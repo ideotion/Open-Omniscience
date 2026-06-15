@@ -3827,13 +3827,36 @@
     function agSubs() { try { return new Set(JSON.parse(localStorage.getItem("oo.agenda.subs") || "null") || []); } catch (_e) { return new Set(); } }
     function agSaveSubs(set) { localStorage.setItem("oo.agenda.subs", JSON.stringify([...set])); }
 
+    // An imported feed event (already cross-feed deduped server-side) mapped into
+    // the agenda's event shape, flagged as the IMPORTED provenance class so it is
+    // filterable and never silently blended with curated events.
+    function mapImportedToAgenda(e) {
+      const d = e.date || "";
+      return {
+        title: e.title, category: "imported", country: null, tags: [],
+        confirmed: true,                       // an ICS VEVENT carries a concrete date
+        next_occurrence: d,
+        month: d.length >= 7 ? +d.slice(5, 7) : null,
+        day: d.length >= 10 ? +d.slice(8, 10) : null,
+        calendar: e.family, family_name: e.family_name, family_names: e.family_names,
+        sources: e.sources || [], source_count: e.source_count, family_count: e.family_count,
+        imported: true,
+      };
+    }
     async function loadAgenda() {
       const box = $("agenda-list");
       box.innerHTML = '<div class="muted">Loading…</div>';
       try {
-        const [ev, fac] = await Promise.all([api("/api/events"), api("/api/events/calendars")]);
-        AG.events = ev.events; AG.caveat = ev.caveat; AG.cals = fac.calendars;
-        AG.categories = fac.categories || [];
+        const today = new Date().toISOString().slice(0, 10);
+        const [ev, fac, imp] = await Promise.all([
+          api("/api/events"), api("/api/events/calendars"),
+          api("/api/events/imported?from=" + today).catch(() => ({ events: [] })),
+        ]);
+        const imported = (imp.events || []).map(mapImportedToAgenda);
+        AG.events = ev.events.concat(imported); AG.caveat = ev.caveat; AG.cals = fac.calendars;
+        // Imported events are their own filterable category (a distinct provenance
+        // class, like DDG-discovered sources) — surface it as a chip only when present.
+        AG.categories = (fac.categories || []).concat(imported.length ? ["imported"] : []);
         AG.meta = Object.fromEntries(fac.calendars.map(c => [c.key, c]));
         // First run: subscribe to all calendars so the agenda isn't empty.
         if (localStorage.getItem("oo.agenda.subs") == null) agSaveSubs(new Set(fac.calendars.map(c => c.key)));
@@ -3969,12 +3992,15 @@
                                : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
       const tags = (e.tags||[]).map(t => `<span class="ag-tag" onclick="$('agenda-tag').value='${esc(t)}';renderAgenda()">${esc(t)}</span>`).join("");
       const alsoIn = (e.also_in && e.also_in.length) ? ` <span class="pill" title="this event also appears in: ${esc(e.also_in.join(', '))}">also in ${e.also_in.length}</span>` : "";
+      const imp = (e.imported && e.source_count > 1)
+        ? ` <span class="pill" title="${esc((e.family_names || [e.family_name || ""]).filter(Boolean).join(', '))}">${e.source_count}×</span>` : "";
       const variants = (e.date_variants && e.date_variants.length > 1)
         ? `<div class="hint" style="color:var(--warn)">date varies by source: ${esc(e.date_variants.join(' · '))}</div>` : "";
+      const src = e.official_url ? " · " + extLink(e.official_url, "official source ↗") : "";
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
-        <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}</div>
+        <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}${imp}</div>
           ${variants}
-          <div class="hint">${tags} ${e.note?"· "+esc(e.note):""} · ${extLink(e.official_url, "official source ↗")}</div></div></div>`;
+          <div class="hint">${tags} ${e.note?"· "+esc(e.note):""}${src}</div></div></div>`;
     }
     // -- Agenda views: MONTH grid (the ruled default) + the original list ----- //
     // The tab shows DATA only (maintainer principle 2026-06-11): calendar
@@ -4046,7 +4072,9 @@
       const subOnly = $("agenda-subonly").checked;
       return AG.events.filter(e =>
         (!cat || e.category === cat) && (!country || e.country === country) &&
-        (!tag || (e.tags||[]).includes(tag)) && (!subOnly || (e.sources || [e.calendar]).some(s => subs.has(s))));
+        (!tag || (e.tags||[]).includes(tag)) &&
+        // imported events were explicitly imported -> always shown (bypass subscribed-only)
+        (!subOnly || e.imported || (e.sources || [e.calendar]).some(s => subs.has(s))));
     }
     function agShowDay(d) { AGV.day = d; renderAgenda(); }
     // T11: the astronomy layer (Meeus, computed locally) — moon glyphs in the

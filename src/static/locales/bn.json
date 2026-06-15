@@ -684,5 +684,6 @@
   "Dysfunctional": "ত্রুটিপূর্ণ",
   "Not checked": "এখনও যাচাই হয়নি",
   "Sort": "সাজান",
-  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "একাধিক ফিডে থাকা একই ইভেন্ট একবারই দেখানো হয় এবং প্রতিটি উৎস তালিকাভুক্ত করা হয়; তারিখের অমিল আলাদা এন্ট্রি হিসেবে দৃশ্যমান থাকে।"
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "একাধিক ফিডে থাকা একই ইভেন্ট একবারই দেখানো হয় এবং প্রতিটি উৎস তালিকাভুক্ত করা হয়; তারিখের অমিল আলাদা এন্ট্রি হিসেবে দৃশ্যমান থাকে।",
+  "imported": "আমদানিকৃত"
 }

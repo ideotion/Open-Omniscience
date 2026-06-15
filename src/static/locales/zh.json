@@ -684,5 +684,6 @@
   "Dysfunctional": "异常",
   "Not checked": "未检查",
   "Sort": "排序",
-  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "来自多个订阅源的同一事件只显示一次，并列出每个来源；日期分歧仍以单独条目的形式显示。"
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "来自多个订阅源的同一事件只显示一次，并列出每个来源；日期分歧仍以单独条目的形式显示。",
+  "imported": "已导入"
 }

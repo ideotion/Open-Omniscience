@@ -684,5 +684,6 @@
   "Dysfunctional": "Неисправен",
   "Not checked": "Не проверено",
   "Sort": "Сортировка",
-  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Одно и то же событие из нескольких лент показывается один раз с указанием каждого источника; расхождение дат остаётся видимым как отдельные записи."
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Одно и то же событие из нескольких лент показывается один раз с указанием каждого источника; расхождение дат остаётся видимым как отдельные записи.",
+  "imported": "импортировано"
 }
