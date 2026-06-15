@@ -580,3 +580,113 @@ categories, the Agenda view switch) — the invariant-#18 "next adopters"; **(C)
 the subtab visual design itself across the app (a new look for the one component);
 **(D)** something else. Resolving this changes the work — clarifying question posed;
 answer to be folded in here.
+
+---
+
+## Item K — Analysis-window sub-tabs (Keywords / Articles / When-Where-Who / Links / Sentiment / Sources / Advanced) as uniform subtabs  [ALREADY SHIPPED at the nav level on HEAD; content = Group F remaining]  ⏭ capture-only
+
+**Verbatim (08:24):** "regarding the analysis tab. Same remark : Keywords / Articles /
+When/where/who / links / sntiment / Sources / Advanced should be presented as
+sub-tabs. Visually coherent like any other subtabs."
+
+**Grounded:** the analysis nav `#an-subtabs` (**index.html:827–835**) ALREADY renders
+exactly that set as `data-tab` buttons — Keywords, Articles, When/Where/Who (`www`),
+Links, Sentiment, Sources, Advanced — wired through the SAME `ooSubtabs` component
+(7736, `anSelectTab`). So at the **sub-tab grammar** level this is already shipped and
+visually coherent with every other surface.
+
+What's actually missing = the **panel CONTENT**: only Keywords + Articles are
+implemented (`anSelectTab` 7219 → Keywords = `/api/insights/corpus-keywords`,
+counts-only; Articles = the match list). When/Where/Who · Links · Sentiment · Sources ·
+Advanced are the **Group F remaining** panels — present as tabs, stubbed as content.
+
+**Resolves Item J's ambiguity (by the maintainer's own example):** BOTH surfaces the
+maintainer named (Home card families #129, the analysis sub-tabs) are ALREADY uniform
+subtabs on HEAD. ⇒ the maintainer is most likely on a **build that predates #129 / the
+Group-F slice**, OR reacting to the **stub panels** (a subtab that switches to empty
+content reads as "not a real subtab"). **Action: flag as a build-lag to verify** +
+prioritise the Group F panel content (Item L specifies the Keywords panel). The
+uniform-subtab MANDATE (invariant #18) stands as the guide for every surface regardless.
+
+---
+
+## Item L — Keyword sub-tab = top-8 daily-occurrence graphs via the commodities engine (ooChart); categorize/tag keywords; tags assemble keyword FAMILIES (graph the family's top-8); fit-on-screen, no scroll  [NEW — Group F keyword panel + #16 + families]  ⏭ capture-only
+
+**Verbatim (08:29):** "The keyword subtab should show the top 8 keywords daily occurence
+graph, with the same engine as the commodities are presented. Like commodities, keyword
+should be categorized / tagged. Tags should allow user to assemble family of keywords so
+that the top 8 keywords from this family are graphed. Try to make everything fit on the
+screen so that there's no need to scroll down to see all graphs."
+
+**Where (grounded):**
+- The keyword sub-tab `#an-keywords` (**index.html:836**) shows a COUNTS LIST today
+  (`anSelectTab` 7219 → `GET /api/insights/corpus-keywords` 7229, counts-only).
+- "Same engine as commodities" = **`ooChart`** (**index.html:5620**; invariant #16) —
+  already used for markets (5794), the corpus trend (6190), the insights trend (6462).
+  The commodities **small-multiples grid** is `#mkt-dashboard`
+  (`grid-template-columns:repeat(auto-fill,minmax(300px,1fr))`, **index.html:1109**) —
+  the fit-to-screen pattern to mirror.
+- Per-keyword daily series substrate: keyword_mentions carry dates; `/api/insights/
+  trend` already builds a per-term daily series for ooChart (6462). Top-8 = the top-8
+  keywords, each with its series.
+- Categorize/tag + families substrate EXISTS: `src/api/keyword_management.py` —
+  `get_keyword_categories` (97), `categorize_keywords` (109), `get_top_keywords`
+  (123); plus `src/analytics/families.py` (the families engine; `#fam-kind`).
+
+Asks:
+- **(a)** Graph the **top-8** keywords' **daily occurrence** via ooChart (full-res per
+  #16; honest sparse→points + the early-corpus caveat).
+- **(b)** Keywords **categorized/tagged** like commodities (reuse keyword_management +
+  families).
+- **(c)** Tags let the user **assemble keyword FAMILIES**; selecting a family graphs
+  the **family's top-8** (the corpora "curated symbol→family seed table" idea, now
+  user-buildable).
+- **(d)** **Fit-on-screen, no scroll** — a viewport-fitting small-multiples grid (the
+  `#mkt-dashboard` pattern), all top-8 visible at once.
+
+**Maps to:** BACKLOG_GROUPED **Group F** (the keyword panel = the next slice beyond
+counts-only) + invariant **#16** (ooChart) + the corpora "KEYWORDS ARE CORPORA" +
+time-scope + the keyword **families/tagging** system + the commodities small-multiples
+grid (Group G). Cross-links **Item C(d)** (colored tag chips = same tagging UX) and
+**Item K** (this IS the Keywords-panel content the window needs).
+
+**⏭ Open Qs (compile):** top-8 by which window (last-N-days vs the time-scope
+control)? one multi-series chart vs 8 small multiples? how families are defined (auto
+co-occurrence vs purely user-assembled vs seed-table + user edits)?
+
+---
+
+## Item M — "Download keyword log" opens a raw streaming JSON in a new tab (very slow, no feedback) → show progress + make the tab informative ("use it smartly")  [NEW — ties task-manager / Group C]  ⏭ capture-only
+
+**Verbatim (08:31):** "Downloading keywords opens-up a new tab, takes a very long time.
+Why not help the user understand what's going on and show a progress bar? This new tab
+should show information. Let's use it smartly."
+
+**Where (grounded):**
+- The button: **index.html:1719** — `window.open('/api/diagnostics/keywords','_blank')`
+  "Download keyword log (.json)" (Settings → diagnostics). It opens a NEW browser tab
+  pointed straight at the **streaming JSON** endpoint.
+- The endpoint: `src/api/diagnostics.py:57–58` `GET /keywords` → `keyword_log` returns a
+  `StreamingResponse`. **Known-slow:** field-log C measured **29.6 s → 65.2 s** under
+  live-scrape contention; T1 got it to ~7.8 s encrypted (streamed). So the tab sits
+  **blank/loading for tens of seconds**, then dumps raw JSON — no progress, no info.
+
+**Asks:** a **progress bar** + the new tab should **show information** — a real page,
+not a raw JSON dump.
+
+**Maps to:** the **task-manager / download-manager** (BACKLOG_GROUPED **Group C** —
+every job a VISIBLE job with progress; running/queue/history) + the perf work (the
+export is heavy) + the diagnostics channel (the keyword log is part of the maintainer's
+debug protocol). Honesty: it's a STREAM — show **honest progress** (items processed /
+indeterminate "working… N keywords"), **never a fabricated ETA**.
+
+**Design directions:** (a) make it a **task-manager job** with a progress indicator
+instead of a raw `window.open`; OR (b) the new tab loads a **real page** that states
+what's being exported + a progress bar, then offers the file when ready; (c) an async
+export-then-download (kick the job, stream progress, download on completion) so the UI
+never blocks on a blank tab. Fold ALL slow exports/downloads into the same treatment via
+the download subsystem.
+
+**⏭ Open Qs (compile):** in-app job + download-when-ready vs an informative export page
+in the new tab? does the streaming endpoint expose a progress count, or show
+indeterminate progress?
