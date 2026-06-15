@@ -893,5 +893,9 @@
   "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "発展段階：パターンは形成されつつありますが、コーパスはまだ強く頼れるほど広くも古くもありません。",
   "Stages are descriptive, from real corpus facts — never a score.": "段階は記述的で、実際のコーパスの事実に基づきます——スコアではありません。",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "しきい値：初期は {a} 記事未満または {d} 日未満；確立は {b} 記事以上かつ {e} 日以上；発展中はその中間。",
-  "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.": "このコーパスに関連するキーワードを放射状のマインドマップで表示（中心→枝→外側）。フォントサイズ＝共有記事数；PMIで順位付けした関連語で、因果関係ではありません。"
+  "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.": "このコーパスに関連するキーワードを放射状のマインドマップで表示（中心→枝→外側）。フォントサイズ＝共有記事数；PMIで順位付けした関連語で、因果関係ではありません。",
+  "Sentiment": "感情",
+  "How outlets frame this": "各メディアの取り上げ方",
+  "(VADER tone)": "（VADER トーン）",
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "このコーパスを報じる各メディアのトーンの分かれ方——メディアごとの VADER 複合値と記事数。VADER は英語辞書ベースの手法のため、非英語報道のトーンは信頼できないか欠落します。複合スコアはありません。リンク先の記事を読んでご自身で判断してください。"
 }

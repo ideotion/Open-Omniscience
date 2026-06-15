@@ -893,5 +893,9 @@
   "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "Etapa en desarrollo: se forman patrones pero el corpus aún no es lo bastante amplio o antiguo para apoyarse mucho en él.",
   "Stages are descriptive, from real corpus facts — never a score.": "Las etapas son descriptivas, a partir de hechos reales del corpus — nunca una puntuación.",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Umbrales: inicial por debajo de {a} artículos o {d} días; consolidado con al menos {b} artículos y {e} días; en desarrollo, entre ambos.",
-  "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.": "Palabras clave asociadas a este corpus como un mapa mental radial (centro → ramas → hacia afuera). Tamaño de fuente = volumen de artículos compartidos; vecinos ordenados por PMI, nunca causalidad."
+  "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.": "Palabras clave asociadas a este corpus como un mapa mental radial (centro → ramas → hacia afuera). Tamaño de fuente = volumen de artículos compartidos; vecinos ordenados por PMI, nunca causalidad.",
+  "Sentiment": "Sentimiento",
+  "How outlets frame this": "Cómo lo enmarcan los medios",
+  "(VADER tone)": "(tono VADER)",
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "Cómo se dividen en tono los medios que cubren este corpus — compuesto VADER por medio, con recuentos de artículos. VADER es un método de léxico INGLÉS, por lo que el tono de la cobertura no inglesa es poco fiable o nulo. Sin puntuación compuesta; lee los artículos enlazados y juzga por ti mismo."
 }

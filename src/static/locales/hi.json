@@ -893,5 +893,9 @@
   "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "विकासशील चरण: पैटर्न बन रहे हैं पर कॉर्पस अभी इतना व्यापक या पुराना नहीं कि उस पर अधिक भरोसा किया जाए।",
   "Stages are descriptive, from real corpus facts — never a score.": "चरण वर्णनात्मक हैं, वास्तविक कॉर्पस तथ्यों से — कभी स्कोर नहीं।",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "सीमाएँ: प्रारंभिक {a} लेख या {d} दिन से कम; स्थापित कम से कम {b} लेख और {e} दिन; विकासशील इनके बीच।",
-  "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.": "इस कॉर्पस से संबंधित कीवर्ड एक रेडियल माइंड मैप के रूप में (केंद्र → शाखाएँ → बाहर की ओर)। फ़ॉन्ट आकार = साझा लेख मात्रा; PMI-क्रमित पड़ोसी, कभी कारण नहीं।"
+  "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.": "इस कॉर्पस से संबंधित कीवर्ड एक रेडियल माइंड मैप के रूप में (केंद्र → शाखाएँ → बाहर की ओर)। फ़ॉन्ट आकार = साझा लेख मात्रा; PMI-क्रमित पड़ोसी, कभी कारण नहीं।",
+  "Sentiment": "भावना",
+  "How outlets frame this": "मीडिया इसे कैसे प्रस्तुत करता है",
+  "(VADER tone)": "(VADER टोन)",
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "इस कॉर्पस को कवर करने वाले मीडिया स्वर में कैसे बँटते हैं — प्रति आउटलेट VADER कंपाउंड, लेख संख्या के साथ। VADER एक अंग्रेज़ी-शब्दकोश विधि है, इसलिए ग़ैर-अंग्रेज़ी कवरेज का स्वर अविश्वसनीय या अनुपस्थित है। कोई समग्र स्कोर नहीं; लिंक किए गए लेख पढ़ें और स्वयं निर्णय लें।"
 }
