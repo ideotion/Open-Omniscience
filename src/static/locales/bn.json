@@ -851,5 +851,6 @@
   "LLM offline": "LLM অফলাইন",
   "Summarizing locally…": "স্থানীয়ভাবে সারসংক্ষেপ করা হচ্ছে…",
   "Translating locally…": "স্থানীয়ভাবে অনুবাদ করা হচ্ছে…",
-  "Other": "অন্যান্য"
+  "Other": "অন্যান্য",
+  "co-occurrence in your corpus, never causation": "আপনার কর্পাসে সহ-উপস্থিতি, কখনোই কার্যকারণ নয়"
 }

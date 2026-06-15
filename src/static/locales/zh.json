@@ -851,5 +851,6 @@
   "LLM offline": "LLM 离线",
   "Summarizing locally…": "正在本地摘要…",
   "Translating locally…": "正在本地翻译…",
-  "Other": "其他"
+  "Other": "其他",
+  "co-occurrence in your corpus, never causation": "语料库中的共现，绝非因果关系"
 }

@@ -851,5 +851,6 @@
   "LLM offline": "LLM オフライン",
   "Summarizing locally…": "ローカルで要約中…",
   "Translating locally…": "ローカルで翻訳中…",
-  "Other": "その他"
+  "Other": "その他",
+  "co-occurrence in your corpus, never causation": "コーパス内の共起であり、因果関係ではありません"
 }

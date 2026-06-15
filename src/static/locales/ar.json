@@ -851,5 +851,6 @@
   "LLM offline": "LLM غير متصل",
   "Summarizing locally…": "جارٍ التلخيص محليًا…",
   "Translating locally…": "جارٍ الترجمة محليًا…",
-  "Other": "أخرى"
+  "Other": "أخرى",
+  "co-occurrence in your corpus, never causation": "تزامن الورود في مجموعتك، وليس علاقة سببية أبدًا"
 }

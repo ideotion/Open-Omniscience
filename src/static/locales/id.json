@@ -851,5 +851,6 @@
   "LLM offline": "LLM offline",
   "Summarizing locally…": "Meringkas secara lokal…",
   "Translating locally…": "Menerjemahkan secara lokal…",
-  "Other": "Lainnya"
+  "Other": "Lainnya",
+  "co-occurrence in your corpus, never causation": "ko-kemunculan dalam korpus Anda, bukan sebab-akibat"
 }
