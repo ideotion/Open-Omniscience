@@ -1345,3 +1345,57 @@ REAL keywords); REVERSIBLE/inspectable (query-time hide; user can see + un-hide)
 **⏭ Open Qs (compile):** boilerplate detection threshold per source/language? auto-add vs
 flag-for-curation (I review candidates, per AA)? expose the per-language stoplist in Settings
 (view/edit/un-hide)?
+
+---
+
+## Item AC — user-adjustable keyword management (Settings subtab: explore/add/remove/tag per language/tag/family) + PRE-TAG keywords during the batch pass (a new analytical axis)  [NEW — maintainer proposal + "what do you think?"]  ⏭ endorse + design
+
+**Verbatim (10:46):** "this should be adjustable by the user of course. Users should have the
+power to add / remove keywords. The UI would be an additional subtab in the settings. This UI
+should allow users to explore keywords, per language, per tags, per families, and so forth. And
+by the way, wouldn't this work be a great opportunity to pre-tag keywords? you know I'd like
+keywords to be tagged, so that we can search not only articles by their tags, but also filter
+keyword tags in order to discover and analyze corpus."
+
+**GROUNDED:** Sources have `tags` (models.py:409, comma-separated) + the source-tag UX (colored
+chips, multi-tag AND, tag-click→corpus). Keywords have only `entity_type` (699: person/org/
+location) = a PROTO-tag for entities; `KeywordCategory` (626) exists (check if used/legacy at
+impl); family system = KeywordFamilyOverride (1281) + KeywordSuperGroup (1308) + global_stopwords.
+NO rich topic/user TAG system on keywords yet.
+
+**PART 1 — USER-ADJUSTABLE KEYWORD MANAGEMENT (Settings subtab): ENDORSE.** It's the natural home
+for the reversible/inspectable stoplist control flagged in AB (view/edit/un-hide) + the existing
+family merge/split overrides + NEW tag editing. Boundary (invariant #8): Settings = CURATION
+(add/remove/hide/tag/merge); the keyword-corpus WINDOWS = ANALYSIS — keep coherent (enough
+exploration in Settings to FIND the keyword to curate; deep analysis stays in the windows). Uses
+the universal subtab component (#18) + explore-by language/tag/family + the source-tags UX. User
+edits local + reversible + local-always-wins (the merge engine already treats curation that way).
+Folds the AB stoplist UI here.
+
+**PART 2 — PRE-TAG KEYWORDS (the opportune by-product): YES** — and especially opportune because
+the AA **Wikidata anchor gives tags nearly FREE**: Wikidata "instance of" (P31) yields the TYPE/
+TAG (Q30→country; a person→human; a company→business; a disease→disease…). So the SAME
+family-building pass yields THREE outputs: families (cross-language equivalence) + stopword/
+boilerplate candidates (AB) + TAGS (types). Leaving tagging out wastes that. `entity_type`
+(person/org/place) folds in as the existing proto-tag.
+
+**THE PAYOFF (the maintainer's vision):** keyword tags become a NEW ANALYTICAL AXIS — filter/
+discover/analyze the corpus by KEYWORD tag (all "health" keywords trending; the "economics"
+keyword family network), complementing the existing SOURCE-tag filtering. A keyword-tag = a corpus
+(KEYWORDS ARE CORPORA) → consumable by the corpora windows + search facets + insights.
+
+**HONESTY CAVEATS:** (1) tag PROVENANCE — auto-tags from Wikidata are DEDUCED (a mis-mapped QID →
+wrong tag); label deduced vs curated, user-correctable, never authoritative (the "deduced, never
+confirmed" discipline). (2) CONTROLLED VOCABULARY — a keyword-tag TAXONOMY is needed (else sprawl):
+Wikidata types + a curated topic taxonomy; decide it. (3) reuse, don't duplicate: `entity_type` is
+the proto-tag; fold it in (+ check `KeywordCategory`). (4) multi-tag (Macron = person + politics +
+France).
+
+**DB/impl sketch:** a `keyword_tags` relation (many-to-many) + tag provenance (deduced/curated/
+source); the batch pass writes deduced tags from Wikidata P31 + entity_type; the Settings subtab
+edits them; corpora/search/insights consume keyword-tag filters. Substantial — spans DB + batch +
+UI + analysis; sequence with AA/U.
+
+**⏭ Open Qs (compile):** keyword-tag taxonomy (Wikidata types + curated topics — which)? reuse
+`KeywordCategory` vs new `keyword_tags` table? one tag space across keywords/sources/articles or
+distinct? auto-tag confidence threshold + the deduced/curated label UX?
