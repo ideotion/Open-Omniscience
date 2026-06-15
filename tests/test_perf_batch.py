@@ -247,9 +247,15 @@ def test_keyword_export_cap_bounds_work_per_language(client, seeded, monkeypatch
 # --------------------------------------------------------------------------- #
 # Cached counts (freshness disclosed) + the VACUUM tool
 # --------------------------------------------------------------------------- #
-def test_stats_cached_with_disclosed_freshness(client):
+def test_stats_cached_with_disclosed_freshness(client, monkeypatch):
     from src.api import database as dbmod
 
+    # Freeze the DB change-probe so the two reads are GUARANTEED cache hits. Otherwise a
+    # probe blip between the two HTTP calls (data_version / per-connection total_changes()
+    # across the test client's connection pool) can spuriously invalidate the cache and
+    # recompute computed_at ~1s later — a real-clock timing flake (CI, 2026-06-15). This
+    # asserts the cache-SERVING path deterministically; probe invalidation is separate.
+    monkeypatch.setattr(dbmod, "_db_change_probe", lambda db: ("frozen",))
     dbmod._cache.clear()
     first = client.get("/api/database/stats").json()
     assert "computed_at" in first and first["cache_ttl_s"] == dbmod._CACHE_TTL_S
