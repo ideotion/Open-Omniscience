@@ -942,3 +942,110 @@ variants of ONE concept render as SEPARATE trend series, fragmenting the trend l
 making the screen hard to read. So the family-merge must drive the **trend view** too (merged
 series by default, per-language sub-series available + splittable), not only the top-keywords
 list. Add the trend screen to the rework's acceptance criteria.
+
+---
+
+## Item T — "group sources by domain" buckets UNRELATED publishers under apps.apple.com (multi-tenant platform host ≠ publisher)  [NEW — data-quality bug]  ⏭ capture + DATA REQUEST
+
+**Verbatim (09:13):** "The source subtab in the analytics tab allows the user to group
+sources by domain. I'm not sure the domain extraction is working properly. Lots of sources
+are assembled under apps.apple.com, and within it we find sources as surprising as La
+Repubblica (Italy), Hufvudstadsbladet (Finland), RIA Novosti, Hong Kong Free Press, etc. It
+doesn't help the user make sense of what they have in common."
+
+**What I traced (grounded):**
+- The analysis-window Source view = `#an-sources` ← `GET /api/insights/corpus-sources` ←
+  `analytics/queries.py:354 corpus_sources()`, which groups by **`Source.id`** (one row per
+  registered source; shows Source.name + Source.domain). I found **no explicit "group by
+  domain" toggle** in the code — so CONFIRM which surface (this analysis-window Source subtab
+  `#an-sources`, the Settings→Sources tab, or Insights); it changes where the fix goes.
+- `Source.domain` is **`nullable=False, unique=True`** (models.py:404/443) ⇒ distinct sources
+  CANNOT share `apps.apple.com` as their stored domain. So the bucket is NOT registered-source
+  grouping — it's a host **derived** from article/feed URLs (`Article.url`) or a
+  group-by-registrable-domain over a field that stored the full Apple URL.
+- `apps.apple.com` is **nowhere in the repo catalog** — runtime data in the corpus.
+
+**ROOT CAUSE — the smoking gun (by comparison inside `configs/sources.yml`):**
+- Tenant-as-**SUBDOMAIN** platforms are already handled RIGHT: Substack stores
+  `domain: thesequence.substack.com` / `importai.substack.com` / `adamtooze.substack.com` —
+  each a DISTINCT host ⇒ distinct `Source.domain` ⇒ grouping keeps them separate. ✅
+- Apple Podcasts puts the tenant in the **PATH** (`apps.apple.com/…/podcast/<name>/<id>`), so
+  host extraction yields `apps.apple.com` for EVERY publisher's podcast ⇒ they all collapse
+  into one meaningless bucket. ❌ Same trap: `youtube.com/@x`, `open.spotify.com/show/x`,
+  `t.me/x`, `medium.com/@x`, `pod.link`, `anchor.fm`.
+- So **"domain extraction" is not buggy per se — registrable/host domain is the WRONG identity
+  key for path-tenant platforms.** Podcast RSS items also commonly set the item link to the
+  Apple page, so article-URL-host grouping buckets episodes from many publishers there too.
+
+**HONESTY ANGLE:** bucketing La Repubblica + RIA Novosti + Hong Kong Free Press together
+because they share a DISTRIBUTION PLATFORM falsely implies an editorial/ownership relationship
+— the SAME false-grouping the project fights (false triangulation, over-merge). A platform
+bucket must be LABELED "shared distribution platform — not a publisher" and never imply
+commonality.
+
+**FIX DIRECTIONS:** (1) an `is_multitenant_platform(host)` classifier (sibling of
+`is_commerce_domain`) + a registry of path-tenant platforms with the tenant path-segment rule;
+(2) for those, the source IDENTITY / grouping key INCLUDES the tenant segment — mirroring how
+Substack's subdomain already IS the identity; backfill existing apps.apple.com rows;
+(3) ingest: prefer the publisher's own canonical link for `Article.url` when a platform feed
+exposes it, else label the platform origin honestly; (4) don't let discovery or de-US-centring
+treat a platform host as a publisher (ties audit-07's "10 named aggregator biases").
+
+**DATA REQUEST (the fact I need):** the **Settings→Sources export** (or the debug bundle) for a
+handful of those surprising sources — their `domain` + `rss_url`, and whether there is ONE
+apps.apple.com source with mis-attributed articles vs MANY sources whose derived host is
+apps.apple.com. That single fact picks the fix (extraction vs grouping-key vs attribution vs
+ingest). The keyword log won't show this; the source export / debug bundle will.
+
+**⏭ Open Qs (compile):** which surface exactly? identity-key change (include the tenant path)
+vs honest-platform-label-only first? backfill existing rows?
+
+---
+
+## Item U — a precached, normalized, standardized multilingual keyword LEXICON (×12 UI languages): preconfigure families + KILL substring over-merge suggestions ("world cup"→"world", "United States"→"state")  [NEW — the seeding + guard layer for Items S/T]  ⏭ capture (collaborative design)
+
+**Verbatim (09:17):** "I think we can work together on a way to have a precached, normalized,
+standardized list [of] keywords in all of the UI available languages. This would help
+preconfigure families, avoid recommendations such as: 'world cup' having as merging
+recommendation the keyword 'world', or another example the keyword 'United States' have the
+suggestion to merge with 'state'."
+
+**Two problems it solves:**
+1. **SEEDING families (Item S):** a curated, normalized, multilingual lexicon lets us PRE-build
+   trans-language families instead of discovering them cold — the ruled "curated ring file +
+   signature auto-join + user edits" seeding, ELEVATED to a standardized ×12 lexicon.
+2. **KILLING bad merge suggestions:** the examples are **substring / partial-token false
+   positives** — "world cup" ⊃ "world", "United States" ⊃ "state". The recommender is
+   proposing merges on LEXICAL CONTAINMENT, not semantic equivalence. A lexicon of known
+   multi-word concepts / named entities ("World Cup", "United States") lets the recommender
+   treat them as **ATOMIC units**, never decomposed into their substrings.
+
+**Honesty/method angle:** merge SUGGESTIONS must be SEMANTIC equivalence (same concept across
+languages, signature-supported) NOT lexical containment. "world cup"→"world" /
+"United States"→"state" are containment artifacts — exactly the false equivalence the ruled
+over-merge guards forbid (language-qualified members only, signature-supported joins). This is
+evidence the recommender currently LEAKS substring matches; the lexicon + an atomic-phrase rule
+closes the gap.
+
+**What the lexicon is (to design together):** a normalized, standardized, PRECACHED
+keyword/concept list per UI language (12) — each concept with a canonical form per language,
+known surface variants/inflections, a type (entity/place/org/event/common term), and
+cross-language links (the family seed). **Bootstrap source:** Wikidata labels/aliases
+(multilingual by construction — ties the de-US-centring Wikidata generator + the
+wiki-as-living-source work) PLUS the EXISTING `configs/keyword_equivalents.yml` +
+`configs/keyword_supergroups.yml` seeds. **Precached = bundled, local-first, zero-network at
+runtime** (ships with the app; building/refreshing it is an offline tooling step like the
+catalog / city gazetteer).
+
+**Relationship to existing config:** `keyword_equivalents.yml` + `keyword_supergroups.yml`
+already exist (ring/supergroup seeds). This = expand them into a standardized multilingual
+lexicon + use it as BOTH (a) family seeds AND (b) an atomic-phrase / containment-aware GUARD in
+the merge recommender. Folds into the Item S keyword-analytics rework as its seeding+guarding
+layer.
+
+**Collaborative ("we can work together"):** next step is a design pass — I propose the lexicon
+schema + sourcing (Wikidata + existing seeds) + the atomic-phrase guard; maintainer steers.
+
+**⏭ Open Qs (compile):** bootstrap = Wikidata labels/aliases vs hand-curated vs both? scope
+order (entities/places/orgs/events first, common terms later)? how the lexicon overrides vs
+feeds the live signature auto-join? precached size budget (12 languages × concepts)?
