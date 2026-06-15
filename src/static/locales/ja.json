@@ -382,6 +382,7 @@
   "Start continuous background collection": "継続的なバックグラウンド収集を開始",
   "Allow network requests again": "ネットワークリクエストを再び許可",
   "Online": "オンライン",
+  "Collecting paused": "収集を一時停止中",
   "Offline": "オフライン",
   "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "機内モード — 塗りつぶしはオフラインを意味します。新しいネットワークリクエストは即座に拒否され、進行中のリクエストは完了する場合があります。",
   "Fetch market and index data from the official feeds": "公式フィードから市場・指数データを取得",

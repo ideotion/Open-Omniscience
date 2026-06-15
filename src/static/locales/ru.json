@@ -382,6 +382,7 @@
   "Start continuous background collection": "Запустить непрерывный фоновый сбор",
   "Allow network requests again": "Снова разрешить сетевые запросы",
   "Online": "В сети",
+  "Collecting paused": "Сбор приостановлен",
   "Offline": "Офлайн",
   "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "Режим полёта — закрашенный значок означает офлайн: каждый новый сетевой запрос немедленно отклоняется; начатый запрос может завершиться.",
   "Fetch market and index data from the official feeds": "Получить данные рынков и индексов из официальных источников",
