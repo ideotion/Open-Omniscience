@@ -318,6 +318,12 @@ ruling, a contingency, or a deliberate-omission note.
   release-eng; the full plan lives in the session log + PR descriptions), then
   execute topic-by-topic — **ONE PR PER TOPIC**, draft onto `0.09`, CI
   subscribed, autonomously; ask only when a genuine ruling is needed.
+  **AUTONOMY REINFORCED (maintainer ruled 2026-06-15, verbatim "Choose
+  autonomously. Always choose autonomously, this is not important"): do NOT ask
+  which direction/area/topic comes next — that is NOT a genuine ruling, CHOOSE IT
+  YOURSELF and proceed. Reserve AskUserQuestion strictly for genuine rulings
+  (ambiguous architecture, ethics/security trade-offs, irreversible/outward-facing
+  actions). Sequencing/prioritization across the queue is mine to decide.**
   Reality-check verdict recorded: the ledger and RC gate are ACCURATE (1118
   tests collected as of 2026-06-14; 28 gap claims verified in code; no shipped
   claim found false).
