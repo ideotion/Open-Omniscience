@@ -953,3 +953,18 @@ def test_cjk_keyword_disclosure():
     assert "CJK not segmented — unreliable" in en
     # the long-form (hover bubble) is keyed too (informed-consent-by-layering)
     assert any(k.startswith("Keyword extraction splits on spaces") for k in en), "long-form must be keyed"
+
+
+def test_search_retired_from_sidebar_but_reachable():
+    """Ruled "one search entry" (Item I): now that the analysis window absorbs every
+    Search-tab capability + the omnibar Enter entry, the Search SIDEBAR button is
+    retired. Nothing is lost — #tab-search, doSearch and the entry paths remain, so
+    Boolean search is still reachable (the omnibar / palette), just not a sidebar tab.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert '<button class="nav-item" data-tab="search">' not in html, "no Search button in the sidebar rail"
+    assert 'id="tab-search"' in html, "the search page is KEPT (nothing lost)"
+    assert "function doSearch" in html, "Boolean search still exists"
+    assert 'showTab("search")' in html, "search stays reachable (omnibar/palette entry points)"
+    # the sidebar still lists tabs (invariant #2 not regressed)
+    assert '<button class="nav-item" data-tab="analyze">' in html and '<button class="nav-item" data-tab="home">' in html
