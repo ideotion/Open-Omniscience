@@ -50,10 +50,19 @@ ruling, a contingency, or a deliberate-omission note.
 - **At-rest encryption threat model, stated wherever shown:** protects a
   seized/off machine or a copied file — NEVER a compromised running session.
   **No recovery, no decryption alternative** for THE passphrase (maintainer
-  rationale: the corpus is reconstitutable from the web). **CONTINGENCY: that
-  premise EXPIRES when newsletters ship** (mailbox content is personal,
-  non-reconstitutable) — consciously revisit no-recovery BEFORE the newsletter
-  scraper lands.
+  rationale: the corpus is reconstitutable from the web). **CONTINGENCY
+  RESOLVED 2026-06-15 (maintainer ruled "A" after the explainer): KEEP
+  no-recovery for the local .eml newsletter import.** The contingency feared
+  storing non-reconstitutable *PERSONAL* data under no-recovery; the
+  anonymize-at-ingest design removes exactly that (no recipient identity, no raw
+  .eml, no recipient headers/tracker tokens stored) and the user's OWN .eml
+  files remain the re-import path (the file-world equivalent of "re-scrape").
+  So: keep no-recovery + ship an import-time DISCLOSURE ("these join the
+  no-recovery encrypted corpus; keep your .eml files for re-import") ×12; NEVER
+  add a recovery key (a second decryption surface = the rejected
+  fabricated-security path). Revisit ≠ must-change — consciously revisited &
+  closed. RE-OPEN only if a future path stores genuinely non-reconstitutable
+  PERSONAL content (e.g. live IMAP of a private mailbox held nowhere else).
 - **Wrong-passphrase rate-limiting is a DELIBERATE, REASONED OMISSION (ruled
   2026-06-12 — do NOT re-add it thinking it was an oversight):** an attacker
   who can brute-force HAS the file and works offline (sqlcipher CLI/hashcat);
@@ -420,8 +429,63 @@ ruling, a contingency, or a deliberate-omission note.
   "Coming soon" placeholders left in place): the ENCRYPTION-CHOICE step
   (touches the DB unlock layer) and the SOURCES-BY-THEME step (needs the
   catalog tag taxonomy + the country/language-emphasis picker).
-  **The NEWSLETTER SCRAPER stays blocked until these riders ship AND the
-  no-recovery contingency is revisited** (see Non-negotiables).
+  **The live NEWSLETTER SCRAPER (IMAP/network) stays blocked until these riders
+  ship; LOCAL .eml FILE import is GREENLIT (ruled 2026-06-15) — not a scraper
+  (zero network), no-recovery contingency RESOLVED via anonymize-at-ingest (see
+  Non-negotiables + the ".eml newsletter import" entry below).**
+- **MASS LOCAL .eml NEWSLETTER IMPORT (ruled across 2026-06-15; full design +
+  slices + acceptance in `docs/product/EMAIL_NEWSLETTER_IMPORT_PLAN.md`):**
+  import a folder of .eml files as Articles in the ONE unified corpus (reuse
+  src/ingest/email.py parse_email/ingest_emails — already recipient-free +
+  hash-dedup). LOCAL ONLY, no IMAP/network ("enough for now"). RULINGS:
+  (a) METADATA KEEP From · Reply-To · Subject · Date · Message-ID · **List-Id**
+  (the stable newsletter key) · DKIM `d=` send-domain · List-Archive/List-Post
+  if public. EXCLUDE the recipient AND every recipient-bearing header: To/Cc/Bcc,
+  Delivered-To, X-Original-To, Return-Path (VERP), the Received chain, AND
+  List-Unsubscribe (WALK-BACK of the earlier "capture List-Unsubscribe" idea —
+  it carries a per-recipient token). (b) ANONYMIZE-AT-INGEST, NO RAW RETENTION
+  (ruled): the DB NEVER stores the raw .eml, recipient headers, or any
+  token-bearing tracker URL. (c) TRACKING-LINK DETOX (recipient protection —
+  "most newsletter links track the recipient"): NEVER fetch on import (tested
+  invariant: N files ⇒ 0 sockets — neutralizes open-tracking pixels and never
+  confirms an open/click); a REUSABLE link_sanitizer = unwrap redirect wrappers
+  ONLY when the destination is embedded, strip recipient query-params via a
+  DATED evidence-based denylist (mkt_tok/mc_eid/_hsenc/_hsmi/ck_subscriber_id/
+  oly_*…), drop beacon images, and FLAG tracker-wrapped links whose destination
+  can't be recovered without a refused network call (store wrapper DOMAIN +
+  visible anchor text, DROP the token-bearing path — degrade loudly, never
+  present a wrapped link as the real source); REDACT the recipient's own echoed
+  address from subject/body/URLs using the parsed-then-DISCARDED To (bonus:
+  dedups copies across recipients); the CONSENT surface shows COUNTS of what was
+  stripped ×12; downstream NEVER auto-follows tracker-wrapped links (fetching =
+  phoning home as the recipient). (d) SOURCE RESOLUTION ("is a BBC newsletter
+  the same source as the scraped BBC site?" — TODAY: NO; Source.domain is unique
+  + matched exact-string, and registrable_domain/normalize_domain strip only
+  www., NOT subdomains, so email.bbc.com ≠ the seeded bbc.com). FIX = a PROPER
+  eTLD+1 via a VENDORED, DATED Public-Suffix-List snapshot + freshness test
+  (network-free) → exact Source.domain match → is_equivalent_domain alias map
+  (already carries bbc.com↔bbc.co.uk) → else a NEW DISABLED email source. SILENT
+  auto-attach on a deterministic eTLD+1/alias hit (ruled 2026-06-15) + a
+  DEDICATED import UI announcing it (live progress · every import detail · UNDO
+  the automated attaches — feasible because send-domain + the attached source_id
+  are stored as provenance). PRESERVE send-domain + List-Id as FILTERABLE
+  provenance (email-vs-web stays separable, like per-edition wiki / DDG-discovered
+  classes). NEVER fuzzy-merge (bbc≠nbc) — deterministic only; weaker matches =
+  a user-confirmed SUGGESTION. PLATFORM INVERSION: for newsletter platforms
+  (substack.com/beehiiv.com/ghost.io/mailchimp…, several already in SOCIAL_HOSTS)
+  do the OPPOSITE — key on the publication subdomain / List-Id, never collapse
+  many publishers into one platform domain. (e) IMPORT DATE already stored
+  (created_at=now at ingest, parity with the web pipeline; published_at = the
+  email's Date header) — no work. RETIRE the stale `scripts/import_eml.py`
+  (broken vs the live schema — references content_hash/html_content/is_newsletter/
+  metadata/scraped_at columns absent from Article — AND it captures To/Cc = the
+  excluded recipient; FLAGGED, not yet deleted: maintainer-created, surface
+  don't silently delete). The big configs/email_sources.yaml.example + the
+  ROADMAP "Email & Newsletter Intelligence Implementation Plan" are ASPIRATIONAL,
+  not status. SLICES: S1 anonymization core (link_sanitizer + email parse
+  hardening + .eml file/dir ingest + tests) [first PR]; S2 metadata+provenance
+  schema + the eTLD+1 PSL resolver + silent auto-attach; S3 upload API + the
+  import-progress/UNDO WINDOW + the import-time disclosure ×12 + USER_MANUAL.
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features
