@@ -318,6 +318,12 @@ ruling, a contingency, or a deliberate-omission note.
   release-eng; the full plan lives in the session log + PR descriptions), then
   execute topic-by-topic — **ONE PR PER TOPIC**, draft onto `0.09`, CI
   subscribed, autonomously; ask only when a genuine ruling is needed.
+  **AUTONOMY REINFORCED (maintainer ruled 2026-06-15, verbatim "Choose
+  autonomously. Always choose autonomously, this is not important"): do NOT ask
+  which direction/area/topic comes next — that is NOT a genuine ruling, CHOOSE IT
+  YOURSELF and proceed. Reserve AskUserQuestion strictly for genuine rulings
+  (ambiguous architecture, ethics/security trade-offs, irreversible/outward-facing
+  actions). Sequencing/prioritization across the queue is mine to decide.**
   Reality-check verdict recorded: the ledger and RC gate are ACCURATE (1118
   tests collected as of 2026-06-14; 28 gap claims verified in code; no shipped
   claim found false).
@@ -733,10 +739,17 @@ ruling, a contingency, or a deliberate-omission note.
   dead; the WORKING set is worldpublicholiday.com (wph-*), monkeyness moons,
   ose-calendar. FIX = drop the guaranteed-fail feeds from defaults (honest
   fail-closed is correct, but shipping them as defaults wastes cycles).
-  (F) **RSS DUP RATE ~93% (LOW):** last passes 284/305 and 179/305 duplicate at
-  interval_minutes=1. FIX = conditional GET (ETag/If-Modified-Since) + per-feed
-  backoff when all-duplicate; continuous-collection should not re-pull unchanged
-  feeds every minute. (G) NOTE: Tor 403s on premium news (reuters/ft/bloomberg/
+  (F) **RSS DUP RATE ~93% (LOW) — CONDITIONAL-GET CORE SHIPPED (verified on
+  0.09 2026-06-15; ledger was stale):** conditional GET is DONE — FeedFetchState
+  table (src/database/models.py:457, migration c8d9e0f1a2b3) persists
+  ETag/Last-Modified per feed; EthicalFetcher.fetch threads extra_headers +
+  returns status_code/etag/last_modified; ingest_source (src/ingest/pipeline.py:289)
+  sends If-None-Match/If-Modified-Since and SHORT-CIRCUITS on 304 (tally
+  "not_modified", no feedparser parse), refreshing validators on 200 only;
+  tests/test_feed_conditional_get.py green (304 skips+preserves, 200 refreshes,
+  no-validator→plain GET). REMAINING: per-feed backoff when a 200 yields
+  all-duplicates (secondary; continuous-collection shouldn't re-pull churny feeds
+  every minute even when servers ignore validators). (G) NOTE: Tor 403s on premium news (reuters/ft/bloomberg/
   economist/lefigaro…) are the Tor-population reality, already surfaced via T4
   transport verdicts — not a bug. FRED timeouts over Tor confirm the
   parallel/official-endpoint direction. keyword diagnostics: language_mismatch
@@ -1029,11 +1042,18 @@ ruling, a contingency, or a deliberate-omission note.
   for where) + days + country, min_articles HAVING, coverage_articles
   denominator; WHERE adds gazetteer lat/lon (null when unknown + placed count);
   NO score, method+caveat "Deduced from text, never confirmed."
-  (tests/test_who_aggregate.py, tests/test_where_aggregate.py). REMAINING:
-  reader switches to reading the stored rows (stops recomputing); temporal map's
-  mention layer consumes event-places; wiki articles join when the living-source
-  design lands. NEXT for the extractors themselves: feed the temporal map's
-  mention layer with text locations; extend the country table; aggregate
+  (tests/test_who_aggregate.py, tests/test_where_aggregate.py). READER NOW READS
+  STORED ROWS (SHIPPED 2026-06-15, PR #202): view_article serves the persisted
+  article_mentioned_dates/_places/_entities (datestore.for_article +
+  whostore.*_for_article) instead of recomputing — places/entities already did on
+  0.09; the dates path was the last recompute, now reads stored tags (user-rejected
+  excluded from the compact summary), live extractor kept only as the no-rows
+  fallback; response contract + two-class labeling + "never confirmed" caveat
+  unchanged; test proves the extractor is NOT called when rows exist. TEMPORAL-MAP
+  MENTION LAYER also SHIPPED (PR #200) — plots stored PLACES (article-mentions) on
+  the map; the EVENT-places feed remains. REMAINING: wiki articles join when the
+  living-source design lands. NEXT for the extractors themselves: feed the temporal
+  map's mention layer with event-places too; extend the country table; aggregate
   entities corpus-wide.
 - **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51):**
   space-time co-occurrence (never causation) + the user-defined
@@ -1172,10 +1192,17 @@ ruling, a contingency, or a deliberate-omission note.
   setup, like the planned Ollama installer) + per-source circuit isolation by
   default; treat clearnet-for-Tor-hostile-sources as an explicit consented opt-in.
   Filed with open questions in FUTURE_DEVELOPMENTS.
-- **Evidence-tiered cards — remaining slices:** instrument the other
-  9+recipe producers; corpus tier header (early/developing/established);
-  power-style "what's missing"; BH-FDR later. (Slice 1 shipped: plain
-  sentence + exact math, Wilson/Katz CIs, 7 producers, invariant #9.)
+- **Evidence-tiered cards — PRODUCER SWEEP DONE (PR #204, 2026-06-15):** ALL
+  card-emitting producers now carry the `_trigger` evidence tier — slice 1 did 11,
+  PR #204 added the last 6 (emotion_profile_card, ip_litigation_pulse,
+  ownership_change, law_change, model_legislation, story_lineage). Honesty held: real
+  values only (ip_litigation_pulse = real rate_ratio_interval CI degrading to "—";
+  emotion = guarded frequency share; model_legislation/story_lineage = real avg
+  Jaccard + threshold; ownership_change/law_change = DELIBERATELY descriptive-only
+  real counts/byte-deltas, NEVER an invented CI), no composite scores
+  (CardSchemaError untouched); test_corpus_producers_all_carry_a_trigger sweeps every
+  default producer. REMAINING slices: corpus tier header (early/developing/
+  established); power-style "what's missing"; BH-FDR later.
 - **Trans-language equivalence — LIVE analytics layer (elevated):** rings
   merge inside grouped trends/trending/associations/graph levels
   (fr:élections + en:elections = ONE concept); cross-country recognition via
@@ -1284,6 +1311,34 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
+  subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
+  visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:
+  From/To date inputs + a draggable range bar with two handles, pointer+keyboard
+  + presets 1M·6M·1Y·5Y·All as shortcuts; onChange({from,to}); pure DOM/CSS,
+  deterministic; degrades loudly "not enough data for a time range") and REUSED
+  app-wide per the maintainer's "reuse everywhere" choice: Markets commodities
+  board (#197 — replaces the 5-choice #mkt-scale select; windows on ABSOLUTE
+  [from,to] via filter-only windowPricesRange, full-resolution invariant #16
+  held; default = last year anchored to DATA max never "now"), Insights Explore
+  trend + the keyword/corpus analysis-window Trend sub-tab (#199 — client-side
+  filter on /api/insights/trend, shared _buildTrendScope factory, no fork), and
+  the Search tab (#201 — replaces #f-from/#f-to, feeds the SAME start_date/
+  end_date params, default FULL span so a plain search excludes nothing,
+  openAnalysis repointed off the removed inputs). Strings ×12 (From/To/All/Time
+  range + 1M/6M/1Y/5Y kept as compact universal abbreviations); coverage 100%;
+  node --check + test_ootimescope_range_control/_reused + test_search_timescope +
+  test_ui_invariants green. ALSO this session: TEMPORAL-MAP MENTION LAYER (PR
+  #200) — plots /api/insights/where places on the existing map projection
+  (lon2x/lat2y reused, NOT forked), marker AREA ∝ article spread (raw counts, NO
+  score), OFF by default, null-coordinate places surfaced honestly ("N not
+  mapped"), the "Deduced from text, never confirmed." caveat VISIBLE in legend +
+  marker readout (informed-consent layering); +16 strings ×12 (incl. the toggle
+  label + long hover title, since i18n.js translates title/text by English
+  lookup); test_tmap_mention_layer green. REMAINING for these threads: ooChart
+  rollout to commodity-card enlarge/indices board; the map's mention layer also
+  consuming EVENT-places; calendar-picker + typo-tolerant did-you-mean for date
+  search (the range control is the begin/end half).
 - **AUDIT REMEDIATION PASS (2026-06-15, acts on `docs/audit/AUDIT_LOG_2026-06-14.md`;
   plan + per-finding status in `docs/audit/ACTION_PLAN_2026-06-14.md`; ONE PR onto
   0.09):** every finding re-verified at HEAD first (the audit was pinned at ba61162;
