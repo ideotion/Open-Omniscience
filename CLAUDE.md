@@ -1192,10 +1192,17 @@ ruling, a contingency, or a deliberate-omission note.
   setup, like the planned Ollama installer) + per-source circuit isolation by
   default; treat clearnet-for-Tor-hostile-sources as an explicit consented opt-in.
   Filed with open questions in FUTURE_DEVELOPMENTS.
-- **Evidence-tiered cards — remaining slices:** instrument the other
-  9+recipe producers; corpus tier header (early/developing/established);
-  power-style "what's missing"; BH-FDR later. (Slice 1 shipped: plain
-  sentence + exact math, Wilson/Katz CIs, 7 producers, invariant #9.)
+- **Evidence-tiered cards — PRODUCER SWEEP DONE (PR #204, 2026-06-15):** ALL
+  card-emitting producers now carry the `_trigger` evidence tier — slice 1 did 11,
+  PR #204 added the last 6 (emotion_profile_card, ip_litigation_pulse,
+  ownership_change, law_change, model_legislation, story_lineage). Honesty held: real
+  values only (ip_litigation_pulse = real rate_ratio_interval CI degrading to "—";
+  emotion = guarded frequency share; model_legislation/story_lineage = real avg
+  Jaccard + threshold; ownership_change/law_change = DELIBERATELY descriptive-only
+  real counts/byte-deltas, NEVER an invented CI), no composite scores
+  (CardSchemaError untouched); test_corpus_producers_all_carry_a_trigger sweeps every
+  default producer. REMAINING slices: corpus tier header (early/developing/
+  established); power-style "what's missing"; BH-FDR later.
 - **Trans-language equivalence — LIVE analytics layer (elevated):** rings
   merge inside grouped trends/trending/associations/graph levels
   (fr:élections + en:elections = ONE concept); cross-country recognition via
