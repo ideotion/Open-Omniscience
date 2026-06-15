@@ -1124,6 +1124,37 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUDIT REMEDIATION PASS (2026-06-15, acts on `docs/audit/AUDIT_LOG_2026-06-14.md`;
+  plan + per-finding status in `docs/audit/ACTION_PLAN_2026-06-14.md`; ONE PR onto
+  0.09):** every finding re-verified at HEAD first (the audit was pinned at ba61162;
+  #158 had already closed README count/restore + the ETHICS "becomes functional"
+  line + the ARCHITECTURE Postgres section). SHIPPED+verified (full suite green,
+  mypy 114≤127, bandit clean, i18n 100%×12, node --check): OO-D2-001 robots-redirect
+  SSRF guard (one shared `_guarded_redirect_get`, +2 tests); OO-D3-001/D5-002/D10-001
+  dead-config prune (auto_download + audit_* fields/env/yaml; `Config.get_data_dir`
+  now delegates to `src.paths.data_dir`); OO-D7-001 `upsert_sources` per-row
+  SAVEPOINTs (mid-batch error no longer drops the window); OO-D10-002 invariant test
+  (credibility_score/political_bias never serialised by any API module); docs honesty
+  OO-D14-001/003/004/005/006/007 + D9-001 + D6-001 (ETHICS deps→present tense + real
+  pyproject licenses incl. LGPL/MPL GPLv3-compat; ARCHITECTURE license/restore/API-map/
+  anchor; DESIGN meta-note; models docstring SQLite-only); CI OO-D15-001 i18n `--min
+  100` blocking gate + OO-D15-004 pin pip-audit==2.10.1 + OO-D15-005 generic
+  extra-probe + OO-D15-006 fake-clock cache; a11y OO-D13-001 (aria-modal + focus
+  save/restore + Tab trap for palette & task-manager) + OO-D13-002 (`fam-pick`
+  aria-label; recipe-toggles were already `<label>`-wrapped = false positive) +
+  OO-D12-002 esc() consistency; OO-D3-002 the "stays on this machine" headline is now
+  QUALIFIED ("Your corpus stays on this machine — no cloud, no telemetry; fetching
+  follows your Network mode.") keyed ×12 — **exact wording still open to a maintainer
+  ruling** (resolves the long-standing AWAITS-RULING note as a default, not a veto);
+  audit-07 **B1** disclosure sweep (VADER English-only on the *framing* surface — the
+  one gap; LLM "verify against stored article" label; USER_MANUAL §5.5 "Known limits
+  & honest disclosures"); OO-D8-001 perf_harness now times the named paths (FTS
+  rebuild + search + corpus-window) with a documented 100k profile; OO-D5-001
+  GOVERNANCE states custody-trail is opt-in (one-click enable) — **default-flip is a
+  maintainer call**; OO-D2-003 SSRF TOCTOU residual documented in SECURITY. DEFERRED
+  (raised as PR questions): OO-D12-001+D2-002 the 199-inline-handler→CSP migration
+  (large + browser-unverifiable here), OO-D15-002/003 ruff-blocking + win/mac
+  graduation. New locale strings are AI-drafted (flagged for native review).
 - **QUARANTINE REMOVED TO AN ARCHIVE BRANCH (2026-06-14, maintainer-chosen):** the
   ~79.5k-line `quarantine/` tree (legacy six-pillar trees + fabricated/dead modules,
   never imported, excluded from package/ruff/mypy/coverage) was removed from the

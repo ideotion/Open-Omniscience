@@ -5,6 +5,37 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
 
 ---
 
+## 2026-06-15 · Audit remediation pass (acts on the 2026-06-14 findings)
+
+- **Base commit:** `6b4ff13` (tip of `0.09`; the #158 claim sweep already landed).
+- **Branch:** `claude/great-galileo-l2kfmn` → PR onto `0.09`.
+- **Environment advantage:** unlike the read-only audit, this pass had Python 3.13
+  + all extras + node 22, so every fix was **verified by running** the suite
+  (baseline 1160 passed / 6 skipped green; mypy 114 ≤ 127; bandit clean; i18n 100%
+  ×12). No headless browser — frontend changes are `node --check`'d + test-pinned,
+  not visually verified.
+- **Plan:** [`docs/audit/ACTION_PLAN_2026-06-14.md`](docs/audit/ACTION_PLAN_2026-06-14.md)
+  (every finding → decision → status → resolving commit).
+- **Resolved (verified):** OO-D2-001 (robots-redirect SSRF + tests), OO-D3-001/
+  OO-D5-002/OO-D10-001 (dead-config prune + data-dir divergence), OO-D7-001
+  (savepoint upsert), OO-D10-002 (credibility-column serialization guard test),
+  OO-D9-001/OO-D14-001/-003/-004/-005/-006/-007/OO-D6-001 (docs honesty sweep),
+  OO-D15-001/-004/-005/-006 (i18n CI gate, pin pip-audit, generic extra-probe,
+  fake-clock cache), OO-D13-001/-002/OO-D12-002 (a11y focus + esc()), OO-D3-002
+  (privacy claim qualified ×12) + audit-07 **B1** (VADER framing caveat, LLM verify
+  label, USER_MANUAL disclosures), OO-D8-001 (harness measures the named paths),
+  OO-D5-001 + OO-D2-003 (auditability + SSRF-residual disclosures).
+- **Re-verify corrections:** OO-D14-002 already fixed at HEAD; OO-D13-002
+  recipe-toggles already labelled (only `fam-pick` needed it); audit-07 B1 VADER
+  already disclosed on corpus-sentiment (the *framing* surface was the gap).
+- **Deferred (with reason, raised as questions):** OO-D12-001 + OO-D2-002 (the
+  199-handler→CSP migration — large + browser-unverifiable here), OO-D15-002/-003
+  (ruff-blocking burn-down; win/mac graduation), the actual 100k perf run.
+- **Pointer:** this remediation is one comprehensive PR; the 2026-06-14 log below
+  remains the read-only finding source of truth.
+
+---
+
 ## 2026-06-14 · Comprehensive read-only audit & handoff (0.09 / v0.0.9)
 
 - **Commit:** `ba61162fedd02bd1787c7c15bc957526da2909d7`
