@@ -747,3 +747,26 @@ def test_agenda_view_switch_and_week_view():
     for fn in ("function renderAgendaWeek", "function agEventsOn", "function agPickDate", "function agWeekShift"):
         assert fn in html, f"the Week view requires {fn}()"
     assert "#tab-agenda { max-width:none; }" in html, "the agenda must use the full content width (maximize space)"
+
+
+def test_agenda_category_chips_and_country_flags():
+    """Agenda rework (ledger Item C d/e, 2026-06-15): the Category dropdown became
+    distinct-colored, data-driven chips (extensible — a new catalog category like
+    "religious" appears automatically), and the Country picker shows ISO-2 flag
+    emoji beside the code (the code stays the unambiguous identifier — flags ≠
+    identity).
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="agenda-cat"' not in html, "the Category <select> must be replaced by colored chips"
+    assert 'id="agenda-cats"' in html, "the category chips need their container"
+    for fn in ("function renderAgendaCatChips", "function agSetCat", "function agCatHue", "function agFlag"):
+        assert fn in html, f"category chips / flags require {fn}()"
+    assert "const cat = _agCat," in html, "the category filter must read the chip state (_agCat), not the removed select"
+    assert "AG.categories = fac.categories" in html, "categories must be data-driven from the catalog facets"
+    assert "${agFlag(x)} ${esc(x)}" in html, "country options must show the flag emoji beside the ISO-2 code"
+    assert ".ag-catchip" in html, "the category chips need their styling"
+    # the future "religious" category is pre-keyed so its chip is born translated
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert "religious" in en, "the forthcoming 'religious' category label must be keyed ×12"
