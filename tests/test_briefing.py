@@ -141,6 +141,149 @@ def test_diet_self_audit_uses_concentration(corpus):
 
 
 # --------------------------------------------------------------------------- #
+#  Evidence-tiered cards (invariant #9): every emitted card carries a trigger
+#  with a non-empty plain sentence + >=1 real math row. Slice 1 instrumented
+#  ~8 producers; this asserts the remaining card producers now do too.
+# --------------------------------------------------------------------------- #
+def _assert_valid_trigger(card):
+    """The evidence-tier contract: plain (non-empty str) + >=1 {label,value} row."""
+    assert card.trigger is not None, f"{card.type}: missing 'Why am I seeing this?' trigger"
+    plain = card.trigger.get("plain")
+    assert isinstance(plain, str) and plain.strip(), f"{card.type}: empty plain sentence"
+    rows = card.trigger.get("math")
+    assert isinstance(rows, list) and rows, f"{card.type}: no math rows"
+    for row in rows:
+        assert row.get("label"), f"{card.type}: a math row has no label"
+        # value may be a number-bearing string ("0", "—" only when honestly absent);
+        # the contract is that the row EXISTS and is labelled — values are real.
+        assert "value" in row, f"{card.type}: a math row has no value"
+
+
+def test_corpus_producers_all_carry_a_trigger(corpus):
+    """Every card produced over the live corpus fixture carries a valid trigger.
+
+    Covers the producers that fire on this fixture (rising/diet/framing/echo/
+    lonely/etc.); the law/wiki/lineage producers are covered below with the
+    data they need.
+    """
+    from src.briefing import producers as P
+
+    fired = 0
+    for _name, producer in P._DEFAULT_PRODUCERS:
+        for card in producer(corpus):
+            _assert_valid_trigger(card)
+            fired += 1
+    assert fired, "the corpus fixture should fire at least some cards"
+
+
+@pytest.fixture()
+def law_corpus(monkeypatch, tmp_path):
+    """A corpus carrying tracked legal documents: a flagged revision (law_change)
+    and near-identical text across two jurisdictions (model_legislation)."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src.database.models import LawDocument, LawRevision
+
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    shared_text = (
+        "Section 1. Every operator of a regulated platform shall maintain a public "
+        "register of automated decisions and provide a means of human review on "
+        "request, retaining records for a period of not less than five years."
+    ) * 3
+    for jur, title in (("fr", "Loi sur les plateformes"), ("uk", "Platforms Act")):
+        doc = LawDocument(
+            jurisdiction=jur,
+            title=title,
+            url=f"https://law.test/{jur}",
+            official_url=f"https://law.test/{jur}",
+            category="legislation",
+            watched=True,
+            baseline_text=shared_text,
+            baseline_hash=f"bh-{jur}",
+        )
+        s.add(doc)
+        s.commit()
+        s.add(
+            LawRevision(
+                document_id=doc.id,
+                observed_at=datetime.now(UTC),
+                content_hash=f"ch-{jur}",
+                size=len(shared_text) + 500,
+                delta_bytes=500,
+                flagged=True,
+                flag_reasons="large_change,structure",
+            )
+        )
+        s.commit()
+    return s
+
+
+def test_law_change_carries_a_trigger(law_corpus):
+    from src.briefing.producers import law_change
+
+    cards = law_change(law_corpus)
+    assert cards, "a flagged law revision should produce a law_change card"
+    for c in cards:
+        _assert_valid_trigger(c)
+        # the math is REAL, descriptive (delta bytes + flag count), not invented stats.
+        labels = {r["label"] for r in c.trigger["math"]}
+        assert any("bytes" in lb.lower() for lb in labels)
+
+
+def test_model_legislation_carries_a_trigger(law_corpus):
+    from src.briefing.producers import model_legislation
+
+    cards = model_legislation(law_corpus)
+    assert cards, "near-identical cross-jurisdiction text should fire model_legislation"
+    for c in cards:
+        _assert_valid_trigger(c)
+        # the similarity row is a REAL Jaccard value the near-dup signal computed.
+        labels = {r["label"] for r in c.trigger["math"]}
+        assert any("similarity" in lb.lower() for lb in labels)
+
+
+@pytest.fixture()
+def wiki_corpus(monkeypatch, tmp_path):
+    """A corpus with a flagged Wikipedia revision (record_reshaped)."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src.database.models import WikiPage, WikiRevision
+
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    page = WikiPage(wiki="en", title="Some Event", watched=True)
+    s.add(page)
+    s.commit()
+    s.add(
+        WikiRevision(
+            page_id=page.id,
+            revid=12345,
+            timestamp=datetime.now(UTC),
+            editor_anon=True,
+            delta_bytes=-4200,
+            flagged=True,
+            flag_reasons="large_removal,anon",
+        )
+    )
+    s.commit()
+    return s
+
+
+def test_record_reshaped_carries_a_trigger(wiki_corpus):
+    from src.briefing.producers import record_reshaped
+
+    cards = record_reshaped(wiki_corpus)
+    assert cards, "a flagged wiki revision should fire record_reshaped"
+    for c in cards:
+        _assert_valid_trigger(c)
+
+
+# --------------------------------------------------------------------------- #
 #  Service: precompute → cache → serve; dismiss is reversible
 # --------------------------------------------------------------------------- #
 def test_refresh_then_cached_get(corpus):
