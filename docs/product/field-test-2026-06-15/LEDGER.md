@@ -419,3 +419,69 @@ Item D holds the systemic fix (+ the non-regression gate so this list can't regr
   span that doesn't bisect a sentence, or drop the `<b>`), then key each sentence ×12.
 - **Maps to:** Item D + CLAUDE.md "i18n & LANGUAGE UX" + the "Whole-sentence nodes"
   note (index.html:1041).
+
+---
+
+## Item H — Home "at a glance" stats strip: stale (must be LIVE) + labels are raw snake_case table keys (untranslated)  [ties Item F (live) + Item D (i18n) + a raw-label bug]  ⏭ capture-only
+
+**Verbatim (08:16):** [the strip showing] "0 articles / 0 sources / 0 source_groups /
+0 keywords / 0 commodity_prices / 0 external_sources / 0 article_links / 0
+article_analyses / 0 mentioned_dates / Automatic collection: stopped · everything
+stays on this machine — no cloud, no telemetry". "It is not up to date. It should
+automatically be updated. the ideal is that it should show live information. It
+should be translated in all languages."
+
+**Surface (clarify):** this is the **Home "at a glance" strip** (`.home-glance` panel
+= `#home-stats` + `#home-status`, **index.html:750–754**) — invariant **#19**'s
+compact strip, NOT the chrome top bar (the top bar's vitals moved into the
+task-manager System tab — invariant #4). The maintainer perceives it as a top bar
+because #19 pins it at the very top of Home.
+
+**Where (grounded):**
+- **`#home-stats` render:** `loadHome` **3245–3250** —
+  `entries.map(([k,v]) => "<b>"+v.toLocaleString()+"</b> <span>"+esc(k)+"</span>")`.
+  **`k` is printed raw.**
+- **The keys** come from `/api/database/stats` → `counts`, keyed by `_COUNTED_TABLES`
+  (**database.py:67–77**): articles, sources, source_groups, keywords,
+  commodity_prices, external_sources, article_links, article_analyses,
+  mentioned_dates — **raw snake_case**, designed for the **Database management tab**
+  (database.py:107); the Home strip reuses it verbatim. CSS then **uppercases** them
+  (`.stat-strip .s span text-transform:uppercase`, **index.html:469**) → "SOURCE_GROUPS",
+  "COMMODITY_PRICES".
+- **`#home-status` 3255–3258:** "Automatic collection: {running|stopped} · {privacy
+  line}". "Automatic collection", "running", "stopped" are JS-built strings (the i18n
+  DOM walker can't reach them → need `OOI18N.t()`). (Aside: the maintainer's build
+  shows the OLD "everything stays on this machine" privacy line; HEAD on this branch
+  already reads "Your corpus stays on this machine … fetching follows your Network
+  mode" — the OO-D3-002 qualification. Not a new issue, just a build-lag note.)
+- **Not live:** the strip is painted only by `loadHome` (on Home tab open) — no
+  periodic/auto refresh, no push on collect, so it holds the values from when Home was
+  last opened. **Same root as Item F.**
+- **Fresh-corpus nit:** on an empty corpus every count is 0 **but the keys exist** →
+  `entries.length === 9` (truthy) → the strip shows nine "0 …" chips instead of the
+  friendly "Your library is empty" empty-state (which only fires when `counts` is
+  `{}`). So a brand-new user sees exactly the maintainer's "0 ARTICLES 0 SOURCES 0
+  SOURCE_GROUPS …".
+
+**Maps to:** **Item F** (Home must self-update — the "live information" ask is the
+same mechanism) + **Item D/G** (untranslated chrome — labels + status strings) +
+invariant **#19** (the at-a-glance strip) + invariant **#8** (data, not plumbing).
+
+Sub-parts:
+- **(a) [NEW = Item F mechanism] LIVE stats.** Auto-update `#home-stats` /
+  `#home-status` — push after each collect pass + refresh on Home open + at most an
+  adaptive visible-tab poll (never a blind timer; field-log B). Ideal = counts tick up
+  as rows land. Reuse Item F's Home self-update.
+- **(b) [NEW] Human, translated labels.** Map each raw key → a human label keyed ×12
+  (articles→"Articles", source_groups→"Source groups", commodity_prices→"Commodity
+  prices", external_sources→"External sources", article_links→"Article links",
+  article_analyses→"Article analyses", mentioned_dates→"Mentioned dates"). Do it in the
+  **UI layer** via `OOI18N.t()` (a fixed key→label dict) — do **NOT** rename the server
+  `counts` keys (they're identifiers the Database tab + cache rely on). Key the status
+  strings ("Automatic collection", "running", "stopped") too.
+- **(c) [NEW, minor] Fresh-corpus display.** Show the friendly empty-state when every
+  count is 0, instead of nine "0" chips (today it never does because the keys exist).
+
+**⏭ Open questions (compile):** live cadence/trigger (shared with Item F);
+empty-state-on-all-zeros yes/no; keep raw keys in the Database management tab (fine
+there) while Home gets human labels (recommended split).
