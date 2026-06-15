@@ -717,5 +717,17 @@
   "Export this analysis:": "Экспортировать этот анализ:",
   "Export signed evidence": "Экспорт подписанных доказательств",
   "Signed, reproducible record of the query + method behind this analysis": "Подписанная воспроизводимая запись запроса и метода этого анализа",
-  "Signed, tamper-evident bundle of the analysed articles": "Подписанный защищённый от подделки пакет проанализированных статей"
+  "Signed, tamper-evident bundle of the analysed articles": "Подписанный защищённый от подделки пакет проанализированных статей",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "Сколько стран охватывает каталог источников (по стране каждого источника, сверенной с ISO 3166). Измеряется по данным; обновляется в реальном времени.",
+  "No tracked changes yet — “Track changes now”.": "Пока нет отслеживаемых изменений — «Отслеживать изменения сейчас».",
+  "Click “Scan for coordination”.": "Нажмите «Сканировать на координацию».",
+  "No imported authors yet.": "Пока нет импортированных авторов.",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "Регион — это страна/город источника (надёжный сигнал на основе источника). Графическая масштабируемая карта с метками городов — следующий шаг (требуется справочник координат).",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "Согласованный снимок всего корпуса, сделанный в реальном времени через API онлайн-резервного копирования SQLite.",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "Загрузка этична: robots.txt соблюдается (запрет по умолчанию) и с ограничением частоты.",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "Найдено офлайн каналами цитирования и каталога в пределах бюджета вашего планировщика. Каждая строка показывает свои доказательства.",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "Безвозвратно удаляет корпус, ключи и кэши на этой машине, после чего приложение нужно перезапустить.",
+  "This cannot be undone.": "Это нельзя отменить.",
+  "API reference (Swagger) ↗": "Справочник API (Swagger) ↗",
+  "Pick a document on the left.": "Выберите документ слева."
 }

@@ -717,5 +717,17 @@
   "Export this analysis:": "تصدير هذا التحليل:",
   "Export signed evidence": "تصدير أدلة موقَّعة",
   "Signed, reproducible record of the query + method behind this analysis": "سجل موقَّع وقابل لإعادة الإنتاج للاستعلام والمنهجية وراء هذا التحليل",
-  "Signed, tamper-evident bundle of the analysed articles": "حزمة موقَّعة وكاشفة للعبث من المقالات التي جرى تحليلها"
+  "Signed, tamper-evident bundle of the analysed articles": "حزمة موقَّعة وكاشفة للعبث من المقالات التي جرى تحليلها",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "عدد الدول التي يصل إليها كتالوج المصادر (حسب بلد كل مصدر، مُقيَّمًا وفق ISO 3166). مقيس من البيانات؛ يتحدّث مباشرةً.",
+  "No tracked changes yet — “Track changes now”.": "لا توجد تغييرات مُتتبَّعة بعد — «تتبَّع التغييرات الآن».",
+  "Click “Scan for coordination”.": "انقر «امسح بحثًا عن التنسيق».",
+  "No imported authors yet.": "لا يوجد مؤلفون مستوردون بعد.",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "المنطقة هي بلد/مدينة المصدر (الإشارة الموثوقة المستندة إلى المصدر). الخطوة التالية هي خريطة رسومية قابلة للتكبير مع دبابيس للمدن (تتطلّب دليل إحداثيات).",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "لقطة متّسقة للمجموعة بأكملها، مأخوذة مباشرةً عبر واجهة النسخ الاحتياطي عبر الإنترنت في SQLite.",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "الجلب أخلاقي: يُحترم robots.txt (الرفض الافتراضي) ومع تقييد المعدّل.",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "وُجد دون اتصال عبر قناتي الاستشهاد والكتالوج ضمن ميزانية مجدولك. كل صف يعرض دليله.",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "يحذف المجموعة والمفاتيح والذواكر المؤقتة على هذا الجهاز نهائيًّا، ثم يجب إعادة تشغيل التطبيق.",
+  "This cannot be undone.": "لا يمكن التراجع عن ذلك.",
+  "API reference (Swagger) ↗": "مرجع الواجهة البرمجية (Swagger) ↗",
+  "Pick a document on the left.": "اختر مستندًا على اليسار."
 }

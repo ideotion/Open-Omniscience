@@ -717,5 +717,17 @@
   "Export this analysis:": "Ekspor analisis ini:",
   "Export signed evidence": "Ekspor bukti bertanda tangan",
   "Signed, reproducible record of the query + method behind this analysis": "Catatan bertanda tangan dan dapat direproduksi atas kueri + metode di balik analisis ini",
-  "Signed, tamper-evident bundle of the analysed articles": "Paket bertanda tangan dan antirusak dari artikel yang dianalisis"
+  "Signed, tamper-evident bundle of the analysed articles": "Paket bertanda tangan dan antirusak dari artikel yang dianalisis",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "Berapa banyak negara yang dijangkau katalog sumber (berdasarkan negara tiap sumber, dinilai terhadap ISO 3166). Diukur dari data; diperbarui secara langsung.",
+  "No tracked changes yet — “Track changes now”.": "Belum ada perubahan yang dilacak — “Lacak perubahan sekarang”.",
+  "Click “Scan for coordination”.": "Klik “Pindai koordinasi”.",
+  "No imported authors yet.": "Belum ada penulis yang diimpor.",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "Wilayah adalah negara/kota sumber (sinyal andal berbasis sumber). Peta grafis yang dapat diperbesar dengan penanda kota adalah langkah berikutnya (memerlukan gazetir koordinat).",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "Snapshot konsisten dari seluruh korpus, diambil secara langsung melalui API pencadangan daring SQLite.",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "Pengambilan bersifat etis: robots.txt dihormati (fail-closed) dan dibatasi lajunya.",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "Ditemukan luring oleh saluran kutipan dan katalog dalam anggaran penjadwal Anda. Setiap baris menampilkan buktinya.",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "Menghapus korpus, kunci, dan cache di mesin ini secara permanen, lalu aplikasi harus dimulai ulang.",
+  "This cannot be undone.": "Tindakan ini tidak dapat dibatalkan.",
+  "API reference (Swagger) ↗": "Referensi API (Swagger) ↗",
+  "Pick a document on the left.": "Pilih dokumen di sebelah kiri."
 }

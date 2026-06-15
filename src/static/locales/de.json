@@ -717,5 +717,17 @@
   "Export this analysis:": "Diese Analyse exportieren:",
   "Export signed evidence": "Signierte Belege exportieren",
   "Signed, reproducible record of the query + method behind this analysis": "Signierte, reproduzierbare Aufzeichnung der Abfrage und Methode hinter dieser Analyse",
-  "Signed, tamper-evident bundle of the analysed articles": "Signiertes, manipulationssicheres Bündel der analysierten Artikel"
+  "Signed, tamper-evident bundle of the analysed articles": "Signiertes, manipulationssicheres Bündel der analysierten Artikel",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "Wie viele Länder der Quellenkatalog erreicht (nach dem Land jeder Quelle, bewertet gegen ISO 3166). Aus den Daten gemessen; aktualisiert live.",
+  "No tracked changes yet — “Track changes now”.": "Noch keine verfolgten Änderungen — „Änderungen jetzt verfolgen“.",
+  "Click “Scan for coordination”.": "Klicken Sie auf „Nach Koordination suchen“.",
+  "No imported authors yet.": "Noch keine importierten Autoren.",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "Die Region ist das Land/die Stadt der Quelle (das zuverlässige quellenbasierte Signal). Eine grafische, zoombare Karte mit Stadtmarkierungen ist der nächste Schritt (benötigt ein Koordinaten-Verzeichnis).",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "Ein konsistenter Schnappschuss des gesamten Korpus, live aufgenommen über die Online-Backup-API von SQLite.",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "Das Abrufen ist ethisch: robots.txt wird respektiert (Fail-Closed) und mit Ratenbegrenzung.",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "Offline durch die Zitations- und Katalogkanäle innerhalb des Budgets Ihres Zeitplaners gefunden. Jede Zeile zeigt ihre Belege.",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "Löscht unwiderruflich den Korpus, die Schlüssel und die Caches auf diesem Gerät; danach muss die App neu gestartet werden.",
+  "This cannot be undone.": "Dies kann nicht rückgängig gemacht werden.",
+  "API reference (Swagger) ↗": "API-Referenz (Swagger) ↗",
+  "Pick a document on the left.": "Wählen Sie links ein Dokument."
 }

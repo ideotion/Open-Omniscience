@@ -717,5 +717,17 @@
   "Export this analysis:": "Export this analysis:",
   "Export signed evidence": "Export signed evidence",
   "Signed, reproducible record of the query + method behind this analysis": "Signed, reproducible record of the query + method behind this analysis",
-  "Signed, tamper-evident bundle of the analysed articles": "Signed, tamper-evident bundle of the analysed articles"
+  "Signed, tamper-evident bundle of the analysed articles": "Signed, tamper-evident bundle of the analysed articles",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.",
+  "No tracked changes yet — “Track changes now”.": "No tracked changes yet — “Track changes now”.",
+  "Click “Scan for coordination”.": "Click “Scan for coordination”.",
+  "No imported authors yet.": "No imported authors yet.",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.",
+  "This cannot be undone.": "This cannot be undone.",
+  "API reference (Swagger) ↗": "API reference (Swagger) ↗",
+  "Pick a document on the left.": "Pick a document on the left."
 }
