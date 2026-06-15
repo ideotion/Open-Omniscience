@@ -939,3 +939,17 @@ def test_omnibar_enter_opens_analysis_window():
     i_search_item = html.index('showTab("search"); setTimeout(() => { $("q").value = raw; doSearch()')
     i_analysis_item = html.index("run: () => openAnalysisFor(raw)")
     assert i_search_item < i_analysis_item, "Analysis must be unshifted after Search (=> index 0, default Enter)"
+
+
+def test_cjk_keyword_disclosure():
+    """Audit-07 B1: keyword extraction does not segment CJK, so CJK keyword
+    aggregates are unreliable — the analysis window discloses this VISIBLY (with a
+    hover long-form) exactly when CJK terms are present, never hidden."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "CJK not segmented" in html, "the CJK caveat marker must be present"
+    assert "/[぀-ヿ㐀-䶿一-鿿가-힯]/.test(tm.term)" in html, "the caveat must trigger on detected CJK terms"
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert "CJK not segmented — unreliable" in en
+    # the long-form (hover bubble) is keyed too (informed-consent-by-layering)
+    assert any(k.startswith("Keyword extraction splits on spaces") for k in en), "long-form must be keyed"

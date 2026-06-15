@@ -729,5 +729,7 @@
   "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "Menghapus korpus, kunci, dan cache di mesin ini secara permanen, lalu aplikasi harus dimulai ulang.",
   "This cannot be undone.": "Tindakan ini tidak dapat dibatalkan.",
   "API reference (Swagger) ↗": "Referensi API (Swagger) ↗",
-  "Pick a document on the left.": "Pilih dokumen di sebelah kiri."
+  "Pick a document on the left.": "Pilih dokumen di sebelah kiri.",
+  "CJK not segmented — unreliable": "CJK tidak disegmentasi — tidak andal",
+  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "Ekstraksi kata kunci memisahkan berdasarkan spasi dan tanda baca; ia TIDAK menyegmentasi bahasa Tionghoa, Jepang, atau Korea, sehingga agregat kata kunci CJK yang ditampilkan di sini tidak andal."
 }

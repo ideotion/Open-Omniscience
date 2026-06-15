@@ -729,5 +729,7 @@
   "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "このマシン上のコーパス、鍵、キャッシュを取り消し不能で削除し、その後アプリを再起動する必要があります。",
   "This cannot be undone.": "これは元に戻せません。",
   "API reference (Swagger) ↗": "API リファレンス（Swagger）↗",
-  "Pick a document on the left.": "左側のドキュメントを選択してください。"
+  "Pick a document on the left.": "左側のドキュメントを選択してください。",
+  "CJK not segmented — unreliable": "CJK は分かち書きなし — 信頼できません",
+  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "キーワード抽出は空白と句読点で区切ります。中国語・日本語・韓国語の分かち書きは行わないため、ここに表示される CJK キーワードの集計は信頼できません。"
 }

@@ -7655,8 +7655,13 @@
             `<button class="chip" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
             + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(term.term)}`
             + ` <span class="muted">${term.articles}</span></button>`).join(" ");
+          // Audit-07 B1 disclosure: our extractor splits on spaces/punctuation and does
+          // NOT segment CJK, so CJK keywords are unreliable. Surface it exactly when CJK
+          // terms are present (visible by default + the long form in the hover bubble).
+          const cjk = d.terms.some((tm) => /[぀-ヿ㐀-䶿一-鿿가-힯]/.test(tm.term));
+          const cjkNote = cjk ? ` · <span class="note err" title="${esc(t("Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable."))}">${esc(t("CJK not segmented — unreliable"))}</span>` : "";
           kw.innerHTML = `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
-            + ` · <span class="muted">${esc(d.caveat || "")}</span></div>`
+            + ` · <span class="muted">${esc(d.caveat || "")}</span>${cjkNote}</div>`
             + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`;
         }
       } catch (e) { kw.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
