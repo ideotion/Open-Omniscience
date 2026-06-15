@@ -290,7 +290,7 @@ def test_ui_invariants():
     )
     assert 'id="agenda-feeds"' in html, "the calendar directory must still exist (in Settings)"
     assert 'id="set-agenda"' in html, "Settings must host the Agenda configuration section"
-    assert 'id="agenda-month"' in agenda_tab and 'id="agenda-view"' in agenda_tab, (
+    assert 'id="agenda-month"' in agenda_tab and 'id="agenda-views"' in agenda_tab, (
         "the agenda month grid + view switcher must exist in the tab"
     )
     assert 'return localStorage.getItem("oo.agenda.view") || "month"' in html, (
@@ -724,3 +724,26 @@ def test_dropdown_option_labels_are_translatable():
         "translatable <option> without an explicit value= (the i18n text rewrite "
         "would corrupt the submitted value — add value=): " + ", ".join(no_value)
     )
+
+
+def test_agenda_view_switch_and_week_view():
+    """Agenda rework (ledger Item C, 2026-06-15): the Month/List dropdown became a
+    uniform subtab switch (the ooSubtabs grammar — invariant #18 / Item J) with a
+    new WEEK (7-day) view; the agenda uses the full content width.
+
+    Guards the shape so it can't silently regress: the old <select id="agenda-view">
+    is gone, replaced by a <nav id="agenda-views"> with month/week/list data-tab
+    buttons wired through ooSubtabs; the Week renderer + its date helpers + the
+    full-width rule all exist.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="agenda-view"' not in html, "the Month/List <select> must be replaced by the subtab switch"
+    assert 'id="agenda-views"' in html, "the view switch must be a <nav id='agenda-views'>"
+    for view in ("month", "week", "list"):
+        assert f'data-tab="{view}"' in html, f"the view switch must offer the {view} view"
+    assert 'ooSubtabs($("agenda-views")' in html, "the view switch must use the universal ooSubtabs component (Item J)"
+    assert 'id="agenda-week"' in html, "the Week view needs its render container"
+    for fn in ("function renderAgendaWeek", "function agEventsOn", "function agPickDate", "function agWeekShift"):
+        assert fn in html, f"the Week view requires {fn}()"
+    assert "#tab-agenda { max-width:none; }" in html, "the agenda must use the full content width (maximize space)"

@@ -322,7 +322,17 @@
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .ag-chip.approx { background:color-mix(in srgb, var(--warn, orange) 14%, transparent); }
     .ag-more { font-size:10px; color:var(--muted); }
+    /* The Agenda uses the full content width — the calendar wants the room. */
+    #tab-agenda { max-width:none; }
+    .ag-views { gap:0; }                              /* Month · Week · List segmented switch */
+    /* Week view: 7 taller day columns, weekday+date header, room for more events. */
+    #agenda-week .ag-grid { grid-auto-rows:1fr; }
+    #agenda-week .ag-cell { min-height:150px; }
+    #agenda-week .ag-wd { text-align:start; padding-inline-start:5px; font-weight:600; }
+    #agenda-week .ag-wd .ag-wd-d { color:var(--fg); }
+    #agenda-week .ag-chip { display:block; white-space:normal; }
     @media (max-width:900px) { .ag-cell { min-height:54px; } .ag-chip { display:none; }
+      #agenda-week .ag-cell { min-height:64px; } #agenda-week .ag-chip { display:block; }
       .ag-cell.has::after { content:"•"; color:var(--accent); font-size:14px; line-height:.6; } }
     .ag-cal { font-size:12px; padding:3px 10px; border:1px solid var(--border); border-radius:999px;
       background:var(--panel); color:var(--muted); cursor:pointer; opacity:.6; }
@@ -1044,8 +1054,11 @@
         <span>Summit/meeting dates move each year — follow the official source for the exact date.</span>
         <span>Nothing here is fabricated.</span></p>
       <div class="row" style="margin-top:6px">
-        <div><label for="agenda-view">View</label><select id="agenda-view" onchange="agendaSetView(this.value)">
-          <option value="month">Month</option><option value="list">List</option></select></div>
+        <div><label>View</label>
+          <nav class="tabs ag-views" id="agenda-views" style="position:static;padding:0;border:0;margin:0">
+            <button class="active" data-tab="month">Month</button>
+            <button data-tab="week">Week</button>
+            <button data-tab="list">List</button></nav></div>
         <div><label for="agenda-cat">Category</label><select id="agenda-cat" onchange="renderAgenda()">
           <option value="">all</option><option value="civic">civic</option><option value="political">political</option>
           <option value="economic">economic</option><option value="technology">technology</option></select></div>
@@ -1058,13 +1071,14 @@
         <div class="hint" style="align-self:end"><a href="#settings" onclick="showTab('settings');(_setSubtabs||{select:showSetCat}).select('agenda');return false">Manage calendars &amp; sources in Settings → Agenda.</a></div>
       </div>
       <div id="agenda-monthbar" class="row" style="margin-top:10px;align-items:center;gap:8px;flex-wrap:nowrap">
-        <button class="secondary" onclick="agMonthShift(-1)" title="previous month" style="min-width:34px">‹</button>
+        <button class="secondary" onclick="agNavShift(-1)" title="previous" style="min-width:34px">‹</button>
         <b id="agenda-monthlabel" style="min-width:170px;text-align:center;font-size:14px"></b>
-        <button class="secondary" onclick="agMonthShift(1)" title="next month" style="min-width:34px">›</button>
-        <button class="secondary" onclick="agMonthToday()">Today</button>
+        <button class="secondary" onclick="agNavShift(1)" title="next" style="min-width:34px">›</button>
+        <button class="secondary" onclick="agNavToday()">Today</button>
         <span id="agenda-monthhint" class="hint"></span>
       </div>
       <div id="agenda-month" style="margin-top:10px"></div>
+      <div id="agenda-week" style="margin-top:10px"></div>
       <div id="agenda-day"></div>
       <div id="agenda-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
     </section>
@@ -3811,6 +3825,7 @@
         if (localStorage.getItem("oo.agenda.subs") == null) agSaveSubs(new Set(fac.calendars.map(c => c.key)));
         $("agenda-country").innerHTML = '<option value="">all</option>' + fac.countries.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
         $("agenda-tag").innerHTML = '<option value="">all</option>' + fac.tags.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+        if (!_agViewTabs) _agViewTabs = ooSubtabs($("agenda-views"), agendaSetView);
         renderAgenda();
       } catch (e) { box.innerHTML = `<div class="muted">Could not load agenda: ${esc(e.message)}</div>`; }
       loadFeedDir();   // the bundled directory (no network: it reads the catalog)
@@ -3925,15 +3940,30 @@
     // The tab shows DATA only (maintainer principle 2026-06-11): calendar
     // subscriptions and the feed directory live in Settings -> Agenda.
     function agView() { return localStorage.getItem("oo.agenda.view") || "month"; }
-    function agendaSetView(v) { localStorage.setItem("oo.agenda.view", v); renderAgenda(); }
-    const AGV = { y: null, m: null, day: null };   // displayed month (m = 1-12)
+    function agendaSetView(v) { localStorage.setItem("oo.agenda.view", v); if (_agViewTabs) _agViewTabs.paint(v); renderAgenda(); }
+    let _agViewTabs = null;                          // the Month·Week·List ooSubtabs handle
+    const AGV = { y: null, m: null, day: null };   // displayed month (m = 1-12) + picked day
     function agLocale() { return document.documentElement.lang || "en"; }
+    // The concrete anchor date the views pivot on (picked day, else 1st of the
+    // displayed month, else today) — drives the Week window.
+    function agAnchorDate() {
+      if (AGV.y == null) return new Date();
+      return new Date(AGV.y, AGV.m - 1, AGV.day || 1);
+    }
+    function agPickDate(y, m, d) { AGV.y = y; AGV.m = m; AGV.day = d; renderAgenda(); }
     function agMonthShift(d) {
       let m = AGV.m + d, y = AGV.y;
       if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
       AGV.y = y; AGV.m = m; AGV.day = null; renderAgenda();
     }
-    function agMonthToday() {
+    function agWeekShift(d) {
+      const a = agAnchorDate(); a.setDate(a.getDate() + d * 7);
+      AGV.y = a.getFullYear(); AGV.m = a.getMonth() + 1; AGV.day = a.getDate(); renderAgenda();
+    }
+    // The nav bar (‹ · label · › · Today) is shared by Month and Week — dispatch
+    // by the active view so one bar serves both.
+    function agNavShift(d) { agView() === "week" ? agWeekShift(d) : agMonthShift(d); }
+    function agNavToday() {
       const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1;
       AGV.day = t.getDate(); renderAgenda();
     }
@@ -4016,20 +4046,85 @@
           byDay[AGV.day].map(agRow).join("");
       } else dayBox.innerHTML = "";
     }
+    // Events falling on ONE concrete date: annual rules (month+day, any year) +
+    // dated instances (next_occurrence === that ISO date). Shared by the Week view.
+    function agEventsOn(rows, dt) {
+      const y = dt.getFullYear(), m = dt.getMonth() + 1, d = dt.getDate();
+      const iso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const out = [];
+      for (const e of rows) {
+        if (e.month === m && e.day === d) out.push(e);
+        else if (e.next_occurrence === iso && !out.includes(e)) out.push(e);
+      }
+      return out;
+    }
+    // WEEK view (ruled 2026-06-15, Item C): the Monday-start 7-day window around
+    // the anchor date — taller day columns with more events, the same honest chips
+    // + moon glyphs as the month grid; click a day for its detail below.
+    function renderAgendaWeek(rows) {
+      const box = $("agenda-week"), dayBox = $("agenda-day"), loc = agLocale();
+      const anchor = agAnchorDate();
+      const monday = new Date(anchor); monday.setDate(anchor.getDate() - ((anchor.getDay() + 6) % 7));
+      const days = [...Array(7)].map((_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return d; });
+      const sunday = days[6];
+      $("agenda-monthlabel").textContent =
+        new Intl.DateTimeFormat(loc, { month: "short", day: "numeric" }).format(monday) + " – " +
+        new Intl.DateTimeFormat(loc, { month: "short", day: "numeric", year: "numeric" }).format(sunday);
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const now = new Date();
+      const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+      const monthsInWeek = new Set(days.map(d => d.getMonth() + 1));
+      let html = `<div class="ag-grid">` + days.map(d => {
+        const evs = agEventsOn(rows, d);
+        const isToday = same(d, now);
+        const isSel = AGV.day === d.getDate() && AGV.m === d.getMonth() + 1 && AGV.y === d.getFullYear();
+        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const moon = _astroByDate[iso];
+        const moonHtml = moon
+          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc((moon.kind === "full" ? t9("Full moon") : t9("New moon")) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
+          : "";
+        const wd = new Intl.DateTimeFormat(loc, { weekday: "short" }).format(d);
+        const dn = new Intl.DateTimeFormat(loc, { day: "numeric", month: "short" }).format(d);
+        const chips = evs.slice(0, 6).map(e =>
+          `<span class="ag-chip${e.confirmed ? "" : " approx"}" title="${esc(e.title)}${e.confirmed ? "" : " — exact date moves; check the official source"}">${esc(e.title.length > 30 ? e.title.slice(0, 29) + "…" : e.title)}</span>`).join("");
+        const more = evs.length > 6 ? `<span class="ag-more">+${evs.length - 6}</span>` : "";
+        return `<div class="ag-cell${isToday ? " today" : ""}${evs.length ? " has" : ""}${isSel ? " sel" : ""}" onclick="agPickDate(${d.getFullYear()},${d.getMonth() + 1},${d.getDate()})">
+          <div class="ag-wd">${esc(wd)} <span class="ag-wd-d">${esc(dn)}</span>${moonHtml}</div>${chips}${more}</div>`;
+      }).join("") + `</div>`;
+      const monthOnly = rows.filter(e => e.month && !e.day && !e.next_occurrence && monthsInWeek.has(e.month));
+      if (monthOnly.length)
+        html += `<div class="hint" style="margin-top:8px"><span>${esc(t9("This week — no fixed day:"))}</span> ` +
+          monthOnly.map(e => `<span class="ag-tag" title="${esc(e.title)}">${esc(e.title)}</span>`).join(" ") + `</div>`;
+      box.innerHTML = html;
+      const picked = AGV.day ? new Date(AGV.y, AGV.m - 1, AGV.day) : null;
+      if (picked && picked >= days[0] && picked <= sunday) {
+        const evs = agEventsOn(rows, picked);
+        if (evs.length) {
+          const label = new Intl.DateTimeFormat(loc, { dateStyle: "full" }).format(picked);
+          dayBox.innerHTML = `<h3 style="font-size:13px;margin:12px 0 6px">${esc(label)}</h3>` + evs.map(agRow).join("");
+        } else dayBox.innerHTML = "";
+      } else dayBox.innerHTML = "";
+    }
     function renderAgenda() {
       renderAgendaCals();
       const view = agView();
-      $("agenda-view").value = view;
-      $("agenda-monthbar").style.display = view === "month" ? "" : "none";
-      $("agenda-month").style.display = view === "month" ? "" : "none";
-      $("agenda-day").style.display = view === "month" ? "" : "none";
-      $("agenda-list").style.display = view === "month" ? "none" : "";
-      $("agenda-group-wrap").style.display = view === "month" ? "none" : "";
+      if (_agViewTabs) _agViewTabs.paint(view);
+      const isMonth = view === "month", isWeek = view === "week", isList = view === "list";
+      $("agenda-monthbar").style.display = (isMonth || isWeek) ? "" : "none";
+      $("agenda-month").style.display = isMonth ? "" : "none";
+      $("agenda-week").style.display = isWeek ? "" : "none";
+      $("agenda-day").style.display = (isMonth || isWeek) ? "" : "none";
+      $("agenda-list").style.display = isList ? "" : "none";
+      $("agenda-group-wrap").style.display = isList ? "" : "none";
       const rows = agFiltered();
       $("agenda-monthhint").textContent = AG.caveat || "";
-      if (view === "month") {
+      if (isMonth) {
         if (AGV.y == null) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
         _ensureAstro(AGV.y).then(() => renderAgendaMonth(rows));
+        return;
+      }
+      if (isWeek) {
+        _ensureAstro(agAnchorDate().getFullYear()).then(() => renderAgendaWeek(rows));
         return;
       }
       const box = $("agenda-list");
