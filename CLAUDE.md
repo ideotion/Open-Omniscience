@@ -804,7 +804,24 @@ ruling, a contingency, or a deliberate-omission note.
   **LINKS sub-tab (ruled 2026-06-12; SUBSTRATE + WINDOW SLICE 1 SHIPPED T10
   same day: /api/links/shared with the independence notes per shared URL +
   the corpus window — keyword-click entry via the ⊞ Corpus button — with
-  Trend (ooChart)/Articles/Links sub-tabs; **FULL SUB-TAB SET NOW COMPLETE
+  Trend (ooChart)/Articles/Links sub-tabs;
+  **⚠️ KNOWN DEBT — TWO PARALLEL ANALYSIS WINDOWS (found 2026-06-15 doc audit;
+  maintainer ruled "leave it for now" = record as debt, consolidate later):**
+  the project has DIVERGED from the "ONE corpora system, one window" ruling into
+  TWO overlapping windows — (1) `#an` the search/Enter "analyze" tab (Item I, the
+  UI_SHELL §5 flagship: Keywords·Mindmap·Articles·When/Where/Who·Links·Sentiment·
+  Sources·Advanced·Source-competitive; absorbed the retired Search tab incl.
+  Synthesize/export/signed-evidence; reached from omnibar Enter + commodity ⊞/
+  Analyse via openAnalysisFor), and (2) `#corpus-win` the T10 keyword MODAL
+  (openCorpus, reached from ⊞ Corpus chips) whose sub-tab set was built out in
+  PRs #214-218 (Trend·Articles·Links·Mindmap·Sentiment·Keywords·Sources·
+  Competitive) — DUPLICATING five sub-tabs the #an window already had. Cause: long
+  session + context summarization lost track of the Item I window. CONSOLIDATION
+  DEFERRED by maintainer; when resumed, the recommended target is the #an flagship
+  (route openCorpus → #an, port #corpus's Trend + Competitive over, retire the
+  modal). Until then BOTH exist and work; do NOT build new sub-tabs on either
+  without first deciding the canonical window.** **EARLIER NOTE: full sub-tab set complete
+  on the #corpus modal (PRs #214-218):
   (PRs #214-218, 2026-06-15): Mindmap (reuses renderGraph via a relocatable
   #mm-kit, null-guarded return), Sentiment (reuses /api/framing, VADER
   English-only B1 disclosure), Keywords (ranked table from /api/insights/
