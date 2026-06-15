@@ -1304,7 +1304,12 @@
       <div id="ins-trend" style="margin-top:12px"></div>
       <h2 style="margin:14px 0 6px;font-size:13px">Associated keywords (mind-map)</h2>
       <!-- Layered zoom (maintainer-ruled): keyword + relatives-of-relatives →
-           families → super-groups. Buttons switch; zooming far out goes up a level. -->
+           families → super-groups. Buttons switch; zooming far out goes up a level.
+           The control-bar + host are wrapped in #mm-kit so the corpus-window
+           Mindmap sub-tab can RELOCATE the exact same component (no fork, no
+           duplicate IDs) and return it here on leave (#mm-kit-home anchor). -->
+      <div id="mm-kit-home"></div>
+      <div id="mm-kit">
       <div class="row" style="gap:8px;align-items:end;margin-bottom:6px">
         <div class="seg-toggle" id="mm-levels">
           <button class="active" data-level="keyword" onclick="mmLevel('keyword')">Keywords</button>
@@ -1326,6 +1331,7 @@
         <div style="flex:0 0 auto"><button class="secondary tiny" id="mm-expand" onclick="mmExpand()" title="Enlarge the chart">⛶ Enlarge</button></div>
       </div>
       <div id="ins-mindmap"></div>
+      </div><!-- /#mm-kit -->
       <h2 style="margin:14px 0 6px;font-size:13px">How outlets frame this <span class="muted">(VADER tone)</span></h2>
       <div id="ins-framing"></div>
       <h2 style="margin:14px 0 6px;font-size:13px">In context</h2>
@@ -2207,8 +2213,18 @@
     <nav class="tabs" id="corpus-subtabs" style="padding:8px 16px;border-bottom:1px solid var(--line)">
       <button class="active" data-tab="trend">Trend</button>
       <button data-tab="articles">Articles</button>
+      <button data-tab="keywords"
+        title="The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.">Keywords</button>
+      <button data-tab="mindmap"
+        title="Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.">Mindmap</button>
       <button data-tab="links"
         title="Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.">Links</button>
+      <button data-tab="sentiment"
+        title="How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.">Sentiment</button>
+      <button data-tab="sources"
+        title="Which sources feed this corpus — the distinct outlets behind the member articles, with their per-corpus article count and the catalog metadata they assert (domain, country, region, language, tags). Counts are exact; the country/region/language/tags are stated by the source catalog (not deduced from text). No score, no ranking — descriptive provenance, not credibility.">Sources</button>
+      <button data-tab="competitive"
+        title="How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.">Competitive</button>
     </nav>
     <div id="corpus-body" style="padding:12px 16px;max-height:64vh;overflow:auto"></div>
   </dialog>
@@ -7220,10 +7236,20 @@
       document.getElementById("corpus-win").showModal();
       (_corpusSubtabs || {select: corpusTab}).select(_corpusTab);
     }
+    // Return the relocatable mind-map kit (#mm-kit) to its Insights home anchor.
+    // Called BEFORE any corpus tab overwrites #corpus-body, so the shared
+    // component (its DOM + live SVG/pan-zoom handlers) is never destroyed.
+    function _mmKitHome() {
+      const kit = $("mm-kit"), home = $("mm-kit-home");
+      if (kit && home && kit.parentNode !== home.parentNode) {
+        home.parentNode.insertBefore(kit, home.nextSibling);
+      }
+    }
     async function corpusTab(which) {
       _corpusTab = which;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       // Button/ARIA state is owned by the ooSubtabs component.
+      _mmKitHome();   // restore the shared mind-map kit before clearing the body
       const el = $("corpus-body"); el.innerHTML = `<div class="muted">…</div>`;
       try {
         if (which === "trend") {
@@ -7250,6 +7276,19 @@
                  ${m.article_id ? `· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a>` : ""}</div>
                <div style="font-size:13px">${esc(m.snippet || m.title || "")}</div></div>`).join("")
             : `<div class="muted">${esc(t("No indexed mentions yet."))}</div>`;
+        } else if (which === "mindmap") {
+          // Reuse the EXACT Insights associations mind-map (renderMindmap →
+          // renderGraph): same radial renderer, same in-map controls
+          // (levels / cloud / period / text-size / enlarge). We RELOCATE the
+          // shared #mm-kit into this pane (no fork, no duplicate IDs), then
+          // point it at THIS window's corpus term. The mind-map's own Period
+          // control honours the date window (the corpus Trend's ooTimeScope is
+          // a client-side filter on a different series, so we don't pretend to
+          // couple them — the mind-map carries its own honest window control).
+          el.innerHTML = `<div id="corpus-mm-host"></div>`;
+          const kit = $("mm-kit");
+          if (kit) $("corpus-mm-host").appendChild(kit);
+          await renderMindmap(_corpusTerm);
         } else if (which === "links") {
           const d = await api(`/api/links/shared?term=${encodeURIComponent(_corpusTerm)}`);
           const rows = d.shared || [];
@@ -7261,8 +7300,300 @@
                  <div class="muted" style="font-size:12px">${esc(t("citing sources:"))} ${r.citing_sources} — ${esc(r.note)}</div>
                </div>`).join("")
              : `<div class="muted">${esc(t("No outbound link is shared by more than one member article."))}</div>`);
+        } else if (which === "sentiment") {
+          // Reuse the EXACT Insights framing renderer (loadFraming → /api/framing)
+          // by CALLING it into a fresh host — no DOM relocation, Insights untouched.
+          // The endpoint is keyed on the FTS query, so we point it at _corpusTerm.
+          // Its d.caveat carries the English-only VADER disclosure (audit B1),
+          // rendered VISIBLY by loadFraming (the same keyed disclosure the
+          // Insights framing surface shows). /api/framing takes no date params,
+          // so this is honest full-corpus — we do NOT fake a time-scope window.
+          el.innerHTML = `<h2 style="margin:2px 0 6px;font-size:13px">${esc(t("How outlets frame this"))} <span class="muted">${esc(t("(VADER tone)"))}</span></h2>
+            <div id="corpus-sentiment-host"></div>`;
+          await loadFraming(_corpusTerm, "corpus-sentiment-host");
+        } else if (which === "keywords") {
+          // Reuse the EXACT Insights associations data (/api/insights/associations,
+          // the SAME endpoint q.associations that powers the mind-map graph) by
+          // rendering it as a ranked TABLE into a fresh host — the Sentiment
+          // pattern (function-call into a host, no DOM relocation). The Mindmap
+          // sub-tab shows the SAME relatives as a radial GRAPH (how they relate,
+          // visually); this answers "which terms define this corpus, with numbers".
+          // /api/insights/associations exposes no date params, so this is honest
+          // full-corpus — we do NOT fake a time-scope window (cf. Sentiment).
+          el.innerHTML = `<div id="corpus-keywords-host"><div class="muted">${esc(t("…"))}</div></div>`;
+          await renderCorpusKeywords(_corpusTerm, "corpus-keywords-host");
+        } else if (which === "sources") {
+          // SOURCE-DESCRIPTION sub-tab: WHICH sources feed this corpus, with the
+          // catalog metadata they assert — descriptive provenance, NOT the
+          // competitive/angle analysis (a later, corpus-only tab) and NOT tone
+          // (Sentiment owns that). Reuses /api/insights/corpus-sources for the
+          // corpus's DISTINCT sources + their REAL per-corpus article count, then
+          // enriches client-side from the bulk /api/sources catalog (no new
+          // backend, no fork). The function-call-into-a-fresh-host pattern
+          // (Sentiment/Keywords), never DOM relocation. No time-scope here:
+          // /api/insights/corpus-sources does honest full-corpus over the matched
+          // articles (it exposes date params but we don't fake a window control).
+          el.innerHTML = `<div id="corpus-sources-host"><div class="muted">${esc(t("…"))}</div></div>`;
+          await renderCorpusSources(_corpusTerm, "corpus-sources-host");
+        } else if (which === "competitive") {
+          // SOURCE-COMPETITIVE sub-tab (corpus-only, the flagship's LAST design
+          // facet): how each source APPROACHES this concept, side by side —
+          // VOLUME (exact article count), TONE (VADER mean + label), TIMING
+          // (first→last span), EMPHASIS (each outlet's distinctive terms). It is
+          // a DESCRIPTIVE comparison of DIVERGENCE, never a ranking, a winner or
+          // a credibility verdict — no composite score. Built by JOINING two
+          // EXISTING endpoints per source (no new backend, no fork): volume +
+          // timing + mean tone from /api/insights/corpus-sources, tone label +
+          // emphasised terms from /api/framing. n=1 ⇒ "nothing to compare". The
+          // function-call-into-a-fresh-host pattern (Sentiment/Sources). No
+          // time-scope: neither endpoint takes date params — honest full-corpus.
+          el.innerHTML = `<div id="corpus-competitive-host"><div class="muted">${esc(t("…"))}</div></div>`;
+          await renderCorpusCompetitive(_corpusTerm, "corpus-competitive-host");
         }
       } catch (e) { el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+
+    // Source-description sub-tab: the distinct sources behind this corpus, each
+    // with its REAL per-corpus article count (from /api/insights/corpus-sources,
+    // the same data the source-coverage view uses) PLUS the catalog metadata the
+    // source ASSERTS — domain, country, region, language, tags (from the bulk
+    // /api/sources list, merged by domain). Two-class honesty: every metadata
+    // field here is catalog/source-ASSERTED (set from the catalog, ccTLD or the
+    // operator), NEVER text-deduced — stated as such; we never fabricate a
+    // "description" the model does not store (Source has no free-text bio), so a
+    // source with no catalog facts on file reads "no catalog metadata on file".
+    // No score, no ranking — descriptive provenance, not credibility.
+    async function renderCorpusSources(term, hostId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const host = document.getElementById(hostId);
+      if (!host) return;
+      let cs, cat;
+      try {
+        // corpus-sources keys on the FTS query (like Sentiment's framing call),
+        // so we point it at this window's term to get THIS corpus's sources.
+        [cs, cat] = await Promise.all([
+          api(`/api/insights/corpus-sources?query=${encodeURIComponent(term)}&limit=200`),
+          api(`/api/sources/?limit=1000`).catch(() => []),
+        ]);
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const rows = (cs && cs.sources) || [];
+      if (!rows.length) {
+        host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`;
+        return;
+      }
+      // Index the catalog metadata by domain (+ name fallback) for client-side merge.
+      const byDom = {}, byName = {};
+      (Array.isArray(cat) ? cat : []).forEach(s => {
+        if (s.domain) byDom[s.domain.toLowerCase()] = s;
+        if (s.name) byName[s.name] = s;
+      });
+      const fmt = (n) => (n || 0).toLocaleString();
+      const chips = (arr) => (arr || []).filter(Boolean)
+        .map(x => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ");
+      const cards = rows.map(r => {
+        const meta = byDom[(r.domain || "").toLowerCase()] || byName[r.name] || {};
+        const facts = [];
+        if (meta.country) facts.push(`${esc(t("Country"))}: ${esc(meta.country.toUpperCase())}`);
+        if (meta.region) facts.push(`${esc(t("Region"))}: ${esc(meta.region)}`);
+        if (meta.language) facts.push(`${esc(t("Language"))}: ${esc(meta.language)}`);
+        if (meta.source_type) facts.push(`${esc(t("Type"))}: ${esc(meta.source_type)}`);
+        const tags = (meta.tags && meta.tags.length) ? chips(meta.tags) : "";
+        const hasMeta = facts.length || tags;
+        // Source name → the EXISTING integrity source-profile view (reuse), keyed
+        // by the source name/domain it already accepts. No invented destination.
+        const nameLink = `<a href="#" class="csrc-prof" data-src="${esc(r.domain || r.name)}"
+            title="${esc(t("Open this source's profile (measured dimensions, no composite score)."))}">${esc(r.name || r.domain || "—")}</a>`;
+        return `<div class="note" style="max-width:none;margin-bottom:8px">
+          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+            <b style="font-size:13px">${nameLink}</b>
+            <span class="muted" style="font-size:12px">${esc(r.domain || "")}</span>
+            <span style="margin-inline-start:auto;font-size:12px">${fmt(r.articles)} ${esc(t("articles"))}</span>
+          </div>
+          ${facts.length ? `<div class="muted" style="font-size:12px;margin-top:3px">${facts.join(" · ")}</div>` : ""}
+          ${tags ? `<div style="margin-top:4px">${tags}</div>` : ""}
+          ${hasMeta ? "" : `<div class="muted" style="font-size:12px;margin-top:3px">${esc(t("No catalog metadata on file."))}</div>`}
+        </div>`;
+      }).join("");
+      host.innerHTML =
+        `<div class="hint">${esc(t("The distinct sources behind this corpus, with their per-corpus article count. Country, region, language and tags are stated by the source catalog (asserted, not deduced from text); article counts are exact. No score, no ranking — coverage, not credibility."))}</div>` +
+        cards +
+        `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ${esc(cs.caveat || "")}</div>`;
+      // Source name → the existing source-profile view (reuse loadProfile).
+      host.querySelectorAll(".csrc-prof").forEach(a =>
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          const inp = $("prof-source");
+          if (inp) { inp.value = a.dataset.src; showTab("integrity"); loadProfile(); }
+        }));
+    }
+
+    // Source-competitive sub-tab (corpus-only, the flagship's LAST design facet):
+    // how each source APPROACHES this concept, side by side. It JOINS two EXISTING
+    // endpoints per source (no new backend, no fork):
+    //   • VOLUME + TIMING + mean tone  ← /api/insights/corpus-sources
+    //     (sources[]: name, domain, articles, mean_tone, first, last)
+    //   • TONE label + EMPHASISED terms ← /api/framing
+    //     (framing[]: source, tone_label, avg_tone, article_count, top_terms[])
+    // Every column is a REAL value — exact article counts, real publication dates,
+    // the source's own VADER mean/label, that outlet's distinctive terms. There is
+    // NO composite score, NO "leader", NO ranking-as-quality: rows are ordered by
+    // VOLUME only (the most-covering source first — an ordering, not a verdict).
+    // It is a DESCRIPTIVE comparison of DIVERGENCE. n=1 ⇒ "nothing to compare"
+    // (the ledger's "n=1 has no competition"). Tone carries the VADER English-only
+    // disclosure (audit B1), reused from the framing/Sentiment surface, VISIBLE.
+    // Neither endpoint takes date params, so this is honest full-corpus — we do
+    // NOT fake a time-scope window (cf. Sentiment/Keywords/Sources).
+    async function renderCorpusCompetitive(term, hostId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const host = document.getElementById(hostId);
+      if (!host) return;
+      let cs, fr;
+      try {
+        // Both endpoints key on the FTS query (like Sentiment/Sources), so we point
+        // them at THIS window's term. Framing needs the [analysis] extra; if it is
+        // absent we still show volume/timing and say tone/emphasis is unavailable.
+        [cs, fr] = await Promise.all([
+          api(`/api/insights/corpus-sources?query=${encodeURIComponent(term)}&limit=200`),
+          api(`/api/framing?query=${encodeURIComponent(term)}`).catch(() => null),
+        ]);
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const rows = (cs && cs.sources) || [];
+      if (!rows.length) {
+        host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`;
+        return;
+      }
+      if (rows.length === 1) {
+        // The ledger's "n=1 has no competition" — honest single-source state.
+        host.innerHTML =
+          `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`;
+        return;
+      }
+      // Index framing per source (by name; tone label + emphasised terms live there).
+      const byName = {};
+      ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
+      const fmt = (n) => (n || 0).toLocaleString();
+      // Relative timing readout vs the WHOLE corpus span (real dates, never a score):
+      // the corpus's earliest/latest publication across these sources.
+      const firsts = rows.map(r => r.first).filter(Boolean).sort();
+      const lasts = rows.map(r => r.last).filter(Boolean).sort();
+      const corpusFirst = firsts[0] || null, corpusLast = lasts[lasts.length - 1] || null;
+      const day = (s) => (s || "").slice(0, 10);
+      const tonePill = (label, val) => {
+        if (val == null) return `<span class="muted">—</span>`;
+        const cls = label === "positive" ? "ok" : label === "negative" ? "err" : "";
+        const lab = label === "positive" ? t("Positive") : label === "negative" ? t("Negative")
+          : label === "neutral" ? t("Neutral") : (label || "");
+        return `<span class="pill ${cls}">${esc(lab)} ${val.toFixed(2)}</span>`;
+      };
+      const chips = (arr) => (arr || []).slice(0, 6).filter(Boolean)
+        .map(x => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ");
+      // The "not a ranking / not credibility" disclosure — VISIBLE, with the long
+      // form in the #oo-tip hover (informed-consent layering). Plus the VADER
+      // English-only disclosure carried by the framing/corpus-sources caveat.
+      const notRanking = t("Descriptive comparison — how these sources DIFFER, never a ranking or a credibility judgement. Rows are ordered by volume only (most-covering first); there is no winner and no composite score.");
+      const body = rows.map(r => {
+        const f = byName[r.name] || {};
+        const emphasis = (f.top_terms && f.top_terms.length) ? chips(f.top_terms)
+          : `<span class="muted" style="font-size:12px">${fr ? esc(t("No distinctive terms.")) : esc(t("Needs the [analysis] extra."))}</span>`;
+        // Tone: prefer the framing label+avg; fall back to the corpus-sources mean
+        // (same VADER number) when framing has no row for this outlet — real value.
+        const toneVal = (f.avg_tone != null) ? f.avg_tone : r.mean_tone;
+        const toneLbl = f.tone_label || null;
+        const span = (r.first && r.last)
+          ? `${esc(day(r.first))} → ${esc(day(r.last))}`
+          : `<span class="muted">—</span>`;
+        return `<tr style="border-bottom:1px solid var(--line)">
+          <td style="padding:5px 8px"><b style="font-size:13px">${esc(r.name || r.domain || "—")}</b>
+            ${r.domain ? `<div class="muted" style="font-size:11px">${esc(r.domain)}</div>` : ""}</td>
+          <td style="text-align:right;padding:5px 8px">${fmt(r.articles)}</td>
+          <td style="padding:5px 8px">${tonePill(toneLbl, toneVal)}</td>
+          <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${span}</td>
+          <td style="padding:5px 8px">${emphasis}</td>
+        </tr>`;
+      }).join("");
+      host.innerHTML =
+        `<div class="hint" title="${esc(t("How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed."))}">${esc(notRanking)}</div>` +
+        `<table style="width:100%;border-collapse:collapse;font-size:13px">
+           <thead><tr style="border-bottom:1px solid var(--line)">
+             <th style="text-align:start;padding:5px 8px">${esc(t("Source"))}</th>
+             <th style="text-align:right;padding:5px 8px"
+                 title="${esc(t("How many articles in this corpus come from this source — an exact count, never a score."))}">${esc(t("Volume"))}</th>
+             <th style="text-align:start;padding:5px 8px"
+                 title="${esc(t("Mean VADER tone for this source's coverage, with the label. VADER is an ENGLISH-lexicon method — tone for non-English coverage is unreliable or absent. A real value, never a verdict."))}">${esc(t("Tone"))} <span class="muted" style="font-weight:normal">${esc(t("(VADER tone)"))}</span></th>
+             <th style="text-align:start;padding:5px 8px"
+                 title="${esc(t("The first → last publication date for this source's coverage in the corpus — real dates, never a score."))}">${esc(t("Timing"))}</th>
+             <th style="text-align:start;padding:5px 8px"
+                 title="${esc(t("This outlet's most distinctive terms when covering the concept (from framing). Descriptive emphasis, not a judgement."))}">${esc(t("Emphasis"))}</th>
+           </tr></thead>
+           <tbody>${body}</tbody>
+         </table>` +
+        `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}` +
+          `${(corpusFirst && corpusLast) ? ` · ${esc(day(corpusFirst))} → ${esc(day(corpusLast))}` : ""}` +
+          `${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ` +
+          `${esc(cs.caveat || "")} ${esc((fr && fr.caveat) || "")}</div>`;
+    }
+
+    // Keyword-analysis sub-tab: a ranked TABLE of the corpus's co-occurring
+    // keywords with REAL per-keyword numbers from /api/insights/associations
+    // (the same data the mind-map plots). No composite score — each column is a
+    // raw value; PMI carries the endpoint's own method + caveat. A row click
+    // opens that keyword as its own corpus (the existing openCorpus entry).
+    let _ckwSort = "pmi";
+    async function renderCorpusKeywords(term, hostId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const host = document.getElementById(hostId);
+      if (!host) return;
+      let d;
+      try {
+        d = await api(`/api/insights/associations?term=${encodeURIComponent(term)}&limit=100`);
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const pairs = (d.pairs || []).slice();
+      if (!pairs.length) {
+        host.innerHTML = `<div class="muted">${esc(t("No keywords indexed for this corpus yet."))}</div>`;
+        return;
+      }
+      const sorters = {
+        pmi: (a, b) => (b.pmi - a.pmi) || (b.cooccur - a.cooccur),
+        cooccur: (a, b) => (b.cooccur - a.cooccur) || (b.pmi - a.pmi),
+        n_b: (a, b) => (b.n_b - a.n_b) || (b.cooccur - a.cooccur),
+      };
+      pairs.sort(sorters[_ckwSort] || sorters.pmi);
+      const nA = d.n_articles_with_term || 0;
+      const fmt = (n) => (n || 0).toLocaleString();
+      // Headers carry honest method/caveat in the #oo-tip hover (translated title).
+      const th = (key, label, title) =>
+        `<th data-sort="${key}" role="button" tabindex="0" style="cursor:pointer;text-align:right;padding:4px 8px;white-space:nowrap"
+            title="${esc(title)}">${esc(label)}${_ckwSort === key ? " ▾" : ""}</th>`;
+      host.innerHTML =
+        `<div class="hint">${esc(t("Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score."))} ${esc(d.method || "")} ${esc(d.caveat || "")}</div>` +
+        `<table style="width:100%;border-collapse:collapse;font-size:13px">
+           <thead><tr style="border-bottom:1px solid var(--line)">
+             <th style="text-align:start;padding:4px 8px">${esc(t("Keyword"))}</th>
+             ${th("cooccur", t("In this corpus"), t("Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score."))}
+             ${th("n_b", t("Total articles"), t("Distinct articles across the whole corpus that mention this keyword. A real count, never a score."))}
+             ${th("pmi", t("Association"), t("Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts."))}
+           </tr></thead>
+           <tbody>${pairs.map(p => {
+             const members = (p.members && p.members.length > 1) ? p.members.join(", ") : "";
+             const titleAttr = members ? ` title="${esc(t("Entity family:"))} ${esc(members)}"` : "";
+             return `<tr class="ckw-row" data-term="${esc(p.normalized || p.term)}" style="cursor:pointer;border-bottom:1px solid var(--line)">
+               <td style="padding:4px 8px"><span${titleAttr}>${esc(p.term)}</span>${p.kind ? ` <span class="muted" style="font-size:11px">${esc(p.kind)}</span>` : ""}</td>
+               <td style="text-align:right;padding:4px 8px">${fmt(p.cooccur)}</td>
+               <td style="text-align:right;padding:4px 8px">${fmt(p.n_b)}</td>
+               <td style="text-align:right;padding:4px 8px">${(p.pmi != null ? p.pmi.toFixed(2) : "—")}</td>
+             </tr>`;
+           }).join("")}</tbody>
+         </table>` +
+        `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(nA)} ${esc(t("articles mention the corpus term."))} ${d.grouped ? esc(t("Surface variants are merged into entity families.")) : ""} ${esc(t("Click a row to open that keyword as its own corpus."))}</div>`;
+      // Row click → that keyword's corpus window (reuse the existing entry).
+      host.querySelectorAll(".ckw-row").forEach(tr =>
+        tr.addEventListener("click", () => openCorpus(tr.dataset.term)));
+      // Header click/Enter → re-sort (honest defaults first; PMI by default).
+      host.querySelectorAll("th[data-sort]").forEach(h => {
+        const go = () => { _ckwSort = h.dataset.sort; renderCorpusKeywords(term, hostId); };
+        h.addEventListener("click", go);
+        h.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+      });
     }
 
     function pickTerm(t) { $("ins-term").value = t; (_insSubtabs || {select: showInsightCat}).select("explore"); exploreTerm(); }
@@ -8797,8 +9128,11 @@
     }
 
     // Framing comparison — moved into Insights, scoped to the explored term.
-    async function loadFraming(term) {
-      const el = $("ins-framing");
+    // elId lets a second surface (the corpus window's Sentiment sub-tab) REUSE
+    // this exact renderer + its English-only VADER disclosure (d.caveat) by
+    // pointing it at a fresh host, instead of relocating the Insights DOM.
+    async function loadFraming(term, elId) {
+      const el = $(elId || "ins-framing");
       el.innerHTML = "<span class='muted'>Comparing how outlets frame this…</span>";
       try {
         const d = await api("/api/framing?query=" + encodeURIComponent(term));
@@ -9072,6 +9406,9 @@
     _insSubtabs = ooSubtabs($("ins-subtabs"), showInsightCat);
     _setSubtabs = ooSubtabs($("set-subtabs"), showSetCat);
     _corpusSubtabs = ooSubtabs($("corpus-subtabs"), corpusTab);
+    // Closing the corpus window returns the shared mind-map kit to Insights
+    // (so the Insights Explore mind-map is never left empty after a relocation).
+    $("corpus-win").addEventListener("close", _mmKitHome);
     ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
     ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window (Keywords / Articles)
   </script>

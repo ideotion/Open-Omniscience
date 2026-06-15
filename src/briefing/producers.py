@@ -1525,6 +1525,123 @@ def weather_corroboration(session) -> list[Card]:
     return cards
 
 
+# --------------------------------------------------------------------------- #
+#  Space-time convergence — the 0.0.9 flagship, slice 1 (read-only).
+#  Articles converging on the SAME PLACE within the SAME TIME WINDOW, gated by
+#  DISTINCT-SOURCE independence (anti-false-triangulation). Co-occurrence is
+#  NEVER causation; a single chatty source cannot manufacture a convergence.
+# --------------------------------------------------------------------------- #
+_MAX_CONVERGENCE = 4
+
+
+def space_time_convergence(session) -> list[Card]:
+    """Surface clusters of articles converging on one place within one window.
+
+    A NEW producer over the persisted When×Where×Who substrate (places + event
+    dates). The honest measure is DISTINCT-SOURCE spread (not raw article count):
+    articles sharing one origin are one source wearing many hats. The surfacing
+    gate (≥3 articles AND ≥2 distinct sources) makes a single source unable to
+    fabricate a convergence; the shared-outbound-link flag exposes when even
+    distinct sources lean on one common citation. No causation, ever.
+    """
+    try:
+        from src.analytics.convergence import (
+            CONVERGENCE_CAVEAT,
+            find_convergences,
+        )
+
+        found = find_convergences(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("space-time convergence scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for c in found.get("clusters", [])[:_MAX_CONVERGENCE]:
+        ev_rows = (
+            session.query(Article.id, Article.title, Article.url, Article.published_at)
+            .filter(Article.id.in_(c["article_ids"][:4]))
+            .all()
+        )
+        # Map article -> source name for honest per-evidence attribution.
+        src_lookup = dict(
+            session.query(Article.id, Source.name)
+            .outerjoin(Source, Source.id == Article.source_id)
+            .filter(Article.id.in_(c["article_ids"][:4]))
+            .all()
+        )
+        evidence = [
+            {
+                "article_id": aid,
+                "title": title or url,
+                "url": url,
+                "source": src_lookup.get(aid),
+                "published_at": pub.isoformat() if pub else None,
+            }
+            for aid, title, url, pub in ev_rows
+        ]
+        place_label = c["place"] + (
+            f" ({c['place_country'].upper()})" if c["place_country"] else ""
+        )
+        shared = c["shared_origin_links"]
+        math_rows = [
+            ("Articles converging on this place + window", str(c["n_articles"])),
+            ("Distinct sources (the independence measure)", str(c["distinct_sources"])),
+            ("Minimum distinct sources for this card", f"≥ {found['min_sources']} ✓"),
+            ("Minimum articles for this card", f"≥ {found['min_articles']} ✓"),
+            ("Time window (deduced event dates)", f"{c['window_start']} → {c['window_end']}"),
+            (
+                "Outbound links shared by >1 member (false-triangulation flag)",
+                str(shared),
+            ),
+        ]
+        cards.append(
+            Card(
+                type="space_time_convergence",
+                title=f"{c['distinct_sources']} sources converge on {place_label}",
+                summary=(
+                    f"{c['n_articles']} articles from {c['distinct_sources']} distinct "
+                    f"sources mention {place_label} around {c['window_start']}"
+                    + (f"–{c['window_end']}" if c["window_end"] != c["window_start"] else "")
+                    + (
+                        f". {shared} outbound link(s) are shared across members — read those "
+                        "as one possible common origin, not independent confirmation."
+                        if shared
+                        else ". No shared outbound links among them in your corpus."
+                    )
+                ),
+                bucket="investigate",
+                signal={
+                    "metric": "distinct_sources",
+                    "value": c["distinct_sources"],
+                    "n_articles": c["n_articles"],
+                    "place": c["place"],
+                    "place_country": c["place_country"],
+                    "place_kind": c["place_kind"],
+                    "lat": c["lat"],
+                    "lon": c["lon"],
+                    "window_start": c["window_start"],
+                    "window_end": c["window_end"],
+                    "shared_origin_links": shared,
+                    "shared_origin_examples": c["shared_origin_examples"],
+                    "source_names": c["source_names"],
+                    "clusters_total": found.get("clusters_total", 0),
+                },
+                method=c["method"],
+                caveat=CONVERGENCE_CAVEAT,
+                evidence=evidence,
+                n=c["n_articles"],
+                key=f"{c['place_country'] or ''}|{c['place']}|{c['window_start']}",
+                trigger=_trigger(
+                    "Several of your sources mention the same place inside the same time "
+                    "window. Things lining up in space and time is worth a look — but it "
+                    "is never proof that one thing caused another.",
+                    math_rows,
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -1545,6 +1662,7 @@ _DEFAULT_PRODUCERS = (
     # Registered last (fail-safe order): the newest producer must never cost
     # the operator the established feed.
     ("weather_corroboration", weather_corroboration),
+    ("space_time_convergence", space_time_convergence),
 )
 
 

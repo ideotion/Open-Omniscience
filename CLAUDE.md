@@ -804,9 +804,20 @@ ruling, a contingency, or a deliberate-omission note.
   **LINKS sub-tab (ruled 2026-06-12; SUBSTRATE + WINDOW SLICE 1 SHIPPED T10
   same day: /api/links/shared with the independence notes per shared URL +
   the corpus window — keyword-click entry via the ⊞ Corpus button — with
-  Trend (ooChart)/Articles/Links sub-tabs; REMAINING: the full sub-tab set
-  (mindmap/source/sentiment/competitive), the other six entries, the
-  TIME-SCOPE control, one-click ingestion of linked pages):** which member
+  Trend (ooChart)/Articles/Links sub-tabs; **FULL SUB-TAB SET NOW COMPLETE
+  (PRs #214-218, 2026-06-15): Mindmap (reuses renderGraph via a relocatable
+  #mm-kit, null-guarded return), Sentiment (reuses /api/framing, VADER
+  English-only B1 disclosure), Keywords (ranked table from /api/insights/
+  associations, real cooccur/n_b/pmi, no score), Sources (descriptive provenance
+  from /api/insights/corpus-sources + catalog, no fabricated description,
+  asserted-metadata labeled), Source-competitive (joins corpus-sources+framing:
+  volume/tone/timing/emphasis, DESCRIPTIVE not ranking, no winner/score, n=1
+  honest state). All reuse existing endpoints (no new backend), the
+  function-call-into-host pattern, the TIME-SCOPE precedent (honest full-corpus
+  where endpoints lack date params), ×12. REMAINING: the other SIX entry points
+  (only keyword-click + palette wired) + Enter→window from search + the
+  TIME-SCOPE control on the non-trend sub-tabs + one-click ingestion of linked
+  pages.** Earlier REMAINING note (superseded for sub-tabs): which member
   articles SHARE outbound links; one-click ethical ingestion of linked pages for keyword/date/place
   extraction; the goal is the SOURCES' SOURCES. **METHODOLOGICAL RULING
   (anti-false-triangulation): convergence counts as corroboration ONLY when
@@ -1072,10 +1083,21 @@ ruling, a contingency, or a deliberate-omission note.
   living-source design lands. NEXT for the extractors themselves: feed the temporal
   map's mention layer with event-places too; extend the country table; aggregate
   entities corpus-wide.
-- **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51):**
-  space-time co-occurrence (never causation) + the user-defined
-  "if-this-then-WATCH" alert engine (explainable, off by default,
-  local-only). After When×Where×Who ingest persistence.
+- **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51) —
+  SLICE 1 SHIPPED (PR #212, 2026-06-15; unblocked now that When×Where×Who
+  persists):** READ-ONLY space-time co-occurrence in src/analytics/convergence.py
+  (find_convergences) + the space_time_convergence briefing producer (investigate
+  bucket, registered last/fail-safe). Groups articles converging on the same PLACE
+  within a TIME WINDOW (default 7d) on the MENTIONED event date (not pub date).
+  Honesty baked in: independence measured by DISTINCT SOURCES (not article count),
+  surfacing gate ≥3 articles AND ≥2 sources (a chatty single source can't
+  manufacture one), shared-outbound-link flagging (_shared_origin, anti-false-
+  triangulation), metric=distinct_sources (NO score), verbatim "never causation …
+  a prompt to read, not proof anything happened" caveat on every cluster. No
+  endpoint/frontend/migration (read-only over T12 tables). tests/test_convergence.py.
+  REMAINING: the user-defined "if-this-then-WATCH" alert engine (explainable, off by
+  default, local-only) — its UX is a GENUINE RULING to bring to the maintainer
+  before building; plus a dedicated convergence VIEW (needs an endpoint + frontend).
 - **Temporal map remainder:** logarithmic time scale (agreed: linear/log
   toggle, labelled ticks, no hidden warp); feed mention-layer with extracted
   event-places.
@@ -1218,8 +1240,12 @@ ruling, a contingency, or a deliberate-omission note.
   Jaccard + threshold; ownership_change/law_change = DELIBERATELY descriptive-only
   real counts/byte-deltas, NEVER an invented CI), no composite scores
   (CardSchemaError untouched); test_corpus_producers_all_carry_a_trigger sweeps every
-  default producer. REMAINING slices: corpus tier header (early/developing/
-  established); power-style "what's missing"; BH-FDR later.
+  default producer. CORPUS TIER HEADER SHIPPED (PR #210): a descriptive
+  early/developing/established stage on the Home glance strip from real corpus
+  facts (corpus_tier in producers.py reuses _is_young; additive briefing field;
+  NO score; thresholds <200 art or <14d → early, ≥1000 art and ≥90d → established;
+  visible early caveat + invariant-#17 threshold hover as ONE atomic placeholder
+  sentence ×12). REMAINING slices: power-style "what's missing"; BH-FDR later.
 - **Trans-language equivalence — LIVE analytics layer (elevated):** rings
   merge inside grouped trends/trending/associations/graph levels
   (fr:élections + en:elections = ONE concept); cross-country recognition via
