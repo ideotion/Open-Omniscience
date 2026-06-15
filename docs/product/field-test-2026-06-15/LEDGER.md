@@ -536,3 +536,47 @@ Sub-parts / design:
 **⏭ Open questions (compile):** does this RETIRE `/investigate` (and its shareable-URL
 property), or do both coexist (in-app window for clicks, `/investigate` for sharing)?
 The per-card-type seed table needs sign-off (which sub-tab each card opens on).
+
+---
+
+## Item J — Uniform subtabs app-wide: card categories as subtabs + ONE identical subtab grammar everywhere ("a big one")  [PLANNED — keystone #3 / invariant #18; largely SHIPPED — audit inside]  ⏭ capture-only + CLARIFY
+
+**Verbatim (08:21):** "The cards categories should be represented as subtabs. The UI
+should be coherent and show subtabs in a uniformed manner. This is a big one. Subtabs
+should be identical in the way they are presented, their name and content will / might
+vary depending on the tab the UI is in. If this is not clear, ask questions."
+
+**Maps to:** invariant **#18** (ONE universal subtab component `ooSubtabs` — identical
+presentation + ARIA + keyboard nav; content varies per surface) = **keystone #3**
+(BACKLOG_GROUPED Group E) = **UI_SHELL_REDESIGN_PLAN §1** ("ONE universal nav grammar
+app-wide — lateral sidebar = main tabs, vertical subtabs = subcategories"). This
+observation IS that principle, restated by the maintainer.
+
+**Audit (HEAD — the principle is largely SHIPPED):**
+- ONE component `ooSubtabs(nav, onSelect, opts)` (**index.html:5834**) owns
+  presentation + ARIA (tablist/tab/aria-selected) + keyboard nav + roving tabindex;
+  one `<nav class="tabs">` grammar (5827).
+- **SIX adopters already use it identically:** Home card families
+  (`home-fam-subtabs`, **3326** — #129), Insights (`ins-subtabs`, **7732**), Settings
+  (`set-subtabs`, **7733**), corpus window (`corpus-subtabs`, **7734**), task-manager
+  window (`tm-subtabs`, **7735**), analysis window (`an-subtabs`, **7736**).
+- The legacy divergent impls (`data-ins` / `data-set` / `data-ctab`) are **GONE** —
+  all unified onto `data-tab` (44 occurrences, 0 legacy).
+- **So "card categories as subtabs" is already shipped (#129) on HEAD** — Home families
+  render through the same component as everywhere else.
+
+**Remaining NON-uniform surfaces:** per invariant #18 "NEXT: Markets category tabs,
+the analysis window" — the analysis window is now an adopter; **Markets/commodities
+category tabs** are still unbuilt (Group G "Split graphs into category tabs" ⬜). Also
+candidates from this session: the **Agenda view switch** (Item C(b): Month/Week/List as
+a uniform subtab/segmented control) and any surface still using dropdowns/buttons where
+the subtab grammar would be more coherent.
+
+**Ambiguity → CLARIFY (the maintainer invited it):** the headline "card categories
+should be subtabs" is ALREADY true on the latest build, so the ask is one of: **(A)**
+the maintainer's BUILD lags #129 / a regression (Home not showing subtabs) — chase it;
+**(B)** EXTEND the same component to surfaces that aren't subtabs yet (Markets
+categories, the Agenda view switch) — the invariant-#18 "next adopters"; **(C)** REWORK
+the subtab visual design itself across the app (a new look for the one component);
+**(D)** something else. Resolving this changes the work — clarifying question posed;
+answer to be folded in here.
