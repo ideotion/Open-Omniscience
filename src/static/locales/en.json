@@ -762,5 +762,9 @@
   "Register a curated starter set of public-interest RSS sources": "Register a curated starter set of public-interest RSS sources",
   "Source this is about (name/domain)": "Source this is about (name/domain)",
   "Type to filter (name, autonym or code)…": "Type to filter (name, autonym or code)…",
-  "type to filter (name or country)…": "type to filter (name or country)…"
+  "type to filter (name or country)…": "type to filter (name or country)…",
+  "Map": "Map",
+  "Cloud": "Cloud",
+  "Enlarge the mindmap": "Enlarge the mindmap",
+  "Word cloud: keywords sized by shared-article volume; no links.": "Word cloud: keywords sized by shared-article volume; no links."
 }

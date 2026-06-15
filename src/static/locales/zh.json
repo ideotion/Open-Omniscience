@@ -762,5 +762,9 @@
   "Register a curated starter set of public-interest RSS sources": "注册一组精选的公共利益 RSS 来源入门集",
   "Source this is about (name/domain)": "所涉来源（名称/域名）",
   "Type to filter (name, autonym or code)…": "输入以筛选（名称、自称或代码）…",
-  "type to filter (name or country)…": "输入以筛选（名称或国家）…"
+  "type to filter (name or country)…": "输入以筛选（名称或国家）…",
+  "Map": "图谱",
+  "Cloud": "词云",
+  "Enlarge the mindmap": "放大思维导图",
+  "Word cloud: keywords sized by shared-article volume; no links.": "词云：关键词大小按共享文章数量缩放；无连线。"
 }

@@ -762,5 +762,9 @@
   "Register a curated starter set of public-interest RSS sources": "जनहित वाले RSS स्रोतों का एक चयनित आरंभिक समूह पंजीकृत करें",
   "Source this is about (name/domain)": "संबंधित स्रोत (नाम/डोमेन)",
   "Type to filter (name, autonym or code)…": "फ़िल्टर करने के लिए टाइप करें (नाम, स्व-नाम या कोड)…",
-  "type to filter (name or country)…": "फ़िल्टर करने के लिए टाइप करें (नाम या देश)…"
+  "type to filter (name or country)…": "फ़िल्टर करने के लिए टाइप करें (नाम या देश)…",
+  "Map": "मानचित्र",
+  "Cloud": "क्लाउड",
+  "Enlarge the mindmap": "माइंड मैप बड़ा करें",
+  "Word cloud: keywords sized by shared-article volume; no links.": "शब्द क्लाउड: कीवर्ड का आकार साझा-लेख मात्रा के अनुसार; कोई लिंक नहीं।"
 }

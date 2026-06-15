@@ -762,5 +762,9 @@
   "Register a curated starter set of public-interest RSS sources": "تسجيل مجموعة مبدئية منتقاة من مصادر RSS ذات النفع العام",
   "Source this is about (name/domain)": "المصدر المعني (الاسم/النطاق)",
   "Type to filter (name, autonym or code)…": "اكتب للتصفية (الاسم أو التسمية الذاتية أو الرمز)…",
-  "type to filter (name or country)…": "اكتب للتصفية (الاسم أو البلد)…"
+  "type to filter (name or country)…": "اكتب للتصفية (الاسم أو البلد)…",
+  "Map": "خريطة",
+  "Cloud": "سحابة",
+  "Enlarge the mindmap": "تكبير الخريطة الذهنية",
+  "Word cloud: keywords sized by shared-article volume; no links.": "سحابة كلمات: يُحدَّد حجم الكلمات المفتاحية حسب عدد المقالات المشتركة؛ بلا روابط."
 }

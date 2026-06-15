@@ -762,5 +762,9 @@
   "Register a curated starter set of public-interest RSS sources": "Daftarkan kumpulan awal terkurasi sumber RSS untuk kepentingan publik",
   "Source this is about (name/domain)": "Sumber yang dimaksud (nama/domain)",
   "Type to filter (name, autonym or code)…": "Ketik untuk memfilter (nama, autonim, atau kode)…",
-  "type to filter (name or country)…": "ketik untuk memfilter (nama atau negara)…"
+  "type to filter (name or country)…": "ketik untuk memfilter (nama atau negara)…",
+  "Map": "Peta",
+  "Cloud": "Awan",
+  "Enlarge the mindmap": "Perbesar peta pikiran",
+  "Word cloud: keywords sized by shared-article volume; no links.": "Awan kata: kata kunci diukur menurut volume artikel bersama; tanpa tautan."
 }

@@ -762,5 +762,9 @@
   "Register a curated starter set of public-interest RSS sources": "Eine kuratierte Startauswahl gemeinnütziger RSS-Quellen registrieren",
   "Source this is about (name/domain)": "Betroffene Quelle (Name/Domain)",
   "Type to filter (name, autonym or code)…": "Tippen zum Filtern (Name, Eigenbezeichnung oder Code)…",
-  "type to filter (name or country)…": "tippen zum Filtern (Name oder Land)…"
+  "type to filter (name or country)…": "tippen zum Filtern (Name oder Land)…",
+  "Map": "Karte",
+  "Cloud": "Wolke",
+  "Enlarge the mindmap": "Mindmap vergrößern",
+  "Word cloud: keywords sized by shared-article volume; no links.": "Wortwolke: Schlagwörter nach Volumen gemeinsamer Artikel skaliert; ohne Verbindungen."
 }

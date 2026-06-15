@@ -762,5 +762,9 @@
   "Register a curated starter set of public-interest RSS sources": "公共の関心に資する厳選した初期 RSS ソース一式を登録",
   "Source this is about (name/domain)": "対象となるソース（名前／ドメイン）",
   "Type to filter (name, autonym or code)…": "入力して絞り込み（名前、自称名、またはコード）…",
-  "type to filter (name or country)…": "入力して絞り込み（名前または国）…"
+  "type to filter (name or country)…": "入力して絞り込み（名前または国）…",
+  "Map": "マップ",
+  "Cloud": "クラウド",
+  "Enlarge the mindmap": "マインドマップを拡大",
+  "Word cloud: keywords sized by shared-article volume; no links.": "ワードクラウド：キーワードの大きさは共有記事数に比例。リンクなし。"
 }

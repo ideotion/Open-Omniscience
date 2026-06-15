@@ -762,5 +762,9 @@
   "Register a curated starter set of public-interest RSS sources": "জনস্বার্থমূলক RSS উৎসের একটি বাছাইকৃত প্রারম্ভিক সেট নিবন্ধন করুন",
   "Source this is about (name/domain)": "সংশ্লিষ্ট উৎস (নাম/ডোমেইন)",
   "Type to filter (name, autonym or code)…": "ফিল্টার করতে টাইপ করুন (নাম, স্বনাম বা কোড)…",
-  "type to filter (name or country)…": "ফিল্টার করতে টাইপ করুন (নাম বা দেশ)…"
+  "type to filter (name or country)…": "ফিল্টার করতে টাইপ করুন (নাম বা দেশ)…",
+  "Map": "মানচিত্র",
+  "Cloud": "ক্লাউড",
+  "Enlarge the mindmap": "মাইন্ড ম্যাপ বড় করুন",
+  "Word cloud: keywords sized by shared-article volume; no links.": "শব্দ ক্লাউড: কীওয়ার্ডের আকার শেয়ার-করা নিবন্ধের পরিমাণ অনুসারে; কোনো লিঙ্ক নেই।"
 }

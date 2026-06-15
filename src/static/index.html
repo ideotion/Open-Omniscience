@@ -7653,48 +7653,69 @@
     // neighbour only (radial, no cross-tangle); never interpolate fake structure.
     // Consumes the /api/insights/graph shape: nodes {id,label,size,center}, edges
     // {a,b,weight}, plus level/method/caveat. Font size scales with node size.
+    // In-map controls (mind-map rules): a Cloud SECOND view, a text-size control and
+    // ⛶ Enlarge. State is kept so the controls re-render from the same graph.
+    const _anMM = { graph: null, cloud: false, scale: 100, big: false };
+    function anMMset(patch) { Object.assign(_anMM, patch); if (_anMM.graph) renderAnMindmap(_anMM.graph); }
     function renderAnMindmap(graph, hostEl) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = hostEl || $("an-mindmap");
       if (!host) return;
-      const g = graph || {};
+      if (graph) _anMM.graph = graph;
+      const g = _anMM.graph || {};
       const all = (g.nodes || []);
+      const controls = `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">`
+        + `<button class="ghost tiny${_anMM.cloud ? "" : " on"}" onclick="anMMset({cloud:false})">Map</button>`
+        + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" onclick="anMMset({cloud:true})">Cloud</button>`
+        + `<label class="hint" style="display:flex;align-items:center;gap:4px">${esc(t("Text size"))}`
+        + ` <input type="range" min="60" max="180" value="${_anMM.scale}" oninput="anMMset({scale:+this.value})" style="width:90px"></label>`
+        + `<button class="ghost tiny" onclick="anMMset({big:!_anMM.big})" title="${esc(t("Enlarge the mindmap"))}">⛶</button></div>`;
       if (all.length < 2) {
-        host.innerHTML = `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
+        host.innerHTML = controls + `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
         return;
       }
-      // Centre = the seeded node; first ring = its direct neighbours (radial tree,
-      // outward only). Cap the ring so labels stay legible (deterministic top-by-size).
       const center = all.find((n) => n.center) || all[0];
       const neighbours = all.filter((n) => n.id !== center.id)
         .sort((a, b) => (b.size || 1) - (a.size || 1)).slice(0, 24);
-      const W = 680, H = 460, cx = W / 2, cy = H / 2;
+      const scale = (_anMM.scale || 100) / 100, big = _anMM.big;
+      const W = big ? 1100 : 680, H = big ? 720 : 460, cx = W / 2, cy = H / 2;
       const R = Math.min(W, H) * 0.36;
       const maxSize = Math.max(center.size || 1, ...neighbours.map((n) => n.size || 1), 1);
-      const fsOf = (n) => (n.id === center.id ? 17 : 9 + 9 * Math.sqrt((n.size || 1) / maxSize));
-      // Place neighbours evenly on one circle (deterministic order = size rank).
-      neighbours.forEach((n, i) => {
-        const ang = (i / neighbours.length) * 2 * Math.PI - Math.PI / 2;
-        n._x = cx + R * Math.cos(ang); n._y = cy + R * Math.sin(ang);
-      });
-      const edges = neighbours.map((n) =>
-        `<line stroke="var(--border)" stroke-width="1.4" x1="${cx}" y1="${cy}"`
-        + ` x2="${n._x.toFixed(1)}" y2="${n._y.toFixed(1)}"></line>`).join("");
-      const drawNode = (n, x, y) => {
+      const fsOf = (n) => ((n.id === center.id ? 17 : 9 + 9 * Math.sqrt((n.size || 1) / maxSize)) * scale);
+      let edges = "";
+      if (_anMM.cloud) {
+        // Word cloud SECOND view: golden-angle spiral by size, no edges.
+        [center, ...neighbours].sort((a, b) => (b.size || 1) - (a.size || 1)).forEach((n, i) => {
+          const ang = i * 2.39996, r = 15 * Math.sqrt(i);
+          n._x = cx + r * Math.cos(ang) * 1.5; n._y = cy + r * Math.sin(ang);
+        });
+      } else {
+        // Radial tree: centre → arms → ALWAYS outward (deterministic, no cross-tangle).
+        center._x = cx; center._y = cy;
+        neighbours.forEach((n, i) => {
+          const ang = (i / neighbours.length) * 2 * Math.PI - Math.PI / 2;
+          n._x = cx + R * Math.cos(ang); n._y = cy + R * Math.sin(ang);
+        });
+        edges = neighbours.map((n) =>
+          `<line stroke="var(--border)" stroke-width="1.4" x1="${cx}" y1="${cy}"`
+          + ` x2="${n._x.toFixed(1)}" y2="${n._y.toFixed(1)}"></line>`).join("");
+      }
+      const drawNode = (n) => {
         const col = n.id === center.id ? "var(--ok)" : "var(--accent)";
         const fam = (n.members || []).length > 1;
         const title = fam ? `<title>${esc((n.members || []).join(", "))}</title>` : "";
-        return `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})">${title}`
+        return `<g transform="translate(${n._x.toFixed(1)},${n._y.toFixed(1)})">${title}`
           + `<text text-anchor="middle" dominant-baseline="central" font-size="${fsOf(n).toFixed(1)}"`
           + ` font-weight="${n.id === center.id ? 700 : 500}" fill="${col}">${esc(n.label || n.id)}</text></g>`;
       };
-      const nodesSvg = drawNode(center, cx, cy)
-        + neighbours.map((n) => drawNode(n, n._x, n._y)).join("");
-      host.innerHTML =
-        `<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);`
+      const nodesSvg = drawNode(center) + neighbours.map(drawNode).join("");
+      const desc = _anMM.cloud
+        ? t("Word cloud: keywords sized by shared-article volume; no links.")
+        : t("Radial map: the seed keyword at the centre, its strongest relatives outward.");
+      host.innerHTML = controls
+        + `<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);`
         + `border:1px solid var(--border);border-radius:8px">${edges}${nodesSvg}</svg>`
-        + `<div class="hint muted" style="margin-top:6px">`
-        + `${esc(t("Radial map: the seed keyword at the centre, its strongest relatives outward."))} `
+        + `<div class="hint muted" style="margin-top:6px">${esc(desc)} `
         + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
     }
     async function loadAnalysis(p) {

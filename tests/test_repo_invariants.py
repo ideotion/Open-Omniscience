@@ -1002,3 +1002,17 @@ def test_text_only_modality_disclosed():
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     assert "Text only — images, audio and video aren't analysed." in en
+
+
+def test_analysis_mindmap_controls():
+    """Mind-map rules on the analysis Mindmap: a Cloud SECOND view, a text-size
+    control and ⛶ enlarge — re-rendering deterministically from the same graph."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "function anMMset" in html and "const _anMM" in html, "stateful in-map controls required"
+    assert 'anMMset({cloud:true})' in html and 'anMMset({cloud:false})' in html, "Map/Cloud second view"
+    assert "anMMset({big:!_anMM.big})" in html, "⛶ enlarge"
+    assert "anMMset({scale:+this.value})" in html, "text-size control"
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    for k in ("Map", "Cloud", "Enlarge the mindmap"):
+        assert k in en

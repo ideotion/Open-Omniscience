@@ -762,5 +762,9 @@
   "Register a curated starter set of public-interest RSS sources": "Зарегистрировать подобранный стартовый набор общественно значимых источников RSS",
   "Source this is about (name/domain)": "Источник, о котором речь (имя/домен)",
   "Type to filter (name, autonym or code)…": "Введите для фильтрации (название, самоназвание или код)…",
-  "type to filter (name or country)…": "введите для фильтрации (название или страна)…"
+  "type to filter (name or country)…": "введите для фильтрации (название или страна)…",
+  "Map": "Карта",
+  "Cloud": "Облако",
+  "Enlarge the mindmap": "Увеличить интеллект-карту",
+  "Word cloud: keywords sized by shared-article volume; no links.": "Облако слов: размер ключевых слов задан объёмом общих статей; без связей."
 }
