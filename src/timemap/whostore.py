@@ -44,6 +44,65 @@ def store_places_for_article(db: Session, article: Article) -> int:
     return len(places)
 
 
+def places_for_article(db: Session, article_id: int, limit: int = 5) -> list[dict]:
+    """Read the persisted (T12) places for an article, ordered by mentions desc.
+
+    Returns the SAME dict shape the live extractor (``extract_locations``)
+    emits — ``{name, country, kind, mentions, snippet, lat?, lon?, note}`` —
+    so callers can swap stored rows for the live computation transparently.
+    The rows stay DEDUCED candidates with their snippet provenance + rule note.
+    """
+    rows = (
+        db.query(ArticleMentionedPlace)
+        .filter_by(article_id=article_id)
+        .order_by(ArticleMentionedPlace.mentions.desc(), ArticleMentionedPlace.id)
+        .limit(limit)
+        .all()
+    )
+    out: list[dict] = []
+    for r in rows:
+        d: dict = {
+            "name": r.name,
+            "country": r.country,
+            "kind": r.kind,
+            "mentions": r.mentions or 1,
+            "snippet": r.snippet,
+            "note": r.note,
+        }
+        if r.lat is not None:
+            d["lat"] = r.lat
+        if r.lon is not None:
+            d["lon"] = r.lon
+        out.append(d)
+    return out
+
+
+def entities_for_article(db: Session, article_id: int, limit: int = 5) -> dict:
+    """Read the persisted (T12) entities for an article as the SAME shape the
+    live extractor (``extract_entities``) returns — ``{"people": [...],
+    "organizations": [...]}`` with each entry ``{name, mentions, snippet,
+    note}``, ordered by mentions desc, capped per class. DEDUCED candidates."""
+    result: dict[str, list[dict]] = {"people": [], "organizations": []}
+    for cls, key in (("person", "people"), ("organization", "organizations")):
+        rows = (
+            db.query(ArticleEntity)
+            .filter_by(article_id=article_id, entity_class=cls)
+            .order_by(ArticleEntity.mentions.desc(), ArticleEntity.id)
+            .limit(limit)
+            .all()
+        )
+        result[key] = [
+            {
+                "name": r.name,
+                "mentions": r.mentions or 1,
+                "snippet": r.snippet,
+                "note": r.note,
+            }
+            for r in rows
+        ]
+    return result
+
+
 def store_entities_for_article(db: Session, article: Article) -> int:
     text = (article.content or "")
     db.query(ArticleEntity).filter_by(article_id=article.id).delete()
