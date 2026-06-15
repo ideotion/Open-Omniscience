@@ -12,7 +12,7 @@ below, which goes through the ethical fetcher (fail-closed, kill-switch aware).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -99,6 +99,42 @@ def feed_import(feed_id: str) -> dict:
         return import_feed(make_fetcher(), feed_id)
     except Exception as exc:  # noqa: BLE001 - surface the refusal honestly
         raise HTTPException(status_code=502, detail=str(exc)[:300]) from exc
+
+
+@router.post("/feeds/import-ics")
+def feed_import_ics(payload: dict = Body(...)) -> dict:
+    """Import a .ics file the user UPLOADED (NO network). The events join the agenda
+    (deduped) as a user-owned, removable, excludable calendar. The raw file is parsed
+    and discarded — only event title + date (+ uid) are stored."""
+    name = str(payload.get("name") or "").strip()
+    ics = str(payload.get("ics") or "")
+    if not ics.strip():
+        raise HTTPException(status_code=400, detail="No .ics content provided.")
+    from src.events.feeds import import_ics_text
+
+    try:
+        return import_ics_text(name, ics)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:300]) from exc
+
+
+@router.get("/feeds/user")
+def feed_list_user() -> dict:
+    """The user's own uploaded calendars (removable)."""
+    from src.events.feeds import list_user_feeds
+
+    return {"feeds": list_user_feeds()}
+
+
+@router.delete("/feeds/user/{key}")
+def feed_remove_user(key: str) -> dict:
+    """Remove a user-uploaded calendar (reversible: re-import the .ics)."""
+    from src.events.feeds import remove_user_feed
+
+    try:
+        return remove_user_feed(key)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/imported")

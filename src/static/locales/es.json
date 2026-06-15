@@ -691,5 +691,14 @@
   "excluded": "excluido",
   "Exclude dysfunctional": "Excluir los defectuosos",
   "Exclude shown": "Excluir los mostrados",
-  "Clear exclusions": "Borrar exclusiones"
+  "Clear exclusions": "Borrar exclusiones",
+  "Add a calendar": "Añadir un calendario",
+  "Calendar name": "Nombre del calendario",
+  "Choose a .ics file": "Elegir un archivo .ics",
+  "Import calendar": "Importar calendario",
+  "Your calendars": "Tus calendarios",
+  "Remove": "Quitar",
+  "Choose a .ics file first.": "Elige primero un archivo .ics.",
+  "Calendar removed.": "Calendario eliminado.",
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Sube un archivo .ics local — sin red. Sus eventos se unen a tu agenda (deduplicados) como un calendario que puedes quitar; el archivo se analiza y se descarta."
 }

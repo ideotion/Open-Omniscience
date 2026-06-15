@@ -1674,6 +1674,14 @@
       </div>
       <div id="feeddir-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
       <div id="feeddir-imported" style="margin-top:12px"></div>
+      <div id="feeddir-user" style="margin-top:12px"></div>
+      <h3 style="margin:14px 0 6px">Add a calendar</h3>
+      <p class="hint" style="margin-top:0"><span>Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.</span></p>
+      <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap">
+        <div><label for="ics-name">Calendar name</label><input id="ics-name" placeholder="My calendar"></div>
+        <div><label for="ics-file">Choose a .ics file</label><input id="ics-file" type="file" accept=".ics,text/calendar"></div>
+        <button class="secondary" onclick="importIcsFile(this)">Import calendar</button>
+      </div>
     </section>
     </div>
 
@@ -3889,6 +3897,7 @@
         kinds.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
       renderFeedDir();
       renderImported();
+      renderUserCalendars();
     }
     function _verdictChip(v, feed) {
       if (!v) return '<span class="pill">not checked yet</span>';
@@ -3993,6 +4002,37 @@
         toast(`Checked ${r.checked} — ${r.ok} reachable · ${r.remaining_unchecked} left`, "ok");
       } catch (e) { toast(e.message, "err"); }
       finally { btn.disabled = false; loadFeedDir(); }
+    }
+    // Upload a local .ics (no network): events join the agenda (deduped) as a
+    // removable, user-owned calendar. The file is read client-side and posted.
+    async function importIcsFile(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const f = $("ics-file").files && $("ics-file").files[0];
+      if (!f) { toast(t("Choose a .ics file first."), "err"); return; }
+      const name = ($("ics-name").value || f.name.replace(/\.ics$/i, "")).trim();
+      btn.disabled = true;
+      try {
+        const ics = await f.text();
+        const r = await api("/api/events/feeds/import-ics", { method: "POST", body: JSON.stringify({ name, ics }) });
+        toast(`${r.added} / ${r.events_in_file}`, "ok");
+        $("ics-file").value = ""; $("ics-name").value = "";
+        renderImported(); renderUserCalendars(); _agendaMaybeReload();
+      } catch (e) { toast(e.message, "err"); }
+      finally { btn.disabled = false; }
+    }
+    async function renderUserCalendars() {
+      let d; try { d = await api("/api/events/feeds/user"); } catch { return; }
+      const box = $("feeddir-user"); if (!box) return;
+      if (!d.feeds || !d.feeds.length) { box.innerHTML = ""; return; }
+      box.innerHTML = `<h3 style="margin-bottom:6px">Your calendars</h3>` + d.feeds.map(f =>
+        `<div class="vr"><span>${esc(f.name)} <span class="muted">· ${f.events}</span></span>` +
+        `<button class="ghost tiny" onclick="removeUserCalendar('${esc(f.key)}')">Remove</button></div>`).join("");
+    }
+    async function removeUserCalendar(key) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try { await api("/api/events/feeds/user/" + encodeURIComponent(key), { method: "DELETE" }); toast(t("Calendar removed."), "ok"); }
+      catch (e) { toast(e.message, "err"); }
+      renderUserCalendars(); renderImported(); _agendaMaybeReload();
     }
     async function renderImported() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

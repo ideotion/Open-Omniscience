@@ -691,5 +691,14 @@
   "excluded": "已排除",
   "Exclude dysfunctional": "排除异常项",
   "Exclude shown": "排除已显示项",
-  "Clear exclusions": "清除排除项"
+  "Clear exclusions": "清除排除项",
+  "Add a calendar": "添加日历",
+  "Calendar name": "日历名称",
+  "Choose a .ics file": "选择 .ics 文件",
+  "Import calendar": "导入日历",
+  "Your calendars": "您的日历",
+  "Remove": "移除",
+  "Choose a .ics file first.": "请先选择一个 .ics 文件。",
+  "Calendar removed.": "已移除日历。",
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "上传本地 .ics 文件 — 不联网。其中的事件将（去重后）并入您的日程，成为一个可移除的日历；文件经解析后即丢弃。"
 }

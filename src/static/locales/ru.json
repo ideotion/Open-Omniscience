@@ -691,5 +691,14 @@
   "excluded": "исключено",
   "Exclude dysfunctional": "Исключить неисправные",
   "Exclude shown": "Исключить показанные",
-  "Clear exclusions": "Сбросить исключения"
+  "Clear exclusions": "Сбросить исключения",
+  "Add a calendar": "Добавить календарь",
+  "Calendar name": "Название календаря",
+  "Choose a .ics file": "Выбрать файл .ics",
+  "Import calendar": "Импортировать календарь",
+  "Your calendars": "Ваши календари",
+  "Remove": "Удалить",
+  "Choose a .ics file first.": "Сначала выберите файл .ics.",
+  "Calendar removed.": "Календарь удалён.",
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Загрузите локальный файл .ics — без сети. Его события попадают в вашу повестку (без дубликатов) как удаляемый календарь; файл разбирается и удаляется."
 }

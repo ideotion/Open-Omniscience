@@ -691,5 +691,14 @@
   "excluded": "বাদ দেওয়া",
   "Exclude dysfunctional": "ত্রুটিপূর্ণগুলো বাদ দিন",
   "Exclude shown": "প্রদর্শিতগুলো বাদ দিন",
-  "Clear exclusions": "বাদ-দেওয়া মুছুন"
+  "Clear exclusions": "বাদ-দেওয়া মুছুন",
+  "Add a calendar": "ক্যালেন্ডার যোগ করুন",
+  "Calendar name": "ক্যালেন্ডারের নাম",
+  "Choose a .ics file": ".ics ফাইল বেছে নিন",
+  "Import calendar": "ক্যালেন্ডার আমদানি করুন",
+  "Your calendars": "আপনার ক্যালেন্ডার",
+  "Remove": "সরান",
+  "Choose a .ics file first.": "আগে একটি .ics ফাইল বেছে নিন।",
+  "Calendar removed.": "ক্যালেন্ডার সরানো হয়েছে।",
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "একটি স্থানীয় .ics ফাইল আপলোড করুন — কোনো নেটওয়ার্ক নয়। এর ইভেন্টগুলো (অনুলিপি বাদ দিয়ে) একটি অপসারণযোগ্য ক্যালেন্ডার হিসেবে আপনার কর্মসূচিতে যুক্ত হয়; ফাইলটি পার্স করে বাতিল করা হয়।"
 }

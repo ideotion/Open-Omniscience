@@ -841,3 +841,24 @@ def test_agenda_feeds_reversible_exclude():
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     for k in ("Exclude", "Include", "Exclude dysfunctional", "Clear exclusions"):
         assert k in en, f"exclude control label {k!r} must be keyed ×12"
+
+
+def test_agenda_add_ics_calendar():
+    """Add-a-calendar by local .ics UPLOAD (Item E, 2026-06-15): no network — the
+    events join the agenda (deduped) as a removable, user-owned calendar; the raw
+    file is parsed and discarded (only title+date+uid stored).
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'id="ics-file"' in html and 'type="file"' in html, "an .ics file input is required"
+    for fn in ("function importIcsFile", "function renderUserCalendars", "function removeUserCalendar"):
+        assert fn in html, f"add-calendar requires {fn}()"
+    assert "/api/events/feeds/import-ics" in html and "/api/events/feeds/user/" in html, "endpoints wired"
+    api = (_SRC / "api" / "events.py").read_text(encoding="utf-8")
+    assert "/feeds/import-ics" in api and "/feeds/user/{key}" in api, "backend endpoints exist"
+    feeds = (_SRC / "events" / "feeds.py").read_text(encoding="utf-8")
+    for fn in ("def import_ics_text", "def list_user_feeds", "def remove_user_feed"):
+        assert fn in feeds, f"backend missing {fn}"
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    for k in ("Add a calendar", "Import calendar", "Your calendars", "Remove"):
+        assert k in en, f"add-calendar label {k!r} must be keyed ×12"

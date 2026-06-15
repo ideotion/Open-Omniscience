@@ -305,6 +305,73 @@ def import_feed(fetcher, feed_id: str) -> dict:
     }
 
 
+_USER_FEED_PREFIX = "user-"
+
+
+def import_ics_text(name: str, ics_text: str) -> dict:
+    """Import events from a raw .ics the user UPLOADED (no network) into a user-owned
+    family, deduped within the family by fingerprint (same discipline as import_feed).
+
+    The events then join the agenda like any imported feed — the cross-feed collapse
+    + reversible per-machine exclude apply automatically. The .ics text is parsed and
+    DISCARDED; only event title + date (+ uid) are stored (no raw file retention).
+    """
+    if len(ics_text.encode("utf-8", "ignore")) > _MAX_FEED_BYTES:
+        raise ValueError(f"file exceeds the {_MAX_FEED_BYTES // (1024 * 1024)} MB cap")
+    events = parse_ics(ics_text)            # bounded by _MAX_EVENTS_PER_FEED
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")[:48]
+    key = _USER_FEED_PREFIX + (slug or "calendar")
+    label = (name or "").strip() or "My calendar"
+    imports = load_imports()
+    bucket = imports.setdefault(key, {"name": label, "events": {}})
+    bucket["name"] = label
+    bucket["user"] = True                   # user-owned (vs the bundled directory)
+    added = merged = 0
+    for ev in events:
+        fp = _fingerprint(ev["title"], ev["date"])
+        entry = bucket["events"].get(fp)
+        if entry is None:
+            bucket["events"][fp] = {
+                "title": ev["title"], "date": ev["date"],
+                "sources": [key], "uids": [ev["uid"]] if ev.get("uid") else [],
+            }
+            added += 1
+        else:
+            if key not in entry["sources"]:
+                entry["sources"].append(key)
+            merged += 1
+    bucket["imported_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+    _save_json("calendar_feed_imports.json", imports)
+    return {
+        "family": key, "name": label, "events_in_file": len(events),
+        "added": added, "merged_into_existing": merged, "family_total": len(bucket["events"]),
+    }
+
+
+def list_user_feeds() -> list[dict]:
+    """The user's own uploaded calendars (removable), name-sorted."""
+    out = [
+        {"key": key, "name": bucket.get("name", key), "events": len(bucket.get("events", {}))}
+        for key, bucket in load_imports().items()
+        if bucket.get("user") or key.startswith(_USER_FEED_PREFIX)
+    ]
+    out.sort(key=lambda f: f["name"].lower())
+    return out
+
+
+def remove_user_feed(key: str) -> dict:
+    """Remove a USER-uploaded calendar family (reversible: re-import the .ics). Only
+    user-owned families can be removed — the bundled directory is never deleted."""
+    imports = load_imports()
+    bucket = imports.get(key)
+    if not bucket or not (bucket.get("user") or key.startswith(_USER_FEED_PREFIX)):
+        raise KeyError(f"not a user calendar: {key}")
+    n = len(bucket.get("events", {}))
+    del imports[key]
+    _save_json("calendar_feed_imports.json", imports)
+    return {"removed": key, "events": n}
+
+
 def collapse_imported(rows: list[dict]) -> list[dict]:
     """Collapse the SAME imported event seen across DIFFERENT feed families into ONE
     row (ruled 2026-06-15: "we don't want 100 entries mentioning Christmas Day").
