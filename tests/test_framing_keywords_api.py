@@ -67,6 +67,17 @@ def test_framing_rejects_invalid_query():
         assert r.status_code == 400
 
 
+def test_framing_caveat_discloses_vader_english_limit():
+    """B1 disclosure (audit-07): the framing surface shows VADER tone per outlet,
+    so its caveat MUST state that VADER is an English-lexicon method and tone for
+    non-English coverage is unreliable -- otherwise a non-English corpus is scored
+    silently. (corpus-sentiment already discloses this; framing did not.)"""
+    _seed()
+    with TestClient(app) as client:
+        cav = (client.get("/api/framing").json().get("caveat") or "").lower()
+        assert "vader" in cav and "english" in cav, f"framing caveat omits the VADER/English limit: {cav!r}"
+
+
 # --- keyword management ------------------------------------------------------ #
 
 
