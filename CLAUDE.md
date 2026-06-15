@@ -739,10 +739,17 @@ ruling, a contingency, or a deliberate-omission note.
   dead; the WORKING set is worldpublicholiday.com (wph-*), monkeyness moons,
   ose-calendar. FIX = drop the guaranteed-fail feeds from defaults (honest
   fail-closed is correct, but shipping them as defaults wastes cycles).
-  (F) **RSS DUP RATE ~93% (LOW):** last passes 284/305 and 179/305 duplicate at
-  interval_minutes=1. FIX = conditional GET (ETag/If-Modified-Since) + per-feed
-  backoff when all-duplicate; continuous-collection should not re-pull unchanged
-  feeds every minute. (G) NOTE: Tor 403s on premium news (reuters/ft/bloomberg/
+  (F) **RSS DUP RATE ~93% (LOW) — CONDITIONAL-GET CORE SHIPPED (verified on
+  0.09 2026-06-15; ledger was stale):** conditional GET is DONE — FeedFetchState
+  table (src/database/models.py:457, migration c8d9e0f1a2b3) persists
+  ETag/Last-Modified per feed; EthicalFetcher.fetch threads extra_headers +
+  returns status_code/etag/last_modified; ingest_source (src/ingest/pipeline.py:289)
+  sends If-None-Match/If-Modified-Since and SHORT-CIRCUITS on 304 (tally
+  "not_modified", no feedparser parse), refreshing validators on 200 only;
+  tests/test_feed_conditional_get.py green (304 skips+preserves, 200 refreshes,
+  no-validator→plain GET). REMAINING: per-feed backoff when a 200 yields
+  all-duplicates (secondary; continuous-collection shouldn't re-pull churny feeds
+  every minute even when servers ignore validators). (G) NOTE: Tor 403s on premium news (reuters/ft/bloomberg/
   economist/lefigaro…) are the Tor-population reality, already surfaced via T4
   transport verdicts — not a bug. FRED timeouts over Tor confirm the
   parallel/official-endpoint direction. keyword diagnostics: language_mismatch
