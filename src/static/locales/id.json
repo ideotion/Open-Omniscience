@@ -892,5 +892,6 @@
   "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "Tahap mapan: cukup luas dan lama sehingga pola lebih dari sekadar petunjuk awal — tetap deskriptif, tidak pernah vonis.",
   "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "Tahap berkembang: pola mulai terbentuk tetapi korpus belum cukup luas atau lama untuk diandalkan sepenuhnya.",
   "Stages are descriptive, from real corpus facts — never a score.": "Tahapan bersifat deskriptif, dari fakta korpus yang nyata — bukan skor.",
-  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Ambang: awal di bawah {a} artikel atau {d} hari; mapan minimal {b} artikel dan {e} hari; berkembang di antaranya."
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Ambang: awal di bawah {a} artikel atau {d} hari; mapan minimal {b} artikel dan {e} hari; berkembang di antaranya.",
+  "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.": "Kata kunci yang terkait dengan korpus ini sebagai peta pikiran radial (pusat → cabang → ke luar). Ukuran font = volume artikel bersama; tetangga berperingkat PMI, bukan kausalitas."
 }
