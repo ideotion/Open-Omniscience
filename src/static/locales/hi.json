@@ -850,5 +850,6 @@
   "Synthesizing…": "संश्लेषण हो रहा है…",
   "LLM offline": "LLM ऑफ़लाइन",
   "Summarizing locally…": "स्थानीय रूप से सारांश बनाया जा रहा है…",
-  "Translating locally…": "स्थानीय रूप से अनुवाद हो रहा है…"
+  "Translating locally…": "स्थानीय रूप से अनुवाद हो रहा है…",
+  "Other": "अन्य"
 }

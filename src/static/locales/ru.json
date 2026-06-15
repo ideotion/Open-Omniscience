@@ -850,5 +850,6 @@
   "Synthesizing…": "Синтез…",
   "LLM offline": "LLM офлайн",
   "Summarizing locally…": "Локальное реферирование…",
-  "Translating locally…": "Локальный перевод…"
+  "Translating locally…": "Локальный перевод…",
+  "Other": "Другое"
 }

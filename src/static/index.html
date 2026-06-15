@@ -1153,6 +1153,7 @@
         <div id="mkt-dash-status" class="hint" style="align-self:center"></div>
         <div id="mkt-verdicts" class="hint" style="flex-basis:100%"></div>
       </div>
+      <nav class="tabs" id="commodities-cats" style="margin-top:12px"></nav>
       <div id="mkt-dashboard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:12px"></div>
       <div id="mkt-chart" style="margin-top:12px"></div>
     </section>
@@ -5874,17 +5875,40 @@
       ["precious", "Precious metals"], ["construction", "Construction materials"],
       ["agriculture", "Agriculture & cereals"], ["fx", "Currencies"], ["custom", "Custom"],
     ];
+    let _mktCatTabs = null;        // the commodities category ooSubtabs handle
+    function selectCommodityCat(key) {
+      // Button/ARIA state is owned by the ooSubtabs component (universal
+      // grammar, invariant #18); this callback only filters which category
+      // section is visible. "__all" (the default lens) shows everything.
+      document.querySelectorAll("#mkt-dashboard .mkt-cat").forEach(el => {
+        el.style.display = (key === "__all" || el.dataset.cat === key) ? "" : "none";
+      });
+    }
     function renderDashboard() {
       if (!MKT_SERIES.length) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const days = Number($("mkt-scale").value);
       // Indices are NOT commodities (maintainer-ruled): they live in the
       // Indices tab; the board shows everything else, grouped by category.
+      // The category comes straight from the series data (s.category), not a
+      // guessed symbol map — never misfile an index as a commodity.
       const series = MKT_SERIES.filter(s => s.category !== "index");
       const byCat = {};
       for (const s of series) (byCat[s.category] || (byCat[s.category] = [])).push(s);
-      $("mkt-dashboard").innerHTML = MKT_CATS.filter(([k]) => byCat[k]).map(([k, label]) =>
-        `<div class="vsect" style="grid-column:1/-1">${esc(label)}</div>` +
-        byCat[k].map(s => {
+      // Category list is DATA-DRIVEN: only the categories actually present
+      // among the loaded commodities (never an empty tab), in the declared
+      // MKT_CATS display order; any unmapped category falls under "Other".
+      const present = MKT_CATS.filter(([k]) => byCat[k]);
+      const mappedKeys = new Set(MKT_CATS.map(([k]) => k));
+      const otherCats = Object.keys(byCat).filter(k => !mappedKeys.has(k));
+      if (otherCats.length) present.push(["__other", "Other"]);
+      const sectionKey = ([k]) => k === "__other" ? "__other" : k;
+      const seriesFor = k => k === "__other"
+        ? otherCats.reduce((acc, c) => acc.concat(byCat[c]), []) : byCat[k];
+      $("mkt-dashboard").innerHTML = present.map(([k, label]) =>
+        `<div class="mkt-cat" data-cat="${esc(sectionKey([k]))}" style="display:contents">` +
+        `<div class="vsect" style="grid-column:1/-1">${esc(t(label))}</div>` +
+        seriesFor(k).map(s => {
           const all = MKT_PRICES[s.symbol] || [];
           // RESPECT the window (invariant #16): never silently expand a narrow
           // window to the full history. A sparse window renders as honest dots
@@ -5905,8 +5929,28 @@
               <strong title="${esc(s.name || s.symbol)}">${esc(s.symbol)}</strong> ${change}</div>
             <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv}</div>
             ${dashChartSvg(pts, last ? `${last.currency}/${last.unit}` : "")}</div>`;
-        }).join("")
+        }).join("") + `</div>`
       ).join("");
+      // Category SUB-TABS (universal subtab grammar, invariant #18): build the
+      // nav from the categories actually present, with an "All" default lens
+      // (like Home families). Skip the nav entirely when only one category is
+      // present (a lone tab adds nothing — Home does the same).
+      const catNav = $("commodities-cats");
+      if (catNav) {
+        if (present.length > 1) {
+          catNav.style.display = "";
+          catNav.innerHTML =
+            `<button class="active" data-tab="__all">${esc(t("All"))}</button>`
+            + present.map(([k, label]) =>
+                `<button data-tab="${esc(sectionKey([k]))}">${esc(t(label))}</button>`).join("");
+          _mktCatTabs = ooSubtabs(catNav, selectCommodityCat, {initial: "__all"});
+        } else {
+          catNav.style.display = "none";
+          catNav.innerHTML = "";
+          _mktCatTabs = null;
+          selectCommodityCat("__all");
+        }
+      }
     }
 
     async function loadMarketData(btn) {

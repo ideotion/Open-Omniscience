@@ -850,5 +850,6 @@
   "Synthesizing…": "正在综合…",
   "LLM offline": "LLM 离线",
   "Summarizing locally…": "正在本地摘要…",
-  "Translating locally…": "正在本地翻译…"
+  "Translating locally…": "正在本地翻译…",
+  "Other": "其他"
 }

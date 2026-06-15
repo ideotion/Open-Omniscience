@@ -850,5 +850,6 @@
   "Synthesizing…": "جارٍ التوليف…",
   "LLM offline": "LLM غير متصل",
   "Summarizing locally…": "جارٍ التلخيص محليًا…",
-  "Translating locally…": "جارٍ الترجمة محليًا…"
+  "Translating locally…": "جارٍ الترجمة محليًا…",
+  "Other": "أخرى"
 }
