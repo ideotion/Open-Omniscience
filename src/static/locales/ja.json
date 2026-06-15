@@ -717,5 +717,17 @@
   "Export this analysis:": "この分析をエクスポート：",
   "Export signed evidence": "署名済みエビデンスをエクスポート",
   "Signed, reproducible record of the query + method behind this analysis": "この分析の背後にあるクエリと手法の、署名済みで再現可能な記録",
-  "Signed, tamper-evident bundle of the analysed articles": "分析した記事の署名済み・改ざん検知可能なバンドル"
+  "Signed, tamper-evident bundle of the analysed articles": "分析した記事の署名済み・改ざん検知可能なバンドル",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "情報源カタログが到達する国の数（各情報源の国別に、ISO 3166 と照合して評価）。データから計測し、リアルタイムで更新されます。",
+  "No tracked changes yet — “Track changes now”.": "追跡された変更はまだありません — 「今すぐ変更を追跡」。",
+  "Click “Scan for coordination”.": "「協調をスキャン」をクリックしてください。",
+  "No imported authors yet.": "インポートされた著者はまだありません。",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "地域は情報源の国/都市です（情報源に基づく信頼できる信号）。都市ピン付きでズーム可能なグラフィカルな地図が次のステップです（座標地名辞典が必要）。",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "SQLite のオンラインバックアップ API を介してライブで取得した、コーパス全体の一貫したスナップショット。",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "取得は倫理的です：robots.txt を尊重し（既定で拒否）、レート制限を行います。",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "スケジューラの予算内で、引用チャネルとカタログチャネルによりオフラインで発見されました。各行はその証拠を表示します。",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "このマシン上のコーパス、鍵、キャッシュを取り消し不能で削除し、その後アプリを再起動する必要があります。",
+  "This cannot be undone.": "これは元に戻せません。",
+  "API reference (Swagger) ↗": "API リファレンス（Swagger）↗",
+  "Pick a document on the left.": "左側のドキュメントを選択してください。"
 }

@@ -717,5 +717,17 @@
   "Export this analysis:": "Exporter cette analyse :",
   "Export signed evidence": "Exporter des preuves signées",
   "Signed, reproducible record of the query + method behind this analysis": "Enregistrement signé et reproductible de la requête et de la méthode de cette analyse",
-  "Signed, tamper-evident bundle of the analysed articles": "Lot signé et inviolable des articles analysés"
+  "Signed, tamper-evident bundle of the analysed articles": "Lot signé et inviolable des articles analysés",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "Combien de pays le catalogue des sources atteint (par le pays de chaque source, évalué selon ISO 3166). Mesuré à partir des données ; actualisé en direct.",
+  "No tracked changes yet — “Track changes now”.": "Aucune modification suivie pour l'instant — « Suivre les modifications maintenant ».",
+  "Click “Scan for coordination”.": "Cliquez sur « Rechercher une coordination ».",
+  "No imported authors yet.": "Aucun auteur importé pour l'instant.",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "La région correspond au pays/à la ville de la source (le signal fiable fondé sur la source). Une carte graphique zoomable avec des repères de villes est l'étape suivante (nécessite un répertoire de coordonnées).",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "Un instantané cohérent de l'ensemble du corpus, pris en direct via l'API de sauvegarde en ligne de SQLite.",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "La récupération est éthique : robots.txt est respecté (fermeture par défaut) et soumis à une limitation de débit.",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "Trouvé hors ligne par les canaux de citation et de catalogue dans la limite du budget de votre planificateur. Chaque ligne affiche ses preuves.",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "Supprime irréversiblement le corpus, les clés et les caches sur cette machine, puis l'application doit être redémarrée.",
+  "This cannot be undone.": "Cette action est irréversible.",
+  "API reference (Swagger) ↗": "Référence de l'API (Swagger) ↗",
+  "Pick a document on the left.": "Choisissez un document à gauche."
 }

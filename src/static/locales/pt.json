@@ -717,5 +717,17 @@
   "Export this analysis:": "Exportar esta análise:",
   "Export signed evidence": "Exportar evidência assinada",
   "Signed, reproducible record of the query + method behind this analysis": "Registo assinado e reproduzível da consulta e do método desta análise",
-  "Signed, tamper-evident bundle of the analysed articles": "Pacote assinado e à prova de adulteração dos artigos analisados"
+  "Signed, tamper-evident bundle of the analysed articles": "Pacote assinado e à prova de adulteração dos artigos analisados",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "Quantos países o catálogo de fontes alcança (pelo país de cada fonte, avaliado segundo a ISO 3166). Medido a partir dos dados; atualiza ao vivo.",
+  "No tracked changes yet — “Track changes now”.": "Ainda não há alterações rastreadas — “Rastrear alterações agora”.",
+  "Click “Scan for coordination”.": "Clique em “Procurar coordenação”.",
+  "No imported authors yet.": "Ainda não há autores importados.",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "A região é o país/cidade da fonte (o sinal confiável baseado na fonte). Um mapa gráfico com zoom e marcadores de cidades é o próximo passo (precisa de um gazeteiro de coordenadas).",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "Um instantâneo consistente de todo o corpus, capturado ao vivo via API de backup on-line do SQLite.",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "A recuperação é ética: o robots.txt é respeitado (fecho por padrão) e com limite de taxa.",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "Encontrado offline pelos canais de citação e catálogo dentro do orçamento do seu agendador. Cada linha mostra a sua evidência.",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "Exclui irreversivelmente o corpus, as chaves e os caches desta máquina; depois o aplicativo precisa ser reiniciado.",
+  "This cannot be undone.": "Isto não pode ser desfeito.",
+  "API reference (Swagger) ↗": "Referência da API (Swagger) ↗",
+  "Pick a document on the left.": "Escolha um documento à esquerda."
 }

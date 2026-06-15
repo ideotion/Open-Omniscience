@@ -717,5 +717,17 @@
   "Export this analysis:": "এই বিশ্লেষণ রপ্তানি করুন:",
   "Export signed evidence": "স্বাক্ষরিত প্রমাণ রপ্তানি করুন",
   "Signed, reproducible record of the query + method behind this analysis": "এই বিশ্লেষণের পেছনের কোয়েরি ও পদ্ধতির স্বাক্ষরিত, পুনরুৎপাদনযোগ্য রেকর্ড",
-  "Signed, tamper-evident bundle of the analysed articles": "বিশ্লেষিত নিবন্ধগুলোর স্বাক্ষরিত, কারচুপি-প্রকাশক বান্ডিল"
+  "Signed, tamper-evident bundle of the analysed articles": "বিশ্লেষিত নিবন্ধগুলোর স্বাক্ষরিত, কারচুপি-প্রকাশক বান্ডিল",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "উৎস তালিকা কতগুলি দেশে পৌঁছায় (প্রতিটি উৎসের দেশ অনুসারে, ISO 3166-এর বিপরীতে মূল্যায়িত)। ডেটা থেকে পরিমাপ করা; লাইভভাবে রিফ্রেশ হয়।",
+  "No tracked changes yet — “Track changes now”.": "এখনও কোনো ট্র্যাক করা পরিবর্তন নেই — “এখনই পরিবর্তন ট্র্যাক করুন”।",
+  "Click “Scan for coordination”.": "“সমন্বয়ের জন্য স্ক্যান করুন”-এ ক্লিক করুন।",
+  "No imported authors yet.": "এখনও কোনো আমদানিকৃত লেখক নেই।",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "অঞ্চল হলো উৎসের দেশ/শহর (উৎস-ভিত্তিক নির্ভরযোগ্য সংকেত)। শহরের পিনসহ একটি গ্রাফিক্যাল জুমযোগ্য মানচিত্র পরবর্তী ধাপ (এর জন্য একটি স্থানাঙ্ক নামতালিকা প্রয়োজন)।",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "SQLite-এর অনলাইন-ব্যাকআপ API-এর মাধ্যমে লাইভ নেওয়া, সম্পূর্ণ কর্পাসের একটি সামঞ্জস্যপূর্ণ স্ন্যাপশট।",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "আহরণ নৈতিক: robots.txt মান্য করা হয় (ডিফল্টভাবে প্রত্যাখ্যান) এবং হার-সীমিত।",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "আপনার শিডিউলার বাজেটের আওতায় উদ্ধৃতি ও তালিকা চ্যানেল দ্বারা অফলাইনে পাওয়া গেছে। প্রতিটি সারি তার প্রমাণ দেখায়।",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "এই মেশিনের কর্পাস, কী ও ক্যাশে অপরিবর্তনীয়ভাবে মুছে ফেলে, তারপর অ্যাপটি পুনরায় চালু করতে হবে।",
+  "This cannot be undone.": "এটি পূর্বাবস্থায় ফেরানো যাবে না।",
+  "API reference (Swagger) ↗": "API রেফারেন্স (Swagger) ↗",
+  "Pick a document on the left.": "বাঁ দিকে একটি নথি বেছে নিন।"
 }

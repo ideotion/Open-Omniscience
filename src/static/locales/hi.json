@@ -717,5 +717,17 @@
   "Export this analysis:": "यह विश्लेषण निर्यात करें:",
   "Export signed evidence": "हस्ताक्षरित साक्ष्य निर्यात करें",
   "Signed, reproducible record of the query + method behind this analysis": "इस विश्लेषण के पीछे की क्वेरी और विधि का हस्ताक्षरित, पुनरुत्पादनीय रिकॉर्ड",
-  "Signed, tamper-evident bundle of the analysed articles": "विश्लेषित लेखों का हस्ताक्षरित, छेड़छाड़-स्पष्ट बंडल"
+  "Signed, tamper-evident bundle of the analysed articles": "विश्लेषित लेखों का हस्ताक्षरित, छेड़छाड़-स्पष्ट बंडल",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "स्रोत सूची कितने देशों तक पहुँचती है (प्रत्येक स्रोत के देश के अनुसार, ISO 3166 के विरुद्ध आँका गया)। डेटा से मापा गया; लाइव रूप से ताज़ा होता है।",
+  "No tracked changes yet — “Track changes now”.": "अभी तक कोई ट्रैक किया गया परिवर्तन नहीं — “अभी परिवर्तन ट्रैक करें”।",
+  "Click “Scan for coordination”.": "“समन्वय के लिए स्कैन करें” पर क्लिक करें।",
+  "No imported authors yet.": "अभी तक कोई आयातित लेखक नहीं।",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "क्षेत्र स्रोत का देश/शहर है (स्रोत-आधारित विश्वसनीय संकेत)। शहर पिन वाला, ज़ूम किया जा सकने वाला ग्राफ़िकल मानचित्र अगला चरण है (इसके लिए निर्देशांक नामसूची आवश्यक है)।",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "SQLite की ऑनलाइन-बैकअप API के माध्यम से लाइव लिया गया, पूरे कॉर्पस का एक संगत स्नैपशॉट।",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "प्राप्त करना नैतिक है: robots.txt का सम्मान किया जाता है (डिफ़ॉल्ट रूप से अस्वीकृत) और दर-सीमित।",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "आपके शेड्यूलर बजट के अंतर्गत उद्धरण और सूची चैनलों द्वारा ऑफ़लाइन पाया गया। प्रत्येक पंक्ति अपना साक्ष्य दिखाती है।",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "इस मशीन पर कॉर्पस, कुंजियाँ और कैश को अपरिवर्तनीय रूप से हटा देता है, फिर ऐप को पुनः आरंभ करना आवश्यक है।",
+  "This cannot be undone.": "इसे पूर्ववत नहीं किया जा सकता।",
+  "API reference (Swagger) ↗": "API संदर्भ (Swagger) ↗",
+  "Pick a document on the left.": "बाईं ओर एक दस्तावेज़ चुनें।"
 }

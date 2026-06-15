@@ -717,5 +717,17 @@
   "Export this analysis:": "导出此分析：",
   "Export signed evidence": "导出签名证据",
   "Signed, reproducible record of the query + method behind this analysis": "本次分析所用查询与方法的签名、可复现记录",
-  "Signed, tamper-evident bundle of the analysed articles": "已分析文章的签名、防篡改捆绑包"
+  "Signed, tamper-evident bundle of the analysed articles": "已分析文章的签名、防篡改捆绑包",
+  "How many countries the source catalog reaches (by each source's country, scored against ISO 3166). Measured from the data; refreshes live.": "来源目录覆盖多少个国家（按每个来源的所在国，对照 ISO 3166 评定）。根据数据测得；实时刷新。",
+  "No tracked changes yet — “Track changes now”.": "尚无已跟踪的更改——“立即跟踪更改”。",
+  "Click “Scan for coordination”.": "点击“扫描协同行为”。",
+  "No imported authors yet.": "尚无已导入的作者。",
+  "Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).": "区域即来源的国家/城市（基于来源的可靠信号）。带城市标记、可缩放的图形地图是下一步（需要坐标地名录）。",
+  "A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.": "整个语料库的一致快照，通过 SQLite 的在线备份 API 实时获取。",
+  "Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.": "抓取符合伦理：尊重 robots.txt（默认拒绝）并限速。",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence.": "在调度器预算范围内，由引用与目录渠道离线发现。每一行都显示其证据。",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "不可逆地删除本机上的语料库、密钥和缓存，之后必须重启应用。",
+  "This cannot be undone.": "此操作无法撤销。",
+  "API reference (Swagger) ↗": "API 参考（Swagger）↗",
+  "Pick a document on the left.": "在左侧选择一个文档。"
 }
