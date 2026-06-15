@@ -885,7 +885,9 @@
         <button class="ghost tiny" onclick="exportResults('json', anParams())">Export JSON</button>
         <button class="ghost tiny" onclick="exportMethods(anQuery())" title="Signed, reproducible record of the query + method behind this analysis">Methods appendix</button>
         <button class="ghost tiny" onclick="exportEvidence(anQuery())" title="Signed, tamper-evident bundle of the analysed articles">Export signed evidence</button>
+        <button class="ghost tiny" onclick="synthesizeResults(this, anQuery(), 'an-synth')" title="One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.">Synthesize results</button>
       </div>
+      <div id="an-synth" style="display:none;margin-top:8px"></div>
     </section>
     </div>
 
@@ -7756,20 +7758,22 @@
       window.open("/api/articles/export?" + params.toString(), "_blank");
     }
 
-    async function synthesizeResults(btn) {
+    async function synthesizeResults(btn, qArg, mountId) {
       // RM-12: one bounded synthesis call across the current results (max 20).
-      const q = $("q").value.trim();
+      // qArg/mountId let the analysis window reuse this with its OWN query + a panel.
+      const q = (qArg != null ? qArg : $("q").value.trim());
       if (!q) { toast("Run a search first.", "err"); return; }
       btn.disabled = true; btn.textContent = "Synthesizing…";
       try {
         const r = await api("/api/llm/synthesize",
           {method: "POST", body: JSON.stringify({query: q})});
-        let box = $("synth-result");
+        let box = $(mountId || "synth-result");
         if (!box) {
           box = document.createElement("div");
           box.id = "synth-result"; box.className = "card";
           $("results").parentNode.insertBefore(box, $("results"));
         }
+        box.className = "card"; box.style.display = "";
         box.innerHTML = `<span class="chip">synthesis · ${esc(r.model)} · ` +
           `${r.member_count} articles${r.truncated ? " (top 20 of more)" : ""}</span>` +
           `<p style="white-space:pre-wrap">${esc(r.result)}</p>` +
