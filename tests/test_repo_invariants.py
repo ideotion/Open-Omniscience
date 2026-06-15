@@ -533,6 +533,49 @@ def test_ui_invariants():
     )
 
 
+def test_corpus_tier_header():
+    """Corpus maturity tier on Home (evidence-tiered cards REMAINING slice): a
+    DESCRIPTIVE stage (early/developing/established) rides with the at-a-glance
+    strip so a reader calibrates how much weight the evidence cards deserve.
+    Binding (pinned so it cannot regress):
+      * the tier element lives IN the Home glance strip (invariant #19 intact),
+        not as a card, and is rendered from the additive briefing field;
+      * the visible surface keeps the real numbers; an EARLY corpus shows the
+        short "thin evidence" caveat inline (informed consent, visible by default);
+      * the LONG explanation AND the exact thresholds live in the #oo-tip hover
+        (invariant #17 — a translated title) — never hidden behind a toggle;
+      * it is descriptive, NEVER a score bar / composite."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    home = html.split('id="tab-home"', 1)[1].split('id="tab-search"', 1)[0]
+    # 1. the tier element sits inside the glance strip, above the Briefing.
+    assert 'id="home-tier"' in home and "corpus-tier" in home, (
+        "the corpus maturity tier must render in the Home glance strip"
+    )
+    assert home.index("home-glance") < home.index('id="home-tier"') < home.index("Briefing</h2>"), (
+        "the tier must ride WITH the at-a-glance strip, above the Briefing (invariant #19)"
+    )
+    # 2. it is rendered from the additive briefing field, not recomputed in JS.
+    assert "function renderCorpusTier(" in html and "renderCorpusTier(data.corpus_tier)" in html, (
+        "the tier must render from the additive briefing corpus_tier field"
+    )
+    # 3. the three descriptive stage labels exist (keyed x12 by the integrator).
+    for stage in ("Early corpus", "Developing corpus", "Established corpus"):
+        assert stage in html, f"the tier stage label is missing: {stage}"
+    # 4. the early-corpus caveat is present (visible short form), and the hover
+    #    carries the thresholds (the title is set with the threshold numbers).
+    assert "thin evidence — read with care" in html, (
+        "an early corpus must show the visible 'thin evidence' caveat (informed consent)"
+    )
+    assert "el.title =" in html.split("function renderCorpusTier(", 1)[1].split("function renderBriefing(", 1)[0], (
+        "the tier must carry a #oo-tip hover title (invariant #17) with the threshold long-form"
+    )
+    assert "Thresholds:" in html, "the tier hover must state the exact thresholds verbatim"
+    # 5. honesty: no score bar / composite for the tier.
+    assert "tier-score" not in html and "maturity-score" not in html, (
+        "the corpus tier is descriptive — never a score bar / composite"
+    )
+
+
 def test_first_launch_guide_wizard():
     """First-launch GUIDED SETUP (ruled 2026-06-13): a ONE-TIME stepped wizard
     walks a new user to a working app. SLICE 1 = shell + Language step + Finish/

@@ -338,3 +338,114 @@ def test_draft_add_and_export_markdown(monkeypatch, tmp_path):
 
     draft_store.remove_card(card["id"])
     assert draft_store.load_draft()["items"] == []
+
+
+# --------------------------------------------------------------------------- #
+#  Corpus maturity tier — a DESCRIPTIVE stage, never a score (evidence-tier)
+# --------------------------------------------------------------------------- #
+def _tier_session():
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    s.add(Source(name="Alpha", domain="alpha.test", country="fr"))
+    s.commit()
+    return s
+
+
+def _populate(session, n, span_days):
+    """Add ``n`` articles whose published_at spans exactly ``span_days`` days."""
+    now = datetime.now(UTC)
+    for i in range(n):
+        # Spread evenly so min->max == span_days regardless of n (>=2 needed).
+        offset = 0 if n <= 1 else round(span_days * i / (n - 1))
+        a = Article(
+            url=f"https://x.test/{i}",
+            canonical_url=f"https://x.test/{i}",
+            source_id=1,
+            title=f"Story {i}",
+            hash=f"h{i}",
+            language="en",
+            content="some text",
+            published_at=now - timedelta(days=offset),
+            created_at=now,
+        )
+        session.add(a)
+    session.commit()
+
+
+def test_corpus_tier_no_score_field():
+    """The tier must never carry a composite score (the §6 honesty guard)."""
+    from src.briefing.producers import corpus_tier
+
+    s = _tier_session()
+    _populate(s, 5, 3)
+    out = corpus_tier(s)
+    for banned in ("score", "trust_score", "credibility", "rating", "verdict", "maturity_score"):
+        assert banned not in out
+
+
+def test_corpus_tier_empty_is_early():
+    from src.briefing.producers import corpus_tier
+
+    s = _tier_session()  # zero articles
+    out = corpus_tier(s)
+    assert out["tier"] == "early"
+    assert out["articles"] == 0
+    assert out["age_days"] == 0
+    # The thresholds travel so the UI can state them verbatim.
+    th = out["thresholds"]
+    assert {"young_articles", "min_span_days", "established_articles", "established_days"} <= set(th)
+
+
+def test_corpus_tier_small_young_is_early():
+    from src.briefing.producers import corpus_tier
+
+    s = _tier_session()
+    _populate(s, 10, 2)  # few articles, short span
+    out = corpus_tier(s)
+    assert out["tier"] == "early"
+    assert out["articles"] == 10
+
+
+def test_corpus_tier_enough_articles_but_short_span_is_early():
+    # Reuses _is_young's article threshold AND the min-span rule: a big, brand-new
+    # burst is still EARLY because the span is too short to lean on.
+    from src.briefing.producers import corpus_tier
+
+    s = _tier_session()
+    _populate(s, 1200, 3)  # plenty of articles, only 3 days of span
+    out = corpus_tier(s)
+    assert out["tier"] == "early"
+
+
+def test_corpus_tier_middle_is_developing():
+    from src.briefing.producers import corpus_tier
+
+    s = _tier_session()
+    _populate(s, 400, 40)  # past young + min-span, below established thresholds
+    out = corpus_tier(s)
+    assert out["tier"] == "developing"
+    assert out["age_days"] == 40
+
+
+def test_corpus_tier_large_and_old_is_established():
+    from src.briefing.producers import corpus_tier
+
+    s = _tier_session()
+    _populate(s, 1500, 120)  # >= established_articles AND >= established_days
+    out = corpus_tier(s)
+    assert out["tier"] == "established"
+    assert out["articles"] == 1500
+    assert out["age_days"] == 120
+
+
+def test_briefing_view_carries_corpus_tier(corpus):
+    """The Home briefing API response gains the additive corpus_tier field."""
+    view = service.get_briefing(corpus)
+    assert "corpus_tier" in view
+    assert view["corpus_tier"]["tier"] in ("early", "developing", "established")
+    # Additive only: the existing contract keys are all still present.
+    for key in ("generated_at", "count", "total", "dismissed_count", "buckets", "cards"):
+        assert key in view
