@@ -578,8 +578,20 @@ the maintainer's BUILD lags #129 / a regression (Home not showing subtabs) — c
 **(B)** EXTEND the same component to surfaces that aren't subtabs yet (Markets
 categories, the Agenda view switch) — the invariant-#18 "next adopters"; **(C)** REWORK
 the subtab visual design itself across the app (a new look for the one component);
-**(D)** something else. Resolving this changes the work — clarifying question posed;
-answer to be folded in here.
+**(D)** something else.
+
+**RESOLVED (maintainer, 08:50):** option **(C)** — **rework the subtab LOOK across the
+whole app**. NOT a build-lag, and not (only) extending to new surfaces: keep the ONE
+shared component (`ooSubtabs`, **index.html:5834**, + the `<nav class="tabs">` grammar &
+its CSS) and **redesign its visual treatment** — which, because it is a single
+component/class, propagates to all six adopters AT ONCE (the payoff of invariant #18). So
+this is a **centralised CSS/component visual refresh**, applied everywhere uniformly (not
+per-surface work). **⏭ OPEN (needs the maintainer's design intent, or the implementer
+proposes options):** the SPECIFIC new look — bar shape, active-state (underline vs pill
+vs filled), spacing, typography, hue/accent — while preserving ARIA + keyboard nav + the
+#oo-tip hover. Item K (the analysis subtabs) and every other adopter inherit it
+automatically. Build-lag is moot: choosing "rework the look" means the maintainer DOES
+see the subtabs and wants them redesigned.
 
 ---
 
