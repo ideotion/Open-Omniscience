@@ -575,7 +575,10 @@ ruling, a contingency, or a deliberate-omission note.
   recurring-event model unifying rules + per-year instances +
   origin year ("since 1810" — the Mexico sighting was the ICS import path
   storing year-pinned instances); month-span banners ("Dry January"); the
-  remaining views (week/trimester/semester/year/decade); play speeds 0.05–16×
+  remaining views (week/trimester/semester/year/decade) — ALL SHIPPED now (week
+  + year earlier; Trimester/Semester/Decade = PR #206, reusing the shared event
+  path + Year-view card grammar, one shared nav bar, Intl-localized ×12);
+  REMAINING here = play speeds 0.05–16×
   log-stepped; PRELOADED worldwide bank holidays + religious calendars
   (moon-based Islamic = computed tabular dates with the honest ±1-day
   moon-sighting caveat; Hindu/Buddhist = sourced published tables, NEVER a
@@ -879,8 +882,10 @@ ruling, a contingency, or a deliberate-omission note.
   2026-06-14 (h2/p/button keyed ×12; the engine auto-translates the static
   card once keyed); REMAINING here = the server-built home-card TITLES.
 - **MARKETS/INDICES/COMMODITIES (consolidated; TOOLKIT SHIPPED T8 slice 1 —
-  invariant #16; REMAINING: roll ooChart onto commodity-card enlarge,
-  indices board detail, timemap-adjacent charts):** Commodities cards render the real curve at every
+  invariant #16; INDICES DETAIL SHIPPED PR #205 — the Indices board gained a
+  click→detail chart via ooChart on the full series (commodity-card "enlarge" was
+  already the ooChart detail path, no separate enlarge existed); REMAINING:
+  timemap-adjacent charts):** Commodities cards render the real curve at every
   timeframe (drop the "· 5 pts" suffix); axes detailed; discrete gridlines.
   **COMMODITIES TAB REWORK (ruled 2026-06-13, field session):** (1) split the
   board GRAPHS INTO CATEGORY TABS (the universal subtab grammar — UI plan §1);
