@@ -874,5 +874,9 @@
   "Find coverage in your corpus": "Encontrar cobertura en su corpus",
   "mentions": "menciones",
   "📍 places": "📍 lugares",
-  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Mostrar los lugares que su corpus MENCIONA, deducidos del texto de los artículos (nunca confirmados). El área del marcador varía según cuántos artículos mencionan cada lugar — recuentos brutos, sin puntuación."
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Mostrar los lugares que su corpus MENCIONA, deducidos del texto de los artículos (nunca confirmados). El área del marcador varía según cuántos artículos mencionan cada lugar — recuentos brutos, sin puntuación.",
+  "open detailed chart": "abrir gráfico detallado",
+  "open detail + correlation": "abrir detalle + correlación",
+  "point(s)": "punto(s)",
+  "Chart unavailable:": "Gráfico no disponible:"
 }

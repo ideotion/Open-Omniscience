@@ -874,5 +874,9 @@
   "Find coverage in your corpus": "Найти освещение в вашем корпусе",
   "mentions": "упоминания",
   "📍 places": "📍 места",
-  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Показать места, которые УПОМИНАЕТ ваш корпус, выведенные из текста статей (не подтверждено). Площадь маркера зависит от того, сколько статей упоминают каждое место — необработанные подсчёты, без оценки."
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Показать места, которые УПОМИНАЕТ ваш корпус, выведенные из текста статей (не подтверждено). Площадь маркера зависит от того, сколько статей упоминают каждое место — необработанные подсчёты, без оценки.",
+  "open detailed chart": "открыть подробный график",
+  "open detail + correlation": "открыть детали + корреляцию",
+  "point(s)": "точк(и)",
+  "Chart unavailable:": "График недоступен:"
 }

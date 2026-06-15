@@ -874,5 +874,9 @@
   "Find coverage in your corpus": "Abdeckung in Ihrem Korpus finden",
   "mentions": "Erwähnungen",
   "📍 places": "📍 Orte",
-  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Zeigt die Orte, die Ihr Korpus ERWÄHNT, abgeleitet aus dem Artikeltext (nie bestätigt). Die Markierungsfläche skaliert damit, wie viele Artikel jeden Ort erwähnen — Rohzahlen, kein Score."
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Zeigt die Orte, die Ihr Korpus ERWÄHNT, abgeleitet aus dem Artikeltext (nie bestätigt). Die Markierungsfläche skaliert damit, wie viele Artikel jeden Ort erwähnen — Rohzahlen, kein Score.",
+  "open detailed chart": "detailliertes Diagramm öffnen",
+  "open detail + correlation": "Detail + Korrelation öffnen",
+  "point(s)": "Punkt(e)",
+  "Chart unavailable:": "Diagramm nicht verfügbar:"
 }

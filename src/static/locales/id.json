@@ -874,5 +874,9 @@
   "Find coverage in your corpus": "Temukan liputan di korpus Anda",
   "mentions": "penyebutan",
   "📍 places": "📍 tempat",
-  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Tampilkan tempat yang DISEBUTKAN korpus Anda, disimpulkan dari teks artikel (tidak pernah dikonfirmasi). Luas penanda mengikuti berapa banyak artikel yang menyebutkan setiap tempat — hitungan mentah, tanpa skor."
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Tampilkan tempat yang DISEBUTKAN korpus Anda, disimpulkan dari teks artikel (tidak pernah dikonfirmasi). Luas penanda mengikuti berapa banyak artikel yang menyebutkan setiap tempat — hitungan mentah, tanpa skor.",
+  "open detailed chart": "buka grafik terperinci",
+  "open detail + correlation": "buka detail + korelasi",
+  "point(s)": "titik",
+  "Chart unavailable:": "Grafik tidak tersedia:"
 }
