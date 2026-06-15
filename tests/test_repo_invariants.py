@@ -1016,3 +1016,13 @@ def test_analysis_mindmap_controls():
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     for k in ("Map", "Cloud", "Enlarge the mindmap"):
         assert k in en
+
+
+def test_agenda_year_view():
+    """Agenda Year view (Item C remaining): a 12-month overview of clickable month
+    cards (per-month event counts), with year navigation, drilling into the Month grid."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'data-tab="year"' in html and 'id="agenda-year"' in html, "Year tab + pane required"
+    assert "function renderAgendaYear" in html and "function agYearShift" in html, "year renderer + nav"
+    assert "function agOpenMonth" in html, "clicking a month drills into Month view"
+    assert 'v === "year"' in html, "the shared nav bar must dispatch year navigation"

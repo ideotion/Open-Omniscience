@@ -828,5 +828,6 @@
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps का अनुरोध किया गया, लेकिन 'timestamping' एक्स्ट्रा स्थापित नहीं है।",
   "Custody settings saved.": "अभिरक्षा शृंखला सेटिंग्स सहेजी गईं।",
   "Enter an item id (e.g. article:42).": "एक आइटम id दर्ज करें (उदा. article:42)।",
-  "Enter a Merkle root (hex).": "एक Merkle रूट दर्ज करें (हेक्स)।"
+  "Enter a Merkle root (hex).": "एक Merkle रूट दर्ज करें (हेक्स)।",
+  "Year": "वर्ष"
 }

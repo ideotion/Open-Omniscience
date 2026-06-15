@@ -828,5 +828,6 @@
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps запрошено, но дополнение 'timestamping' не установлено.",
   "Custody settings saved.": "Настройки цепочки ответственности сохранены.",
   "Enter an item id (e.g. article:42).": "Введите идентификатор элемента (напр. article:42).",
-  "Enter a Merkle root (hex).": "Введите корень Меркла (шестнадцатеричный)."
+  "Enter a Merkle root (hex).": "Введите корень Меркла (шестнадцатеричный).",
+  "Year": "Год"
 }

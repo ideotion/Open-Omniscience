@@ -828,5 +828,6 @@
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps が要求されましたが、'timestamping' エクストラがインストールされていません。",
   "Custody settings saved.": "管理連鎖の設定を保存しました。",
   "Enter an item id (e.g. article:42).": "アイテム id を入力してください（例：article:42）。",
-  "Enter a Merkle root (hex).": "Merkle ルートを入力してください（16 進数）。"
+  "Enter a Merkle root (hex).": "Merkle ルートを入力してください（16 進数）。",
+  "Year": "年"
 }

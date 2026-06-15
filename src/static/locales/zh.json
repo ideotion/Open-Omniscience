@@ -828,5 +828,6 @@
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "已请求 OpenTimestamps，但未安装 'timestamping' 附加项。",
   "Custody settings saved.": "保管链设置已保存。",
   "Enter an item id (e.g. article:42).": "请输入项目 id（例如 article:42）。",
-  "Enter a Merkle root (hex).": "请输入 Merkle 根（十六进制）。"
+  "Enter a Merkle root (hex).": "请输入 Merkle 根（十六进制）。",
+  "Year": "年"
 }
