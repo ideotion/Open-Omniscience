@@ -949,9 +949,17 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     except Exception:  # noqa: BLE001 - extraction must never break the reader
         logger.warning("date extraction failed in reader", exc_info=True)
     try:
-        from src.timemap.locextract import extract_locations
+        from src.timemap import whostore
 
-        locs = extract_locations(content, source_country=a.country, limit=5)
+        # Prefer the persisted T12 rows (article_mentioned_places) — consistent
+        # with the corpus-wide WHERE (/api/insights/where), no recompute. Fall
+        # back to the live extractor only when an article has NO stored rows
+        # (older articles ingested before T12 persistence).
+        locs = whostore.places_for_article(db, a.id, limit=5)
+        if not locs:
+            from src.timemap.locextract import extract_locations
+
+            locs = extract_locations(content, source_country=a.country, limit=5)
         if locs:
             deduced_extra.append(
                 _row(
@@ -966,9 +974,16 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     except Exception:  # noqa: BLE001
         logger.warning("location extraction failed in reader", exc_info=True)
     try:
-        from src.timemap.entextract import extract_entities
+        from src.timemap import whostore
 
-        ents = extract_entities(content, limit=5)
+        # Prefer the persisted T12 rows (article_entities) — consistent with the
+        # corpus-wide WHO (/api/insights/who), no recompute. Fall back to the
+        # live extractor only when an article has NO stored rows.
+        ents = whostore.entities_for_article(db, a.id, limit=5)
+        if not ents["people"] and not ents["organizations"]:
+            from src.timemap.entextract import extract_entities
+
+            ents = extract_entities(content, limit=5)
         if ents["people"]:
             deduced_extra.append(
                 _row(
