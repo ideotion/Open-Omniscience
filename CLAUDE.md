@@ -246,6 +246,54 @@ ruling, a contingency, or a deliberate-omission note.
   missing route can't fail them).
 
 ## Open queue (when maintainer says proceed)
+- **ELECTIONS & CIVIC VERTICAL + POLL ANALYSIS + MANIPULATION-PATTERN CARD
+  MODELS (maintainer design session 2026-06-15; DESIGN-ONLY, not built — full
+  design + the nine card maths in `docs/FUTURE_DEVELOPMENTS.md`):** elections as
+  the everyday-person civic flagship, built as a COMPOSITION of existing substrate
+  (agenda dates + WWW + corpora + links/lineage + source-competitive) + a curated
+  data layer. THREE binding framing INVERSIONS: (1) never "politically neutral" →
+  plural & transparent about the app's OWN bias (audit §5; "Your lens"/A3 on the
+  election corpus); (2) never "voting implications" → evidence trails the user
+  navigates (Claim Workspace A1); LLM-less = the ASSET (no generated slant); (3)
+  never "detect candidates/sentiment/momentum" → curated SOURCED scaffolding +
+  descriptive caveated analytics — NO horse-race number, NO auto-detected
+  candidates, NO per-candidate sentiment verdict, NO poll-of-polls forecast.
+  "Name the shape, never prescribe it" (no honest baseline exists for candidate
+  coverage). Candidate roster = the two-class deduced/confirmed model (status
+  presumed/declared/official/withdrawn/disqualified + provenance; captured
+  commissions are ONE claim, never ground truth). FIRST SLICE (lowest risk): a
+  sourced `elections` calendar in world_events.yml (France 2027 pilot;
+  confirmed:false + official_url for movable dates; subscribable tag query).
+  Scenario card #10 "election-integrity desk" → DROP the "integrity" branding,
+  keep the capability via the general claim-provenance/single-origin tooling.
+  POLL ANALYSIS = audit METHOD (near-neutral; survey science, not values), never
+  RESULTS; a TIER STACK — build Tier 2 FIRST (transparency CHECKLIST, never a
+  score, + verbatim question/answer-STRUCTURE display when data allows = the
+  language-agnostic FACT that is the strongest+safest signal); Tier 4
+  (tie-reported-as-lead) later (points at journalists; needs Tier-2 credibility +
+  the same extractor). RULES: no composite poll score; NON-DISCLOSURE always
+  outranks disclosed-imperfection (opacity disqualifies, never disclosed-ugliness
+  — else we punish transparency); never LABEL "useless", surface a glanceable
+  disclosure FLOOR + let the user conclude; per-language caveat on anything
+  semantic; a poll is an INSTANCE of the official-statistics pattern.
+  MANIPULATION-PATTERN CARDS = detect STRUCTURE, never deception/intent/truth
+  (labeling = a censorship engine; AI-free is the ETHICAL ASSET; neutrality =
+  structural INVARIANCE + a self-audited flag distribution). SHARED SPINE:
+  effective-independent-origins r (not article count n); Benjamini–Hochberg FDR
+  over the daily scan; surprise vs the corpus's OWN baseline (Poisson/z/surprisal
+  + Wilson CIs); convergence = an AND GATE, not a multiplied probability. NINE
+  card models (astroturf · copypasta · manufactured-emergence · flood/bury ·
+  recycled-claim · source-laundering · headline-body-mismatch · outrage-intensity
+  · event-timed-op), each a new PRODUCER feeding EXISTING buckets, signal carries
+  COMPONENTS never a blend (passes assert_no_score_fields). FP/FN discipline =
+  precision-biased SURFACING + full-recall EXPLORATION; innocent-explanation shown
+  beside the pattern; "absence of a flag ≠ absence of manipulation" on every
+  producer; a microscope, never a detector. BUILD ORDER: card #6 (citation graph)
+  + #1 (near-dup) first (primitives already in src/signals/). OPEN (maintainer
+  "not sure"): Tier-4 lean; ever say "push poll" vs describe the mechanic; whether
+  to answer "who's winning" more directly. The everyday-person PARADOX recorded:
+  the honest tool withholds the simple answer that audience wants ⇒ CHANGE THE
+  PROMISE to "read the coverage yourself + catch the manipulation aimed at you".
 - **SESSION WORKING MODE (ruled 2026-06-12, this session):** reality-check the
   docs↔code gap, organize ALL open work into TOPICS (T1 performance … T20
   release-eng; the full plan lives in the session log + PR descriptions), then
