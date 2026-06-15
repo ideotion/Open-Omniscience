@@ -1064,3 +1064,33 @@ def test_commodities_category_subtabs():
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     assert "All" in en, "the 'All' lens label must be keyed for translation"
+
+
+def test_commodity_card_opens_analysis():
+    """Each commodity card's TITLE opens the universal analysis window seeded
+    with that commodity's keyword query (maintainer-ruled COMMODITIES TAB REWORK
+    item 4 / the corpora system's commodity-click entry — first slice). The
+    title is a clickable affordance calling the EXISTING openAnalysisFor(query);
+    the query comes from the curated COMMODITY_QUERY seed map (else the series
+    display name). stopPropagation keeps the card's own price-detail click
+    intact. A VISIBLE caveat states the maintainer's binding rule: the corpus
+    surfaces CO-OCCURRENCE, never causation."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the universal analysis entry point must exist (we wire to it, not reinvent)
+    assert "function openAnalysisFor" in html, "openAnalysisFor must exist to wire to"
+    # the curated symbol -> query seed map
+    assert "const COMMODITY_QUERY" in html, "the curated COMMODITY_QUERY map must exist"
+    # the card title is a clickable affordance that opens the analysis window,
+    # falling back to the series name for unmapped commodities
+    assert "COMMODITY_QUERY[s.symbol] || s.name" in html, (
+        "the title query must come from COMMODITY_QUERY, defaulting to the name"
+    )
+    assert "openAnalysisFor(" in html, "the title must open the analysis window"
+    # must not hijack the card's own (chartSymbol) click
+    assert "event.stopPropagation(); openAnalysisFor(" in html, (
+        "the title click must stopPropagation so the card's chartSymbol stays"
+    )
+    # the co-occurrence-not-causation caveat, keyed for ×12 translation
+    assert 't("co-occurrence in your corpus, never causation")' in html, (
+        "the binding co-occurrence-not-causation caveat string must be present"
+    )

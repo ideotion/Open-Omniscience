@@ -5875,6 +5875,22 @@
       ["precious", "Precious metals"], ["construction", "Construction materials"],
       ["agriculture", "Agriculture & cereals"], ["fx", "Currencies"], ["custom", "Custom"],
     ];
+    // Curated commodity SYMBOL → corpus search query (the "symbol→family seed
+    // table", maintainer-ruled). Maps a price-feed symbol to the best plain
+    // search term for that commodity's coverage in the corpus. Only symbols
+    // whose raw code/name is a poor query are listed; everything unmapped falls
+    // back to the series display name (s.name) — never an invented commodity.
+    const COMMODITY_QUERY = {
+      WTI: "oil", BRENT: "oil", NATGAS: "natural gas", NATGAS_EU: "natural gas",
+      LNG_ASIA: "liquefied natural gas", COAL: "coal", URANIUM: "uranium",
+      COPPER: "copper", ALUMINUM: "aluminium", NICKEL: "nickel", ZINC: "zinc",
+      IRON_ORE: "iron ore", TIN: "tin", LEAD: "lead",
+      GOLD: "gold", SILVER: "silver",
+      CORN: "maize corn", WHEAT: "wheat", RICE: "rice", SOYBEANS: "soybeans",
+      SUGAR: "sugar", COFFEE: "coffee", COCOA: "cocoa", COTTON: "cotton",
+      RUBBER: "rubber", LOGS: "timber logs", SAWNWOOD: "sawnwood timber",
+      EURUSD: "euro dollar exchange rate",
+    };
     let _mktCatTabs = null;        // the commodities category ooSubtabs handle
     function selectCommodityCat(key) {
       // Button/ARIA state is owned by the ooSubtabs component (universal
@@ -5923,11 +5939,22 @@
             change = `<span class="pill ${pct>=0?'ok':'err'}">${pct>=0?'+':''}${pct.toFixed(1)}%</span>`;
           }
           const lv = last ? `${fmtNum(last.price)} <span class="muted">${esc(last.currency)}/${esc(last.unit)}</span>` : '—';
+          // The TITLE is its own clickable affordance: it investigates the
+          // commodity's coverage in the corpus via the analysis window
+          // (openAnalysisFor — the universal corpora object). stopPropagation
+          // keeps the card's own chartSymbol click (the price detail) intact;
+          // the query comes from the curated COMMODITY_QUERY seed map, else the
+          // series display name. The caveat is the maintainer's binding rule:
+          // this surfaces co-occurrence in the corpus, NEVER causation.
+          const q = COMMODITY_QUERY[s.symbol] || s.name || s.symbol;
           return `<div class="stat" style="cursor:pointer" title="open detail + correlation"
               onclick="chartSymbol(${esc(JSON.stringify(s.symbol))}, ${esc(JSON.stringify(last?last.unit:''))})">
             <div style="display:flex;justify-content:space-between;align-items:baseline">
-              <strong title="${esc(s.name || s.symbol)}">${esc(s.symbol)}</strong> ${change}</div>
+              <button type="button" title="${esc(s.name || s.symbol)}"
+                style="background:none;border:none;padding:0;margin:0;font:inherit;font-weight:700;color:var(--accent);cursor:pointer;text-decoration:none"
+                onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))})">${esc(s.symbol)} ⊞</button> ${change}</div>
             <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv}</div>
+            <div class="hint muted" style="font-size:10px;margin:-2px 0 4px">${esc(t("co-occurrence in your corpus, never causation"))}</div>
             ${dashChartSvg(pts, last ? `${last.currency}/${last.unit}` : "")}</div>`;
         }).join("") + `</div>`
       ).join("");

@@ -851,5 +851,6 @@
   "LLM offline": "LLM offline",
   "Summarizing locally…": "Summarizing locally…",
   "Translating locally…": "Translating locally…",
-  "Other": "Other"
+  "Other": "Other",
+  "co-occurrence in your corpus, never causation": "co-occurrence in your corpus, never causation"
 }
