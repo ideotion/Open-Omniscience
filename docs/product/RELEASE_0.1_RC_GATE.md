@@ -18,6 +18,12 @@ Status legend: ✅ shipped+verified · 🔶 partially shipped · ⬜ open.
 Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 (strongly recommended in RC) / POST (honest to ship after, stated in notes).
 
+> **Reconciled 2026-06-15 (solo session, OO-D14-010).** This snapshot had drifted
+> behind the code: several rows below were ⬜/🔶 while shipped at HEAD (verified in
+> `index.html` / `src/`). Only **code-spot-checked** rows were advanced (under-claim is
+> safe, over-claim is not — the audit ethic). **`CLAUDE.md` is the live ledger**; this
+> gate is a periodic snapshot and may still lag it between reconciliations.
+
 ## 1. The trust core (data integrity + crypto + safety)
 
 | Item | Status | Gate | Acceptance check |
@@ -33,7 +39,7 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 | Settings → Data & backup UI on the v2 endpoints (restore preview table, encrypted-default, ×12 locales) | ✅ 2026-06-12 (T6) | RC-BLOCKING | shipped: signed-archive backup + preview→merge flow primary in Settings; plan table (new/duplicate/conflict-kept-local + samples); Apply disabled on failed verification; legacy tools demoted to a collapsed block (never silently lost); i18n 100% ×12; UI contract pinned in tests/test_restore_ui.py |
 | Network kill switch: airplane-mode semantics + online-consent popup (local IPs) + immediate repaint | ✅ | RC-BLOCKING (ethics-facing) | SHIPPED (T2, invariant #14 + tests/test_network_consent.py): every online transition consented; state never lies (scrape-start repaint) |
 | oo-netcut opt-in OS layer (interface-agnostic; netsh/networksetup parity) | ⬜ | POST (document app-level scope honestly in RC) | manual + sudoers doc; per-OS smoke |
-| Single guarded socket factory + build-failing test (no module opens its own) | ⬜ | SHOULD | grep-test in suite |
+| Single guarded socket factory + build-failing test (no module opens its own) | 🔶 2026-06-13 | SHOULD | `guarded_session` routes dumps/wiki/ores/DDG through the kill switch + proxy + honest UA; the socket-importer RATCHET test pins the allowlist (6→3). REMAINING: refactor the remaining allowed importers onto the ONE factory |
 | Newsletter scraper | ⬜ | POST (by standing ruling: only after the above is solid; no-recovery premise must be revisited first) | — |
 
 ## 2. Release engineering & portability
@@ -54,15 +60,15 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 |---|---|---|---|
 | Agenda: data-first restructure + month-grid default + tab fully i18n'd | ✅ 2026-06-11 | — | invariant #13 enforces |
 | Agenda content: recurrence schema (+origin years, month-spans), worldwide bank holidays, religious calendars (computed/moon ±1d caveat; sourced tables), astronomy layer (Meeus moons tested vs almanac + eclipse canon), article-extracted dated events layer | ⬜ | RC-BLOCKING (the maintainer's "all and everything accessible") | every entry carries method+accuracy; zero-network boot kept |
-| Agenda: remaining views (week/trimester/semester/year/decade) | ⬜ | SHOULD | month+list shipped |
+| Agenda: remaining views (week/trimester/semester/year/decade) | ✅ 2026-06-14 (PR #206) | SHOULD | all shipped — Month/Week/Trimester/Semester/Year/Decade/List view buttons present in the agenda tab (`index.html` agenda view bar) |
 | Task manager window (repeat ×2; acceptance: reorder fr-before-en wiki dumps; per-country scrape priority) + download arbitration (queue/prioritize/cancel) | 🔶 2026-06-12 (T9 slice 1: visible jobs view, REAL reorderable dump queue — fr-before-en works end-to-end and is tested; arbitration ask on collect) | RC-BLOCKING (twice-repeated ask) | REMAINING: per-country scrape priority; arbitration ask on remaining starters; richer pass-time estimates |
 | Reader TABS (mindmap/related/source/keywords/sentiment) | ⬜ | RC-BLOCKING (twice-repeated ask) | bar: sleek, data-rich, scientifically driven |
-| The ONE corpora system (6 entries: hand/tag-selection/tag-click/commodity-click/keyword-click/date-keyword-click; keyword windows = same sub-tabs + events sub-tab + TIME-SCOPE control) | 🔶 2026-06-12 (T10 slice 1: keyword-click window with Trend/Articles/LINKS; /api/links/shared substrate with independence notes, tested) | RC-BLOCKING (the flagship analysis object) | REMAINING: full sub-tab set, other entries, time-scope control |
-| Interactive charts (zoom/pan/X-Y readout/legends; kill the 5-point cap; real curves) | 🔶 2026-06-12 (T8 slice 1: ooChart toolkit + markets symbol + insights trend; invariant #16) | RC-BLOCKING (live-test complaint) | >6mo scales render full series; REMAINING: commodity-card enlarge + indices board detail onto the toolkit |
+| The ONE corpora system (6 entries: hand/tag-selection/tag-click/commodity-click/keyword-click/date-keyword-click; keyword windows = same sub-tabs + events sub-tab + TIME-SCOPE control) | 🔶 advanced 2026-06-15 | RC-BLOCKING (the flagship analysis object) | sub-tab set built out on the `#corpus` modal (Mindmap/Sentiment/Keywords/Sources/Competitive, PRs #214–218) AND the Group F `#analyze` window (invariant #22); TIME-SCOPE shipped as `ooTimeScope` (PRs #197–201). REMAINING: the **two-windows consolidation** (known debt, CLAUDE.md) + the remaining entry points |
+| Interactive charts (zoom/pan/X-Y readout/legends; kill the 5-point cap; real curves) | 🔶 advanced 2026-06-15 | RC-BLOCKING (live-test complaint) | full series at all scales; **indices board detail rolled onto `ooChart`** (PR #205; invariant #16 asserts `ooChart($("idx-chart-oo")`). REMAINING: commodity-card enlarge; the n<10→bar rule (Item Y, DEFERRED on a baseline-honesty Q) |
 | Commodity → keyword-family pivot (price curve + article-timeline overlay; symbol→family seed table) | ⬜ | SHOULD | co-occurrence framing, never causation |
 | Continuous collection (per-country round-robin + first-run approval + onboarding country/language picker; explainable schedule) | 🔶 2026-06-13 (slice 1: boot-in-airplane-mode + continuous loop + per-country round-robin ordering, tested) | SHOULD | consent design shared with network popup; REMAINING: onboarding picker, explainable cycle detail, demote arbitration modal, parallel fetch |
-| When×Where×Who extraction at ingest + backfill (confirmed GO) | 🔶 2026-06-12 (T12: persistence shipped through the one index hook — tables + migration + provenance, tested) | SHOULD (substrate for convergence) | REMAINING: reader reads stored rows; map gains event-places; WHO aggregation |
-| Convergence detection + watch rules (the 0.0.9 flagship, layers 3+4) | ⬜ | POST (honest: too large to rush into an RC; ships in 0.1.x with its own design) | maintainer veto point |
+| When×Where×Who extraction at ingest + backfill (confirmed GO) | 🔶 advanced 2026-06-15 | SHOULD (substrate for convergence) | reader now reads STORED rows (PR #202, `datestore.for_article`); WHO+WHERE corpus aggregates shipped (`/api/insights/who` + `/where`); temporal-map mention layer (PR #200). REMAINING: map gains EVENT-places too |
+| Convergence detection + watch rules (the 0.0.9 flagship, layers 3+4) | 🔶 slice 1 2026-06-15 (PR #212) | POST | READ-ONLY space-time co-occurrence shipped (`src/analytics/convergence.py` + briefing producer; distinct-sources metric, no score). REMAINING: the watch-rule engine (a genuine maintainer ruling — its UX) + a dedicated convergence view |
 | Permanent top-bar language switcher (flag + native name) | ✅ 2026-06-12 (T7) | RC-BLOCKING (reputation ×12 languages) | shipped: 12-language menu (flag = cue, native name = identifier), one click through OOI18N.setLang (DOM re-walk + t() for dynamic strings), Settings sync, invariant #15 |
 | i18n long tail → ~0 (audit-chrome per tab) + Home-card title translation design | ⬜ | RC-BLOCKING | `i18n_report.py --audit-chrome` ≈ 0 per tab |
 | French easter eggs (transnational, translatable) | ⬜ | SHOULD | personality.yml |
