@@ -252,9 +252,23 @@ def framing_split(session) -> list[Card]:
                         "published_at": hd.get("published_at"),
                     }
                 )
+        spread = round(high["avg_tone"] - low["avg_tone"], 2)
+        math_rows = [
+            ("Most-positive outlet's tone (VADER, −1…+1)", f"{high['avg_tone']:+.2f}"),
+            ("Most-negative outlet's tone (VADER, −1…+1)", f"{low['avg_tone']:+.2f}"),
+            ("Tone spread = positive − negative", f"{spread:+.2f}"),
+            ("Outlets compared on this topic", str(len(by_source))),
+            ("Pieces of coverage analysed", str(result.get("total_articles") or 0)),
+        ]
         return [
             Card(
                 type="framing_split",
+                trigger=_trigger(
+                    "Two of your sources cover the same topic but in opposite emotional "
+                    "registers — one reads positive, another negative. That divergence is "
+                    "worth a closer look; it never means either outlet is biased.",
+                    math_rows,
+                ),
                 title=f"“{term['term']}”: outlets frame it differently",
                 summary=(
                     f"On “{term['term']}”, {high['source']} reads {high['tone_label']} "
@@ -297,10 +311,23 @@ def record_reshaped(session) -> list[Card]:
     cards: list[Card] = []
     for rev, page in rows:
         reasons = (rev.flag_reasons or "").replace(",", ", ")
+        reason_count = len([r for r in (rev.flag_reasons or "").split(",") if r])
         url = f"https://{page.wiki}.wikipedia.org/wiki/{page.title.replace(' ', '_')}?diff={rev.revid}"
+        math_rows = [
+            ("Size change of this edit (bytes)", f"{rev.delta_bytes:+}"),
+            ("Flag reasons raised on it", str(reason_count)),
+            ("Made by an anonymous editor", "✓" if rev.editor_anon else "—"),
+            ("Revision id (anchors the diff)", str(rev.revid)),
+        ]
         cards.append(
             Card(
                 type="record_reshaped",
+                trigger=_trigger(
+                    "An edit to a tracked Wikipedia page tripped one of the honest "
+                    "large-edit flags — by its size or its pattern. The flag only means "
+                    "a human should open the diff and judge; it is never a verdict of vandalism.",
+                    math_rows,
+                ),
                 title=f"Wikipedia ({page.wiki}): “{page.title}” reshaped",
                 summary=(
                     f"A flagged edit changed “{page.title}” by {rev.delta_bytes:+} bytes"
@@ -373,9 +400,24 @@ def price_narrative(session) -> list[Card]:
         result = correlate_price_with_news(points, article_dates)
         if result.insufficient_data or result.coefficient is None:
             continue
+        math_rows = [
+            ("Correlation r (−1…+1)", f"{result.coefficient:+.2f}"),
+            ("p-value (how likely by chance)", f"{result.p_value:.3g}"),
+            ("Overlapping days compared (n)", str(result.n)),
+            (
+                "Significant at p < 0.05",
+                ("✓" if result.significant else "—") if result.significant is not None else "—",
+            ),
+        ]
         cards.append(
             Card(
                 type="price_narrative",
+                trigger=_trigger(
+                    "On the days where you have both a price for this commodity and "
+                    "coverage about it, the price moves and the volume of coverage tend "
+                    "to rise and fall together. Moving together is not proof one causes the other.",
+                    math_rows,
+                ),
                 title=f"{label}: price moves vs coverage",
                 summary=(
                     f"Daily price change and news volume for {label} correlate "
@@ -809,9 +851,26 @@ def emotion_profile_card(session) -> list[Card]:
         return []
     kw = resolve_keyword(session, term["term"])  # resolve once (F-009)
     rows = _articles_for_term(session, kw.id, days=21, limit=4) if kw else []
+    dom_hits = prof["categories"][prof["dominant"]]
+    dom_share = round(dom_hits / prof["total_hits"] * 100) if prof["total_hits"] else 0
+    math_rows = [
+        ("Context windows scanned around the term", str(prof["n_snippets"])),
+        ("Emotion-associated words found in them", str(prof["total_hits"])),
+        (f"Of which in the leading category ({prof['dominant']})", str(dom_hits)),
+        (
+            "Leading category's share = its hits ÷ all hits",
+            f"{dom_hits} ÷ {prof['total_hits']} = {dom_share}%",
+        ),
+    ]
     return [
         Card(
             type="emotion_profile",
+            trigger=_trigger(
+                "The words used around this topic lean toward one emotional category "
+                "more than the others. That is a pattern in the wording to read, never "
+                "a label that an outlet is fearmongering.",
+                math_rows,
+            ),
             title=f"“{term['term']}”: coverage skews {prof['dominant']}",
             summary=(
                 f"Across {prof['n_snippets']} context windows around “{term['term']}”, "
@@ -870,13 +929,37 @@ def ip_litigation_pulse(session) -> list[Card]:
     hits = [t for t in rising if t["normalized"] in _IP_TERMS]
     if not hits:
         return []
+    from src.signals.intervals import rate_ratio_interval
+
     top = max(hits, key=lambda t: t["growth"])
     kw = resolve_keyword(session, top["term"])
     rows = _articles_for_term(session, kw.id, days=_IP_DAYS, limit=6) if kw else []
     names = ", ".join(sorted({t["term"] for t in hits}))
+    ci = rate_ratio_interval(top["recent"], top["prior"], window_days=7, baseline_days=30)
+    math_rows = [
+        ("IP/legal terms rising in your corpus", str(len(hits))),
+        ("Fastest of them: mentions in the last 7 days", str(top["recent"])),
+        ("Its mentions in the 30 days before that", str(top["prior"])),
+        (
+            "Its growth = recent rate ÷ earlier rate"
+            if top["prior"]
+            else "Brand-new term — no earlier mentions to compare against",
+            f"×{top['growth']}",
+        ),
+        (
+            "How sure can we be? (95% interval)" if ci else "Too few mentions for a confidence interval",
+            f"×{round(ci.low, 2)} – ×{round(ci.high, 2)}" if ci else "—",
+        ),
+    ]
     return [
         Card(
             type="ip_litigation_pulse",
+            trigger=_trigger(
+                "Words about patents, lawsuits and other legal disputes are showing up "
+                "in your collection more than before. This tracks how much such language "
+                "is being reported — never the merits of any actual case.",
+                math_rows,
+            ),
             title="IP / legal terms are rising",
             summary=(
                 f"IP/legal vocabulary is trending in your corpus ({names}); “{top['term']}” "
@@ -934,9 +1017,21 @@ def ownership_change(session) -> list[Card]:
         for a, name in matches
     ]
     lead = matches[0][0].title or "(untitled)"
+    math_rows = [
+        ("Recent articles scanned for deal language", str(len(rows))),
+        ("Of which match an acquisition/merger/divestiture verb", str(len(matches))),
+        ("Recency window scanned (days)", str(_IP_DAYS)),
+        ("Most this card surfaces at once", str(_MAX_DEAL)),
+    ]
     return [
         Card(
             type="ownership_change",
+            trigger=_trigger(
+                "Some recent articles use the language of corporate deals — acquired, "
+                "merged, divested. This flags the wording for you to verify against the "
+                "primary filing; it never asserts a deal actually happened.",
+                math_rows,
+            ),
             title=f"{len(matches)} possible ownership-change report(s)",
             summary=(
                 f"Recent articles use deal language (acquired / merger / divested), e.g. "
@@ -977,9 +1072,21 @@ def law_change(session) -> list[Card]:
     cards: list[Card] = []
     for rev, doc in rows:
         reasons = (rev.flag_reasons or "").replace(",", ", ")
+        reason_count = len([r for r in (rev.flag_reasons or "").split(",") if r])
+        math_rows = [
+            ("Size change of this revision (bytes)", f"{rev.delta_bytes:+}"),
+            ("Flag reasons raised on it", str(reason_count)),
+            ("Compared against", "the stored baseline text"),
+        ]
         cards.append(
             Card(
                 type="law_change",
+                trigger=_trigger(
+                    "A legal document you track changed compared with the version stored "
+                    "before, and the size of the change tripped a flag. The flag only means "
+                    "a human should read the diff — it is never a judgement about the law.",
+                    math_rows,
+                ),
                 title=f"Law changed ({doc.jurisdiction}): {doc.title[:70]}",
                 summary=(
                     f"A tracked legal document changed by {rev.delta_bytes:+} bytes vs its baseline"
@@ -1031,9 +1138,21 @@ def model_legislation(session) -> list[Card]:
         if len(cards) >= _MAX_LAW:
             break
         titles = [by_id[m] for m in cluster.members]
+        math_rows = [
+            ("Distinct jurisdictions sharing the text", str(len(jurs))),
+            ("Documents in this near-identical cluster", str(len(cluster.members))),
+            ("Average text similarity (Jaccard, 0…1)", f"{cluster.avg_similarity:.2f}"),
+            ("Minimum similarity to cluster", f"≥ {result.threshold:.2f}"),
+        ]
         cards.append(
             Card(
                 type="model_legislation",
+                trigger=_trigger(
+                    "Legal texts in different places are nearly word-for-word the same. "
+                    "That is a measurable diffusion pattern worth a look — shared templates "
+                    "and treaties also share text, so it is never proof of coordinated lobbying.",
+                    math_rows,
+                ),
                 title=f"Near-identical law across {len(jurs)} jurisdictions",
                 summary=(
                     f"Legal text is near-duplicate across {', '.join(jurs)} "
@@ -1109,9 +1228,22 @@ def story_lineage(session) -> list[Card]:
             continue
         ev = _articles_by_id(session, [i.doc_id for i in lin.chain[:5]])
         evidence = [ev[i.doc_id] for i in lin.chain[:5] if i.doc_id in ev]
+        math_rows = [
+            ("Outlets carrying near-identical text", str(len(sources))),
+            ("Documents in the traced chain", str(len(cluster.members))),
+            ("Average text similarity (Jaccard, 0…1)", f"{cluster.avg_similarity:.2f}"),
+            ("Minimum similarity to cluster", f"≥ {nd.threshold:.2f}"),
+            ("Attributed to a named wire agency", "✓" if lin.wire_origin else "—"),
+        ]
         return [
             Card(
                 type="story_lineage",
+                trigger=_trigger(
+                    "Many of your outlets ran near-identical text on one story. Ordering the "
+                    "copies by publication time points back toward the earliest one — a "
+                    "candidate origin to foreground, not a proven first source.",
+                    math_rows,
+                ),
                 title=f"One story, {len(sources)} outlets — tracing the source",
                 summary=(
                     f"A story echoed across {len(sources)} sources traces earliest to "
