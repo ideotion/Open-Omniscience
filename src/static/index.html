@@ -124,6 +124,11 @@
     html[data-sidebar="collapsed"] .nav-item .badge,
     html[data-sidebar="collapsed"] .sb-foot .lbl { display:none; }
     html[data-sidebar="collapsed"] .nav-item { justify-content:center; padding:10px 0; }
+    /* Sidebar toggle: show the affordance for the CURRENT state — a discoverable
+       EXPAND button (right chevron) in the collapsed rail, the Collapse button
+       (left chevron) when expanded (maintainer-reported: "no discoverable expand"). */
+    html:not([data-sidebar="collapsed"]) #sb-expand { display:none; }
+    html[data-sidebar="collapsed"] #sb-collapse { display:none; }
 
     .main-col { flex:1; min-width:0; display:flex; flex-direction:column; }
     .topbar { position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:12px;
@@ -748,8 +753,10 @@
                 style="display:flex;align-items:center;justify-content:center;gap:8px;flex:1">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.2A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 2.6 14H2.5a2 2 0 0 1 0-4h.2A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10 2.6V2.5a2 2 0 0 1 4 0v.2A1.6 1.6 0 0 0 17 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H23a2 2 0 0 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg>
           <span class="lbl">Settings</span></button>
-        <button class="icon-btn" onclick="toggleSidebar()" title="Collapse sidebar" aria-label="Collapse sidebar" style="flex:0 0 auto">
+        <button id="sb-collapse" class="icon-btn" onclick="toggleSidebar()" title="Collapse sidebar" aria-label="Collapse sidebar" style="flex:0 0 auto">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+        <button id="sb-expand" class="icon-btn" onclick="toggleSidebar()" title="Expand sidebar" aria-label="Expand sidebar" style="flex:0 0 auto">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
       </div>
     </aside>
 

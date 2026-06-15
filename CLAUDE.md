@@ -1382,6 +1382,15 @@ ruling, a contingency, or a deliberate-omission note.
     while offline — never the active green. Class-B choice (D-03): muted/grounded,
     NOT the literal go-off accent (which is `--ok` green here = would conflate with
     active-green) and NOT a new alarm-red. +1 string ("Collecting paused") ×12.
+  - **Item R SHIPPED — discoverable sidebar EXPAND affordance:** the collapsed
+    rail showed only a "Collapse sidebar"-titled button (left chevron) with no
+    discoverable way back. Now TWO CSS-toggled buttons share the slot: `#sb-collapse`
+    (left chevron, "Collapse sidebar") when expanded, `#sb-expand` (right chevron,
+    "Expand sidebar") in the collapsed rail. REFINES decision D-05 (a single
+    state-aware *title* is unreliable: the i18n engine caches the first-seen English
+    title per element in a private WeakMap and re-translates from it on every apply,
+    clobbering a swapped title — so two STATIC keyed buttons toggled by pure CSS is
+    the i18n-robust realization of the same intent). +1 string ("Expand sidebar") ×12.
 - **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
   subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
   visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:
