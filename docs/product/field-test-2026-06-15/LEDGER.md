@@ -1290,3 +1290,58 @@ ALSO the eventual digest's S/U sections — so Item Z's deferral doesn't block t
 **⏭ Open Qs (compile):** Wikidata ingestion = bundled subset vs a one-time consented fetch? cluster
 batch size + priority bands? curated lexicon location (keyword_equivalents.yml vs a new precached
 file)? how much the app auto-applies vs waits for my curation?
+
+---
+
+## Item AB — per-language stoplists: expand them empirically via batch access; but RECALIBRATE the "too many keywords" expectation (mostly entities, not junk)  [NEW — maintainer "what do you think?"]  ⏭ analysis (endorse + 3 honest caveats)
+
+**Verbatim (10:43):** "you've created a preliminary list of words to not consider as keywords
+such as 'the' or 'it', or 'a'. this should be per language. It should help clean-up the amount
+of keywords. I heard that some politicians only use less than 500 different words in their
+speeches, so I'm surprised by this amount of keywords. Accessing the corpus by batch should
+allow identifying them and establish a list that will be by default integrated in the app. What
+do you think?"
+
+**CURRENT STATE (grounded):** stoplists ALREADY exist AND are ALREADY per-language —
+`src/services/stopwords.py` (legacy `StopwordsManager`) + the ACTIVE evidence-based **×16
+catalog-language** stoplists in `extract.py` (the ruled KEYWORD POLICY): `global_stopwords`
+applies AT QUERY TIME (reversible, no migration) ⇒ **704 keyword rows / 71,854 mentions already
+retroactively hidden**; measured junk ≈ **6% of mentions**; en+fr were already clean. So "should
+be per language" is already true.
+
+**MY TAKE — ENDORSE the mechanism + 3 honest caveats:**
+
+**ENDORSE:** use the Item AA batch pipeline to EMPIRICALLY identify high-frequency low-information
+terms PER LANGUAGE → expand the default integrated stoplists. The same batches that build families
+surface stopword/boilerplate candidates — good synergy; the result ships as the default lists.
+
+**CAVEAT 1 — RECALIBRATE the expectation (honesty owed to the maintainer too):** the "<500 words"
+figure is ONE speaker's active SPEECH vocabulary (function-heavy, a popular + inflated claim); it
+does NOT transfer to a corpus. A multilingual WORLD-NEWS corpus's distinct-term count is dominated
+by NAMED ENTITIES (every person/place/org/company/product/event in the world's news) + 16
+languages' vocabularies + inflections/numbers — tens of thousands of LEGITIMATE terms, and that's
+the POINT (the app mines entities/topics). So 80k keywords is EXPECTED and mostly SIGNAL, not junk.
+Stoplists remove the function/boilerplate tail (the measured ~6%); they CLEAN the list, they do NOT
+collapse it to hundreds. Expect a cleaner tail, not a 100× shrink. (The digest's kind-distribution
+— entity vs term — would EMPIRICALLY prove most are entities.)
+
+**CAVEAT 2 — the bigger win is BOILERPLATE, not classic function words (you already have those):**
+navigation/subscription/source-noise ("read more", "subscribe", "all articles" = the Swedish
+"alla artiklar" ×118 case) is where real cleanup remains. The `per_source_concentration` suspect
+detector ALREADY flags these; batch access can build per-language + per-source boilerplate lists.
+Target boilerplate, not more "the/it/a".
+
+**CAVEAT 3 — per-language APPLICATION is mandatory (an honesty trap):** a stopword in language A is
+SIGNAL in language B ("die" = German article vs English verb/noun; "a" = English article vs
+meaningful elsewhere). Stoplists must apply within the keyword's DOMINANT language, never globally
+— the existing design assigns a dominant language; keep it; the AA uniform-cross-language treatment
+must stoplist WITHIN each language's list, never one global list (same trap as "a global cap
+anglicises the export").
+
+**PRESERVE the ruled discipline:** evidence-based; FLAG-don't-auto-hide where uncertain; stoplists
+≠ caps (removing KNOWN function/boilerplate is legitimate; the no-cap rule protects the COUNT of
+REAL keywords); REVERSIBLE/inspectable (query-time hide; user can see + un-hide) — keep all of it.
+
+**⏭ Open Qs (compile):** boilerplate detection threshold per source/language? auto-add vs
+flag-for-curation (I review candidates, per AA)? expose the per-language stoplist in Settings
+(view/edit/un-hide)?
