@@ -121,10 +121,15 @@ live in code. **No Critical or High findings.**
 
 The weaknesses that matter are **edge controls around hostile input**, all Medium:
 
-1. **SSRF (S-001):** the fetcher validates only the URL *scheme* and follows redirects
-   **without re-validation**, so a legitimately-ingested page can 30x-redirect the fetcher to
-   loopback / private / `169.254.169.254` (cloud metadata) — robots is checked on the original
-   URL only.
+1. **SSRF (S-001) — substantially closed; one residual.** The fetcher resolves and
+   validates every target against private / loopback / link-local / `169.254.169.254`
+   (cloud metadata), and follows redirects **manually with a per-hop re-validation on
+   BOTH the page fetch and the robots.txt fetch** (the robots redirect chain was the
+   last gap — it used `allow_redirects=True` and is closed by OO-D2-001).
+   **Residual (OO-D2-003, Low/Rare):** a DNS-rebinding TOCTOU window between the
+   guard's `getaddrinfo` check and `requests`' connect-time re-resolution. Closing it
+   needs connect-time IP pinning (a custom `requests` adapter) and is tracked as
+   hardening; it is mitigated by the public-IP-literal block and the curated catalog.
 2. **Decompression-bomb / size DoS (S-002):** the 10 MiB cap is checked **after** the whole
    (auto-gunzipped) body is in memory.
 3. **CSRF on no-body POST endpoints (S-003):** no token/Origin check; a visited web page can

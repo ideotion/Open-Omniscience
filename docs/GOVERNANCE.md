@@ -12,7 +12,12 @@ afterthought.
   institutions, markets and law — surfacing measurable structure (ownership concentration,
   coordination/echo, novelty, framing, change-over-time) for a human to judge.
 - **Source protection and reproducibility** — local-first, offline-capable, with
-  tamper-evident provenance so findings can be defended.
+  tamper-evident provenance so findings can be defended. The hash-chained, signed
+  chain-of-custody trail is **opt-in** (off by default — it adds a small per-article
+  signing cost): enable it in **Settings → Chain of custody → "Auto-log on ingest"**
+  (or `OO_CUSTODY_ON_INGEST=1`) when evidentiary integrity matters for a case. Until
+  then, provenance still travels with every article (source, capture time, content
+  hash) and signed evidence bundles can be produced on demand.
 
 ## Dual-use red lines (absent by construction, not configurable)
 
