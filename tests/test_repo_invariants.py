@@ -925,3 +925,17 @@ def test_analysis_window_absorbs_synthesize():
     assert "synthesizeResults(this, anQuery(), 'an-synth')" in html, "analysis window wires its own query + panel"
     assert 'id="an-synth"' in html, "a synthesis result panel in the analysis window"
     assert "synthesizeResults(this)" in html, "the Search-tab call site stays back-compatible"
+
+
+def test_omnibar_enter_opens_analysis_window():
+    """Item I: the omnibar's default Enter action opens the corpus/analysis window
+    seeded with the query (ruled: Enter -> a corpus-of-articles window, not the
+    Search tab). The Boolean Search-tab item stays available (nothing lost)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "function openAnalysisFor" in html, "seeded analysis-window opener required"
+    assert "run: () => openAnalysisFor(raw)" in html, "the default omnibar item opens analysis"
+    # the Analysis item is unshifted LAST so it sits at index 0 (the Enter default),
+    # while the Boolean search item remains reachable.
+    i_search_item = html.index('showTab("search"); setTimeout(() => { $("q").value = raw; doSearch()')
+    i_analysis_item = html.index("run: () => openAnalysisFor(raw)")
+    assert i_search_item < i_analysis_item, "Analysis must be unshifted after Search (=> index 0, default Enter)"
