@@ -685,5 +685,11 @@
   "Not checked": "এখনও যাচাই হয়নি",
   "Sort": "সাজান",
   "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "একাধিক ফিডে থাকা একই ইভেন্ট একবারই দেখানো হয় এবং প্রতিটি উৎস তালিকাভুক্ত করা হয়; তারিখের অমিল আলাদা এন্ট্রি হিসেবে দৃশ্যমান থাকে।",
-  "imported": "আমদানিকৃত"
+  "imported": "আমদানিকৃত",
+  "Exclude": "বাদ দিন",
+  "Include": "অন্তর্ভুক্ত করুন",
+  "excluded": "বাদ দেওয়া",
+  "Exclude dysfunctional": "ত্রুটিপূর্ণগুলো বাদ দিন",
+  "Exclude shown": "প্রদর্শিতগুলো বাদ দিন",
+  "Clear exclusions": "বাদ-দেওয়া মুছুন"
 }

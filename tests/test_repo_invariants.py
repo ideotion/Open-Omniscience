@@ -821,3 +821,23 @@ def test_agenda_merges_imported_events_as_filterable_class():
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     assert "imported" in en, "the 'imported' category label must be keyed ×12"
+
+
+def test_agenda_feeds_reversible_exclude():
+    """Bulk 'remove' in the Agenda source manager = a REVERSIBLE, per-machine
+    exclude/unsubscribe (ruled 2026-06-15), never a delete-from-catalog: excluded
+    folders keep their honest verdicts in the directory (anti-hiding) but
+    contribute no imported events, and can be re-included.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "oo.agenda.excluded" in html, "exclusions must be a per-machine, reversible store"
+    for fn in ("function agExcluded", "function agToggleExclude", "function agExcludeBulk", "function agExcludeClear"):
+        assert fn in html, f"reversible exclude requires {fn}()"
+    # imported events from an excluded folder are filtered out of the agenda
+    assert "filter(e => !excl.has(e.calendar))" in html, "excluded folders must contribute no events"
+    # the directory still RENDERS excluded folders (anti-hiding) — just marked
+    assert 'class="cs-row${isExcl ? " excluded" : ""}"' in html, "excluded folders stay visible, marked"
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    for k in ("Exclude", "Include", "Exclude dysfunctional", "Clear exclusions"):
+        assert k in en, f"exclude control label {k!r} must be keyed ×12"
