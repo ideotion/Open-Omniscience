@@ -250,6 +250,12 @@ ruling, a contingency, or a deliberate-omission note.
   when adding chrome strings (12 languages, Arabic is RTL).
 - Maintainer merges PRs fast: after `git push`, if the output says
   "[new branch]", the previous PR was merged — open a NEW PR onto `0.09`.
+  COROLLARY (near-miss 2026-06-15): local `origin/0.09` goes STALE within
+  minutes given the fast merges — ALWAYS `git fetch origin 0.09` immediately
+  before `git checkout -B <branch> origin/0.09`, or a doc/ledger branch can be
+  cut from a pre-merge base and a 3-way merge could drop a just-merged ledger
+  edit on the same lines. (Caught when a finding-F ledger update branched from a
+  stale 0.09 and the entry was missing; re-cut from a freshly-fetched 0.09.)
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 - Update `docs/product/RELEASE_0.1_RC_GATE.md` rows you close, every session.
 - Lessons that cost a bug: duplicate top-level JS function names silently
