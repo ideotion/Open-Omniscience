@@ -2223,6 +2223,8 @@
         title="How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.">Sentiment</button>
       <button data-tab="sources"
         title="Which sources feed this corpus — the distinct outlets behind the member articles, with their per-corpus article count and the catalog metadata they assert (domain, country, region, language, tags). Counts are exact; the country/region/language/tags are stated by the source catalog (not deduced from text). No score, no ranking — descriptive provenance, not credibility.">Sources</button>
+      <button data-tab="competitive"
+        title="How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.">Competitive</button>
     </nav>
     <div id="corpus-body" style="padding:12px 16px;max-height:64vh;overflow:auto"></div>
   </dialog>
@@ -7307,6 +7309,20 @@
           // articles (it exposes date params but we don't fake a window control).
           el.innerHTML = `<div id="corpus-sources-host"><div class="muted">${esc(t("…"))}</div></div>`;
           await renderCorpusSources(_corpusTerm, "corpus-sources-host");
+        } else if (which === "competitive") {
+          // SOURCE-COMPETITIVE sub-tab (corpus-only, the flagship's LAST design
+          // facet): how each source APPROACHES this concept, side by side —
+          // VOLUME (exact article count), TONE (VADER mean + label), TIMING
+          // (first→last span), EMPHASIS (each outlet's distinctive terms). It is
+          // a DESCRIPTIVE comparison of DIVERGENCE, never a ranking, a winner or
+          // a credibility verdict — no composite score. Built by JOINING two
+          // EXISTING endpoints per source (no new backend, no fork): volume +
+          // timing + mean tone from /api/insights/corpus-sources, tone label +
+          // emphasised terms from /api/framing. n=1 ⇒ "nothing to compare". The
+          // function-call-into-a-fresh-host pattern (Sentiment/Sources). No
+          // time-scope: neither endpoint takes date params — honest full-corpus.
+          el.innerHTML = `<div id="corpus-competitive-host"><div class="muted">${esc(t("…"))}</div></div>`;
+          await renderCorpusCompetitive(_corpusTerm, "corpus-competitive-host");
         }
       } catch (e) { el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
@@ -7383,6 +7399,112 @@
           const inp = $("prof-source");
           if (inp) { inp.value = a.dataset.src; showTab("integrity"); loadProfile(); }
         }));
+    }
+
+    // Source-competitive sub-tab (corpus-only, the flagship's LAST design facet):
+    // how each source APPROACHES this concept, side by side. It JOINS two EXISTING
+    // endpoints per source (no new backend, no fork):
+    //   • VOLUME + TIMING + mean tone  ← /api/insights/corpus-sources
+    //     (sources[]: name, domain, articles, mean_tone, first, last)
+    //   • TONE label + EMPHASISED terms ← /api/framing
+    //     (framing[]: source, tone_label, avg_tone, article_count, top_terms[])
+    // Every column is a REAL value — exact article counts, real publication dates,
+    // the source's own VADER mean/label, that outlet's distinctive terms. There is
+    // NO composite score, NO "leader", NO ranking-as-quality: rows are ordered by
+    // VOLUME only (the most-covering source first — an ordering, not a verdict).
+    // It is a DESCRIPTIVE comparison of DIVERGENCE. n=1 ⇒ "nothing to compare"
+    // (the ledger's "n=1 has no competition"). Tone carries the VADER English-only
+    // disclosure (audit B1), reused from the framing/Sentiment surface, VISIBLE.
+    // Neither endpoint takes date params, so this is honest full-corpus — we do
+    // NOT fake a time-scope window (cf. Sentiment/Keywords/Sources).
+    async function renderCorpusCompetitive(term, hostId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const host = document.getElementById(hostId);
+      if (!host) return;
+      let cs, fr;
+      try {
+        // Both endpoints key on the FTS query (like Sentiment/Sources), so we point
+        // them at THIS window's term. Framing needs the [analysis] extra; if it is
+        // absent we still show volume/timing and say tone/emphasis is unavailable.
+        [cs, fr] = await Promise.all([
+          api(`/api/insights/corpus-sources?query=${encodeURIComponent(term)}&limit=200`),
+          api(`/api/framing?query=${encodeURIComponent(term)}`).catch(() => null),
+        ]);
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const rows = (cs && cs.sources) || [];
+      if (!rows.length) {
+        host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`;
+        return;
+      }
+      if (rows.length === 1) {
+        // The ledger's "n=1 has no competition" — honest single-source state.
+        host.innerHTML =
+          `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`;
+        return;
+      }
+      // Index framing per source (by name; tone label + emphasised terms live there).
+      const byName = {};
+      ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
+      const fmt = (n) => (n || 0).toLocaleString();
+      // Relative timing readout vs the WHOLE corpus span (real dates, never a score):
+      // the corpus's earliest/latest publication across these sources.
+      const firsts = rows.map(r => r.first).filter(Boolean).sort();
+      const lasts = rows.map(r => r.last).filter(Boolean).sort();
+      const corpusFirst = firsts[0] || null, corpusLast = lasts[lasts.length - 1] || null;
+      const day = (s) => (s || "").slice(0, 10);
+      const tonePill = (label, val) => {
+        if (val == null) return `<span class="muted">—</span>`;
+        const cls = label === "positive" ? "ok" : label === "negative" ? "err" : "";
+        const lab = label === "positive" ? t("Positive") : label === "negative" ? t("Negative")
+          : label === "neutral" ? t("Neutral") : (label || "");
+        return `<span class="pill ${cls}">${esc(lab)} ${val.toFixed(2)}</span>`;
+      };
+      const chips = (arr) => (arr || []).slice(0, 6).filter(Boolean)
+        .map(x => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ");
+      // The "not a ranking / not credibility" disclosure — VISIBLE, with the long
+      // form in the #oo-tip hover (informed-consent layering). Plus the VADER
+      // English-only disclosure carried by the framing/corpus-sources caveat.
+      const notRanking = t("Descriptive comparison — how these sources DIFFER, never a ranking or a credibility judgement. Rows are ordered by volume only (most-covering first); there is no winner and no composite score.");
+      const body = rows.map(r => {
+        const f = byName[r.name] || {};
+        const emphasis = (f.top_terms && f.top_terms.length) ? chips(f.top_terms)
+          : `<span class="muted" style="font-size:12px">${fr ? esc(t("No distinctive terms.")) : esc(t("Needs the [analysis] extra."))}</span>`;
+        // Tone: prefer the framing label+avg; fall back to the corpus-sources mean
+        // (same VADER number) when framing has no row for this outlet — real value.
+        const toneVal = (f.avg_tone != null) ? f.avg_tone : r.mean_tone;
+        const toneLbl = f.tone_label || null;
+        const span = (r.first && r.last)
+          ? `${esc(day(r.first))} → ${esc(day(r.last))}`
+          : `<span class="muted">—</span>`;
+        return `<tr style="border-bottom:1px solid var(--line)">
+          <td style="padding:5px 8px"><b style="font-size:13px">${esc(r.name || r.domain || "—")}</b>
+            ${r.domain ? `<div class="muted" style="font-size:11px">${esc(r.domain)}</div>` : ""}</td>
+          <td style="text-align:right;padding:5px 8px">${fmt(r.articles)}</td>
+          <td style="padding:5px 8px">${tonePill(toneLbl, toneVal)}</td>
+          <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${span}</td>
+          <td style="padding:5px 8px">${emphasis}</td>
+        </tr>`;
+      }).join("");
+      host.innerHTML =
+        `<div class="hint" title="${esc(t("How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed."))}">${esc(notRanking)}</div>` +
+        `<table style="width:100%;border-collapse:collapse;font-size:13px">
+           <thead><tr style="border-bottom:1px solid var(--line)">
+             <th style="text-align:start;padding:5px 8px">${esc(t("Source"))}</th>
+             <th style="text-align:right;padding:5px 8px"
+                 title="${esc(t("How many articles in this corpus come from this source — an exact count, never a score."))}">${esc(t("Volume"))}</th>
+             <th style="text-align:start;padding:5px 8px"
+                 title="${esc(t("Mean VADER tone for this source's coverage, with the label. VADER is an ENGLISH-lexicon method — tone for non-English coverage is unreliable or absent. A real value, never a verdict."))}">${esc(t("Tone"))} <span class="muted" style="font-weight:normal">${esc(t("(VADER tone)"))}</span></th>
+             <th style="text-align:start;padding:5px 8px"
+                 title="${esc(t("The first → last publication date for this source's coverage in the corpus — real dates, never a score."))}">${esc(t("Timing"))}</th>
+             <th style="text-align:start;padding:5px 8px"
+                 title="${esc(t("This outlet's most distinctive terms when covering the concept (from framing). Descriptive emphasis, not a judgement."))}">${esc(t("Emphasis"))}</th>
+           </tr></thead>
+           <tbody>${body}</tbody>
+         </table>` +
+        `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}` +
+          `${(corpusFirst && corpusLast) ? ` · ${esc(day(corpusFirst))} → ${esc(day(corpusLast))}` : ""}` +
+          `${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ` +
+          `${esc(cs.caveat || "")} ${esc((fr && fr.caveat) || "")}</div>`;
     }
 
     // Keyword-analysis sub-tab: a ranked TABLE of the corpus's co-occurring

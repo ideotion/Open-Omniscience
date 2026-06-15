@@ -1603,3 +1603,81 @@ def test_corpus_window_sources_subtab():
     assert "loadProfile()" in sfn, (
         "the source name must reuse the existing source-profile view, not an invented destination"
     )
+
+
+def test_corpus_window_competitive_subtab():
+    """THE ONE CORPORA SYSTEM: the corpus analysis window's LAST design facet --
+    the corpus-only SOURCE-COMPETITIVE sub-tab. It shows how each source DIFFERS
+    (volume / tone / timing / emphasis) side by side: a DESCRIPTIVE comparison of
+    divergence, NEVER a ranking, a winner or a credibility verdict, and NEVER a
+    composite score. It JOINS two EXISTING endpoints per source -- no new backend,
+    no fork. Pinned so it cannot regress:
+      * a data-tab="competitive" button exists in the corpus window's ooSubtabs
+        nav (DOM-text label, no inline onclick) and every sibling sub-tab stays;
+      * corpusTab() handles "competitive" by calling renderCorpusCompetitive for
+        the window's _corpusTerm into a fresh #corpus-competitive-host;
+      * the renderer JOINS /api/insights/corpus-sources (volume/timing/mean tone)
+        with /api/framing (tone label + emphasised terms) -- both existing;
+      * the four REAL dimensions are shown (volume = exact count, tone = VADER,
+        timing = real first/last dates, emphasis = framing top_terms);
+      * the n=1 honest state exists ("nothing to compare");
+      * the "not a ranking / not credibility" + the VADER English-only
+        disclosures are reachable (informed consent).
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # 1. the Competitive button lives in the corpus window's subtab nav (DOM text).
+    nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
+    assert 'data-tab="competitive"' in nav, (
+        "the corpus window must carry a Competitive sub-tab button in its ooSubtabs nav"
+    )
+    assert "Competitive" in nav, "the sub-tab button label must be DOM text (auto-translated)"
+    assert "onclick" not in nav.lower(), "no inline onclick -- the ooSubtabs component owns clicks"
+    # every sibling sub-tab stays (nothing lost).
+    for sib in (
+        'data-tab="trend"',
+        'data-tab="articles"',
+        'data-tab="links"',
+        'data-tab="mindmap"',
+        'data-tab="sentiment"',
+        'data-tab="keywords"',
+        'data-tab="sources"',
+    ):
+        assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
+    # 2. corpusTab dispatches "competitive" -> the renderer for _corpusTerm.
+    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    assert 'which === "competitive"' in body, "corpusTab must handle the competitive sub-tab"
+    assert "renderCorpusCompetitive(_corpusTerm" in body, (
+        "the Competitive sub-tab must render for THIS window's corpus term into a fresh host"
+    )
+    assert 'id="corpus-competitive-host"' in body, (
+        "the Competitive sub-tab must mount a fresh #corpus-competitive-host (function-into-host)"
+    )
+    # 3. the renderer JOINS the two EXISTING endpoints (no new backend, no fork).
+    cfn = html.split("async function renderCorpusCompetitive(", 1)[1].split(
+        "\n    function ", 1
+    )[0]
+    assert "/api/insights/corpus-sources?" in cfn, (
+        "Competitive must reuse /api/insights/corpus-sources for volume/timing/tone"
+    )
+    assert "/api/framing?" in cfn, (
+        "Competitive must reuse /api/framing for the tone label + emphasised terms"
+    )
+    # 4. the four REAL dimensions are present (no score, no invented value).
+    assert "r.articles" in cfn, "Volume must be the REAL per-source article count"
+    assert "mean_tone" in cfn or "avg_tone" in cfn, "Tone must be the REAL VADER value"
+    assert "r.first" in cfn and "r.last" in cfn, "Timing must use REAL first/last dates"
+    assert "top_terms" in cfn, "Emphasis must come from the framing top_terms (real)"
+    # 5. n=1 honest state -- "nothing to compare" (the ledger's n=1 has no competition).
+    assert "rows.length === 1" in cfn, "the Competitive tab must special-case the single-source corpus"
+    assert "Only one source in this corpus — nothing to compare." in cfn, (
+        "n=1 must read an honest 'nothing to compare', never a fake comparison"
+    )
+    assert "No sources for this corpus yet." in cfn, "honest empty state when the corpus has no sources"
+    # 6. the disclosures are reachable: 'not a ranking/credibility' + VADER English-only.
+    assert "never a ranking" in cfn.lower(), "the 'descriptive, not a ranking' disclosure must be visible"
+    assert "credibility" in cfn.lower(), "the 'not a credibility judgement' framing must be present"
+    assert "VADER" in cfn, "the VADER tone disclosure must be reachable (tone is shown)"
+    # honesty by construction: the comparison is ordered, never scored/ranked-as-quality.
+    assert "composite score" not in cfn or "no composite score" in cfn.lower() or (
+        "never a" in cfn.lower()
+    ), "the Competitive tab must not compute a composite score"
