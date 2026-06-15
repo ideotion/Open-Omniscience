@@ -858,5 +858,21 @@
   "1M": "1M",
   "6M": "6M",
   "1Y": "1Y",
-  "5Y": "5Y"
+  "5Y": "5Y",
+  "Could not load mentioned places: ": "Не удалось загрузить упомянутые места: ",
+  "Loading mentioned places…": "Загрузка упомянутых мест…",
+  "No mapped mentions in your corpus yet.": "В вашем корпусе пока нет упоминаний на карте.",
+  "Deduced from text, never confirmed.": "Выведено из текста, не подтверждено.",
+  "mentioned places": "упомянутые места",
+  "These places have no known coordinate, so they are not drawn on the map.": "У этих мест нет известных координат, поэтому они не показаны на карте.",
+  "places not mapped (no coordinates)": "места без координат (не на карте)",
+  "city": "город",
+  "A place name extracted from article text, placed at a gazetteer coordinate.": "Название места, извлечённое из текста статьи и размещённое по координате из географического справочника.",
+  "mentioned · deduced": "упомянуто · выведено",
+  "articles mention it": "статей упоминают это",
+  "total mentions": "всего упоминаний",
+  "Find coverage in your corpus": "Найти освещение в вашем корпусе",
+  "mentions": "упоминания",
+  "📍 places": "📍 места",
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Показать места, которые УПОМИНАЕТ ваш корпус, выведенные из текста статей (не подтверждено). Площадь маркера зависит от того, сколько статей упоминают каждое место — необработанные подсчёты, без оценки."
 }

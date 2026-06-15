@@ -858,5 +858,21 @@
   "1M": "1M",
   "6M": "6M",
   "1Y": "1Y",
-  "5Y": "5Y"
+  "5Y": "5Y",
+  "Could not load mentioned places: ": "उल्लिखित स्थान लोड नहीं हो सके: ",
+  "Loading mentioned places…": "उल्लिखित स्थान लोड हो रहे हैं…",
+  "No mapped mentions in your corpus yet.": "आपके कॉर्पस में अभी तक कोई मानचित्रित उल्लेख नहीं है।",
+  "Deduced from text, never confirmed.": "पाठ से अनुमानित, कभी पुष्टि नहीं।",
+  "mentioned places": "उल्लिखित स्थान",
+  "These places have no known coordinate, so they are not drawn on the map.": "इन स्थानों के निर्देशांक ज्ञात नहीं हैं, इसलिए इन्हें मानचित्र पर नहीं दिखाया गया।",
+  "places not mapped (no coordinates)": "मानचित्रित नहीं किए गए स्थान (निर्देशांक नहीं)",
+  "city": "शहर",
+  "A place name extracted from article text, placed at a gazetteer coordinate.": "लेख के पाठ से निकाला गया स्थान नाम, गजेटियर निर्देशांक पर रखा गया।",
+  "mentioned · deduced": "उल्लिखित · अनुमानित",
+  "articles mention it": "लेख इसका उल्लेख करते हैं",
+  "total mentions": "कुल उल्लेख",
+  "Find coverage in your corpus": "अपने कॉर्पस में कवरेज खोजें",
+  "mentions": "उল्लेख",
+  "📍 places": "📍 स्थान",
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "वे स्थान दिखाएँ जिनका आपका कॉर्पस उल्लेख करता है, लेख पाठ से अनुमानित (कभी पुष्टि नहीं)। मार्कर का क्षेत्रफल इस पर निर्भर करता है कि कितने लेख प्रत्येक स्थान का उल्लेख करते हैं — कच्ची गिनती, कोई स्कोर नहीं।"
 }

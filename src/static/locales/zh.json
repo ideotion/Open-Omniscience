@@ -858,5 +858,21 @@
   "1M": "1M",
   "6M": "6M",
   "1Y": "1Y",
-  "5Y": "5Y"
+  "5Y": "5Y",
+  "Could not load mentioned places: ": "无法加载提及的地点：",
+  "Loading mentioned places…": "正在加载提及的地点…",
+  "No mapped mentions in your corpus yet.": "您的语料库中尚无可映射的提及。",
+  "Deduced from text, never confirmed.": "由文本推断，从未确认。",
+  "mentioned places": "提及的地点",
+  "These places have no known coordinate, so they are not drawn on the map.": "这些地点没有已知坐标，因此未在地图上绘制。",
+  "places not mapped (no coordinates)": "未映射的地点（无坐标）",
+  "city": "城市",
+  "A place name extracted from article text, placed at a gazetteer coordinate.": "从文章文本中提取的地名，按地名词典坐标定位。",
+  "mentioned · deduced": "提及 · 推断",
+  "articles mention it": "篇文章提及它",
+  "total mentions": "提及总数",
+  "Find coverage in your corpus": "在您的语料库中查找报道",
+  "mentions": "提及",
+  "📍 places": "📍 地点",
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "显示您的语料库提及的地点，由文章文本推断（从未确认）。标记面积随提及每个地点的文章数量而变化——原始计数，无评分。"
 }

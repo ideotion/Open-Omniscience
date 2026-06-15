@@ -858,5 +858,21 @@
   "1M": "1M",
   "6M": "6M",
   "1Y": "1Y",
-  "5Y": "5Y"
+  "5Y": "5Y",
+  "Could not load mentioned places: ": "Could not load mentioned places: ",
+  "Loading mentioned places…": "Loading mentioned places…",
+  "No mapped mentions in your corpus yet.": "No mapped mentions in your corpus yet.",
+  "Deduced from text, never confirmed.": "Deduced from text, never confirmed.",
+  "mentioned places": "mentioned places",
+  "These places have no known coordinate, so they are not drawn on the map.": "These places have no known coordinate, so they are not drawn on the map.",
+  "places not mapped (no coordinates)": "places not mapped (no coordinates)",
+  "city": "city",
+  "A place name extracted from article text, placed at a gazetteer coordinate.": "A place name extracted from article text, placed at a gazetteer coordinate.",
+  "mentioned · deduced": "mentioned · deduced",
+  "articles mention it": "articles mention it",
+  "total mentions": "total mentions",
+  "Find coverage in your corpus": "Find coverage in your corpus",
+  "mentions": "mentions",
+  "📍 places": "📍 places",
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score."
 }

@@ -858,5 +858,21 @@
   "1M": "1M",
   "6M": "6M",
   "1Y": "1Y",
-  "5Y": "5Y"
+  "5Y": "5Y",
+  "Could not load mentioned places: ": "No se pudieron cargar los lugares mencionados: ",
+  "Loading mentioned places…": "Cargando lugares mencionados…",
+  "No mapped mentions in your corpus yet.": "Aún no hay menciones cartografiadas en su corpus.",
+  "Deduced from text, never confirmed.": "Deducido del texto, nunca confirmado.",
+  "mentioned places": "lugares mencionados",
+  "These places have no known coordinate, so they are not drawn on the map.": "Estos lugares no tienen coordenadas conocidas, por lo que no se dibujan en el mapa.",
+  "places not mapped (no coordinates)": "lugares no cartografiados (sin coordenadas)",
+  "city": "ciudad",
+  "A place name extracted from article text, placed at a gazetteer coordinate.": "Un nombre de lugar extraído del texto del artículo, ubicado en una coordenada de un nomenclátor.",
+  "mentioned · deduced": "mencionado · deducido",
+  "articles mention it": "artículos lo mencionan",
+  "total mentions": "menciones totales",
+  "Find coverage in your corpus": "Encontrar cobertura en su corpus",
+  "mentions": "menciones",
+  "📍 places": "📍 lugares",
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Mostrar los lugares que su corpus MENCIONA, deducidos del texto de los artículos (nunca confirmados). El área del marcador varía según cuántos artículos mencionan cada lugar — recuentos brutos, sin puntuación."
 }
