@@ -932,10 +932,23 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     # App-deduced: capture facts + extracted event dates/locations + keywords.
     deduced_extra = []
     try:
-        from src.timemap.dateextract import extract_dates
+        from src.timemap import datestore
 
-        anchor = a.published_at.date() if a.published_at else None
-        ds = extract_dates(content, anchor=anchor, language=a.language, limit=5)
+        # Prefer the persisted (T12) date tags (article_mentioned_dates) — the
+        # SAME stored rows the "Dates mentioned in this text" section already
+        # reads, no recompute. A user-REJECTED tag is excluded from this compact
+        # summary (rejected = "not a real date here"). Fall back to the live
+        # extractor only when an article carries NO stored date tags.
+        ds = [
+            {"date": t["date"], "precision": t["precision"]}
+            for t in datestore.for_article(db, a.id)
+            if t.get("status") != "rejected" and t.get("date")
+        ][:5]
+        if not ds:
+            from src.timemap.dateextract import extract_dates
+
+            anchor = a.published_at.date() if a.published_at else None
+            ds = extract_dates(content, anchor=anchor, language=a.language, limit=5)
         if ds:
             deduced_extra.append(
                 _row(

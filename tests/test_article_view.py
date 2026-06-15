@@ -17,6 +17,7 @@ from src.database.models import (
     Article,
     ArticleEntity,
     ArticleLink,
+    ArticleMentionedDate,
     ArticleMentionedPlace,
     Base,
     Source,
@@ -296,5 +297,106 @@ def test_reader_falls_back_to_live_when_no_stored_rows(tmp_path, monkeypatch):
             assert "Fallbackton" in body  # live-computed place surfaced
             assert "Fallback Person" in body  # live-computed entity surfaced
             assert calls["loc"] == 1 and calls["ent"] == 1  # fallback ran
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_reader_reads_stored_dates_without_recomputing(tmp_path, monkeypatch):
+    """The 'Event dates in text' row reads stored article_mentioned_dates (T12),
+    NOT the live date extractor, when stored tags exist. A user-REJECTED tag is
+    excluded from the compact summary."""
+    from datetime import date
+
+    from src.database.session import get_db
+
+    Sess = _engine_with_article(tmp_path, "dates.db")
+    with Sess() as s:
+        s.add(
+            ArticleMentionedDate(
+                article_id=1,
+                mentioned_on=date(1945, 8, 6),
+                precision="day",
+                snippet="…on 6 August 1945…",
+                status="candidate",
+                extractor="dateextract",
+            )
+        )
+        s.add(
+            ArticleMentionedDate(
+                article_id=1,
+                mentioned_on=date(1969, 7, 20),
+                precision="day",
+                snippet="…20 July 1969…",
+                status="rejected",  # must NOT appear in the deduced summary
+                extractor="dateextract",
+            )
+        )
+        s.commit()
+
+    def _boom(*a, **k):  # pragma: no cover - must never be called
+        raise AssertionError("live date extractor recomputed despite stored rows")
+
+    monkeypatch.setattr("src.timemap.dateextract.extract_dates", _boom)
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    from src.api.main import app
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            r = client.get("/api/articles/1/view")
+            assert r.status_code == 200
+            body = r.text
+            assert "Event dates in text" in body
+            # Assert against the COMPACT deduced summary cell ("Event dates in
+            # text") only: the rejected tag still legitimately appears in the
+            # full "Dates mentioned in this text" management section below (with
+            # its confirm/reject controls), so a whole-body check would be wrong.
+            i = body.index("Event dates in text")
+            summary_cell = body[i : body.index("</div>", i)]
+            assert "1945-08-06" in summary_cell  # stored candidate date rendered
+            assert "1969-07-20" not in summary_cell  # rejected tag excluded
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_reader_falls_back_to_live_dates_when_no_stored_rows(tmp_path, monkeypatch):
+    """With NO stored date tags, the deduced 'Event dates in text' row falls back
+    to the live extractor."""
+    from src.database.session import get_db
+
+    Sess = _engine_with_article(tmp_path, "dates_fallback.db")  # no date rows
+
+    calls = {"dates": 0}
+
+    def _fake_dates(*a, **k):
+        calls["dates"] += 1
+        return [{"date": "2030-01-02", "precision": "day", "text": "…2 Jan 2030…"}]
+
+    monkeypatch.setattr("src.timemap.dateextract.extract_dates", _fake_dates)
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    from src.api.main import app
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            r = client.get("/api/articles/1/view")
+            assert r.status_code == 200
+            body = r.text
+            assert "2030-01-02" in body  # live-computed date surfaced
+            assert calls["dates"] >= 1  # fallback ran
     finally:
         app.dependency_overrides.clear()
