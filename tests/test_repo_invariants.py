@@ -770,3 +770,20 @@ def test_agenda_category_chips_and_country_flags():
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     assert "religious" in en, "the forthcoming 'religious' category label must be keyed ×12"
+
+
+def test_dates_render_in_app_language_not_browser_locale():
+    """User-facing dates use the app language, not the browser locale (ledger Item
+    F broader note, 2026-06-15): the shared ``fmtDateTime()`` formats via
+    ``Intl.DateTimeFormat(OOI18N.current(), …)`` (full month name in the chosen UI
+    language). The browser-locale anti-pattern ``new Date(x).toLocaleString()`` —
+    which ignores the app language entirely — must not reappear for date display.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "function fmtDateTime" in html and "Intl.DateTimeFormat(OOI18N.current()" in html, (
+        "the shared locale-aware date/time formatter must exist"
+    )
+    offenders = re.findall(r"new Date\([^)]*\)\.toLocaleString", html)
+    assert not offenders, (
+        f"browser-locale date display reintroduced (use fmtDateTime instead): {offenders}"
+    )
