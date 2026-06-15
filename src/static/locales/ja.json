@@ -700,5 +700,14 @@
   "Remove": "削除",
   "Choose a .ics file first.": "まず .ics ファイルを選択してください。",
   "Calendar removed.": "カレンダーを削除しました。",
-  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "ローカルの .ics ファイルをアップロードします — ネットワークなし。その予定は（重複を除いて）削除可能なカレンダーとしてアジェンダに加わります。ファイルは解析後に破棄されます。"
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "ローカルの .ics ファイルをアップロードします — ネットワークなし。その予定は（重複を除いて）削除可能なカレンダーとしてアジェンダに加わります。ファイルは解析後に破棄されます。",
+  "Corpus integrity (fixity)": "コーパスの完全性（固定性）",
+  "Check corpus integrity": "コーパスの完全性を確認",
+  "Checking…": "確認中…",
+  "checked": "確認済み",
+  "intact": "無傷",
+  "diverged": "不一致",
+  "All articles match their capture-time hash.": "すべての記事が取得時のハッシュと一致しています。",
+  "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "件の記事が取得時のハッシュと食い違っています — 改ざんまたはビット腐敗の証拠です。何も変更されていません。",
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "保存された各記事のハッシュを再計算し、取得時に記録されたハッシュと比較します。不一致は、保存された内容が取得時のハッシュと一致しなくなったことを意味します — 改ざんまたはビット腐敗の証拠です。何も変更されません。確認はローカルで行われ、読み取り専用です。"
 }

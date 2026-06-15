@@ -700,5 +700,14 @@
   "Remove": "Remover",
   "Choose a .ics file first.": "Escolha primeiro um ficheiro .ics.",
   "Calendar removed.": "Calendário removido.",
-  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Carregue um ficheiro .ics local — sem rede. Os seus eventos juntam-se à sua agenda (sem duplicados) como um calendário removível; o ficheiro é analisado e descartado."
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Carregue um ficheiro .ics local — sem rede. Os seus eventos juntam-se à sua agenda (sem duplicados) como um calendário removível; o ficheiro é analisado e descartado.",
+  "Corpus integrity (fixity)": "Integridade do corpus (fixidez)",
+  "Check corpus integrity": "Verificar a integridade do corpus",
+  "Checking…": "Verificando…",
+  "checked": "verificados",
+  "intact": "intactos",
+  "diverged": "divergentes",
+  "All articles match their capture-time hash.": "Todos os artigos correspondem ao seu hash do momento da captura.",
+  "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "artigos divergem do seu hash do momento da captura — evidência de adulteração ou corrupção de bits. Nada foi alterado.",
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Recalcula o hash de cada artigo armazenado e o compara com o hash registrado quando foi capturado. Uma divergência significa que o conteúdo armazenado já não corresponde ao seu hash do momento da captura — evidência de adulteração ou corrupção de bits. Nada é alterado; a verificação é local e somente leitura."
 }

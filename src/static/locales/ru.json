@@ -700,5 +700,14 @@
   "Remove": "Удалить",
   "Choose a .ics file first.": "Сначала выберите файл .ics.",
   "Calendar removed.": "Календарь удалён.",
-  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Загрузите локальный файл .ics — без сети. Его события попадают в вашу повестку (без дубликатов) как удаляемый календарь; файл разбирается и удаляется."
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Загрузите локальный файл .ics — без сети. Его события попадают в вашу повестку (без дубликатов) как удаляемый календарь; файл разбирается и удаляется.",
+  "Corpus integrity (fixity)": "Целостность корпуса (фиксация)",
+  "Check corpus integrity": "Проверить целостность корпуса",
+  "Checking…": "Проверка…",
+  "checked": "проверено",
+  "intact": "без изменений",
+  "diverged": "расходятся",
+  "All articles match their capture-time hash.": "Все статьи соответствуют своему хешу на момент захвата.",
+  "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "статей расходятся со своим хешем на момент захвата — признак подделки или битового распада. Ничего не изменено.",
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Заново вычисляет хеш каждой сохранённой статьи и сравнивает его с хешем, записанным при захвате. Несовпадение означает, что сохранённое содержимое больше не соответствует своему хешу на момент захвата — признак подделки или битового распада. Ничего не изменяется; проверка локальная и только для чтения."
 }

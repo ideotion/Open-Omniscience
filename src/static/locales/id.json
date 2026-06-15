@@ -700,5 +700,14 @@
   "Remove": "Hapus",
   "Choose a .ics file first.": "Pilih berkas .ics terlebih dahulu.",
   "Calendar removed.": "Kalender dihapus.",
-  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Unggah berkas .ics lokal — tanpa jaringan. Acaranya bergabung ke agenda Anda (tanpa duplikat) sebagai kalender yang dapat dihapus; berkas diurai lalu dibuang."
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Unggah berkas .ics lokal — tanpa jaringan. Acaranya bergabung ke agenda Anda (tanpa duplikat) sebagai kalender yang dapat dihapus; berkas diurai lalu dibuang.",
+  "Corpus integrity (fixity)": "Integritas korpus (fiksitas)",
+  "Check corpus integrity": "Periksa integritas korpus",
+  "Checking…": "Memeriksa…",
+  "checked": "diperiksa",
+  "intact": "utuh",
+  "diverged": "menyimpang",
+  "All articles match their capture-time hash.": "Semua artikel cocok dengan hash saat pengambilannya.",
+  "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "artikel menyimpang dari hash saat pengambilannya — bukti adanya manipulasi atau kerusakan bit. Tidak ada yang diubah.",
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Menghitung ulang hash setiap artikel tersimpan dan membandingkannya dengan hash yang dicatat saat artikel diambil. Ketidakcocokan berarti konten tersimpan tidak lagi cocok dengan hash saat pengambilannya — bukti adanya manipulasi atau kerusakan bit. Tidak ada yang diubah; pemeriksaan bersifat lokal dan hanya-baca."
 }

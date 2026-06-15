@@ -700,5 +700,14 @@
   "Remove": "সরান",
   "Choose a .ics file first.": "আগে একটি .ics ফাইল বেছে নিন।",
   "Calendar removed.": "ক্যালেন্ডার সরানো হয়েছে।",
-  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "একটি স্থানীয় .ics ফাইল আপলোড করুন — কোনো নেটওয়ার্ক নয়। এর ইভেন্টগুলো (অনুলিপি বাদ দিয়ে) একটি অপসারণযোগ্য ক্যালেন্ডার হিসেবে আপনার কর্মসূচিতে যুক্ত হয়; ফাইলটি পার্স করে বাতিল করা হয়।"
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "একটি স্থানীয় .ics ফাইল আপলোড করুন — কোনো নেটওয়ার্ক নয়। এর ইভেন্টগুলো (অনুলিপি বাদ দিয়ে) একটি অপসারণযোগ্য ক্যালেন্ডার হিসেবে আপনার কর্মসূচিতে যুক্ত হয়; ফাইলটি পার্স করে বাতিল করা হয়।",
+  "Corpus integrity (fixity)": "কর্পাসের সততা (স্থিরতা)",
+  "Check corpus integrity": "কর্পাসের সততা যাচাই করুন",
+  "Checking…": "যাচাই চলছে…",
+  "checked": "যাচাইকৃত",
+  "intact": "অক্ষত",
+  "diverged": "বিচ্যুত",
+  "All articles match their capture-time hash.": "সব নিবন্ধ তাদের ধারণকালের হ্যাশের সাথে মিলে যায়।",
+  "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "নিবন্ধ তাদের ধারণকালের হ্যাশ থেকে বিচ্যুত — কারসাজি বা বিট-ক্ষয়ের প্রমাণ। কিছুই পরিবর্তন করা হয়নি।",
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "প্রতিটি সংরক্ষিত নিবন্ধের হ্যাশ পুনরায় গণনা করে এবং ধারণের সময় নথিভুক্ত হ্যাশের সাথে তুলনা করে। অমিল মানে সংরক্ষিত বিষয়বস্তু আর তার ধারণকালের হ্যাশের সাথে মেলে না — কারসাজি বা বিট-ক্ষয়ের প্রমাণ। কিছুই পরিবর্তন করা হয় না; এই যাচাই স্থানীয় ও কেবল-পঠনযোগ্য।"
 }

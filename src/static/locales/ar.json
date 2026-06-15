@@ -700,5 +700,14 @@
   "Remove": "إزالة",
   "Choose a .ics file first.": "اختر ملف ‎.ics‎ أولاً.",
   "Calendar removed.": "أُزيل التقويم.",
-  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "ارفع ملف ‎.ics‎ محلياً — دون شبكة. تنضمّ أحداثه إلى مفكرتك (بلا تكرار) كتقويم قابل للإزالة؛ يُحلَّل الملف ثم يُتجاهَل."
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "ارفع ملف ‎.ics‎ محلياً — دون شبكة. تنضمّ أحداثه إلى مفكرتك (بلا تكرار) كتقويم قابل للإزالة؛ يُحلَّل الملف ثم يُتجاهَل.",
+  "Corpus integrity (fixity)": "سلامة المجموعة (الثبات)",
+  "Check corpus integrity": "افحص سلامة المجموعة",
+  "Checking…": "جارٍ الفحص…",
+  "checked": "مفحوصة",
+  "intact": "سليمة",
+  "diverged": "متباينة",
+  "All articles match their capture-time hash.": "جميع المقالات تطابق بصمتها (hash) وقت الالتقاط.",
+  "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "مقالات تتباين عن بصمتها (hash) وقت الالتقاط — دليل على تلاعب أو تلف بِتّي. لم يُغيَّر أي شيء.",
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "يعيد حساب بصمة (hash) كل مقال مخزَّن ويقارنها بالبصمة المسجَّلة عند التقاطه. يعني عدم التطابق أن المحتوى المخزَّن لم يعد يطابق بصمته وقت الالتقاط — دليل على تلاعب أو تلف بِتّي. لا يُغيَّر أي شيء؛ والفحص محلي وللقراءة فقط."
 }

@@ -700,5 +700,14 @@
   "Remove": "Entfernen",
   "Choose a .ics file first.": "Wählen Sie zuerst eine .ics-Datei.",
   "Calendar removed.": "Kalender entfernt.",
-  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Laden Sie eine lokale .ics-Datei — kein Netzwerk. Ihre Termine kommen (entdoppelt) als entfernbarer Kalender in Ihre Agenda; die Datei wird analysiert und verworfen."
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Laden Sie eine lokale .ics-Datei — kein Netzwerk. Ihre Termine kommen (entdoppelt) als entfernbarer Kalender in Ihre Agenda; die Datei wird analysiert und verworfen.",
+  "Corpus integrity (fixity)": "Korpus-Integrität (Fixität)",
+  "Check corpus integrity": "Korpus-Integrität prüfen",
+  "Checking…": "Wird geprüft…",
+  "checked": "geprüft",
+  "intact": "intakt",
+  "diverged": "abweichend",
+  "All articles match their capture-time hash.": "Alle Artikel stimmen mit ihrem Hash zum Erfassungszeitpunkt überein.",
+  "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "Artikel weichen von ihrem Hash zum Erfassungszeitpunkt ab — Hinweis auf Manipulation oder Bit-Fäule. Es wurde nichts geändert.",
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Berechnet den Hash jedes gespeicherten Artikels neu und vergleicht ihn mit dem bei der Erfassung aufgezeichneten Hash. Eine Abweichung bedeutet, dass der gespeicherte Inhalt nicht mehr mit seinem Hash zum Erfassungszeitpunkt übereinstimmt — Hinweis auf Manipulation oder Bit-Fäule. Es wird nichts geändert; die Prüfung ist lokal und nur lesend."
 }

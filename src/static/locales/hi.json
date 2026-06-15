@@ -700,5 +700,14 @@
   "Remove": "हटाएँ",
   "Choose a .ics file first.": "पहले एक .ics फ़ाइल चुनें।",
   "Calendar removed.": "कैलेंडर हटा दिया गया।",
-  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "एक स्थानीय .ics फ़ाइल अपलोड करें — कोई नेटवर्क नहीं। इसके इवेंट (दोहराव हटाकर) एक हटाने योग्य कैलेंडर के रूप में आपकी कार्यसूची में जुड़ जाते हैं; फ़ाइल को पार्स करके त्याग दिया जाता है।"
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "एक स्थानीय .ics फ़ाइल अपलोड करें — कोई नेटवर्क नहीं। इसके इवेंट (दोहराव हटाकर) एक हटाने योग्य कैलेंडर के रूप में आपकी कार्यसूची में जुड़ जाते हैं; फ़ाइल को पार्स करके त्याग दिया जाता है।",
+  "Corpus integrity (fixity)": "कॉर्पस सत्यनिष्ठा (स्थिरता)",
+  "Check corpus integrity": "कॉर्पस सत्यनिष्ठा जाँचें",
+  "Checking…": "जाँच हो रही है…",
+  "checked": "जाँचे गए",
+  "intact": "अक्षुण्ण",
+  "diverged": "विचलित",
+  "All articles match their capture-time hash.": "सभी लेख अपने कैप्चर-समय के हैश से मेल खाते हैं।",
+  "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "लेख अपने कैप्चर-समय के हैश से विचलित हैं — छेड़छाड़ या बिट-क्षय का प्रमाण। कुछ भी नहीं बदला गया।",
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "हर संग्रहीत लेख का हैश फिर से निकालता है और उसकी तुलना उस हैश से करता है जो कैप्चर के समय दर्ज किया गया था। बेमेल होने का अर्थ है कि संग्रहीत सामग्री अब अपने कैप्चर-समय के हैश से मेल नहीं खाती — छेड़छाड़ या बिट-क्षय का प्रमाण। कुछ भी नहीं बदला जाता; यह जाँच स्थानीय और केवल-पढ़ने योग्य है।"
 }

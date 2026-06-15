@@ -700,5 +700,14 @@
   "Remove": "Remove",
   "Choose a .ics file first.": "Choose a .ics file first.",
   "Calendar removed.": "Calendar removed.",
-  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded."
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.",
+  "Corpus integrity (fixity)": "Corpus integrity (fixity)",
+  "Check corpus integrity": "Check corpus integrity",
+  "Checking…": "Checking…",
+  "checked": "checked",
+  "intact": "intact",
+  "diverged": "diverged",
+  "All articles match their capture-time hash.": "All articles match their capture-time hash.",
+  "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.",
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only."
 }
