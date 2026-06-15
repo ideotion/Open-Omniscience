@@ -849,6 +849,7 @@
       <p class="hint" style="margin-top:0">Analytics over the articles your search matched — counts only, never a verdict.</p>
       <nav class="tabs" id="an-subtabs" style="position:static;padding:0;border:0;margin-top:6px">
         <button class="active" data-tab="keywords">Keywords</button>
+        <button data-tab="mindmap">Mindmap</button>
         <button data-tab="articles">Articles</button>
         <button data-tab="www">When/Where/Who</button>
         <button data-tab="links">Links</button>
@@ -859,6 +860,7 @@
       <div class="an-panel" id="an-keywords" style="margin-top:10px">
         <div class="muted">Run a search, then press Analyze to populate this window.</div>
       </div>
+      <div class="an-panel" id="an-mindmap" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-articles" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-www" style="display:none;margin-top:10px"></div>
       <div class="an-panel" id="an-links" style="display:none;margin-top:10px;overflow:auto"></div>
@@ -7643,6 +7645,58 @@
       document.querySelectorAll("#tab-analyze .an-panel").forEach(el =>
         el.style.display = (el.id === "an-" + key) ? "" : "none");
     }
+    // Self-contained radial mind-map for the analysis window. Distinct from the
+    // Insights renderGraph() (which owns _mm* state + a force/zoom canvas): this
+    // draws ONE static, deterministic SVG into the container it is handed — no
+    // shared globals, no animation loop. Maintainer mind-map rules: centre →
+    // arms → ALWAYS outward; first-ring neighbours on a circle; edges centre→
+    // neighbour only (radial, no cross-tangle); never interpolate fake structure.
+    // Consumes the /api/insights/graph shape: nodes {id,label,size,center}, edges
+    // {a,b,weight}, plus level/method/caveat. Font size scales with node size.
+    function renderAnMindmap(graph, hostEl) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = hostEl || $("an-mindmap");
+      if (!host) return;
+      const g = graph || {};
+      const all = (g.nodes || []);
+      if (all.length < 2) {
+        host.innerHTML = `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
+        return;
+      }
+      // Centre = the seeded node; first ring = its direct neighbours (radial tree,
+      // outward only). Cap the ring so labels stay legible (deterministic top-by-size).
+      const center = all.find((n) => n.center) || all[0];
+      const neighbours = all.filter((n) => n.id !== center.id)
+        .sort((a, b) => (b.size || 1) - (a.size || 1)).slice(0, 24);
+      const W = 680, H = 460, cx = W / 2, cy = H / 2;
+      const R = Math.min(W, H) * 0.36;
+      const maxSize = Math.max(center.size || 1, ...neighbours.map((n) => n.size || 1), 1);
+      const fsOf = (n) => (n.id === center.id ? 17 : 9 + 9 * Math.sqrt((n.size || 1) / maxSize));
+      // Place neighbours evenly on one circle (deterministic order = size rank).
+      neighbours.forEach((n, i) => {
+        const ang = (i / neighbours.length) * 2 * Math.PI - Math.PI / 2;
+        n._x = cx + R * Math.cos(ang); n._y = cy + R * Math.sin(ang);
+      });
+      const edges = neighbours.map((n) =>
+        `<line stroke="var(--border)" stroke-width="1.4" x1="${cx}" y1="${cy}"`
+        + ` x2="${n._x.toFixed(1)}" y2="${n._y.toFixed(1)}"></line>`).join("");
+      const drawNode = (n, x, y) => {
+        const col = n.id === center.id ? "var(--ok)" : "var(--accent)";
+        const fam = (n.members || []).length > 1;
+        const title = fam ? `<title>${esc((n.members || []).join(", "))}</title>` : "";
+        return `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})">${title}`
+          + `<text text-anchor="middle" dominant-baseline="central" font-size="${fsOf(n).toFixed(1)}"`
+          + ` font-weight="${n.id === center.id ? 700 : 500}" fill="${col}">${esc(n.label || n.id)}</text></g>`;
+      };
+      const nodesSvg = drawNode(center, cx, cy)
+        + neighbours.map((n) => drawNode(n, n._x, n._y)).join("");
+      host.innerHTML =
+        `<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);`
+        + `border:1px solid var(--border);border-radius:8px">${edges}${nodesSvg}</svg>`
+        + `<div class="hint muted" style="margin-top:6px">`
+        + `${esc(t("Radial map: the seed keyword at the centre, its strongest relatives outward."))} `
+        + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(g.method || "")} ${esc(g.caveat || "")}</div>`;
+    }
     async function loadAnalysis(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const kw = $("an-keywords"), arts = $("an-articles");
@@ -7667,6 +7721,25 @@
             + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`;
         }
       } catch (e) { kw.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      // Mindmap: a deterministic radial keyword-association graph seeded on the
+      // TOP keyword of the matched set (KEYWORDS ARE CORPORA). Self-contained
+      // renderer — never touches the Insights mind-map state. Window params pass
+      // through (the /graph endpoint accepts start/end/days, like _mmWindowQS).
+      const mm = $("an-mindmap");
+      mm.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const dk = await api("/api/insights/corpus-keywords?" + p.toString());
+        const top = (dk.terms && dk.terms.length) ? dk.terms[0].term : null;
+        if (!top) {
+          mm.innerHTML = `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
+        } else {
+          const gp = new URLSearchParams();
+          gp.set("level", "keyword"); gp.set("term", top); gp.set("hops", "2");
+          for (const k of ["days", "start", "end"]) { const v = p.get(k); if (v) gp.set(k, v); }
+          const g = await api("/api/insights/graph?" + gp.toString());
+          renderAnMindmap(g, mm);
+        }
+      } catch (e) { mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       try {
         const p2 = new URLSearchParams(p); p2.set("limit", "100");
         const d = await api("/api/articles?" + p2.toString());

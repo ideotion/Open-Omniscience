@@ -968,3 +968,27 @@ def test_search_retired_from_sidebar_but_reachable():
     assert 'showTab("search")' in html, "search stays reachable (omnibar/palette entry points)"
     # the sidebar still lists tabs (invariant #2 not regressed)
     assert '<button class="nav-item" data-tab="analyze">' in html and '<button class="nav-item" data-tab="home">' in html
+
+
+def test_analysis_mindmap_subtab():
+    """The universal analysis window gained a Mindmap sub-tab (Item I): a SELF-CONTAINED
+    radial keyword-association graph seeded on the corpus's top keyword. It must NOT
+    regress the load-bearing Insights mind-map (renderGraph + #ins-mindmap own the _mm*
+    force/zoom canvas) — the analysis renderer is a distinct static SVG with its own host.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the new self-contained renderer + its sub-tab button + panel host
+    assert "function renderAnMindmap" in html, "the analysis-window radial renderer must exist"
+    assert 'id="an-mindmap"' in html, "the analysis Mindmap panel host must exist"
+    assert 'data-tab="mindmap"' in html, "the Mindmap sub-tab button must exist in #an-subtabs"
+    # it must be wired into loadAnalysis (so the sub-tab actually renders)
+    assert "renderAnMindmap(" in html, "renderAnMindmap must be called (wired into loadAnalysis)"
+    # NO REGRESSION: the Insights mind-map is untouched and still present
+    assert "function renderGraph" in html, "Insights renderGraph must remain (no regression)"
+    assert 'id="ins-mindmap"' in html, "Insights #ins-mindmap host must remain (no regression)"
+    # the analysis renderer must stay self-contained: its body must not touch the
+    # Insights #ins-mindmap host nor share the _mm* force-canvas state.
+    an_start = html.index("function renderAnMindmap")
+    an_body = html[an_start:an_start + 2200]
+    assert "ins-mindmap" not in an_body, "renderAnMindmap must not touch the Insights host"
+    assert "_mm" not in an_body, "renderAnMindmap must not share the Insights _mm* state"

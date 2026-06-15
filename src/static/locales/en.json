@@ -731,5 +731,8 @@
   "API reference (Swagger) ↗": "API reference (Swagger) ↗",
   "Pick a document on the left.": "Pick a document on the left.",
   "CJK not segmented — unreliable": "CJK not segmented — unreliable",
-  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable."
+  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.",
+  "Mindmap": "Mindmap",
+  "No strong associations yet.": "No strong associations yet.",
+  "Radial map: the seed keyword at the centre, its strongest relatives outward.": "Radial map: the seed keyword at the centre, its strongest relatives outward."
 }

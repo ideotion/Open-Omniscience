@@ -731,5 +731,8 @@
   "API reference (Swagger) ↗": "API 参考（Swagger）↗",
   "Pick a document on the left.": "在左侧选择一个文档。",
   "CJK not segmented — unreliable": "中日韩未分词 — 不可靠",
-  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "关键词提取按空格和标点切分；它不对中文、日文或韩文进行分词，因此这里显示的中日韩关键词聚合结果不可靠。"
+  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "关键词提取按空格和标点切分；它不对中文、日文或韩文进行分词，因此这里显示的中日韩关键词聚合结果不可靠。",
+  "Mindmap": "思维导图",
+  "No strong associations yet.": "暂无强关联。",
+  "Radial map: the seed keyword at the centre, its strongest relatives outward.": "径向图：种子关键词位于中心，其最强关联向外延伸。"
 }
