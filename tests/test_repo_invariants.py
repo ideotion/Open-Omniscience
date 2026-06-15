@@ -1376,6 +1376,39 @@ def test_oochart_enlarge_indices():
     assert "function dashChartSvg(" in html and "function idxSpark(" in html
 
 
+def test_commodity_corpus_entry():
+    """The commodity/index GRAPH is a first-class entry into the analysis WINDOW
+    (ledger MARKETS item 4 / the corpora-system commodity-click entry): a clear
+    "Analyse ↗" affordance under the commodity chart and on the index card opens
+    the corpus via the EXISTING openAnalysisFor (no new opener, no new backend).
+
+    NON-DESTRUCTIVE (the Desk lesson): the price-detail + correlation path stays
+    reachable — the card body still routes to chartSymbol / indexDetail. The term
+    is the curated COMMODITY_QUERY family seed (else the real series/index name),
+    never a fabricated family. Distinct from the already-shipped title (⊞) entry,
+    which is left untouched (test_commodity_card_opens_analysis covers it)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the universal opener we wire to (reused, never reinvented)
+    assert "function openAnalysisFor" in html, "openAnalysisFor must exist to wire to"
+    # the graph carries an explicit "Analyse" affordance opening the window;
+    # the visible label is keyed for ×12 translation
+    assert 't("Analyse")' in html or 't2("Analyse")' in html, (
+        "the graph must carry a keyed 'Analyse' affordance"
+    )
+    # that affordance opens the analysis window WITHOUT hijacking the card's own
+    # price-detail click (stopPropagation), and seeds the curated family query
+    assert "event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))})" in html, (
+        "the commodity graph 'Analyse' must open the window on the family query"
+    )
+    # the PRICE-DETAIL + correlation path is NOT removed (the Desk lesson)
+    assert "function chartSymbol(" in html, "the commodity price-detail handler must stay"
+    assert "function correlateSymbol(" in html, "the price-vs-news correlation must stay"
+    assert 'onclick="chartSymbol(' in html, "the commodity card body must still open price detail"
+    assert "function indexDetail(" in html, "the index price-detail handler must stay"
+    # honest term: the curated family seed, else the real name — never fabricated
+    assert "COMMODITY_QUERY[s.symbol] || s.name" in html, (
+        "the commodity term must be the curated family seed, defaulting to the name"
+    )
 def test_corpus_window_mindmap_subtab():
     """Mindmap sub-tab on THE corpus analysis window (ledger "ONE CORPORA
     SYSTEM": Mindmap is one of the ruled sub-tabs). It must REUSE the existing

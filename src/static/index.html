@@ -5907,6 +5907,7 @@
     }
 
     function idxCard(c) {
+      const t2 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const has = !!c.latest;
       const chg = c.change_pct;
       const cls = chg == null ? "flat" : (chg >= 0 ? "up" : "down");
@@ -5919,6 +5920,15 @@
         ? ` style="cursor:pointer" title="open detailed chart"
             onclick="indexDetail(${esc(JSON.stringify(c.symbol))}, ${esc(JSON.stringify(c.name || c.symbol))}, ${esc(JSON.stringify(c.currency || ""))})"`
         : "";
+      // The GRAPH is a first-class entry into the analysis WINDOW (ledger
+      // MARKETS item 4): an "Analyse ↗" affordance opens the index's corpus
+      // coverage via openAnalysisFor (the same universal opener — no duplicate).
+      // The card body keeps its indexDetail price chart (the Desk lesson: never
+      // silently lose a tool); stopPropagation in the footer keeps the two paths
+      // distinct. No symbol→family seed exists for indices, so the term is the
+      // index's REAL name — never a fabricated family. The price × article
+      // timeline OVERLAY is remaining; this slice opens the window on the name.
+      const idxQ = c.name || c.symbol;
       return `<div class="idx-card"${open}>
         <div class="idx-top">
           <div class="idx-id"><div class="idx-name">${esc(c.name)}</div>
@@ -5928,7 +5938,10 @@
         </div>
         ${idxSpark(c.spark, chg)}
         <div class="idx-foot muted" onclick="event.stopPropagation()">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
-          · ${esc(c.currency || "")} · ${extLink(c.url, "source")}</div>
+          · ${esc(c.currency || "")} · ${extLink(c.url, "source")}
+          · <button class="tiny secondary" type="button"
+              title="${esc(t2("Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)"))}"
+              onclick="openAnalysisFor(${esc(JSON.stringify(idxQ))})">${esc(t2("Analyse"))} ↗</button></div>
       </div>`;
     }
 
@@ -6204,6 +6217,16 @@
           // series display name. The caveat is the maintainer's binding rule:
           // this surfaces co-occurrence in the corpus, NEVER causation.
           const q = COMMODITY_QUERY[s.symbol] || s.name || s.symbol;
+          // The GRAPH is a first-class entry into the analysis WINDOW (ledger
+          // MARKETS item 4): a clear "Analyse ↗" affordance UNDER the chart opens
+          // the commodity's keyword-family corpus via openAnalysisFor (the same
+          // opener the title ⊞ already uses — NOT a duplicate opener). The card
+          // body keeps its chartSymbol price detail + correlation (the Desk
+          // lesson: never silently lose a tool); stopPropagation keeps the two
+          // paths distinct. The term is the curated COMMODITY_QUERY family seed,
+          // else the real series name/symbol — never a fabricated family. NOTE:
+          // the price-curve × article-timeline OVERLAY is remaining; this slice
+          // opens the window on the term.
           return `<div class="stat" style="cursor:pointer" title="open detail + correlation"
               onclick="chartSymbol(${esc(JSON.stringify(s.symbol))}, ${esc(JSON.stringify(last?last.unit:''))})">
             <div style="display:flex;justify-content:space-between;align-items:baseline">
@@ -6212,7 +6235,10 @@
                 onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))})">${esc(s.symbol)} ⊞</button> ${change}</div>
             <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv}</div>
             <div class="hint muted" style="font-size:10px;margin:-2px 0 4px">${esc(t("co-occurrence in your corpus, never causation"))}</div>
-            ${dashChartSvg(pts, last ? `${last.currency}/${last.unit}` : "")}</div>`;
+            ${dashChartSvg(pts, last ? `${last.currency}/${last.unit}` : "")}
+            <div style="margin-top:4px"><button class="tiny secondary" type="button"
+                title="${esc(t("Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)"))}"
+                onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))})">${esc(t("Analyse"))} ↗</button></div></div>`;
         }).join("") + `</div>`
       ).join("");
       // Category SUB-TABS (universal subtab grammar, invariant #18): build the
