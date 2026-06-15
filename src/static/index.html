@@ -324,6 +324,16 @@
     .ag-more { font-size:10px; color:var(--muted); }
     /* The Agenda uses the full content width — the calendar wants the room. */
     #tab-agenda { max-width:none; }
+    /* Category filter as colored chips (replaced the dropdown). The dot carries the
+       category hue; the translated label is the real identifier. */
+    .ag-cats { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+    .ag-catchip { font-size:12px; padding:3px 11px; border:1px solid var(--border); border-radius:999px;
+      background:var(--panel); color:var(--muted); cursor:pointer; }
+    .ag-catchip:hover { border-color:var(--accent); }
+    .ag-catchip.on { color:var(--fg); font-weight:600;
+      border-color:hsl(var(--cat,210) 70% 50%); background:hsl(var(--cat,210) 70% 50% / .18); }
+    .ag-catdot { display:inline-block; width:8px; height:8px; border-radius:50%;
+      background:hsl(var(--cat,210) 70% 50%); margin-inline-end:5px; vertical-align:middle; }
     .ag-views { gap:0; }                              /* Month · Week · List segmented switch */
     /* Week view: 7 taller day columns, weekday+date header, room for more events. */
     #agenda-week .ag-grid { grid-auto-rows:1fr; }
@@ -1059,9 +1069,8 @@
             <button class="active" data-tab="month">Month</button>
             <button data-tab="week">Week</button>
             <button data-tab="list">List</button></nav></div>
-        <div><label for="agenda-cat">Category</label><select id="agenda-cat" onchange="renderAgenda()">
-          <option value="">all</option><option value="civic">civic</option><option value="political">political</option>
-          <option value="economic">economic</option><option value="technology">technology</option></select></div>
+        <div style="flex:1 1 auto"><label>Category</label>
+          <div class="ag-cats" id="agenda-cats"></div></div>
         <div><label for="agenda-country">Country</label><select id="agenda-country" onchange="renderAgenda()"><option value="">all</option></select></div>
         <div><label for="agenda-tag">Tag</label><select id="agenda-tag" onchange="renderAgenda()"><option value="">all</option></select></div>
         <div id="agenda-group-wrap"><label for="agenda-group">Group by</label><select id="agenda-group" onchange="renderAgenda()">
@@ -3810,7 +3819,7 @@
     // ===================================================================== //
     // -- Agenda (world events): subscribe to calendars, filter & group ------ //
     const _MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    const AG = { events: [], cals: [], caveat: "", meta: {} };
+    const AG = { events: [], cals: [], caveat: "", meta: {}, categories: [] };
     function agSubs() { try { return new Set(JSON.parse(localStorage.getItem("oo.agenda.subs") || "null") || []); } catch (_e) { return new Set(); } }
     function agSaveSubs(set) { localStorage.setItem("oo.agenda.subs", JSON.stringify([...set])); }
 
@@ -3820,12 +3829,14 @@
       try {
         const [ev, fac] = await Promise.all([api("/api/events"), api("/api/events/calendars")]);
         AG.events = ev.events; AG.caveat = ev.caveat; AG.cals = fac.calendars;
+        AG.categories = fac.categories || [];
         AG.meta = Object.fromEntries(fac.calendars.map(c => [c.key, c]));
         // First run: subscribe to all calendars so the agenda isn't empty.
         if (localStorage.getItem("oo.agenda.subs") == null) agSaveSubs(new Set(fac.calendars.map(c => c.key)));
-        $("agenda-country").innerHTML = '<option value="">all</option>' + fac.countries.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+        $("agenda-country").innerHTML = '<option value="">all</option>' + fac.countries.map(x => `<option value="${esc(x)}">${agFlag(x)} ${esc(x)}</option>`).join("");
         $("agenda-tag").innerHTML = '<option value="">all</option>' + fac.tags.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
         if (!_agViewTabs) _agViewTabs = ooSubtabs($("agenda-views"), agendaSetView);
+        renderAgendaCatChips();
         renderAgenda();
       } catch (e) { box.innerHTML = `<div class="muted">Could not load agenda: ${esc(e.message)}</div>`; }
       loadFeedDir();   // the bundled directory (no network: it reads the catalog)
@@ -3943,6 +3954,39 @@
     function agendaSetView(v) { localStorage.setItem("oo.agenda.view", v); if (_agViewTabs) _agViewTabs.paint(v); renderAgenda(); }
     let _agViewTabs = null;                          // the Month·Week·List ooSubtabs handle
     const AGV = { y: null, m: null, day: null };   // displayed month (m = 1-12) + picked day
+    // Category filter: colored chips replaced the dropdown (ruled 2026-06-15,
+    // Item C). The taxonomy is data-driven (derived from the catalog facets), so a
+    // new category (e.g. "religious") appears as a chip automatically. Distinct,
+    // separable hues; the translated label stays the real identifier (colour is
+    // decorative). Single-select with toggle-off.
+    let _agCat = "";
+    const AG_CAT_HUE = { civic: 210, political: 0, economic: 140, technology: 280, religious: 45, other: 30 };
+    function agCatHue(c) {
+      if (AG_CAT_HUE[c] != null) return AG_CAT_HUE[c];
+      let h = 0; for (let i = 0; i < c.length; i++) h = (h * 31 + c.charCodeAt(i)) >>> 0;
+      return h % 360;
+    }
+    function renderAgendaCatChips() {
+      const box = $("agenda-cats"); if (!box) return;
+      // Labels are the English category slugs (all keyed ×12) emitted as DOM text,
+      // so the i18n engine translates them live on a language switch.
+      const chips = [`<button type="button" class="ag-catchip${_agCat === "" ? " on" : ""}" onclick="agSetCat('')">all</button>`];
+      for (const c of (AG.categories || [])) {
+        chips.push(`<button type="button" class="ag-catchip${_agCat === c ? " on" : ""}" style="--cat:${agCatHue(c)}" onclick="agSetCat('${esc(c)}')"><span class="ag-catdot"></span>${esc(c)}</button>`);
+      }
+      box.innerHTML = chips.join("");
+    }
+    function agSetCat(c) { _agCat = (_agCat === c) ? "" : c; renderAgendaCatChips(); renderAgenda(); }
+    // ISO-2 → regional-indicator flag emoji (offline, zero-asset). The country CODE
+    // stays visible beside it as the unambiguous identifier — a flag is a visual
+    // convention, never the sole label (flags ≠ identity; some entities have none,
+    // and emoji flags render inconsistently on some platforms).
+    function agFlag(cc) {
+      if (!cc) return "";
+      cc = cc.toUpperCase();
+      if (/^[A-Z]{2}$/.test(cc)) return String.fromCodePoint(...[...cc].map(ch => 0x1F1E6 + ch.charCodeAt(0) - 65));
+      return "\u{1F310}";   // globe for INT / non-ISO entities
+    }
     function agLocale() { return document.documentElement.lang || "en"; }
     // The concrete anchor date the views pivot on (picked day, else 1st of the
     // displayed month, else today) — drives the Week window.
@@ -3969,7 +4013,7 @@
     }
     function agFiltered() {
       const subs = agSubs();
-      const cat = $("agenda-cat").value, country = $("agenda-country").value, tag = $("agenda-tag").value;
+      const cat = _agCat, country = $("agenda-country").value, tag = $("agenda-tag").value;
       const subOnly = $("agenda-subonly").checked;
       return AG.events.filter(e =>
         (!cat || e.category === cat) && (!country || e.country === country) &&
