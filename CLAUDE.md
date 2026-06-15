@@ -1400,6 +1400,19 @@ ruling, a contingency, or a deliberate-omission note.
     mistaken for a complete log. ADDITIVE: the default (full) stream is byte-for-byte
     unchanged (the perf byte-parity contract test still passes); the digest is its own
     branch + `tests/test_keyword_log_digest_mode`. No score; method+caveat preserved.
+  - **B2 SHIPPED — LOCAL FIXITY AUDIT (reliable-memory turned inward, audit-07 B2):**
+    `src/integrity/fixity.py::audit_fixity` re-hashes a bounded window of article
+    bodies with the canonical content hash (whitespace-normalised SHA-256, the SAME
+    function used at ingest) and compares to the stored `Article.hash`; a mismatch =
+    the stored content no longer hashes to its recorded value (tamper / bit-rot),
+    surfaced LOUDLY with the offending ids via `GET /api/diagnostics/fixity`
+    (envelope provenance, statement-deadline guarded, offset/limit paging, total
+    reported). HONESTY: NO score (a count + the exact stored-vs-recomputed rows);
+    whitespace-only edits stated as non-detectable; empty-content / no-stored-hash
+    rows counted in their OWN buckets, never folded into verified-ok.
+    `tests/test_fixity_audit_flags_tampered_content` proves a rewritten body is
+    caught while an intact one is not a false positive. REMAINING (follow-up): a
+    Settings/Trust UI surface for the report (endpoint is directly usable meanwhile).
 - **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
   subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
   visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:

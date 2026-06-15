@@ -241,6 +241,60 @@ def test_keyword_log_digest_mode(client, monkeypatch):
     assert len(full["keywords"]) >= 3      # the long tail is present in full mode
 
 
+def test_fixity_audit_flags_tampered_content(client):
+    """audit-07 B2 (reliable-memory turned inward): re-hashing the corpus catches an
+    article whose stored content no longer matches its recorded hash, surfaced
+    loudly with the offending id — while an untampered article verifies OK. No score."""
+    from src.database.models import Article, SessionLocal
+    from src.utils.url_utils import generate_content_hash
+
+    s = SessionLocal()
+    try:
+        src = Source(name="Fixity source", domain="fixity.test")
+        s.add(src)
+        s.flush()
+        good_text = "This article body is intact and hashes to its stored value."
+        good = Article(
+            url="https://fixity.test/good",
+            canonical_url="https://fixity.test/good",
+            source_id=src.id,
+            title="Intact",
+            hash=generate_content_hash(good_text),
+            language="en",
+            content=good_text,
+            created_at=datetime.now(UTC),
+        )
+        # Tampered: the content was altered AFTER ingest, but the hash still records
+        # the original — exactly the silent-rewrite the audit exists to catch.
+        tampered = Article(
+            url="https://fixity.test/tampered",
+            canonical_url="https://fixity.test/tampered",
+            source_id=src.id,
+            title="Tampered",
+            hash=generate_content_hash("the ORIGINAL body before anyone touched it"),
+            language="en",
+            content="the body was quietly REWRITTEN after it was stored",
+            created_at=datetime.now(UTC),
+        )
+        s.add_all([good, tampered])
+        s.commit()
+        good_id, tampered_id = good.id, tampered.id
+    finally:
+        s.close()
+
+    body = client.get("/api/diagnostics/fixity").json()
+    assert body["kind"] == "fixity-audit"
+    data = body["data"]
+    ids = {m["article_id"] for m in data["mismatches"]}
+    assert tampered_id in ids          # the rewrite is caught, loudly
+    assert good_id not in ids          # the intact article is not a false positive
+    assert data["mismatched"] >= 1 and data["checked"] >= 2
+    # The flagged row carries the evidence (stored vs recomputed), never a score.
+    row = next(m for m in data["mismatches"] if m["article_id"] == tampered_id)
+    assert row["stored_hash"] != row["recomputed_hash"]
+    assert "score" not in data and data["method"] and data["caveat"]
+
+
 # --------------------------------------------------------------------------- #
 #  Translated docs: ?lang= serving + honest fallback (ruled 2026-06-10)
 # --------------------------------------------------------------------------- #

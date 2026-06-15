@@ -417,6 +417,33 @@ def keyword_log(
     )
 
 
+@router.get("/fixity")
+def fixity_audit(
+    db: Session = Depends(get_db),
+    limit: int = Query(2000, ge=1, le=50000, description="rows to check this window"),
+    offset: int = Query(0, ge=0, description="window start (page through total_articles)"),
+) -> JSONResponse:
+    """Local fixity audit (audit-07 B2, reliable-memory turned inward): re-hash a
+    window of the corpus and compare to the stored content hashes, surfacing any
+    mismatch (tamper / bit-rot) LOUDLY with the offending ids. No score; method +
+    caveat travel with the result; read-only."""
+    from src.integrity.fixity import audit_fixity
+
+    try:
+        with statement_deadline(db):
+            result = audit_fixity(db, limit=limit, offset=offset)
+    except StatementTimeout as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return JSONResponse(
+        envelope(
+            kind="fixity-audit",
+            query={"limit": limit, "offset": offset},
+            count=result["checked"],
+            payload=result,
+        )
+    )
+
+
 @router.get("/performance")
 def performance_report(
     selftest: bool = True, db: Session = Depends(get_db)
