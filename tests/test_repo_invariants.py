@@ -787,3 +787,21 @@ def test_dates_render_in_app_language_not_browser_locale():
     assert not offenders, (
         f"browser-locale date display reintroduced (use fmtDateTime instead): {offenders}"
     )
+
+
+def test_agenda_source_manager_sort_and_status_filter():
+    """Settings → Agenda is a sortable, status-filterable source manager (ledger
+    Item E-b, 2026-06-15: "present them with possible sorting capabilities … bulk
+    select all dysfunctional, or per country"). The sort + status-filter controls
+    and the folder-health helper exist; the new control labels are keyed ×12 (the
+    dropdown-translatable gate also enforces this).
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'id="feeddir-sort"' in html and 'id="feeddir-status-filter"' in html, (
+        "the source manager needs a Sort control and a Status filter"
+    )
+    assert "function famStatus" in html and "_FEED_SORTS" in html, (
+        "folder health + the sort comparators must exist"
+    )
+    for opt in ('value="ok"', 'value="error"', 'value="unchecked"'):
+        assert opt in html, f"the status filter must offer {opt}"

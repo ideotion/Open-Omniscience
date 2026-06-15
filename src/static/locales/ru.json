@@ -676,5 +676,13 @@
   "note": "примечание",
   "Week": "Неделя",
   "This week — no fixed day:": "На этой неделе — без точного дня:",
-  "religious": "религиозный"
+  "religious": "религиозный",
+  "Name": "Название",
+  "Status": "Состояние",
+  "Imported": "Импортировано",
+  "Reachable": "Доступен",
+  "Dysfunctional": "Неисправен",
+  "Not checked": "Не проверено",
+  "Sort": "Сортировка",
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Одно и то же событие из нескольких лент показывается один раз с указанием каждого источника; расхождение дат остаётся видимым как отдельные записи."
 }

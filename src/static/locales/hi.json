@@ -676,5 +676,13 @@
   "note": "टिप्पणी",
   "Week": "सप्ताह",
   "This week — no fixed day:": "इस सप्ताह — बिना निश्चित दिन:",
-  "religious": "धार्मिक"
+  "religious": "धार्मिक",
+  "Name": "नाम",
+  "Status": "स्थिति",
+  "Imported": "आयातित",
+  "Reachable": "पहुँच योग्य",
+  "Dysfunctional": "ख़राब",
+  "Not checked": "अभी जाँचा नहीं",
+  "Sort": "क्रमबद्ध करें",
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "कई फ़ीड में मौजूद एक ही घटना एक बार दिखाई जाती है और हर स्रोत सूचीबद्ध होता है; तारीख़ का मतभेद अलग प्रविष्टियों के रूप में दिखता रहता है।"
 }

@@ -676,5 +676,13 @@
   "note": "メモ",
   "Week": "週",
   "This week — no fixed day:": "今週 — 日付未定:",
-  "religious": "宗教"
+  "religious": "宗教",
+  "Name": "名前",
+  "Status": "状態",
+  "Imported": "インポート数",
+  "Reachable": "到達可能",
+  "Dysfunctional": "異常",
+  "Not checked": "未確認",
+  "Sort": "並べ替え",
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "複数のフィードに含まれる同じイベントは一度だけ表示され、すべての情報源を列挙します。日付の不一致は別々の項目として残ります。"
 }

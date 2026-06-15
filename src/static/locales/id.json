@@ -676,5 +676,13 @@
   "note": "catatan",
   "Week": "Minggu",
   "This week — no fixed day:": "Minggu ini — tanpa hari pasti:",
-  "religious": "keagamaan"
+  "religious": "keagamaan",
+  "Name": "Nama",
+  "Status": "Status",
+  "Imported": "Diimpor",
+  "Reachable": "Terjangkau",
+  "Dysfunctional": "Bermasalah",
+  "Not checked": "Belum diperiksa",
+  "Sort": "Urutkan",
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Acara yang sama dari beberapa umpan ditampilkan satu kali, mencantumkan setiap sumber; perbedaan tanggal tetap terlihat sebagai entri terpisah."
 }

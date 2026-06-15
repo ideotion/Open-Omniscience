@@ -305,8 +305,60 @@ def import_feed(fetcher, feed_id: str) -> dict:
     }
 
 
-def imported_agenda(*, family: str | None = None, frm: str | None = None) -> list[dict]:
-    """Imported events (optionally one family / from a start date), soonest first."""
+def collapse_imported(rows: list[dict]) -> list[dict]:
+    """Collapse the SAME imported event seen across DIFFERENT feed families into ONE
+    row (ruled 2026-06-15: "we don't want 100 entries mentioning Christmas Day").
+
+    Within-family dedup already happened at import (``import_feed``); this is the
+    CROSS-family layer. With auto-import-everything a holiday like Christmas Day is
+    carried by dozens of country/religion/aggregator feeds — without this the agenda
+    would show one row per feed. Identity = the same normalized title on the same
+    EXACT date (``_fingerprint``); a different date stays a separate row (a
+    moved/contested date is information, never hidden). Every provider source and
+    every folder is preserved and counted, so the collapse is transparent and the
+    user can still see who published it. Input order preserved (first wins canonical).
+    """
+    order: list[str] = []
+    groups: dict[str, dict] = {}
+    for e in rows:
+        fp = _fingerprint(e.get("title", ""), e.get("date", ""))
+        g = groups.get(fp)
+        if g is None:
+            order.append(fp)
+            g = groups[fp] = {
+                "title": e.get("title", ""), "date": e.get("date", ""),
+                "sources": [], "families": [], "family_names": [], "uids": [],
+            }
+        for s in e.get("sources", []):
+            if s not in g["sources"]:
+                g["sources"].append(s)
+        fam = e.get("family")
+        if fam and fam not in g["families"]:
+            g["families"].append(fam)
+            g["family_names"].append(e.get("family_name", fam))
+        for u in e.get("uids", []) or []:
+            if u and u not in g["uids"]:
+                g["uids"].append(u)
+    out: list[dict] = []
+    for fp in order:
+        g = groups[fp]
+        g["source_count"] = len(g["sources"])
+        g["family_count"] = len(g["families"])
+        g["family"] = g["families"][0] if g["families"] else None
+        g["family_name"] = g["family_names"][0] if g["family_names"] else ""
+        out.append(g)
+    return out
+
+
+def imported_agenda(*, family: str | None = None, frm: str | None = None,
+                    collapse: bool = True) -> list[dict]:
+    """Imported events (optionally one family / from a start date), soonest first.
+
+    With ``collapse`` (default) and no single ``family`` filter, the same event
+    across different feed families is merged into one row (see ``collapse_imported``)
+    so the agenda never shows the same holiday once per feed. A single-family view
+    is already deduped at import, so it is returned uncollapsed.
+    """
     out = []
     for key, bucket in load_imports().items():
         if family and key != family:
@@ -316,6 +368,9 @@ def imported_agenda(*, family: str | None = None, frm: str | None = None) -> lis
                 continue
             out.append({**entry, "family": key, "family_name": bucket.get("name", key)})
     out.sort(key=lambda e: (e["date"], e["title"]))
+    if collapse and family is None:
+        out = collapse_imported(out)
+        out.sort(key=lambda e: (e["date"], e["title"]))
     return out
 
 

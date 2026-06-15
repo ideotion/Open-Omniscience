@@ -676,5 +676,13 @@
   "note": "nota",
   "Week": "Semana",
   "This week — no fixed day:": "Esta semana — sin día fijo:",
-  "religious": "religioso"
+  "religious": "religioso",
+  "Name": "Nombre",
+  "Status": "Estado",
+  "Imported": "Importados",
+  "Reachable": "Accesible",
+  "Dysfunctional": "Defectuoso",
+  "Not checked": "Sin comprobar",
+  "Sort": "Ordenar",
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Un mismo evento presente en varios canales se muestra una sola vez, indicando cada fuente; una discrepancia de fecha permanece visible como entradas separadas."
 }
