@@ -734,5 +734,6 @@
   "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "L'extraction de mots-clés découpe sur les espaces et la ponctuation ; elle ne segmente PAS le chinois, le japonais ni le coréen, de sorte que les agrégats de mots-clés CJC affichés ici sont peu fiables.",
   "Mindmap": "Carte mentale",
   "No strong associations yet.": "Pas encore d'associations fortes.",
-  "Radial map: the seed keyword at the centre, its strongest relatives outward.": "Carte radiale : le mot-clé de départ au centre, ses relations les plus fortes vers l'extérieur."
+  "Radial map: the seed keyword at the centre, its strongest relatives outward.": "Carte radiale : le mot-clé de départ au centre, ses relations les plus fortes vers l'extérieur.",
+  "Text only — images, audio and video aren't analysed.": "Texte uniquement — les images, l'audio et la vidéo ne sont pas analysés."
 }

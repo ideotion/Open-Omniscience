@@ -734,5 +734,6 @@
   "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.",
   "Mindmap": "Mindmap",
   "No strong associations yet.": "No strong associations yet.",
-  "Radial map: the seed keyword at the centre, its strongest relatives outward.": "Radial map: the seed keyword at the centre, its strongest relatives outward."
+  "Radial map: the seed keyword at the centre, its strongest relatives outward.": "Radial map: the seed keyword at the centre, its strongest relatives outward.",
+  "Text only — images, audio and video aren't analysed.": "Text only — images, audio and video aren't analysed."
 }
