@@ -897,5 +897,21 @@
   "Sentiment": "অনুভূতি",
   "How outlets frame this": "সংবাদমাধ্যম এটি কীভাবে উপস্থাপন করে",
   "(VADER tone)": "(VADER টোন)",
-  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "এই কর্পাস কভার করা সংবাদমাধ্যমগুলি স্বরে কীভাবে বিভক্ত — প্রতি আউটলেটে VADER কম্পোজিট, নিবন্ধ সংখ্যাসহ। VADER একটি ইংরেজি-অভিধান পদ্ধতি, তাই অ-ইংরেজি কভারেজের স্বর অনির্ভরযোগ্য বা অনুপস্থিত। কোনো সমন্বিত স্কোর নেই; লিঙ্ক করা নিবন্ধ পড়ুন এবং নিজে বিচার করুন।"
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "এই কর্পাস কভার করা সংবাদমাধ্যমগুলি স্বরে কীভাবে বিভক্ত — প্রতি আউটলেটে VADER কম্পোজিট, নিবন্ধ সংখ্যাসহ। VADER একটি ইংরেজি-অভিধান পদ্ধতি, তাই অ-ইংরেজি কভারেজের স্বর অনির্ভরযোগ্য বা অনুপস্থিত। কোনো সমন্বিত স্কোর নেই; লিঙ্ক করা নিবন্ধ পড়ুন এবং নিজে বিচার করুন।",
+  "Association": "সংযোগ",
+  "Keyword": "কীওয়ার্ড",
+  "In this corpus": "এই কর্পাসে",
+  "Total articles": "মোট নিবন্ধ",
+  "Entity family:": "সত্তা পরিবার:",
+  "n =": "n =",
+  "…": "…",
+  "articles mention the corpus term.": "নিবন্ধ কর্পাস শব্দ উল্লেখ করে।",
+  "Surface variants are merged into entity families.": "সারফেস ভেরিয়েন্টগুলি সত্তা পরিবারে একত্রিত করা হয়।",
+  "No keywords indexed for this corpus yet.": "এই কর্পাসের জন্য এখনও কোনো কীওয়ার্ড সূচিবদ্ধ হয়নি।",
+  "Click a row to open that keyword as its own corpus.": "একটি সারিতে ক্লিক করে সেই কীওয়ার্ডটিকে তার নিজস্ব কর্পাস হিসেবে খুলুন।",
+  "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.": "এই কর্পাসের সাথে সহ-উপস্থিত কীওয়ার্ড, র‍্যাঙ্ককৃত। প্রতি কীওয়ার্ডে প্রকৃত গণনা — কোনো সমন্বিত স্কোর নেই।",
+  "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "এই কর্পাসে যেসব স্বতন্ত্র নিবন্ধ কর্পাস শব্দ এবং এই কীওয়ার্ড উভয়ই উল্লেখ করে। একটি প্রকৃত গণনা, কখনও স্কোর নয়।",
+  "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "সম্পূর্ণ কর্পাসে এই কীওয়ার্ড উল্লেখকারী স্বতন্ত্র নিবন্ধ। একটি প্রকৃত গণনা, কখনও স্কোর নয়।",
+  "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "কর্পাস শব্দের সাথে পয়েন্টওয়াইজ মিউচুয়াল ইনফরমেশন — সংযোগের শক্তি, কার্যকারণ নয়। ছোট নমুনায় PMI গোলমেলে; গণনার পাশে পড়ুন।",
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "যে কীওয়ার্ডগুলি এই কর্পাসকে একটি র‍্যাঙ্ককৃত টেবিল হিসেবে সংজ্ঞায়িত করে — স্বতন্ত্র-নিবন্ধ বিস্তার, মোট উল্লেখ, এবং কর্পাস শব্দের সাথে PMI সংযোগ শক্তি। প্রতি কীওয়ার্ডে প্রকৃত গণনা, কোনো সমন্বিত স্কোর নেই; ছোট নমুনায় PMI গোলমেলে। একটি সারিতে ক্লিক করে সেই কীওয়ার্ডটিকে তার নিজস্ব কর্পাস হিসেবে খুলুন।"
 }

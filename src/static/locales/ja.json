@@ -897,5 +897,21 @@
   "Sentiment": "感情",
   "How outlets frame this": "各メディアの取り上げ方",
   "(VADER tone)": "（VADER トーン）",
-  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "このコーパスを報じる各メディアのトーンの分かれ方——メディアごとの VADER 複合値と記事数。VADER は英語辞書ベースの手法のため、非英語報道のトーンは信頼できないか欠落します。複合スコアはありません。リンク先の記事を読んでご自身で判断してください。"
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "このコーパスを報じる各メディアのトーンの分かれ方——メディアごとの VADER 複合値と記事数。VADER は英語辞書ベースの手法のため、非英語報道のトーンは信頼できないか欠落します。複合スコアはありません。リンク先の記事を読んでご自身で判断してください。",
+  "Association": "関連",
+  "Keyword": "キーワード",
+  "In this corpus": "このコーパス内",
+  "Total articles": "記事の合計",
+  "Entity family:": "エンティティ系列：",
+  "n =": "n =",
+  "…": "…",
+  "articles mention the corpus term.": "件の記事がコーパス用語に言及。",
+  "Surface variants are merged into entity families.": "表層的な変種はエンティティ系列に統合されます。",
+  "No keywords indexed for this corpus yet.": "このコーパスのキーワードはまだインデックスされていません。",
+  "Click a row to open that keyword as its own corpus.": "行をクリックすると、そのキーワードを独自のコーパスとして開きます。",
+  "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.": "このコーパスと共起するキーワードをランク付け。キーワードごとの実数——複合スコアはありません。",
+  "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "このコーパス内でコーパス用語とこのキーワードの両方に言及する個別の記事数。実数であり、スコアではありません。",
+  "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "コーパス全体でこのキーワードに言及する個別の記事数。実数であり、スコアではありません。",
+  "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "コーパス用語との自己相互情報量——関連の強さであり、因果ではありません。小標本の PMI はノイズが多いため、件数と併せて読んでください。",
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "このコーパスを定義するキーワードをランク付けした表で表示——個別記事への広がり、言及総数、コーパス用語との PMI 関連強度。キーワードごとの実数で、複合スコアはありません。小標本の PMI はノイズが多いです。行をクリックすると、そのキーワードを独自のコーパスとして開きます。"
 }

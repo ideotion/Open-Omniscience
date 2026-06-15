@@ -897,5 +897,21 @@
   "Sentiment": "भावना",
   "How outlets frame this": "मीडिया इसे कैसे प्रस्तुत करता है",
   "(VADER tone)": "(VADER टोन)",
-  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "इस कॉर्पस को कवर करने वाले मीडिया स्वर में कैसे बँटते हैं — प्रति आउटलेट VADER कंपाउंड, लेख संख्या के साथ। VADER एक अंग्रेज़ी-शब्दकोश विधि है, इसलिए ग़ैर-अंग्रेज़ी कवरेज का स्वर अविश्वसनीय या अनुपस्थित है। कोई समग्र स्कोर नहीं; लिंक किए गए लेख पढ़ें और स्वयं निर्णय लें।"
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "इस कॉर्पस को कवर करने वाले मीडिया स्वर में कैसे बँटते हैं — प्रति आउटलेट VADER कंपाउंड, लेख संख्या के साथ। VADER एक अंग्रेज़ी-शब्दकोश विधि है, इसलिए ग़ैर-अंग्रेज़ी कवरेज का स्वर अविश्वसनीय या अनुपस्थित है। कोई समग्र स्कोर नहीं; लिंक किए गए लेख पढ़ें और स्वयं निर्णय लें।",
+  "Association": "संबद्धता",
+  "Keyword": "कीवर्ड",
+  "In this corpus": "इस कॉर्पस में",
+  "Total articles": "कुल लेख",
+  "Entity family:": "इकाई परिवार:",
+  "n =": "n =",
+  "…": "…",
+  "articles mention the corpus term.": "लेख कॉर्पस शब्द का उल्लेख करते हैं।",
+  "Surface variants are merged into entity families.": "सतही रूपांतर इकाई परिवारों में मिला दिए जाते हैं।",
+  "No keywords indexed for this corpus yet.": "इस कॉर्पस के लिए अभी तक कोई कीवर्ड अनुक्रमित नहीं हैं।",
+  "Click a row to open that keyword as its own corpus.": "किसी पंक्ति पर क्लिक करके उस कीवर्ड को उसके अपने कॉर्पस के रूप में खोलें।",
+  "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.": "इस कॉर्पस के साथ सह-घटित होने वाले कीवर्ड, क्रमित। प्रति कीवर्ड वास्तविक गणना — कोई समग्र स्कोर नहीं।",
+  "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "इस कॉर्पस में वे विशिष्ट लेख जो कॉर्पस शब्द और इस कीवर्ड दोनों का उल्लेख करते हैं। एक वास्तविक गणना, कभी स्कोर नहीं।",
+  "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "पूरे कॉर्पस में इस कीवर्ड का उल्लेख करने वाले विशिष्ट लेख। एक वास्तविक गणना, कभी स्कोर नहीं।",
+  "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "कॉर्पस शब्द के साथ पॉइंटवाइज़ म्यूचुअल इन्फॉर्मेशन — संबद्धता की प्रबलता, कारण नहीं। छोटे नमूनों पर PMI शोरयुक्त है; इसे गणनाओं के साथ पढ़ें।",
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "वे कीवर्ड जो इस कॉर्पस को एक क्रमित तालिका के रूप में परिभाषित करते हैं — विशिष्ट-लेख प्रसार, कुल उल्लेख, और कॉर्पस शब्द से PMI संबद्धता प्रबलता। प्रति कीवर्ड वास्तविक गणना, कोई समग्र स्कोर नहीं; छोटे नमूनों पर PMI शोरयुक्त है। किसी पंक्ति पर क्लिक करके उस कीवर्ड को उसके अपने कॉर्पस के रूप में खोलें।"
 }

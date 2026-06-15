@@ -897,5 +897,21 @@
   "Sentiment": "Sentiment",
   "How outlets frame this": "How outlets frame this",
   "(VADER tone)": "(VADER tone)",
-  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself."
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.",
+  "Association": "Association",
+  "Keyword": "Keyword",
+  "In this corpus": "In this corpus",
+  "Total articles": "Total articles",
+  "Entity family:": "Entity family:",
+  "n =": "n =",
+  "…": "…",
+  "articles mention the corpus term.": "articles mention the corpus term.",
+  "Surface variants are merged into entity families.": "Surface variants are merged into entity families.",
+  "No keywords indexed for this corpus yet.": "No keywords indexed for this corpus yet.",
+  "Click a row to open that keyword as its own corpus.": "Click a row to open that keyword as its own corpus.",
+  "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.": "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.",
+  "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.",
+  "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.",
+  "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.",
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus."
 }

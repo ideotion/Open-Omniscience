@@ -897,5 +897,21 @@
   "Sentiment": "Sentimento",
   "How outlets frame this": "Como os meios o enquadram",
   "(VADER tone)": "(tom VADER)",
-  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "Como os meios que cobrem este corpus se dividem em tom — composto VADER por meio, com contagens de artigos. VADER é um método de léxico INGLÊS, por isso o tom da cobertura não inglesa é pouco fiável ou ausente. Sem pontuação composta; leia os artigos ligados e atribua você mesmo."
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "Como os meios que cobrem este corpus se dividem em tom — composto VADER por meio, com contagens de artigos. VADER é um método de léxico INGLÊS, por isso o tom da cobertura não inglesa é pouco fiável ou ausente. Sem pontuação composta; leia os artigos ligados e atribua você mesmo.",
+  "Association": "Associação",
+  "Keyword": "Palavra-chave",
+  "In this corpus": "Neste corpus",
+  "Total articles": "Artigos totais",
+  "Entity family:": "Família de entidades:",
+  "n =": "n =",
+  "…": "…",
+  "articles mention the corpus term.": "artigos mencionam o termo do corpus.",
+  "Surface variants are merged into entity families.": "As variantes de superfície são fundidas em famílias de entidades.",
+  "No keywords indexed for this corpus yet.": "Ainda não há palavras-chave indexadas para este corpus.",
+  "Click a row to open that keyword as its own corpus.": "Clique numa linha para abrir essa palavra-chave como o seu próprio corpus.",
+  "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.": "Palavras-chave que coocorrem com este corpus, ordenadas. Contagens reais por palavra-chave — sem pontuação composta.",
+  "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "Artigos distintos neste corpus que mencionam TANTO o termo do corpus como esta palavra-chave. Uma contagem real, nunca uma pontuação.",
+  "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "Artigos distintos em todo o corpus que mencionam esta palavra-chave. Uma contagem real, nunca uma pontuação.",
+  "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "Informação mútua pontual com o termo do corpus — força de associação, não causalidade. A PMI em amostras pequenas é ruidosa; leia-a ao lado das contagens.",
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "As palavras-chave que definem este corpus como uma TABELA ordenada — difusão em artigos distintos, menções totais e força de associação PMI ao termo do corpus. Contagens reais por palavra-chave, sem pontuação composta; a PMI em amostras pequenas é ruidosa. Clique numa linha para abrir essa palavra-chave como o seu próprio corpus."
 }

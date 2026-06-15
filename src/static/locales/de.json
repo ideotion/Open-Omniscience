@@ -897,5 +897,21 @@
   "Sentiment": "Stimmung",
   "How outlets frame this": "Wie Medien das darstellen",
   "(VADER tone)": "(VADER-Tonalität)",
-  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "Wie sich die Medien, die diesen Korpus abdecken, in der Tonalität aufteilen — VADER-Compound je Medium, mit Artikelzahlen. VADER ist eine ENGLISCH-lexikalische Methode; die Tonalität nicht-englischer Berichterstattung ist daher unzuverlässig oder fehlt. Kein zusammengesetzter Score; lesen Sie die verlinkten Artikel und urteilen Sie selbst."
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "Wie sich die Medien, die diesen Korpus abdecken, in der Tonalität aufteilen — VADER-Compound je Medium, mit Artikelzahlen. VADER ist eine ENGLISCH-lexikalische Methode; die Tonalität nicht-englischer Berichterstattung ist daher unzuverlässig oder fehlt. Kein zusammengesetzter Score; lesen Sie die verlinkten Artikel und urteilen Sie selbst.",
+  "Association": "Assoziation",
+  "Keyword": "Schlüsselwort",
+  "In this corpus": "In diesem Korpus",
+  "Total articles": "Artikel insgesamt",
+  "Entity family:": "Entitätsfamilie:",
+  "n =": "n =",
+  "…": "…",
+  "articles mention the corpus term.": "Artikel erwähnen den Korpusbegriff.",
+  "Surface variants are merged into entity families.": "Oberflächenvarianten werden zu Entitätsfamilien zusammengeführt.",
+  "No keywords indexed for this corpus yet.": "Für diesen Korpus sind noch keine Schlüsselwörter indexiert.",
+  "Click a row to open that keyword as its own corpus.": "Klicken Sie auf eine Zeile, um dieses Schlüsselwort als eigenen Korpus zu öffnen.",
+  "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.": "Schlüsselwörter, die mit diesem Korpus gemeinsam auftreten, geordnet. Echte Zählungen je Schlüsselwort — kein zusammengesetzter Score.",
+  "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "Eindeutige Artikel in diesem Korpus, die SOWOHL den Korpusbegriff ALS AUCH dieses Schlüsselwort erwähnen. Eine echte Zählung, nie eine Bewertung.",
+  "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "Eindeutige Artikel im gesamten Korpus, die dieses Schlüsselwort erwähnen. Eine echte Zählung, nie eine Bewertung.",
+  "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "Punktweise Transinformation mit dem Korpusbegriff — Assoziationsstärke, keine Kausalität. PMI bei kleinen Stichproben ist verrauscht; neben den Zählungen lesen.",
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "Die Schlüsselwörter, die diesen Korpus als geordnete TABELLE definieren — Verbreitung über eindeutige Artikel, Gesamterwähnungen und PMI-Assoziationsstärke zum Korpusbegriff. Echte Zählungen je Schlüsselwort, kein zusammengesetzter Score; PMI bei kleinen Stichproben ist verrauscht. Klicken Sie auf eine Zeile, um dieses Schlüsselwort als eigenen Korpus zu öffnen."
 }
