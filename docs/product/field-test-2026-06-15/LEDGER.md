@@ -1173,3 +1173,60 @@ series.
 **⏭ Open Qs (compile):** bar baseline for price-level data (window-min-labeled vs zero)? "<10"
 strict (n≤9 → bars, n≥10 → line)? bar placement for IRREGULAR time spacing (market dates aren't
 evenly spaced — bars at true x-position vs evenly categorical)?
+
+---
+
+## Item Z — critical analysis of the diagnostics tools; the keyword log (>60MB) is UNUSABLE in the maintainer→dev channel → make it a DIGEST (compute the analysis locally)  [NEW — maintainer asked "what makes them useful to you?"]  ⏭ analysis + proposal (offer to implement v1)
+
+**Verbatim (10:17):** "Make a critical analysis of the diagnostics logging tools. What can we
+make them more useful to you? The keyword log seems too slow to produce. It's OK if there's no
+workaround. But I don't know how you will manage to analyse a several megabyte file. Why not do
+parts of the analysis locally in the app to help you with easier to ingest files? The keyword
+log I just produced is more than 60Mb…"
+
+**THE FOUR TOOLS (src/api/diagnostics.py):**
+- `/performance` (perf report): GOOD digest — env + store PRAGMAs + corpus counts + top-80
+  endpoint latencies + selftest timings. Bounded, methodful, aggregate. **THE MODEL.**
+- `/debug-bundle`: GOOD — runtime, corpus shape, scheduler + recent_runs(30), network verdicts,
+  imports(50), law/wiki states, field_test, errors(300). Bounded.
+- `/network` (preflight): GOOD — source/feed/calendar verdicts.
+- `/keywords` (keyword log): **THE OUTLIER → 60MB.** It already computes the right AGGREGATES
+  locally (families via `build_families`, `per_source_concentration` suspects, `language_mismatch`
+  flags) BUT ALSO serialises the ENTIRE raw keyword list — up to **5000 PER LANGUAGE × ~16 langs
+  ≈ 80k fat entries**, each with a per-keyword `language_signature` dict (lines 328-332, 270-289).
+  THAT is the 60MB.
+
+**CORE PROBLEM (verdict):** the diagnostics channel EXISTS for the maintainer→developer(me)
+loop. A 60MB JSON CANNOT be pasted into chat or ingested by me in full — so the keyword log is
+effectively **unusable in the very channel it was built for** (I'd be reduced to grep/sampling,
+losing the holistic view). The other three work BECAUSE they're bounded digests. The maintainer's
+instinct — "do parts of the analysis locally, give easier-to-ingest files" — is exactly the fix.
+
+**WHAT MAKES A DIAGNOSTIC USEFUL TO ME (principles):** small enough to read WHOLE (target
+≤~1MB, ideally a few hundred KB); AGGREGATE-FIRST (distributions/rates/top-N, not raw rows);
+METHODFUL (method+caveat+n per metric — the honesty discipline doubles as machine-readability);
+SAMPLED EXAMPLES (a handful per pattern, not all); STABLE SORTED schema (deterministic order ⇒
+cross-run DIFFs = drift detection); LAYERED (small summary always + opt-in raw drill-down).
+
+**PROPOSAL — keyword log → DIGEST (reuses existing computation):**
+- KEEP: corpus, method, families (summarised: count + largest + a fragmentation metric),
+  per_source_concentration (200), supergroups, overrides.
+- REPLACE the 80k raw keyword list with: per-language counts, kind distribution, hidden +
+  language_mismatch RATES (count+%), and TOP-N keywords per language (≈50-100, not 5000).
+- ADD the analyses I do by hand AND that Items S/T/U need: language_mismatch top examples +
+  total; trans-language family FRAGMENTATION measure (S); SUBSTRING/containment over-merge
+  suspects (U: "world cup⊃world", "United States⊃state"); platform-host source suspects (T) if
+  cheap.
+- The FULL raw list becomes an OPT-IN (`?full=1`) companion for rare deep dives — never default.
+- Result: a few-hundred-KB file I can read WHOLE, that directly feeds the keyword-analytics rework.
+
+**ON SLOWNESS:** the all-mentions scan is inherent (real aggregates); the maintainer accepts it.
+A digest still helps (far less to serialise/transmit). `/performance` already times
+`keyword_export_streamed`, so any win is measurable.
+
+**OFFER:** I can implement a v1 digest (`?digest=1` on `/keywords`, or a `/keywords/digest`
+endpoint) immediately — it's also the substrate for S/T/U. Awaiting go-ahead on the digest
+CONTENTS so it carries the right analyses.
+
+**⏭ Open Qs (compile):** digest contents priority? `?digest=1` vs new endpoint? keep full raw as
+opt-in or drop? target size cap?
