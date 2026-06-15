@@ -19,16 +19,18 @@ from __future__ import annotations
 
 import email
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.header import decode_header
 from email.message import Message
-from email.utils import parsedate_to_datetime
+from email.utils import getaddresses, parsedate_to_datetime
+from pathlib import Path
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
+from src.privacy.link_sanitizer import SanitizeStats, sanitize_text
 from src.utils.url_utils import generate_content_hash
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -41,6 +43,10 @@ class ParsedEmail:
     from_addr: str
     date: datetime | None
     body_text: str
+    # Anonymisation outcome. The recipient is NEVER stored; these are only the
+    # counts of what anonymisation did, surfaced to the user as honest feedback.
+    sanitize: SanitizeStats = field(default_factory=SanitizeStats)
+    redactions: int = 0
 
 
 def _decode_part(part: Message) -> str:
@@ -100,8 +106,50 @@ def _header(msg: Message, name: str, default: str = "") -> str:
         return str(raw).strip()
 
 
+# Headers that carry the recipient (or a per-recipient token). They are read
+# transiently -- ONLY to redact any echo of the recipient address from the stored
+# text -- and then discarded. This is the "anonymise at ingest" rule: the corpus
+# keeps the sender side, never the subscriber.
+_RECIPIENT_HEADERS = ("To", "Cc", "Bcc", "Delivered-To", "X-Original-To")
+
+
+def _recipient_addresses(msg: Message) -> set[str]:
+    """Collect recipient addresses from the message, for redaction only (never stored)."""
+    addrs: set[str] = set()
+    for name in _RECIPIENT_HEADERS:
+        for raw in msg.get_all(name, []):
+            for _disp, addr in getaddresses([str(raw)]):
+                addr = addr.strip().lower()
+                if "@" in addr:
+                    addrs.add(addr)
+    return addrs
+
+
+def _redact(text: str, addrs: set[str]) -> tuple[str, int]:
+    """Replace any literal recipient address in ``text`` with a marker.
+
+    Conservative on purpose: only the full address is redacted (redacting a bare
+    local-part would risk nuking common words). Returns ``(text, count)``.
+    """
+    if not text or not addrs:
+        return text, 0
+    count = 0
+    out = text
+    for addr in addrs:
+        out, n = re.subn(re.escape(addr), "[recipient]", out, flags=re.IGNORECASE)
+        count += n
+    return out, count
+
+
 def parse_email(raw: bytes) -> ParsedEmail:
-    """Parse an RFC822 message into the fields we store."""
+    """Parse an RFC822 message into the (anonymised) fields we store.
+
+    The recipient is NEVER stored: To/Cc/... are read only to redact any echo of
+    the recipient from the subject and body, then discarded. Links are de-tracked
+    (recipient query-tokens stripped, server-side wrappers flagged) before storage
+    so the corpus carries no per-subscriber identifiers. ``from_addr`` is the
+    sender, which is recipient-safe and kept.
+    """
     msg = email.message_from_bytes(raw)
     date = None
     if msg.get("Date"):
@@ -112,12 +160,22 @@ def parse_email(raw: bytes) -> ParsedEmail:
     message_id = _header(msg, "Message-ID")
     if not message_id:
         message_id = f"no-id-{generate_content_hash(raw.decode(errors='replace'))[:16]}"
+
+    subject = _header(msg, "Subject", "(no subject)")
+    body_text, stats = sanitize_text(_extract_body(msg))
+
+    recipients = _recipient_addresses(msg)
+    subject, r1 = _redact(subject, recipients)
+    body_text, r2 = _redact(body_text, recipients)
+
     return ParsedEmail(
         message_id=message_id,
-        subject=_header(msg, "Subject", "(no subject)"),
+        subject=subject,
         from_addr=_header(msg, "From"),
         date=date,
-        body_text=_extract_body(msg),
+        body_text=body_text,
+        sanitize=stats,
+        redactions=r1 + r2,
     )
 
 
@@ -155,10 +213,25 @@ def fetch_imap(
 
 
 def ingest_emails(session: Session, source: Source, raw_messages: list[bytes]) -> dict[str, int]:
-    """Parse and store raw emails as Article rows, deduplicated by content hash."""
-    tally = {"stored": 0, "duplicate": 0, "empty": 0}
+    """Parse and store raw emails as Article rows, deduplicated by content hash.
+
+    Emails are anonymised at ingest (recipient never stored, recipient echoes
+    redacted, links de-tracked). The tally surfaces what anonymisation did so the
+    caller can show the user honest counts.
+    """
+    tally = {
+        "stored": 0,
+        "duplicate": 0,
+        "empty": 0,
+        "recipient_redactions": 0,
+        "tracker_params_stripped": 0,
+        "trackers_flagged": 0,
+    }
     for raw in raw_messages:
         parsed = parse_email(raw)
+        tally["recipient_redactions"] += parsed.redactions
+        tally["tracker_params_stripped"] += parsed.sanitize.params_stripped
+        tally["trackers_flagged"] += parsed.sanitize.trackers_wrapped
         if not parsed.body_text:
             tally["empty"] += 1
             continue
@@ -197,3 +270,38 @@ def ingest_emails(session: Session, source: Source, raw_messages: list[bytes]) -
             session.rollback()
             tally["duplicate"] += 1
     return tally
+
+
+def ingest_eml_files(session: Session, source: Source, paths) -> dict[str, int]:
+    """Read ``.eml`` files from local disk and ingest them as Articles.
+
+    Local files only -- this opens no network connection. Unreadable files are
+    skipped; duplicate paths (e.g. a case-insensitive filesystem yielding the
+    same file as ``.eml`` and ``.EML``) are read once.
+    """
+    raws: list[bytes] = []
+    seen: set[object] = set()
+    for p in paths:
+        path = Path(p)
+        try:
+            key: object = path.resolve()
+        except OSError:
+            key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            raws.append(path.read_bytes())
+        except OSError:
+            continue
+    return ingest_emails(session, source, raws)
+
+
+def ingest_eml_directory(
+    session: Session, source: Source, directory, *, recursive: bool = True
+) -> dict[str, int]:
+    """Ingest every ``.eml`` file under ``directory`` (recursively by default)."""
+    root = Path(directory)
+    pattern = "**/*.eml" if recursive else "*.eml"
+    paths = sorted(root.glob(pattern)) + sorted(root.glob(pattern[:-4] + ".EML"))
+    return ingest_eml_files(session, source, paths)

@@ -12,7 +12,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
-from src.ingest.email import fetch_imap, ingest_emails, parse_email
+from src.ingest.email import (
+    fetch_imap,
+    ingest_emails,
+    ingest_eml_directory,
+    parse_email,
+)
 
 PLAIN = b"""From: Reporter <r@news.example>
 To: me@example.com
@@ -112,3 +117,83 @@ def test_fetch_imap_with_injected_connection():
     raws = fetch_imap("imap.example", "u", "p", conn=conn, limit=10)
     assert len(raws) == 2
     assert raws[0].startswith(b"From: Reporter")
+
+
+# --- Anonymisation at ingest (recipient protection) ------------------------- #
+
+RCPT = b"""From: Daily <news@publisher.example>
+To: jane.doe@personal.example
+Subject: Hello jane.doe@personal.example
+Message-ID: <r1@publisher.example>
+Date: Wed, 07 Jan 2026 09:00:00 +0000
+Content-Type: text/plain; charset=utf-8
+
+Hi jane.doe@personal.example, your weekly digest is ready.
+"""
+
+TRACK = b"""From: News <n@publisher.example>
+Subject: Markets
+Message-ID: <t1@publisher.example>
+Date: Tue, 06 Jan 2026 09:00:00 +0000
+Content-Type: text/plain; charset=utf-8
+
+Read https://publisher.example/a?mc_eid=SECRET&id=9 and then
+https://x.us2.list-manage.com/track/click?e=ME today.
+"""
+
+
+def test_recipient_is_redacted_and_never_stored():
+    p = parse_email(RCPT)
+    # the recipient address must not survive anywhere we store
+    assert "jane.doe@personal.example" not in p.subject
+    assert "jane.doe@personal.example" not in p.body_text
+    assert "[recipient]" in p.body_text
+    assert p.redactions >= 2
+    # the sender is recipient-safe and kept
+    assert p.from_addr == "Daily <news@publisher.example>"
+
+
+def test_links_are_detracked_on_ingest():
+    s = _db()
+    src = s.query(Source).first()
+    tally = ingest_emails(s, src, [TRACK])
+    assert tally["stored"] == 1
+    art = s.query(Article).filter_by(title="Markets").one()
+    assert "mc_eid" not in art.content
+    assert "SECRET" not in art.content
+    assert "ME" not in art.content  # recipient token inside the wrapped link is gone
+    assert "[tracked link -> https://x.us2.list-manage.com]" in art.content
+    assert tally["tracker_params_stripped"] >= 1
+    assert tally["trackers_flagged"] == 1
+    s.close()
+
+
+def test_ingest_eml_directory_reads_files(tmp_path):
+    (tmp_path / "one.eml").write_bytes(PLAIN)
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "two.eml").write_bytes(HTML)
+    s = _db()
+    src = s.query(Source).first()
+    tally = ingest_eml_directory(s, src, tmp_path)
+    assert tally["stored"] == 2
+    assert s.query(Article).count() == 2
+    s.close()
+
+
+def test_eml_import_makes_no_network_call(tmp_path, monkeypatch):
+    # Build the in-memory DB BEFORE forbidding sockets (sqlite opens none, but be safe).
+    s = _db()
+    src = s.query(Source).first()
+    (tmp_path / "a.eml").write_bytes(PLAIN)
+    (tmp_path / "b.eml").write_bytes(TRACK)
+
+    import socket
+
+    def _forbidden(*_a, **_k):  # pragma: no cover - only runs if the rule is violated
+        raise AssertionError("import attempted a network connection")
+
+    monkeypatch.setattr(socket, "socket", _forbidden)
+    tally = ingest_eml_directory(s, src, tmp_path)
+    assert tally["stored"] == 2
+    s.close()
