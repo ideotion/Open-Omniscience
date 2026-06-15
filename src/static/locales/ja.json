@@ -913,5 +913,12 @@
   "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "このコーパス内でコーパス用語とこのキーワードの両方に言及する個別の記事数。実数であり、スコアではありません。",
   "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "コーパス全体でこのキーワードに言及する個別の記事数。実数であり、スコアではありません。",
   "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "コーパス用語との自己相互情報量——関連の強さであり、因果ではありません。小標本の PMI はノイズが多いため、件数と併せて読んでください。",
-  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "このコーパスを定義するキーワードをランク付けした表で表示——個別記事への広がり、言及総数、コーパス用語との PMI 関連強度。キーワードごとの実数で、複合スコアはありません。小標本の PMI はノイズが多いです。行をクリックすると、そのキーワードを独自のコーパスとして開きます。"
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "このコーパスを定義するキーワードをランク付けした表で表示——個別記事への広がり、言及総数、コーパス用語との PMI 関連強度。キーワードごとの実数で、複合スコアはありません。小標本の PMI はノイズが多いです。行をクリックすると、そのキーワードを独自のコーパスとして開きます。",
+  "Type": "種類",
+  "No sources for this corpus yet.": "このコーパスのソースはまだありません。",
+  "No catalog metadata on file.": "カタログのメタデータはありません。",
+  "(scoped to the top matched articles)": "（一致した上位記事に限定）",
+  "Open this source's profile (measured dimensions, no composite score).": "このソースのプロファイルを開く（測定された指標、複合スコアなし）。",
+  "The distinct sources behind this corpus, with their per-corpus article count. Country, region, language and tags are stated by the source catalog (asserted, not deduced from text); article counts are exact. No score, no ranking — coverage, not credibility.": "このコーパスの背後にある個別のソースと、コーパスごとの記事数。国・地域・言語・タグはソースカタログが提示します（主張であり、本文から推定したものではありません）。記事数は正確です。スコアもランキングもなし——信頼性ではなくカバレッジです。",
+  "Which sources feed this corpus — the distinct outlets behind the member articles, with their per-corpus article count and the catalog metadata they assert (domain, country, region, language, tags). Counts are exact; the country/region/language/tags are stated by the source catalog (not deduced from text). No score, no ranking — descriptive provenance, not credibility.": "どのソースがこのコーパスを構成するか——メンバー記事の背後にある個別のメディアと、コーパスごとの記事数、そしてカタログで主張するメタデータ（ドメイン・国・地域・言語・タグ）。件数は正確です。国・地域・言語・タグはソースカタログが提示します（本文から推定したものではありません）。スコアもランキングもなし——信頼性ではなく記述的な出所です。"
 }

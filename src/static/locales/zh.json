@@ -913,5 +913,12 @@
   "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "本语料库中同时提及语料库术语和此关键词的不同文章。真实计数，绝非评分。",
   "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "整个语料库中提及此关键词的不同文章。真实计数，绝非评分。",
   "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "与语料库术语的逐点互信息——关联强度，而非因果。小样本上的 PMI 噪声大；请结合计数一起看。",
-  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "以排序后的表格呈现定义该语料库的关键词——不同文章的覆盖、提及总数，以及与语料库术语的 PMI 关联强度。每个关键词的真实计数，无综合评分；小样本上的 PMI 噪声大。点击某行可将该关键词作为独立语料库打开。"
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "以排序后的表格呈现定义该语料库的关键词——不同文章的覆盖、提及总数，以及与语料库术语的 PMI 关联强度。每个关键词的真实计数，无综合评分；小样本上的 PMI 噪声大。点击某行可将该关键词作为独立语料库打开。",
+  "Type": "类型",
+  "No sources for this corpus yet.": "此语料库尚无来源。",
+  "No catalog metadata on file.": "无目录元数据记录。",
+  "(scoped to the top matched articles)": "（仅限匹配度最高的文章）",
+  "Open this source's profile (measured dimensions, no composite score).": "打开此来源的档案（已测量维度，无综合评分）。",
+  "The distinct sources behind this corpus, with their per-corpus article count. Country, region, language and tags are stated by the source catalog (asserted, not deduced from text); article counts are exact. No score, no ranking — coverage, not credibility.": "该语料库背后的不同来源，及其各自的语料库文章数。国家、地区、语言和标签由来源目录声明（断言，而非从文本推断）；文章计数精确。无评分、无排名——覆盖范围，而非可信度。",
+  "Which sources feed this corpus — the distinct outlets behind the member articles, with their per-corpus article count and the catalog metadata they assert (domain, country, region, language, tags). Counts are exact; the country/region/language/tags are stated by the source catalog (not deduced from text). No score, no ranking — descriptive provenance, not credibility.": "哪些来源构成该语料库——成员文章背后的不同媒体，及其各自的语料库文章数和它们在目录中声明的元数据（域名、国家、地区、语言、标签）。计数精确；国家/地区/语言/标签由来源目录声明（非从文本推断）。无评分、无排名——描述性来源，而非可信度。"
 }
