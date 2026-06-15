@@ -702,3 +702,243 @@ the download subsystem.
 **⏭ Open Qs (compile):** in-app job + download-when-ready vs an informative export page
 in the new tab? does the streaming endpoint expose a progress count, or show
 indeterminate progress?
+
+---
+
+## Item N — the "Trust" tabs (Evidence & custody · Source integrity): rethink purpose, spread into the workflow, make them dummy-proof & (semi-)automatic  [NEW — design decision; "help me decide"]  ⏭ capture + RECOMMENDATION (awaits maintainer steer)
+
+**Verbatim (09:00):** "The TRUST tabs might not be used. Note that they are not fully
+translated also. I'm wondering if this shouldn't be spread in search related tools and UI.
+Anyways, we should think [about] their ultimate purpose and use cases in order to maximize
+usefulness and user accessibility. They should become more user friendly anyways, and
+accessible to users that are not familiar with these and not experts. They should become
+dummy-proof, maybe semi automated, or completely automated. I'm not sure, help me decide."
+
+**What they are (grounded):** the sidebar **"Trust" nav-group** (index.html:654-658) =
+exactly TWO tabs:
+- **Evidence & custody** (`#tab-custody`, index.html:891) — chain-of-custody: signed,
+  tamper-evident provenance for legal defensibility. Expert knobs (post-quantum ML-DSA/
+  FIPS-204 signatures, OpenTimestamps→Bitcoin anchoring, auto-log-on-ingest, default actor)
+  + actions (view chain / verify / export offline-verifiable bundle / **anchor a raw
+  "Merkle root (hex) … 64-char SHA-256 hex"**). Deeply forensic.
+- **Source integrity** (`#tab-integrity`, index.html:974) — anti-amplification ("Scan for
+  coordination" → collapse a near-duplicate flood to "one voice", reversible), source
+  profiling (structure signals: coordination/novelty/output-capacity/transparency —
+  explicitly **NO trust score**), and the **web-of-trust** shared annotations (signed,
+  contestable facts about sources; trusted-author curation).
+
+**i18n confirmed:** "Chain of custody", "Source integrity & anti-amplification",
+"Merkle root", etc. live ONLY in index.html — absent from all 12 `locales/*.json`. So
+these tabs are hardcoded English (part of the untranslatable long tail).
+
+**Usage:** we have NO telemetry (by design), so "might not be used" can't be measured —
+but structurally they're buried in a silo, expert-heavy, and disconnected from where users
+actually work (search/reading/analysis), which predicts low use. The maintainer's instinct
+is sound.
+
+**THE REALIZATION (the crux):** these are TWO different things wearing one "Trust" label,
+for TWO different audiences:
+- **Integrity = for EVERYONE, belongs AMBIENT.** "Is this source manipulating me? Is this
+  'consensus' really 10 copies of one origin?" is the project's core anti-single-origin
+  ethic — the SAME methodology as the LINKS anti-false-triangulation rule. It should not be
+  a destination you remember to visit; it should COME TO the user where they read/search/
+  analyze.
+- **Custody = for a NARROW expert subset** (journalists / legal / archivists proving an
+  artifact existed at T and is unaltered). Inherently forensic. It's the LOCAL end of the
+  reliable-memory pillar.
+
+**MY RECOMMENDATION — 4 moves (applies existing rulings, invents no new philosophy):**
+1. **Dissolve the "Trust" sidebar group** — apply invariant #8 ("show DATA, never
+   plumbing") + the content-first precedent that already moved Collect/Sources/Wikipedia
+   into Settings. GATED by an **absorption test** (the Desk lesson: nothing removed until
+   its capability lives in its new home).
+2. **Integrity → ambient + automatic (the maintainer's "spread into search/UI", endorsed):**
+   coordination detection becomes a BACKGROUND pass (like Insights auto-indexing,
+   invariant #21 — no manual "Scan" button); in SEARCH results + the corpus/analysis window
+   a coordinated cluster shows inline, dummy-proof: *"12 near-identical copies from a
+   coordinated network · counted as 1 voice [show all 12]"* (this IS the anti-false-
+   triangulation surface LINKS already wants); the READER gets a per-source integrity-
+   signals row (method+caveat) + web-of-trust annotations on the source chip; profiling +
+   annotations attach to a SOURCE CHIP wherever a source appears (no "type a domain" box).
+   Dummy-proof BY CONSTRUCTION — the user never needs the word "anti-amplification".
+3. **Custody → an ACTION on content, not a destination:** per-item "Export tamper-evident
+   proof" / "Verify this bundle (green=unaltered / red=altered)" on articles + corpora (the
+   signed-evidence export already lives in the Search tab = precedent); the raw
+   "Merkle root (hex)/Ed25519/OTS" detail moves into the **#oo-tip hover** (informed-
+   consent-by-LAYERING — the permanent ruling); the custody PREFERENCES move to **Settings**.
+4. **Automation defaults (the genuine rulings needed):** (a) **auto-log custody ON by
+   default** — recommended YES (tamper-evidence is the reliable-memory pillar; on by
+   construction like at-rest encryption, so users get legal-grade provenance without knowing
+   what a Merkle root is; expert knobs in Settings). **OTS/Bitcoin anchoring stays OFF by
+   default** either way — it's a network egress that reveals IP/timing (already warned).
+   (b) integrity coordination scan → background/auto.
+
+**i18n note:** don't spend the ×12 keying effort on the CURRENT tabs if we're about to
+dissolve/move them — key the strings AS they land in their new homes (else we translate
+strings we're about to delete). The i18n fix FOLDS INTO the rework.
+
+**Sequencing reality:** integrity's best home (the corpus/analysis window with
+source-competitive-analysis + LINKS) is only PARTIALLY built (T10 slice 1). So the full
+"spread integrity into the workflow" rides WITH the search/analysis-window completion (the
+Enter→corpus-window slice). Custody-as-action can land earlier (reader + Search export
+exist).
+
+**Supersedes/extends** the existing queue item *"Custody tab UX: most users won't get it —
+rename/explain/guided steps"* — the answer is not rename/explain but spread + automate +
+dummy-proof.
+
+**⏭ DECISIONS I need from the maintainer:** (a) dissolve the Trust group & spread into the
+workflow (recommended) **vs** keep two tabs but just dummy-proof in place? (b) custody
+auto-log ON by default (recommended) **vs** stay opt-in? (c) treat as a now-ish topic **vs**
+parked behind the analysis-window build (integrity's natural home)?
+
+---
+
+## Item O — app tabs should be right-clickable → "open in a new window/tab" (real browser behaviour)  [NEW — ties the routing/back-button rework]  ⏭ capture-only
+
+**Verbatim (09:01):** "tabs should be right-clickable so users can open up a tab in a new
+window."
+
+**Where (grounded):** nav is JS-only — `showTab()` swaps `.tab-page` visibility; the
+nav-items are `<button data-tab=…>` with NO real `href`, and tab nav uses
+`history.replaceState` (the back-button bug, UI-plan §7a). With no URL there is nothing for
+the browser's "open in new window/tab", middle-click, or ⌘/Ctrl-click to open.
+
+**THE UNIFYING INSIGHT:** give every tab a REAL URL (deep-link anchor) + `pushState`
+history, with `showTab` intercepting plain left-click (preventDefault) while letting
+modified clicks (middle / right / ⌘ / Ctrl) fall through to native browser behaviour. ONE
+routing fix then delivers THREE things at once: (1) right-click/middle-click → open in new
+window/tab; (2) the BACK BUTTON bug fix (already in the queue: pushState for tab nav +
+replaceState to "/" after unlock); (3) pop-out analysis/corpus WINDOWS to their own browser
+window (aligns with "click a graph → a dedicated window like search results").
+
+**Cross-ref:** the "TWO BUGS … (a) the BACK BUTTON returns to the passphrase screen" queue
+item — SAME root, fix together.
+
+**⏭ Open Q (compile):** scope — main nav tabs only, or also the analysis/corpus windows
+(so a corpus can pop out to its own browser window)? My read: both, eventually; windows-as-
+real-URLs is the bigger lift.
+
+---
+
+## Item P — remove the "Help & docs" SIDEBAR tab (top-bar "?" is sufficient)  [NEW]  ✅ SHIPPED this session
+
+**Verbatim (09:02):** "Remove the help and docs tab, having the top question mark icon is
+sufficient."
+
+**Grounded + absorption confirmed:** the sidebar "Help & docs" item (`data-tab="help"`,
+was index.html:662) duplicated the **top-bar "?" icon** (index.html:704) — BOTH call
+`showTab('help')` → the identical `#tab-help` page; the command palette (index.html:3128/
+3134) and the Law-guide link (953) also reach it. Nothing lost.
+
+**Shipped:** removed the `data-grp="system"` nav-group (Help was its only remaining member
+after Settings was removed earlier). Help stays **registered + LOCKED** (TABS registry +
+`LOCKED` set, index.html:2928/2931) so the "?" icon, palette and deep-links keep working;
+in-code breadcrumb left, registry comment updated. No new strings (removal only).
+**Verified:** `test_ui_invariants` green (no test pinned Help to the sidebar; the negative
+content-first assertions for Collect/Sources/Wikipedia were the precedent).
+
+---
+
+## Item Q — ALL in-app docs should be translated + inherit the repo's docs automatically  [NEW]  ⏭ capture (repo-linkage already exists; translation is the open work)
+
+**Verbatim (09:04):** "All in-app documentation should be translated. We should link them
+to the app's repo, so that they inherently inherit changes made to the repo's docs. Maybe
+it's already the case."
+
+**Finding (grounded — it IS largely already the case):**
+- **Repo-linkage ✅ already exists:** docs are served LIVE from the repo's `docs/` directory
+  at runtime (`_DOCS_DIR = …/docs`, src/api/main.py:1310; `GET /api/docs/{slug}`). Any edit
+  to the repo docs shows up in-app once the local clone updates (git pull / self-update). We
+  do NOT — and should not — live-fetch from GitHub at runtime: that breaks offline-first /
+  zero-network boot. So inheritance is via the bundled repo tree, refreshed on app update.
+  (Optional nicety: a consented "view the latest on GitHub ↗" external link behind the
+  invariant-#7 popup, for users who want the canonical online copy.)
+- **Translation infra ✅ shipped, content ❌ mostly empty:** `_doc_path` serves
+  `docs/i18n/<lang>/<file>` when a draft exists, else falls back to English (authoritative)
+  with the honest machine-drafted banner + `X-OO-Doc-Lang` header (index.html:4105-4116).
+  The GAP is that `docs/i18n/<lang>/*.md` is mostly UNPOPULATED (only fr QUICKSTART
+  hand-seeded). The actual translation RUN (`scripts/translate_docs.py` on a machine with a
+  local model, and/or community translation) is the remaining work.
+
+**So:** reassure the maintainer the repo-inheritance is built; the real action is to
+POPULATE the per-language doc drafts. **Elevates** the existing queue item *"Translated
+docs: infrastructure shipped … TODO: run scripts/translate_docs.py on a machine with a local
+model."*
+
+**⏭ Open Qs (compile):** add a consented "view latest on GitHub" external link? prioritise
+which docs first (USER_MANUAL, QUICKSTART)? machine-draft-now-then-human-review vs wait for
+human translation (the banner already states machine-drafted + English-authoritative)?
+
+---
+
+## Item R — sidebar has a COLLAPSE button but no discoverable EXPAND button  [NEW]  ⏭ capture (quick win; needs +1 string ×12)
+
+**Verbatim (09:06):** "There's a button to collapse the side bar containing the tabs,
+however, there's no button to expand it back."
+
+**Diagnosis (grounded — it's a DISCOVERABILITY bug, not a missing function):**
+`toggleSidebar()` (index.html:3062) already toggles BOTH ways
+(`collapsed`↔`expanded`), and the button (index.html:671, in `.sb-foot`) is still rendered
+when collapsed (only `.lbl` text is hidden, CSS line 125). BUT the button is **static**: its
+chevron always points `‹` (collapse direction) and its `title` is always "Collapse
+sidebar" — so once collapsed it doesn't read as an expand control (and in the narrow icon
+rail it's easy to miss next to the gear).
+
+**Fix (small):** make the toggle **direction-aware** — give it an id, rotate the chevron
+180° via `html[data-sidebar="collapsed"] #…  svg { transform:rotate(180deg) }`, and swap the
+title to a keyed **"Expand sidebar"** in `applyUi` (currently "Collapse sidebar" is itself
+unkeyed → key both). +1 new string ("Expand sidebar") ×12. Optionally add a second, more
+obvious rail affordance (e.g., the collapsed brand/logo expands on click). Invariant #2
+(sidebar may collapse to an icon rail, never off-canvas >600px) stays intact.
+
+**⏭ Open Q (compile):** direction-aware toggle alone, or also make the collapsed
+brand/hamburger expand for redundancy?
+
+---
+
+## Item S — comprehensive keyword-analytics rework: top keywords MIX all languages (unhelpful) → trans-language keyword families  [NEW — elevates the trans-language-equivalence queue item]  ⏭ capture + ACCEPT the keyword log
+
+**Verbatim (09:09):** "We should do a comprehensive work on keyword analytics. For now, the
+top keywords appear from all languages. It doesn't help. We've talk[ed] about keyword
+trans-language families. If having the keyword log helps, I can send it to you."
+
+**The problem (grounded):** top-keyword / trending / association views aggregate raw
+normalized terms across ALL corpus languages, so `fr:élections`, `en:elections`,
+`es:elecciones` are counted as THREE different terms; the ranking becomes an artifact of
+which language has the most volume, not of importance — the cross-language signal is
+fragmented and the list "doesn't help".
+
+**Maps to the EXISTING queue item** *"Trans-language equivalence — LIVE analytics layer
+(elevated): rings merge inside grouped trends/trending/associations/graph levels
+(fr:élections + en:elections = ONE concept); cross-country recognition via
+per-source-country split; guards stay (language-qualified members only, signature-supported
+joins, per-language counts visible, user can split). Groundwork shipped (signatures + curated
+ring file + first 10 rings from field log #1)."* → THIS is the "comprehensive keyword
+analytics" the maintainer wants; **elevate from groundwork to a built feature.**
+
+**Scope to define (compile):** (1) trans-language **FAMILIES as the aggregation unit** for
+top-keywords/trending/associations/graph — per-language counts still visible + user can split
+(the ruled guards); (2) language-aware views (top keywords per-language AND merged, with a
+language filter); (3) merges respect the ruled **over-merge guards** (language-qualified
+members only, signature-supported joins, never silent merge — the field-log-#1 guards);
+(4) ties into the keyword-as-corpus windows (each family → a corpus). Maintainer position
+stands: NOT a fan of capping; use as many keywords as possible (any cap must be DYNAMIC).
+
+**Keyword log — YES, send it.** Grounding the rework in the live keyword distribution is
+exactly how field reports #1/#4 produced the stoplists + the first 10 rings. The Settings →
+"Download keyword log (.json)" export (the one Item M is about — slow, but fine), or the debug
+bundle. I'll use it to: propose the next batch of equivalence rings from real co-occurring
+cross-language terms, measure what share of the top-N is fragmented across languages (the size
+of the problem), and validate the guards against real data.
+
+**⏭ Open Qs (compile):** families as the DEFAULT view vs an opt-in lens? seeding = curated
+ring file + signature auto-join + user edits (the ruled approach)? per-language counts always
+shown (informed consent)?
+
+**AFFECTED SURFACE flagged (maintainer 09:10):** the problem shows **prominently in the
+keyword TREND screen** (Insights → trend, ooChart per invariant #16) — multiple language
+variants of ONE concept render as SEPARATE trend series, fragmenting the trend line and
+making the screen hard to read. So the family-merge must drive the **trend view** too (merged
+series by default, per-language sub-series available + splittable), not only the top-keywords
+list. Add the trend screen to the rework's acceptance criteria.

@@ -656,11 +656,11 @@
           <button class="nav-item" data-tab="custody"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Evidence &amp; custody</span></button>
           <button class="nav-item" data-tab="integrity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M10 7h7M7 10v7"/><path d="M14 14l-4-4"/></svg><span>Source integrity</span></button>
         </div>
-        <div class="nav-group" data-grp="system">
-          <div class="gl">System</div>
-          <!-- Settings row removed (maintainer-ruled 2026-06-10): the top-bar gear is the single entry. -->
-          <button class="nav-item" data-tab="help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg><span>Help &amp; docs</span></button>
-        </div>
+        <!-- System nav-group removed (maintainer-ruled 2026-06-15): Help & docs left the
+             sidebar — the top-bar "?" icon (showTab('help')) is the single entry, mirroring
+             how Settings was handled. The tab stays registered + LOCKED (see TABS below) so
+             the icon, the command palette and deep-links keep working. -->
+
       </nav>
 
       <div class="sb-foot">
@@ -2924,7 +2924,9 @@
       {id:"integrity",label:"Source integrity",   grp:"Trust"},
       // Settings is NOT a menu item (maintainer-ruled 2026-06-10: the top-bar
       // gear button is the single entry; a duplicate menu row was confusing).
-      // The tab itself stays registered/locked so deep-links + the button work.
+      // Help is ALSO not a sidebar item (maintainer-ruled 2026-06-15: the top-bar
+      // "?" icon is sufficient). Both stay registered/LOCKED so deep-links, the
+      // command palette and the top-bar buttons keep working.
       {id:"help",     label:"Help & docs",        grp:"System"},
     ];
     // Always-available tools can't be hidden, so the user can never lock themselves out.
