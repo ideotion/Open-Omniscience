@@ -1218,8 +1218,12 @@ ruling, a contingency, or a deliberate-omission note.
   Jaccard + threshold; ownership_change/law_change = DELIBERATELY descriptive-only
   real counts/byte-deltas, NEVER an invented CI), no composite scores
   (CardSchemaError untouched); test_corpus_producers_all_carry_a_trigger sweeps every
-  default producer. REMAINING slices: corpus tier header (early/developing/
-  established); power-style "what's missing"; BH-FDR later.
+  default producer. CORPUS TIER HEADER SHIPPED (PR #210): a descriptive
+  early/developing/established stage on the Home glance strip from real corpus
+  facts (corpus_tier in producers.py reuses _is_young; additive briefing field;
+  NO score; thresholds <200 art or <14d → early, ≥1000 art and ≥90d → established;
+  visible early caveat + invariant-#17 threshold hover as ONE atomic placeholder
+  sentence ×12). REMAINING slices: power-style "what's missing"; BH-FDR later.
 - **Trans-language equivalence — LIVE analytics layer (elevated):** rings
   merge inside grouped trends/trending/associations/graph levels
   (fr:élections + en:elections = ONE concept); cross-country recognition via
