@@ -1663,6 +1663,10 @@
       <div class="row">
         <div><label for="feeddir-kind">Kind</label><select id="feeddir-kind" onchange="renderFeedDir()">
           <option value="">all</option></select></div>
+        <div><label for="feeddir-status-filter">Status</label><select id="feeddir-status-filter" onchange="renderFeedDir()">
+          <option value="">all</option><option value="ok">Reachable</option><option value="error">Dysfunctional</option><option value="unchecked">Not checked</option></select></div>
+        <div><label for="feeddir-sort">Sort</label><select id="feeddir-sort" onchange="renderFeedDir()">
+          <option value="name">Name</option><option value="country">Country</option><option value="kind">Kind</option><option value="status">Status</option><option value="imported">Imported</option></select></div>
         <div style="flex:1"><label for="feeddir-q">Filter</label><input id="feeddir-q" placeholder="type to filter (name or country)…" oninput="renderFeedDir()"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="verifyFeedBatch(this)">Verify next 25</button></div>
         <div id="feeddir-status" class="hint" style="align-self:end"></div>
@@ -3865,12 +3869,32 @@
       if (v.status === "not_ical") return '<span class="pill warn">not an iCal file</span>';
       return `<span class="pill err" title="${esc(v.error || "")}">unreachable</span>`;
     }
+    // A folder's overall health from its feeds' verdicts: reachable if ANY feed is
+    // reachable, dysfunctional if all checked feeds failed, else not-yet-checked.
+    function famStatus(f) {
+      let anyOk = false, anyChecked = false;
+      for (const fd of (f.feeds || [])) {
+        if (fd.verdict) { anyChecked = true; if (fd.verdict.status === "ok") anyOk = true; }
+      }
+      return anyOk ? "ok" : (anyChecked ? "error" : "unchecked");
+    }
+    const _FEED_SORTS = {
+      name: (a, b) => a.name.localeCompare(b.name),
+      country: (a, b) => (a.country || "￿").localeCompare(b.country || "￿") || a.name.localeCompare(b.name),
+      kind: (a, b) => (a.kind || "").localeCompare(b.kind || "") || a.name.localeCompare(b.name),
+      // dysfunctional first, so problems surface (the maintainer's "find the broken ones")
+      status: (a, b) => ({ error: 0, unchecked: 1, ok: 2 }[famStatus(a)] - { error: 0, unchecked: 1, ok: 2 }[famStatus(b)]) || a.name.localeCompare(b.name),
+      imported: (a, b) => ((b.imported_events || 0) - (a.imported_events || 0)) || a.name.localeCompare(b.name),
+    };
     function renderFeedDir() {
       if (!_feedDir) return;
       const kind = $("feeddir-kind").value, q = ($("feeddir-q").value || "").toLowerCase();
+      const sf = $("feeddir-status-filter").value, sort = $("feeddir-sort").value || "name";
       let fams = _feedDir.families.filter(f =>
         (!kind || f.kind === kind) &&
+        (!sf || famStatus(f) === sf) &&
         (!q || f.name.toLowerCase().includes(q) || (f.country || "").toLowerCase().includes(q)));
+      fams.sort(_FEED_SORTS[sort] || _FEED_SORTS.name);
       const total = fams.length;
       fams = fams.slice(0, 40);
       $("feeddir-status").textContent =

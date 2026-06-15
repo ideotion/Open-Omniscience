@@ -676,5 +676,12 @@
   "note": "নোট",
   "Week": "সপ্তাহ",
   "This week — no fixed day:": "এই সপ্তাহে — নির্দিষ্ট দিন নেই:",
-  "religious": "ধর্মীয়"
+  "religious": "ধর্মীয়",
+  "Name": "নাম",
+  "Status": "অবস্থা",
+  "Imported": "আমদানিকৃত",
+  "Reachable": "অভিগম্য",
+  "Dysfunctional": "ত্রুটিপূর্ণ",
+  "Not checked": "এখনও যাচাই হয়নি",
+  "Sort": "সাজান"
 }

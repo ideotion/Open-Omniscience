@@ -676,5 +676,12 @@
   "note": "टिप्पणी",
   "Week": "सप्ताह",
   "This week — no fixed day:": "इस सप्ताह — बिना निश्चित दिन:",
-  "religious": "धार्मिक"
+  "religious": "धार्मिक",
+  "Name": "नाम",
+  "Status": "स्थिति",
+  "Imported": "आयातित",
+  "Reachable": "पहुँच योग्य",
+  "Dysfunctional": "ख़राब",
+  "Not checked": "अभी जाँचा नहीं",
+  "Sort": "क्रमबद्ध करें"
 }

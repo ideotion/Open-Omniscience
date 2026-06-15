@@ -676,5 +676,12 @@
   "note": "Notiz",
   "Week": "Woche",
   "This week — no fixed day:": "Diese Woche — ohne festen Tag:",
-  "religious": "religiös"
+  "religious": "religiös",
+  "Name": "Name",
+  "Status": "Status",
+  "Imported": "Importiert",
+  "Reachable": "Erreichbar",
+  "Dysfunctional": "Fehlerhaft",
+  "Not checked": "Ungeprüft",
+  "Sort": "Sortieren"
 }

@@ -676,5 +676,12 @@
   "note": "备注",
   "Week": "周",
   "This week — no fixed day:": "本周 — 无固定日期：",
-  "religious": "宗教"
+  "religious": "宗教",
+  "Name": "名称",
+  "Status": "状态",
+  "Imported": "已导入",
+  "Reachable": "可访问",
+  "Dysfunctional": "异常",
+  "Not checked": "未检查",
+  "Sort": "排序"
 }

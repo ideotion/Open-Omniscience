@@ -676,5 +676,12 @@
   "note": "ملاحظة",
   "Week": "أسبوع",
   "This week — no fixed day:": "هذا الأسبوع — بدون يوم محدد:",
-  "religious": "ديني"
+  "religious": "ديني",
+  "Name": "الاسم",
+  "Status": "الحالة",
+  "Imported": "المستورَدة",
+  "Reachable": "يمكن الوصول",
+  "Dysfunctional": "معطّل",
+  "Not checked": "لم يُفحص",
+  "Sort": "ترتيب"
 }

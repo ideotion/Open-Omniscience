@@ -676,5 +676,12 @@
   "note": "メモ",
   "Week": "週",
   "This week — no fixed day:": "今週 — 日付未定:",
-  "religious": "宗教"
+  "religious": "宗教",
+  "Name": "名前",
+  "Status": "状態",
+  "Imported": "インポート数",
+  "Reachable": "到達可能",
+  "Dysfunctional": "異常",
+  "Not checked": "未確認",
+  "Sort": "並べ替え"
 }
