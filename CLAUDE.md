@@ -375,7 +375,18 @@ ruling, a contingency, or a deliberate-omission note.
   initial screen (the in-browser first-launch prompt becomes the PRIMARY
   path; the terminal prompt demotes to the headless/env fallback). Fits
   the shipped deferred-init design (option 3 already seeds at first
-  unlocked boot). (c) The /unlock screen carries THE canonical eye —
+  unlocked boot). **(a)+(b) INSTALLER HALF SHIPPED 2026-06-15 (field test,
+  field-test-2026-06-15/LEDGER.md Item A): install.sh NO LONGER PROMPTS for a
+  passphrase — init_database initialises ONLY for an existing store or an
+  explicit headless env choice (OO_DB_PASSPHRASE/OO_DB_PLAINTEXT via
+  _try_db_init), else DEFERS silently to the in-app first-launch setup; the
+  interactive _prompt_db_protection function was REMOVED (env vars are the only
+  headless fallback, per the ruling). maybe_launch() execs scripts/launch.sh at
+  the end of an INTERACTIVE install (never CI/--unattended/--appvm/OO_SKIP_PIP;
+  OO_AUTOLAUNCH=0 opts out), ending inside the running app at 127.0.0.1:8000;
+  zero-network/airplane boot preserved; tests/test_installer.py green. The
+  in-app encryption-choice STEP of the wizard (the GUI side of (b)) is still the
+  remaining wizard slice.** (c) The /unlock screen carries THE canonical eye —
   SHIPPED #134: unlock.html now draws the pointed-oval + #-grid iris (exact
   same vector as the GUI top-left), the old double-arc eye is gone, and the
   invariant-#5 test now covers unlock.html. (d) FIRST-LAUNCH
@@ -991,12 +1002,28 @@ ruling, a contingency, or a deliberate-omission note.
   meanings). (4) SEARCH bigger + always-on; REMOVE the visible "Ctrl K" hint
   (index.html:646); permanent "Advanced" button; shortcuts list → Help +
   editable in Settings (a keybindings panel); small-screen overlaid text
-  dropped. (5) ENTER → the advanced-search WINDOW = the corpora flagship
+  dropped. **CHROME SLICE SHIPPED 2026-06-15 (field test,
+  field-test-2026-06-15/LEDGER.md Item B): the visible "Ctrl K" badge is GONE
+  from the top omnibar (the Ctrl/⌘-K shortcut still works); the omnibar hover
+  bubble (invariant #17) was the UNTRANSLATED English "Command palette" — now
+  the keyed, translated ×12 "Search everything — articles, dates, locations,
+  settings, etc." (omnibar aria-label matches); the palette dialog aria-label is
+  the keyed "Search everything" ×12, so the LAST "Command palette" untranslatable
+  string is gone (--audit-chrome clean; i18n 100%). The visible placeholder
+  already read "Search everything — data, tools, actions, docs…".** (5) ENTER →
+  the advanced-search WINDOW = the corpora flagship
   (keyword/mindmap/link/source/WWW/sentiment/Advanced sub-tabs). HONEST
   STATUS recorded (answers "I can't find this UI"): palette shipped T13 s1,
   keyword→corpus window shipped T10 s1 (Trend/Articles/Links only); the FULL
   Enter→corpus window with the analysis sub-tabs is the REMAINING slice — not
-  lost, not yet built; PROMOTE it. (6) INSIGHTS: auto-index in the
+  lost, not yet built; PROMOTE it. **Maintainer REPEATED this 2026-06-15
+  ("two search entries, I prefer only the top one … there should not be a search
+  button in the tabs"): the SECOND entry is the Search SIDEBAR TAB
+  (data-tab="search" → #tab-search). Removing it is GATED on (5) — #tab-search
+  still owns Boolean query, source/lang/date filters, Export CSV/JSON, Methods
+  appendix, Synthesize results, and Export SIGNED EVIDENCE; the Enter→window must
+  ABSORB all of these first (never silently lose a tool). So the tab STAYS until
+  (5) lands; do NOT delete it early.** (6) INSIGHTS: auto-index in the
   background, REMOVE the "Index corpus" button (index.html:1287) + its
   palette action (index.html:2655); present Insights sections as subtabs.
 - **TWO BUGS found in the field session (ruled to fix, diagnosed in the UI

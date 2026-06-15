@@ -494,6 +494,8 @@
   "No values were returned for this variable and window.": "Tidak ada nilai yang dikembalikan untuk variabel dan jendela ini.",
   "Search your data, jump to a tool, run an action…": "Cari di data Anda, buka alat, jalankan aksi…",
   "Search everything — data, tools, actions, docs…": "Cari semuanya — data, alat, aksi, dokumen…",
+  "Search everything — articles, dates, locations, settings, etc.": "Cari semua — artikel, tanggal, lokasi, pengaturan, dll.",
+  "Search everything": "Cari semua",
   "Run the full Boolean search for": "Jalankan pencarian Boolean lengkap untuk",
   "opens its corpus window": "membuka jendela korpusnya",
   "article": "artikel",

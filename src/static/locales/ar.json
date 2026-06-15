@@ -494,6 +494,8 @@
   "No values were returned for this variable and window.": "لم تُرجَع أي قيم لهذا المتغيّر وهذه النافذة.",
   "Search your data, jump to a tool, run an action…": "ابحث في بياناتك، وافتح أداة، وشغّل إجراءً…",
   "Search everything — data, tools, actions, docs…": "ابحث في كل شيء — البيانات والأدوات والإجراءات والوثائق…",
+  "Search everything — articles, dates, locations, settings, etc.": "ابحث في كل شيء — مقالات، تواريخ، أماكن، إعدادات، إلخ.",
+  "Search everything": "ابحث في كل شيء",
   "Run the full Boolean search for": "تشغيل البحث البولياني الكامل عن",
   "opens its corpus window": "يفتح نافذة المدونة الخاصة به",
   "article": "مقال",

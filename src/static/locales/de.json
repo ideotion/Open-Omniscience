@@ -494,6 +494,8 @@
   "No values were returned for this variable and window.": "Für diese Variable und dieses Zeitfenster wurden keine Werte zurückgegeben.",
   "Search your data, jump to a tool, run an action…": "Durchsuchen Sie Ihre Daten, öffnen Sie ein Werkzeug, starten Sie eine Aktion…",
   "Search everything — data, tools, actions, docs…": "Alles durchsuchen — Daten, Werkzeuge, Aktionen, Doku…",
+  "Search everything — articles, dates, locations, settings, etc.": "Alles durchsuchen — Artikel, Daten, Orte, Einstellungen usw.",
+  "Search everything": "Alles durchsuchen",
   "Run the full Boolean search for": "Vollständige Boolesche Suche ausführen für",
   "opens its corpus window": "öffnet sein Korpusfenster",
   "article": "Artikel",
