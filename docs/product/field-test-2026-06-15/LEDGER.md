@@ -485,3 +485,54 @@ Sub-parts:
 **⏭ Open questions (compile):** live cadence/trigger (shared with Item F);
 empty-state-on-all-zeros yes/no; keep raw keys in the Database management tab (fine
 there) while Home gets human labels (recommended split).
+
+---
+
+## Item I — Home cards must ALL be clickable → open the universal search/analysis window seeded with the card's results (not the standalone `/investigate` new-tab page)  [PLANNED remainder + destination refinement; Group F]  ⏭ capture-only
+
+**Verbatim (08:18):** "The cards should be clickable, and open-up a search tab with
+the results from the cards' analysis (in the same universal search interface)."
+
+**Where (grounded, `src/static/index.html`):**
+- Cards are rendered by `cardHtml(c)` (**3335–3412**). A card is clickable **only if**
+  it has `c.recipe.view` — `cardOpen` (**3394–3396**) adds `cursor:pointer` +
+  `onclick=window.open('/investigate?view=…&params','_blank')` (a **separate page, NEW
+  browser tab**), guarded by `if(!event.target.closest('button,a,details,summary'))`.
+  **Cards without a recipe are not clickable.**
+- Each card already carries what a seed needs: `c.type`, `c.title`, `c.summary`,
+  `c.signal` (metric/value/n/signature/lat/lon), `c.evidence` (article_ids/urls),
+  `c.recipe` (view+params), `c.trigger`.
+- The universal window = the Group F analysis window: `openAnalysis()` (**7191**) /
+  `#tab-analyze` (**822**), sub-tabs Keywords/Articles now (mindmap/links/WWW/sentiment
+  planned) — "the seven entries into the same object."
+
+**Two changes the maintainer wants:** (1) **every** card clickable (drop the
+recipe-only condition); (2) destination = the **in-app universal search/analysis
+window** seeded with the card's analysis, **not** the standalone `/investigate` page
+in a new browser tab.
+
+**Maps to:** CLAUDE.md **"Home cards remainder: per-card-TYPE /investigate views so
+EVERY card is clickable"** (the every-card-clickable remainder — PLANNED) +
+BACKLOG_GROUPED **Group F** (the analysis window + **"the seven entries into the same
+window"**) — a card-click becomes another entry. **Refinement:** the destination
+unifies onto the ONE universal window ("the same universal search interface"), instead
+of bespoke per-type `/investigate` pages.
+
+Sub-parts / design:
+- **(a)** Map `card.type → window seed` (query/scope + initial sub-tab): rising→the
+  term (trend+associations); framing-split→the keyword (sentiment/competitive);
+  echo_chamber→the actor signature (links); overtold/undertold & diet/coverage→sources;
+  promise-due→the date/keyword; law/wiki→reader/article-set. `c.recipe.params` is a
+  ready seed for recipe cards; non-recipe cards seed from `c.signal` / `c.evidence`.
+- **(b)** Keep the inner-control click guard (`closest('button,a,details,summary')`) so
+  Dismiss / "+ Add to draft" / evidence links / the "Why am I seeing this?" details
+  don't trigger the open.
+- **(c)** Preserve shareability: `/investigate?…` is URL-parameterised today
+  ("shareable, no hidden state"). The universal window should be URL-addressable too,
+  OR `/investigate` stays as the shareable export while in-app clicks open the window.
+- **Gated by** the Group F flagship (the window's full sub-tab set is only partly
+  built — Keywords/Articles). Card-click entry lands with / after that window.
+
+**⏭ Open questions (compile):** does this RETIRE `/investigate` (and its shareable-URL
+property), or do both coexist (in-app window for clicks, `/investigate` for sharing)?
+The per-card-type seed table needs sign-off (which sub-tab each card opens on).
