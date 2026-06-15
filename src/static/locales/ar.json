@@ -897,5 +897,21 @@
   "Sentiment": "المشاعر",
   "How outlets frame this": "كيف تؤطّر وسائل الإعلام هذا",
   "(VADER tone)": "(نبرة VADER)",
-  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "كيف تتوزّع وسائل الإعلام التي تغطّي هذه المجموعة في النبرة — مركّب VADER لكل وسيلة، مع أعداد المقالات. VADER طريقة قائمة على معجم إنجليزي، لذا فإن نبرة التغطية غير الإنجليزية غير موثوقة أو غائبة. لا توجد درجة مركّبة؛ اقرأ المقالات المرتبطة واحكم بنفسك."
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "كيف تتوزّع وسائل الإعلام التي تغطّي هذه المجموعة في النبرة — مركّب VADER لكل وسيلة، مع أعداد المقالات. VADER طريقة قائمة على معجم إنجليزي، لذا فإن نبرة التغطية غير الإنجليزية غير موثوقة أو غائبة. لا توجد درجة مركّبة؛ اقرأ المقالات المرتبطة واحكم بنفسك.",
+  "Association": "ارتباط",
+  "Keyword": "كلمة مفتاحية",
+  "In this corpus": "في هذه المجموعة",
+  "Total articles": "إجمالي المقالات",
+  "Entity family:": "عائلة الكيان:",
+  "n =": "n =",
+  "…": "…",
+  "articles mention the corpus term.": "مقالة تذكر مصطلح المجموعة.",
+  "Surface variants are merged into entity families.": "تُدمج المتغيّرات السطحية في عائلات كيانات.",
+  "No keywords indexed for this corpus yet.": "لا توجد بعد كلمات مفتاحية مفهرسة لهذه المجموعة.",
+  "Click a row to open that keyword as its own corpus.": "انقر على صف لفتح تلك الكلمة المفتاحية كمجموعة خاصة بها.",
+  "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.": "الكلمات المفتاحية التي تتزامن مع هذه المجموعة، مرتّبة. أعداد حقيقية لكل كلمة مفتاحية — بلا درجة مركّبة.",
+  "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "مقالات متمايزة في هذه المجموعة تذكر كلاً من مصطلح المجموعة وهذه الكلمة المفتاحية معًا. عدد حقيقي، وليس درجة أبدًا.",
+  "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "مقالات متمايزة في كامل المجموعة تذكر هذه الكلمة المفتاحية. عدد حقيقي، وليس درجة أبدًا.",
+  "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "المعلومات المتبادلة النقطية مع مصطلح المجموعة — قوة ارتباط، وليست سببية. قيمة PMI على العينات الصغيرة مشوّشة؛ اقرأها بجانب الأعداد.",
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "الكلمات المفتاحية التي تحدّد هذه المجموعة كجدول مرتّب — انتشار عبر مقالات متمايزة، وإجمالي الإشارات، وقوة ارتباط PMI بمصطلح المجموعة. أعداد حقيقية لكل كلمة مفتاحية، بلا درجة مركّبة؛ قيمة PMI على العينات الصغيرة مشوّشة. انقر على صف لفتح تلك الكلمة المفتاحية كمجموعة خاصة بها."
 }

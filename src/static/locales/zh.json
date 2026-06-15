@@ -897,5 +897,21 @@
   "Sentiment": "情感",
   "How outlets frame this": "媒体如何框定此话题",
   "(VADER tone)": "（VADER 语气）",
-  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "报道该语料库的各家媒体在语气上的分布——每家媒体的 VADER 综合值及文章数。VADER 是基于英语词典的方法，因此非英语报道的语气不可靠或缺失。无综合评分；请阅读所链接的文章并自行判断。"
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "报道该语料库的各家媒体在语气上的分布——每家媒体的 VADER 综合值及文章数。VADER 是基于英语词典的方法，因此非英语报道的语气不可靠或缺失。无综合评分；请阅读所链接的文章并自行判断。",
+  "Association": "关联",
+  "Keyword": "关键词",
+  "In this corpus": "在此语料库中",
+  "Total articles": "文章总数",
+  "Entity family:": "实体族：",
+  "n =": "n =",
+  "…": "…",
+  "articles mention the corpus term.": "篇文章提及该语料库术语。",
+  "Surface variants are merged into entity families.": "表层变体被合并为实体族。",
+  "No keywords indexed for this corpus yet.": "尚未为此语料库索引关键词。",
+  "Click a row to open that keyword as its own corpus.": "点击某行可将该关键词作为独立语料库打开。",
+  "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.": "与该语料库共现的关键词，已排序。每个关键词的真实计数——无综合评分。",
+  "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "本语料库中同时提及语料库术语和此关键词的不同文章。真实计数，绝非评分。",
+  "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "整个语料库中提及此关键词的不同文章。真实计数，绝非评分。",
+  "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "与语料库术语的逐点互信息——关联强度，而非因果。小样本上的 PMI 噪声大；请结合计数一起看。",
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "以排序后的表格呈现定义该语料库的关键词——不同文章的覆盖、提及总数，以及与语料库术语的 PMI 关联强度。每个关键词的真实计数，无综合评分；小样本上的 PMI 噪声大。点击某行可将该关键词作为独立语料库打开。"
 }

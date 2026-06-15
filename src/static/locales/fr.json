@@ -897,5 +897,21 @@
   "Sentiment": "Sentiment",
   "How outlets frame this": "Comment les médias le présentent",
   "(VADER tone)": "(tonalité VADER)",
-  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "Comment les médias couvrant ce corpus se répartissent en tonalité — score composé VADER par média, avec le nombre d'articles. VADER est une méthode à lexique ANGLAIS ; la tonalité des contenus non anglophones est donc peu fiable ou absente. Aucun score composite ; lisez les articles liés et jugez par vous-même."
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "Comment les médias couvrant ce corpus se répartissent en tonalité — score composé VADER par média, avec le nombre d'articles. VADER est une méthode à lexique ANGLAIS ; la tonalité des contenus non anglophones est donc peu fiable ou absente. Aucun score composite ; lisez les articles liés et jugez par vous-même.",
+  "Association": "Association",
+  "Keyword": "Mot-clé",
+  "In this corpus": "Dans ce corpus",
+  "Total articles": "Articles au total",
+  "Entity family:": "Famille d'entités :",
+  "n =": "n =",
+  "…": "…",
+  "articles mention the corpus term.": "articles mentionnent le terme du corpus.",
+  "Surface variants are merged into entity families.": "Les variantes de surface sont fusionnées en familles d'entités.",
+  "No keywords indexed for this corpus yet.": "Aucun mot-clé indexé pour ce corpus pour l'instant.",
+  "Click a row to open that keyword as its own corpus.": "Cliquez sur une ligne pour ouvrir ce mot-clé comme son propre corpus.",
+  "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.": "Mots-clés qui co-occurrent avec ce corpus, classés. Décomptes réels par mot-clé — aucun score composite.",
+  "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "Articles distincts de ce corpus qui mentionnent À LA FOIS le terme du corpus et ce mot-clé. Un décompte réel, jamais un score.",
+  "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "Articles distincts dans l'ensemble du corpus qui mentionnent ce mot-clé. Un décompte réel, jamais un score.",
+  "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "Information mutuelle ponctuelle avec le terme du corpus — force d'association, non causalité. La PMI sur de petits échantillons est bruitée ; à lire à côté des décomptes.",
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "Les mots-clés qui définissent ce corpus sous forme de TABLEAU classé — diffusion en articles distincts, mentions totales et force d'association PMI au terme du corpus. Décomptes réels par mot-clé, aucun score composite ; la PMI sur de petits échantillons est bruitée. Cliquez sur une ligne pour ouvrir ce mot-clé comme son propre corpus."
 }

@@ -897,5 +897,21 @@
   "Sentiment": "Тональность",
   "How outlets frame this": "Как СМИ это подают",
   "(VADER tone)": "(тон VADER)",
-  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "Как СМИ, освещающие этот корпус, распределяются по тональности — составной показатель VADER по каждому изданию, с числом статей. VADER — метод на АНГЛИЙСКОМ лексиконе, поэтому тональность неанглоязычных материалов ненадёжна или отсутствует. Без составной оценки; читайте связанные статьи и судите сами."
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "Как СМИ, освещающие этот корпус, распределяются по тональности — составной показатель VADER по каждому изданию, с числом статей. VADER — метод на АНГЛИЙСКОМ лексиконе, поэтому тональность неанглоязычных материалов ненадёжна или отсутствует. Без составной оценки; читайте связанные статьи и судите сами.",
+  "Association": "Связь",
+  "Keyword": "Ключевое слово",
+  "In this corpus": "В этом корпусе",
+  "Total articles": "Всего статей",
+  "Entity family:": "Семейство сущностей:",
+  "n =": "n =",
+  "…": "…",
+  "articles mention the corpus term.": "статей упоминают термин корпуса.",
+  "Surface variants are merged into entity families.": "Поверхностные варианты объединяются в семейства сущностей.",
+  "No keywords indexed for this corpus yet.": "Для этого корпуса ещё не проиндексированы ключевые слова.",
+  "Click a row to open that keyword as its own corpus.": "Нажмите на строку, чтобы открыть это ключевое слово как отдельный корпус.",
+  "Keywords that co-occur with this corpus, ranked. Real per-keyword counts — no composite score.": "Ключевые слова, совместно встречающиеся с этим корпусом, по рангу. Реальные подсчёты по каждому слову — без составной оценки.",
+  "Distinct articles in this corpus that mention BOTH the corpus term and this keyword. A real count, never a score.": "Различные статьи в этом корпусе, упоминающие И термин корпуса, И это ключевое слово. Реальный подсчёт, а не оценка.",
+  "Distinct articles across the whole corpus that mention this keyword. A real count, never a score.": "Различные статьи во всём корпусе, упоминающие это ключевое слово. Реальный подсчёт, а не оценка.",
+  "Pointwise mutual information with the corpus term — association strength, not causation. PMI on small samples is noisy; read it beside the counts.": "Поточечная взаимная информация с термином корпуса — сила связи, не причинность. PMI на малых выборках зашумлён; читайте рядом с подсчётами.",
+  "The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.": "Ключевые слова, определяющие этот корпус, в виде ранжированной ТАБЛИЦЫ — охват по различным статьям, всего упоминаний и сила связи PMI с термином корпуса. Реальные подсчёты по каждому слову, без составной оценки; PMI на малых выборках зашумлён. Нажмите на строку, чтобы открыть это ключевое слово как отдельный корпус."
 }
