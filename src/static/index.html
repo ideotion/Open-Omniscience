@@ -755,17 +755,17 @@
 
       <section class="panel">
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
-          <span id="brief-generated" class="hint" style="margin:0"></span>
-          <button class="secondary tiny" onclick="refreshBriefing()" id="brief-refresh-btn">Refresh</button></div>
+          <span id="brief-generated" class="hint" style="margin:0"></span></div>
         <div class="brief-toolbar">
           <label class="switch" title="Transparency: show how every figure was computed and what it does not mean.">
             <input type="checkbox" id="brief-methods" onchange="toggleMethods()"> Show method &amp; caveat</label>
           <span class="sp"></span>
           <button class="secondary tiny" onclick="openDraft()">Draft (<span id="draft-count">0</span>) →</button>
         </div>
-        <p class="hint" style="margin-top:8px">Equal view — every source is counted once; no source is
-          de-amplified in this version. The app gathers and measures; <b>you judge</b>. Each card is one
-          measured signal with its evidence and caveat, never a verdict.</p>
+        <!-- Whole-sentence nodes (the i18n exact-match pattern; see the Agenda intro). -->
+        <p class="hint" style="margin-top:8px"><span>Equal view — every source is counted once; no source is de-amplified in this version.</span>
+          <span><b>The app gathers and measures; you judge.</b></span>
+          <span>Each card is one measured signal with its evidence and caveat, never a verdict.</span></p>
         <div id="briefing-feed" style="margin-top:6px"><div class="muted">Loading the briefing…</div></div>
       </section>
 
@@ -3240,24 +3240,68 @@
     }
 
     // -- Home dashboard ----------------------------------------------------- //
+    // Locale-aware date/time in the APP language (not the browser locale), full
+    // month name. Shared formatter (parallels the smart units formatter); the
+    // i18n DOM walker cannot reach JS-built date strings, so format them here.
+    function fmtDateTime(ts) {
+      const d = new Date(ts); if (isNaN(d)) return "";
+      try {
+        return new Intl.DateTimeFormat(OOI18N.current(),
+          { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
+      } catch (e) { return d.toLocaleString(); }
+    }
+    // Human, translated labels for the at-a-glance stat keys. The server keys are
+    // raw snake_case identifiers (the Database tab + cache rely on them), so the
+    // Home strip maps them to translated labels in the UI layer; an unknown key
+    // falls back to a prettified form so a new server key never shows raw.
+    const HOME_STAT_LABELS = {
+      articles: "Articles", sources: "Sources", source_groups: "Source groups",
+      keywords: "Keywords", commodity_prices: "Commodity prices",
+      external_sources: "External sources", article_links: "Article links",
+      article_analyses: "Article analyses", mentioned_dates: "Mentioned dates",
+    };
+    function homeStatLabel(k) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return t(HOME_STAT_LABELS[k] || k.replace(/_/g, " "));
+    }
+    function renderHomeStats(counts) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("home-stats"); if (!el) return;
+      const entries = Object.entries(counts || {});
+      const allZero = entries.length > 0 && entries.every(([, v]) => !v);
+      el.innerHTML = (entries.length && !allZero)
+        ? entries.map(([k, v]) =>
+            `<span class="s"><b>${(v || 0).toLocaleString()}</b> <span>${esc(homeStatLabel(k))}</span></span>`).join("")
+        : `<div class="muted">${esc(t("Your library is empty — head to Collect to gather your first material."))}</div>`;
+    }
+    function renderHomeStatus(running) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("home-status"); if (!el) return;
+      const priv = t("Your corpus stays on this machine — no cloud, no telemetry; fetching follows your Network mode.");
+      el.innerHTML =
+        `${esc(t("Automatic collection"))}: <span class="pill ${running ? "ok" : ""}">${esc(t(running ? "running" : "stopped"))}</span> ` +
+        `· <span class="muted">${esc(priv)}</span>`;
+    }
     async function loadHome() {
-      try {
-        const s = await api("/api/database/stats");
-        const entries = Object.entries(s.counts || {});
-        $("home-stats").innerHTML = entries.length
-          ? entries.map(([k, v]) =>
-              `<span class="s"><b>${(v || 0).toLocaleString()}</b> <span>${esc(k)}</span></span>`).join("")
-          : '<div class="muted">Your library is empty — head to Collect to gather your first material.</div>';
-      } catch (e) { $("home-stats").innerHTML = '<div class="muted">Stats unavailable.</div>'; }
-      try {
-        const sc = await api("/api/scheduler/status");
-        const on = sc.running;
-        $("home-status").innerHTML =
-          `Automatic collection: <span class="pill ${on ? "ok" : ""}">${on ? "running" : "stopped"}</span> ` +
-          `· <span class="muted">Your corpus stays on this machine — no cloud, no telemetry; fetching follows your Network mode.</span>`;
-      } catch (e) { $("home-status").innerHTML = '<span class="muted">Your corpus stays on this machine — no cloud, no telemetry; fetching follows your Network mode.</span>'; }
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try { const s = await api("/api/database/stats"); renderHomeStats(s.counts); }
+      catch (e) { $("home-stats").innerHTML = `<div class="muted">${esc(t("Stats unavailable."))}</div>`; }
+      try { const sc = await api("/api/scheduler/status"); renderHomeStatus(sc.running); }
+      catch (e) { renderHomeStatus(false); }
       loadBriefing();
       refreshDraftCount();
+    }
+    // Live Home (the at-a-glance strip + briefing self-update; no Refresh button).
+    // Only runs while Home is the active, visible tab (the LIVE registry). Cheap:
+    // stats are server-cached ~30 s; the briefing feed re-renders ONLY when its
+    // generated_at actually changes, so the user's card triage is never reset.
+    async function refreshHomeLive() {
+      try { const s = await api("/api/database/stats"); renderHomeStats(s.counts); } catch (e) {}
+      try { const sc = await api("/api/scheduler/status"); renderHomeStatus(sc.running); } catch (e) {}
+      try {
+        const data = await api("/api/briefing");
+        if (data.generated_at !== _lastBriefGen) renderBriefing(data);
+      } catch (e) {}
     }
 
     // -- The Home briefing (triage cards) ----------------------------------- //
@@ -3265,6 +3309,7 @@
     // them and lets the user triage (dismiss / add to draft). It never computes a
     // verdict. The full method + caveat for every figure is one toggle away.
     let _briefCards = {};   // id -> card (so "Add to draft" has the full card)
+    let _lastBriefGen = null;  // last rendered briefing generated_at (live-refresh guard)
 
     async function loadBriefing(force) {
       const feed = $("briefing-feed");
@@ -3285,10 +3330,12 @@
     }
 
     function renderBriefing(data) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _briefCards = {};
+      _lastBriefGen = data.generated_at || null;
       const feed = $("briefing-feed");
       const gen = $("brief-generated");
-      if (gen) gen.textContent = data.generated_at ? ("updated " + new Date(data.generated_at).toLocaleString()) : "";
+      if (gen) gen.textContent = data.generated_at ? (t("updated") + " " + fmtDateTime(data.generated_at)) : "";
       if (!data.buckets || !data.buckets.length) {
         feed.innerHTML = `<div class="card">
           <h4>No cards yet — that's expected on a young corpus</h4>
@@ -3316,7 +3363,6 @@
           + `<h3>${esc(b.label)} <span class="ct">· ${b.cards.length}</span></h3>`
           + `<div class="cards">${cards}</div></div>`;
       }).join("");
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s => s);
       const famTabs = `<button class="active" data-tab="__all">${esc(t("All cards"))}</button>`
         + data.buckets.map((b, bi) =>
             `<button data-tab="${bi}"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}</button>`).join("");
@@ -4708,6 +4754,10 @@
     // Live polling manager: each tab can register a refresh fn + interval; only
     // the active tab's poller runs, and only while the window is visible.
     const LIVE = {
+      // Home self-updates while open: stats strip + status + briefing (the latter
+      // re-renders only when generated_at changes). Replaces the old Refresh
+      // button. Conservative cadence; stats are server-cached ~30 s.
+      home:     {ms: 15000, fn: () => refreshHomeLive()},
       // Stats every tick; the coverage panel every 4th (it groups all sources,
       // cheap but no need for 4s cadence) — live data, so no Refresh button.
       library:  {ms: 4000, fn: () => { loadDbStats(); if ((++_covTick % 4) === 1) loadCoverage(); }},

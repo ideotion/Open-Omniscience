@@ -671,3 +671,56 @@ def test_sp500_is_classified_as_index():
     com = {f.symbol for f in load_feeds()}
     assert "SP500" in idx, "S&P 500 (SP500) must be in the index catalog"
     assert "SP500" not in com, "S&P 500 must NOT be in the commodity catalog"
+
+
+def test_dropdown_option_labels_are_translatable():
+    """Every static <select> CONTROL option label is keyed for i18n and safe to
+    translate (ledger Item D, 2026-06-15: "none of the dropdown menus have been
+    translated — check app-wide").
+
+    The i18n engine rewrites an option's text node in place, so a translated
+    option whose value is implicit (text == submitted value) would corrupt the
+    form. This gate therefore asserts two things for every non-excluded select:
+    (1) each static option label exists as a key in en.json (translatable), and
+    (2) each carries an explicit ``value=`` (translating the text is safe).
+    Data/native selects are excluded by id (the language picker keeps native
+    names by design — invariant #15; wiki editions + loading placeholders are
+    data, not chrome). A NEW unkeyed control option fails CI here.
+    """
+    import json
+
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    en = set(json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8")))
+
+    # Selects whose option labels are DATA or native-by-design (not chrome):
+    exclude = {
+        "oo-lang-select",  # native language names — invariant #15 (stay English)
+        "wiki-lang",       # wiki edition data, e.g. "English (en)"
+        "dump-lang",       # dynamic placeholder, replaced by edition data
+        "dumpread-wiki",   # dynamic placeholder ("—")
+    }
+
+    unkeyed: list[str] = []
+    no_value: list[str] = []
+    for m in re.finditer(r'<select\b[^>]*\bid="([^"]+)"[^>]*>(.*?)</select>', html, re.S):
+        sid = m.group(1)
+        if sid in exclude:
+            continue
+        for om in re.finditer(r"<option\b([^>]*)>(.*?)</option>", m.group(2), re.S):
+            attrs = om.group(1)
+            label = re.sub(r"\s+", " ", om.group(2)).strip()
+            if not label:
+                continue
+            if label not in en:
+                unkeyed.append(f"#{sid}:{label!r}")
+            if "value=" not in attrs:
+                no_value.append(f"#{sid}:{label!r}")
+
+    assert not unkeyed, (
+        "static <select> option labels not keyed in en.json (Item D regression — "
+        "key them ×12 and translate): " + ", ".join(unkeyed)
+    )
+    assert not no_value, (
+        "translatable <option> without an explicit value= (the i18n text rewrite "
+        "would corrupt the submitted value — add value=): " + ", ".join(no_value)
+    )
