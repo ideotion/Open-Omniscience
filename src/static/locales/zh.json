@@ -878,5 +878,9 @@
   "open detailed chart": "打开详细图表",
   "open detail + correlation": "打开详情 + 相关性",
   "point(s)": "个点",
-  "Chart unavailable:": "图表不可用："
+  "Chart unavailable:": "图表不可用：",
+  "Trimester": "季度",
+  "Semester": "半年",
+  "Decade": "十年",
+  "No events in this period.": "此期间没有事件。"
 }

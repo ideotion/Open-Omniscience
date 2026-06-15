@@ -878,5 +878,9 @@
   "open detailed chart": "詳細グラフを開く",
   "open detail + correlation": "詳細＋相関を開く",
   "point(s)": "ポイント",
-  "Chart unavailable:": "グラフを利用できません:"
+  "Chart unavailable:": "グラフを利用できません:",
+  "Trimester": "四半期",
+  "Semester": "半期",
+  "Decade": "10年",
+  "No events in this period.": "この期間にイベントはありません。"
 }

@@ -878,5 +878,9 @@
   "open detailed chart": "विस्तृत चार्ट खोलें",
   "open detail + correlation": "विवरण + सहसंबंध खोलें",
   "point(s)": "बिंदु",
-  "Chart unavailable:": "चार्ट उपलब्ध नहीं:"
+  "Chart unavailable:": "चार्ट उपलब्ध नहीं:",
+  "Trimester": "तिमाही",
+  "Semester": "छमाही",
+  "Decade": "दशक",
+  "No events in this period.": "इस अवधि में कोई घटना नहीं।"
 }

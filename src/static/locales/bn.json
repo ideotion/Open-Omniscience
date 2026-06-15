@@ -878,5 +878,9 @@
   "open detailed chart": "বিস্তারিত চার্ট খুলুন",
   "open detail + correlation": "বিস্তারিত + পারস্পরিক সম্পর্ক খুলুন",
   "point(s)": "পয়েন্ট",
-  "Chart unavailable:": "চার্ট অনুপলব্ধ:"
+  "Chart unavailable:": "চার্ট অনুপলব্ধ:",
+  "Trimester": "ত্রৈমাসিক",
+  "Semester": "ষাণ্মাসিক",
+  "Decade": "দশক",
+  "No events in this period.": "এই সময়ে কোনো ইভেন্ট নেই।"
 }

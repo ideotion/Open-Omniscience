@@ -324,6 +324,12 @@
     .ag-more { font-size:10px; color:var(--muted); }
     /* Year view: a 12-month overview of clickable month cards. */
     .ag-ygrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:8px; }
+    /* Trimester (3-month) + Semester (6-month) views: a row of compact clickable
+       month cards reusing the Year view's per-month card grammar (.ag-ycard). */
+    .ag-mgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; }
+    /* Decade view: a 10-year overview of clickable year cells (the Year view's
+       month-card grammar reused per-year; click → that Year view). */
+    .ag-dgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; }
     .ag-ycard { border:1px solid var(--border); border-radius:8px; padding:7px 9px; cursor:pointer;
       display:flex; flex-direction:column; gap:3px; min-height:70px; }
     .ag-ycard:hover { border-color:var(--accent); }
@@ -1115,7 +1121,10 @@
           <nav class="tabs ag-views" id="agenda-views" style="position:static;padding:0;border:0;margin:0">
             <button class="active" data-tab="month">Month</button>
             <button data-tab="week">Week</button>
+            <button data-tab="trimester">Trimester</button>
+            <button data-tab="semester">Semester</button>
             <button data-tab="year">Year</button>
+            <button data-tab="decade">Decade</button>
             <button data-tab="list">List</button></nav></div>
         <div style="flex:1 1 auto"><label>Category</label>
           <div class="ag-cats" id="agenda-cats"></div></div>
@@ -1136,7 +1145,9 @@
       </div>
       <div id="agenda-month" style="margin-top:10px"></div>
       <div id="agenda-week" style="margin-top:10px"></div>
+      <div id="agenda-months" style="margin-top:10px"></div>
       <div id="agenda-year" style="margin-top:10px"></div>
+      <div id="agenda-decade" style="margin-top:10px"></div>
       <div id="agenda-day"></div>
       <div id="agenda-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
     </section>
@@ -4230,7 +4241,12 @@
     // by the active view so one bar serves both.
     function agNavShift(d) {
       const v = agView();
-      if (v === "week") agWeekShift(d); else if (v === "year") agYearShift(d); else agMonthShift(d);
+      if (v === "week") agWeekShift(d);
+      else if (v === "year") agYearShift(d);
+      else if (v === "decade") agYearShift(d * 10);
+      else if (v === "trimester") agMonthShift(d * 3);
+      else if (v === "semester") agMonthShift(d * 6);
+      else agMonthShift(d);
     }
     function agYearShift(d) { AGV.y = (AGV.y || new Date().getFullYear()) + d; AGV.day = null; renderAgenda(); }
     // YEAR view (Item C remaining): a 12-month overview — per-month event counts +
@@ -4258,6 +4274,74 @@
       box.innerHTML = `<div class="ag-ygrid">${cards}</div>`;
     }
     function agOpenMonth(m) { AGV.m = m; AGV.day = null; agendaSetView("month"); }
+    function agOpenMonthYear(y, m) { AGV.y = y; AGV.m = m; AGV.day = null; agendaSetView("month"); }
+    function agOpenYear(y) { AGV.y = y; AGV.day = null; agendaSetView("year"); }
+    // Count the events that fall in a given (year, month) — the SAME placement rule
+    // the Year view uses: annual rules by e.month, plus dated instances whose
+    // next_occurrence lands in that exact year-month. Returns the matching events.
+    function agEventsInMonth(rows, y, m) {
+      const ym = `${y}-${String(m).padStart(2, "0")}`, out = [];
+      for (const e of rows) {
+        if (e.month === m) out.push(e);
+        else if (e.next_occurrence && e.next_occurrence.slice(0, 7) === ym && !out.includes(e)) out.push(e);
+      }
+      return out;
+    }
+    // One clickable month summary card (the Year view's .ag-ycard grammar, reused).
+    function agMonthCard(rows, y, m, loc, curY, curM) {
+      const evs = agEventsInMonth(rows, y, m);
+      const name = new Intl.DateTimeFormat(loc, { month: "long", year: "numeric" }).format(new Date(y, m - 1, 1));
+      const isCur = y === curY && m === curM;
+      const chips = evs.slice(0, 4).map(e =>
+        `<span class="ag-chip${e.confirmed ? "" : " approx"}" title="${esc(e.title)}">${esc(e.title.length > 20 ? e.title.slice(0, 19) + "…" : e.title)}</span>`).join("");
+      const more = evs.length > 4 ? `<span class="ag-more">+${evs.length - 4}</span>` : "";
+      return `<div class="ag-ycard${isCur ? " today" : ""}${evs.length ? " has" : ""}" onclick="agOpenMonthYear(${y},${m})" title="${esc(name)}">
+        <div class="ag-ymon">${esc(name)} <span class="muted">${evs.length || ""}</span></div>${chips}${more}</div>`;
+    }
+    // TRIMESTER (3 months) + SEMESTER (6 months): a row of consecutive month
+    // summary cards anchored on the displayed month — same data path + same click
+    // (→ that Month grid) as the Year view. `span` = 3 or 6.
+    function renderAgendaMonths(rows, span) {
+      const box = $("agenda-months"), loc = agLocale();
+      const now = new Date(), curY = now.getFullYear(), curM = now.getMonth() + 1;
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let y = AGV.y, m = AGV.m;
+      const months = [];
+      for (let i = 0; i < span; i++) { months.push([y, m]); m++; if (m > 12) { m = 1; y++; } }
+      const start = months[0], end = months[span - 1];
+      $("agenda-monthlabel").textContent =
+        new Intl.DateTimeFormat(loc, { month: "short", year: "numeric" }).format(new Date(start[0], start[1] - 1, 1)) + " – " +
+        new Intl.DateTimeFormat(loc, { month: "short", year: "numeric" }).format(new Date(end[0], end[1] - 1, 1));
+      const total = months.reduce((n, [yy, mm]) => n + agEventsInMonth(rows, yy, mm).length, 0);
+      if (!total) { box.innerHTML = `<div class="muted">${esc(t9("No events in this period."))}</div>`; return; }
+      box.innerHTML = `<div class="ag-mgrid">` + months.map(([yy, mm]) => agMonthCard(rows, yy, mm, loc, curY, curM)).join("") + `</div>`;
+    }
+    // DECADE: a 10-year overview, the Year view's year-summary scaled to a per-year
+    // cell × 10. Each cell counts the year's events (annual rules + that year's dated
+    // instances) and links to that Year view. Decade anchored on the floor-10 year.
+    function renderAgendaDecade(rows) {
+      const box = $("agenda-decade"), loc = agLocale(), now = new Date(), curY = now.getFullYear();
+      const y0 = Math.floor((AGV.y || curY) / 10) * 10;
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      $("agenda-monthlabel").textContent = `${y0}–${y0 + 9}`;
+      // Per-year count: annual rules count once a year; dated instances count in
+      // their own year (same placement the Year view applies, summed over months).
+      const yearCount = (y) => {
+        let n = 0;
+        for (const e of rows) {
+          if (e.month) n++;
+          else if (e.next_occurrence && +e.next_occurrence.slice(0, 4) === y) n++;
+        }
+        return n;
+      };
+      let cells = "";
+      for (let y = y0; y < y0 + 10; y++) {
+        const n = yearCount(y), isCur = y === curY;
+        cells += `<div class="ag-ycard${isCur ? " today" : ""}${n ? " has" : ""}" onclick="agOpenYear(${y})" title="${y}">
+          <div class="ag-ymon">${y} <span class="muted">${n || ""}</span></div></div>`;
+      }
+      box.innerHTML = `<div class="ag-dgrid">${cells}</div>`;
+    }
     function agNavToday() {
       const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1;
       AGV.day = t.getDate(); renderAgenda();
@@ -4407,17 +4491,21 @@
       const view = agView();
       if (_agViewTabs) _agViewTabs.paint(view);
       const isMonth = view === "month", isWeek = view === "week", isYear = view === "year", isList = view === "list";
-      $("agenda-monthbar").style.display = (isMonth || isWeek || isYear) ? "" : "none";
+      const isTri = view === "trimester", isSem = view === "semester", isDec = view === "decade";
+      const hasBar = isMonth || isWeek || isYear || isTri || isSem || isDec;
+      $("agenda-monthbar").style.display = hasBar ? "" : "none";
       $("agenda-month").style.display = isMonth ? "" : "none";
       $("agenda-week").style.display = isWeek ? "" : "none";
+      $("agenda-months").style.display = (isTri || isSem) ? "" : "none";
       $("agenda-year").style.display = isYear ? "" : "none";
+      $("agenda-decade").style.display = isDec ? "" : "none";
       $("agenda-day").style.display = (isMonth || isWeek) ? "" : "none";
       $("agenda-list").style.display = isList ? "" : "none";
       $("agenda-group-wrap").style.display = isList ? "" : "none";
       const rows = agFiltered();
       $("agenda-monthhint").textContent = AG.caveat || "";
+      if (AGV.y == null && hasBar) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
       if (isMonth) {
-        if (AGV.y == null) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
         _ensureAstro(AGV.y).then(() => renderAgendaMonth(rows));
         return;
       }
@@ -4425,8 +4513,10 @@
         _ensureAstro(agAnchorDate().getFullYear()).then(() => renderAgendaWeek(rows));
         return;
       }
+      if (isTri) { renderAgendaMonths(rows, 3); return; }
+      if (isSem) { renderAgendaMonths(rows, 6); return; }
+      if (isDec) { renderAgendaDecade(rows); return; }
       if (isYear) {
-        if (AGV.y == null) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
         $("agenda-monthlabel").textContent = String(AGV.y);
         renderAgendaYear(rows);
         return;

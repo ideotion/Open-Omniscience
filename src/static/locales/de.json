@@ -878,5 +878,9 @@
   "open detailed chart": "detailliertes Diagramm öffnen",
   "open detail + correlation": "Detail + Korrelation öffnen",
   "point(s)": "Punkt(e)",
-  "Chart unavailable:": "Diagramm nicht verfügbar:"
+  "Chart unavailable:": "Diagramm nicht verfügbar:",
+  "Trimester": "Quartal",
+  "Semester": "Halbjahr",
+  "Decade": "Jahrzehnt",
+  "No events in this period.": "Keine Ereignisse in diesem Zeitraum."
 }
