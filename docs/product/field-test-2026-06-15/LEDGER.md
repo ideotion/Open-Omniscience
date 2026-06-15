@@ -239,3 +239,92 @@ option-label subset of `--audit-chrome` to blocking, OR a test enumerating every
 (3) translate dynamic-select control labels via `OOI18N.t()` at build time. This
 also pre-empts **Item C** (new agenda controls keyed from the start). New locale
 strings AI-drafted, flagged for native review.
+
+---
+
+## Item E — Agenda must auto-populate (background verify/import, kill the manual "Verify next 25"); Settings → Agenda = a sortable source manager with bulk select/remove (dysfunctional / per-country) + easy `.ics` import & calendar subscribe  [auto-collect PLANNED · the manager mostly NEW]  ⏭ capture-only
+
+**Verbatim (08:09):** "How come the agenda doesn't auto-populate? We don't want
+users to have to go to the settings and click on the 'Verify next 25', especially
+if there are few hundred calendar sources. All of this should be automatic,
+background. The settings interface should be used to check sources, adjust them,
+why not present them with possible sorting capabilities. There should be a way to
+bulk select all dysfunctional agendas, or per country, and so forth. This selection
+would allow the user to remove them. There should be an easy way to import .ics and
+subscribe to other calendars."
+
+**Where (grounded):**
+- **"Verify next 25"** = `index.html:1644` → `verifyFeedBatch` → `POST
+  /api/events/feeds/verify-batch?limit=25` (`events.py:116–137`). It only **verifies**
+  (records verdicts) — it does **not** import events.
+- **Per-feed Verify/Import** = `index.html:3811–3812` → `feedAction` → `POST
+  /api/events/feeds/{id}/{verify|import}` (`events.py:78–101`). **Import** is what
+  actually populates imported events — and it's one click **per feed**.
+- **Directory render** = `renderFeedDir` (`index.html:3796–3821`): families as
+  `<details>` rows, filter by kind + free text only, status "X feeds · Y folders · Z
+  checked", display capped at 40. **No sort, no bulk-select, no remove, no add-your-own.**
+- **Background today:** the scheduler runs `feed_preflight` **once on first run**
+  (`runner.py:508–515`) = a robots/reachability **sample** → `data/feed_preflight.jsonl`;
+  it is **not** an import and never repeats. The collect scheduler modes (`#sch-mode`)
+  are RSS / crawl / markets / wiki — **there is no calendar-feed mode**, so feed
+  calendars never auto-import.
+- **What IS auto-present** (so the agenda is not blank): the **curated/computed**
+  events — civic dates, UN days, astronomy/seasons (`events.py` `list_events` /
+  `/astronomy`, offline). It's the bundled **feed directory** ("few hundred" `.ics`
+  provider candidates) that needs the manual verify+import the maintainer is hitting.
+- **ICS substrate exists:** `parse_ics` / `_unfold` / `_ics_unescape`
+  (`feeds.py:162–216`), 5 MB cap — but it's invoked **only** by `verify_feed` /
+  `import_feed` on **bundled** feeds. There is **no user add-feed** (URL or upload)
+  and **no `remove_feed`**.
+- **Subscription model:** first run subscribes to all calendars so the agenda isn't
+  empty (`index.html:3764`); "subscribed only" filter (`#agenda-subonly`, 1056).
+  Subscription is a **client preference** (`events.py:48`); CLAUDE.md D1/D4 "agenda
+  subs server-side" is a queued migration.
+- **Fields already present to drive bulk ops:** every feed carries `country`
+  (`fd.country`) + `verdict` (`fd.verdict`) → "dysfunctional" = `verdict.status != ok`;
+  "per country" = `fd.country`. The data for the bulk filters is already there.
+
+**Maps to:** invariant **#8** ("the UI shows DATA, never plumbing — first applied:
+Agenda") — the maintainer **sharpens** it here: plumbing should not merely *move* to
+Settings, it should be **automated** (background), and Settings becomes an
+inspect/adjust/manage surface. Also CLAUDE.md **AGENDA CONTENT** queue + the
+**"batch it like calendars"** field-log note + the standing **"we should be flooded;
+expand calendars massively; subscribe-default stays off-flood."** Plus BACKLOG_GROUPED
+**Group B** (continuous collection + the **bandwidth priority ladder** + no source
+cap): calendar verify/import becomes a background **job kind** on the ladder —
+bounded, polite, kill-switch-gated, parallel-by-host, like RSS. And the **D1/D4**
+agenda-subs-server-side migration (persistence for subscriptions + bulk-manage state).
+
+Sub-parts:
+- **(a) [PLANNED — elevate] Background auto verify+import.** Calendar feeds join
+  continuous collection so the agenda fills itself; drop "Verify next 25" as the
+  PRIMARY path (keep a manual "refresh now" for power users, as elsewhere). Robots /
+  kill-switch / politeness inherited via `make_fetcher`; on the bandwidth ladder.
+  Honesty: a feed fetch is a network action, so it still rides the ONE consent
+  (invariant #14) + auto-collect runs only when online after consent; the curated
+  offline catalog keeps the agenda non-empty before any network.
+- **(b) [NEW] Settings → Agenda = a SORTABLE source manager.** Sort by name /
+  country / kind / verdict / last-checked / imported-count (the directory already
+  carries these fields); status + manage instead of per-row verify/import friction.
+- **(c) [NEW] BULK select + remove.** Select all **dysfunctional** (`verdict.status
+  != ok`), or **per country**, or by kind/filter → remove. **Tension to resolve
+  (flag for the maintainer):** the anti-hiding principle (BACKLOG_GROUPED Group B —
+  "removing them would hide sources", resolved by design to KEEP showing honest
+  verdicts) is preserved ONLY if removal is **user-initiated** and ideally means
+  **"unsubscribe / exclude from MY agenda"** (a reversible per-machine choice), NOT
+  deleting the bundled candidate from the catalog or silently app-hiding it.
+- **(d) [NEW] Easy `.ics` import + subscribe to OTHER calendars.** Add a calendar by
+  URL (webcal/https → through the ethical fetcher: robots / kill-switch / consent) or
+  by uploading a local `.ics` file (no network). Reuse `parse_ics`; new add/remove
+  user-feed endpoints + the D1/D4 server-side subs persistence. Today only the bundled
+  directory exists — this is the "subscribe to other calendars" the maintainer wants.
+
+**⏭ Open design questions (hold for "compile"):** (1) does auto-populate IMPORT all
+bundled candidates, or only **subscribed** ones? (the standing "subscribe-default
+stays off-flood" suggests: auto-**verify** all in the background for honest verdicts,
+auto-**import** only subscribed; the user bulk-subscribes by country/kind). (2)
+"remove dysfunctional" semantics — recommend **unsubscribe/exclude** (reversible,
+per-machine) over delete-candidate, to keep anti-hiding. (3) where bulk-manage +
+user-feeds persist (localStorage vs the D1/D4 server-side subs table). Cross-links
+**Item C** (manage UI uses the universal subtab/sort grammar) and **Item D** (every
+new control keyed ×12 from the start).
