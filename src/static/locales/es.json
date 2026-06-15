@@ -892,5 +892,7 @@
   "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "Etapa consolidada: suficiente amplitud y tiempo para que los patrones sean más que una primera pista — aun así descriptivo, nunca un veredicto.",
   "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "Etapa en desarrollo: se forman patrones pero el corpus aún no es lo bastante amplio o antiguo para apoyarse mucho en él.",
   "Stages are descriptive, from real corpus facts — never a score.": "Las etapas son descriptivas, a partir de hechos reales del corpus — nunca una puntuación.",
-  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Umbrales: inicial por debajo de {a} artículos o {d} días; consolidado con al menos {b} artículos y {e} días; en desarrollo, entre ambos."
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Umbrales: inicial por debajo de {a} artículos o {d} días; consolidado con al menos {b} artículos y {e} días; en desarrollo, entre ambos.",
+  "Analyse": "Analizar",
+  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "Abrir esto en la ventana de análisis — su cobertura en el corpus (coocurrencia en tu corpus, nunca causalidad)"
 }

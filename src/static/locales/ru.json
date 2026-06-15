@@ -892,5 +892,7 @@
   "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "Зрелая стадия: достаточно охвата и времени, чтобы закономерности были больше, чем первая подсказка — всё же описательно, никогда не вердикт.",
   "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "Развивающаяся стадия: закономерности формируются, но корпус ещё недостаточно широк или стар, чтобы сильно на него опираться.",
   "Stages are descriptive, from real corpus facts — never a score.": "Стадии описательны, на основе реальных фактов корпуса — никогда не оценка.",
-  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Пороги: молодой — менее {a} статей или {d} дней; зрелый — не менее {b} статей и {e} дней; развивающийся — между ними."
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Пороги: молодой — менее {a} статей или {d} дней; зрелый — не менее {b} статей и {e} дней; развивающийся — между ними.",
+  "Analyse": "Анализ",
+  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "Открыть это в окне анализа — его освещение в корпусе (совместная встречаемость в вашем корпусе, никогда не причинность)"
 }

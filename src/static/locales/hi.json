@@ -892,5 +892,7 @@
   "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "स्थापित चरण: पैटर्न को पहले संकेत से अधिक होने के लिए पर्याप्त विस्तार और समय — फिर भी वर्णनात्मक, कभी निर्णय नहीं।",
   "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "विकासशील चरण: पैटर्न बन रहे हैं पर कॉर्पस अभी इतना व्यापक या पुराना नहीं कि उस पर अधिक भरोसा किया जाए।",
   "Stages are descriptive, from real corpus facts — never a score.": "चरण वर्णनात्मक हैं, वास्तविक कॉर्पस तथ्यों से — कभी स्कोर नहीं।",
-  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "सीमाएँ: प्रारंभिक {a} लेख या {d} दिन से कम; स्थापित कम से कम {b} लेख और {e} दिन; विकासशील इनके बीच।"
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "सीमाएँ: प्रारंभिक {a} लेख या {d} दिन से कम; स्थापित कम से कम {b} लेख और {e} दिन; विकासशील इनके बीच।",
+  "Analyse": "विश्लेषण",
+  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "इसे विश्लेषण विंडो में खोलें — इसका कॉर्पस कवरेज (आपके कॉर्पस में सह-घटना, कभी कारण नहीं)"
 }

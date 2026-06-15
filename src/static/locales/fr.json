@@ -892,5 +892,7 @@
   "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "Stade établi : assez d'ampleur et de temps pour que les tendances soient plus qu'un premier indice — descriptif malgré tout, jamais un verdict.",
   "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "Stade en développement : des tendances se forment mais le corpus n'est pas encore assez vaste ni ancien pour s'y fier fortement.",
   "Stages are descriptive, from real corpus facts — never a score.": "Les stades sont descriptifs, issus de faits réels du corpus — jamais un score.",
-  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Seuils : naissant en dessous de {a} articles ou {d} jours ; établi à au moins {b} articles et {e} jours ; en développement entre les deux."
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Seuils : naissant en dessous de {a} articles ou {d} jours ; établi à au moins {b} articles et {e} jours ; en développement entre les deux.",
+  "Analyse": "Analyser",
+  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "Ouvrir ceci dans la fenêtre d'analyse — sa couverture dans le corpus (co-occurrence dans votre corpus, jamais causalité)"
 }
