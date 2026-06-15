@@ -852,5 +852,11 @@
   "Summarizing locally…": "स्थानीय रूप से सारांश बनाया जा रहा है…",
   "Translating locally…": "स्थानीय रूप से अनुवाद हो रहा है…",
   "Other": "अन्य",
-  "co-occurrence in your corpus, never causation": "आपके कॉर्पस में सह-घटना, कभी कारणता नहीं"
+  "co-occurrence in your corpus, never causation": "आपके कॉर्पस में सह-घटना, कभी कारणता नहीं",
+  "Time range": "समय सीमा",
+  "not enough data for a time range": "समय सीमा के लिए पर्याप्त डेटा नहीं",
+  "1M": "1M",
+  "6M": "6M",
+  "1Y": "1Y",
+  "5Y": "5Y"
 }

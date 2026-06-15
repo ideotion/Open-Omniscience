@@ -852,5 +852,11 @@
   "Summarizing locally…": "正在本地摘要…",
   "Translating locally…": "正在本地翻译…",
   "Other": "其他",
-  "co-occurrence in your corpus, never causation": "语料库中的共现，绝非因果关系"
+  "co-occurrence in your corpus, never causation": "语料库中的共现，绝非因果关系",
+  "Time range": "时间范围",
+  "not enough data for a time range": "数据不足，无法设定时间范围",
+  "1M": "1M",
+  "6M": "6M",
+  "1Y": "1Y",
+  "5Y": "5Y"
 }

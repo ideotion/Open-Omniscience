@@ -852,5 +852,11 @@
   "Summarizing locally…": "Локальное реферирование…",
   "Translating locally…": "Локальный перевод…",
   "Other": "Другое",
-  "co-occurrence in your corpus, never causation": "совстречаемость в вашем корпусе, никогда не причинность"
+  "co-occurrence in your corpus, never causation": "совстречаемость в вашем корпусе, никогда не причинность",
+  "Time range": "Диапазон дат",
+  "not enough data for a time range": "недостаточно данных для диапазона времени",
+  "1M": "1M",
+  "6M": "6M",
+  "1Y": "1Y",
+  "5Y": "5Y"
 }

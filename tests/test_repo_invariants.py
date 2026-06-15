@@ -1094,3 +1094,42 @@ def test_commodity_card_opens_analysis():
     assert 't("co-occurrence in your corpus, never causation")' in html, (
         "the binding co-occurrence-not-causation caveat string must be present"
     )
+
+
+def test_ootimescope_range_control():
+    """The reusable time-range control (maintainer UX: "dates + a visual range
+    bar", NOT 5 buttons) replaced the 5-choice <select> on the Markets board.
+
+    Asserts the component exists, the select is gone, and the control offers
+    all three coordinated surfaces (date inputs + a draggable bar + presets)
+    and re-renders the board on change.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the reusable component
+    assert "function ooTimeScope" in html, "the reusable ooTimeScope control must exist"
+    # the old 5-choice time-scale <select> is GONE, the control box replaced it
+    assert 'id="mkt-scale"' not in html, (
+        "the 5-choice #mkt-scale select must be removed (replaced by ooTimeScope)"
+    )
+    assert 'id="mkt-timescope"' in html, "the markets board must mount #mkt-timescope"
+    # (a) From / To date inputs
+    assert '<input type="date" class="ts-from">' in html and '<input type="date" class="ts-to">' in html, (
+        "the control must render From / To date inputs"
+    )
+    # (b) a visual draggable range bar (track + two handles)
+    assert "ts-bar" in html and "ts-handle" in html, (
+        "the control must render a draggable range bar (ts-bar + ts-handle)"
+    )
+    assert 'addEventListener("pointerdown"' in html or 'pointerdown' in html, (
+        "the handles must be pointer-draggable (mouse + touch)"
+    )
+    # (c) quick presets as one-click shortcuts
+    assert "ts-presets" in html and "data-preset" in html, "quick presets must exist"
+    assert '_TS_PRESETS' in html, "the preset span table must exist"
+    # the markets wiring: onChange re-renders the board, windowed by [from,to]
+    assert "_mktScope = {from, to}; renderDashboard()" in html, (
+        "the control's onChange must update the window and re-render the board"
+    )
+    assert "windowPricesRange(all, from, to)" in html, (
+        "the board must window by absolute [from,to] dates (not a trailing days count)"
+    )

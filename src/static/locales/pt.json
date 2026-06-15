@@ -852,5 +852,11 @@
   "Summarizing locally…": "Resumindo localmente…",
   "Translating locally…": "Traduzindo localmente…",
   "Other": "Outros",
-  "co-occurrence in your corpus, never causation": "coocorrência no seu corpus, nunca causalidade"
+  "co-occurrence in your corpus, never causation": "coocorrência no seu corpus, nunca causalidade",
+  "Time range": "Intervalo de datas",
+  "not enough data for a time range": "dados insuficientes para um intervalo de tempo",
+  "1M": "1M",
+  "6M": "6M",
+  "1Y": "1Y",
+  "5Y": "5Y"
 }

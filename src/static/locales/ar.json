@@ -852,5 +852,11 @@
   "Summarizing locally…": "جارٍ التلخيص محليًا…",
   "Translating locally…": "جارٍ الترجمة محليًا…",
   "Other": "أخرى",
-  "co-occurrence in your corpus, never causation": "تزامن الورود في مجموعتك، وليس علاقة سببية أبدًا"
+  "co-occurrence in your corpus, never causation": "تزامن الورود في مجموعتك، وليس علاقة سببية أبدًا",
+  "Time range": "النطاق الزمني",
+  "not enough data for a time range": "لا توجد بيانات كافية لنطاق زمني",
+  "1M": "1M",
+  "6M": "6M",
+  "1Y": "1Y",
+  "5Y": "5Y"
 }
