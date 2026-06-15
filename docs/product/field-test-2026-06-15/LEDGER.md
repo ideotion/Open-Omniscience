@@ -792,6 +792,13 @@ workflow (recommended) **vs** keep two tabs but just dummy-proof in place? (b) c
 auto-log ON by default (recommended) **vs** stay opt-in? (c) treat as a now-ish topic **vs**
 parked behind the analysis-window build (integrity's natural home)?
 
+**✅ RESOLVED (maintainer 09:59) — all three as recommended:** (a) **DISSOLVE the group &
+spread into the workflow**; (b) **custody auto-log ON BY DEFAULT, opt-out in Settings**;
+(c) **PARK it behind the analysis-window build + the search UI**. Recorded as a ruling in
+CLAUDE.md (supersedes the old "Custody tab UX" queue note). So integrity's home = the analysis
+window + search results; custody-as-action rides the same build; OTS/Bitcoin still OFF by
+default; i18n folds into the rework. No code this turn (parked, sequenced).
+
 ---
 
 ## Item O — app tabs should be right-clickable → "open in a new window/tab" (real browser behaviour)  [NEW — ties the routing/back-button rework]  ⏭ capture-only
@@ -1126,3 +1133,43 @@ Item W (health-into-TM) and the whole task-manager vision.
 
 **⏭ Open Q (compile):** stale build (most likely) vs a real runtime error — awaiting the console
 output / hard-refresh result.
+
+---
+
+## Item Y — APP-WIDE chart rule: <10 datapoints → BAR graph (not dots); REMOVE the "early corpus… no curve interpolated" caveat, KEEP n=x  [NEW — RULING; amends invariant #16]  ⏭ ruling RECORDED (CLAUDE.md #16); impl PENDING + a baseline-honesty Q
+
+**Verbatim (09:57):** "the 6 months view market data shows only 5 datapoints. I suggest to show
+bars in this case. We should make a rule for the entire app's graph visuals so that when there
+is less than 10 datapoints, the graph automatically switches to a bar graph. remove the mention
+'early corpus: dots shown, no curve interpolated through sparse points (n=x)'. Keep showing the
+amount of datapoints (n=x)."
+
+**The ruling:** (1) **app-wide, every graph: n<10 → a BAR graph** (replaces the current
+sparse=dots treatment); n≥10 → the systematic full-resolution line/curve. (2) **DROP** the
+"early corpus: dots shown, no curve interpolated through sparse points" caveat sentence.
+(3) **KEEP "n=x".**
+
+**Where it lands (grounded):** both renderers — `ooChart()` (index.html:5622; `lineMin`=8 +
+sparse-dots at 5690-5718; caveat at 5718) and `dashChartSvg()` (5387; dots-vs-line at
+5410-5415; caveat at 5417). The caveat is the keyed string `t9("early corpus: dots shown, no
+curve interpolated through sparse points")` (present in all 12 locales) → retire the references,
+keep `n=${n}`. Amends invariant #16 (was: sparse→dots + caveat, lineMin=8); recorded in
+CLAUDE.md #16 as impl-PENDING.
+
+**TEST IMPACT:** `test_ui_invariants` #16 currently asserts **`"early corpus" in html`**
+(test_repo_invariants.py:359) — removing the caveat BREAKS it; the test must flip to assert the
+bar behaviour + caveat-gone when Y ships. (Why this is a deliberate slice, not an inline edit.)
+
+**⚠ HONESTY WRINKLE — raised, NOT silently shipped:** a bar encodes value by LENGTH ⇒ implies a
+ZERO baseline. For PRICE-LEVEL series (markets) that's both misleading AND useless — gold $1900
+vs $1950 over 5 months render as ~equal full-height bars (a real ~3% move made invisible) —
+exactly the visual distortion the project's "no fabricated visuals" ethic forbids. Bars-from-
+zero are fine for COUNT/magnitude series (article counts, mentions — naturally zero-based;
+`ooChart` already has a `zeroBase` opt, e.g. index.html:6466). **Proposed resolution (confirm):**
+sparse bars anchor to the **window-MIN on a clearly-LABELED axis** (not zero) for level data so
+differences stay visible + honest; true-zero baseline only for naturally zero-based/count
+series.
+
+**⏭ Open Qs (compile):** bar baseline for price-level data (window-min-labeled vs zero)? "<10"
+strict (n≤9 → bars, n≥10 → line)? bar placement for IRREGULAR time spacing (market dates aren't
+evenly spaced — bars at true x-position vs evenly categorical)?
