@@ -851,8 +851,8 @@
       <div class="row">
         <div><label for="f-source">Source</label><input id="f-source" placeholder="exact name (optional)"></div>
         <div><label for="f-lang">Language</label><input id="f-lang" placeholder="en (optional)"></div>
-        <div><label for="f-from">From</label><input id="f-from" type="date"></div>
-        <div><label for="f-to">To</label><input id="f-to" type="date"></div>
+        <div style="flex:1;min-width:240px"><label>Time range</label>
+          <div id="search-timescope"></div></div>
       </div>
       <div class="row">
         <button onclick="doSearch()">Search</button>
@@ -3033,6 +3033,7 @@
     // -- Tab navigation ----------------------------------------------------- //
     const TAB_LOADERS = {
       home: loadHome,
+      search: buildSearchTimeScope,   // mount the ooTimeScope date-range control once
       indices: loadIndices,
       markets: loadMarkets,
       insights: loadInsights,
@@ -8143,13 +8144,48 @@
       } catch (e) { el.innerHTML=""; toast("Diff: " + e.message, "err"); }
     }
 
+    // --- Search-tab time-range control (ooTimeScope reuse) ----------------- //
+    // There is no lightweight corpus-span endpoint exposed to the chrome, so the
+    // absolute bounds default to [today-5y, today] (a sensible bounded range).
+    // The SELECTED window defaults to the WHOLE span (min..max) so a fresh search
+    // excludes nothing; searchTimeScopeParams only forwards a bound the user has
+    // narrowed off min/max. Built once on first Search-tab open (idempotent).
+    let _searchTimeScope = null;
+    let _searchTsBounds = {min: null, max: null};
+    function buildSearchTimeScope() {
+      const box = $("search-timescope");
+      if (!box || _searchTimeScope) return;
+      const today = new Date();
+      const max = today.toISOString().slice(0, 10);
+      const lo = new Date(today); lo.setUTCFullYear(today.getUTCFullYear() - 5);
+      const min = lo.toISOString().slice(0, 10);
+      _searchTsBounds = {min, max};
+      // Default window = the full span; re-run the search live on change (matches
+      // how the omnibar/other live filters behave — the user sees results update).
+      _searchTimeScope = ooTimeScope(box, {
+        min, max, from: min, to: max,
+        onChange: () => { if (_loaded.has("search")) doSearch(); },
+      });
+    }
+
+    // The Search-tab date filter is the SAME ooTimeScope control used app-wide
+    // (Markets/Insights/corpus window) — periods are first-class. The control's
+    // from/to feed the UNCHANGED backend params start_date / end_date (YYYY-MM-DD,
+    // accepted by /api/articles + /api/articles/export). A bound is sent ONLY when
+    // the user has narrowed it off the absolute min/max — so a plain search never
+    // silently excludes articles outside the default window.
+    function searchTimeScopeParams(p) {
+      if (!_searchTimeScope) return;
+      const sel = _searchTimeScope.get();   // {from,to} ISO, or {null,null} on unusable span
+      if (sel && sel.from && sel.from > _searchTsBounds.min) p.set("start_date", sel.from);
+      if (sel && sel.to && sel.to < _searchTsBounds.max) p.set("end_date", sel.to);
+    }
     function searchParams() {
       const p = new URLSearchParams();
       const q = $("q").value.trim(); if (q) p.set("query", q);
       const src = $("f-source").value.trim(); if (src) p.set("source", src);
       const lang = $("f-lang").value.trim(); if (lang) p.set("language", lang);
-      if ($("f-from").value) p.set("start_date", $("f-from").value);
-      if ($("f-to").value) p.set("end_date", $("f-to").value);
+      searchTimeScopeParams(p);
       return p;
     }
     // The SAME params, built from the analysis window's own Advanced inputs — so the
@@ -8189,8 +8225,12 @@
       $("an-adv-query").value = qtxt;
       $("an-adv-source").value = $("f-source").value.trim();
       $("an-adv-lang").value = $("f-lang").value.trim();
-      $("an-adv-from").value = $("f-from").value;
-      $("an-adv-to").value = $("f-to").value;
+      // Carry only a NARROWED window over to the analysis Advanced inputs (the
+      // ooTimeScope feeds start_date/end_date the same way; a bound left at the
+      // absolute min/max means "all", so it stays blank here).
+      const _ts = _searchTimeScope && _searchTimeScope.get();
+      $("an-adv-from").value = (_ts && _ts.from && _ts.from > _searchTsBounds.min) ? _ts.from : "";
+      $("an-adv-to").value = (_ts && _ts.to && _ts.to < _searchTsBounds.max) ? _ts.to : "";
       $("an-adv-note").textContent = "";
       showTab("analyze");
       loadAnalysis(searchParams());

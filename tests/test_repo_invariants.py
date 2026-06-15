@@ -1216,3 +1216,33 @@ def test_tmap_mention_layer():
     )
     assert "function buildTmapMentionLegend()" in html, "the layer legend caveat line must exist"
     assert "function showTmapWhereDetail(" in html, "the marker readout must exist"
+
+
+def test_search_timescope():
+    """The Search sidebar tab reuses the SAME ooTimeScope control for date-range
+    filtering (maintainer: "reuse the time-range control everywhere") so PERIODS
+    are first-class — replacing the old #f-from / #f-to begin/end date inputs.
+
+    Asserts: the legacy date inputs are gone; the control mounts into
+    #search-timescope via the ONE ooTimeScope factory (not a fork); and the
+    selected from/to feed the UNCHANGED backend params start_date / end_date.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the reusable component (shared with Markets/Insights/corpus window)
+    assert "function ooTimeScope" in html, "the reusable ooTimeScope control must exist"
+    # the legacy Search begin/end date inputs are REMOVED (replaced by the control)
+    assert 'id="f-from"' not in html, "the legacy #f-from date input must be gone"
+    assert 'id="f-to"' not in html, "the legacy #f-to date input must be gone"
+    # the new container + the factory mounting the SAME component there
+    assert 'id="search-timescope"' in html, "the Search tab must mount #search-timescope"
+    assert "function buildSearchTimeScope" in html, "the Search time-scope factory must exist"
+    assert 'ooTimeScope(box, {' in html, "the factory must instantiate the SAME ooTimeScope"
+    # the from/to reach the search query via the UNCHANGED backend params
+    assert "function searchTimeScopeParams" in html, "the param-forwarding helper must exist"
+    assert 'p.set("start_date", sel.from)' in html, "the control's 'from' must feed start_date"
+    assert 'p.set("end_date", sel.to)' in html, "the control's 'to' must feed end_date"
+    assert "searchTimeScopeParams(p)" in html, "searchParams() must forward the time-scope window"
+    # mounted lazily on first Search-tab open (TAB_LOADERS), idempotent
+    assert "search: buildSearchTimeScope" in html, (
+        "the Search tab loader must mount the time-scope control"
+    )
