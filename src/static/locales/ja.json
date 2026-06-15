@@ -882,5 +882,15 @@
   "Trimester": "四半期",
   "Semester": "半期",
   "Decade": "10年",
-  "No events in this period.": "この期間にイベントはありません。"
+  "No events in this period.": "この期間にイベントはありません。",
+  "Early corpus": "初期コーパス",
+  "Developing corpus": "発展中のコーパス",
+  "Established corpus": "確立されたコーパス",
+  "days": "日",
+  "thin evidence — read with care": "根拠が薄い——慎重に読んでください",
+  "Early stage: the cards rest on thin evidence — read them as first hints, not established patterns.": "初期段階：カードは薄い根拠に基づきます——確立したパターンではなく最初の手がかりとして読んでください。",
+  "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "確立段階：パターンが最初の手がかり以上になるだけの広がりと時間があります——それでも記述的であり、判定ではありません。",
+  "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "発展段階：パターンは形成されつつありますが、コーパスはまだ強く頼れるほど広くも古くもありません。",
+  "Stages are descriptive, from real corpus facts — never a score.": "段階は記述的で、実際のコーパスの事実に基づきます——スコアではありません。",
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "しきい値：初期は {a} 記事未満または {d} 日未満；確立は {b} 記事以上かつ {e} 日以上；発展中はその中間。"
 }

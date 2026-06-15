@@ -3492,12 +3492,11 @@
           ? "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict."
           : "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.");
       const rule = t("Stages are descriptive, from real corpus facts — never a score.") + " " +
-        t("Thresholds:") + " " +
-        t("early") + " < " + (th.young_articles ?? 200) + " " + t("articles") + " " + t("or") + " < " +
-          (th.min_span_days ?? 14) + " " + t("days") + "; " +
-        t("established") + " ≥ " + (th.established_articles ?? 1000) + " " + t("articles") + " " + t("and") + " ≥ " +
-          (th.established_days ?? 90) + " " + t("days") + "; " +
-        t("developing") + " " + t("in between") + ".";
+        t("Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.")
+          .replace("{a}", th.young_articles ?? 200)
+          .replace("{d}", th.min_span_days ?? 14)
+          .replace("{b}", th.established_articles ?? 1000)
+          .replace("{e}", th.established_days ?? 90);
       el.className = "corpus-tier tier-" + tier;
       // The #oo-tip hover re-reads this live-translated title (invariant #17).
       el.title = stageLabel + " — " + meaning + " " + rule;

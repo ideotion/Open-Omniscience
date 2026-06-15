@@ -882,5 +882,15 @@
   "Trimester": "Triwulan",
   "Semester": "Semester",
   "Decade": "Dekade",
-  "No events in this period.": "Tidak ada acara dalam periode ini."
+  "No events in this period.": "Tidak ada acara dalam periode ini.",
+  "Early corpus": "Korpus awal",
+  "Developing corpus": "Korpus berkembang",
+  "Established corpus": "Korpus mapan",
+  "days": "hari",
+  "thin evidence — read with care": "bukti tipis — baca dengan hati-hati",
+  "Early stage: the cards rest on thin evidence — read them as first hints, not established patterns.": "Tahap awal: kartu bersandar pada bukti tipis — baca sebagai petunjuk awal, bukan pola yang mapan.",
+  "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "Tahap mapan: cukup luas dan lama sehingga pola lebih dari sekadar petunjuk awal — tetap deskriptif, tidak pernah vonis.",
+  "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "Tahap berkembang: pola mulai terbentuk tetapi korpus belum cukup luas atau lama untuk diandalkan sepenuhnya.",
+  "Stages are descriptive, from real corpus facts — never a score.": "Tahapan bersifat deskriptif, dari fakta korpus yang nyata — bukan skor.",
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Ambang: awal di bawah {a} artikel atau {d} hari; mapan minimal {b} artikel dan {e} hari; berkembang di antaranya."
 }

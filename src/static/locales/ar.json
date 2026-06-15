@@ -882,5 +882,15 @@
   "Trimester": "ربع سنة",
   "Semester": "نصف سنة",
   "Decade": "عقد",
-  "No events in this period.": "لا توجد أحداث في هذه الفترة."
+  "No events in this period.": "لا توجد أحداث في هذه الفترة.",
+  "Early corpus": "مجموعة ناشئة",
+  "Developing corpus": "مجموعة قيد التطور",
+  "Established corpus": "مجموعة راسخة",
+  "days": "أيام",
+  "thin evidence — read with care": "أدلة ضئيلة — اقرأها بحذر",
+  "Early stage: the cards rest on thin evidence — read them as first hints, not established patterns.": "مرحلة مبكرة: تستند البطاقات إلى أدلة ضئيلة — اقرأها كإشارات أولى، لا كأنماط راسخة.",
+  "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "مرحلة راسخة: اتساع ووقت كافيان لتكون الأنماط أكثر من إشارة أولى — وصفية مع ذلك، وليست حكمًا أبدًا.",
+  "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "مرحلة قيد التطور: تتشكّل الأنماط لكن المجموعة ليست بعد واسعة أو قديمة بما يكفي للاعتماد عليها بقوة.",
+  "Stages are descriptive, from real corpus facts — never a score.": "المراحل وصفية، مبنية على حقائق فعلية من المجموعة — وليست درجة أبدًا.",
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "العتبات: ناشئة دون {a} مقالة أو {d} يومًا؛ راسخة عند {b} مقالة على الأقل و{e} يومًا؛ قيد التطور بين الاثنين."
 }
