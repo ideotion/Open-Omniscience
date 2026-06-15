@@ -2663,7 +2663,7 @@
         const nr = a.next_run ? new Date(a.next_run) : null;
         const mins = nr ? Math.max(0, Math.round((nr - Date.now()) / 60000)) : null;
         nowHtml = row("Now collecting", a.running
-          ? `<span class="muted">idle</span>${mins != null ? ` · <span title="${esc(nr.toLocaleString())}">⏱ ${mins} min</span>` : ""}`
+          ? `<span class="muted">idle</span>${mins != null ? ` · <span title="${esc(fmtDateTime(a.next_run))}">⏱ ${mins} min</span>` : ""}`
           : '<span class="muted">scheduler stopped</span>');
       }
       // -- Next pass: targets as domain chips + the honest estimate --------- //
@@ -4222,7 +4222,7 @@
             <b>${esc(ch.jurisdiction.toUpperCase())}</b> · ${esc(ch.title)}
             <span class="pill ${ch.flagged?'warn':''}">${ch.delta_bytes>0?'+':''}${ch.delta_bytes} bytes</span>
             ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(esc).join(', ')+'</span>':''}
-            <div class="hint" style="margin-top:4px">${ch.observed_at?new Date(ch.observed_at).toLocaleString():''} ·
+            <div class="hint" style="margin-top:4px">${ch.observed_at?fmtDateTime(ch.observed_at):''} ·
               <a href="/api/law/documents/${ch.document_id}/view" target="_blank" rel="noopener" title="offline stored copy + history">open reader</a> ·
               ${extLink(ch.official_url, "official source ↗", "muted")}</div>
             ${renderDiff(ch.diff)}
@@ -5314,7 +5314,7 @@
       return `in ~${h} h${m ? ` ${m} min` : ""}`;
     }
     function fmtLocal(iso) {
-      const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString();
+      return fmtDateTime(iso);   // app language + full month (not the browser locale)
     }
     function renderSchedStatus(st) {
       if (typeof st.online === "boolean") _paintNetwork(st.online);  // repaint NOW, not at the next poll
