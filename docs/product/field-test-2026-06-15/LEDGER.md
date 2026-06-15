@@ -1,9 +1,13 @@
 # Field-Test Ledger — 2026-06-15 session
 
-Continues the 2026-06-14 intake (`../field-test-2026-06-14/`). This session is
-intake **+ implementation** (the maintainer said "continue implementing"). Each
-item records the verbatim observation, the mapping to existing rulings/docs, what
-**shipped this session**, and what **remains**.
+Continues the 2026-06-14 intake (`../field-test-2026-06-14/`). **Mode: this session
+began as intake + implementation, then the maintainer switched to CAPTURE-ONLY
+mid-session (07:55)** — a parallel session owns the `0.09` implementation. Items
+**A–B** were already implemented + pushed (draft **PR #162**) before the switch;
+**Items C onward are capture-only** — verbatim observation + mapping to existing
+rulings/docs + code grounding + what is [PLANNED]/[NEW], with **no code changes**.
+The consolidated baseline + numbered question list is rendered on "compile", like
+2026-06-14.
 
 Legend: [PLANNED] already ruled · [NEW] net-new · ✅ shipped here · ⏭ remaining.
 
@@ -105,3 +109,133 @@ JSON-valid; i18n `--min 100` green; `--audit-chrome` clean; full suite 1165 pass
 
 **Recommendation:** do (1)+(2) as the **next** PR (the promoted Group F flagship);
 the chrome shipped here is the down-payment.
+
+---
+
+## Item C — Agenda rework: maximize space; view BUTTONS (+ Week view); category dropdown → colored event TAGS; country FLAGS  [mostly NEW · Week view PLANNED]  ⏭ capture-only
+
+**Verbatim (07:55):** "The agenda should take as much space as possible in the
+screen. Instead of having a drop down menu to switch between month and list views,
+show actual buttons. Add a week (7 days) view. Replace the drop down category menu
+by events tags, give them distinct colors. There will be more tags coming, such as
+'religious'." **+ follow-up (07:55):** "Concerning the list of countries, can't you
+show a list of flags?"
+
+**Where (`src/static/index.html`):** the Agenda tab `<section class="panel">` at
+**1039–1070**; the controls row at **1046–1059**:
+- `#agenda-view` `<select>` (Month/List) — **1047–1048**
+- `#agenda-cat` `<select>` (Category: all/civic/political/economic/technology) — **1049–1051**
+- `#agenda-country` `<select>` (dynamic: "all" + JS-filled) — **1052**
+- `#agenda-tag` `<select>` (dynamic: "all" + JS-filled) — **1053**
+- month bar + `#agenda-month` / `#agenda-day` / `#agenda-list` render targets — **1060–1069**
+
+**Maps to:** invariant **#13** (Agenda data-first, month-grid default) + the
+CLAUDE.md **"AGENDA CONTENT"** queue, which already lists **"the remaining views
+(week/trimester/semester/year/decade)"** and **"PRELOADED … religious calendars"**.
+BACKLOG_GROUPED has **no Agenda group** — these extend the CLAUDE.md agenda queue
+(candidate for a new backlog group at "compile"). Colored-chip convention already
+exists for **Sources tag-selection** ("multi-tag AND-combination, colored chips" —
+the corpora entry). Country substrate = **`src/catalog/countries.py`** (ISO-2
+canonical, from the de-US-centring batch).
+
+Sub-parts:
+- **(a) [NEW] Maximize screen space for the Agenda.** It renders inside a standard
+  `.panel` (padding + the app's content max-width). Ask = a full-bleed / expanded
+  layout so the calendar uses the viewport. Design within invariant #13; the month
+  grid stays the primary surface.
+- **(b) [NEW] View switch → real BUTTONS, not a `<select>`.** Replace `#agenda-view`
+  (1047) with a segmented button group (Month · Week · List). Candidate: the
+  universal subtab grammar (`ooSubtabs`) or a simple button row; labels keyed ×12
+  from the start (see **Item D** — must not repeat the unkeyed-option mistake).
+- **(c) [PLANNED] Add a WEEK (7-day) view.** New render mode + its button — already
+  in the agenda-content "remaining views" queue. Needs a 7-day grid renderer + week
+  navigation (reuse the `agMonthShift`/`agMonthToday` nav pattern, 1061–1064).
+- **(d) [NEW; the tag taxonomy is PLANNED] Category dropdown → colored event TAG
+  chips.** Replace `#agenda-cat` (1049) with clickable tag chips, each a distinct
+  color; the taxonomy is **extensible** ("religious" coming — ties to the queued
+  religious-calendars work). Clarify category-vs-tag: there is ALSO a `#agenda-tag`
+  select (1053); the rework should converge them into one colored-tag filter. Reuse
+  the Sources colored-chip convention; colors must be distinguishable (ideally
+  colorblind-safe); chip labels keyed ×12.
+- **(e) [NEW] Country picker shows FLAGS.** `#agenda-country` (1052) — show flags
+  (with or instead of names). Generalizes to country pickers app-wide. Substrate:
+  ISO-2 from `countries.py` → derive a flag (regional-indicator emoji = offline,
+  zero-asset; or a bundled SVG set). **Honesty caveat (carry the invariant-#15
+  spirit, flags ≠ identity):** a flag is a visual convention — disputed /
+  sub-national / multi-country / no-clean-flag entities exist, and emoji flags
+  render inconsistently on some OSes; keep the country NAME reachable (accessible
+  label / hover) so a flag never becomes the sole identifier. Verify rendering or
+  bundle assets.
+
+**⏭ Remaining:** all of C is unbuilt (capture-only). Cross-links to **Item D**:
+every new control label here (Week, the view buttons, tag chips, "all") must be
+keyed ×12 from the start. Open design questions (hold for "compile"): the exact
+button view-set now (Month/Week/List) vs where trimester/semester/year/decade live;
+whether tags REPLACE or COMPLEMENT the country/group filters; flags-with-names vs
+flags-only.
+
+---
+
+## Item D — App-wide: dropdown `<option>` labels are not translated (66 of 91 unkeyed)  [PLANNED — i18n burn-down]  ⏭ capture-only
+
+**Verbatim (07:55):** "It seems that none of the drop down menus have been
+translated. Check app wide."
+
+**Checked app-wide — verified facts (not a feeling):**
+- **The engine CAN translate option text.** `i18n.js` `apply()` walks a `SHOW_TEXT`
+  TreeWalker (**i18n.js:71**) and translates any text node whose trimmed value
+  exactly matches a locale key; its `SKIP` set (**i18n.js:23** = SCRIPT / STYLE /
+  TEXTAREA / CODE / PRE) **does not include OPTION/SELECT**. So `<option>` labels
+  are translatable by construction — **not** an engine limitation.
+- **Root cause = a coverage gap.** Most option labels were never keyed in `en.json`
+  (+11 locales). Inventory (read-only audit of `index.html` × `en.json`): **91
+  static option labels; 13 keyed; 66 UNKEYED;** the 12 `#oo-lang-select` native
+  names are correctly **not** translated (invariant #15).
+- **Case-sensitivity trap (same words keyed inconsistently):** `#agenda-group`
+  **"month"** is unkeyed while `#agenda-view` **"Month"** is keyed; `#mkt-scale`
+  **"1 month"/"6 months"** are unkeyed while `#tmap-window` **"± 1 month"/"± 2
+  months"** are keyed. Same vocabulary, opposite outcomes → dropdowns look half- or
+  never-translated.
+- **Why a "100%" i18n badge coexists with untranslated dropdowns:** the CI gate
+  `--min 100` (`i18n_report.py`) only checks that locales translate every
+  **existing** `en.json` key — NOT that every chrome string is keyed. The unkeyed
+  option labels live in the separate, **non-blocking** `--audit-chrome`
+  "untranslatable tail" (~423 strings). `_ChromeExtractor` (**i18n_report.py:45**)
+  also doesn't skip OPTION, so these ARE measured there — known-untranslatable, just
+  never keyed.
+- **Possible secondary caveat (UNVERIFIED headlessly):** whether mutating an
+  `<option>` text node via `nodeValue` re-renders the **closed** `<select>` display
+  in every target browser. The keyed ones (agenda-view Month/List, `mm-window`,
+  `fetch-mode`) presumably do translate in the live app (shipped, never flagged), so
+  this is likely fine — **verify in-browser** when implementing; if a keyed option
+  does NOT visibly translate, there is an `<option>`-rendering bug on top of the
+  coverage gap.
+- **Dynamic selects** (`#agenda-country`, `#mkt-source`, `#ing-source`, wiki
+  editions…) build options in JS: their CONTROL labels ("all"/"any") need
+  `OOI18N.t()` at build time; data labels (source names, editions) stay English by
+  design.
+
+**The 66 unkeyed, by select (control labels; data/native excluded):** `anno-kind`
+(ownership, leaning, coordination-tag, transparency-fact, correction, note);
+`agenda-cat` (all, civic, political, economic, technology); `agenda-group` (month,
+calendar, country); `mkt-scale` (1 month, 6 months, 1 year, 5 years, All);
+`trd-kind` & `map-kind` (all, terms, entities, people, orgs, places); `cs-by`
+(domain, exact link); `fam-kind` (entities, people, orgs, places, all);
+`tmap-window` (all of time, ± 2000/100/25/5 yrs, ± 1 yr); `tmap-speed`
+(0.5× / 1× / 2× / 4×); `set-theme` (Dark, Light); `sch-mode` (RSS feeds, Recursive
+crawl, Markets (price rules), Wikipedia (watched pages)); `bi-enabled` &
+`src-enabled` (all/any, enabled, disabled); `feeddir-kind` (all); plus the JS-built
+control labels on the dynamic selects.
+
+**Maps to:** CLAUDE.md **"i18n & LANGUAGE UX"** (the elevated `--audit-chrome`
+burn-down) + BACKLOG_GROUPED **Group D "Card strings into i18n"** (sibling).
+Invariant **#15** stands (native names stay English-by-design).
+
+**⏭ Fix shape (for the implementing session):** (1) key the ~66 control option
+labels ×12 (skip data + native-by-design), **normalizing the case mismatches** so
+"Month"/"month"/"1 month" share keys; (2) add a **non-regression gate** — promote an
+option-label subset of `--audit-chrome` to blocking, OR a test enumerating every
+`<select>`'s static option labels asserting each control label is in `en.json`;
+(3) translate dynamic-select control labels via `OOI18N.t()` at build time. This
+also pre-empts **Item C** (new agenda controls keyed from the start). New locale
+strings AI-drafted, flagged for native review.
