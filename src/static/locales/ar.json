@@ -893,5 +893,9 @@
   "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "مرحلة قيد التطور: تتشكّل الأنماط لكن المجموعة ليست بعد واسعة أو قديمة بما يكفي للاعتماد عليها بقوة.",
   "Stages are descriptive, from real corpus facts — never a score.": "المراحل وصفية، مبنية على حقائق فعلية من المجموعة — وليست درجة أبدًا.",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "العتبات: ناشئة دون {a} مقالة أو {d} يومًا؛ راسخة عند {b} مقالة على الأقل و{e} يومًا؛ قيد التطور بين الاثنين.",
-  "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.": "الكلمات المفتاحية المرتبطة بهذه المجموعة كخريطة ذهنية شعاعية (المركز ← الفروع ← إلى الخارج). حجم الخط = حجم المقالات المشتركة؛ الجيران مرتّبون حسب PMI، وليست علاقة سببية أبدًا."
+  "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.": "الكلمات المفتاحية المرتبطة بهذه المجموعة كخريطة ذهنية شعاعية (المركز ← الفروع ← إلى الخارج). حجم الخط = حجم المقالات المشتركة؛ الجيران مرتّبون حسب PMI، وليست علاقة سببية أبدًا.",
+  "Sentiment": "المشاعر",
+  "How outlets frame this": "كيف تؤطّر وسائل الإعلام هذا",
+  "(VADER tone)": "(نبرة VADER)",
+  "How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.": "كيف تتوزّع وسائل الإعلام التي تغطّي هذه المجموعة في النبرة — مركّب VADER لكل وسيلة، مع أعداد المقالات. VADER طريقة قائمة على معجم إنجليزي، لذا فإن نبرة التغطية غير الإنجليزية غير موثوقة أو غائبة. لا توجد درجة مركّبة؛ اقرأ المقالات المرتبطة واحكم بنفسك."
 }
