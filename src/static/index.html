@@ -3932,14 +3932,19 @@
       finally { btn.disabled = false; loadFeedDir(); }
     }
     async function renderImported() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       let data; try { data = await api("/api/events/imported"); } catch { return; }
       if (!data.count) { $("feeddir-imported").innerHTML = ""; return; }
       const today = new Date().toISOString().slice(0, 10);
       const next = data.events.filter(e => e.date >= today).slice(0, 30);
       $("feeddir-imported").innerHTML = `<h3 style="margin-bottom:6px">Imported events</h3>` +
-        next.map(e => `<div class="vr"><span>${esc(e.date)} · ${esc(e.title)}</span>` +
-          `<b class="muted">${esc(e.family_name)}${e.sources.length > 1 ? ` · ${e.sources.length}×` : ""}</b></div>`).join("") +
-        `<div class="hint">${data.count} imported in total · duplicates within a folder are merged and list every provider; a date disagreement stays visible as two entries.</div>`;
+        next.map(e => {
+          const folders = e.family_count > 1 ? ` +${e.family_count - 1}` : "";
+          const srcs = e.source_count > 1 ? ` · ${e.source_count}×` : "";
+          return `<div class="vr"><span>${esc(e.date)} · ${esc(e.title)}</span>` +
+            `<b class="muted" title="${esc((e.family_names || [e.family_name]).join(', '))}">${esc(e.family_name)}${folders}${srcs}</b></div>`;
+        }).join("") +
+        `<div class="hint">${data.count}${data.occurrences > data.count ? ` / ${data.occurrences}` : ""} · <span>The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.</span></div>`;
     }
 
     function renderAgendaCals() {

@@ -683,5 +683,6 @@
   "Reachable": "Erreichbar",
   "Dysfunctional": "Fehlerhaft",
   "Not checked": "Ungeprüft",
-  "Sort": "Sortieren"
+  "Sort": "Sortieren",
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Dasselbe Ereignis aus mehreren Feeds wird einmal angezeigt und nennt jede Quelle; eine Datumsabweichung bleibt als separate Einträge sichtbar."
 }

@@ -683,5 +683,6 @@
   "Reachable": "到達可能",
   "Dysfunctional": "異常",
   "Not checked": "未確認",
-  "Sort": "並べ替え"
+  "Sort": "並べ替え",
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "複数のフィードに含まれる同じイベントは一度だけ表示され、すべての情報源を列挙します。日付の不一致は別々の項目として残ります。"
 }

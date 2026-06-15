@@ -106,11 +106,17 @@ def imported_events(
     family: str | None = Query(None, description="one family key, e.g. holidays-fr"),
     frm: str | None = Query(None, alias="from", description="ISO date lower bound"),
 ) -> dict:
-    """Events imported from verified feeds, soonest first (per-machine data)."""
+    """Events imported from verified feeds, soonest first (per-machine data).
+
+    Cross-feed duplicates are collapsed into one row each (the same holiday carried
+    by many feeds shows once, listing every source); ``count`` is the collapsed row
+    count and ``occurrences`` the raw pre-collapse total, so the merge is transparent.
+    """
     from src.events.feeds import imported_agenda
 
     items = imported_agenda(family=family, frm=frm)
-    return {"count": len(items), "events": items}
+    occurrences = len(imported_agenda(family=family, frm=frm, collapse=False))
+    return {"count": len(items), "occurrences": occurrences, "events": items}
 
 
 @router.post("/feeds/verify-batch")

@@ -683,5 +683,6 @@
   "Reachable": "Terjangkau",
   "Dysfunctional": "Bermasalah",
   "Not checked": "Belum diperiksa",
-  "Sort": "Urutkan"
+  "Sort": "Urutkan",
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Acara yang sama dari beberapa umpan ditampilkan satu kali, mencantumkan setiap sumber; perbedaan tanggal tetap terlihat sebagai entri terpisah."
 }
