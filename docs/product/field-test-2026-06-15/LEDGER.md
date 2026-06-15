@@ -1049,3 +1049,80 @@ schema + sourcing (Wikidata + existing seeds) + the atomic-phrase guard; maintai
 **⏭ Open Qs (compile):** bootstrap = Wikidata labels/aliases vs hand-curated vs both? scope
 order (entities/places/orgs/events first, common terms later)? how the lexicon overrides vs
 feeds the live signature auto-join? precached size budget (12 languages × concepts)?
+
+---
+
+## Item V — airplane mode ON still shows GREEN "Collecting…"; should show a PAUSED (not-green) "Collecting paused"  [NEW — status-honesty bug]  ⏭ capture (implementable; +1 string ×12)
+
+**Verbatim (09:34):** "When activating airplane mode, the top bar is still showing
+'collecting' in green. Why not mark it as red and display collecting paused."
+
+**Grounded:** the activity chip (`#activity` / `#activity-label`, index.html:689) is painted by
+`_paintActivity()` (index.html:2226) from the `_bg` collecting label (set "Collecting N/M…" at
+2611) with the green `bg` class. It NEVER consults online/offline state. The airplane state IS
+known — `_paintNetwork(online)` (2435, fed by API `online` booleans at 2422/2520/2727/5133) —
+but that state never reaches `_paintActivity`.
+
+**Honesty angle:** showing green "Collecting…" while collection is actually paused is a
+FABRICATED status — against degrade-loudly / no-theater. Airplane mode trips the kill switch
+(Collect-Stop side effect), so the pass really stops; the chip must say so.
+
+**Fix (small):** persist the online state in a module var when `_paintNetwork` runs, and in
+`_paintActivity` show a PAUSED style + keyed "Collecting paused" when offline + a collect pass
+is in-flight/scheduled. Use the go-OFF calm/grounded accent (invariant #14c's direction-aware
+color), NOT a brand-new red that conflates meanings. +1 string ("Collecting paused") ×12.
+
+**⏭ Open Q (compile):** "Collecting paused" vs "Paused (airplane mode)"? exact color = reuse
+the go-off calm/grounded accent?
+
+---
+
+## Item W — move the "healthy"/backend-status indicator into the task-manager System tab  [NEW — extends invariant #4]  ⏭ capture (BLOCKED ON Item X)
+
+**Verbatim (09:34):** "the 'healthy' status should be moved to the task manager."
+
+**Grounded:** `#health` (index.html:690, "checking…"/healthy + a status dot) sits in the
+top-bar status-cluster. Invariant #4 already moved VITALS out of the chrome into the
+task-manager window's System tab (`#tm-system`). This extends that: health joins the same
+System tab, decluttering the top bar (UI-shell §2 "minimal top bar").
+
+**DEPENDENCY — BLOCKED ON Item X:** if the task manager doesn't open (the maintainer's report),
+moving health INTO it hides health entirely. Land W only once X is confirmed (the TM opens
+reliably). **Consider** keeping a MINIMAL chrome health signal (a tiny dot that turns red when
+the backend is down) so a down backend is never fully hidden — informed-by-construction; decide
+in compile. Keep the persistent `#tm-open` access (invariant #4).
+
+---
+
+## Item X — the TASK MANAGER DOESN'T OPEN (maintainer report); code path verifies CORRECT at HEAD → most likely a STALE/CACHED build  [NEW — repeated pain point ×3+]  ⏭ capture + DIAGNOSTIC REQUEST
+
+**Verbatim (09:34):** "by the way, did I mention that the task manager doesn't work / open up
+the task management interface?"
+
+**What I verified at HEAD (code-level):**
+- `#tm-open` (index.html:693) AND `#activity` (689) both `onclick="toggleVitals()"`.
+- `toggleVitals()` (2869) sets `pop.hidden = false` (2872) — making `#vitals-pop` (708) visible
+  — BEFORE anything that can throw; `_vitalsPrevFocus` IS declared (2573); `_ensureVitalsPoll`
+  defined (2593); no strict mode.
+- The inline app `<script>` (2189 — NOT `type=module`, so inline handlers resolve globally)
+  passes **`node --check` cleanly** ⇒ `toggleVitals` IS defined (no syntax error abort).
+- CSS: `.vitals-pop[hidden]{display:none}` else `position:fixed;top:52px;right:14px;z-index:60`
+  ⇒ visible when not hidden.
+- ⇒ **In current code, clicking the task-manager icon MUST open the dialog.** I could not
+  reproduce "doesn't open" statically. (Even an init-time throw at the ooSubtabs wiring
+  7734-7738 would NOT prevent opening — `toggleVitals` is hoisted — only break subtab switching.)
+
+**Most likely cause:** a **STALE / browser-CACHED build** on the long-running field instance
+(served index.html predates task-manager fixes, or the browser cached an old copy). Secondary: a
+runtime error I can't see statically.
+
+**DIAGNOSTIC REQUEST (definitive):** (1) **hard-refresh / relaunch** the app and re-test (rules
+out cache/stale build); (2) if it STILL fails, open the browser **console**, click the
+task-manager icon, and send the error + a screenshot. I can also **run-and-verify here** (launch
++ click) to confirm the current build opens it — say the word and I'll invest the detour.
+
+**Why it matters:** this is the repeatedly-asked task manager (ledger ×3+). Resolving X UNBLOCKS
+Item W (health-into-TM) and the whole task-manager vision.
+
+**⏭ Open Q (compile):** stale build (most likely) vs a real runtime error — awaiting the console
+output / hard-refresh result.
