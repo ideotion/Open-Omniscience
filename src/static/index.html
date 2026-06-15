@@ -334,6 +334,7 @@
       border-color:hsl(var(--cat,210) 70% 50%); background:hsl(var(--cat,210) 70% 50% / .18); }
     .ag-catdot { display:inline-block; width:8px; height:8px; border-radius:50%;
       background:hsl(var(--cat,210) 70% 50%); margin-inline-end:5px; vertical-align:middle; }
+    .cs-row.excluded { opacity:.55; }   /* a feed folder excluded from MY agenda (reversible) */
     .ag-views { gap:0; }                              /* Month · Week · List segmented switch */
     /* Week view: 7 taller day columns, weekday+date header, room for more events. */
     #agenda-week .ag-grid { grid-auto-rows:1fr; }
@@ -3826,6 +3827,11 @@
     const AG = { events: [], cals: [], caveat: "", meta: {}, categories: [] };
     function agSubs() { try { return new Set(JSON.parse(localStorage.getItem("oo.agenda.subs") || "null") || []); } catch (_e) { return new Set(); } }
     function agSaveSubs(set) { localStorage.setItem("oo.agenda.subs", JSON.stringify([...set])); }
+    // Per-machine EXCLUDED feed families (ruled 2026-06-15: "remove = reversible
+    // unsubscribe, never delete-from-catalog"). Excluded folders keep their honest
+    // verdicts in the directory (anti-hiding) but contribute no imported events.
+    function agExcluded() { try { return new Set(JSON.parse(localStorage.getItem("oo.agenda.excluded") || "null") || []); } catch (_e) { return new Set(); } }
+    function agSaveExcluded(set) { localStorage.setItem("oo.agenda.excluded", JSON.stringify([...set])); }
 
     // An imported feed event (already cross-feed deduped server-side) mapped into
     // the agenda's event shape, flagged as the IMPORTED provenance class so it is
@@ -3852,7 +3858,8 @@
           api("/api/events"), api("/api/events/calendars"),
           api("/api/events/imported?from=" + today).catch(() => ({ events: [] })),
         ]);
-        const imported = (imp.events || []).map(mapImportedToAgenda);
+        const excl = agExcluded();
+        const imported = (imp.events || []).map(mapImportedToAgenda).filter(e => !excl.has(e.calendar));
         AG.events = ev.events.concat(imported); AG.caveat = ev.caveat; AG.cals = fac.calendars;
         // Imported events are their own filterable category (a distinct provenance
         // class, like DDG-discovered sources) — surface it as a chip only when present.
@@ -3909,20 +3916,50 @@
       status: (a, b) => ({ error: 0, unchecked: 1, ok: 2 }[famStatus(a)] - { error: 0, unchecked: 1, ok: 2 }[famStatus(b)]) || a.name.localeCompare(b.name),
       imported: (a, b) => ((b.imported_events || 0) - (a.imported_events || 0)) || a.name.localeCompare(b.name),
     };
-    function renderFeedDir() {
-      if (!_feedDir) return;
+    function _feedDirFiltered() {
+      if (!_feedDir) return [];
       const kind = $("feeddir-kind").value, q = ($("feeddir-q").value || "").toLowerCase();
       const sf = $("feeddir-status-filter").value, sort = $("feeddir-sort").value || "name";
-      let fams = _feedDir.families.filter(f =>
+      const fams = _feedDir.families.filter(f =>
         (!kind || f.kind === kind) &&
         (!sf || famStatus(f) === sf) &&
         (!q || f.name.toLowerCase().includes(q) || (f.country || "").toLowerCase().includes(q)));
       fams.sort(_FEED_SORTS[sort] || _FEED_SORTS.name);
+      return fams;
+    }
+    // Bulk exclude/include (reversible). 'dysfunctional' = every broken folder;
+    // 'shown' = the current filtered+sorted set (so the Status filter doubles as a
+    // selector, e.g. show Dysfunctional then Exclude shown).
+    function agExcludeBulk(which) {
+      const s = agExcluded();
+      const fams = which === "dysfunctional"
+        ? (_feedDir ? _feedDir.families.filter(f => famStatus(f) === "error") : [])
+        : _feedDirFiltered();
+      fams.forEach(f => s.add(f.key));
+      agSaveExcluded(s); renderFeedDir(); _agendaMaybeReload();
+    }
+    function agExcludeClear() { agSaveExcluded(new Set()); renderFeedDir(); _agendaMaybeReload(); }
+    function agToggleExclude(key) {
+      const s = agExcluded(); s.has(key) ? s.delete(key) : s.add(key);
+      agSaveExcluded(s); renderFeedDir(); _agendaMaybeReload();
+    }
+    function _agendaMaybeReload() {  // keep the agenda in sync if it's open
+      const t = $("tab-agenda"); if (t && t.classList.contains("active")) loadAgenda();
+    }
+    function renderFeedDir() {
+      if (!_feedDir) return;
+      const excl = agExcluded();
+      let fams = _feedDirFiltered();
       const total = fams.length;
       fams = fams.slice(0, 40);
       $("feeddir-status").textContent =
         `${_feedDir.total_feeds} feeds · ${_feedDir.families.length} folders · ${_feedDir.checked} checked`;
-      $("feeddir-list").innerHTML = fams.map(f => {
+      const bulk = `<div class="row" style="gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+        <button class="secondary tiny" onclick="agExcludeBulk('dysfunctional')">Exclude dysfunctional</button>
+        <button class="secondary tiny" onclick="agExcludeBulk('shown')">Exclude shown</button>
+        ${excl.size ? `<button class="ghost tiny" onclick="agExcludeClear()">Clear exclusions</button>
+          <span class="hint">${excl.size} <span>excluded</span></span>` : ""}</div>`;
+      $("feeddir-list").innerHTML = bulk + fams.map(f => {
         const feeds = f.feeds.map(fd => `
           <div class="vr">
             <span>${esc(fd.provider)}${fd.year_pinned ? ` <span class="muted">· ${fd.year_pinned}</span>` : ""}</span>
@@ -3931,11 +3968,14 @@
               <button class="secondary tiny" onclick="feedAction('${esc(fd.id)}','import')">Import</button></b>
           </div>
           <div class="hint" style="word-break:break-all;margin:0 0 4px"><a href="${esc(fd.url)}" target="_blank" rel="noopener noreferrer">${esc(fd.url)}</a></div>`).join("");
-        return `<details class="cs-row" style="padding:6px 10px">
+        const isExcl = excl.has(f.key);
+        return `<details class="cs-row${isExcl ? " excluded" : ""}" style="padding:6px 10px">
           <summary style="cursor:pointer">${esc(f.name)}
             ${f.duplicates ? `<span class="pill" title="Several providers publish this calendar — compare them below">${f.feeds.length} sources</span>` : ""}
             ${f.imported_events ? `<span class="pill ok">${f.imported_events} imported</span>` : ""}
-            <span class="muted">· ${esc(f.kind)}${f.country ? " · " + esc(f.country) : ""}</span></summary>
+            ${isExcl ? `<span class="pill warn">excluded</span>` : ""}
+            <span class="muted">· ${esc(f.kind)}${f.country ? " · " + esc(f.country) : ""}</span>
+            <button class="ghost tiny" style="float:inline-end" onclick="event.preventDefault();event.stopPropagation();agToggleExclude('${esc(f.key)}')">${isExcl ? "Include" : "Exclude"}</button></summary>
           ${feeds}</details>`;
       }).join("") + (total > 40 ? `<div class="hint">+${total - 40} — type to filter</div>` : "");
     }

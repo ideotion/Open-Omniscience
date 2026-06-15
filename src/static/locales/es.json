@@ -685,5 +685,11 @@
   "Not checked": "Sin comprobar",
   "Sort": "Ordenar",
   "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Un mismo evento presente en varios canales se muestra una sola vez, indicando cada fuente; una discrepancia de fecha permanece visible como entradas separadas.",
-  "imported": "importado"
+  "imported": "importado",
+  "Exclude": "Excluir",
+  "Include": "Incluir",
+  "excluded": "excluido",
+  "Exclude dysfunctional": "Excluir los defectuosos",
+  "Exclude shown": "Excluir los mostrados",
+  "Clear exclusions": "Borrar exclusiones"
 }

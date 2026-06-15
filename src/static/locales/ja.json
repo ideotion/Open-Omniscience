@@ -685,5 +685,11 @@
   "Not checked": "未確認",
   "Sort": "並べ替え",
   "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "複数のフィードに含まれる同じイベントは一度だけ表示され、すべての情報源を列挙します。日付の不一致は別々の項目として残ります。",
-  "imported": "インポート済み"
+  "imported": "インポート済み",
+  "Exclude": "除外",
+  "Include": "含める",
+  "excluded": "除外済み",
+  "Exclude dysfunctional": "異常なものを除外",
+  "Exclude shown": "表示中を除外",
+  "Clear exclusions": "除外をクリア"
 }
