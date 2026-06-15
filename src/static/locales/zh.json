@@ -700,5 +700,14 @@
   "Remove": "移除",
   "Choose a .ics file first.": "请先选择一个 .ics 文件。",
   "Calendar removed.": "已移除日历。",
-  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "上传本地 .ics 文件 — 不联网。其中的事件将（去重后）并入您的日程，成为一个可移除的日历；文件经解析后即丢弃。"
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "上传本地 .ics 文件 — 不联网。其中的事件将（去重后）并入您的日程，成为一个可移除的日历；文件经解析后即丢弃。",
+  "Corpus integrity (fixity)": "语料库完整性（固性）",
+  "Check corpus integrity": "检查语料库完整性",
+  "Checking…": "正在检查…",
+  "checked": "已检查",
+  "intact": "完好",
+  "diverged": "已偏离",
+  "All articles match their capture-time hash.": "所有文章均与其采集时的哈希值一致。",
+  "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "篇文章与其采集时的哈希值不符——存在篡改或位衰减的迹象。未更改任何内容。",
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "重新计算每篇已存文章的哈希值，并与采集时记录的哈希值进行比对。不一致即表示存储内容已与其采集时的哈希值不符——存在篡改或位衰减的迹象。不会更改任何内容；该检查在本地进行，且为只读。"
 }

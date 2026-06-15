@@ -862,3 +862,16 @@ def test_agenda_add_ics_calendar():
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     for k in ("Add a calendar", "Import calendar", "Your calendars", "Remove"):
         assert k in en, f"add-calendar label {k!r} must be keyed ×12"
+
+
+def test_fixity_ui_present():
+    """The local fixity audit (B-2) has a Settings UI: a button + loud results panel
+    wired to /api/integrity/fixity, with the divergence banner keyed ×12."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'id="fixity-btn"' in html and "function runFixity" in html, "fixity button + handler required"
+    assert "/api/integrity/fixity" in html, "the UI must call the fixity endpoint"
+    assert 'id="fixity-result"' in html, "a results panel is required"
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    for k in ("Check corpus integrity", "All articles match their capture-time hash."):
+        assert k in en, f"fixity string {k!r} must be keyed ×12"

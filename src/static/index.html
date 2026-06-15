@@ -2000,6 +2000,15 @@
       <div id="vacuum-result" class="hint"></div>
 
       <hr>
+      <h3 style="margin-bottom:6px">Corpus integrity (fixity)</h3>
+      <p class="muted" style="margin-top:0"><span>Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.</span></p>
+      <div class="row">
+        <div style="flex:0 0 auto"><button class="secondary" id="fixity-btn" onclick="runFixity(this)">Check corpus integrity</button></div>
+        <div id="fixity-summary" class="hint" style="flex:1;align-self:center"></div>
+      </div>
+      <div id="fixity-result" style="margin-top:8px"></div>
+
+      <hr>
       <h3 style="margin-bottom:6px">Network fetch mode</h3>
       <p class="muted" style="margin-top:0" id="fetch-note">Transparent mode names this tool in the
         User-Agent (polite, but identifiable). Protected mode sends a generic User-Agent and routes
@@ -4705,6 +4714,33 @@
       } catch (e) {
         out.textContent = t("Compaction failed:") + " " + e.message;
       } finally { btn.disabled = false; }
+    }
+
+    // Local fixity audit (B-2): re-hash the corpus vs the capture-time hash. Loud,
+    // read-only; nothing is auto-fixed. Backend: /api/integrity/fixity.
+    async function runFixity(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      btn.disabled = true;
+      $("fixity-summary").textContent = t("Checking…");
+      $("fixity-result").innerHTML = "";
+      try {
+        const r = await api("/api/integrity/fixity");
+        const bad = (r.mismatched || 0) + (r.missing_hash || 0);
+        $("fixity-summary").innerHTML =
+          `<b>${(r.checked || 0).toLocaleString()}</b> ${esc(t("checked"))} · ` +
+          `<span class="pill ok">${(r.ok || 0).toLocaleString()} ${esc(t("intact"))}</span>` +
+          (bad ? ` · <span class="pill err">${bad.toLocaleString()} ${esc(t("diverged"))}</span>` : "");
+        if (bad) {
+          const rows = (r.mismatches || []).slice(0, 200).map(m =>
+            `<div class="vr"><span>#${m.id} ${esc(m.title || m.url || "")}</span>` +
+            `<b class="muted" title="${esc(m.reason || "")}">${esc((m.stored_hash || "—").slice(0, 12))} ≠ ${esc((m.computed_hash || "").slice(0, 12))}</b></div>`).join("");
+          $("fixity-result").innerHTML =
+            `<div class="note err">${esc(bad.toLocaleString())} ${esc(t("articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed."))}</div>` + rows;
+        } else {
+          $("fixity-result").innerHTML = `<div class="note ok">${esc(t("All articles match their capture-time hash."))}</div>`;
+        }
+      } catch (e) { $("fixity-summary").innerHTML = `<span class="note err">${esc(e.message)}</span>`; }
+      finally { btn.disabled = false; }
     }
 
     // ---- Backup v2: one signed archive; restore = MERGE with a preview ---- //
