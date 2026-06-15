@@ -713,5 +713,9 @@
   "…or subscribe by URL (webcal / https)": "…または URL で購読（webcal / https）",
   "Add from URL": "URL から追加",
   "Enter a calendar URL first.": "先にカレンダーの URL を入力してください。",
-  "Fetch a calendar from a URL you provided": "指定した URL からカレンダーを取得"
+  "Fetch a calendar from a URL you provided": "指定した URL からカレンダーを取得",
+  "Export this analysis:": "この分析をエクスポート：",
+  "Export signed evidence": "署名済みエビデンスをエクスポート",
+  "Signed, reproducible record of the query + method behind this analysis": "この分析の背後にあるクエリと手法の、署名済みで再現可能な記録",
+  "Signed, tamper-evident bundle of the analysed articles": "分析した記事の署名済み・改ざん検知可能なバンドル"
 }

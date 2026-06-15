@@ -713,5 +713,9 @@
   "…or subscribe by URL (webcal / https)": "…or subscribe by URL (webcal / https)",
   "Add from URL": "Add from URL",
   "Enter a calendar URL first.": "Enter a calendar URL first.",
-  "Fetch a calendar from a URL you provided": "Fetch a calendar from a URL you provided"
+  "Fetch a calendar from a URL you provided": "Fetch a calendar from a URL you provided",
+  "Export this analysis:": "Export this analysis:",
+  "Export signed evidence": "Export signed evidence",
+  "Signed, reproducible record of the query + method behind this analysis": "Signed, reproducible record of the query + method behind this analysis",
+  "Signed, tamper-evident bundle of the analysed articles": "Signed, tamper-evident bundle of the analysed articles"
 }

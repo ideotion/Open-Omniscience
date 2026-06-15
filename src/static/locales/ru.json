@@ -713,5 +713,9 @@
   "…or subscribe by URL (webcal / https)": "…или подписаться по URL (webcal / https)",
   "Add from URL": "Добавить по URL",
   "Enter a calendar URL first.": "Сначала введите URL календаря.",
-  "Fetch a calendar from a URL you provided": "Загрузить календарь по указанному URL"
+  "Fetch a calendar from a URL you provided": "Загрузить календарь по указанному URL",
+  "Export this analysis:": "Экспортировать этот анализ:",
+  "Export signed evidence": "Экспорт подписанных доказательств",
+  "Signed, reproducible record of the query + method behind this analysis": "Подписанная воспроизводимая запись запроса и метода этого анализа",
+  "Signed, tamper-evident bundle of the analysed articles": "Подписанный защищённый от подделки пакет проанализированных статей"
 }

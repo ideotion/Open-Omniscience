@@ -713,5 +713,9 @@
   "…or subscribe by URL (webcal / https)": "…বা URL দিয়ে সাবস্ক্রাইব করুন (webcal / https)",
   "Add from URL": "URL থেকে যোগ করুন",
   "Enter a calendar URL first.": "প্রথমে একটি ক্যালেন্ডার URL লিখুন।",
-  "Fetch a calendar from a URL you provided": "আপনার দেওয়া URL থেকে ক্যালেন্ডার আনুন"
+  "Fetch a calendar from a URL you provided": "আপনার দেওয়া URL থেকে ক্যালেন্ডার আনুন",
+  "Export this analysis:": "এই বিশ্লেষণ রপ্তানি করুন:",
+  "Export signed evidence": "স্বাক্ষরিত প্রমাণ রপ্তানি করুন",
+  "Signed, reproducible record of the query + method behind this analysis": "এই বিশ্লেষণের পেছনের কোয়েরি ও পদ্ধতির স্বাক্ষরিত, পুনরুৎপাদনযোগ্য রেকর্ড",
+  "Signed, tamper-evident bundle of the analysed articles": "বিশ্লেষিত নিবন্ধগুলোর স্বাক্ষরিত, কারচুপি-প্রকাশক বান্ডিল"
 }

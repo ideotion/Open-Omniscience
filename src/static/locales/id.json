@@ -713,5 +713,9 @@
   "…or subscribe by URL (webcal / https)": "…atau berlangganan via URL (webcal / https)",
   "Add from URL": "Tambah dari URL",
   "Enter a calendar URL first.": "Masukkan URL kalender terlebih dahulu.",
-  "Fetch a calendar from a URL you provided": "Ambil kalender dari URL yang Anda berikan"
+  "Fetch a calendar from a URL you provided": "Ambil kalender dari URL yang Anda berikan",
+  "Export this analysis:": "Ekspor analisis ini:",
+  "Export signed evidence": "Ekspor bukti bertanda tangan",
+  "Signed, reproducible record of the query + method behind this analysis": "Catatan bertanda tangan dan dapat direproduksi atas kueri + metode di balik analisis ini",
+  "Signed, tamper-evident bundle of the analysed articles": "Paket bertanda tangan dan antirusak dari artikel yang dianalisis"
 }
