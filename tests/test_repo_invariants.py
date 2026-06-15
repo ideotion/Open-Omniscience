@@ -914,3 +914,14 @@ def test_analysis_window_absorbs_exports():
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     assert "Export this analysis:" in en
+
+
+def test_analysis_window_absorbs_synthesize():
+    """Item I: Synthesize is reachable from the analysis window too (its own query +
+    a dedicated panel), so the last Search-tab capability is mirrored. The Search-tab
+    call stays back-compatible (optional query/mount args)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "function synthesizeResults(btn, qArg, mountId)" in html, "synthesize must take optional query + mount"
+    assert "synthesizeResults(this, anQuery(), 'an-synth')" in html, "analysis window wires its own query + panel"
+    assert 'id="an-synth"' in html, "a synthesis result panel in the analysis window"
+    assert "synthesizeResults(this)" in html, "the Search-tab call site stays back-compatible"
