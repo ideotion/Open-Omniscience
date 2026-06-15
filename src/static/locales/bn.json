@@ -734,5 +734,6 @@
   "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "কীওয়ার্ড নিষ্কাশন স্পেস ও যতিচিহ্নে বিভক্ত করে; এটি চীনা, জাপানি বা কোরীয় ভাষা খণ্ডন করে না, তাই এখানে দেখানো CJK কীওয়ার্ড সমষ্টি অনির্ভরযোগ্য।",
   "Mindmap": "মাইন্ড ম্যাপ",
   "No strong associations yet.": "এখনও কোনো শক্তিশালী সম্পর্ক নেই।",
-  "Radial map: the seed keyword at the centre, its strongest relatives outward.": "রেডিয়াল মানচিত্র: কেন্দ্রে বীজ কীওয়ার্ড, এর সবচেয়ে শক্তিশালী সম্পর্কগুলো বাইরের দিকে।"
+  "Radial map: the seed keyword at the centre, its strongest relatives outward.": "রেডিয়াল মানচিত্র: কেন্দ্রে বীজ কীওয়ার্ড, এর সবচেয়ে শক্তিশালী সম্পর্কগুলো বাইরের দিকে।",
+  "Text only — images, audio and video aren't analysed.": "শুধু টেক্সট — ছবি, অডিও ও ভিডিও বিশ্লেষণ করা হয় না।"
 }

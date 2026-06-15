@@ -992,3 +992,13 @@ def test_analysis_mindmap_subtab():
     an_body = html[an_start:an_start + 2200]
     assert "ins-mindmap" not in an_body, "renderAnMindmap must not touch the Insights host"
     assert "_mm" not in an_body, "renderAnMindmap must not share the Insights _mm* state"
+
+
+def test_text_only_modality_disclosed():
+    """Audit-07 B1: the app analyses TEXT only — images/audio/video aren't analysed.
+    Stated visibly in the analysis window (keyed ×12), not left implicit."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "Text only — images, audio and video aren't analysed." in html
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert "Text only — images, audio and video aren't analysed." in en
