@@ -731,5 +731,8 @@
   "API reference (Swagger) ↗": "API संदर्भ (Swagger) ↗",
   "Pick a document on the left.": "बाईं ओर एक दस्तावेज़ चुनें।",
   "CJK not segmented — unreliable": "CJK खंडित नहीं — अविश्वसनीय",
-  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "कीवर्ड निष्कर्षण रिक्त स्थान और विराम चिह्नों पर विभाजित करता है; यह चीनी, जापानी या कोरियाई को खंडित नहीं करता, इसलिए यहाँ दिखाए गए CJK कीवर्ड समुच्चय अविश्वसनीय हैं।"
+  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "कीवर्ड निष्कर्षण रिक्त स्थान और विराम चिह्नों पर विभाजित करता है; यह चीनी, जापानी या कोरियाई को खंडित नहीं करता, इसलिए यहाँ दिखाए गए CJK कीवर्ड समुच्चय अविश्वसनीय हैं।",
+  "Mindmap": "माइंड मैप",
+  "No strong associations yet.": "अभी तक कोई मज़बूत संबंध नहीं।",
+  "Radial map: the seed keyword at the centre, its strongest relatives outward.": "रेडियल मानचित्र: केंद्र में बीज कीवर्ड, इसके सबसे मज़बूत संबंध बाहर की ओर।"
 }

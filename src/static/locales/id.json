@@ -731,5 +731,8 @@
   "API reference (Swagger) ↗": "Referensi API (Swagger) ↗",
   "Pick a document on the left.": "Pilih dokumen di sebelah kiri.",
   "CJK not segmented — unreliable": "CJK tidak disegmentasi — tidak andal",
-  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "Ekstraksi kata kunci memisahkan berdasarkan spasi dan tanda baca; ia TIDAK menyegmentasi bahasa Tionghoa, Jepang, atau Korea, sehingga agregat kata kunci CJK yang ditampilkan di sini tidak andal."
+  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "Ekstraksi kata kunci memisahkan berdasarkan spasi dan tanda baca; ia TIDAK menyegmentasi bahasa Tionghoa, Jepang, atau Korea, sehingga agregat kata kunci CJK yang ditampilkan di sini tidak andal.",
+  "Mindmap": "Peta pikiran",
+  "No strong associations yet.": "Belum ada asosiasi yang kuat.",
+  "Radial map: the seed keyword at the centre, its strongest relatives outward.": "Peta radial: kata kunci awal di tengah, kerabat terkuatnya ke arah luar."
 }
