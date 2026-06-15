@@ -22,8 +22,12 @@ For inquiries, contact: open-omniscience@ideotion.com
 """
 Database Models for Open Omniscience
 
-This module defines the SQLAlchemy models for the database,
-supporting both SQLite (default) and PostgreSQL.
+This module defines the SQLAlchemy models for the database. **SQLite is the
+supported backend.** A PostgreSQL URL is honoured at the engine layer, but
+full-text search (FTS5), the single-writer gate, and maintenance/PRAGMA tuning
+are SQLite-only -- search would error on PostgreSQL because the FTS table is
+never created there (a PostgreSQL FTS path is possible future server work, not a
+supported deployment today).
 Includes tables for sources and articles, with relationships and indexes.
 
 Author: Ideotion

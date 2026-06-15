@@ -189,8 +189,10 @@ results = session.query(Article).filter(
 
 ##### SQLite:
 - **"Database is locked"**:
-  - SQLite only allows one writer at a time. Ensure no other process is writing to the database.
-  - Use WAL mode (see [Performance Tips](#performance-tips)).
+  - SQLite only allows one writer at a time. WAL mode is enabled by default
+    (`src/database/session.py`) and a process-wide single-writer gate
+    (`src/database/writer.py`) serialises in-app writes, so concurrent ingest +
+    import no longer collide. A persistent lock means another *process* is writing.
 
 - **"Too many open files"**:
   - SQLite opens a new connection for each thread. Limit the number of threads or use connection pooling.
@@ -246,7 +248,9 @@ results = session.query(Article).filter(
      ```
 
 ---
-**© 2026 Ideotion. All rights reserved.**
+*Copyright © 2026 Ideotion. Licensed under the GNU General Public License v3.0
+or later (GPL-3.0-or-later) — see [LICENSE](../LICENSE). This is free software;
+you may redistribute and modify it under those terms.*
 
 
 ---
@@ -262,6 +266,11 @@ The app binds to loopback only and (for a single local user) requires no auth.
 
 ### Endpoint groups
 
+This is a **map of the key groups, not an exhaustive list** — the live
+`/openapi.json` (above) is always authoritative. The routers are wired in
+`src/api/main.py` via `include_router(...)`; groups marked **[analysis]** require
+the `[analysis]` extra (the app still boots without it, those endpoints disabled).
+
 | Prefix | What it does |
 |--------|--------------|
 | `GET /api/health` | Liveness + version |
@@ -270,7 +279,8 @@ The app binds to loopback only and (for a single local user) requires no auth.
 | `… /api/sources`, `/api/sources/...` | Source + group + metadata management |
 | `POST /api/sources/seed-defaults` | Seed the curated source catalogs (news + markets + generated world catalog) |
 | `GET /api/database/stats`, `/coverage`, `/countries` | Corpus row counts + on-disk size; country coverage; per-country source counts + topic keywords |
-| `GET /api/database/backup`, `POST /api/database/restore` | Consistent SQLite snapshot download; validated, snapshotted restore (SQLite only) |
+| `GET /api/database/backup` | Consistent SQLite snapshot download (SQLite only) |
+| `POST /api/database/v2/restore/preview`, `/v2/restore/commit`, `/api/backup/v2/*` | **Additive-only** restore via the signed `oo-backup-2` artifact: preview the merge plan, then commit. Restore **never overwrites your corpus** — it merges duplicate-lessly, keeping local values on conflict (the destructive replace path was removed on 2026-06-13) |
 | `GET/PUT /api/settings` | GUI preferences (theme, default result limit) |
 | `… /api/scheduler/...` | Background ingester: status, start, stop, run-now, config (modes: rss / crawl / markets) |
 | `… /api/markets/rules`, `/rules/{id}/run`, `/overview` | Per-source price-extraction rules + a "test" run + Markets overview |
@@ -288,11 +298,26 @@ The app binds to loopback only and (for a single local user) requires no auth.
 | `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`, `GET /api/custody/export`, `POST /api/custody/verify` | Append-only, hash-chained signed chain-of-custody log + offline verification |
 | `GET/PUT /api/custody/settings` | Runtime custody preferences (post-quantum signing, anchoring mode, auto-log) — reports *effective*, availability-aware state |
 | `POST /api/custody/anchor`, `GET /api/custody/providers` | Anchor a Merkle root (local / OpenTimestamps) + provider availability |
-| `… /api/keywords/...`, `/api/analysis/articles/similarity` | Keyword extraction + article similarity |
+| `… /api/keywords/...`, `/api/analysis/articles/similarity` | **[analysis]** Keyword extraction + article similarity |
+| `GET /api/search/omni` | Index-backed federated omnibar (articles FTS5 + keywords + sources + wiki/law) |
+| `… /api/jobs/...` | Task-manager job aggregation (collect pass, in-flight fetch, wiki-dump queue + reorder) |
+| `… /api/system/...` | System vitals + network state/consent (airplane-mode kill switch, local interface IPs) |
+| `… /api/safety/...` | Safety controls: kill switch, discovery gate, restore-from-encrypted-artifact |
+| `… /api/briefing/...` | Home briefing producers (evidence-tiered cards; method+caveat+n) |
+| `… /api/insights/...`, `/api/insights/who`, `/where` | Keyword/entity analytics + corpus-wide Who/Where aggregation |
+| `… /api/links/...` (shared, preview) | Shared-outbound-link / citation-graph analysis + local link-preview dialog |
+| `… /api/events/...`, `/api/events/astronomy`, `/climate` | Agenda events incl. locally-computed astronomy (Meeus) + El Niño table |
+| `POST /api/weather/context` | Consented, bounded Open-Meteo reanalysis slice for corroboration |
+| `… /api/law/...` | Tracked legislation/primary-source change feed |
+| `… /api/integrity/...` | Echo / coordination / lineage signals |
+| `… /api/annotations/...` | Local, optionally signed article annotations |
+| `… /api/wiki/...` | Wikipedia editions, watched pages, dump download/read, corpus sync |
+| `… /api/hazards/...`, `/api/timemap` | Hazard overlays + space-time map |
+| `GET /unlock`, `POST /api/unlock`, `/create-db`, `/doctor`, `/encrypt-db` | At-rest encryption: locked-boot unlock screen, create encrypted/plaintext store, header attestation, one-way encrypt tool |
 
-Routers marked **[analysis]** (commodities, statistics, keywords) require the
-`[analysis]` extra; without it the app still boots with the core spine and those
-endpoints are disabled.
+Routers marked **[analysis]** (commodities, statistics, keywords, framing)
+require the `[analysis]` extra; without it the app still boots with the core
+spine and those endpoints are disabled.
 
 Behaviour notes:
 - Ingestion fetches through the ethical fetcher only (robots.txt fail-closed, rate

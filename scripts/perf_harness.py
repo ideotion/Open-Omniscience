@@ -13,6 +13,15 @@ Run:  python scripts/perf_harness.py [--articles 6400] [--keywords 228000]
                                      [--scale 0.1] [--json out.json]
                                      [--endpoints-only] [--encrypted]
 
+100k SCALE PROFILE (audit-07 B3 / OO-D8-001): a year of continuous collection is
+~10-20x the T1-tested shape. Run the named-path profile with
+    python scripts/perf_harness.py --articles 100000 --keywords 3600000 \
+        --encrypted --json perf_100k.json
+It now also times the FTS rebuild and the corpus-window/search/briefing paths the
+audit flagged as unmeasured. NOTE: this run is heavy (~GBs on disk, minutes-to-
+hours of build + decrypt) and is intended for a maintainer/CI box, not this
+sandbox -- measure first, then fix what fails the existing thresholds.
+
 Honesty notes (the numbers' method, printed with them):
   * Synthetic corpus: Zipf-distributed mentions over 16 catalog languages,
     ~35 KB of text per article -- the SHAPE of the maintainer's live corpus,
@@ -252,9 +261,33 @@ HOT_ENDPOINTS = [
     "/api/insights/graph?term=en-term-1",
     "/api/insights/map",
     "/api/timemap/range",
-    "/api/briefing",  # Home cards
+    "/api/briefing",  # Home cards (briefing recompute) -- audit-07 B3
     "/api/articles?limit=50",  # reader list
+    "/api/search/omni?q=en-term-1",  # index-backed omnibar (FTS5) -- audit-07 B3
+    "/api/insights/corpus-sentiment?days=3650",  # a corpus-window aggregate -- audit-07 B3
 ]
+
+
+def measure_fts_rebuild() -> dict:
+    """Time a full FTS5 rebuild over the corpus.
+
+    The FTS rebuild is a maintenance path whose cost grows with the article count;
+    audit-07 B3 named it (with briefing recompute and corpus windows) as unmeasured
+    at ~10-20x the T1-tested scale. Timing it here lets a 100k profile expose any
+    regression instead of discovering it in the field.
+    """
+    from src.database.fts import ensure_fts
+    from src.database.session import engine
+
+    t0 = time.perf_counter()
+    ensure_fts(engine)  # idempotent DDL + INSERT INTO article_fts(article_fts) VALUES ('rebuild')
+    return {
+        "endpoint": "FTS rebuild (maintenance)",
+        "cold_ms": round((time.perf_counter() - t0) * 1000),
+        "warm_ms": None,
+        "status": "ok",
+        "bytes": "-",
+    }
 
 
 def _rss_mb() -> float | None:
@@ -334,7 +367,9 @@ def main() -> int:
     if not args.endpoints_only:
         shape = build_corpus(n_articles, n_keywords, body_kb=args.body_kb)
 
-    results = measure(HOT_ENDPOINTS)
+    # Maintenance path that scales with corpus size (audit-07 B3) before endpoints.
+    maintenance = [measure_fts_rebuild()] if not args.endpoints_only else []
+    results = maintenance + measure(HOT_ENDPOINTS)
 
     out = {
         "method": (

@@ -1025,6 +1025,53 @@ default sources imported over Tor in one pass):
 
 ---
 
+## 5.5 Known limits & honest disclosures
+
+Honesty by construction means stating what the tool *cannot* tell you, not only
+what it can. These are the standing limits of the methods (audit-07 "disclosure
+sweep"). None is a bug; each shapes how to read a result.
+
+- **Keyword/trend counts are lexical, not semantic.** They measure how often
+  words appear, not what was meant. Negation ("not a crisis"), quotation,
+  sarcasm and irony are counted at face value. Volume is coverage, never
+  importance or truth.
+- **Sentiment/tone is VADER, an English-lexicon method.** Scores for non-English
+  articles are unreliable; the Sentiment and Framing surfaces disclose this and
+  show the English-scored share. Tone is a measurable signal, never a verdict
+  that an outlet is biased.
+- **LLM summaries/translations are model artifacts.** A local model can be
+  fluent and wrong. Every generated cell is labelled "verify against the stored
+  article"; treat its output as a lead, and check it against the original text
+  you collected.
+- **The app is text-only.** It analyses article text. Images carry EXIF/metadata
+  honesty only (no forensic/deepfake claims); there is no audio or video
+  analysis. A claim that lives only in a video or image is outside what the tool
+  can see.
+- **CJK word segmentation is not implemented.** Keyword extraction relies on
+  whitespace tokenisation, so Chinese and Japanese keyword analysis is
+  effectively non-functional even though the interface ships in those languages.
+  Stoplists exist for 16 languages; the *analytical depth* per language varies,
+  and this is the largest current gap.
+- **Permissive-host survivorship bias.** Because robots.txt is fail-closed, the
+  corpus over-represents sites that *allow* crawling and structurally
+  under-represents paywalled or crawl-restrictive journalism. This cannot be
+  "fixed" ethically — it is mitigated by preferring official APIs/archives and is
+  disclosed here so you read coverage accordingly.
+- **Your record begins when you started collecting.** Trends and "rising" signals
+  are bounded by your collection window; the tool has no history from before you
+  began. Wikipedia dumps and (future) archives extend the past; otherwise read
+  early-corpus results with the n-shown caveats.
+- **Wikipedia carries its own systemic biases.** Watched/ingested Wikipedia
+  imports the well-documented editorial and coverage skews of each edition.
+  Per-edition sources (`xx.wikipedia.org`) keep it filterable, and it is
+  triangulable like any other source — never an oracle.
+- **Catalog selection bias is measured, not hidden.** The source catalog is a
+  human-curated, de-US-centring-in-progress set; the **World coverage** view
+  shows which countries are and aren't represented so you can see the shape of
+  what you are (and aren't) collecting.
+
+---
+
 ## 6. Troubleshooting
 
 - **The page won't load.** Confirm the process is running and bound to

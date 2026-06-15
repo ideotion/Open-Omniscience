@@ -30,8 +30,9 @@ _extractor = KeywordExtractor()
 
 _CAVEAT = (
     "These are measurable framing SIGNALS (tone via VADER sentiment; emphasised "
-    "terms via frequency), not a judgement that any outlet is biased. Read the "
-    "linked articles and attribute for yourself."
+    "terms via frequency), not a judgement that any outlet is biased. VADER is an "
+    "English-lexicon method, so tone for non-English coverage is unreliable. Read "
+    "the linked articles and attribute for yourself."
 )
 
 

@@ -706,7 +706,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></button>
       </header>
 
-      <div id="vitals-pop" class="vitals-pop taskmgr" hidden role="dialog" aria-label="Task manager">
+      <div id="vitals-pop" class="vitals-pop taskmgr" hidden role="dialog" aria-modal="true" aria-label="Task manager" onkeydown="vitalsKey(event)">
         <div class="vitals-head"><b>Task manager</b>
           <button class="icon-btn" style="width:24px;height:24px" onclick="toggleVitals()" aria-label="Close" title="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
@@ -2048,7 +2048,7 @@
 
   <!-- ====================== COMMAND PALETTE ========================== -->
   <div class="overlay" id="palOverlay" onclick="closePalette()"></div>
-  <div class="palette" id="palette" role="dialog" aria-label="Command palette">
+  <div class="palette" id="palette" role="dialog" aria-modal="true" aria-label="Command palette">
     <input id="pal-input" autocomplete="off" spellcheck="false"
            placeholder="Search your data, jump to a tool, run an action…"
            oninput="renderPalette()" onkeydown="palKey(event)">
@@ -2570,6 +2570,8 @@
     // never a guessed instantaneous value). Hosts are shown as DOMAINS, never
     // full URLs (maintainer-ruled 2026-06-10).
     let _vitalsTimer = null, _vitalsOpen = false, _vitalsPrev = null, _actData = null;
+    // a11y (OO-D13-001): remember who opened a non-native dialog so focus returns.
+    let _vitalsPrevFocus = null, _palPrevFocus = null;
     function _shortUrl(u) {
       if (!u) return "";
       const s = String(u).replace(/^https?:\/\//i, "").replace(/^www\./i, "");
@@ -2848,13 +2850,41 @@
       // switching to it is instant (no new fetch); the 2 s poll keeps it fresh.
       if (key === "schedule") _renderSchedule();
     }
+    // a11y focus management for the two non-native dialogs (palette, task manager)
+    // -- the native <dialog>.showModal() modals trap focus implicitly (OO-D13-001).
+    function _focusables(el) {
+      if (!el) return [];
+      return [...el.querySelectorAll(
+        'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),'
+        + 'textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+      )].filter(n => n.offsetParent !== null || n === document.activeElement);
+    }
+    function _trapTab(el, e) {
+      if (e.key !== "Tab") return;
+      const f = _focusables(el);
+      if (!f.length) { e.preventDefault(); return; }  // keep focus inside even when empty
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
     function toggleVitals() {
       const pop = $("vitals-pop"); if (!pop) return;
       _vitalsOpen = !_vitalsOpen;
       pop.hidden = !_vitalsOpen;
       const chip = $("activity"); if (chip) chip.setAttribute("aria-expanded", String(_vitalsOpen));
-      if (_vitalsOpen) _vitalsPrev = null;
+      if (_vitalsOpen) {
+        _vitalsPrev = null;
+        _vitalsPrevFocus = document.activeElement;  // restore on close
+        const f = _focusables(pop); if (f.length) setTimeout(() => f[0].focus(), 30);
+      } else if (_vitalsPrevFocus && _vitalsPrevFocus.focus) {
+        try { _vitalsPrevFocus.focus(); } catch (_) { /* opener gone */ }
+      }
       _ensureVitalsPoll();
+    }
+    // Esc closes the task manager; Tab is trapped inside it (OO-D13-001).
+    function vitalsKey(e) {
+      if (e.key === "Escape") { e.preventDefault(); if (_vitalsOpen) toggleVitals(); return; }
+      if (_vitalsOpen) _trapTab($("vitals-pop"), e);
     }
 
     async function api(path, opts={}) {
@@ -3108,10 +3138,17 @@
     function openPalette() {
       _palItems = palCommands();
       _omniLive = null;
+      _palPrevFocus = document.activeElement;  // a11y: restore focus on close (OO-D13-001)
       $("palOverlay").classList.add("open"); $("palette").classList.add("open");
       const i = $("pal-input"); i.value = ""; renderPalette(); setTimeout(() => i.focus(), 30);
     }
-    function closePalette() { $("palOverlay").classList.remove("open"); $("palette").classList.remove("open"); }
+    function closePalette() {
+      $("palOverlay").classList.remove("open"); $("palette").classList.remove("open");
+      if (_palPrevFocus && _palPrevFocus.focus) {
+        try { _palPrevFocus.focus(); } catch (_) { /* opener gone */ }
+        _palPrevFocus = null;
+      }
+    }
     // The live half of the omnibar: items built from /api/search/omni results.
     // Each carries a run() like any static command, so keyboard navigation and
     // Enter work unchanged. Group headers disclose the TRUE total behind the
@@ -3200,6 +3237,7 @@
       else if (e.key === "ArrowUp") { e.preventDefault(); palMove(-1); }
       else if (e.key === "Enter") { e.preventDefault(); palRun(_palSel); }
       else if (e.key === "Escape") { closePalette(); }
+      else if (e.key === "Tab") { _trapTab($("palette"), e); }  // a11y trap (OO-D13-001)
     }
 
     // -- Home dashboard ----------------------------------------------------- //
@@ -3217,8 +3255,8 @@
         const on = sc.running;
         $("home-status").innerHTML =
           `Automatic collection: <span class="pill ${on ? "ok" : ""}">${on ? "running" : "stopped"}</span> ` +
-          `<span class="muted">· everything stays on this machine — no cloud, no telemetry.</span>`;
-      } catch (e) { $("home-status").innerHTML = '<span class="muted">Everything stays on this machine — no cloud, no telemetry.</span>'; }
+          `· <span class="muted">Your corpus stays on this machine — no cloud, no telemetry; fetching follows your Network mode.</span>`;
+      } catch (e) { $("home-status").innerHTML = '<span class="muted">Your corpus stays on this machine — no cloud, no telemetry; fetching follows your Network mode.</span>'; }
       loadBriefing();
       refreshDraftCount();
     }
@@ -3599,8 +3637,8 @@
         box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.actors.map(a => {
           const members = a.sources.map(esc).join(", ");
           const btn = a.applied
-            ? `<button class="secondary tiny" onclick="collapseAction('${a.signature}', false)">Expand (revert)</button>`
-            : `<button class="secondary tiny" onclick="collapseAction('${a.signature}', true)">Apply collapse</button>`;
+            ? `<button class="secondary tiny" onclick="collapseAction('${esc(a.signature)}', false)">Expand (revert)</button>`
+            : `<button class="secondary tiny" onclick="collapseAction('${esc(a.signature)}', true)">Apply collapse</button>`;
           const flag = a.applied ? '<span class="pill ok">collapsed</span> ' : '<span class="pill warn">annotated only</span> ';
           return `<div class="panel" style="background:var(--panel2); margin-top:8px">
             ${flag}<b>${a.size} sources</b> · ${a.shared_stories} shared story(ies)
@@ -5917,7 +5955,7 @@
             `<button class="fam-chip" data-norm="${esc(m.normalized)}" data-kind="${esc(f.kind)}"
                onclick="familySplit(this)" title="split this form out">${esc(m.term)}${f.variants > 1 ? " ✕" : ""}</button>`).join("");
           return `<div class="fam-row">
-            <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}">
+            <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
             <div class="fam-body"><div><b>${esc(f.term)}</b> <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
               <span class="muted">· ${f.mentions} mentions</span></div>
@@ -7399,7 +7437,11 @@
       cell.textContent = "Summarizing locally…";
       try {
         const r = await api(`/api/llm/articles/${id}/summarize`, {method: "POST", body: "{}"});
-        cell.textContent = `“${r.result}”  — ${r.model}`;
+        // LLM output is a model artifact — fluent, and capable of being wrong. Carry a
+        // constant verify-against-the-source note (B1 disclosure; auto-translated x12 by
+        // the i18n observer). Data is esc()'d (innerHTML).
+        cell.innerHTML = `“${esc(r.result)}” <span class="muted">— ${esc(r.model)}</span>`
+          + `<div class="hint muted">Generated by a local model — verify against the stored article.</div>`;
       } catch (e) { cell.textContent = ""; toast("Summarize: " + e.message, "err"); }
     }
 
@@ -7409,7 +7451,9 @@
       try {
         const r = await api(`/api/llm/articles/${id}/translate`,
           {method: "POST", body: JSON.stringify({target_language: "English"})});
-        cell.textContent = `[${r.source_language || "?"}→${r.target_language}] ${r.result}  — ${r.model}`;
+        cell.innerHTML = `<span class="muted">[${esc(r.source_language || "?")}→${esc(r.target_language)}]</span> `
+          + `${esc(r.result)} <span class="muted">— ${esc(r.model)}</span>`
+          + `<div class="hint muted">Generated by a local model — verify against the stored article.</div>`;
       } catch (e) { cell.textContent = ""; toast("Translate: " + e.message, "err"); }
     }
 

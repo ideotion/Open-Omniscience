@@ -414,6 +414,28 @@ class EthicalFetcher:
         Tor stream isolation) overrides the session proxy for THIS fetch, keyed on
         the ORIGINAL host so every redirect hop stays on the same circuit.
         """
+        return self._guarded_redirect_get(
+            url, extra_headers=extra_headers, proxies=proxies, stream=True
+        )
+
+    def _guarded_redirect_get(
+        self,
+        url: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        proxies: dict[str, str] | None = None,
+        stream: bool = False,
+    ):
+        """The ONE redirect path: follow bounded redirects manually, re-running the
+        SSRF guard on EVERY hop's target (CWE-918). Returns ``(response, final_url)``.
+
+        Both the page fetch (``_http_get``, ``stream=True``) and the robots.txt
+        fetch (``_get_robots``, ``stream=False``) route through here, so a 30x
+        redirect to an internal address (``127.0.0.1`` / ``169.254.169.254`` / a
+        rebinding hostname) is refused on the robots path exactly as on the page
+        path -- closing the prior gap where robots used ``allow_redirects=True``
+        and so let its redirect chain bypass the guard.
+        """
         current = url
         for _ in range(self._max_redirects + 1):
             kwargs: dict[str, Any] = {"timeout": self.timeout, "allow_redirects": False}
@@ -421,7 +443,7 @@ class EthicalFetcher:
                 kwargs["headers"] = extra_headers
             if proxies:
                 kwargs["proxies"] = proxies
-            if self._real_session:
+            if stream and self._real_session:
                 kwargs["stream"] = True
             resp = self.session.get(current, **kwargs)
             status = resp.status_code
@@ -512,10 +534,12 @@ class EthicalFetcher:
         iso = self._isolated_proxies(getattr(parsed, "netloc", None))
         decision: RobotFileParser | None
         try:
-            robots_kwargs: dict[str, Any] = {"timeout": self.timeout, "allow_redirects": True}
-            if iso:
-                robots_kwargs["proxies"] = iso
-            resp = self.session.get(robots_url, **robots_kwargs)
+            # Follow redirects MANUALLY through the shared guarded loop so a
+            # robots.txt that 30x-redirects to an internal address is refused
+            # (SSRF, CWE-918). Previously this used allow_redirects=True, which let
+            # the robots redirect chain bypass the per-hop SSRF guard that the page
+            # fetch always applied (finding OO-D2-001).
+            resp, _robots_final = self._guarded_redirect_get(robots_url, proxies=iso)
             status = resp.status_code
             if status == 200:
                 rp = RobotFileParser()
@@ -532,8 +556,11 @@ class EthicalFetcher:
             else:
                 # 5xx / unexpected -> cannot determine -> fail closed.
                 decision = None
-        except requests.RequestException:
-            decision = None  # network/timeout -> fail closed
+        except (requests.RequestException, FetchError):
+            # network/timeout, an SSRF-blocked redirect target, a redirect to an
+            # unsupported scheme, or too many redirects -> cannot safely determine
+            # robots -> fail closed.
+            decision = None
 
         self._robots[host_key] = (decision, self._now() + _ROBOTS_TTL)
         return decision

@@ -31,30 +31,70 @@ os.environ.setdefault("OO_NO_SCHEDULER", "1")
 # passphrases and data dirs.
 os.environ.setdefault("OO_DB_PLAINTEXT", "1")
 
-# --- Optional [analysis] extra (finding TEST-06) ----------------------------- #
-# numpy/scipy/pandas/scikit-learn ship only with the [analysis] extra. The app
-# boots fine without them (the analysis/commodity/keyword routers are simply not
-# mounted -- see src/api/main.py:_ANALYSIS_AVAILABLE), so a core-only install
-# (`pip install -e '.[dev]'`) MUST yield a green suite. These modules either
-# import scipy/numpy at collection time (hard ImportError) or exercise endpoints
-# that 404 without the routers; on a core-only install we skip collecting them
-# rather than letting them error/fail. With the extra installed they all run.
-ANALYSIS_AVAILABLE = all(
-    importlib.util.find_spec(_m) is not None for _m in ("numpy", "scipy", "pandas")
+# --- Optional-extra test isolation (findings TEST-06 + OO-D15-005) ----------- #
+# The analysis/nlp extras (numpy/scipy/pandas/scikit-learn/statsmodels/networkx/
+# nltk/vaderSentiment/spaCy) are optional. The app boots fine without them (the
+# analysis/commodity/keyword routers are simply not mounted -- see
+# src/api/main.py:_ANALYSIS_AVAILABLE), so a core-only install
+# (`pip install -e '.[dev]'`) MUST yield a green suite. Two failure modes:
+#   (1) a test module imports an extra at COLLECTION time -> hard ImportError;
+#   (2) a test exercises an analysis router that isn't mounted -> 404 failures.
+# We skip-collect the affected modules rather than letting them error/fail.
+#
+# (1) is now handled GENERICALLY: any test_*.py that directly imports a MISSING
+#     extra is auto-ignored, so a future statsmodels/sklearn/networkx/spaCy test
+#     needs no manual list edit. The prior probe checked only numpy/scipy/pandas
+#     against a hand-maintained list, so such a test would have hard-errored.
+# (2) keeps an explicit list, since a router-404 is a runtime failure no import
+#     scanner can see.
+_EXTRA_MODULES = (
+    "numpy",
+    "scipy",
+    "pandas",
+    "sklearn",
+    "statsmodels",
+    "networkx",
+    "spacy",
+    "nltk",
+    "vaderSentiment",
 )
+_MISSING_EXTRAS = {_m for _m in _EXTRA_MODULES if importlib.util.find_spec(_m) is None}
+# The analysis routers need the numpy/scipy/pandas core of the [analysis] extra.
+ANALYSIS_AVAILABLE = not ({"numpy", "scipy", "pandas"} & _MISSING_EXTRAS)
 
+# (2) Router-dependent modules: green only with the analysis routers mounted.
+_ROUTER_DEPENDENT = [
+    "test_awareness.py",
+    "test_commodity.py",
+    "test_commodity_csv.py",
+    "test_confidence_intervals.py",
+    "test_statistical_tests.py",
+    "test_analysis_api.py",
+    "test_csv_feeds.py",
+    "test_workflow_integration.py",
+    "test_framing_keywords_api.py",
+]
+
+collect_ignore: list[str] = []
 if not ANALYSIS_AVAILABLE:
-    collect_ignore = [
-        "test_awareness.py",
-        "test_commodity.py",
-        "test_commodity_csv.py",
-        "test_confidence_intervals.py",
-        "test_statistical_tests.py",
-        "test_analysis_api.py",
-        "test_csv_feeds.py",
-        "test_workflow_integration.py",
-        "test_framing_keywords_api.py",
-    ]
+    collect_ignore.extend(_ROUTER_DEPENDENT)
+# (1) Generic import-error guard: ignore any test file that directly imports an
+# extra we do not have installed.
+if _MISSING_EXTRAS:
+    import re as _re
+    from pathlib import Path as _Path
+
+    _extra_import = _re.compile(
+        r"^\s*(?:import|from)\s+(" + "|".join(_re.escape(_m) for _m in _EXTRA_MODULES) + r")\b",
+        _re.MULTILINE,
+    )
+    for _f in sorted(_Path(__file__).parent.glob("test_*.py")):
+        try:
+            _src = _f.read_text(encoding="utf-8")
+        except OSError:  # pragma: no cover - unreadable file
+            continue
+        if (set(_extra_import.findall(_src)) & _MISSING_EXTRAS) and _f.name not in collect_ignore:
+            collect_ignore.append(_f.name)
 
 
 import pytest  # noqa: E402 - must follow the OO_DATA_DIR/plaintext env setup above

@@ -175,6 +175,12 @@ def upsert_sources(session, rows: list[dict]) -> dict:
 
     Returns ``{created, updated, skipped, errors}``. A row whose domain already
     exists updates only the fields present in that row.
+
+    Each row runs inside its own SAVEPOINT (``begin_nested``), so a mid-batch
+    failure undoes ONLY that row -- rows staged earlier in the same import survive
+    (finding OO-D7-001). A bare ``session.rollback()`` previously rolled back the
+    whole commit window, silently discarding every good row that preceded the bad
+    one while keeping the rows that followed it.
     """
     from src.database.models import Source
 
@@ -184,19 +190,26 @@ def upsert_sources(session, rows: list[dict]) -> dict:
 
     for row in rows:
         domain = row["domain"]
+        is_update = domain in existing
         try:
-            if domain in existing:
-                src = session.query(Source).filter_by(domain=domain).first()
-                for k, v in row.items():
-                    if k != "domain":
-                        setattr(src, k, v)
+            # begin_nested() issues a SAVEPOINT and flushes at block exit; an error
+            # there auto-rolls-back to the savepoint (this row only) and re-raises.
+            with session.begin_nested():
+                if is_update:
+                    src = session.query(Source).filter_by(domain=domain).first()
+                    for k, v in row.items():
+                        if k != "domain":
+                            setattr(src, k, v)
+                else:
+                    session.add(Source(**row))
+            # The savepoint committed cleanly -> count it only now (so a row that
+            # failed at flush is never miscounted as created/updated).
+            if is_update:
                 updated += 1
             else:
-                session.add(Source(**row))
                 existing[domain] = -1
                 created += 1
         except Exception as exc:  # noqa: BLE001 - one bad row must not abort the batch
-            session.rollback()
             errors.append(f"{domain}: {exc}")
             continue
     session.commit()

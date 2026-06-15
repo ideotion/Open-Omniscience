@@ -387,9 +387,6 @@ note where reality now stands). See the linked feature docs for detail.
 
 ---
 
-*This synthesis is intended to be edited. Strike, reprioritize, or expand any section — especially the
-`⚠️ DECIDE` points — and I'll fold your changes into a finalized product spec and a matching build plan.*
-
 
 ---
 

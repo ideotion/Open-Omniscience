@@ -56,10 +56,9 @@ logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_file: "logs/open_omniscience.log"
 
-# Audit settings
-audit:
-  enabled: true
-  log_directory: "audit"
+# (finding OO-D5-002) the audit: section was removed -- its keys mapped to dead
+# Config fields and no code wrote to that directory. The operative trail is the
+# tamper-evident custody log (src/custody) plus structured logging.
 
 # Security settings (loopback only -- do not widen on a local-first deployment)
 security:

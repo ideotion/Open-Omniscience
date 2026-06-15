@@ -35,7 +35,6 @@ Author: Ideotion
 
 import sys
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -44,6 +43,32 @@ import pytest
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from utils.cache import LRUCache, SimpleCache, cached, lru_cached
+
+
+@pytest.fixture
+def fake_clock(monkeypatch):
+    """Drive cache TTL with a controllable clock instead of real ``time.sleep``.
+
+    Finding OO-D15-006: real-clock waits (6 x ``time.sleep(1.1)`` here) are the
+    suite's principal flakiness vector and add ~7 s of pure waiting. The cache
+    reads wall time via ``time.time()`` at module scope, so we swap that module's
+    ``time`` for a fake whose ``.advance()`` jumps the clock forward deterministically.
+    """
+    import utils.cache as cache_mod
+
+    class _Clock:
+        def __init__(self) -> None:
+            self.now = 1_000_000.0
+
+        def time(self) -> float:
+            return self.now
+
+        def advance(self, dt: float) -> None:
+            self.now += dt
+
+    clock = _Clock()
+    monkeypatch.setattr(cache_mod, "time", clock)
+    return clock
 
 
 class TestSimpleCache:
@@ -60,7 +85,7 @@ class TestSimpleCache:
         cache = SimpleCache()
         assert cache.get("nonexistent") is None
 
-    def test_ttl_expiration(self):
+    def test_ttl_expiration(self, fake_clock):
         """Test that items expire after TTL."""
         cache = SimpleCache(default_ttl=1)  # 1 second TTL
         cache.set("key1", "value1")
@@ -68,20 +93,20 @@ class TestSimpleCache:
         # Should be available immediately
         assert cache.get("key1") == "value1"
 
-        # Wait for expiration
-        time.sleep(1.1)
+        # Advance past expiration (no real sleep)
+        fake_clock.advance(1.1)
 
         # Should be expired now
         assert cache.get("key1") is None
 
-    def test_custom_ttl(self):
+    def test_custom_ttl(self, fake_clock):
         """Test custom TTL for individual items."""
         cache = SimpleCache(default_ttl=5)
         cache.set("key1", "value1", ttl=1)  # 1 second TTL
         cache.set("key2", "value2")  # Uses default 5 second TTL
 
-        # Wait for key1 to expire
-        time.sleep(1.1)
+        # Advance past key1's TTL but not key2's
+        fake_clock.advance(1.1)
 
         assert cache.get("key1") is None
         assert cache.get("key2") == "value2"
@@ -164,15 +189,15 @@ class TestSimpleCache:
         assert stats["misses"] == 1
         assert stats["hit_rate"] == 0.5
 
-    def test_cleanup_expired(self):
+    def test_cleanup_expired(self, fake_clock):
         """Test cleanup of expired items."""
         cache = SimpleCache(default_ttl=1)
 
         cache.set("key1", "value1")
         cache.set("key2", "value2", ttl=2)
 
-        # Wait for key1 to expire
-        time.sleep(1.1)
+        # Advance past key1's TTL but not key2's
+        fake_clock.advance(1.1)
 
         # Cleanup should remove key1
         removed = cache.cleanup_expired()
@@ -224,18 +249,18 @@ class TestLRUCache:
         assert cache.get("key2") == "value2"
         assert cache.size() == 2  # Should not evict anything
 
-    def test_ttl_expiration(self):
+    def test_ttl_expiration(self, fake_clock):
         """Test TTL expiration in LRUCache."""
         cache = LRUCache(default_ttl=1)
         cache.set("key1", "value1")
 
         assert cache.get("key1") == "value1"
 
-        time.sleep(1.1)
+        fake_clock.advance(1.1)
 
         assert cache.get("key1") is None
 
-    def test_lru_with_ttl(self):
+    def test_lru_with_ttl(self, fake_clock):
         """Test LRU eviction with TTL."""
         cache = LRUCache(max_size=2, default_ttl=1)
 
@@ -245,8 +270,8 @@ class TestLRUCache:
         # Access key1
         cache.get("key1")
 
-        # Wait for both to expire
-        time.sleep(1.1)
+        # Advance past both TTLs
+        fake_clock.advance(1.1)
 
         # Both should be expired
         assert cache.get("key1") is None
@@ -282,7 +307,7 @@ class TestCacheDecorators:
         assert result3 == 9
         assert call_count == 2
 
-    def test_cached_decorator_expiration(self):
+    def test_cached_decorator_expiration(self, fake_clock):
         """Test that cached decorator respects TTL."""
         call_count = 0
 
@@ -300,8 +325,8 @@ class TestCacheDecorators:
         result2 = expensive_function(5)
         assert call_count == 1
 
-        # Wait for cache to expire
-        time.sleep(1.1)
+        # Advance past the cache TTL
+        fake_clock.advance(1.1)
 
         # Third call should execute function again
         result3 = expensive_function(5)

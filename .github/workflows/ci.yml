@@ -40,7 +40,7 @@ jobs:
           bandit -r src/ -ll -q
       - name: Dependency audit (pip-audit)
         run: |
-          python -m pip install pip-audit
+          python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
           pip-audit --skip-editable
 
   test:
@@ -62,6 +62,14 @@ jobs:
       - name: Lint (ruff)
         run: ruff check src/ tests/
         continue-on-error: true  # advisory until the legacy style debt is burned down
+
+      # Locale-completeness gate (OO-D15-001): the informed-consent mandate ships
+      # every chrome/consent/caveat string x12 locales. This was a per-session
+      # manual ritual; gate it so a locale that declares status:complete but drops
+      # below 100% fails the build (drift can no longer land unblocked). Reads
+      # JSON only -- no extra deps.
+      - name: i18n locale completeness (x12)
+        run: python scripts/i18n_report.py --min 100
 
       - name: Migration drift (models vs Alembic baseline)
         # The CI database is a fresh throwaway file; since at-rest encryption
@@ -107,7 +115,7 @@ jobs:
 
       - name: Dependency audit (pip-audit)
         run: |
-          python -m pip install pip-audit
+          python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
           pip-audit --skip-editable
 
   # The "extras are optional" contract (audit finding TEST-06): a core-only

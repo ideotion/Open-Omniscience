@@ -63,6 +63,30 @@ def test_quarantine_not_imported_by_live_code():
     assert not offenders, f"live code imports quarantined modules: {offenders}"
 
 
+def test_dormant_credibility_columns_never_serialized():
+    """OO-D10-002: ``credibility_score`` / ``political_bias`` are dormant
+    ``ExternalSource`` columns kept null by design (the quarantine removed every
+    fabricated-score surface; the stored 50.0 defaults were NULLed by migration).
+    They must NEVER be re-introduced into an API response -- a future contributor
+    wiring the dormant scorer into a view would resurrect the exact composite-score
+    honesty violation the project forbids (no composite trust/quality scores). The
+    only legitimate uses are the model definition (database/models.py) and the
+    DB->DB merge copy (backup/merge.py); no API module may name them.
+    """
+    api_dir = _SRC / "api"
+    offenders = []
+    for p in api_dir.rglob("*.py"):
+        if "__pycache__" in p.parts:
+            continue
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if "credibility_score" in line or "political_bias" in line:
+                offenders.append(f"{p.relative_to(_ROOT)}:{i}: {line.strip()}")
+    assert not offenders, (
+        "dormant fabricated-score columns surfaced in an API module "
+        f"(honesty-by-construction violation): {offenders}"
+    )
+
+
 def test_no_dangerous_eval_or_deserialization_sinks():
     """S-010: live code must stay free of code-exec / unsafe-deserialization sinks."""
     banned = re.compile(
