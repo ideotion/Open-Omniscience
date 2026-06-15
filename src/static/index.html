@@ -6637,6 +6637,81 @@
       };
     }
 
+    // ---- ooTimeScope reuse for keyword-trend surfaces (Insights Explore +
+    // the corpus window). The /api/insights/trend endpoint returns the FULL
+    // bucketed series (no date params), so the window is applied CLIENT-SIDE by
+    // FILTERING the already-fetched points — never refetched, never thinned
+    // (invariant #16: the full-resolution series within the window is kept and
+    // handed to the existing ooChart renderer UNCHANGED). The bucket key may be
+    // YYYY-MM-DD (day), YYYY-MM (month) or YYYY-Www (ISO week); _trendBucketMs
+    // mirrors ooChart's own toMs so the filter agrees with the renderer. ------ //
+    function _trendBucketMs(key) {
+      const wk = /^(\d{4})-W(\d{2})$/.exec(key);   // ISO week -> its Monday (UTC)
+      if (wk) {
+        const jan4 = Date.UTC(+wk[1], 0, 4);
+        const dow = (new Date(jan4).getUTCDay() + 6) % 7;
+        return jan4 - dow * 864e5 + (+wk[2] - 1) * 7 * 864e5;
+      }
+      if (/^\d{4}-\d{2}$/.test(key)) return Date.parse(key + "-01");
+      return Date.parse(key);
+    }
+    function _trendBucketIso(key) {
+      const ms = _trendBucketMs(key);
+      return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : null;
+    }
+    // Span (oldest -> newest bucket) as ISO dates, to bound the ooTimeScope.
+    function _trendSpan(points) {
+      let min = null, max = null;
+      for (const p of (points || [])) {
+        const iso = _trendBucketIso(p.date);
+        if (!iso) continue;
+        if (min === null || iso < min) min = iso;
+        if (max === null || iso > max) max = iso;
+      }
+      return {min, max};
+    }
+    // Keep only buckets whose start falls in [from,to] (ISO YYYY-MM-DD); the
+    // points keep their original resolution — no downsampling, ever.
+    function _windowTrendPoints(points, from, to) {
+      if (!from && !to) return points || [];
+      const fromMs = from ? Date.parse(from) : -Infinity;
+      const toMs = to ? Date.parse(to) : Infinity;
+      return (points || []).filter(p => {
+        const ms = _trendBucketMs(p.date);
+        return isFinite(ms) && ms >= fromMs && ms <= toMs;
+      });
+    }
+    // Default window = the last 1 year anchored to the data's MAX (never "now"),
+    // or the whole span if it covers less than a year — mirrors mktDefaultWindow.
+    function _trendDefaultWindow(span) {
+      if (!span.min || !span.max) return {from: span.min, to: span.max};
+      const maxD = new Date(span.max + "T00:00:00Z");
+      const yearAgo = new Date(maxD); yearAgo.setUTCFullYear(maxD.getUTCFullYear() - 1);
+      const from = yearAgo.toISOString().slice(0, 10);
+      return {from: from > span.min ? from : span.min, to: span.max};
+    }
+    // Build (or rebuild) an ooTimeScope over a trend point series in `box`.
+    // `redraw(windowedPoints)` re-renders the chart from the CLIENT-FILTERED
+    // full-resolution points (invariant #16 — never downsampled/thinned; the
+    // existing ooChart renderer is handed the windowed points unchanged).
+    // ooTimeScope itself degrades loudly ("not enough data for a time range")
+    // when the span is unusable. Returns the initial {from,to} so the caller's
+    // first paint matches the control.
+    function _buildTrendScope(box, points, redraw) {
+      if (!box) return {from: null, to: null};
+      const span = _trendSpan(points);
+      if (!span.min || !span.max || span.min === span.max) {
+        ooTimeScope(box, {});           // honest "not enough data" message
+        return {from: null, to: null};  // caller paints the full (tiny) series
+      }
+      const def = _trendDefaultWindow(span);
+      ooTimeScope(box, {
+        min: span.min, max: span.max, from: def.from, to: def.to,
+        onChange: ({from, to}) => redraw(_windowTrendPoints(points, from, to)),
+      });
+      return def;
+    }
+
     let _insSubtabs = null, _setSubtabs = null, _corpusSubtabs = null;
 
     // -- Insights (keyword & entity analytics) ------------------------------ //
@@ -6941,9 +7016,17 @@
           const tr = await api(`/api/insights/trend?term=${encodeURIComponent(_corpusTerm)}`);
           if (!tr.resolved) { el.innerHTML = `<div class="muted">${esc(t("No indexed mentions yet."))}</div>`; return; }
           $("corpus-n").textContent = `${tr.total} ${t("mentions in")} ${tr.articles} ${t("articles")}`;
-          el.innerHTML = `<div id="corpus-chart"></div>`;
-          ooChart($("corpus-chart"), [{label: tr.resolved.term, unit: "mentions",
-            points: (tr.points || []).map(pt => ({t: pt.date, v: pt.count}))}], {height: 200, zeroBase: true});
+          // The trend endpoint returns the FULL bucketed series (no date params),
+          // so the ooTimeScope window is applied CLIENT-SIDE by FILTERING the
+          // already-fetched points — never refetched, never thinned (invariant #16).
+          el.innerHTML = `<div style="margin-bottom:8px"><div class="hint">${esc(t("Time range"))}</div>
+            <div id="corpus-timescope"></div></div><div id="corpus-chart"></div>`;
+          const allPts = tr.points || [];
+          const label = tr.resolved.term;
+          const draw = (pts) => ooChart($("corpus-chart"), [{label, unit: "mentions",
+            points: pts.map(pt => ({t: pt.date, v: pt.count}))}], {height: 200, zeroBase: true});
+          const def = _buildTrendScope($("corpus-timescope"), allPts, draw);
+          draw(_windowTrendPoints(allPts, def.from, def.to));
         } else if (which === "articles") {
           const ctx = await api(`/api/insights/context?term=${encodeURIComponent(_corpusTerm)}&limit=25`);
           const ms = ctx.mentions || [];
@@ -7209,14 +7292,22 @@
         ]);
         if (!tr.resolved) { $("ins-trend").innerHTML = `<div class="note err">No indexed mentions of “${esc(term)}”. Index the corpus, or try another term.</div>`; return; }
         const r = tr.resolved;
+        const t8 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         $("ins-trend").innerHTML =
           `<div style="margin-bottom:6px">Resolved to <strong>${esc(r.term)}</strong> ` +
           `<span class="pill">${esc(r.kind)}</span> · ${tr.total} mentions in ${tr.articles} articles ` +
           `<button class="tiny secondary" onclick="openCorpus(${esc(JSON.stringify(r.term))})" title="Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).">⊞ Corpus</button></div>` +
+          `<div style="margin-bottom:8px"><div class="hint">${esc(t8("Time range"))}</div>` +
+          `<div id="ins-trend-scope"></div></div>` +
           `<div id="ins-trend-oo"></div>`;
-        ooChart($("ins-trend-oo"), [{label: r.term, unit: "mentions",
-          points: (tr.points || []).map(pt => ({t: pt.date, v: pt.count}))}],
+        // FULL bucketed series fetched once; the ooTimeScope window FILTERS it
+        // client-side (invariant #16 — never thinned; ooChart unchanged).
+        const allPts = tr.points || [];
+        const insDraw = (pts) => ooChart($("ins-trend-oo"), [{label: r.term, unit: "mentions",
+          points: pts.map(pt => ({t: pt.date, v: pt.count}))}],
           {height: 180, zeroBase: true, lineMin: 8});
+        const insDef = _buildTrendScope($("ins-trend-scope"), allPts, insDraw);
+        insDraw(_windowTrendPoints(allPts, insDef.from, insDef.to));
         renderMindmap(r.term, assoc.pairs);
         loadFraming(r.term);
         $("ins-context").innerHTML = (ctx.mentions || []).length

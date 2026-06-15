@@ -1133,3 +1133,41 @@ def test_ootimescope_range_control():
     assert "windowPricesRange(all, from, to)" in html, (
         "the board must window by absolute [from,to] dates (not a trailing days count)"
     )
+
+
+def test_ootimescope_reused():
+    """The reusable ooTimeScope control (maintainer: "reuse it so date filtering
+    is consistent app-wide") is wired onto the keyword-trend surfaces beyond
+    Markets: the Insights Explore trend and the corpus-window Trend sub-tab.
+
+    Both fetch /api/insights/trend (the FULL bucketed series, no date params), so
+    the window is applied CLIENT-SIDE by FILTERING the already-fetched points and
+    re-rendering through the EXISTING ooChart renderer (invariant #16: the
+    full-resolution series within the window is kept, never thinned).
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the shared windowing helpers + the one factory that mounts an ooTimeScope
+    # over a trend series and re-renders on change.
+    assert "function _buildTrendScope" in html, "the shared trend-scope factory must exist"
+    assert "function _windowTrendPoints" in html, "the client-side trend filter must exist"
+    # the factory mounts the SAME component (not a fork) and recomputes on change.
+    assert "ooTimeScope(box, {" in html, "_buildTrendScope must instantiate the SAME ooTimeScope"
+    assert "onChange: ({from, to}) => redraw(_windowTrendPoints(points, from, to))" in html, (
+        "onChange must re-render from the date-filtered points (no downsampling)"
+    )
+    # default window = last 1 year anchored to the data MAX (never 'now').
+    assert "function _trendDefaultWindow" in html, "a 1-year-from-max default window helper must exist"
+
+    # (1) Insights Explore trend: a new container + the factory wiring.
+    assert 'id="ins-trend-scope"' in html, "Insights Explore must mount #ins-trend-scope"
+    assert '_buildTrendScope($("ins-trend-scope")' in html, (
+        "Insights Explore must build the time-scope over its trend series"
+    )
+    # (2) Corpus window Trend sub-tab: a new container + the factory wiring.
+    assert 'id="corpus-timescope"' in html, "the corpus window Trend tab must mount #corpus-timescope"
+    assert '_buildTrendScope($("corpus-timescope")' in html, (
+        "the corpus Trend tab must build the time-scope over its trend series"
+    )
+    # both surfaces keep handing points to the UNCHANGED ooChart renderer.
+    assert html.count('ooChart($("ins-trend-oo")') == 1
+    assert html.count('ooChart($("corpus-chart")') == 1
