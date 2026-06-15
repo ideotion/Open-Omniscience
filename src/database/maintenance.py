@@ -67,6 +67,44 @@ def ensure_hot_indexes(engine: Engine) -> list[str]:
     return created
 
 
+# De-churn backoff columns on feed_fetch_state (field log finding F). create_all
+# materialises a MISSING table but never adds columns to an existing one, and not
+# every install runs `make migrate`, so an install that already has
+# feed_fetch_state (from the conditional-GET ship) needs these added at boot.
+# Same self-heal pattern as ensure_hot_indexes; idempotent (checks PRAGMA first).
+_FEED_BACKOFF_COLUMNS: dict[str, str] = {
+    "consecutive_unchanged": "ALTER TABLE feed_fetch_state ADD COLUMN consecutive_unchanged INTEGER",
+    "skip_until": "ALTER TABLE feed_fetch_state ADD COLUMN skip_until DATETIME",
+}
+
+
+def ensure_feed_backoff_columns(engine: Engine) -> list[str]:
+    """Add the missing per-feed backoff columns to feed_fetch_state (idempotent).
+
+    Returns the column names added. No-op on a fresh DB (create_all already built
+    them from the model) or a non-sqlite backend or if the table doesn't exist yet.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='feed_fetch_state'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {
+            r[1] for r in conn.execute(text("PRAGMA table_info(feed_fetch_state)")).fetchall()
+        }
+        for name, ddl in _FEED_BACKOFF_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added feed_fetch_state backoff column(s): {', '.join(added)}")
+    return added
+
+
 def optimize_at_boot(engine: Engine) -> dict:
     """Refresh the query planner's statistics, bounded (PRAGMA analysis_limit).
 

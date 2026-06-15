@@ -64,6 +64,44 @@ def round_robin_interleave(sources: list, *, rng: random.Random | None = None) -
     return out
 
 
+def _filter_due_feeds(session, sources: list) -> tuple[list, int]:
+    """Split RSS sources into (due, backed_off_count) by their feed backoff state.
+
+    A source is "backed off" (skipped THIS pass) when its FeedFetchState carries a
+    ``skip_until`` deadline in the future — set after a 200 that served only
+    duplicates (field log finding F). The cap on that deadline guarantees the feed
+    becomes due again soon, so this is a transport de-churn, never an exclusion.
+
+    Sources without a feed (no ``rss_url``) and sources with no/expired state are
+    always due. One bulk query for the relevant states keeps this cheap. Any
+    bookkeeping error degrades to "all due" — the backoff is only an optimisation.
+    """
+    from src.database.models import FeedFetchState
+    from src.ingest.pipeline import feed_is_due
+
+    try:
+        feed_ids = [s.id for s in sources if getattr(s, "rss_url", None)]
+        if not feed_ids:
+            return sources, 0
+        states = {
+            st.source_id: st
+            for st in session.query(FeedFetchState).filter(
+                FeedFetchState.source_id.in_(feed_ids)
+            )
+        }
+        due: list = []
+        backed_off = 0
+        for s in sources:
+            if getattr(s, "rss_url", None) and not feed_is_due(states.get(s.id)):
+                backed_off += 1
+                continue
+            due.append(s)
+        return due, backed_off
+    except Exception:  # noqa: BLE001 - the backoff filter must never break a pass
+        _LOG.debug("feed backoff pre-filter failed; treating all feeds as due", exc_info=True)
+        return sources, 0
+
+
 def select_sources(session, settings: SchedulerSettings):
     """Query of enabled sources matching the scheduler's selection criteria.
 
@@ -286,6 +324,21 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     # a pass (maintainer 2026-06-11). With continuous passes this realises the
     # ruled "one source per country, then repeat".
     sources = round_robin_interleave(sources)
+
+    # Per-feed de-churn backoff (field log finding F): skip RSS feeds that are
+    # within a CAPPED, self-resetting backoff window (a recent 200 served only
+    # duplicates). This is an additive pre-filter — it changes only WHICH feeds
+    # run THIS pass, never the dispatch below, and never an exclusion: the cap
+    # (BACKOFF_CAP_S ~6 h) guarantees every feed is re-checked soon; any new
+    # article / 304 / error already cleared the window. Crawl mode has no feed
+    # state, so it is untouched. Counted honestly as "backed_off", not skipped
+    # silently and not as a duplicate/error.
+    backed_off = 0
+    if settings.mode == "rss":
+        sources, backed_off = _filter_due_feeds(session, sources)
+    if backed_off:
+        agg["backed_off"] = agg.get("backed_off", 0) + backed_off
+
     countries = len({(s.country or "").strip().lower() for s in sources if s.country})
 
     _progress_set(

@@ -12,8 +12,9 @@ no raw-requests bypass, and no silently-stored junk.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 
 import feedparser
@@ -21,6 +22,49 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, FeedFetchState, Source
+
+# --------------------------------------------------------------------------- #
+# Per-feed de-churn backoff (field log finding F, 2026-06-13)
+# --------------------------------------------------------------------------- #
+# Some servers IGNORE conditional-GET headers (ETag / If-Modified-Since) and
+# return a full 200 every pass even when nothing changed (~93% duplicate rate at
+# 1-minute intervals). When a 200 fetch yields ZERO new articles we delay this
+# ONE feed's next re-check by a CAPPED, TEMPORARY, SELF-RESETTING amount.
+#
+# This is a transport DE-CHURN, never an exclusion (maintainer: "no source
+# starved, no selection made; ordering != exclusion"). The cap guarantees the
+# feed is ALWAYS re-checked within ``BACKOFF_CAP_S`` (~6 h); ANY new article, a
+# 304 (the server says unchanged honestly), or a fetch error resets the counter
+# and clears the skip deadline immediately. The state is stored (never hidden)
+# so the task manager / diagnostics can show "backed off until T".
+#
+# delay = min(BACKOFF_BASE_S * 2 ** consecutive_unchanged, BACKOFF_CAP_S)
+# so the 1st no-new-content 200 waits BASE, then 2*BASE, 4*BASE, ... up to CAP.
+#
+# Both bounds are overridable by env so an operator can widen, narrow, or disable
+# the backoff. Default ON. Set OO_FEED_BACKOFF=0 to disable (no skip deadline is
+# ever written; the counter still records for diagnostics).
+def _env_float(name: str, default: float) -> float:
+    try:
+        v = float(os.getenv(name, ""))
+        return v if v > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+# Base delay after the FIRST all-duplicate 200 (5 min): well above the 1-minute
+# hammering the field log saw, small enough that a feed that just went quiet is
+# rechecked soon.
+BACKOFF_BASE_S: float = _env_float("OO_FEED_BACKOFF_BASE_S", 300.0)
+# Hard ceiling (~6 h): a feed is NEVER skipped longer than this, so it can never
+# be starved. The exponential growth is clamped here.
+BACKOFF_CAP_S: float = _env_float("OO_FEED_BACKOFF_CAP_S", 6 * 3600.0)
+# Cap the exponent so 2 ** consecutive_unchanged can't overflow before the min().
+_BACKOFF_MAX_EXP = 20
+
+
+def _backoff_enabled() -> bool:
+    return os.getenv("OO_FEED_BACKOFF", "1") != "0"
 from src.ingest import (
     EthicalFetcher,
     FetchError,
@@ -281,14 +325,19 @@ def ingest_source(
             source.rss_url, require_html=False, extra_headers=extra_headers or None
         )
     except FetchError:
-        # Feed itself blocked/unavailable: nothing to ingest, but not an article failure.
+        # Feed itself blocked/unavailable: nothing to ingest, but not an article
+        # failure. A transient error is NOT a "feed is quiet" signal — reset any
+        # backoff so a recovered feed is re-checked at the normal cadence.
+        _update_feed_backoff(session, source.id, reset=True)
         return tally
 
     _record_feed_state(session, source.id, feed_resp)
 
     if feed_resp.status_code == 304:
-        # Unchanged since last pass — nothing new to parse or ingest.
+        # Unchanged since last pass — nothing new to parse or ingest. The server
+        # answered honestly, so this is NOT penalised: clear any backoff.
         tally["not_modified"] = 1
+        _update_feed_backoff(session, source.id, reset=True)
         return tally
 
     parsed = feedparser.parse(feed_resp.content)
@@ -298,6 +347,15 @@ def ingest_source(
     for link in links:
         outcome = ingest_url(session, source, link, fetcher=fetcher)
         tally[outcome.result.value] += 1
+
+    # De-churn backoff: a 200 that stored ZERO new articles means this feed
+    # served only content we already have. Delay its next re-check (capped,
+    # self-resetting); ANY new article resets it. Servers that ignore conditional
+    # GET (full 200 every pass) are exactly the case this catches.
+    if tally[IngestResult.STORED.value] > 0:
+        _update_feed_backoff(session, source.id, reset=True)
+    else:
+        _update_feed_backoff(session, source.id, reset=False)
 
     return tally
 
@@ -334,6 +392,9 @@ def _record_feed_state(session: Session, source_id: int, resp) -> None:
         if state is None:
             state = FeedFetchState(source_id=source_id)
             session.add(state)
+            # Flush so a same-call _update_feed_backoff() sees THIS row via
+            # session.get and reuses it (a second add() would duplicate the PK).
+            session.flush()
         if resp.etag is not None:
             state.etag = resp.etag
         if resp.last_modified is not None:
@@ -344,6 +405,68 @@ def _record_feed_state(session: Session, source_id: int, resp) -> None:
         import logging
 
         logging.getLogger(__name__).debug("recording feed fetch state failed", exc_info=True)
+
+
+def _update_feed_backoff(session: Session, source_id: int, *, reset: bool) -> None:
+    """Advance or clear the per-feed de-churn backoff (field log finding F).
+
+    ``reset=True`` (new article stored, a 304, or a fetch error): zero the
+    counter and clear the skip deadline — the feed is behaving / changing.
+
+    ``reset=False`` (a 200 that yielded zero new articles): increment the
+    consecutive-unchanged counter and push the skip deadline out exponentially,
+    CLAMPED to :data:`BACKOFF_CAP_S` so the feed is always re-checked soon
+    enough — never starved. When the backoff is disabled (``OO_FEED_BACKOFF=0``)
+    the counter still advances for diagnostics but no skip deadline is written.
+
+    Best-effort and isolated: any error degrades to "no backoff", never blocks
+    ingestion. The row is created on demand so a feed fetched before any state
+    existed still gets bookkeeping.
+    """
+    try:
+        state = session.get(FeedFetchState, source_id)
+        if state is None:
+            if reset:
+                # Nothing to clear and no penalty to record — avoid a useless row.
+                return
+            state = FeedFetchState(source_id=source_id)
+            session.add(state)
+        if reset:
+            state.consecutive_unchanged = 0
+            state.skip_until = None
+            return
+        count = (state.consecutive_unchanged or 0) + 1
+        state.consecutive_unchanged = count
+        if _backoff_enabled():
+            exp = min(count, _BACKOFF_MAX_EXP)
+            delay_s = min(BACKOFF_BASE_S * (2 ** (exp - 1)), BACKOFF_CAP_S)
+            state.skip_until = datetime.now(UTC) + timedelta(seconds=delay_s)
+        else:
+            state.skip_until = None
+    except Exception:  # noqa: BLE001 - backoff is an optimisation, never required
+        import logging
+
+        logging.getLogger(__name__).debug("feed backoff update failed", exc_info=True)
+
+
+def feed_is_due(state: FeedFetchState | None, *, now: datetime | None = None) -> bool:
+    """Return whether a feed should be re-checked THIS pass.
+
+    A feed is due unless it carries a ``skip_until`` deadline in the FUTURE (it
+    was backed off after an all-duplicate 200). The cap on ``skip_until`` (see
+    :data:`BACKOFF_CAP_S`) guarantees the feed becomes due again soon — this is a
+    de-churn, never an exclusion. ``None`` state (never fetched) is always due.
+
+    Pure and side-effect free so the collect loop can pre-filter cheaply; ``now``
+    is injectable for deterministic tests.
+    """
+    if state is None or state.skip_until is None:
+        return True
+    deadline = state.skip_until
+    if deadline.tzinfo is None:
+        # Stored naive (SQLite DateTime) — interpret as UTC, the only thing we write.
+        deadline = deadline.replace(tzinfo=UTC)
+    return (now or datetime.now(UTC)) >= deadline
 
 
 def _exists(session: Session, **filters) -> bool:

@@ -467,6 +467,18 @@ class FeedFetchState(Base):
     no ADD COLUMN migration to run and no 'no such column' risk in the collection
     hot path (the project self-heals indexes but not columns). Validators are
     opaque HTTP tokens, stored verbatim and sent back verbatim — never parsed.
+
+    De-churn backoff (field log finding F, 2026-06-13): some servers IGNORE the
+    conditional headers and return a full 200 every pass even when nothing
+    changed (~93% duplicate rate at 1-minute intervals). ``consecutive_unchanged``
+    counts passes that fetched a 200 yet yielded ZERO new articles, and
+    ``skip_until`` records a CAPPED, TEMPORARY, SELF-RESETTING UTC deadline before
+    which the collect loop skips re-checking this feed. This is a transport
+    de-churn, NEVER an exclusion: the cap guarantees the feed is always re-checked
+    within :data:`src.ingest.pipeline.BACKOFF_CAP_S` (~6 h), and ANY new article,
+    a 304 (the server says unchanged honestly), or a fetch error resets the
+    counter and clears ``skip_until``. Stored (not hidden) so the task manager /
+    diagnostics can surface "backed off until T".
     """
 
     __tablename__ = "feed_fetch_state"
@@ -478,6 +490,10 @@ class FeedFetchState(Base):
     last_modified: Mapped[str | None] = mapped_column(String(128))  # opaque If-Modified-Since
     last_status: Mapped[int | None] = mapped_column(Integer)  # last feed HTTP status seen
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # De-churn backoff: consecutive 200-but-no-new-articles passes, and the
+    # capped UTC deadline before which the feed is skipped (NULL = no backoff).
+    consecutive_unchanged: Mapped[int | None] = mapped_column(Integer)
+    skip_until: Mapped[datetime | None] = mapped_column(DateTime)
 
     def __repr__(self):
         return f"<FeedFetchState(source_id={self.source_id}, status={self.last_status})>"
