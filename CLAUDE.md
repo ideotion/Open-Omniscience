@@ -1072,10 +1072,21 @@ ruling, a contingency, or a deliberate-omission note.
   living-source design lands. NEXT for the extractors themselves: feed the temporal
   map's mention layer with event-places too; extend the country table; aggregate
   entities corpus-wide.
-- **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51):**
-  space-time co-occurrence (never causation) + the user-defined
-  "if-this-then-WATCH" alert engine (explainable, off by default,
-  local-only). After When×Where×Who ingest persistence.
+- **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51) —
+  SLICE 1 SHIPPED (PR #212, 2026-06-15; unblocked now that When×Where×Who
+  persists):** READ-ONLY space-time co-occurrence in src/analytics/convergence.py
+  (find_convergences) + the space_time_convergence briefing producer (investigate
+  bucket, registered last/fail-safe). Groups articles converging on the same PLACE
+  within a TIME WINDOW (default 7d) on the MENTIONED event date (not pub date).
+  Honesty baked in: independence measured by DISTINCT SOURCES (not article count),
+  surfacing gate ≥3 articles AND ≥2 sources (a chatty single source can't
+  manufacture one), shared-outbound-link flagging (_shared_origin, anti-false-
+  triangulation), metric=distinct_sources (NO score), verbatim "never causation …
+  a prompt to read, not proof anything happened" caveat on every cluster. No
+  endpoint/frontend/migration (read-only over T12 tables). tests/test_convergence.py.
+  REMAINING: the user-defined "if-this-then-WATCH" alert engine (explainable, off by
+  default, local-only) — its UX is a GENUINE RULING to bring to the maintainer
+  before building; plus a dedicated convergence VIEW (needs an endpoint + frontend).
 - **Temporal map remainder:** logarithmic time scale (agreed: linear/log
   toggle, labelled ticks, no hidden warp); feed mention-layer with extracted
   event-places.
