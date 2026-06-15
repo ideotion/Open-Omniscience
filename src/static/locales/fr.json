@@ -684,5 +684,6 @@
   "Dysfunctional": "Défaillant",
   "Not checked": "Non vérifié",
   "Sort": "Trier",
-  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Un même événement présent dans plusieurs flux est affiché une seule fois, en listant chaque source ; un désaccord de date reste visible sous forme d'entrées distinctes."
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "Un même événement présent dans plusieurs flux est affiché une seule fois, en listant chaque source ; un désaccord de date reste visible sous forme d'entrées distinctes.",
+  "imported": "importé"
 }

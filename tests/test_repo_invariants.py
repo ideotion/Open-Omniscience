@@ -763,7 +763,7 @@ def test_agenda_category_chips_and_country_flags():
     for fn in ("function renderAgendaCatChips", "function agSetCat", "function agCatHue", "function agFlag"):
         assert fn in html, f"category chips / flags require {fn}()"
     assert "const cat = _agCat," in html, "the category filter must read the chip state (_agCat), not the removed select"
-    assert "AG.categories = fac.categories" in html, "categories must be data-driven from the catalog facets"
+    assert "AG.categories = (fac.categories" in html, "categories must be data-driven from the catalog facets"
     assert "${agFlag(x)} ${esc(x)}" in html, "country options must show the flag emoji beside the ISO-2 code"
     assert ".ag-catchip" in html, "the category chips need their styling"
     # the future "religious" category is pre-keyed so its chip is born translated
@@ -805,3 +805,19 @@ def test_agenda_source_manager_sort_and_status_filter():
     )
     for opt in ('value="ok"', 'value="error"', 'value="unchecked"'):
         assert opt in html, f"the status filter must offer {opt}"
+
+
+def test_agenda_merges_imported_events_as_filterable_class():
+    """Auto-imported feed events surface IN the main agenda (ledger Item E,
+    2026-06-15), deduped server-side and flagged as a distinct, filterable
+    "imported" provenance class — never silently blended with curated events, and
+    shown even under 'subscribed only' (they were explicitly imported).
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "function mapImportedToAgenda" in html, "imported events must map into the agenda shape"
+    assert "/api/events/imported?from=" in html, "loadAgenda must pull imported events (forward-looking)"
+    assert 'category: "imported"' in html and "imported: true" in html, "imported events are their own class"
+    assert "e.imported || (e.sources" in html, "imported events must bypass the subscribed-only filter"
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert "imported" in en, "the 'imported' category label must be keyed ×12"

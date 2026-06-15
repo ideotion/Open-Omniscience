@@ -684,5 +684,6 @@
   "Dysfunctional": "معطّل",
   "Not checked": "لم يُفحص",
   "Sort": "ترتيب",
-  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "الحدث نفسه الوارد من عدة مصادر يُعرض مرة واحدة مع ذكر كل مصدر؛ يبقى اختلاف التاريخ ظاهرًا كإدخالات منفصلة."
+  "The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.": "الحدث نفسه الوارد من عدة مصادر يُعرض مرة واحدة مع ذكر كل مصدر؛ يبقى اختلاف التاريخ ظاهرًا كإدخالات منفصلة.",
+  "imported": "مستورد"
 }
