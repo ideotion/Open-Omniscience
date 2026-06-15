@@ -1297,6 +1297,34 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
+  subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
+  visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:
+  From/To date inputs + a draggable range bar with two handles, pointer+keyboard
+  + presets 1M·6M·1Y·5Y·All as shortcuts; onChange({from,to}); pure DOM/CSS,
+  deterministic; degrades loudly "not enough data for a time range") and REUSED
+  app-wide per the maintainer's "reuse everywhere" choice: Markets commodities
+  board (#197 — replaces the 5-choice #mkt-scale select; windows on ABSOLUTE
+  [from,to] via filter-only windowPricesRange, full-resolution invariant #16
+  held; default = last year anchored to DATA max never "now"), Insights Explore
+  trend + the keyword/corpus analysis-window Trend sub-tab (#199 — client-side
+  filter on /api/insights/trend, shared _buildTrendScope factory, no fork), and
+  the Search tab (#201 — replaces #f-from/#f-to, feeds the SAME start_date/
+  end_date params, default FULL span so a plain search excludes nothing,
+  openAnalysis repointed off the removed inputs). Strings ×12 (From/To/All/Time
+  range + 1M/6M/1Y/5Y kept as compact universal abbreviations); coverage 100%;
+  node --check + test_ootimescope_range_control/_reused + test_search_timescope +
+  test_ui_invariants green. ALSO this session: TEMPORAL-MAP MENTION LAYER (PR
+  #200) — plots /api/insights/where places on the existing map projection
+  (lon2x/lat2y reused, NOT forked), marker AREA ∝ article spread (raw counts, NO
+  score), OFF by default, null-coordinate places surfaced honestly ("N not
+  mapped"), the "Deduced from text, never confirmed." caveat VISIBLE in legend +
+  marker readout (informed-consent layering); +16 strings ×12 (incl. the toggle
+  label + long hover title, since i18n.js translates title/text by English
+  lookup); test_tmap_mention_layer green. REMAINING for these threads: ooChart
+  rollout to commodity-card enlarge/indices board; the map's mention layer also
+  consuming EVENT-places; calendar-picker + typo-tolerant did-you-mean for date
+  search (the range control is the begin/end half).
 - **AUDIT REMEDIATION PASS (2026-06-15, acts on `docs/audit/AUDIT_LOG_2026-06-14.md`;
   plan + per-finding status in `docs/audit/ACTION_PLAN_2026-06-14.md`; ONE PR onto
   0.09):** every finding re-verified at HEAD first (the audit was pinned at ba61162;
