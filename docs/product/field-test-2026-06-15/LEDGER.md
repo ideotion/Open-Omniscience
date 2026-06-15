@@ -388,3 +388,34 @@ on-open, no idle poll); (2) keep a hidden/manual **recompute** affordance for po
 users (since recompute ≠ reload), or drop it entirely; (3) stamp **format** — the
 maintainer said "date + time" (absolute, full month) — keep absolute, or absolute +
 a relative "updated N min ago" in the hover (the #oo-tip pattern used elsewhere)?
+
+---
+
+## Item G — Specific untranslated chrome strings flagged live (running list; all instances of Item D)  ⏭ capture-only
+
+The maintainer is calling out individual untranslated strings as they appear. Each is
+a concrete instance of **Item D**'s class; they accumulate here as a worklist while
+Item D holds the systemic fix (+ the non-regression gate so this list can't regrow).
+
+**G1 (08:13) — Home Briefing transparency paragraph.**
+> "Equal view — every source is counted once; no source is de-amplified in this
+> version. The app gathers and measures; you judge. Each card is one measured signal
+> with its evidence and caveat, never a verdict."
+
+- **Where:** the `<p class="hint">` under the Briefing toolbar, **index.html:766–768**.
+- **Root cause (the inline-markup-split sub-case):** the sentence is split by
+  **`<b>you judge</b>`** into THREE text nodes, so the exact-match engine (`i18n.js`
+  `tr`, which matches a WHOLE text node) has no node equal to the full sentence — and
+  none of the fragments are keyed (grep across all 12 locales = **0 hits** for "Equal
+  view" / "de-amplified" / "gathers and measures"). This is precisely the
+  `--audit-chrome` "fragments split by inline markup" category.
+- **Contrast (the pattern that works):** the nearby "Analytics over the articles your
+  search matched — counts only, never a verdict." (**index.html:826**) is a SINGLE
+  text node and IS keyed + translated ×12 — proof the engine handles it once the
+  markup doesn't bisect the sentence.
+- **Fix:** follow the established **whole-sentence-node** convention (the Agenda intro
+  `1041–1045` and Indices intro `1077–1078` wrap each sentence in its own `<span>`):
+  restructure this `<p>` into whole-sentence `<span>`s (keep "you judge" emphasis as a
+  span that doesn't bisect a sentence, or drop the `<b>`), then key each sentence ×12.
+- **Maps to:** Item D + CLAUDE.md "i18n & LANGUAGE UX" + the "Whole-sentence nodes"
+  note (index.html:1041).
