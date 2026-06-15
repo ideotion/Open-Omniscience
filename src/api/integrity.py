@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from src.database.session import get_db
 from src.integrity import collapse as collapse_mod
 from src.integrity import profile as profile_mod
+from src.verification.fixity import audit_fixity
 
 router = APIRouter(prefix="/api/integrity", tags=["integrity"])
 
@@ -81,3 +82,19 @@ def apply_all(days: int = Query(14, ge=1, le=180), db: Session = Depends(get_db)
 def revert_all() -> dict:
     """Undo all applied collapses."""
     return {"applied": sorted(collapse_mod.revert_all())}
+
+
+@router.get("/fixity")
+def get_fixity(
+    limit: int | None = Query(None, ge=1, description="Optional cap on rows checked."),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Local fixity audit -- re-hash stored articles against their capture-time hash.
+
+    "Reliable memory turned inward": a read-only, LOCAL, no-network integrity check
+    that proves the stored corpus still hashes to what was recorded at ingest. Any
+    divergence (the stored content no longer matches its ``Article.hash``) is
+    reported LOUDLY in ``mismatches``; nothing is ever auto-fixed. The exact method
+    compared travels in the ``method`` field. ``?limit=`` bounds the work.
+    """
+    return audit_fixity(db, limit=limit)
