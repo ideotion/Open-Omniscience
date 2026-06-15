@@ -3268,8 +3268,12 @@
       if (raw.length >= 2) {
         live = _omniItems(raw);
         if (!_omniLive || _omniLive.q !== raw) _omniFetch(raw);
+        // Ruled: Enter -> the corpus/analysis window (default), with the Boolean
+        // Search tab still one item away (nothing lost while capability migrated).
         live.unshift({grp: t("Search"), label: `${t("Run the full Boolean search for")} “${raw}”`,
-          sub: "↵", run: () => { showTab("search"); setTimeout(() => { $("q").value = raw; doSearch(); }, 60); }});
+          sub: "", run: () => { showTab("search"); setTimeout(() => { $("q").value = raw; doSearch(); }, 60); }});
+        live.unshift({grp: t("Search"), label: `${t("Analysis")}: “${raw}”`,
+          sub: "↵", run: () => openAnalysisFor(raw)});
       }
       _palFiltered = [...statics, ...live];
       _palSel = 0;
@@ -7593,6 +7597,18 @@
     // --- Analysis window (Group F): analytics over the articles a search matched.
     // Keywords (article-set aggregate) + the matches themselves; keyword chips
     // open their own analysis (the keyword corpus window). Counts, never a verdict.
+    // Open the analysis window seeded with an explicit query (the omnibar Enter
+    // path — ruled: Enter -> a corpus-of-articles window, not the Search tab).
+    function openAnalysisFor(query) {
+      const q = (query || "").trim();
+      $("an-adv-query").value = q;
+      $("an-adv-source").value = ""; $("an-adv-lang").value = "";
+      $("an-adv-from").value = ""; $("an-adv-to").value = "";
+      $("an-query").textContent = q ? `“${q}”` : "(all articles matching your filters)";
+      $("an-adv-note").textContent = "";
+      showTab("analyze");
+      loadAnalysis(anParams());
+    }
     function openAnalysis() {
       const qtxt = $("q").value.trim();
       $("an-query").textContent = qtxt ? `“${qtxt}”` : "(all articles matching your filters)";
