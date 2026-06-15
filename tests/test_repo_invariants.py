@@ -1026,3 +1026,41 @@ def test_agenda_year_view():
     assert "function renderAgendaYear" in html and "function agYearShift" in html, "year renderer + nav"
     assert "function agOpenMonth" in html, "clicking a month drills into Month view"
     assert 'v === "year"' in html, "the shared nav bar must dispatch year navigation"
+
+
+def test_commodities_category_subtabs():
+    """Commodities board groups cards into CATEGORY sub-tabs (maintainer-ruled
+    COMMODITIES TAB REWORK §1) via the ONE universal subtab component (invariant
+    #18) — never a bespoke impl. The category is DATA-DRIVEN (s.category from
+    /api/markets/series), with an 'All' default lens (like Home families) and an
+    'Other' fallback for unmapped categories; indices are excluded (S&P 500 is an
+    INDEX, not a commodity), so the board never misfiles one as a commodity."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the category nav lives above the card grid
+    assert 'id="commodities-cats"' in html, "the category sub-tab nav must exist"
+    assert html.index('id="commodities-cats"') < html.index('id="mkt-dashboard"'), (
+        "the category nav must precede the card grid"
+    )
+    # driven by the ONE reusable ooSubtabs component, NOT a bespoke tab impl
+    assert "ooSubtabs($(\"commodities-cats\")" in html or \
+           "ooSubtabs(catNav, selectCommodityCat" in html, (
+        "the category tabs must reuse ooSubtabs (universal subtab grammar)"
+    )
+    # the filter callback + the categoriser map exist
+    assert "function selectCommodityCat" in html, "category filter callback required"
+    assert "const MKT_CATS" in html, "the deterministic category map must exist"
+    # "All" is the default lens (the ooSubtabs initial) and shows everything
+    assert '{initial: "__all"}' in html, "'All' (__all) must be the default lens"
+    assert 'key === "__all"' in html, "the '__all' lens must show every category"
+    # data-driven: built from the categories actually present (no empty tab)
+    assert "byCat" in html and "MKT_CATS.filter" in html, (
+        "the present-category list must be data-driven (no empty tab)"
+    )
+    # indices are NOT commodities — excluded from the board
+    assert 's.category !== "index"' in html, (
+        "indices must be excluded from the commodities board"
+    )
+    # the labels are keyed for i18n (auto-translated ×12 via the t() lookup)
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert "All" in en, "the 'All' lens label must be keyed for translation"

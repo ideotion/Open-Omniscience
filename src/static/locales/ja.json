@@ -850,5 +850,6 @@
   "Synthesizing…": "統合中…",
   "LLM offline": "LLM オフライン",
   "Summarizing locally…": "ローカルで要約中…",
-  "Translating locally…": "ローカルで翻訳中…"
+  "Translating locally…": "ローカルで翻訳中…",
+  "Other": "その他"
 }

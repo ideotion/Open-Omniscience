@@ -850,5 +850,6 @@
   "Synthesizing…": "Synthèse…",
   "LLM offline": "LLM hors ligne",
   "Summarizing locally…": "Résumé en local…",
-  "Translating locally…": "Traduction en local…"
+  "Translating locally…": "Traduction en local…",
+  "Other": "Autre"
 }
