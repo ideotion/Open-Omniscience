@@ -709,5 +709,9 @@
   "diverged": "divergentes",
   "All articles match their capture-time hash.": "Todos los artículos coinciden con su hash del momento de la captura.",
   "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "artículos divergen de su hash del momento de la captura — evidencia de manipulación o corrupción de bits. No se cambió nada.",
-  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Vuelve a calcular el hash de cada artículo almacenado y lo compara con el hash registrado cuando se capturó. Una discrepancia significa que el contenido almacenado ya no coincide con su hash del momento de la captura — evidencia de manipulación o corrupción de bits. No se cambia nada; la verificación es local y de solo lectura."
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Vuelve a calcular el hash de cada artículo almacenado y lo compara con el hash registrado cuando se capturó. Una discrepancia significa que el contenido almacenado ya no coincide con su hash del momento de la captura — evidencia de manipulación o corrupción de bits. No se cambia nada; la verificación es local y de solo lectura.",
+  "…or subscribe by URL (webcal / https)": "…o suscribirse por URL (webcal / https)",
+  "Add from URL": "Añadir desde URL",
+  "Enter a calendar URL first.": "Primero introduce una URL de calendario.",
+  "Fetch a calendar from a URL you provided": "Obtener un calendario desde la URL indicada"
 }

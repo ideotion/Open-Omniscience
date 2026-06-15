@@ -348,6 +348,21 @@ def import_ics_text(name: str, ics_text: str) -> dict:
     }
 
 
+def import_ics_url(fetcher, url: str, name: str = "") -> dict:
+    """Add a calendar by URL (webcal/https). Fetches through the GUARDED fetcher —
+    robots fail-closed, kill switch, per-host politeness, proxy — then imports like an
+    uploaded .ics (dedup, user-owned, removable). The network action is consented at
+    the UI (the ONE airplane-mode popup) before this is called; the kill switch is the
+    backstop (an offline fetch refuses here). webcal:// is normalised to https://."""
+    u = (url or "").strip()
+    if u.lower().startswith("webcal://"):
+        u = "https://" + u[len("webcal://"):]
+    if not u.lower().startswith(("http://", "https://")):
+        raise ValueError("URL must be http(s) or webcal")
+    text = _fetch_text(fetcher, u)          # robots / kill-switch / size cap inherited
+    return import_ics_text(name or u, text)
+
+
 def list_user_feeds() -> list[dict]:
     """The user's own uploaded calendars (removable), name-sorted."""
     out = [

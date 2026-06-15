@@ -875,3 +875,22 @@ def test_fixity_ui_present():
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     for k in ("Check corpus integrity", "All articles match their capture-time hash."):
         assert k in en, f"fixity string {k!r} must be keyed ×12"
+
+
+def test_agenda_add_calendar_by_url():
+    """Add a calendar by URL (Item E, the network half): the fetch goes through the
+    guarded fetcher AND is gated by the ONE consent popup (ensureOnline) before any
+    network — never a silent fetch."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "function importIcsUrl" in html and 'id="ics-url"' in html, "URL add control required"
+    assert "/api/events/feeds/import-url" in html, "URL import endpoint wired"
+    # the consent gate MUST precede the network call (no silent fetch). Anchor on
+    # the unique consent reason string for this handler.
+    i_fn = html.index("function importIcsUrl")
+    i_consent = html.index("Fetch a calendar from a URL you provided")
+    i_post = html.index("/api/events/feeds/import-url")
+    assert i_fn < i_consent < i_post, "ensureOnline must gate before the import-url fetch"
+    api = (_SRC / "api" / "events.py").read_text(encoding="utf-8")
+    assert "/feeds/import-url" in api and "make_fetcher()" in api, "backend fetches via the guarded fetcher"
+    feeds = (_SRC / "events" / "feeds.py").read_text(encoding="utf-8")
+    assert "def import_ics_url" in feeds and "webcal://" in feeds, "URL import + webcal normalization"

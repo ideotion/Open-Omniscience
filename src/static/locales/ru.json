@@ -709,5 +709,9 @@
   "diverged": "расходятся",
   "All articles match their capture-time hash.": "Все статьи соответствуют своему хешу на момент захвата.",
   "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "статей расходятся со своим хешем на момент захвата — признак подделки или битового распада. Ничего не изменено.",
-  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Заново вычисляет хеш каждой сохранённой статьи и сравнивает его с хешем, записанным при захвате. Несовпадение означает, что сохранённое содержимое больше не соответствует своему хешу на момент захвата — признак подделки или битового распада. Ничего не изменяется; проверка локальная и только для чтения."
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Заново вычисляет хеш каждой сохранённой статьи и сравнивает его с хешем, записанным при захвате. Несовпадение означает, что сохранённое содержимое больше не соответствует своему хешу на момент захвата — признак подделки или битового распада. Ничего не изменяется; проверка локальная и только для чтения.",
+  "…or subscribe by URL (webcal / https)": "…или подписаться по URL (webcal / https)",
+  "Add from URL": "Добавить по URL",
+  "Enter a calendar URL first.": "Сначала введите URL календаря.",
+  "Fetch a calendar from a URL you provided": "Загрузить календарь по указанному URL"
 }

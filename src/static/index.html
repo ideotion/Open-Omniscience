@@ -1682,6 +1682,10 @@
         <div><label for="ics-file">Choose a .ics file</label><input id="ics-file" type="file" accept=".ics,text/calendar"></div>
         <button class="secondary" onclick="importIcsFile(this)">Import calendar</button>
       </div>
+      <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:6px">
+        <div style="flex:1 1 240px"><label for="ics-url">…or subscribe by URL (webcal / https)</label><input id="ics-url" placeholder="https://example.org/calendar.ics"></div>
+        <button class="secondary" onclick="importIcsUrl(this)">Add from URL</button>
+      </div>
     </section>
     </div>
 
@@ -4025,6 +4029,23 @@
         const r = await api("/api/events/feeds/import-ics", { method: "POST", body: JSON.stringify({ name, ics }) });
         toast(`${r.added} / ${r.events_in_file}`, "ok");
         $("ics-file").value = ""; $("ics-name").value = "";
+        renderImported(); renderUserCalendars(); _agendaMaybeReload();
+      } catch (e) { toast(e.message, "err"); }
+      finally { btn.disabled = false; }
+    }
+    // Add a calendar by URL (network): the ONE consent popup fires first, then the
+    // fetch goes through the guarded fetcher (robots / kill switch / politeness).
+    async function importIcsUrl(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const url = ($("ics-url").value || "").trim();
+      if (!url) { toast(t("Enter a calendar URL first."), "err"); return; }
+      if (!await ensureOnline(t("Fetch a calendar from a URL you provided"))) return;
+      const name = ($("ics-name").value || "").trim();
+      btn.disabled = true;
+      try {
+        const r = await api("/api/events/feeds/import-url", { method: "POST", body: JSON.stringify({ url, name }) });
+        toast(`${r.added} / ${r.events_in_file}`, "ok");
+        $("ics-url").value = ""; $("ics-name").value = "";
         renderImported(); renderUserCalendars(); _agendaMaybeReload();
       } catch (e) { toast(e.message, "err"); }
       finally { btn.disabled = false; }

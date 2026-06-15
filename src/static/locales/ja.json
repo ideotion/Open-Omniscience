@@ -709,5 +709,9 @@
   "diverged": "不一致",
   "All articles match their capture-time hash.": "すべての記事が取得時のハッシュと一致しています。",
   "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "件の記事が取得時のハッシュと食い違っています — 改ざんまたはビット腐敗の証拠です。何も変更されていません。",
-  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "保存された各記事のハッシュを再計算し、取得時に記録されたハッシュと比較します。不一致は、保存された内容が取得時のハッシュと一致しなくなったことを意味します — 改ざんまたはビット腐敗の証拠です。何も変更されません。確認はローカルで行われ、読み取り専用です。"
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "保存された各記事のハッシュを再計算し、取得時に記録されたハッシュと比較します。不一致は、保存された内容が取得時のハッシュと一致しなくなったことを意味します — 改ざんまたはビット腐敗の証拠です。何も変更されません。確認はローカルで行われ、読み取り専用です。",
+  "…or subscribe by URL (webcal / https)": "…または URL で購読（webcal / https）",
+  "Add from URL": "URL から追加",
+  "Enter a calendar URL first.": "先にカレンダーの URL を入力してください。",
+  "Fetch a calendar from a URL you provided": "指定した URL からカレンダーを取得"
 }
