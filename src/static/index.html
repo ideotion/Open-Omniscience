@@ -1304,7 +1304,12 @@
       <div id="ins-trend" style="margin-top:12px"></div>
       <h2 style="margin:14px 0 6px;font-size:13px">Associated keywords (mind-map)</h2>
       <!-- Layered zoom (maintainer-ruled): keyword + relatives-of-relatives →
-           families → super-groups. Buttons switch; zooming far out goes up a level. -->
+           families → super-groups. Buttons switch; zooming far out goes up a level.
+           The control-bar + host are wrapped in #mm-kit so the corpus-window
+           Mindmap sub-tab can RELOCATE the exact same component (no fork, no
+           duplicate IDs) and return it here on leave (#mm-kit-home anchor). -->
+      <div id="mm-kit-home"></div>
+      <div id="mm-kit">
       <div class="row" style="gap:8px;align-items:end;margin-bottom:6px">
         <div class="seg-toggle" id="mm-levels">
           <button class="active" data-level="keyword" onclick="mmLevel('keyword')">Keywords</button>
@@ -1326,6 +1331,7 @@
         <div style="flex:0 0 auto"><button class="secondary tiny" id="mm-expand" onclick="mmExpand()" title="Enlarge the chart">⛶ Enlarge</button></div>
       </div>
       <div id="ins-mindmap"></div>
+      </div><!-- /#mm-kit -->
       <h2 style="margin:14px 0 6px;font-size:13px">How outlets frame this <span class="muted">(VADER tone)</span></h2>
       <div id="ins-framing"></div>
       <h2 style="margin:14px 0 6px;font-size:13px">In context</h2>
@@ -2207,6 +2213,8 @@
     <nav class="tabs" id="corpus-subtabs" style="padding:8px 16px;border-bottom:1px solid var(--line)">
       <button class="active" data-tab="trend">Trend</button>
       <button data-tab="articles">Articles</button>
+      <button data-tab="mindmap"
+        title="Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.">Mindmap</button>
       <button data-tab="links"
         title="Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.">Links</button>
     </nav>
@@ -7194,10 +7202,20 @@
       document.getElementById("corpus-win").showModal();
       (_corpusSubtabs || {select: corpusTab}).select(_corpusTab);
     }
+    // Return the relocatable mind-map kit (#mm-kit) to its Insights home anchor.
+    // Called BEFORE any corpus tab overwrites #corpus-body, so the shared
+    // component (its DOM + live SVG/pan-zoom handlers) is never destroyed.
+    function _mmKitHome() {
+      const kit = $("mm-kit"), home = $("mm-kit-home");
+      if (kit && home && kit.parentNode !== home.parentNode) {
+        home.parentNode.insertBefore(kit, home.nextSibling);
+      }
+    }
     async function corpusTab(which) {
       _corpusTab = which;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       // Button/ARIA state is owned by the ooSubtabs component.
+      _mmKitHome();   // restore the shared mind-map kit before clearing the body
       const el = $("corpus-body"); el.innerHTML = `<div class="muted">…</div>`;
       try {
         if (which === "trend") {
@@ -7224,6 +7242,19 @@
                  ${m.article_id ? `· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a>` : ""}</div>
                <div style="font-size:13px">${esc(m.snippet || m.title || "")}</div></div>`).join("")
             : `<div class="muted">${esc(t("No indexed mentions yet."))}</div>`;
+        } else if (which === "mindmap") {
+          // Reuse the EXACT Insights associations mind-map (renderMindmap →
+          // renderGraph): same radial renderer, same in-map controls
+          // (levels / cloud / period / text-size / enlarge). We RELOCATE the
+          // shared #mm-kit into this pane (no fork, no duplicate IDs), then
+          // point it at THIS window's corpus term. The mind-map's own Period
+          // control honours the date window (the corpus Trend's ooTimeScope is
+          // a client-side filter on a different series, so we don't pretend to
+          // couple them — the mind-map carries its own honest window control).
+          el.innerHTML = `<div id="corpus-mm-host"></div>`;
+          const kit = $("mm-kit");
+          if (kit) $("corpus-mm-host").appendChild(kit);
+          await renderMindmap(_corpusTerm);
         } else if (which === "links") {
           const d = await api(`/api/links/shared?term=${encodeURIComponent(_corpusTerm)}`);
           const rows = d.shared || [];
@@ -9046,6 +9077,9 @@
     _insSubtabs = ooSubtabs($("ins-subtabs"), showInsightCat);
     _setSubtabs = ooSubtabs($("set-subtabs"), showSetCat);
     _corpusSubtabs = ooSubtabs($("corpus-subtabs"), corpusTab);
+    // Closing the corpus window returns the shared mind-map kit to Insights
+    // (so the Insights Explore mind-map is never left empty after a relocation).
+    $("corpus-win").addEventListener("close", _mmKitHome);
     ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
     ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window (Keywords / Articles)
   </script>

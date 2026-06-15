@@ -1374,3 +1374,47 @@ def test_oochart_enlarge_indices():
     assert html.count("function ooChart(") == 1, "ooChart must not be forked"
     # the tiny in-card multiples remain the static SVGs (not converted)
     assert "function dashChartSvg(" in html and "function idxSpark(" in html
+
+
+def test_corpus_window_mindmap_subtab():
+    """Mindmap sub-tab on THE corpus analysis window (ledger "ONE CORPORA
+    SYSTEM": Mindmap is one of the ruled sub-tabs). It must REUSE the existing
+    associations mind-map (renderMindmap → renderGraph) — the same radial
+    renderer that carries the maintainer mind-map rules + in-map controls — NOT
+    a new graph impl, and NOT a new backend endpoint. Pinned so it cannot
+    regress between sessions:
+      * a data-tab="mindmap" button exists in the corpus window's ooSubtabs nav;
+      * corpusTab() handles "mindmap" by relocating the SHARED mind-map kit and
+        calling renderMindmap() for THIS window's corpus term;
+      * the renderer is reused, not forked (one renderMindmap / one renderGraph).
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # 1. the Mindmap button lives in the corpus window's subtab nav.
+    nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
+    assert 'data-tab="mindmap"' in nav, (
+        "the corpus window must carry a Mindmap sub-tab button in its ooSubtabs nav"
+    )
+    assert "Mindmap" in nav, "the sub-tab button label must be DOM text (auto-translated)"
+    # the Trend/Articles/Links siblings stay (nothing lost).
+    for sib in ('data-tab="trend"', 'data-tab="articles"', 'data-tab="links"'):
+        assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
+    # 2. corpusTab dispatches "mindmap" → the SHARED renderer for the window term.
+    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    assert 'which === "mindmap"' in body, "corpusTab must handle the mindmap sub-tab"
+    assert "renderMindmap(_corpusTerm)" in body, (
+        "the Mindmap sub-tab must render the EXISTING associations mind-map for "
+        "THIS window's corpus term (renderMindmap → renderGraph), not a new graph"
+    )
+    assert 'appendChild(kit)' in body or '$("mm-kit")' in body, (
+        "the Mindmap sub-tab must RELOCATE the shared #mm-kit (no fork, no "
+        "duplicate IDs) rather than re-implement the control bar"
+    )
+    # 3. the renderer is reused, not forked: exactly one of each.
+    assert html.count("async function renderMindmap(") == 1, "renderMindmap must not be forked"
+    assert html.count("function renderGraph(") == 1, "renderGraph must not be forked"
+    # 4. the shared kit has a home anchor so it returns to Insights on leave/close.
+    assert 'id="mm-kit"' in html and 'id="mm-kit-home"' in html, (
+        "the relocatable mind-map kit needs a home anchor so Insights is never "
+        "left without its mind-map"
+    )
+    assert "function _mmKitHome(" in html, "the kit must be restorable to Insights"

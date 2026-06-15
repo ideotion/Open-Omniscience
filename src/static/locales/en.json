@@ -892,5 +892,6 @@
   "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.",
   "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.",
   "Stages are descriptive, from real corpus facts — never a score.": "Stages are descriptive, from real corpus facts — never a score.",
-  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between."
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.",
+  "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.": "Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation."
 }
