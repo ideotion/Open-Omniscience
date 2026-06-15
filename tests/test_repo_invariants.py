@@ -1032,6 +1032,56 @@ def test_agenda_year_view():
     assert 'v === "year"' in html, "the shared nav bar must dispatch year navigation"
 
 
+def test_agenda_views():
+    """Agenda remaining views (ledger 'AGENDA CONTENT' — week/trimester/semester/
+    year/decade): Week + Year already shipped; this adds TRIMESTER (3 months),
+    SEMESTER (6 months) and DECADE (10 years), each reusing the Year view's data
+    path + event placement (agEventsInMonth / agFiltered) and the SAME ooSubtabs
+    view switch — no parallel switcher, no new backend endpoint.
+
+    Guards the wiring so the new layouts can't silently regress: the switch offers
+    all four data-tab views, each has its render container + renderer, navigation
+    dispatches per view (trimester ±3 months, semester ±6 months, decade ±10 years),
+    decade cells drill into that Year view, and the period uses an honest empty
+    state — never a hidden/downsampled event set.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+
+    # all four views registered in the ONE ooSubtabs switch (data-tab buttons)
+    for view in ("week", "trimester", "semester", "year", "decade"):
+        assert f'data-tab="{view}"' in html, f"the view switch must offer the {view} view"
+    assert 'ooSubtabs($("agenda-views")' in html, "the view switch must reuse the universal ooSubtabs component"
+
+    # render containers for the new layouts
+    assert 'id="agenda-months"' in html, "trimester/semester need their render container"
+    assert 'id="agenda-decade"' in html, "the decade view needs its render container"
+
+    # renderers + the SHARED event path (Year view's placement helpers reused)
+    for fn in ("function renderAgendaMonths", "function renderAgendaDecade",
+               "function agEventsInMonth", "function agMonthCard"):
+        assert fn in html, f"the new views require {fn}()"
+    # they render from the same filtered rows the other views use
+    assert "renderAgendaMonths(rows, 3)" in html, "trimester = 3 consecutive months over the shared rows"
+    assert "renderAgendaMonths(rows, 6)" in html, "semester = 6 consecutive months over the shared rows"
+    assert "renderAgendaDecade(rows)" in html, "the decade view renders over the shared filtered rows"
+
+    # navigation dispatches per view through the ONE shared nav bar (agNavShift)
+    assert 'view === "trimester"' in html and 'view === "semester"' in html and 'view === "decade"' in html, (
+        "renderAgenda must toggle the new panes by the active view"
+    )
+    assert "agMonthShift(d * 3)" in html, "trimester navigation steps by 3 months"
+    assert "agMonthShift(d * 6)" in html, "semester navigation steps by 6 months"
+    assert "agYearShift(d * 10)" in html, "decade navigation steps by 10 years"
+
+    # decade cells drill into that Year view (reuse the Year layout, not a new one)
+    assert "function agOpenYear" in html and 'agendaSetView("year")' in html, (
+        "clicking a decade year cell must switch to that Year view"
+    )
+
+    # honest empty state for a period with no events (no silent downsampling/hiding)
+    assert "No events in this period." in html, "periods with no events show an honest empty state"
+
+
 def test_commodities_category_subtabs():
     """Commodities board groups cards into CATEGORY sub-tabs (maintainer-ruled
     COMMODITIES TAB REWORK §1) via the ONE universal subtab component (invariant
