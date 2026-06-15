@@ -2221,6 +2221,8 @@
         title="Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.">Links</button>
       <button data-tab="sentiment"
         title="How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.">Sentiment</button>
+      <button data-tab="sources"
+        title="Which sources feed this corpus — the distinct outlets behind the member articles, with their per-corpus article count and the catalog metadata they assert (domain, country, region, language, tags). Counts are exact; the country/region/language/tags are stated by the source catalog (not deduced from text). No score, no ranking — descriptive provenance, not credibility.">Sources</button>
     </nav>
     <div id="corpus-body" style="padding:12px 16px;max-height:64vh;overflow:auto"></div>
   </dialog>
@@ -7292,8 +7294,95 @@
           // full-corpus — we do NOT fake a time-scope window (cf. Sentiment).
           el.innerHTML = `<div id="corpus-keywords-host"><div class="muted">${esc(t("…"))}</div></div>`;
           await renderCorpusKeywords(_corpusTerm, "corpus-keywords-host");
+        } else if (which === "sources") {
+          // SOURCE-DESCRIPTION sub-tab: WHICH sources feed this corpus, with the
+          // catalog metadata they assert — descriptive provenance, NOT the
+          // competitive/angle analysis (a later, corpus-only tab) and NOT tone
+          // (Sentiment owns that). Reuses /api/insights/corpus-sources for the
+          // corpus's DISTINCT sources + their REAL per-corpus article count, then
+          // enriches client-side from the bulk /api/sources catalog (no new
+          // backend, no fork). The function-call-into-a-fresh-host pattern
+          // (Sentiment/Keywords), never DOM relocation. No time-scope here:
+          // /api/insights/corpus-sources does honest full-corpus over the matched
+          // articles (it exposes date params but we don't fake a window control).
+          el.innerHTML = `<div id="corpus-sources-host"><div class="muted">${esc(t("…"))}</div></div>`;
+          await renderCorpusSources(_corpusTerm, "corpus-sources-host");
         }
       } catch (e) { el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+
+    // Source-description sub-tab: the distinct sources behind this corpus, each
+    // with its REAL per-corpus article count (from /api/insights/corpus-sources,
+    // the same data the source-coverage view uses) PLUS the catalog metadata the
+    // source ASSERTS — domain, country, region, language, tags (from the bulk
+    // /api/sources list, merged by domain). Two-class honesty: every metadata
+    // field here is catalog/source-ASSERTED (set from the catalog, ccTLD or the
+    // operator), NEVER text-deduced — stated as such; we never fabricate a
+    // "description" the model does not store (Source has no free-text bio), so a
+    // source with no catalog facts on file reads "no catalog metadata on file".
+    // No score, no ranking — descriptive provenance, not credibility.
+    async function renderCorpusSources(term, hostId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const host = document.getElementById(hostId);
+      if (!host) return;
+      let cs, cat;
+      try {
+        // corpus-sources keys on the FTS query (like Sentiment's framing call),
+        // so we point it at this window's term to get THIS corpus's sources.
+        [cs, cat] = await Promise.all([
+          api(`/api/insights/corpus-sources?query=${encodeURIComponent(term)}&limit=200`),
+          api(`/api/sources/?limit=1000`).catch(() => []),
+        ]);
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const rows = (cs && cs.sources) || [];
+      if (!rows.length) {
+        host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`;
+        return;
+      }
+      // Index the catalog metadata by domain (+ name fallback) for client-side merge.
+      const byDom = {}, byName = {};
+      (Array.isArray(cat) ? cat : []).forEach(s => {
+        if (s.domain) byDom[s.domain.toLowerCase()] = s;
+        if (s.name) byName[s.name] = s;
+      });
+      const fmt = (n) => (n || 0).toLocaleString();
+      const chips = (arr) => (arr || []).filter(Boolean)
+        .map(x => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ");
+      const cards = rows.map(r => {
+        const meta = byDom[(r.domain || "").toLowerCase()] || byName[r.name] || {};
+        const facts = [];
+        if (meta.country) facts.push(`${esc(t("Country"))}: ${esc(meta.country.toUpperCase())}`);
+        if (meta.region) facts.push(`${esc(t("Region"))}: ${esc(meta.region)}`);
+        if (meta.language) facts.push(`${esc(t("Language"))}: ${esc(meta.language)}`);
+        if (meta.source_type) facts.push(`${esc(t("Type"))}: ${esc(meta.source_type)}`);
+        const tags = (meta.tags && meta.tags.length) ? chips(meta.tags) : "";
+        const hasMeta = facts.length || tags;
+        // Source name → the EXISTING integrity source-profile view (reuse), keyed
+        // by the source name/domain it already accepts. No invented destination.
+        const nameLink = `<a href="#" class="csrc-prof" data-src="${esc(r.domain || r.name)}"
+            title="${esc(t("Open this source's profile (measured dimensions, no composite score)."))}">${esc(r.name || r.domain || "—")}</a>`;
+        return `<div class="note" style="max-width:none;margin-bottom:8px">
+          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+            <b style="font-size:13px">${nameLink}</b>
+            <span class="muted" style="font-size:12px">${esc(r.domain || "")}</span>
+            <span style="margin-inline-start:auto;font-size:12px">${fmt(r.articles)} ${esc(t("articles"))}</span>
+          </div>
+          ${facts.length ? `<div class="muted" style="font-size:12px;margin-top:3px">${facts.join(" · ")}</div>` : ""}
+          ${tags ? `<div style="margin-top:4px">${tags}</div>` : ""}
+          ${hasMeta ? "" : `<div class="muted" style="font-size:12px;margin-top:3px">${esc(t("No catalog metadata on file."))}</div>`}
+        </div>`;
+      }).join("");
+      host.innerHTML =
+        `<div class="hint">${esc(t("The distinct sources behind this corpus, with their per-corpus article count. Country, region, language and tags are stated by the source catalog (asserted, not deduced from text); article counts are exact. No score, no ranking — coverage, not credibility."))}</div>` +
+        cards +
+        `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ${esc(cs.caveat || "")}</div>`;
+      // Source name → the existing source-profile view (reuse loadProfile).
+      host.querySelectorAll(".csrc-prof").forEach(a =>
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          const inp = $("prof-source");
+          if (inp) { inp.value = a.dataset.src; showTab("integrity"); loadProfile(); }
+        }));
     }
 
     // Keyword-analysis sub-tab: a ranked TABLE of the corpus's co-occurring

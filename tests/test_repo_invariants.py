@@ -1529,3 +1529,77 @@ def test_corpus_window_keywords_subtab():
         "the Keywords table must surface the endpoint's method + caveat (PMI honesty)"
     )
     assert "n_articles_with_term" in kfn, "the Keywords table must show n (real corpus count)"
+
+
+def test_corpus_window_sources_subtab():
+    """THE ONE CORPORA SYSTEM: the corpus analysis window carries a SOURCES
+    (source-description) sub-tab -- WHICH sources feed this corpus, with their
+    REAL per-corpus article count + the catalog metadata they ASSERT (domain,
+    country, region, language, tags). Descriptive provenance, NOT the (future)
+    competitive/angle tab and NOT tone (Sentiment owns that). It REUSES an
+    existing endpoint -- no new backend, no fork. Pinned so it cannot regress:
+      * a data-tab="sources" button exists in the corpus window's ooSubtabs nav
+        (DOM-text label, no inline onclick) and every sibling sub-tab stays;
+      * corpusTab() handles "sources" by calling renderCorpusSources for the
+        window's _corpusTerm into a fresh #corpus-sources-host;
+      * the renderer reuses /api/insights/corpus-sources (the corpus's distinct
+        sources + REAL per-corpus article count) and enriches client-side from
+        the bulk /api/sources catalog (no new keyword/source engine);
+      * two-class honesty + no fabricated description: catalog metadata is
+        labelled ASSERTED (not deduced), and a source with nothing on file reads
+        an honest "No catalog metadata on file." (never a generated bio);
+      * the source name reuses the EXISTING source-profile view (loadProfile),
+        not an invented destination.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # 1. the Sources button lives in the corpus window's subtab nav (DOM text).
+    nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
+    assert 'data-tab="sources"' in nav, (
+        "the corpus window must carry a Sources sub-tab button in its ooSubtabs nav"
+    )
+    assert "Sources" in nav, "the sub-tab button label must be DOM text (auto-translated)"
+    # every sibling sub-tab stays (nothing lost).
+    for sib in (
+        'data-tab="trend"',
+        'data-tab="articles"',
+        'data-tab="links"',
+        'data-tab="mindmap"',
+        'data-tab="sentiment"',
+        'data-tab="keywords"',
+    ):
+        assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
+    # 2. corpusTab dispatches "sources" -> the source-description renderer for _corpusTerm.
+    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    assert 'which === "sources"' in body, "corpusTab must handle the sources sub-tab"
+    assert "renderCorpusSources(_corpusTerm" in body, (
+        "the Sources sub-tab must render for THIS window's corpus term into a fresh host"
+    )
+    assert 'id="corpus-sources-host"' in body, (
+        "the Sources sub-tab must mount a fresh #corpus-sources-host (the function-into-host pattern)"
+    )
+    # 3. the renderer reuses EXISTING endpoints (no new backend, no fork).
+    sfn = html.split("async function renderCorpusSources(", 1)[1].split(
+        "\n    function ", 1
+    )[0]
+    assert "/api/insights/corpus-sources?" in sfn, (
+        "the Sources tab must reuse /api/insights/corpus-sources for the corpus's sources"
+    )
+    assert "/api/sources/?" in sfn, (
+        "the Sources tab must enrich from the bulk /api/sources catalog (client-side merge)"
+    )
+    # 4. REAL per-source numbers + asserted metadata fields (no fabrication).
+    assert "r.articles" in sfn, "each source row must show its REAL per-corpus article count"
+    for field in ("meta.country", "meta.region", "meta.language", "meta.tags"):
+        assert field in sfn, f"the Sources tab must show the asserted metadata field: {field}"
+    # 5. honesty: asserted-not-deduced is stated, no generated description, honest empties.
+    assert "asserted" in sfn.lower() and "deduced" in sfn.lower(), (
+        "the Sources tab must label catalog metadata ASSERTED, not deduced from text"
+    )
+    assert "No catalog metadata on file." in sfn, (
+        "a source with nothing on file must read an honest empty, never a fabricated description"
+    )
+    assert "No sources for this corpus yet." in sfn, "honest empty state when the corpus has no sources"
+    # 6. the source name reuses the EXISTING source-profile view (loadProfile).
+    assert "loadProfile()" in sfn, (
+        "the source name must reuse the existing source-profile view, not an invented destination"
+    )
