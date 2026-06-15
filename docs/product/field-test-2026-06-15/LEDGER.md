@@ -328,3 +328,63 @@ per-machine) over delete-candidate, to keep anti-hiding. (3) where bulk-manage +
 user-feeds persist (localStorage vs the D1/D4 server-side subs table). Cross-links
 **Item C** (manage UI uses the universal subtab/sort grammar) and **Item D** (every
 new control keyed ×12 from the start).
+
+---
+
+## Item F — Home/Briefing: auto-refresh (remove the Refresh button); keep the "updated · date · time" stamp; render the date with the FULL month name in the app language (translated)  [NEW · ties to #8 + Item D]  ⏭ capture-only
+
+**Verbatim (08:12):** "In the home tab should automatically be refreshed. Remove the
+refresh button. Keep the 'updated + date + time'. Use full text for months. This
+should be translated."
+
+**Where (grounded, `src/static/index.html`):**
+- **Briefing header** `757–759`: `<span id="brief-generated">` (the "updated …"
+  stamp — **KEEP**) + `<button id="brief-refresh-btn" onclick="refreshBriefing()">
+  Refresh</button>` (**REMOVE**).
+- `refreshBriefing()` `3279–3285` → `POST /api/briefing/refresh` (a server-side
+  **recompute**, heavier than a reload).
+- The stamp is set in `renderBriefing` **3291**:
+  `gen.textContent = "updated " + new Date(data.generated_at).toLocaleString()`.
+  Two faults: **(i)** `"updated "` is hardcoded English (built in JS, so the i18n DOM
+  walker can't reach it — needs `OOI18N.t()`); **(ii)** `toLocaleString()` with **no
+  locale arg** uses the **browser** locale and a **numeric** month (e.g. "6/15/2026,
+  8:12:38 AM"), not the **app** language with a full month.
+- **Load path:** `loadHome` `3243` → `loadBriefing` `3269` (`GET /api/briefing`,
+  cached) on tab open; `renderBriefing` paints. There is **no periodic/auto refresh**
+  today — only tab-open + the manual button.
+- **The correct pattern already exists:** the Agenda formats months via
+  `new Intl.DateTimeFormat(loc, { month: "long", year: "numeric" })` with `loc` =
+  `OOI18N.current()` (**index.html:3921**) — reuse it.
+
+**Maps to:** invariant **#8** (the UI shows DATA, never plumbing — a manual Refresh
+is plumbing; Home should self-update); the **Home redesign §5** / BACKLOG_GROUPED
+**Group E** (content-first, shipped #128/#129); **field-log finding B** (the polling
+storm — auto-refresh must be ADAPTIVE, not a constant poll); and it is a **sibling of
+Item D** (untranslated chrome + locale-aware dates).
+
+Sub-parts:
+- **(a) [NEW] Auto-refresh Home; remove `#brief-refresh-btn` (759).** Cadence to
+  settle (see questions): recommend refresh on Home open (already happens) **+**
+  auto-update when `generated_at` changes / after a collect pass (push, not poll),
+  **+** at most a light adaptive poll **only while the Home tab is visible**. Honesty
+  / perf: prefer the **cached `GET /api/briefing`** and only **recompute** (the heavy
+  `POST /refresh`, T1 perf 36.6 → 1.5 s) when inputs actually changed — never on a
+  blind timer (avoids re-creating the polling storm).
+- **(b) [KEEP] The "updated · date · time" stamp** (`#brief-generated`) stays.
+- **(c) [NEW] Date format = full month, app language, translated.** Replace the bare
+  `toLocaleString()` (3291) with `Intl.DateTimeFormat(OOI18N.current(), { year:
+  "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })`
+  (the Agenda pattern, 3921), and **key "updated"** ×12 via `OOI18N.t()`.
+
+**Broader note (sibling to Item D — flag, don't expand here):** many `toLocaleString()`
+calls across the app (e.g. `2643`, `4040`, `5128`, `5252`) use the **browser** locale,
+not the app language → a **shared locale-aware date/time formatter** (paralleling the
+shared units formatter) would fix the whole class consistently. Candidate for the same
+PR as Item D.
+
+**⏭ Open design questions (hold for "compile"):** (1) auto-refresh **trigger** —
+push-on-pass-complete vs visible-tab adaptive poll vs on-focus (recommend push +
+on-open, no idle poll); (2) keep a hidden/manual **recompute** affordance for power
+users (since recompute ≠ reload), or drop it entirely; (3) stamp **format** — the
+maintainer said "date + time" (absolute, full month) — keep absolute, or absolute +
+a relative "updated N min ago" in the hover (the #oo-tip pattern used elsewhere)?
