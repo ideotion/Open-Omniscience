@@ -1171,3 +1171,48 @@ def test_ootimescope_reused():
     # both surfaces keep handing points to the UNCHANGED ooChart renderer.
     assert html.count('ooChart($("ins-trend-oo")') == 1
     assert html.count('ooChart($("corpus-chart")') == 1
+
+
+def test_tmap_mention_layer():
+    """Temporal-map mention layer: the places the corpus's articles MENTION,
+    plotted from the SHIPPED /api/insights/where substrate, reusing the map's
+    existing equirectangular projection (lon2x/lat2y) and render loop.
+
+    Honesty (non-negotiable): markers scale by raw article SPREAD (r∝√spread,
+    AREA∝spread — no composite score); null-coordinate places are NOT plotted
+    and their count is surfaced; the endpoint's "Deduced from text, never
+    confirmed." caveat is VISIBLE on the layer (legend) AND in the readout.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+
+    # The in-map overlay toggle (Google-Maps "controls inside the map" convention).
+    assert 'id="tmap-mentions-toggle"' in html, "the mention-layer toggle button must exist"
+    assert 'onclick="toggleTmapMentions()"' in html, "the toggle must call toggleTmapMentions()"
+    assert "function toggleTmapMentions()" in html, "toggleTmapMentions must be defined"
+
+    # The layer fetches the SHIPPED corpus-wide WHERE endpoint (bounded, lazy).
+    assert "/api/insights/where" in html, "the layer must fetch /api/insights/where"
+
+    # Reuses the EXISTING projection — no second projection invented.
+    assert "function buildTmapMentionLayer()" in html, "the layer builder must exist"
+    assert "lon2x(p.lon)" in html and "lat2y(p.lat)" in html, (
+        "mention markers must reuse the temporal map's lon2x/lat2y projection"
+    )
+    # Marker AREA ∝ spread ⇒ radius ∝ √(articles); honest raw count, never a score.
+    assert "Math.sqrt((+p.articles" in html, "marker radius must scale with √(article spread)"
+
+    # Null-coordinate places are dropped from the plot, their count surfaced.
+    assert "p.lat != null && p.lon != null" in html, "places without coordinates must not be plotted"
+    assert "places not mapped (no coordinates)" in html, (
+        "the count of unmapped (null-coordinate) places must be surfaced honestly"
+    )
+    # Degrade loudly on empty.
+    assert "No mapped mentions in your corpus yet." in html, "honest empty state required"
+
+    # The deduced/never-confirmed caveat is present on BOTH the legend and the readout,
+    # defaulting to the endpoint's verbatim string (informed-consent layering).
+    assert "Deduced from text, never confirmed." in html, (
+        "the endpoint's verbatim caveat must appear (legend + readout fallback)"
+    )
+    assert "function buildTmapMentionLegend()" in html, "the layer legend caveat line must exist"
+    assert "function showTmapWhereDetail(" in html, "the marker readout must exist"

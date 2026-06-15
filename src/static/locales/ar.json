@@ -858,5 +858,21 @@
   "1M": "1M",
   "6M": "6M",
   "1Y": "1Y",
-  "5Y": "5Y"
+  "5Y": "5Y",
+  "Could not load mentioned places: ": "تعذّر تحميل الأماكن المذكورة: ",
+  "Loading mentioned places…": "جارٍ تحميل الأماكن المذكورة…",
+  "No mapped mentions in your corpus yet.": "لا توجد بعد إشارات مُخرَطة على الخريطة في مجموعتك.",
+  "Deduced from text, never confirmed.": "مُستنتَج من النص، غير مؤكَّد.",
+  "mentioned places": "الأماكن المذكورة",
+  "These places have no known coordinate, so they are not drawn on the map.": "هذه الأماكن ليس لها إحداثيات معروفة، لذلك لا تُرسَم على الخريطة.",
+  "places not mapped (no coordinates)": "أماكن غير مُخرَطة (بلا إحداثيات)",
+  "city": "مدينة",
+  "A place name extracted from article text, placed at a gazetteer coordinate.": "اسم مكان مُستخرَج من نص المقال، مُوضَع عند إحداثيات من معجم جغرافي.",
+  "mentioned · deduced": "مذكور · مُستنتَج",
+  "articles mention it": "مقالات تذكره",
+  "total mentions": "إجمالي الإشارات",
+  "Find coverage in your corpus": "ابحث عن التغطية في مجموعتك",
+  "mentions": "إشارات",
+  "📍 places": "📍 أماكن",
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "إظهار الأماكن التي تَذكرها مجموعتك، مُستنتَجة من نص المقالات (غير مؤكَّدة). تتناسب مساحة العلامة مع عدد المقالات التي تذكر كل مكان — أعداد خام، بلا درجة."
 }

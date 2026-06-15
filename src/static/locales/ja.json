@@ -858,5 +858,21 @@
   "1M": "1M",
   "6M": "6M",
   "1Y": "1Y",
-  "5Y": "5Y"
+  "5Y": "5Y",
+  "Could not load mentioned places: ": "言及された場所を読み込めませんでした: ",
+  "Loading mentioned places…": "言及された場所を読み込み中…",
+  "No mapped mentions in your corpus yet.": "コーパスにはまだ地図化できる言及がありません。",
+  "Deduced from text, never confirmed.": "本文から推定、未確認。",
+  "mentioned places": "言及された場所",
+  "These places have no known coordinate, so they are not drawn on the map.": "これらの場所は既知の座標がないため、地図には描画されません。",
+  "places not mapped (no coordinates)": "地図化されていない場所（座標なし）",
+  "city": "都市",
+  "A place name extracted from article text, placed at a gazetteer coordinate.": "記事本文から抽出した地名を、地名辞典の座標に配置したもの。",
+  "mentioned · deduced": "言及 · 推定",
+  "articles mention it": "件の記事が言及",
+  "total mentions": "言及の合計",
+  "Find coverage in your corpus": "コーパス内のカバレッジを探す",
+  "mentions": "言及",
+  "📍 places": "📍 場所",
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "コーパスが言及する場所を表示します（記事本文から推定、未確認）。マーカーの面積は各場所に言及する記事数に比例します——生の件数で、スコアはありません。"
 }

@@ -1464,6 +1464,9 @@
           <button class="tiny secondary" onclick="zoomTmap(1.4)" title="Zoom out">－</button>
           <button class="tiny secondary" onclick="resetTmap()" title="Reset view">⟲</button>
           <button class="tiny secondary" id="tmap-expand" onclick="tmapExpand()" title="Enlarge the map">⛶</button>
+          <button class="tiny secondary" id="tmap-mentions-toggle" onclick="toggleTmapMentions()"
+            aria-pressed="false"
+            title="Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.">📍 places</button>
         </div>
       </div>
       <div id="tmap-detail" style="margin-top:8px"></div>
@@ -7446,6 +7449,12 @@
     let TMAP_OFF = new Set();                     // kinds toggled off
     let TMAP_VB = {x:0, y:0, w:MAP_W, h:MAP_H};
     let _tmapVisible = [], _tmapPlay = null, TMAP_OUTLINE = null;
+    // Mention layer: PLACES the corpus's articles mention (When/Where/Who, T12),
+    // from /api/insights/where. Geographic only (no per-mention date), so it is a
+    // static overlay independent of the time slider. OFF by default (the temporal
+    // map's own signals stay the primary view; the user opts in). _tmapWhere holds
+    // the endpoint payload verbatim so the method+caveat travel with the data.
+    let _tmapMentionsOn = false, _tmapWhere = null;
     let _tmapDrag = false, _tmapDragSX = 0, _tmapDragSY = 0, _tmapMouseupWired = false, _tmapPrefsLoaded = false;
 
     // Remember the user's layers/window across sessions (local only, like agenda subs).
@@ -7593,6 +7602,113 @@
           <span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)};display:inline-block"></span>
           ${esc(TMAP_KINDS[k].l)} <span class="muted">${counts[k]}</span></button>`;
       }).join("") || `<span class="muted">No signals to show.</span>`;
+      buildTmapMentionLegend();                    // append the mention-layer caveat line (never overwrites the kinds)
+    }
+
+    // ----- Mention layer: places the corpus's articles MENTION (T12) -------- //
+    // Reuses the temporal map's equirectangular projection (lon2x/lat2y) and its
+    // render loop — no second projection. Fed by GET /api/insights/where verbatim,
+    // so the endpoint's method + "Deduced from text, never confirmed." caveat travel
+    // with the data. Marker AREA scales with the article SPREAD (honest: r∝√spread),
+    // never a fabricated score. Places with null lat/lon are NOT plotted; their count
+    // is surfaced. OFF by default (the map's own signals stay primary; the user opts in).
+    let _tmapWhereMapped = [];                      // the plotted subset (for click indexing)
+
+    async function toggleTmapMentions() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      _tmapMentionsOn = !_tmapMentionsOn;
+      const btn = $("tmap-mentions-toggle");
+      if (btn) {                                     // FILL=state cue, like the kind chips
+        btn.setAttribute("aria-pressed", _tmapMentionsOn ? "true" : "false");
+        btn.style.borderColor = _tmapMentionsOn ? "var(--accent)" : "";
+        btn.style.color = _tmapMentionsOn ? "var(--accent)" : "";
+      }
+      if (_tmapMentionsOn && _tmapWhere == null) {   // lazy fetch, only when first switched on
+        if (btn) btn.disabled = true;
+        try {
+          // Both city + country (kind omitted = both); bounded by the endpoint (limit ≤ 500).
+          _tmapWhere = await api("/api/insights/where?limit=500");
+        } catch (e) {
+          _tmapWhere = null; _tmapMentionsOn = false;
+          if (btn) { btn.classList.remove("active"); btn.setAttribute("aria-pressed", "false"); }
+          toast(t("Could not load mentioned places: ") + e.message, "err");
+        } finally { if (btn) btn.disabled = false; }
+      }
+      buildTmapLegend(); renderTimemap();
+    }
+
+    function buildTmapMentionLegend() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const el = $("tmap-legend"); if (!el) return;
+      if (!_tmapMentionsOn) return;
+      const w = _tmapWhere;
+      const placed = w ? (w.placed || 0) : 0;
+      const unmapped = w ? Math.max(0, (w.count || 0) - placed) : 0;
+      // The "deduced, never confirmed" caveat is VISIBLE on the layer (informed consent),
+      // with the endpoint's long-form method in the hover bubble (invariant #17 layering).
+      const caveat = (w && w.caveat) || "Deduced from text, never confirmed.";
+      let line;
+      if (!w) {
+        line = `<span class="muted">${esc(t("Loading mentioned places…"))}</span>`;
+      } else if (!placed) {
+        line = `<span class="muted">${esc(t("No mapped mentions in your corpus yet."))}</span>`;
+      } else {
+        line = `<span style="display:inline-flex;align-items:center;gap:5px">
+            <span style="width:9px;height:9px;border-radius:50%;background:var(--accent);opacity:0.55;display:inline-block"></span>
+            <strong>${placed}</strong> ${esc(t("mentioned places"))}</span>
+          <span class="warn" title="${esc(w.method || caveat)}">— ${esc(t(caveat))}</span>`
+          + (unmapped ? ` <span class="muted" title="${esc(t("These places have no known coordinate, so they are not drawn on the map."))}">· ${unmapped} ${esc(t("places not mapped (no coordinates)"))}</span>` : "");
+      }
+      el.insertAdjacentHTML("beforeend",
+        `<div style="flex-basis:100%;margin-top:4px;font-size:12px">${line}</div>`);
+    }
+
+    function buildTmapMentionLayer() {
+      _tmapWhereMapped = [];
+      if (!_tmapMentionsOn || !_tmapWhere || !Array.isArray(_tmapWhere.places)) return "";
+      // Plot EVERY returned place with a coordinate (the endpoint already bounds the set).
+      _tmapWhereMapped = _tmapWhere.places.filter(p => p.lat != null && p.lon != null);
+      if (!_tmapWhereMapped.length) return "";
+      const labels = TMAP_VB.w < MAP_W * 0.55;       // same semantic-zoom rule as the signals
+      const maxArts = Math.max(1, ..._tmapWhereMapped.map(p => +p.articles || 0));
+      const markers = _tmapWhereMapped.map((p, i) => {
+        const x = lon2x(p.lon).toFixed(1), y = lat2y(p.lat).toFixed(1);
+        // AREA ∝ article spread ⇒ radius ∝ √spread (honest; no composite score).
+        const r = (1.6 + 4.0 * Math.sqrt((+p.articles || 0) / maxArts)).toFixed(1);
+        const lab = labels ? `<text x="${x}" y="${(+y - +r - 1).toFixed(1)}" fill="var(--fg)"
+          font-size="3.2" text-anchor="middle" opacity="0.8">${esc((p.name || "").slice(0, 40))}</text>` : "";
+        return `<g style="cursor:pointer" onclick="showTmapWhereDetail(${i})">
+          <circle cx="${x}" cy="${y}" r="${(+r + 3).toFixed(1)}" fill="transparent" stroke="none"></circle>
+          <circle cx="${x}" cy="${y}" r="${r}" fill="var(--accent)" fill-opacity="0.45"
+            stroke="var(--accent)" stroke-width="0.5"><title>${esc(p.name || "")}${p.country ? " (" + esc(p.country.toUpperCase()) + ")" : ""} — ${(+p.articles || 0)} ${esc("articles")}, ${(+p.mentions || 0)} ${esc("mentions")}</title></circle>${lab}</g>`;
+      }).join("");
+      return `<g class="tmap-mentions">${markers}</g>`;
+    }
+
+    function showTmapWhereDetail(i) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const p = _tmapWhereMapped[i]; if (!p) return;
+      const caveat = (_tmapWhere && _tmapWhere.caveat) || "Deduced from text, never confirmed.";
+      const method = (_tmapWhere && _tmapWhere.method) || "";
+      const cov = (p.name || "").trim();
+      $("tmap-detail").innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="width:11px;height:11px;border-radius:50%;background:var(--accent);opacity:0.55;display:inline-block"></span>
+          <strong>${esc(p.name || "")}</strong>
+          ${p.country ? `<span class="pill">${esc(p.country.toUpperCase())}</span>` : ""}
+          <span class="pill">${esc(p.kind === "country" ? t("country") : t("city"))}</span>
+          <span class="pill warn" title="${esc(t("A place name extracted from article text, placed at a gazetteer coordinate."))}">${esc(t("mentioned · deduced"))}</span>
+        </div>
+        <div class="muted" style="margin-top:5px;font-size:13px">
+          <strong>${(+p.articles || 0)}</strong> ${esc(t("articles mention it"))}
+          · <strong>${(+p.mentions || 0)}</strong> ${esc(t("total mentions"))}
+          · ${(+p.lat).toFixed(2)}, ${(+p.lon).toFixed(2)}
+        </div>
+        <div class="hint" style="margin-top:5px" title="${esc(method)}">${esc(t(caveat))}</div>
+        <div class="row" style="margin-top:7px;gap:8px">
+          ${cov ? `<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">${esc(t("Find coverage in your corpus"))}</button>` : ""}
+        </div>
+      </div>`;
     }
 
     function stopTmapPlay() {                       // also called by showTab when leaving the tab
@@ -7682,12 +7798,16 @@
           <circle cx="${x}" cy="${y}" r="${r}" ${ring}><title>${esc(s.title)} — ${esc(fmtDate(s))}</title></circle>${lab}</g>`;
       }).join("");
 
-      if (!TMAP.signals.length)
+      const mentions = buildTmapMentionLayer();    // static place-mention overlay (sets _tmapWhereMapped)
+
+      // With no curated signals AND the mention layer off, there is nothing to map.
+      // But once the user opts into mentions, keep the map so the overlay can render.
+      if (!TMAP.signals.length && !mentions)
         return `<div class="muted">No signals with both a place and a date yet. Curated anchors ship by default;
           index a geocoded corpus, enable live hazards, or install the events agenda to add more.</div>`;
       return `<svg id="oo-tmap" viewBox="0 0 ${MAP_W} ${MAP_H}" width="100%"
         style="max-width:${MAP_W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab">
-        ${coast}${grid}${dots}</svg>`;
+        ${coast}${grid}${dots}${mentions}</svg>`;
     }
 
     // The honest seed of "convergence": other signals close in BOTH place and time.

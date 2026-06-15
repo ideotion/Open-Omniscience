@@ -858,5 +858,21 @@
   "1M": "1M",
   "6M": "6M",
   "1Y": "1Y",
-  "5Y": "5Y"
+  "5Y": "5Y",
+  "Could not load mentioned places: ": "Tidak dapat memuat tempat yang disebutkan: ",
+  "Loading mentioned places…": "Memuat tempat yang disebutkan…",
+  "No mapped mentions in your corpus yet.": "Belum ada penyebutan yang dipetakan di korpus Anda.",
+  "Deduced from text, never confirmed.": "Disimpulkan dari teks, tidak pernah dikonfirmasi.",
+  "mentioned places": "tempat yang disebutkan",
+  "These places have no known coordinate, so they are not drawn on the map.": "Tempat-tempat ini tidak memiliki koordinat yang diketahui, jadi tidak digambar di peta.",
+  "places not mapped (no coordinates)": "tempat tidak dipetakan (tanpa koordinat)",
+  "city": "kota",
+  "A place name extracted from article text, placed at a gazetteer coordinate.": "Nama tempat yang diekstrak dari teks artikel, ditempatkan pada koordinat gazetteer.",
+  "mentioned · deduced": "disebutkan · disimpulkan",
+  "articles mention it": "artikel menyebutkannya",
+  "total mentions": "total penyebutan",
+  "Find coverage in your corpus": "Temukan liputan di korpus Anda",
+  "mentions": "penyebutan",
+  "📍 places": "📍 tempat",
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "Tampilkan tempat yang DISEBUTKAN korpus Anda, disimpulkan dari teks artikel (tidak pernah dikonfirmasi). Luas penanda mengikuti berapa banyak artikel yang menyebutkan setiap tempat — hitungan mentah, tanpa skor."
 }

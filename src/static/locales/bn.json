@@ -858,5 +858,21 @@
   "1M": "1M",
   "6M": "6M",
   "1Y": "1Y",
-  "5Y": "5Y"
+  "5Y": "5Y",
+  "Could not load mentioned places: ": "উল্লিখিত স্থানগুলি লোড করা যায়নি: ",
+  "Loading mentioned places…": "উল্লিখিত স্থান লোড হচ্ছে…",
+  "No mapped mentions in your corpus yet.": "আপনার কর্পাসে এখনও কোনো ম্যাপ করা উল্লেখ নেই।",
+  "Deduced from text, never confirmed.": "পাঠ্য থেকে অনুমিত, কখনও নিশ্চিত নয়।",
+  "mentioned places": "উল্লিখিত স্থান",
+  "These places have no known coordinate, so they are not drawn on the map.": "এই স্থানগুলির কোনো জানা স্থানাঙ্ক নেই, তাই মানচিত্রে আঁকা হয়নি।",
+  "places not mapped (no coordinates)": "ম্যাপ না-করা স্থান (স্থানাঙ্ক নেই)",
+  "city": "শহর",
+  "A place name extracted from article text, placed at a gazetteer coordinate.": "নিবন্ধের পাঠ্য থেকে নেওয়া একটি স্থাননাম, গেজেটিয়ার স্থানাঙ্কে স্থাপিত।",
+  "mentioned · deduced": "উল্লিখিত · অনুমিত",
+  "articles mention it": "নিবন্ধ এটি উল্লেখ করে",
+  "total mentions": "মোট উল্লেখ",
+  "Find coverage in your corpus": "আপনার কর্পাসে কভারেজ খুঁজুন",
+  "mentions": "উল্লেখ",
+  "📍 places": "📍 স্থান",
+  "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "আপনার কর্পাস যে স্থানগুলি উল্লেখ করে তা দেখান, নিবন্ধের পাঠ্য থেকে অনুমিত (কখনও নিশ্চিত নয়)। প্রতিটি স্থান কতগুলি নিবন্ধ উল্লেখ করে তার সাথে মার্কারের ক্ষেত্রফল মাপ নেয় — কাঁচা গণনা, কোনো স্কোর নেই।"
 }
