@@ -1230,3 +1230,63 @@ CONTENTS so it carries the right analyses.
 
 **⏭ Open Qs (compile):** digest contents priority? `?digest=1` vs new endpoint? keep full raw as
 opt-in or drop? target size cap?
+
+**STATUS (maintainer 10:33):** DEFERRED — "mark this as another optimization", NOT now. The
+family-BUILDING need (crunch the whole DB) is addressed differently — see Item AA (a digest is a
+summary; family-building needs the FULL vocabulary, so the digest is the wrong tool for THAT goal).
+
+---
+
+## Item AA — STRATEGY: how I analyse the ENTIRE keyword DB to build preconfigured families + trans-language analytics, given current ingestion limits  [NEW — maintainer asked "how do you propose we address that?"; the build-path for Items S/U]  ⏭ proposal
+
+**Verbatim (10:33):** "I would like that in the end you analyse all keywords to create
+preconfigured families and translanguage analytics. Keywords from different languages should be
+addressed uniformely, hence the importance of having you crunch the entire keyword database.
+However, knowing our current limitations, how do you propose we address that?"
+
+**The tension:** GOAL = I crunch EVERY keyword across ALL languages, uniformly → preconfigured
+families (S) + the precached lexicon (U). CONSTRAINT = I can't ingest 80k flat keywords (60MB);
+the digest is deferred AND is the wrong tool here anyway (family-building needs the FULL
+vocabulary + the long tail, not a top-N summary).
+
+**KEY REFRAME:** don't hand me FLAT keywords — hand me the app's **PRE-GROUPED CANDIDATE
+families**, anchored to a **language-neutral key**, in **ingestible batches**. I then address
+every keyword (nothing excluded — the no-cap ethos) through a structure that fits my limits, and
+"uniform across languages" becomes true BY CONSTRUCTION (the family is the unit; language is a
+member attribute).
+
+**PROPOSED PIPELINE:**
+1. **APP-SIDE CANDIDATE GROUPING (local-first, offline tooling step — the heavy lift the app
+   does, not me):** per keyword compute (normalized form, dominant language, language_signature,
+   top co-occurring keywords) + a **Wikidata QID** match where one exists. Group by: QID (the
+   cross-language anchor — Q30 = United States = États-Unis = Estados Unidos…) + normalized-form
+   equivalence + the existing signature-supported auto-join. Output = candidate CLUSTERS, each
+   with language-qualified members + evidence + an "uncertain" flag; singletons/unmatched keep
+   their own cluster (nothing dropped).
+2. **WIKIDATA = the uniform multilingual ANCHOR (the Item U bootstrap):** its labels/aliases are
+   multilingual by construction, so it answers "what is the cross-language equivalent of X"
+   WITHOUT me reading 80k rows — and it natively distinguishes "World Cup" (a QID) from "world",
+   killing the substring over-merge (U) at the SOURCE. Entities/places/orgs/events anchor strongly
+   on Wikidata; common terms fall back to co-occurrence signatures + my judgement.
+3. **BATCHED, PRIORITY-ORDERED EXPORT:** clusters exported in batches (≤~1MB each) in
+   FREQUENCY-PRIORITY order (the high-value head first; the long tail fills incrementally across
+   sessions). No cap — everything is processed, just ordered (ordering ≠ exclusion, the ruled
+   principle).
+4. **I CURATE batch-by-batch across turns/sessions:** validate clusters, fix over-merges (the
+   substring/containment guard — U), add cross-language links Wikidata missed, split wrong joins,
+   tag concept type. Emit additions to `configs/keyword_equivalents.yml` + the precached lexicon.
+5. **ACCUMULATE →** the precached multilingual lexicon (U) seeds the live families (S) → uniform
+   trans-language analytics (top keywords + the trend screen).
+
+**HONEST LIMITATION HANDLING:** I never ingest the raw 60MB; I ingest STRUCTURED CANDIDATES in
+batches. The app does the local heavy-lift. Priority order means value lands early; the long tail
+is incremental, not blocked. Multi-session by nature — fine: it's a precached artifact built once
++ refreshed.
+
+**WHAT'S NEEDED FIRST (enabler):** a local, offline candidate-grouping exporter (app-side) +
+Wikidata label ingestion for the corpus's entities. Rides on Item U; the candidate exporter is
+ALSO the eventual digest's S/U sections — so Item Z's deferral doesn't block this.
+
+**⏭ Open Qs (compile):** Wikidata ingestion = bundled subset vs a one-time consented fetch? cluster
+batch size + priority bands? curated lexicon location (keyword_equivalents.yml vs a new precached
+file)? how much the app auto-applies vs waits for my curation?
