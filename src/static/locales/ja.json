@@ -920,5 +920,19 @@
   "(scoped to the top matched articles)": "（一致した上位記事に限定）",
   "Open this source's profile (measured dimensions, no composite score).": "このソースのプロファイルを開く（測定された指標、複合スコアなし）。",
   "The distinct sources behind this corpus, with their per-corpus article count. Country, region, language and tags are stated by the source catalog (asserted, not deduced from text); article counts are exact. No score, no ranking — coverage, not credibility.": "このコーパスの背後にある個別のソースと、コーパスごとの記事数。国・地域・言語・タグはソースカタログが提示します（主張であり、本文から推定したものではありません）。記事数は正確です。スコアもランキングもなし——信頼性ではなくカバレッジです。",
-  "Which sources feed this corpus — the distinct outlets behind the member articles, with their per-corpus article count and the catalog metadata they assert (domain, country, region, language, tags). Counts are exact; the country/region/language/tags are stated by the source catalog (not deduced from text). No score, no ranking — descriptive provenance, not credibility.": "どのソースがこのコーパスを構成するか——メンバー記事の背後にある個別のメディアと、コーパスごとの記事数、そしてカタログで主張するメタデータ（ドメイン・国・地域・言語・タグ）。件数は正確です。国・地域・言語・タグはソースカタログが提示します（本文から推定したものではありません）。スコアもランキングもなし——信頼性ではなく記述的な出所です。"
+  "Which sources feed this corpus — the distinct outlets behind the member articles, with their per-corpus article count and the catalog metadata they assert (domain, country, region, language, tags). Counts are exact; the country/region/language/tags are stated by the source catalog (not deduced from text). No score, no ranking — descriptive provenance, not credibility.": "どのソースがこのコーパスを構成するか——メンバー記事の背後にある個別のメディアと、コーパスごとの記事数、そしてカタログで主張するメタデータ（ドメイン・国・地域・言語・タグ）。件数は正確です。国・地域・言語・タグはソースカタログが提示します（本文から推定したものではありません）。スコアもランキングもなし——信頼性ではなく記述的な出所です。",
+  "Volume": "件数",
+  "Tone": "トーン",
+  "Timing": "タイミング",
+  "Emphasis": "強調",
+  "No distinctive terms.": "特徴的な語はありません。",
+  "Needs the [analysis] extra.": "[analysis] エクストラが必要です。",
+  "Only one source in this corpus — nothing to compare.": "このコーパスにはソースが1つだけ——比較対象がありません。",
+  "How many articles in this corpus come from this source — an exact count, never a score.": "このコーパスのうちこのソース由来の記事数——正確な件数で、スコアではありません。",
+  "Mean VADER tone for this source's coverage, with the label. VADER is an ENGLISH-lexicon method — tone for non-English coverage is unreliable or absent. A real value, never a verdict.": "このソースの報道の VADER 平均トーンとラベル。VADER は英語辞書ベースの手法——非英語報道のトーンは信頼できないか欠落します。実際の値であり、判定ではありません。",
+  "The first → last publication date for this source's coverage in the corpus — real dates, never a score.": "コーパス内でのこのソースの報道の最初 → 最後の公開日——実際の日付で、スコアではありません。",
+  "This outlet's most distinctive terms when covering the concept (from framing). Descriptive emphasis, not a judgement.": "この媒体がこの概念を報じる際の最も特徴的な語（フレーミングより）。記述的な強調であり、判断ではありません。",
+  "Descriptive comparison — how these sources DIFFER, never a ranking or a credibility judgement. Rows are ordered by volume only (most-covering first); there is no winner and no composite score.": "記述的な比較——これらのソースがどう異なるか。ランキングや信頼性の判断ではありません。行は件数のみで並びます（最も多く報じた順）。勝者も複合スコアもありません。",
+  "How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed.": "各ソースがこの概念にどう取り組むかを並べて表示：件数（正確な記事数）、トーン（VADER 平均＋ラベル）、タイミング（最初→最後の公開）、媒体の特徴的な強調語。差異を見る顕微鏡であり、判定ではありません——あるソースを別より上位に置かず、品質を判断せず、複合スコアも計算しません。",
+  "How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.": "各ソースがこの概念にどう取り組むかを並べて表示——件数（正確な記事数）、トーン（VADER 平均＋ラベル）、タイミング（最初→最後の公開）、その媒体の特徴的な強調語。ソースがどう異なるかの記述的な比較であり、ランキング・勝者・信頼性の判断ではありません：複合スコアなし。トーンは VADER（英語辞書で、非英語報道には不確実）。ソースが1つだけなら比較対象はありません。"
 }

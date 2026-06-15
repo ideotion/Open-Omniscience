@@ -920,5 +920,19 @@
   "(scoped to the top matched articles)": "（仅限匹配度最高的文章）",
   "Open this source's profile (measured dimensions, no composite score).": "打开此来源的档案（已测量维度，无综合评分）。",
   "The distinct sources behind this corpus, with their per-corpus article count. Country, region, language and tags are stated by the source catalog (asserted, not deduced from text); article counts are exact. No score, no ranking — coverage, not credibility.": "该语料库背后的不同来源，及其各自的语料库文章数。国家、地区、语言和标签由来源目录声明（断言，而非从文本推断）；文章计数精确。无评分、无排名——覆盖范围，而非可信度。",
-  "Which sources feed this corpus — the distinct outlets behind the member articles, with their per-corpus article count and the catalog metadata they assert (domain, country, region, language, tags). Counts are exact; the country/region/language/tags are stated by the source catalog (not deduced from text). No score, no ranking — descriptive provenance, not credibility.": "哪些来源构成该语料库——成员文章背后的不同媒体，及其各自的语料库文章数和它们在目录中声明的元数据（域名、国家、地区、语言、标签）。计数精确；国家/地区/语言/标签由来源目录声明（非从文本推断）。无评分、无排名——描述性来源，而非可信度。"
+  "Which sources feed this corpus — the distinct outlets behind the member articles, with their per-corpus article count and the catalog metadata they assert (domain, country, region, language, tags). Counts are exact; the country/region/language/tags are stated by the source catalog (not deduced from text). No score, no ranking — descriptive provenance, not credibility.": "哪些来源构成该语料库——成员文章背后的不同媒体，及其各自的语料库文章数和它们在目录中声明的元数据（域名、国家、地区、语言、标签）。计数精确；国家/地区/语言/标签由来源目录声明（非从文本推断）。无评分、无排名——描述性来源，而非可信度。",
+  "Volume": "数量",
+  "Tone": "语气",
+  "Timing": "时间",
+  "Emphasis": "侧重",
+  "No distinctive terms.": "无独特词汇。",
+  "Needs the [analysis] extra.": "需要 [analysis] 扩展。",
+  "Only one source in this corpus — nothing to compare.": "此语料库仅有一个来源——无可比较。",
+  "How many articles in this corpus come from this source — an exact count, never a score.": "此语料库中有多少文章来自该来源——精确计数，绝非评分。",
+  "Mean VADER tone for this source's coverage, with the label. VADER is an ENGLISH-lexicon method — tone for non-English coverage is unreliable or absent. A real value, never a verdict.": "该来源报道的 VADER 平均语气及标签。VADER 是基于英语词典的方法——非英语报道的语气不可靠或缺失。真实值，绝非定论。",
+  "The first → last publication date for this source's coverage in the corpus — real dates, never a score.": "该来源在语料库中报道的首篇 → 末篇发布日期——真实日期，绝非评分。",
+  "This outlet's most distinctive terms when covering the concept (from framing). Descriptive emphasis, not a judgement.": "该媒体报道该概念时最具特色的词汇（来自框架分析）。描述性侧重，而非评判。",
+  "Descriptive comparison — how these sources DIFFER, never a ranking or a credibility judgement. Rows are ordered by volume only (most-covering first); there is no winner and no composite score.": "描述性比较——这些来源有何不同，绝非排名或可信度评判。各行仅按数量排序（覆盖最多者在前）；没有赢家，也没有综合评分。",
+  "How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed.": "各来源如何处理该概念，并排呈现：数量（精确文章数）、语气（VADER 均值+标签）、时间（首篇→末篇发布）以及该媒体独特的强调词汇。这是观察分歧的显微镜，而非定论——不将任一来源排在另一之上，不评判质量，不计算综合评分。",
+  "How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.": "各来源如何处理该概念，并排呈现——数量（精确文章数）、语气（VADER 均值+标签）、时间（首篇→末篇发布）以及该媒体独特的强调词汇。这是对来源差异的描述性比较，绝非排名、赢家或可信度评判：无综合评分。语气为 VADER（英语词典，对非英语报道不可靠）。仅一个来源时无可比较。"
 }
