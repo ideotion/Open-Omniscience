@@ -691,5 +691,14 @@
   "excluded": "बहिष्कृत",
   "Exclude dysfunctional": "ख़राब को बाहर करें",
   "Exclude shown": "दिखाए गए को बाहर करें",
-  "Clear exclusions": "बहिष्करण साफ़ करें"
+  "Clear exclusions": "बहिष्करण साफ़ करें",
+  "Add a calendar": "कैलेंडर जोड़ें",
+  "Calendar name": "कैलेंडर का नाम",
+  "Choose a .ics file": ".ics फ़ाइल चुनें",
+  "Import calendar": "कैलेंडर आयात करें",
+  "Your calendars": "आपके कैलेंडर",
+  "Remove": "हटाएँ",
+  "Choose a .ics file first.": "पहले एक .ics फ़ाइल चुनें।",
+  "Calendar removed.": "कैलेंडर हटा दिया गया।",
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "एक स्थानीय .ics फ़ाइल अपलोड करें — कोई नेटवर्क नहीं। इसके इवेंट (दोहराव हटाकर) एक हटाने योग्य कैलेंडर के रूप में आपकी कार्यसूची में जुड़ जाते हैं; फ़ाइल को पार्स करके त्याग दिया जाता है।"
 }

@@ -691,5 +691,14 @@
   "excluded": "dikecualikan",
   "Exclude dysfunctional": "Kecualikan yang bermasalah",
   "Exclude shown": "Kecualikan yang tampil",
-  "Clear exclusions": "Hapus pengecualian"
+  "Clear exclusions": "Hapus pengecualian",
+  "Add a calendar": "Tambah kalender",
+  "Calendar name": "Nama kalender",
+  "Choose a .ics file": "Pilih berkas .ics",
+  "Import calendar": "Impor kalender",
+  "Your calendars": "Kalender Anda",
+  "Remove": "Hapus",
+  "Choose a .ics file first.": "Pilih berkas .ics terlebih dahulu.",
+  "Calendar removed.": "Kalender dihapus.",
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Unggah berkas .ics lokal — tanpa jaringan. Acaranya bergabung ke agenda Anda (tanpa duplikat) sebagai kalender yang dapat dihapus; berkas diurai lalu dibuang."
 }

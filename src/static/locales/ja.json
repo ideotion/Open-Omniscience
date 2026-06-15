@@ -691,5 +691,14 @@
   "excluded": "除外済み",
   "Exclude dysfunctional": "異常なものを除外",
   "Exclude shown": "表示中を除外",
-  "Clear exclusions": "除外をクリア"
+  "Clear exclusions": "除外をクリア",
+  "Add a calendar": "カレンダーを追加",
+  "Calendar name": "カレンダー名",
+  "Choose a .ics file": ".ics ファイルを選択",
+  "Import calendar": "カレンダーをインポート",
+  "Your calendars": "あなたのカレンダー",
+  "Remove": "削除",
+  "Choose a .ics file first.": "まず .ics ファイルを選択してください。",
+  "Calendar removed.": "カレンダーを削除しました。",
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "ローカルの .ics ファイルをアップロードします — ネットワークなし。その予定は（重複を除いて）削除可能なカレンダーとしてアジェンダに加わります。ファイルは解析後に破棄されます。"
 }

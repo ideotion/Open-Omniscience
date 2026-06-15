@@ -691,5 +691,14 @@
   "excluded": "مستبعد",
   "Exclude dysfunctional": "استبعاد المعطّلة",
   "Exclude shown": "استبعاد المعروضة",
-  "Clear exclusions": "مسح الاستبعادات"
+  "Clear exclusions": "مسح الاستبعادات",
+  "Add a calendar": "إضافة تقويم",
+  "Calendar name": "اسم التقويم",
+  "Choose a .ics file": "اختيار ملف ‎.ics‎",
+  "Import calendar": "استيراد التقويم",
+  "Your calendars": "تقويماتك",
+  "Remove": "إزالة",
+  "Choose a .ics file first.": "اختر ملف ‎.ics‎ أولاً.",
+  "Calendar removed.": "أُزيل التقويم.",
+  "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "ارفع ملف ‎.ics‎ محلياً — دون شبكة. تنضمّ أحداثه إلى مفكرتك (بلا تكرار) كتقويم قابل للإزالة؛ يُحلَّل الملف ثم يُتجاهَل."
 }
