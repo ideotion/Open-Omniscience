@@ -69,6 +69,69 @@ def _small_corpus_note(session) -> str:
     )
 
 
+# --- Corpus maturity tier (evidence-tier header, ruled 2026-06-15) ---------- #
+# A DESCRIPTIVE stage (never a score, never a composite) so a Home reader can
+# calibrate how much weight to give the evidence cards. Derived only from REAL
+# corpus facts: the article COUNT and the corpus AGE (first->last article span).
+# The "early" boundary REUSES the existing young-corpus definition
+# (_YOUNG_CORPUS_ARTICLES / _is_young) rather than inventing a second one, so the
+# whole app agrees on what "young" means. The other constants are named here and
+# surfaced verbatim in the UI hover (informed consent: the thresholds are shown).
+#
+#   early       -> a young corpus by article count (_is_young, < 200) OR a span
+#                  shorter than _TIER_MIN_SPAN_DAYS: the cards rest on thin
+#                  evidence, read with care.
+#   established -> at least _TIER_ESTABLISHED_ARTICLES articles AND at least
+#                  _TIER_ESTABLISHED_DAYS days of span: enough breadth and time
+#                  for patterns to be more than a first hint.
+#   developing  -> everything in between.
+_TIER_MIN_SPAN_DAYS = 14
+_TIER_ESTABLISHED_ARTICLES = 1000
+_TIER_ESTABLISHED_DAYS = 90
+
+
+def _corpus_age_days(session) -> int:
+    """Days spanned by the corpus (oldest -> newest article), 0 if undated.
+
+    Uses ``published_at`` when present, falling back to ``created_at`` (the ingest
+    time) so an undated feed still yields an honest span. Cheap: one min/max query.
+    """
+    earliest = func.min(func.coalesce(Article.published_at, Article.created_at))
+    latest = func.max(func.coalesce(Article.published_at, Article.created_at))
+    lo, hi = session.query(earliest, latest).one()
+    if lo is None or hi is None:
+        return 0
+    return max(0, (hi - lo).days)
+
+
+def corpus_tier(session) -> dict:
+    """The corpus maturity STAGE plus the real numbers + thresholds behind it.
+
+    Pure (read-only); returns a plain dict — NO score field, NO composite. The UI
+    shows the stage word beside the real ``articles``/``age_days`` and explains the
+    thresholds (carried here) in the hover.
+    """
+    articles = _corpus_articles(session)
+    age_days = _corpus_age_days(session)
+    if _is_young(session) or age_days < _TIER_MIN_SPAN_DAYS:
+        tier = "early"
+    elif articles >= _TIER_ESTABLISHED_ARTICLES and age_days >= _TIER_ESTABLISHED_DAYS:
+        tier = "established"
+    else:
+        tier = "developing"
+    return {
+        "tier": tier,
+        "articles": articles,
+        "age_days": age_days,
+        "thresholds": {
+            "young_articles": _YOUNG_CORPUS_ARTICLES,
+            "min_span_days": _TIER_MIN_SPAN_DAYS,
+            "established_articles": _TIER_ESTABLISHED_ARTICLES,
+            "established_days": _TIER_ESTABLISHED_DAYS,
+        },
+    }
+
+
 # --- "Why am I seeing this?" (evidence-tiered cards, ruled 2026-06-10) ------- #
 # Every trigger carries (a) ONE constant plain-language sentence per card type —
 # constant so the exact-match i18n engine translates it into all 12 languages —

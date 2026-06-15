@@ -155,4 +155,15 @@ def get_briefing(session, *, force: bool = False, include_dismissed: bool = Fals
     payload = None if force else _read_cache()
     if payload is None:
         payload = refresh_briefing(session)
-    return _present(payload, include_dismissed=include_dismissed)
+    view = _present(payload, include_dismissed=include_dismissed)
+    # Additive: the corpus maturity STAGE (descriptive, never a score) so a Home
+    # reader can calibrate how much weight to give the evidence cards. Computed
+    # live from real corpus facts (cheap min/max + count) — not cached, so it is
+    # always honest about the corpus as it stands right now. Never breaks the feed.
+    from src.briefing.producers import corpus_tier
+
+    try:
+        view["corpus_tier"] = corpus_tier(session)
+    except Exception:  # noqa: BLE001 - the tier must never break the feed
+        _LOG.warning("corpus_tier failed; omitting from briefing", exc_info=True)
+    return view

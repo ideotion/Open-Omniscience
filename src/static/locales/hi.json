@@ -882,5 +882,15 @@
   "Trimester": "तिमाही",
   "Semester": "छमाही",
   "Decade": "दशक",
-  "No events in this period.": "इस अवधि में कोई घटना नहीं।"
+  "No events in this period.": "इस अवधि में कोई घटना नहीं।",
+  "Early corpus": "प्रारंभिक कॉर्पस",
+  "Developing corpus": "विकासशील कॉर्पस",
+  "Established corpus": "स्थापित कॉर्पस",
+  "days": "दिन",
+  "thin evidence — read with care": "अल्प साक्ष्य — सावधानी से पढ़ें",
+  "Early stage: the cards rest on thin evidence — read them as first hints, not established patterns.": "प्रारंभिक चरण: कार्ड अल्प साक्ष्य पर टिके हैं — इन्हें पहले संकेत के रूप में पढ़ें, स्थापित प्रवृत्ति के रूप में नहीं।",
+  "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "स्थापित चरण: पैटर्न को पहले संकेत से अधिक होने के लिए पर्याप्त विस्तार और समय — फिर भी वर्णनात्मक, कभी निर्णय नहीं।",
+  "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "विकासशील चरण: पैटर्न बन रहे हैं पर कॉर्पस अभी इतना व्यापक या पुराना नहीं कि उस पर अधिक भरोसा किया जाए।",
+  "Stages are descriptive, from real corpus facts — never a score.": "चरण वर्णनात्मक हैं, वास्तविक कॉर्पस तथ्यों से — कभी स्कोर नहीं।",
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "सीमाएँ: प्रारंभिक {a} लेख या {d} दिन से कम; स्थापित कम से कम {b} लेख और {e} दिन; विकासशील इनके बीच।"
 }

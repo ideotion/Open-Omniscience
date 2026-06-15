@@ -882,5 +882,15 @@
   "Trimester": "ত্রৈমাসিক",
   "Semester": "ষাণ্মাসিক",
   "Decade": "দশক",
-  "No events in this period.": "এই সময়ে কোনো ইভেন্ট নেই।"
+  "No events in this period.": "এই সময়ে কোনো ইভেন্ট নেই।",
+  "Early corpus": "প্রাথমিক কর্পাস",
+  "Developing corpus": "বিকাশমান কর্পাস",
+  "Established corpus": "প্রতিষ্ঠিত কর্পাস",
+  "days": "দিন",
+  "thin evidence — read with care": "দুর্বল প্রমাণ — সতর্কতার সঙ্গে পড়ুন",
+  "Early stage: the cards rest on thin evidence — read them as first hints, not established patterns.": "প্রাথমিক পর্যায়: কার্ডগুলি দুর্বল প্রমাণের উপর নির্ভর করে — এগুলিকে প্রথম ইঙ্গিত হিসেবে পড়ুন, প্রতিষ্ঠিত প্যাটার্ন নয়।",
+  "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "প্রতিষ্ঠিত পর্যায়: প্যাটার্নগুলি প্রথম ইঙ্গিতের চেয়ে বেশি হওয়ার মতো যথেষ্ট ব্যাপ্তি ও সময় — তবুও বর্ণনামূলক, কখনও রায় নয়।",
+  "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "বিকাশমান পর্যায়: প্যাটার্ন তৈরি হচ্ছে কিন্তু কর্পাস এখনও যথেষ্ট বিস্তৃত বা পুরনো নয় যে এর উপর বেশি নির্ভর করা যায়।",
+  "Stages are descriptive, from real corpus facts — never a score.": "পর্যায়গুলি বর্ণনামূলক, প্রকৃত কর্পাস তথ্য থেকে — কখনও স্কোর নয়।",
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "সীমা: প্রাথমিক {a} নিবন্ধ বা {d} দিনের কম; প্রতিষ্ঠিত অন্তত {b} নিবন্ধ এবং {e} দিন; বিকাশমান এর মাঝামাঝি।"
 }

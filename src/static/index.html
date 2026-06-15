@@ -527,6 +527,17 @@
     .stat-strip .s { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
     .stat-strip .s b { font-size:15px; font-weight:700; letter-spacing:-.01em; }
     .stat-strip .s span { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    /* Corpus maturity tier — a descriptive STAGE chip beside the glance numbers.
+       Subtle per-stage accent only; never a score bar, never fake precision. */
+    .corpus-tier { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }
+    .corpus-tier .tier-badge { font-size:10.5px; font-weight:700; text-transform:uppercase;
+      letter-spacing:.05em; padding:2px 8px; border-radius:999px;
+      border:1px solid var(--tier-ac, var(--border)); color:var(--tier-ac, var(--muted)); }
+    .corpus-tier .tier-nums { font-size:11px; color:var(--muted); }
+    .corpus-tier.tier-early       { --tier-ac:#c98a1b; }
+    .corpus-tier.tier-developing  { --tier-ac:#3b82c4; }
+    .corpus-tier.tier-established { --tier-ac:#2e9e6b; }
+    .corpus-tier .tier-caveat { font-size:10.5px; color:#c98a1b; }
 
     /* ---- Command palette -------------------------------------------- */
     .overlay { position:fixed; inset:0; background:rgba(2,4,8,.55); backdrop-filter:blur(3px);
@@ -811,6 +822,12 @@
            (UI_SHELL_REDESIGN_PLAN §5). Populated by loadHome(). -->
       <div class="panel home-glance">
         <div id="home-stats" class="stat-strip"><div class="muted">Loading…</div></div>
+        <!-- Corpus maturity STAGE (descriptive, never a score): rides with the
+             glance strip so the reader can calibrate how much weight to give the
+             evidence cards below. The visible word + real "N articles · M days"
+             stay present (informed consent); the long form + thresholds live in
+             the #oo-tip hover (invariant #17). Populated by renderCorpusTier(). -->
+        <div id="home-tier" class="corpus-tier" hidden></div>
         <span class="sp"></span>
         <div id="home-status" class="hint" style="margin:0"></div>
       </div>
@@ -3446,9 +3463,55 @@
       finally { if (btn) { btn.disabled = false; btn.textContent = "Refresh"; } }
     }
 
+    // -- Corpus maturity tier (descriptive STAGE, never a score) ------------ //
+    // Calibrates how much weight the evidence cards deserve. The visible surface
+    // keeps the stage word + the REAL "N articles · M days" present; an EARLY
+    // corpus also shows the short "thin evidence" caveat inline. The long plain-
+    // language explanation AND the exact thresholds live in the #oo-tip hover
+    // (informed-consent layering, invariant #17). Numbers come from the backend;
+    // the JS only formats — no second corpus-age definition lives here.
+    function renderCorpusTier(ct) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("home-tier"); if (!el) return;
+      if (!ct || !ct.tier) { el.hidden = true; el.innerHTML = ""; el.removeAttribute("title"); return; }
+      const tier = ct.tier;
+      const arts = (ct.articles || 0).toLocaleString();
+      const days = (ct.age_days || 0).toLocaleString();
+      const th = ct.thresholds || {};
+      // The stage word (one of three constant labels — each keyed ×12).
+      const stageLabel = t(tier === "early" ? "Early corpus"
+        : tier === "established" ? "Established corpus" : "Developing corpus");
+      // The real numbers, always shown beside the stage (constant unit labels keyed).
+      const nums = `${arts} ${t("articles")} · ${days} ${t("days")}`;
+      // What the stage MEANS (plain language) + the exact thresholds — the hover
+      // long form. Built from keyed sentence fragments + the real numbers so the
+      // bubble is translated ×12 by construction (i18n.t on each fragment).
+      const meaning = t(tier === "early"
+          ? "Early stage: the cards rest on thin evidence — read them as first hints, not established patterns."
+          : tier === "established"
+          ? "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict."
+          : "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.");
+      const rule = t("Stages are descriptive, from real corpus facts — never a score.") + " " +
+        t("Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.")
+          .replace("{a}", th.young_articles ?? 200)
+          .replace("{d}", th.min_span_days ?? 14)
+          .replace("{b}", th.established_articles ?? 1000)
+          .replace("{e}", th.established_days ?? 90);
+      el.className = "corpus-tier tier-" + tier;
+      // The #oo-tip hover re-reads this live-translated title (invariant #17).
+      el.title = stageLabel + " — " + meaning + " " + rule;
+      const caveat = (tier === "early")
+        ? `<span class="tier-caveat">${esc(t("thin evidence — read with care"))}</span>` : "";
+      el.innerHTML =
+        `<span class="tier-badge">${esc(stageLabel)}</span>` +
+        `<span class="tier-nums">${esc(nums)}</span>` + caveat;
+      el.hidden = false;
+    }
+
     function renderBriefing(data) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _briefCards = {};
+      renderCorpusTier(data.corpus_tier);
       _lastBriefGen = data.generated_at || null;
       const feed = $("briefing-feed");
       const gen = $("brief-generated");

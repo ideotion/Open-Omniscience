@@ -882,5 +882,15 @@
   "Trimester": "Trimestre",
   "Semester": "Semestre",
   "Decade": "Décennie",
-  "No events in this period.": "Aucun événement durant cette période."
+  "No events in this period.": "Aucun événement durant cette période.",
+  "Early corpus": "Corpus naissant",
+  "Developing corpus": "Corpus en développement",
+  "Established corpus": "Corpus établi",
+  "days": "jours",
+  "thin evidence — read with care": "preuves minces — à lire avec prudence",
+  "Early stage: the cards rest on thin evidence — read them as first hints, not established patterns.": "Stade précoce : les cartes reposent sur des preuves minces — à lire comme de premiers indices, non comme des tendances établies.",
+  "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict.": "Stade établi : assez d'ampleur et de temps pour que les tendances soient plus qu'un premier indice — descriptif malgré tout, jamais un verdict.",
+  "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.": "Stade en développement : des tendances se forment mais le corpus n'est pas encore assez vaste ni ancien pour s'y fier fortement.",
+  "Stages are descriptive, from real corpus facts — never a score.": "Les stades sont descriptifs, issus de faits réels du corpus — jamais un score.",
+  "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Seuils : naissant en dessous de {a} articles ou {d} jours ; établi à au moins {b} articles et {e} jours ; en développement entre les deux."
 }
