@@ -322,6 +322,14 @@
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .ag-chip.approx { background:color-mix(in srgb, var(--warn, orange) 14%, transparent); }
     .ag-more { font-size:10px; color:var(--muted); }
+    /* Year view: a 12-month overview of clickable month cards. */
+    .ag-ygrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:8px; }
+    .ag-ycard { border:1px solid var(--border); border-radius:8px; padding:7px 9px; cursor:pointer;
+      display:flex; flex-direction:column; gap:3px; min-height:70px; }
+    .ag-ycard:hover { border-color:var(--accent); }
+    .ag-ycard.today { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+    .ag-ycard.has { background:var(--panel2); }
+    .ag-ymon { font-weight:600; font-size:13px; }
     /* The Agenda uses the full content width — the calendar wants the room. */
     #tab-agenda { max-width:none; }
     /* Category filter as colored chips (replaced the dropdown). The dot carries the
@@ -1082,6 +1090,7 @@
           <nav class="tabs ag-views" id="agenda-views" style="position:static;padding:0;border:0;margin:0">
             <button class="active" data-tab="month">Month</button>
             <button data-tab="week">Week</button>
+            <button data-tab="year">Year</button>
             <button data-tab="list">List</button></nav></div>
         <div style="flex:1 1 auto"><label>Category</label>
           <div class="ag-cats" id="agenda-cats"></div></div>
@@ -1102,6 +1111,7 @@
       </div>
       <div id="agenda-month" style="margin-top:10px"></div>
       <div id="agenda-week" style="margin-top:10px"></div>
+      <div id="agenda-year" style="margin-top:10px"></div>
       <div id="agenda-day"></div>
       <div id="agenda-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
     </section>
@@ -4188,7 +4198,36 @@
     }
     // The nav bar (‹ · label · › · Today) is shared by Month and Week — dispatch
     // by the active view so one bar serves both.
-    function agNavShift(d) { agView() === "week" ? agWeekShift(d) : agMonthShift(d); }
+    function agNavShift(d) {
+      const v = agView();
+      if (v === "week") agWeekShift(d); else if (v === "year") agYearShift(d); else agMonthShift(d);
+    }
+    function agYearShift(d) { AGV.y = (AGV.y || new Date().getFullYear()) + d; AGV.day = null; renderAgenda(); }
+    // YEAR view (Item C remaining): a 12-month overview — per-month event counts +
+    // a few honest chips; click a month to drill into the Month grid. Annual rules
+    // (e.month) and this year's dated instances are both counted.
+    function renderAgendaYear(rows) {
+      const box = $("agenda-year"), loc = agLocale(), y = AGV.y;
+      const byMonth = {}; for (let m = 1; m <= 12; m++) byMonth[m] = [];
+      for (const e of rows) {
+        if (e.month) byMonth[e.month].push(e);
+        else if (e.next_occurrence && +e.next_occurrence.slice(0, 4) === y) byMonth[+e.next_occurrence.slice(5, 7)].push(e);
+      }
+      const now = new Date(), curY = now.getFullYear(), curM = now.getMonth() + 1;
+      let cards = "";
+      for (let m = 1; m <= 12; m++) {
+        const evs = byMonth[m];
+        const name = new Intl.DateTimeFormat(loc, { month: "long" }).format(new Date(y, m - 1, 1));
+        const isCur = y === curY && m === curM;
+        const chips = evs.slice(0, 4).map(e =>
+          `<span class="ag-chip${e.confirmed ? "" : " approx"}" title="${esc(e.title)}">${esc(e.title.length > 20 ? e.title.slice(0, 19) + "…" : e.title)}</span>`).join("");
+        const more = evs.length > 4 ? `<span class="ag-more">+${evs.length - 4}</span>` : "";
+        cards += `<div class="ag-ycard${isCur ? " today" : ""}${evs.length ? " has" : ""}" onclick="agOpenMonth(${m})" title="${esc(name)}">
+          <div class="ag-ymon">${esc(name)} <span class="muted">${evs.length || ""}</span></div>${chips}${more}</div>`;
+      }
+      box.innerHTML = `<div class="ag-ygrid">${cards}</div>`;
+    }
+    function agOpenMonth(m) { AGV.m = m; AGV.day = null; agendaSetView("month"); }
     function agNavToday() {
       const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1;
       AGV.day = t.getDate(); renderAgenda();
@@ -4337,10 +4376,11 @@
       renderAgendaCals();
       const view = agView();
       if (_agViewTabs) _agViewTabs.paint(view);
-      const isMonth = view === "month", isWeek = view === "week", isList = view === "list";
-      $("agenda-monthbar").style.display = (isMonth || isWeek) ? "" : "none";
+      const isMonth = view === "month", isWeek = view === "week", isYear = view === "year", isList = view === "list";
+      $("agenda-monthbar").style.display = (isMonth || isWeek || isYear) ? "" : "none";
       $("agenda-month").style.display = isMonth ? "" : "none";
       $("agenda-week").style.display = isWeek ? "" : "none";
+      $("agenda-year").style.display = isYear ? "" : "none";
       $("agenda-day").style.display = (isMonth || isWeek) ? "" : "none";
       $("agenda-list").style.display = isList ? "" : "none";
       $("agenda-group-wrap").style.display = isList ? "" : "none";
@@ -4353,6 +4393,12 @@
       }
       if (isWeek) {
         _ensureAstro(agAnchorDate().getFullYear()).then(() => renderAgendaWeek(rows));
+        return;
+      }
+      if (isYear) {
+        if (AGV.y == null) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
+        $("agenda-monthlabel").textContent = String(AGV.y);
+        renderAgendaYear(rows);
         return;
       }
       const box = $("agenda-list");

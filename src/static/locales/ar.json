@@ -828,5 +828,6 @@
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "طُلب OpenTimestamps، لكن الإضافة 'timestamping' غير مثبّتة.",
   "Custody settings saved.": "تم حفظ إعدادات سلسلة الحفظ.",
   "Enter an item id (e.g. article:42).": "أدخل معرّف عنصر (مثل article:42).",
-  "Enter a Merkle root (hex).": "أدخل جذر Merkle (سداسي عشري)."
+  "Enter a Merkle root (hex).": "أدخل جذر Merkle (سداسي عشري).",
+  "Year": "سنة"
 }

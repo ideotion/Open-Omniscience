@@ -828,5 +828,6 @@
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps অনুরোধ করা হয়েছে, কিন্তু 'timestamping' এক্সট্রা ইনস্টল করা নেই।",
   "Custody settings saved.": "হেফাজত-শৃঙ্খল সেটিংস সংরক্ষণ করা হয়েছে।",
   "Enter an item id (e.g. article:42).": "একটি আইটেম id লিখুন (যেমন article:42)।",
-  "Enter a Merkle root (hex).": "একটি Merkle রুট লিখুন (হেক্স)।"
+  "Enter a Merkle root (hex).": "একটি Merkle রুট লিখুন (হেক্স)।",
+  "Year": "বছর"
 }

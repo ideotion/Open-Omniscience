@@ -828,5 +828,6 @@
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps angefordert, aber das Extra 'timestamping' ist nicht installiert.",
   "Custody settings saved.": "Verwahrungskette-Einstellungen gespeichert.",
   "Enter an item id (e.g. article:42).": "Geben Sie eine Element-ID ein (z. B. article:42).",
-  "Enter a Merkle root (hex).": "Geben Sie eine Merkle-Wurzel ein (Hex)."
+  "Enter a Merkle root (hex).": "Geben Sie eine Merkle-Wurzel ein (Hex).",
+  "Year": "Jahr"
 }

@@ -828,5 +828,6 @@
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps diminta, tetapi ekstra 'timestamping' tidak terpasang.",
   "Custody settings saved.": "Pengaturan rantai pengawasan disimpan.",
   "Enter an item id (e.g. article:42).": "Masukkan id item (mis. article:42).",
-  "Enter a Merkle root (hex).": "Masukkan akar Merkle (heksa)."
+  "Enter a Merkle root (hex).": "Masukkan akar Merkle (heksa).",
+  "Year": "Tahun"
 }

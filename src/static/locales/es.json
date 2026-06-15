@@ -828,5 +828,6 @@
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps solicitado, pero el extra 'timestamping' no está instalado.",
   "Custody settings saved.": "Ajustes de cadena de custodia guardados.",
   "Enter an item id (e.g. article:42).": "Introduce un id de elemento (p. ej. article:42).",
-  "Enter a Merkle root (hex).": "Introduce una raíz Merkle (hexadecimal)."
+  "Enter a Merkle root (hex).": "Introduce una raíz Merkle (hexadecimal).",
+  "Year": "Año"
 }
