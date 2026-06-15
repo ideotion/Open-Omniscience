@@ -372,6 +372,50 @@ def remove_user_feed(key: str) -> dict:
     return {"removed": key, "events": n}
 
 
+def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float = 12.0) -> dict:
+    """Import a BOUNDED batch of bundled calendar feeds (continuous auto-import,
+    ruled 2026-06-15 "auto-import everything").
+
+    Round-robin by least-recently-imported so over successive collect passes EVERY
+    feed is eventually covered WITHOUT hammering: at most ``batch`` feeds per call,
+    and a feed imported (or attempted) within ``min_interval_hours`` is skipped
+    (per-feed backoff — a robots-blocked/dead feed is not retried every pass). Each
+    import is best-effort (one feed's failure never aborts the batch) and idempotent
+    (``import_feed`` dedups). The kill switch / robots / per-host politeness / proxy
+    are all inherited from ``fetcher`` (the guarded path) — this adds no new fetch
+    surface, just schedules the existing operator import. Per-feed timestamps live in
+    a per-machine store. Returns a tally; never raises for a single bad feed.
+    """
+    state = _load_json("calendar_autoimport.json")
+    now = datetime.now(UTC)
+    due: list[tuple[str, str]] = []
+    for fam in load_families():
+        for feed in fam["feeds"]:
+            last = state.get(feed["id"])
+            if last:
+                try:
+                    age_h = (now - datetime.fromisoformat(last)).total_seconds() / 3600
+                    if age_h < min_interval_hours:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            due.append((last or "", feed["id"]))   # "" (never imported) sorts first
+    due.sort()
+    picked = [fid for _, fid in due[: max(0, batch)]]
+    imported = failed = 0
+    for fid in picked:
+        try:
+            import_feed(fetcher, fid)
+            imported += 1
+        except Exception:  # noqa: BLE001 - one bad feed must not abort the batch
+            failed += 1
+        # Record the ATTEMPT either way, so a failing feed backs off too.
+        state[fid] = now.isoformat(timespec="seconds")
+    if picked:
+        _save_json("calendar_autoimport.json", state)
+    return {"due": len(due), "picked": len(picked), "imported": imported, "failed": failed}
+
+
 def collapse_imported(rows: list[dict]) -> list[dict]:
     """Collapse the SAME imported event seen across DIFFERENT feed families into ONE
     row (ruled 2026-06-15: "we don't want 100 entries mentioning Christmas Day").

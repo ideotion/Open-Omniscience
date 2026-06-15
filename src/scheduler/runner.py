@@ -513,6 +513,20 @@ class BackgroundScheduler:
                     _LOG.info("first-run feed preflight: %s", result_fpf)
             except Exception:  # noqa: BLE001
                 _LOG.warning("feed preflight failed", exc_info=True)
+            # Calendar auto-import (ruled 2026-06-15 "auto-import everything"): a
+            # BOUNDED, polite batch of bundled calendar feeds per pass, round-robin
+            # by least-recently-imported so over time every feed is covered without
+            # hammering. Best-effort; gated to online (this pass already is) + the
+            # kill switch via the shared fetcher; opt-out via auto_import_calendars.
+            try:
+                if getattr(settings, "auto_import_calendars", True):
+                    from src.events.feeds import auto_import_due_feeds
+
+                    result_ai = auto_import_due_feeds(fetcher)
+                    if result_ai["picked"]:
+                        _LOG.info("calendar auto-import: %s", result_ai)
+            except Exception:  # noqa: BLE001 - never fail the scrape on auto-import
+                _LOG.warning("calendar auto-import failed", exc_info=True)
             # TEMPORARY (0.0.8 live-test cycle): exercise every fetch surface
             # once and log verbatim outcomes for the maintainer's debug bundle.
             # Self-improvement instrumentation only; OO_FIELD_TEST=0 disables;
