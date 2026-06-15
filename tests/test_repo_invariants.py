@@ -1418,3 +1418,54 @@ def test_corpus_window_mindmap_subtab():
         "left without its mind-map"
     )
     assert "function _mmKitHome(" in html, "the kit must be restorable to Insights"
+
+
+def test_corpus_window_sentiment_subtab():
+    """Sentiment sub-tab on THE corpus analysis window (ledger "ONE CORPORA
+    SYSTEM": Sentiment analysis is one of the ruled sub-tabs). It must REUSE the
+    existing Insights framing renderer (loadFraming -> /api/framing) pointed at
+    the window's corpus term -- NOT a new sentiment engine, NOT a new endpoint --
+    and it MUST carry the English-only VADER disclosure (audit finding B1) so the
+    honesty travels onto this surface. Pinned so it cannot regress between
+    sessions:
+      * a data-tab="sentiment" button exists in the corpus window's ooSubtabs nav
+        (DOM-text label, no inline onclick) and the Trend/Articles/Links/Mindmap
+        siblings stay (nothing lost);
+      * corpusTab() handles "sentiment" by calling loadFraming() for _corpusTerm;
+      * the renderer is reused, not forked (exactly one loadFraming);
+      * the English-only VADER disclosure is reachable on this surface (the
+        button's hover title states it AND the shared renderer emits the
+        endpoint's caveat -- which is the English-lexicon VADER disclosure).
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # 1. the Sentiment button lives in the corpus window's subtab nav.
+    nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
+    assert 'data-tab="sentiment"' in nav, (
+        "the corpus window must carry a Sentiment sub-tab button in its ooSubtabs nav"
+    )
+    assert "Sentiment" in nav, "the sub-tab button label must be DOM text (auto-translated)"
+    # the Trend/Articles/Links/Mindmap siblings stay (nothing lost).
+    for sib in ('data-tab="trend"', 'data-tab="articles"', 'data-tab="links"', 'data-tab="mindmap"'):
+        assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
+    # the English-only VADER disclosure is present in the button's hover long-form
+    # (informed-consent layering) -- VADER + ENGLISH must both be named.
+    assert "VADER" in nav and "ENGLISH" in nav.upper(), (
+        "the Sentiment sub-tab must disclose the English-only VADER limit (audit B1) "
+        "in its hover title"
+    )
+    # 2. corpusTab dispatches "sentiment" -> the SHARED framing renderer, term-keyed.
+    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    assert 'which === "sentiment"' in body, "corpusTab must handle the sentiment sub-tab"
+    assert "loadFraming(_corpusTerm" in body, (
+        "the Sentiment sub-tab must render the EXISTING Insights framing surface "
+        "(loadFraming -> /api/framing) for THIS window's corpus term, not a new engine"
+    )
+    # 3. the renderer is reused, not forked: exactly one loadFraming.
+    assert html.count("async function loadFraming(") == 1, "loadFraming must not be forked"
+    # 4. loadFraming emits the endpoint's caveat (the English-only VADER disclosure)
+    #    so the disclosure is VISIBLE on this surface, not just the hover title.
+    framing_fn = html.split("async function loadFraming(", 1)[1].split("\n    async function ", 1)[0]
+    assert "d.caveat" in framing_fn, (
+        "the framing renderer must surface the endpoint caveat (English-only VADER "
+        "disclosure) on every surface that reuses it, including the corpus window"
+    )

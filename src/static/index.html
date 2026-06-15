@@ -2217,6 +2217,8 @@
         title="Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.">Mindmap</button>
       <button data-tab="links"
         title="Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.">Links</button>
+      <button data-tab="sentiment"
+        title="How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.">Sentiment</button>
     </nav>
     <div id="corpus-body" style="padding:12px 16px;max-height:64vh;overflow:auto"></div>
   </dialog>
@@ -7266,6 +7268,17 @@
                  <div class="muted" style="font-size:12px">${esc(t("citing sources:"))} ${r.citing_sources} — ${esc(r.note)}</div>
                </div>`).join("")
              : `<div class="muted">${esc(t("No outbound link is shared by more than one member article."))}</div>`);
+        } else if (which === "sentiment") {
+          // Reuse the EXACT Insights framing renderer (loadFraming → /api/framing)
+          // by CALLING it into a fresh host — no DOM relocation, Insights untouched.
+          // The endpoint is keyed on the FTS query, so we point it at _corpusTerm.
+          // Its d.caveat carries the English-only VADER disclosure (audit B1),
+          // rendered VISIBLY by loadFraming (the same keyed disclosure the
+          // Insights framing surface shows). /api/framing takes no date params,
+          // so this is honest full-corpus — we do NOT fake a time-scope window.
+          el.innerHTML = `<h2 style="margin:2px 0 6px;font-size:13px">${esc(t("How outlets frame this"))} <span class="muted">${esc(t("(VADER tone)"))}</span></h2>
+            <div id="corpus-sentiment-host"></div>`;
+          await loadFraming(_corpusTerm, "corpus-sentiment-host");
         }
       } catch (e) { el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
@@ -8802,8 +8815,11 @@
     }
 
     // Framing comparison — moved into Insights, scoped to the explored term.
-    async function loadFraming(term) {
-      const el = $("ins-framing");
+    // elId lets a second surface (the corpus window's Sentiment sub-tab) REUSE
+    // this exact renderer + its English-only VADER disclosure (d.caveat) by
+    // pointing it at a fresh host, instead of relocating the Insights DOM.
+    async function loadFraming(term, elId) {
+      const el = $(elId || "ins-framing");
       el.innerHTML = "<span class='muted'>Comparing how outlets frame this…</span>";
       try {
         const d = await api("/api/framing?query=" + encodeURIComponent(term));
