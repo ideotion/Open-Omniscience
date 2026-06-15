@@ -578,5 +578,824 @@ the maintainer's BUILD lags #129 / a regression (Home not showing subtabs) — c
 **(B)** EXTEND the same component to surfaces that aren't subtabs yet (Markets
 categories, the Agenda view switch) — the invariant-#18 "next adopters"; **(C)** REWORK
 the subtab visual design itself across the app (a new look for the one component);
-**(D)** something else. Resolving this changes the work — clarifying question posed;
-answer to be folded in here.
+**(D)** something else.
+
+**RESOLVED (maintainer, 08:50):** option **(C)** — **rework the subtab LOOK across the
+whole app**. NOT a build-lag, and not (only) extending to new surfaces: keep the ONE
+shared component (`ooSubtabs`, **index.html:5834**, + the `<nav class="tabs">` grammar &
+its CSS) and **redesign its visual treatment** — which, because it is a single
+component/class, propagates to all six adopters AT ONCE (the payoff of invariant #18). So
+this is a **centralised CSS/component visual refresh**, applied everywhere uniformly (not
+per-surface work). **⏭ OPEN (needs the maintainer's design intent, or the implementer
+proposes options):** the SPECIFIC new look — bar shape, active-state (underline vs pill
+vs filled), spacing, typography, hue/accent — while preserving ARIA + keyboard nav + the
+#oo-tip hover. Item K (the analysis subtabs) and every other adopter inherit it
+automatically. Build-lag is moot: choosing "rework the look" means the maintainer DOES
+see the subtabs and wants them redesigned.
+
+---
+
+## Item K — Analysis-window sub-tabs (Keywords / Articles / When-Where-Who / Links / Sentiment / Sources / Advanced) as uniform subtabs  [ALREADY SHIPPED at the nav level on HEAD; content = Group F remaining]  ⏭ capture-only
+
+**Verbatim (08:24):** "regarding the analysis tab. Same remark : Keywords / Articles /
+When/where/who / links / sntiment / Sources / Advanced should be presented as
+sub-tabs. Visually coherent like any other subtabs."
+
+**Grounded:** the analysis nav `#an-subtabs` (**index.html:827–835**) ALREADY renders
+exactly that set as `data-tab` buttons — Keywords, Articles, When/Where/Who (`www`),
+Links, Sentiment, Sources, Advanced — wired through the SAME `ooSubtabs` component
+(7736, `anSelectTab`). So at the **sub-tab grammar** level this is already shipped and
+visually coherent with every other surface.
+
+What's actually missing = the **panel CONTENT**: only Keywords + Articles are
+implemented (`anSelectTab` 7219 → Keywords = `/api/insights/corpus-keywords`,
+counts-only; Articles = the match list). When/Where/Who · Links · Sentiment · Sources ·
+Advanced are the **Group F remaining** panels — present as tabs, stubbed as content.
+
+**Resolves Item J's ambiguity (by the maintainer's own example):** BOTH surfaces the
+maintainer named (Home card families #129, the analysis sub-tabs) are ALREADY uniform
+subtabs on HEAD. ⇒ the maintainer is most likely on a **build that predates #129 / the
+Group-F slice**, OR reacting to the **stub panels** (a subtab that switches to empty
+content reads as "not a real subtab"). **Action: flag as a build-lag to verify** +
+prioritise the Group F panel content (Item L specifies the Keywords panel). The
+uniform-subtab MANDATE (invariant #18) stands as the guide for every surface regardless.
+
+---
+
+## Item L — Keyword sub-tab = top-8 daily-occurrence graphs via the commodities engine (ooChart); categorize/tag keywords; tags assemble keyword FAMILIES (graph the family's top-8); fit-on-screen, no scroll  [NEW — Group F keyword panel + #16 + families]  ⏭ capture-only
+
+**Verbatim (08:29):** "The keyword subtab should show the top 8 keywords daily occurence
+graph, with the same engine as the commodities are presented. Like commodities, keyword
+should be categorized / tagged. Tags should allow user to assemble family of keywords so
+that the top 8 keywords from this family are graphed. Try to make everything fit on the
+screen so that there's no need to scroll down to see all graphs."
+
+**Where (grounded):**
+- The keyword sub-tab `#an-keywords` (**index.html:836**) shows a COUNTS LIST today
+  (`anSelectTab` 7219 → `GET /api/insights/corpus-keywords` 7229, counts-only).
+- "Same engine as commodities" = **`ooChart`** (**index.html:5620**; invariant #16) —
+  already used for markets (5794), the corpus trend (6190), the insights trend (6462).
+  The commodities **small-multiples grid** is `#mkt-dashboard`
+  (`grid-template-columns:repeat(auto-fill,minmax(300px,1fr))`, **index.html:1109**) —
+  the fit-to-screen pattern to mirror.
+- Per-keyword daily series substrate: keyword_mentions carry dates; `/api/insights/
+  trend` already builds a per-term daily series for ooChart (6462). Top-8 = the top-8
+  keywords, each with its series.
+- Categorize/tag + families substrate EXISTS: `src/api/keyword_management.py` —
+  `get_keyword_categories` (97), `categorize_keywords` (109), `get_top_keywords`
+  (123); plus `src/analytics/families.py` (the families engine; `#fam-kind`).
+
+Asks:
+- **(a)** Graph the **top-8** keywords' **daily occurrence** via ooChart (full-res per
+  #16; honest sparse→points + the early-corpus caveat).
+- **(b)** Keywords **categorized/tagged** like commodities (reuse keyword_management +
+  families).
+- **(c)** Tags let the user **assemble keyword FAMILIES**; selecting a family graphs
+  the **family's top-8** (the corpora "curated symbol→family seed table" idea, now
+  user-buildable).
+- **(d)** **Fit-on-screen, no scroll** — a viewport-fitting small-multiples grid (the
+  `#mkt-dashboard` pattern), all top-8 visible at once.
+
+**Maps to:** BACKLOG_GROUPED **Group F** (the keyword panel = the next slice beyond
+counts-only) + invariant **#16** (ooChart) + the corpora "KEYWORDS ARE CORPORA" +
+time-scope + the keyword **families/tagging** system + the commodities small-multiples
+grid (Group G). Cross-links **Item C(d)** (colored tag chips = same tagging UX) and
+**Item K** (this IS the Keywords-panel content the window needs).
+
+**⏭ Open Qs (compile):** top-8 by which window (last-N-days vs the time-scope
+control)? one multi-series chart vs 8 small multiples? how families are defined (auto
+co-occurrence vs purely user-assembled vs seed-table + user edits)?
+
+---
+
+## Item M — "Download keyword log" opens a raw streaming JSON in a new tab (very slow, no feedback) → show progress + make the tab informative ("use it smartly")  [NEW — ties task-manager / Group C]  ⏭ capture-only
+
+**Verbatim (08:31):** "Downloading keywords opens-up a new tab, takes a very long time.
+Why not help the user understand what's going on and show a progress bar? This new tab
+should show information. Let's use it smartly."
+
+**Where (grounded):**
+- The button: **index.html:1719** — `window.open('/api/diagnostics/keywords','_blank')`
+  "Download keyword log (.json)" (Settings → diagnostics). It opens a NEW browser tab
+  pointed straight at the **streaming JSON** endpoint.
+- The endpoint: `src/api/diagnostics.py:57–58` `GET /keywords` → `keyword_log` returns a
+  `StreamingResponse`. **Known-slow:** field-log C measured **29.6 s → 65.2 s** under
+  live-scrape contention; T1 got it to ~7.8 s encrypted (streamed). So the tab sits
+  **blank/loading for tens of seconds**, then dumps raw JSON — no progress, no info.
+
+**Asks:** a **progress bar** + the new tab should **show information** — a real page,
+not a raw JSON dump.
+
+**Maps to:** the **task-manager / download-manager** (BACKLOG_GROUPED **Group C** —
+every job a VISIBLE job with progress; running/queue/history) + the perf work (the
+export is heavy) + the diagnostics channel (the keyword log is part of the maintainer's
+debug protocol). Honesty: it's a STREAM — show **honest progress** (items processed /
+indeterminate "working… N keywords"), **never a fabricated ETA**.
+
+**Design directions:** (a) make it a **task-manager job** with a progress indicator
+instead of a raw `window.open`; OR (b) the new tab loads a **real page** that states
+what's being exported + a progress bar, then offers the file when ready; (c) an async
+export-then-download (kick the job, stream progress, download on completion) so the UI
+never blocks on a blank tab. Fold ALL slow exports/downloads into the same treatment via
+the download subsystem.
+
+**⏭ Open Qs (compile):** in-app job + download-when-ready vs an informative export page
+in the new tab? does the streaming endpoint expose a progress count, or show
+indeterminate progress?
+
+---
+
+## Item N — the "Trust" tabs (Evidence & custody · Source integrity): rethink purpose, spread into the workflow, make them dummy-proof & (semi-)automatic  [NEW — design decision; "help me decide"]  ⏭ capture + RECOMMENDATION (awaits maintainer steer)
+
+**Verbatim (09:00):** "The TRUST tabs might not be used. Note that they are not fully
+translated also. I'm wondering if this shouldn't be spread in search related tools and UI.
+Anyways, we should think [about] their ultimate purpose and use cases in order to maximize
+usefulness and user accessibility. They should become more user friendly anyways, and
+accessible to users that are not familiar with these and not experts. They should become
+dummy-proof, maybe semi automated, or completely automated. I'm not sure, help me decide."
+
+**What they are (grounded):** the sidebar **"Trust" nav-group** (index.html:654-658) =
+exactly TWO tabs:
+- **Evidence & custody** (`#tab-custody`, index.html:891) — chain-of-custody: signed,
+  tamper-evident provenance for legal defensibility. Expert knobs (post-quantum ML-DSA/
+  FIPS-204 signatures, OpenTimestamps→Bitcoin anchoring, auto-log-on-ingest, default actor)
+  + actions (view chain / verify / export offline-verifiable bundle / **anchor a raw
+  "Merkle root (hex) … 64-char SHA-256 hex"**). Deeply forensic.
+- **Source integrity** (`#tab-integrity`, index.html:974) — anti-amplification ("Scan for
+  coordination" → collapse a near-duplicate flood to "one voice", reversible), source
+  profiling (structure signals: coordination/novelty/output-capacity/transparency —
+  explicitly **NO trust score**), and the **web-of-trust** shared annotations (signed,
+  contestable facts about sources; trusted-author curation).
+
+**i18n confirmed:** "Chain of custody", "Source integrity & anti-amplification",
+"Merkle root", etc. live ONLY in index.html — absent from all 12 `locales/*.json`. So
+these tabs are hardcoded English (part of the untranslatable long tail).
+
+**Usage:** we have NO telemetry (by design), so "might not be used" can't be measured —
+but structurally they're buried in a silo, expert-heavy, and disconnected from where users
+actually work (search/reading/analysis), which predicts low use. The maintainer's instinct
+is sound.
+
+**THE REALIZATION (the crux):** these are TWO different things wearing one "Trust" label,
+for TWO different audiences:
+- **Integrity = for EVERYONE, belongs AMBIENT.** "Is this source manipulating me? Is this
+  'consensus' really 10 copies of one origin?" is the project's core anti-single-origin
+  ethic — the SAME methodology as the LINKS anti-false-triangulation rule. It should not be
+  a destination you remember to visit; it should COME TO the user where they read/search/
+  analyze.
+- **Custody = for a NARROW expert subset** (journalists / legal / archivists proving an
+  artifact existed at T and is unaltered). Inherently forensic. It's the LOCAL end of the
+  reliable-memory pillar.
+
+**MY RECOMMENDATION — 4 moves (applies existing rulings, invents no new philosophy):**
+1. **Dissolve the "Trust" sidebar group** — apply invariant #8 ("show DATA, never
+   plumbing") + the content-first precedent that already moved Collect/Sources/Wikipedia
+   into Settings. GATED by an **absorption test** (the Desk lesson: nothing removed until
+   its capability lives in its new home).
+2. **Integrity → ambient + automatic (the maintainer's "spread into search/UI", endorsed):**
+   coordination detection becomes a BACKGROUND pass (like Insights auto-indexing,
+   invariant #21 — no manual "Scan" button); in SEARCH results + the corpus/analysis window
+   a coordinated cluster shows inline, dummy-proof: *"12 near-identical copies from a
+   coordinated network · counted as 1 voice [show all 12]"* (this IS the anti-false-
+   triangulation surface LINKS already wants); the READER gets a per-source integrity-
+   signals row (method+caveat) + web-of-trust annotations on the source chip; profiling +
+   annotations attach to a SOURCE CHIP wherever a source appears (no "type a domain" box).
+   Dummy-proof BY CONSTRUCTION — the user never needs the word "anti-amplification".
+3. **Custody → an ACTION on content, not a destination:** per-item "Export tamper-evident
+   proof" / "Verify this bundle (green=unaltered / red=altered)" on articles + corpora (the
+   signed-evidence export already lives in the Search tab = precedent); the raw
+   "Merkle root (hex)/Ed25519/OTS" detail moves into the **#oo-tip hover** (informed-
+   consent-by-LAYERING — the permanent ruling); the custody PREFERENCES move to **Settings**.
+4. **Automation defaults (the genuine rulings needed):** (a) **auto-log custody ON by
+   default** — recommended YES (tamper-evidence is the reliable-memory pillar; on by
+   construction like at-rest encryption, so users get legal-grade provenance without knowing
+   what a Merkle root is; expert knobs in Settings). **OTS/Bitcoin anchoring stays OFF by
+   default** either way — it's a network egress that reveals IP/timing (already warned).
+   (b) integrity coordination scan → background/auto.
+
+**i18n note:** don't spend the ×12 keying effort on the CURRENT tabs if we're about to
+dissolve/move them — key the strings AS they land in their new homes (else we translate
+strings we're about to delete). The i18n fix FOLDS INTO the rework.
+
+**Sequencing reality:** integrity's best home (the corpus/analysis window with
+source-competitive-analysis + LINKS) is only PARTIALLY built (T10 slice 1). So the full
+"spread integrity into the workflow" rides WITH the search/analysis-window completion (the
+Enter→corpus-window slice). Custody-as-action can land earlier (reader + Search export
+exist).
+
+**Supersedes/extends** the existing queue item *"Custody tab UX: most users won't get it —
+rename/explain/guided steps"* — the answer is not rename/explain but spread + automate +
+dummy-proof.
+
+**⏭ DECISIONS I need from the maintainer:** (a) dissolve the Trust group & spread into the
+workflow (recommended) **vs** keep two tabs but just dummy-proof in place? (b) custody
+auto-log ON by default (recommended) **vs** stay opt-in? (c) treat as a now-ish topic **vs**
+parked behind the analysis-window build (integrity's natural home)?
+
+**✅ RESOLVED (maintainer 09:59) — all three as recommended:** (a) **DISSOLVE the group &
+spread into the workflow**; (b) **custody auto-log ON BY DEFAULT, opt-out in Settings**;
+(c) **PARK it behind the analysis-window build + the search UI**. Recorded as a ruling in
+CLAUDE.md (supersedes the old "Custody tab UX" queue note). So integrity's home = the analysis
+window + search results; custody-as-action rides the same build; OTS/Bitcoin still OFF by
+default; i18n folds into the rework. No code this turn (parked, sequenced).
+
+---
+
+## Item O — app tabs should be right-clickable → "open in a new window/tab" (real browser behaviour)  [NEW — ties the routing/back-button rework]  ⏭ capture-only
+
+**Verbatim (09:01):** "tabs should be right-clickable so users can open up a tab in a new
+window."
+
+**Where (grounded):** nav is JS-only — `showTab()` swaps `.tab-page` visibility; the
+nav-items are `<button data-tab=…>` with NO real `href`, and tab nav uses
+`history.replaceState` (the back-button bug, UI-plan §7a). With no URL there is nothing for
+the browser's "open in new window/tab", middle-click, or ⌘/Ctrl-click to open.
+
+**THE UNIFYING INSIGHT:** give every tab a REAL URL (deep-link anchor) + `pushState`
+history, with `showTab` intercepting plain left-click (preventDefault) while letting
+modified clicks (middle / right / ⌘ / Ctrl) fall through to native browser behaviour. ONE
+routing fix then delivers THREE things at once: (1) right-click/middle-click → open in new
+window/tab; (2) the BACK BUTTON bug fix (already in the queue: pushState for tab nav +
+replaceState to "/" after unlock); (3) pop-out analysis/corpus WINDOWS to their own browser
+window (aligns with "click a graph → a dedicated window like search results").
+
+**Cross-ref:** the "TWO BUGS … (a) the BACK BUTTON returns to the passphrase screen" queue
+item — SAME root, fix together.
+
+**⏭ Open Q (compile):** scope — main nav tabs only, or also the analysis/corpus windows
+(so a corpus can pop out to its own browser window)? My read: both, eventually; windows-as-
+real-URLs is the bigger lift.
+
+---
+
+## Item P — remove the "Help & docs" SIDEBAR tab (top-bar "?" is sufficient)  [NEW]  ✅ SHIPPED this session
+
+**Verbatim (09:02):** "Remove the help and docs tab, having the top question mark icon is
+sufficient."
+
+**Grounded + absorption confirmed:** the sidebar "Help & docs" item (`data-tab="help"`,
+was index.html:662) duplicated the **top-bar "?" icon** (index.html:704) — BOTH call
+`showTab('help')` → the identical `#tab-help` page; the command palette (index.html:3128/
+3134) and the Law-guide link (953) also reach it. Nothing lost.
+
+**Shipped:** removed the `data-grp="system"` nav-group (Help was its only remaining member
+after Settings was removed earlier). Help stays **registered + LOCKED** (TABS registry +
+`LOCKED` set, index.html:2928/2931) so the "?" icon, palette and deep-links keep working;
+in-code breadcrumb left, registry comment updated. No new strings (removal only).
+**Verified:** `test_ui_invariants` green (no test pinned Help to the sidebar; the negative
+content-first assertions for Collect/Sources/Wikipedia were the precedent).
+
+---
+
+## Item Q — ALL in-app docs should be translated + inherit the repo's docs automatically  [NEW]  ⏭ capture (repo-linkage already exists; translation is the open work)
+
+**Verbatim (09:04):** "All in-app documentation should be translated. We should link them
+to the app's repo, so that they inherently inherit changes made to the repo's docs. Maybe
+it's already the case."
+
+**Finding (grounded — it IS largely already the case):**
+- **Repo-linkage ✅ already exists:** docs are served LIVE from the repo's `docs/` directory
+  at runtime (`_DOCS_DIR = …/docs`, src/api/main.py:1310; `GET /api/docs/{slug}`). Any edit
+  to the repo docs shows up in-app once the local clone updates (git pull / self-update). We
+  do NOT — and should not — live-fetch from GitHub at runtime: that breaks offline-first /
+  zero-network boot. So inheritance is via the bundled repo tree, refreshed on app update.
+  (Optional nicety: a consented "view the latest on GitHub ↗" external link behind the
+  invariant-#7 popup, for users who want the canonical online copy.)
+- **Translation infra ✅ shipped, content ❌ mostly empty:** `_doc_path` serves
+  `docs/i18n/<lang>/<file>` when a draft exists, else falls back to English (authoritative)
+  with the honest machine-drafted banner + `X-OO-Doc-Lang` header (index.html:4105-4116).
+  The GAP is that `docs/i18n/<lang>/*.md` is mostly UNPOPULATED (only fr QUICKSTART
+  hand-seeded). The actual translation RUN (`scripts/translate_docs.py` on a machine with a
+  local model, and/or community translation) is the remaining work.
+
+**So:** reassure the maintainer the repo-inheritance is built; the real action is to
+POPULATE the per-language doc drafts. **Elevates** the existing queue item *"Translated
+docs: infrastructure shipped … TODO: run scripts/translate_docs.py on a machine with a local
+model."*
+
+**⏭ Open Qs (compile):** add a consented "view latest on GitHub" external link? prioritise
+which docs first (USER_MANUAL, QUICKSTART)? machine-draft-now-then-human-review vs wait for
+human translation (the banner already states machine-drafted + English-authoritative)?
+
+---
+
+## Item R — sidebar has a COLLAPSE button but no discoverable EXPAND button  [NEW]  ⏭ capture (quick win; needs +1 string ×12)
+
+**Verbatim (09:06):** "There's a button to collapse the side bar containing the tabs,
+however, there's no button to expand it back."
+
+**Diagnosis (grounded — it's a DISCOVERABILITY bug, not a missing function):**
+`toggleSidebar()` (index.html:3062) already toggles BOTH ways
+(`collapsed`↔`expanded`), and the button (index.html:671, in `.sb-foot`) is still rendered
+when collapsed (only `.lbl` text is hidden, CSS line 125). BUT the button is **static**: its
+chevron always points `‹` (collapse direction) and its `title` is always "Collapse
+sidebar" — so once collapsed it doesn't read as an expand control (and in the narrow icon
+rail it's easy to miss next to the gear).
+
+**Fix (small):** make the toggle **direction-aware** — give it an id, rotate the chevron
+180° via `html[data-sidebar="collapsed"] #…  svg { transform:rotate(180deg) }`, and swap the
+title to a keyed **"Expand sidebar"** in `applyUi` (currently "Collapse sidebar" is itself
+unkeyed → key both). +1 new string ("Expand sidebar") ×12. Optionally add a second, more
+obvious rail affordance (e.g., the collapsed brand/logo expands on click). Invariant #2
+(sidebar may collapse to an icon rail, never off-canvas >600px) stays intact.
+
+**⏭ Open Q (compile):** direction-aware toggle alone, or also make the collapsed
+brand/hamburger expand for redundancy?
+
+---
+
+## Item S — comprehensive keyword-analytics rework: top keywords MIX all languages (unhelpful) → trans-language keyword families  [NEW — elevates the trans-language-equivalence queue item]  ⏭ capture + ACCEPT the keyword log
+
+**Verbatim (09:09):** "We should do a comprehensive work on keyword analytics. For now, the
+top keywords appear from all languages. It doesn't help. We've talk[ed] about keyword
+trans-language families. If having the keyword log helps, I can send it to you."
+
+**The problem (grounded):** top-keyword / trending / association views aggregate raw
+normalized terms across ALL corpus languages, so `fr:élections`, `en:elections`,
+`es:elecciones` are counted as THREE different terms; the ranking becomes an artifact of
+which language has the most volume, not of importance — the cross-language signal is
+fragmented and the list "doesn't help".
+
+**Maps to the EXISTING queue item** *"Trans-language equivalence — LIVE analytics layer
+(elevated): rings merge inside grouped trends/trending/associations/graph levels
+(fr:élections + en:elections = ONE concept); cross-country recognition via
+per-source-country split; guards stay (language-qualified members only, signature-supported
+joins, per-language counts visible, user can split). Groundwork shipped (signatures + curated
+ring file + first 10 rings from field log #1)."* → THIS is the "comprehensive keyword
+analytics" the maintainer wants; **elevate from groundwork to a built feature.**
+
+**Scope to define (compile):** (1) trans-language **FAMILIES as the aggregation unit** for
+top-keywords/trending/associations/graph — per-language counts still visible + user can split
+(the ruled guards); (2) language-aware views (top keywords per-language AND merged, with a
+language filter); (3) merges respect the ruled **over-merge guards** (language-qualified
+members only, signature-supported joins, never silent merge — the field-log-#1 guards);
+(4) ties into the keyword-as-corpus windows (each family → a corpus). Maintainer position
+stands: NOT a fan of capping; use as many keywords as possible (any cap must be DYNAMIC).
+
+**Keyword log — YES, send it.** Grounding the rework in the live keyword distribution is
+exactly how field reports #1/#4 produced the stoplists + the first 10 rings. The Settings →
+"Download keyword log (.json)" export (the one Item M is about — slow, but fine), or the debug
+bundle. I'll use it to: propose the next batch of equivalence rings from real co-occurring
+cross-language terms, measure what share of the top-N is fragmented across languages (the size
+of the problem), and validate the guards against real data.
+
+**⏭ Open Qs (compile):** families as the DEFAULT view vs an opt-in lens? seeding = curated
+ring file + signature auto-join + user edits (the ruled approach)? per-language counts always
+shown (informed consent)?
+
+**AFFECTED SURFACE flagged (maintainer 09:10):** the problem shows **prominently in the
+keyword TREND screen** (Insights → trend, ooChart per invariant #16) — multiple language
+variants of ONE concept render as SEPARATE trend series, fragmenting the trend line and
+making the screen hard to read. So the family-merge must drive the **trend view** too (merged
+series by default, per-language sub-series available + splittable), not only the top-keywords
+list. Add the trend screen to the rework's acceptance criteria.
+
+---
+
+## Item T — "group sources by domain" buckets UNRELATED publishers under apps.apple.com (multi-tenant platform host ≠ publisher)  [NEW — data-quality bug]  ⏭ capture + DATA REQUEST
+
+**Verbatim (09:13):** "The source subtab in the analytics tab allows the user to group
+sources by domain. I'm not sure the domain extraction is working properly. Lots of sources
+are assembled under apps.apple.com, and within it we find sources as surprising as La
+Repubblica (Italy), Hufvudstadsbladet (Finland), RIA Novosti, Hong Kong Free Press, etc. It
+doesn't help the user make sense of what they have in common."
+
+**What I traced (grounded):**
+- The analysis-window Source view = `#an-sources` ← `GET /api/insights/corpus-sources` ←
+  `analytics/queries.py:354 corpus_sources()`, which groups by **`Source.id`** (one row per
+  registered source; shows Source.name + Source.domain). I found **no explicit "group by
+  domain" toggle** in the code — so CONFIRM which surface (this analysis-window Source subtab
+  `#an-sources`, the Settings→Sources tab, or Insights); it changes where the fix goes.
+- `Source.domain` is **`nullable=False, unique=True`** (models.py:404/443) ⇒ distinct sources
+  CANNOT share `apps.apple.com` as their stored domain. So the bucket is NOT registered-source
+  grouping — it's a host **derived** from article/feed URLs (`Article.url`) or a
+  group-by-registrable-domain over a field that stored the full Apple URL.
+- `apps.apple.com` is **nowhere in the repo catalog** — runtime data in the corpus.
+
+**ROOT CAUSE — the smoking gun (by comparison inside `configs/sources.yml`):**
+- Tenant-as-**SUBDOMAIN** platforms are already handled RIGHT: Substack stores
+  `domain: thesequence.substack.com` / `importai.substack.com` / `adamtooze.substack.com` —
+  each a DISTINCT host ⇒ distinct `Source.domain` ⇒ grouping keeps them separate. ✅
+- Apple Podcasts puts the tenant in the **PATH** (`apps.apple.com/…/podcast/<name>/<id>`), so
+  host extraction yields `apps.apple.com` for EVERY publisher's podcast ⇒ they all collapse
+  into one meaningless bucket. ❌ Same trap: `youtube.com/@x`, `open.spotify.com/show/x`,
+  `t.me/x`, `medium.com/@x`, `pod.link`, `anchor.fm`.
+- So **"domain extraction" is not buggy per se — registrable/host domain is the WRONG identity
+  key for path-tenant platforms.** Podcast RSS items also commonly set the item link to the
+  Apple page, so article-URL-host grouping buckets episodes from many publishers there too.
+
+**HONESTY ANGLE:** bucketing La Repubblica + RIA Novosti + Hong Kong Free Press together
+because they share a DISTRIBUTION PLATFORM falsely implies an editorial/ownership relationship
+— the SAME false-grouping the project fights (false triangulation, over-merge). A platform
+bucket must be LABELED "shared distribution platform — not a publisher" and never imply
+commonality.
+
+**FIX DIRECTIONS:** (1) an `is_multitenant_platform(host)` classifier (sibling of
+`is_commerce_domain`) + a registry of path-tenant platforms with the tenant path-segment rule;
+(2) for those, the source IDENTITY / grouping key INCLUDES the tenant segment — mirroring how
+Substack's subdomain already IS the identity; backfill existing apps.apple.com rows;
+(3) ingest: prefer the publisher's own canonical link for `Article.url` when a platform feed
+exposes it, else label the platform origin honestly; (4) don't let discovery or de-US-centring
+treat a platform host as a publisher (ties audit-07's "10 named aggregator biases").
+
+**DATA REQUEST (the fact I need):** the **Settings→Sources export** (or the debug bundle) for a
+handful of those surprising sources — their `domain` + `rss_url`, and whether there is ONE
+apps.apple.com source with mis-attributed articles vs MANY sources whose derived host is
+apps.apple.com. That single fact picks the fix (extraction vs grouping-key vs attribution vs
+ingest). The keyword log won't show this; the source export / debug bundle will.
+
+**⏭ Open Qs (compile):** which surface exactly? identity-key change (include the tenant path)
+vs honest-platform-label-only first? backfill existing rows?
+
+---
+
+## Item U — a precached, normalized, standardized multilingual keyword LEXICON (×12 UI languages): preconfigure families + KILL substring over-merge suggestions ("world cup"→"world", "United States"→"state")  [NEW — the seeding + guard layer for Items S/T]  ⏭ capture (collaborative design)
+
+**Verbatim (09:17):** "I think we can work together on a way to have a precached, normalized,
+standardized list [of] keywords in all of the UI available languages. This would help
+preconfigure families, avoid recommendations such as: 'world cup' having as merging
+recommendation the keyword 'world', or another example the keyword 'United States' have the
+suggestion to merge with 'state'."
+
+**Two problems it solves:**
+1. **SEEDING families (Item S):** a curated, normalized, multilingual lexicon lets us PRE-build
+   trans-language families instead of discovering them cold — the ruled "curated ring file +
+   signature auto-join + user edits" seeding, ELEVATED to a standardized ×12 lexicon.
+2. **KILLING bad merge suggestions:** the examples are **substring / partial-token false
+   positives** — "world cup" ⊃ "world", "United States" ⊃ "state". The recommender is
+   proposing merges on LEXICAL CONTAINMENT, not semantic equivalence. A lexicon of known
+   multi-word concepts / named entities ("World Cup", "United States") lets the recommender
+   treat them as **ATOMIC units**, never decomposed into their substrings.
+
+**Honesty/method angle:** merge SUGGESTIONS must be SEMANTIC equivalence (same concept across
+languages, signature-supported) NOT lexical containment. "world cup"→"world" /
+"United States"→"state" are containment artifacts — exactly the false equivalence the ruled
+over-merge guards forbid (language-qualified members only, signature-supported joins). This is
+evidence the recommender currently LEAKS substring matches; the lexicon + an atomic-phrase rule
+closes the gap.
+
+**What the lexicon is (to design together):** a normalized, standardized, PRECACHED
+keyword/concept list per UI language (12) — each concept with a canonical form per language,
+known surface variants/inflections, a type (entity/place/org/event/common term), and
+cross-language links (the family seed). **Bootstrap source:** Wikidata labels/aliases
+(multilingual by construction — ties the de-US-centring Wikidata generator + the
+wiki-as-living-source work) PLUS the EXISTING `configs/keyword_equivalents.yml` +
+`configs/keyword_supergroups.yml` seeds. **Precached = bundled, local-first, zero-network at
+runtime** (ships with the app; building/refreshing it is an offline tooling step like the
+catalog / city gazetteer).
+
+**Relationship to existing config:** `keyword_equivalents.yml` + `keyword_supergroups.yml`
+already exist (ring/supergroup seeds). This = expand them into a standardized multilingual
+lexicon + use it as BOTH (a) family seeds AND (b) an atomic-phrase / containment-aware GUARD in
+the merge recommender. Folds into the Item S keyword-analytics rework as its seeding+guarding
+layer.
+
+**Collaborative ("we can work together"):** next step is a design pass — I propose the lexicon
+schema + sourcing (Wikidata + existing seeds) + the atomic-phrase guard; maintainer steers.
+
+**⏭ Open Qs (compile):** bootstrap = Wikidata labels/aliases vs hand-curated vs both? scope
+order (entities/places/orgs/events first, common terms later)? how the lexicon overrides vs
+feeds the live signature auto-join? precached size budget (12 languages × concepts)?
+
+---
+
+## Item V — airplane mode ON still shows GREEN "Collecting…"; should show a PAUSED (not-green) "Collecting paused"  [NEW — status-honesty bug]  ⏭ capture (implementable; +1 string ×12)
+
+**Verbatim (09:34):** "When activating airplane mode, the top bar is still showing
+'collecting' in green. Why not mark it as red and display collecting paused."
+
+**Grounded:** the activity chip (`#activity` / `#activity-label`, index.html:689) is painted by
+`_paintActivity()` (index.html:2226) from the `_bg` collecting label (set "Collecting N/M…" at
+2611) with the green `bg` class. It NEVER consults online/offline state. The airplane state IS
+known — `_paintNetwork(online)` (2435, fed by API `online` booleans at 2422/2520/2727/5133) —
+but that state never reaches `_paintActivity`.
+
+**Honesty angle:** showing green "Collecting…" while collection is actually paused is a
+FABRICATED status — against degrade-loudly / no-theater. Airplane mode trips the kill switch
+(Collect-Stop side effect), so the pass really stops; the chip must say so.
+
+**Fix (small):** persist the online state in a module var when `_paintNetwork` runs, and in
+`_paintActivity` show a PAUSED style + keyed "Collecting paused" when offline + a collect pass
+is in-flight/scheduled. Use the go-OFF calm/grounded accent (invariant #14c's direction-aware
+color), NOT a brand-new red that conflates meanings. +1 string ("Collecting paused") ×12.
+
+**⏭ Open Q (compile):** "Collecting paused" vs "Paused (airplane mode)"? exact color = reuse
+the go-off calm/grounded accent?
+
+---
+
+## Item W — move the "healthy"/backend-status indicator into the task-manager System tab  [NEW — extends invariant #4]  ⏭ capture (BLOCKED ON Item X)
+
+**Verbatim (09:34):** "the 'healthy' status should be moved to the task manager."
+
+**Grounded:** `#health` (index.html:690, "checking…"/healthy + a status dot) sits in the
+top-bar status-cluster. Invariant #4 already moved VITALS out of the chrome into the
+task-manager window's System tab (`#tm-system`). This extends that: health joins the same
+System tab, decluttering the top bar (UI-shell §2 "minimal top bar").
+
+**DEPENDENCY — BLOCKED ON Item X:** if the task manager doesn't open (the maintainer's report),
+moving health INTO it hides health entirely. Land W only once X is confirmed (the TM opens
+reliably). **Consider** keeping a MINIMAL chrome health signal (a tiny dot that turns red when
+the backend is down) so a down backend is never fully hidden — informed-by-construction; decide
+in compile. Keep the persistent `#tm-open` access (invariant #4).
+
+---
+
+## Item X — the TASK MANAGER DOESN'T OPEN (maintainer report); code path verifies CORRECT at HEAD → most likely a STALE/CACHED build  [NEW — repeated pain point ×3+]  ⏭ capture + DIAGNOSTIC REQUEST
+
+**Verbatim (09:34):** "by the way, did I mention that the task manager doesn't work / open up
+the task management interface?"
+
+**What I verified at HEAD (code-level):**
+- `#tm-open` (index.html:693) AND `#activity` (689) both `onclick="toggleVitals()"`.
+- `toggleVitals()` (2869) sets `pop.hidden = false` (2872) — making `#vitals-pop` (708) visible
+  — BEFORE anything that can throw; `_vitalsPrevFocus` IS declared (2573); `_ensureVitalsPoll`
+  defined (2593); no strict mode.
+- The inline app `<script>` (2189 — NOT `type=module`, so inline handlers resolve globally)
+  passes **`node --check` cleanly** ⇒ `toggleVitals` IS defined (no syntax error abort).
+- CSS: `.vitals-pop[hidden]{display:none}` else `position:fixed;top:52px;right:14px;z-index:60`
+  ⇒ visible when not hidden.
+- ⇒ **In current code, clicking the task-manager icon MUST open the dialog.** I could not
+  reproduce "doesn't open" statically. (Even an init-time throw at the ooSubtabs wiring
+  7734-7738 would NOT prevent opening — `toggleVitals` is hoisted — only break subtab switching.)
+
+**Most likely cause:** a **STALE / browser-CACHED build** on the long-running field instance
+(served index.html predates task-manager fixes, or the browser cached an old copy). Secondary: a
+runtime error I can't see statically.
+
+**DIAGNOSTIC REQUEST (definitive):** (1) **hard-refresh / relaunch** the app and re-test (rules
+out cache/stale build); (2) if it STILL fails, open the browser **console**, click the
+task-manager icon, and send the error + a screenshot. I can also **run-and-verify here** (launch
++ click) to confirm the current build opens it — say the word and I'll invest the detour.
+
+**Why it matters:** this is the repeatedly-asked task manager (ledger ×3+). Resolving X UNBLOCKS
+Item W (health-into-TM) and the whole task-manager vision.
+
+**⏭ Open Q (compile):** stale build (most likely) vs a real runtime error — awaiting the console
+output / hard-refresh result.
+
+---
+
+## Item Y — APP-WIDE chart rule: <10 datapoints → BAR graph (not dots); REMOVE the "early corpus… no curve interpolated" caveat, KEEP n=x  [NEW — RULING; amends invariant #16]  ⏭ ruling RECORDED (CLAUDE.md #16); impl PENDING + a baseline-honesty Q
+
+**Verbatim (09:57):** "the 6 months view market data shows only 5 datapoints. I suggest to show
+bars in this case. We should make a rule for the entire app's graph visuals so that when there
+is less than 10 datapoints, the graph automatically switches to a bar graph. remove the mention
+'early corpus: dots shown, no curve interpolated through sparse points (n=x)'. Keep showing the
+amount of datapoints (n=x)."
+
+**The ruling:** (1) **app-wide, every graph: n<10 → a BAR graph** (replaces the current
+sparse=dots treatment); n≥10 → the systematic full-resolution line/curve. (2) **DROP** the
+"early corpus: dots shown, no curve interpolated through sparse points" caveat sentence.
+(3) **KEEP "n=x".**
+
+**Where it lands (grounded):** both renderers — `ooChart()` (index.html:5622; `lineMin`=8 +
+sparse-dots at 5690-5718; caveat at 5718) and `dashChartSvg()` (5387; dots-vs-line at
+5410-5415; caveat at 5417). The caveat is the keyed string `t9("early corpus: dots shown, no
+curve interpolated through sparse points")` (present in all 12 locales) → retire the references,
+keep `n=${n}`. Amends invariant #16 (was: sparse→dots + caveat, lineMin=8); recorded in
+CLAUDE.md #16 as impl-PENDING.
+
+**TEST IMPACT:** `test_ui_invariants` #16 currently asserts **`"early corpus" in html`**
+(test_repo_invariants.py:359) — removing the caveat BREAKS it; the test must flip to assert the
+bar behaviour + caveat-gone when Y ships. (Why this is a deliberate slice, not an inline edit.)
+
+**⚠ HONESTY WRINKLE — raised, NOT silently shipped:** a bar encodes value by LENGTH ⇒ implies a
+ZERO baseline. For PRICE-LEVEL series (markets) that's both misleading AND useless — gold $1900
+vs $1950 over 5 months render as ~equal full-height bars (a real ~3% move made invisible) —
+exactly the visual distortion the project's "no fabricated visuals" ethic forbids. Bars-from-
+zero are fine for COUNT/magnitude series (article counts, mentions — naturally zero-based;
+`ooChart` already has a `zeroBase` opt, e.g. index.html:6466). **Proposed resolution (confirm):**
+sparse bars anchor to the **window-MIN on a clearly-LABELED axis** (not zero) for level data so
+differences stay visible + honest; true-zero baseline only for naturally zero-based/count
+series.
+
+**⏭ Open Qs (compile):** bar baseline for price-level data (window-min-labeled vs zero)? "<10"
+strict (n≤9 → bars, n≥10 → line)? bar placement for IRREGULAR time spacing (market dates aren't
+evenly spaced — bars at true x-position vs evenly categorical)?
+
+---
+
+## Item Z — critical analysis of the diagnostics tools; the keyword log (>60MB) is UNUSABLE in the maintainer→dev channel → make it a DIGEST (compute the analysis locally)  [NEW — maintainer asked "what makes them useful to you?"]  ⏭ analysis + proposal (offer to implement v1)
+
+**Verbatim (10:17):** "Make a critical analysis of the diagnostics logging tools. What can we
+make them more useful to you? The keyword log seems too slow to produce. It's OK if there's no
+workaround. But I don't know how you will manage to analyse a several megabyte file. Why not do
+parts of the analysis locally in the app to help you with easier to ingest files? The keyword
+log I just produced is more than 60Mb…"
+
+**THE FOUR TOOLS (src/api/diagnostics.py):**
+- `/performance` (perf report): GOOD digest — env + store PRAGMAs + corpus counts + top-80
+  endpoint latencies + selftest timings. Bounded, methodful, aggregate. **THE MODEL.**
+- `/debug-bundle`: GOOD — runtime, corpus shape, scheduler + recent_runs(30), network verdicts,
+  imports(50), law/wiki states, field_test, errors(300). Bounded.
+- `/network` (preflight): GOOD — source/feed/calendar verdicts.
+- `/keywords` (keyword log): **THE OUTLIER → 60MB.** It already computes the right AGGREGATES
+  locally (families via `build_families`, `per_source_concentration` suspects, `language_mismatch`
+  flags) BUT ALSO serialises the ENTIRE raw keyword list — up to **5000 PER LANGUAGE × ~16 langs
+  ≈ 80k fat entries**, each with a per-keyword `language_signature` dict (lines 328-332, 270-289).
+  THAT is the 60MB.
+
+**CORE PROBLEM (verdict):** the diagnostics channel EXISTS for the maintainer→developer(me)
+loop. A 60MB JSON CANNOT be pasted into chat or ingested by me in full — so the keyword log is
+effectively **unusable in the very channel it was built for** (I'd be reduced to grep/sampling,
+losing the holistic view). The other three work BECAUSE they're bounded digests. The maintainer's
+instinct — "do parts of the analysis locally, give easier-to-ingest files" — is exactly the fix.
+
+**WHAT MAKES A DIAGNOSTIC USEFUL TO ME (principles):** small enough to read WHOLE (target
+≤~1MB, ideally a few hundred KB); AGGREGATE-FIRST (distributions/rates/top-N, not raw rows);
+METHODFUL (method+caveat+n per metric — the honesty discipline doubles as machine-readability);
+SAMPLED EXAMPLES (a handful per pattern, not all); STABLE SORTED schema (deterministic order ⇒
+cross-run DIFFs = drift detection); LAYERED (small summary always + opt-in raw drill-down).
+
+**PROPOSAL — keyword log → DIGEST (reuses existing computation):**
+- KEEP: corpus, method, families (summarised: count + largest + a fragmentation metric),
+  per_source_concentration (200), supergroups, overrides.
+- REPLACE the 80k raw keyword list with: per-language counts, kind distribution, hidden +
+  language_mismatch RATES (count+%), and TOP-N keywords per language (≈50-100, not 5000).
+- ADD the analyses I do by hand AND that Items S/T/U need: language_mismatch top examples +
+  total; trans-language family FRAGMENTATION measure (S); SUBSTRING/containment over-merge
+  suspects (U: "world cup⊃world", "United States⊃state"); platform-host source suspects (T) if
+  cheap.
+- The FULL raw list becomes an OPT-IN (`?full=1`) companion for rare deep dives — never default.
+- Result: a few-hundred-KB file I can read WHOLE, that directly feeds the keyword-analytics rework.
+
+**ON SLOWNESS:** the all-mentions scan is inherent (real aggregates); the maintainer accepts it.
+A digest still helps (far less to serialise/transmit). `/performance` already times
+`keyword_export_streamed`, so any win is measurable.
+
+**OFFER:** I can implement a v1 digest (`?digest=1` on `/keywords`, or a `/keywords/digest`
+endpoint) immediately — it's also the substrate for S/T/U. Awaiting go-ahead on the digest
+CONTENTS so it carries the right analyses.
+
+**⏭ Open Qs (compile):** digest contents priority? `?digest=1` vs new endpoint? keep full raw as
+opt-in or drop? target size cap?
+
+**STATUS (maintainer 10:33):** DEFERRED — "mark this as another optimization", NOT now. The
+family-BUILDING need (crunch the whole DB) is addressed differently — see Item AA (a digest is a
+summary; family-building needs the FULL vocabulary, so the digest is the wrong tool for THAT goal).
+
+---
+
+## Item AA — STRATEGY: how I analyse the ENTIRE keyword DB to build preconfigured families + trans-language analytics, given current ingestion limits  [NEW — maintainer asked "how do you propose we address that?"; the build-path for Items S/U]  ⏭ proposal
+
+**Verbatim (10:33):** "I would like that in the end you analyse all keywords to create
+preconfigured families and translanguage analytics. Keywords from different languages should be
+addressed uniformely, hence the importance of having you crunch the entire keyword database.
+However, knowing our current limitations, how do you propose we address that?"
+
+**The tension:** GOAL = I crunch EVERY keyword across ALL languages, uniformly → preconfigured
+families (S) + the precached lexicon (U). CONSTRAINT = I can't ingest 80k flat keywords (60MB);
+the digest is deferred AND is the wrong tool here anyway (family-building needs the FULL
+vocabulary + the long tail, not a top-N summary).
+
+**KEY REFRAME:** don't hand me FLAT keywords — hand me the app's **PRE-GROUPED CANDIDATE
+families**, anchored to a **language-neutral key**, in **ingestible batches**. I then address
+every keyword (nothing excluded — the no-cap ethos) through a structure that fits my limits, and
+"uniform across languages" becomes true BY CONSTRUCTION (the family is the unit; language is a
+member attribute).
+
+**PROPOSED PIPELINE:**
+1. **APP-SIDE CANDIDATE GROUPING (local-first, offline tooling step — the heavy lift the app
+   does, not me):** per keyword compute (normalized form, dominant language, language_signature,
+   top co-occurring keywords) + a **Wikidata QID** match where one exists. Group by: QID (the
+   cross-language anchor — Q30 = United States = États-Unis = Estados Unidos…) + normalized-form
+   equivalence + the existing signature-supported auto-join. Output = candidate CLUSTERS, each
+   with language-qualified members + evidence + an "uncertain" flag; singletons/unmatched keep
+   their own cluster (nothing dropped).
+2. **WIKIDATA = the uniform multilingual ANCHOR (the Item U bootstrap):** its labels/aliases are
+   multilingual by construction, so it answers "what is the cross-language equivalent of X"
+   WITHOUT me reading 80k rows — and it natively distinguishes "World Cup" (a QID) from "world",
+   killing the substring over-merge (U) at the SOURCE. Entities/places/orgs/events anchor strongly
+   on Wikidata; common terms fall back to co-occurrence signatures + my judgement.
+3. **BATCHED, PRIORITY-ORDERED EXPORT:** clusters exported in batches (≤~1MB each) in
+   FREQUENCY-PRIORITY order (the high-value head first; the long tail fills incrementally across
+   sessions). No cap — everything is processed, just ordered (ordering ≠ exclusion, the ruled
+   principle).
+4. **I CURATE batch-by-batch across turns/sessions:** validate clusters, fix over-merges (the
+   substring/containment guard — U), add cross-language links Wikidata missed, split wrong joins,
+   tag concept type. Emit additions to `configs/keyword_equivalents.yml` + the precached lexicon.
+5. **ACCUMULATE →** the precached multilingual lexicon (U) seeds the live families (S) → uniform
+   trans-language analytics (top keywords + the trend screen).
+
+**HONEST LIMITATION HANDLING:** I never ingest the raw 60MB; I ingest STRUCTURED CANDIDATES in
+batches. The app does the local heavy-lift. Priority order means value lands early; the long tail
+is incremental, not blocked. Multi-session by nature — fine: it's a precached artifact built once
++ refreshed.
+
+**WHAT'S NEEDED FIRST (enabler):** a local, offline candidate-grouping exporter (app-side) +
+Wikidata label ingestion for the corpus's entities. Rides on Item U; the candidate exporter is
+ALSO the eventual digest's S/U sections — so Item Z's deferral doesn't block this.
+
+**⏭ Open Qs (compile):** Wikidata ingestion = bundled subset vs a one-time consented fetch? cluster
+batch size + priority bands? curated lexicon location (keyword_equivalents.yml vs a new precached
+file)? how much the app auto-applies vs waits for my curation?
+
+---
+
+## Item AB — per-language stoplists: expand them empirically via batch access; but RECALIBRATE the "too many keywords" expectation (mostly entities, not junk)  [NEW — maintainer "what do you think?"]  ⏭ analysis (endorse + 3 honest caveats)
+
+**Verbatim (10:43):** "you've created a preliminary list of words to not consider as keywords
+such as 'the' or 'it', or 'a'. this should be per language. It should help clean-up the amount
+of keywords. I heard that some politicians only use less than 500 different words in their
+speeches, so I'm surprised by this amount of keywords. Accessing the corpus by batch should
+allow identifying them and establish a list that will be by default integrated in the app. What
+do you think?"
+
+**CURRENT STATE (grounded):** stoplists ALREADY exist AND are ALREADY per-language —
+`src/services/stopwords.py` (legacy `StopwordsManager`) + the ACTIVE evidence-based **×16
+catalog-language** stoplists in `extract.py` (the ruled KEYWORD POLICY): `global_stopwords`
+applies AT QUERY TIME (reversible, no migration) ⇒ **704 keyword rows / 71,854 mentions already
+retroactively hidden**; measured junk ≈ **6% of mentions**; en+fr were already clean. So "should
+be per language" is already true.
+
+**MY TAKE — ENDORSE the mechanism + 3 honest caveats:**
+
+**ENDORSE:** use the Item AA batch pipeline to EMPIRICALLY identify high-frequency low-information
+terms PER LANGUAGE → expand the default integrated stoplists. The same batches that build families
+surface stopword/boilerplate candidates — good synergy; the result ships as the default lists.
+
+**CAVEAT 1 — RECALIBRATE the expectation (honesty owed to the maintainer too):** the "<500 words"
+figure is ONE speaker's active SPEECH vocabulary (function-heavy, a popular + inflated claim); it
+does NOT transfer to a corpus. A multilingual WORLD-NEWS corpus's distinct-term count is dominated
+by NAMED ENTITIES (every person/place/org/company/product/event in the world's news) + 16
+languages' vocabularies + inflections/numbers — tens of thousands of LEGITIMATE terms, and that's
+the POINT (the app mines entities/topics). So 80k keywords is EXPECTED and mostly SIGNAL, not junk.
+Stoplists remove the function/boilerplate tail (the measured ~6%); they CLEAN the list, they do NOT
+collapse it to hundreds. Expect a cleaner tail, not a 100× shrink. (The digest's kind-distribution
+— entity vs term — would EMPIRICALLY prove most are entities.)
+
+**CAVEAT 2 — the bigger win is BOILERPLATE, not classic function words (you already have those):**
+navigation/subscription/source-noise ("read more", "subscribe", "all articles" = the Swedish
+"alla artiklar" ×118 case) is where real cleanup remains. The `per_source_concentration` suspect
+detector ALREADY flags these; batch access can build per-language + per-source boilerplate lists.
+Target boilerplate, not more "the/it/a".
+
+**CAVEAT 3 — per-language APPLICATION is mandatory (an honesty trap):** a stopword in language A is
+SIGNAL in language B ("die" = German article vs English verb/noun; "a" = English article vs
+meaningful elsewhere). Stoplists must apply within the keyword's DOMINANT language, never globally
+— the existing design assigns a dominant language; keep it; the AA uniform-cross-language treatment
+must stoplist WITHIN each language's list, never one global list (same trap as "a global cap
+anglicises the export").
+
+**PRESERVE the ruled discipline:** evidence-based; FLAG-don't-auto-hide where uncertain; stoplists
+≠ caps (removing KNOWN function/boilerplate is legitimate; the no-cap rule protects the COUNT of
+REAL keywords); REVERSIBLE/inspectable (query-time hide; user can see + un-hide) — keep all of it.
+
+**⏭ Open Qs (compile):** boilerplate detection threshold per source/language? auto-add vs
+flag-for-curation (I review candidates, per AA)? expose the per-language stoplist in Settings
+(view/edit/un-hide)?
+
+---
+
+## Item AC — user-adjustable keyword management (Settings subtab: explore/add/remove/tag per language/tag/family) + PRE-TAG keywords during the batch pass (a new analytical axis)  [NEW — maintainer proposal + "what do you think?"]  ⏭ endorse + design
+
+**Verbatim (10:46):** "this should be adjustable by the user of course. Users should have the
+power to add / remove keywords. The UI would be an additional subtab in the settings. This UI
+should allow users to explore keywords, per language, per tags, per families, and so forth. And
+by the way, wouldn't this work be a great opportunity to pre-tag keywords? you know I'd like
+keywords to be tagged, so that we can search not only articles by their tags, but also filter
+keyword tags in order to discover and analyze corpus."
+
+**GROUNDED:** Sources have `tags` (models.py:409, comma-separated) + the source-tag UX (colored
+chips, multi-tag AND, tag-click→corpus). Keywords have only `entity_type` (699: person/org/
+location) = a PROTO-tag for entities; `KeywordCategory` (626) exists (check if used/legacy at
+impl); family system = KeywordFamilyOverride (1281) + KeywordSuperGroup (1308) + global_stopwords.
+NO rich topic/user TAG system on keywords yet.
+
+**PART 1 — USER-ADJUSTABLE KEYWORD MANAGEMENT (Settings subtab): ENDORSE.** It's the natural home
+for the reversible/inspectable stoplist control flagged in AB (view/edit/un-hide) + the existing
+family merge/split overrides + NEW tag editing. Boundary (invariant #8): Settings = CURATION
+(add/remove/hide/tag/merge); the keyword-corpus WINDOWS = ANALYSIS — keep coherent (enough
+exploration in Settings to FIND the keyword to curate; deep analysis stays in the windows). Uses
+the universal subtab component (#18) + explore-by language/tag/family + the source-tags UX. User
+edits local + reversible + local-always-wins (the merge engine already treats curation that way).
+Folds the AB stoplist UI here.
+
+**PART 2 — PRE-TAG KEYWORDS (the opportune by-product): YES** — and especially opportune because
+the AA **Wikidata anchor gives tags nearly FREE**: Wikidata "instance of" (P31) yields the TYPE/
+TAG (Q30→country; a person→human; a company→business; a disease→disease…). So the SAME
+family-building pass yields THREE outputs: families (cross-language equivalence) + stopword/
+boilerplate candidates (AB) + TAGS (types). Leaving tagging out wastes that. `entity_type`
+(person/org/place) folds in as the existing proto-tag.
+
+**THE PAYOFF (the maintainer's vision):** keyword tags become a NEW ANALYTICAL AXIS — filter/
+discover/analyze the corpus by KEYWORD tag (all "health" keywords trending; the "economics"
+keyword family network), complementing the existing SOURCE-tag filtering. A keyword-tag = a corpus
+(KEYWORDS ARE CORPORA) → consumable by the corpora windows + search facets + insights.
+
+**HONESTY CAVEATS:** (1) tag PROVENANCE — auto-tags from Wikidata are DEDUCED (a mis-mapped QID →
+wrong tag); label deduced vs curated, user-correctable, never authoritative (the "deduced, never
+confirmed" discipline). (2) CONTROLLED VOCABULARY — a keyword-tag TAXONOMY is needed (else sprawl):
+Wikidata types + a curated topic taxonomy; decide it. (3) reuse, don't duplicate: `entity_type` is
+the proto-tag; fold it in (+ check `KeywordCategory`). (4) multi-tag (Macron = person + politics +
+France).
+
+**DB/impl sketch:** a `keyword_tags` relation (many-to-many) + tag provenance (deduced/curated/
+source); the batch pass writes deduced tags from Wikidata P31 + entity_type; the Settings subtab
+edits them; corpora/search/insights consume keyword-tag filters. Substantial — spans DB + batch +
+UI + analysis; sequence with AA/U.
+
+**⏭ Open Qs (compile):** keyword-tag taxonomy (Wikidata types + curated topics — which)? reuse
+`KeywordCategory` vs new `keyword_tags` table? one tag space across keywords/sources/articles or
+distinct? auto-tag confidence threshold + the deduced/curated label UX?

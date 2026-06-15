@@ -146,6 +146,16 @@ ruling, a contingency, or a deliberate-omission note.
    Wired: markets symbol chart + insights trend (slice 1); commodity CARDS
    keep the static detailed SVG (tiny multiples; interactivity there is the
    enlarge path, later slice). Enforced in test_ui_invariants (#16).
+   **AMENDED (ruled 2026-06-15, impl PENDING — field-test LEDGER Item Y):** the sparse rule
+   changes app-wide — **n<10 datapoints → a BAR graph** (replaces the dots treatment), n≥10 →
+   the full-resolution line; the "early corpus … no curve interpolated through sparse points"
+   caveat is **REMOVED app-wide — keep ONLY n=x**; applies through BOTH `ooChart` (index.html
+   ~5622) + `dashChartSvg` (~5387). OPEN (honesty, must settle BEFORE shipping): zero-baseline
+   bars MISLEAD price-LEVEL series ($1900 vs $1950 ≈ equal full-height bars — a distortion the
+   no-fabricated-visuals ethic forbids) — choose the baseline (window-min-anchored LABELED axis
+   for level data vs true-zero only for naturally zero-based/count series) + irregular-time bar
+   placement. test #16 currently asserts "early corpus" present (test_repo_invariants.py:359) —
+   it updates when this lands.
 17. **The universal hover-for-information convention (ruled 2026-06-12; the
    informed-consent instrument, SHIPPED same day):** every element carrying
    layered info (= anything with a translated `title`) is marked
@@ -1173,7 +1183,18 @@ ruling, a contingency, or a deliberate-omission note.
   signature-supported joins, per-language counts visible, user can split).
   Groundwork shipped (signatures in the log + curated ring file + first 10
   rings from field log #1).
-- **Custody tab UX:** most users won't get it — rename/explain/guided steps.
+- **TRUST TABS → DISSOLVE + SPREAD (RULED 2026-06-15; supersedes the old "Custody tab UX"
+  note; full design = field-test LEDGER Item N):** the "Trust" sidebar group (Evidence &
+  custody + Source integrity) is DISSOLVED (invariant #8 content-first; absorption-test-gated,
+  the Desk lesson). **INTEGRITY** goes AMBIENT + AUTO — a background coordination pass (like the
+  #21 auto-index), inline plain-language "N near-identical copies = 1 voice [show all]" in
+  search/reader/analysis (the LINKS anti-false-triangulation surface), web-of-trust annotations
+  on the source chip. **CUSTODY** becomes an ACTION on content (export/verify tamper-evidence on
+  any article/corpus) with **auto-log ON BY DEFAULT (opt-out in Settings)**, the
+  Merkle/Ed25519/OTS detail in the #oo-tip hover; prefs move to Settings; **OTS/Bitcoin stays
+  OFF by default** (network egress reveals IP/timing). **PARKED behind the analysis-window build
+  + the search UI** (maintainer-sequenced 2026-06-15). i18n folds into the rework (don't key
+  strings we're about to move).
 - **Offline LLM kit** (RM-08 release artifact); DuckDuckGo discovery channel
   only after RM-03 gate UX proves out. **Translated docs:** infrastructure
   shipped (per-language docs served with honest machine-drafted banner; fr
