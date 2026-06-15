@@ -804,9 +804,20 @@ ruling, a contingency, or a deliberate-omission note.
   **LINKS sub-tab (ruled 2026-06-12; SUBSTRATE + WINDOW SLICE 1 SHIPPED T10
   same day: /api/links/shared with the independence notes per shared URL +
   the corpus window — keyword-click entry via the ⊞ Corpus button — with
-  Trend (ooChart)/Articles/Links sub-tabs; REMAINING: the full sub-tab set
-  (mindmap/source/sentiment/competitive), the other six entries, the
-  TIME-SCOPE control, one-click ingestion of linked pages):** which member
+  Trend (ooChart)/Articles/Links sub-tabs; **FULL SUB-TAB SET NOW COMPLETE
+  (PRs #214-218, 2026-06-15): Mindmap (reuses renderGraph via a relocatable
+  #mm-kit, null-guarded return), Sentiment (reuses /api/framing, VADER
+  English-only B1 disclosure), Keywords (ranked table from /api/insights/
+  associations, real cooccur/n_b/pmi, no score), Sources (descriptive provenance
+  from /api/insights/corpus-sources + catalog, no fabricated description,
+  asserted-metadata labeled), Source-competitive (joins corpus-sources+framing:
+  volume/tone/timing/emphasis, DESCRIPTIVE not ranking, no winner/score, n=1
+  honest state). All reuse existing endpoints (no new backend), the
+  function-call-into-host pattern, the TIME-SCOPE precedent (honest full-corpus
+  where endpoints lack date params), ×12. REMAINING: the other SIX entry points
+  (only keyword-click + palette wired) + Enter→window from search + the
+  TIME-SCOPE control on the non-trend sub-tabs + one-click ingestion of linked
+  pages.** Earlier REMAINING note (superseded for sub-tabs): which member
   articles SHARE outbound links; one-click ethical ingestion of linked pages for keyword/date/place
   extraction; the goal is the SOURCES' SOURCES. **METHODOLOGICAL RULING
   (anti-false-triangulation): convergence counts as corroboration ONLY when
