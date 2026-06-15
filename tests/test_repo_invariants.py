@@ -359,7 +359,11 @@ def test_ui_invariants():
     assert "never downsampled" in html and "early corpus" in html, (
         "the toolkit must state and implement the detailed-curves rules"
     )
-    for surface in ('ooChart($("mkt-chart-oo")', 'ooChart($("ins-trend-oo")'):
+    for surface in (
+        'ooChart($("mkt-chart-oo")',
+        'ooChart($("ins-trend-oo")',
+        'ooChart($("idx-chart-oo")',  # indices detail rolled onto ooChart
+    ):
         assert surface in html, f"chart surface must use THE toolkit: {surface}"
     # 17. the universal hover-for-information convention (ruled 2026-06-12,
     #     the informed-consent instrument): every titled element is marked
@@ -1246,3 +1250,34 @@ def test_search_timescope():
     assert "search: buildSearchTimeScope" in html, (
         "the Search tab loader must mount the time-scope control"
     )
+
+
+def test_oochart_enlarge_indices():
+    """ooChart is rolled onto the indices board detail (invariant #16).
+
+    The REMAINING markets work (CLAUDE.md "MARKETS/INDICES/COMMODITIES") was to
+    roll the ONE interactive chart toolkit onto the indices board detail (it was
+    a static spark only). The commodity-card "enlarge"/detail path
+    (chartSymbol -> #mkt-chart-oo) ALREADY used ooChart; this guards that the
+    indices detail joins it through the SAME renderer (never a forked chart, the
+    full series fetched from /api/commodities/{symbol}/prices, never the
+    truncated board spark). The tiny in-card multiples (dashChartSvg / idxSpark)
+    stay static (intended), and ooChart itself is unchanged.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the indices detail handler exists and feeds THE shared toolkit
+    assert "function indexDetail(" in html, "the indices detail handler must exist"
+    assert 'ooChart($("idx-chart-oo")' in html, (
+        "the indices detail must render through THE ooChart toolkit (invariant #16)"
+    )
+    # it pulls the FULL series from the prices endpoint, not the truncated spark
+    assert "/api/commodities/${encodeURIComponent(symbol)}/prices" in html
+    # index cards open the detail (the click path is wired, with data only)
+    assert "onclick=\"indexDetail(" in html, "index cards must open the ooChart detail"
+    assert 'id="idx-chart"' in html, "the indices detail mount container must exist"
+    # the commodity board detail still uses ooChart too (unchanged canonical path)
+    assert 'ooChart($("mkt-chart-oo")' in html
+    # ooChart itself is NOT forked: exactly one definition
+    assert html.count("function ooChart(") == 1, "ooChart must not be forked"
+    # the tiny in-card multiples remain the static SVGs (not converted)
+    assert "function dashChartSvg(" in html and "function idxSpark(" in html

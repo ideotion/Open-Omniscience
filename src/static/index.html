@@ -1158,6 +1158,7 @@
       </div>
       <div id="idx-note" class="hint muted" style="margin-top:4px"></div>
       <div id="idx-board" class="idx-board"><div class="muted">Loading…</div></div>
+      <div id="idx-chart" style="margin-top:12px"></div>
     </section>
     </div>
 
@@ -5739,7 +5740,15 @@
       const chg = c.change_pct;
       const cls = chg == null ? "flat" : (chg >= 0 ? "up" : "down");
       const chgTxt = chg == null ? "" : `${chg >= 0 ? "▲" : "▼"} ${Math.abs(chg).toFixed(2)}%`;
-      return `<div class="idx-card">
+      // With stored data the card opens the SAME interactive ooChart detail the
+      // commodity board uses (invariant #16: full-resolution series fetched from
+      // /api/commodities/{symbol}/prices, never the truncated spark). Empty
+      // catalog entries stay inert until a first import.
+      const open = has
+        ? ` style="cursor:pointer" title="open detailed chart"
+            onclick="indexDetail(${esc(JSON.stringify(c.symbol))}, ${esc(JSON.stringify(c.name || c.symbol))}, ${esc(JSON.stringify(c.currency || ""))})"`
+        : "";
+      return `<div class="idx-card"${open}>
         <div class="idx-top">
           <div class="idx-id"><div class="idx-name">${esc(c.name)}</div>
             <div class="idx-mkt muted">${esc(c.market || "")}</div></div>
@@ -5747,7 +5756,7 @@
             <div class="idx-chg ${cls}">${chgTxt}</div></div>
         </div>
         ${idxSpark(c.spark, chg)}
-        <div class="idx-foot muted">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
+        <div class="idx-foot muted" onclick="event.stopPropagation()">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
           · ${esc(c.currency || "")} · ${extLink(c.url, "source")}</div>
       </div>`;
     }
@@ -6390,6 +6399,26 @@
       } catch (e) {
         el.innerHTML = `<div class="note err">Chart unavailable: ${esc(e.message)} ` +
           `<span class="muted">(commodity analysis endpoints require the [analysis] extra)</span></div>`;
+      }
+    }
+
+    // Indices detail — the SAME interactive ooChart the commodity board uses
+    // (invariant #16). Indices are stored as CommodityPrice rows, so the full,
+    // un-thinned series comes from /api/commodities/{symbol}/prices (never the
+    // truncated board spark). Mirrors chartSymbol; renders into #idx-chart.
+    async function indexDetail(symbol, name, currency) {
+      const el = $("idx-chart"); if (!el) return;
+      el.innerHTML = `<div class="muted">Loading ${esc(name || symbol)}…</div>`;
+      try {
+        const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`);
+        el.innerHTML = `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(name || symbol)} — ${d.count} point(s)</h2>` +
+          `<div id="idx-chart-oo"></div>`;
+        ooChart($("idx-chart-oo"), [{label: name || symbol,
+          unit: currency || (d.prices[0] && d.prices[0].currency) || "",
+          points: d.prices.map(p => ({t: p.observed_on, v: p.price}))}], {height: 230});
+        el.scrollIntoView({behavior: "smooth", block: "nearest"});
+      } catch (e) {
+        el.innerHTML = `<div class="note err">Chart unavailable: ${esc(e.message)}</div>`;
       }
     }
 
