@@ -878,5 +878,9 @@
   "open detailed chart": "открыть подробный график",
   "open detail + correlation": "открыть детали + корреляцию",
   "point(s)": "точк(и)",
-  "Chart unavailable:": "График недоступен:"
+  "Chart unavailable:": "График недоступен:",
+  "Trimester": "Квартал",
+  "Semester": "Полугодие",
+  "Decade": "Десятилетие",
+  "No events in this period.": "Нет событий в этот период."
 }

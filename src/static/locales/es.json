@@ -878,5 +878,9 @@
   "open detailed chart": "abrir gráfico detallado",
   "open detail + correlation": "abrir detalle + correlación",
   "point(s)": "punto(s)",
-  "Chart unavailable:": "Gráfico no disponible:"
+  "Chart unavailable:": "Gráfico no disponible:",
+  "Trimester": "Trimestre",
+  "Semester": "Semestre",
+  "Decade": "Década",
+  "No events in this period.": "No hay eventos en este período."
 }

@@ -878,5 +878,9 @@
   "open detailed chart": "buka grafik terperinci",
   "open detail + correlation": "buka detail + korelasi",
   "point(s)": "titik",
-  "Chart unavailable:": "Grafik tidak tersedia:"
+  "Chart unavailable:": "Grafik tidak tersedia:",
+  "Trimester": "Triwulan",
+  "Semester": "Semester",
+  "Decade": "Dekade",
+  "No events in this period.": "Tidak ada acara dalam periode ini."
 }

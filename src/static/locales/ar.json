@@ -878,5 +878,9 @@
   "open detailed chart": "فتح رسم بياني مفصّل",
   "open detail + correlation": "فتح التفاصيل + الارتباط",
   "point(s)": "نقطة/نقاط",
-  "Chart unavailable:": "الرسم البياني غير متاح:"
+  "Chart unavailable:": "الرسم البياني غير متاح:",
+  "Trimester": "ربع سنة",
+  "Semester": "نصف سنة",
+  "Decade": "عقد",
+  "No events in this period.": "لا توجد أحداث في هذه الفترة."
 }
