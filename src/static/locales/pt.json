@@ -713,5 +713,9 @@
   "…or subscribe by URL (webcal / https)": "…ou subscrever por URL (webcal / https)",
   "Add from URL": "Adicionar a partir de URL",
   "Enter a calendar URL first.": "Introduza primeiro uma URL de calendário.",
-  "Fetch a calendar from a URL you provided": "Obter um calendário a partir da URL indicada"
+  "Fetch a calendar from a URL you provided": "Obter um calendário a partir da URL indicada",
+  "Export this analysis:": "Exportar esta análise:",
+  "Export signed evidence": "Exportar evidência assinada",
+  "Signed, reproducible record of the query + method behind this analysis": "Registo assinado e reproduzível da consulta e do método desta análise",
+  "Signed, tamper-evident bundle of the analysed articles": "Pacote assinado e à prova de adulteração dos artigos analisados"
 }

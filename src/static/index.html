@@ -879,6 +879,13 @@
         </div>
         <div id="an-adv-note" class="muted" style="margin-top:8px"></div>
       </div>
+      <div class="an-export" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border,#3334);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span class="muted">Export this analysis:</span>
+        <button class="ghost tiny" onclick="exportResults('csv', anParams())">Export CSV</button>
+        <button class="ghost tiny" onclick="exportResults('json', anParams())">Export JSON</button>
+        <button class="ghost tiny" onclick="exportMethods(anQuery())" title="Signed, reproducible record of the query + method behind this analysis">Methods appendix</button>
+        <button class="ghost tiny" onclick="exportEvidence(anQuery())" title="Signed, tamper-evident bundle of the analysed articles">Export signed evidence</button>
+      </div>
     </section>
     </div>
 
@@ -7567,6 +7574,19 @@
       if ($("f-to").value) p.set("end_date", $("f-to").value);
       return p;
     }
+    // The SAME params, built from the analysis window's own Advanced inputs — so the
+    // window's exports describe exactly the article set it is analysing (the Search-tab
+    // capabilities are absorbed here, toward the one-search-entry goal).
+    function anQuery() { return ($("an-adv-query").value || "").trim(); }
+    function anParams() {
+      const p = new URLSearchParams();
+      const q = anQuery(); if (q) p.set("query", q);
+      const src = $("an-adv-source").value.trim(); if (src) p.set("source", src);
+      const lang = $("an-adv-lang").value.trim(); if (lang) p.set("language", lang);
+      if ($("an-adv-from").value) p.set("start_date", $("an-adv-from").value);
+      if ($("an-adv-to").value) p.set("end_date", $("an-adv-to").value);
+      return p;
+    }
 
     // --- Analysis window (Group F): analytics over the articles a search matched.
     // Keywords (article-set aggregate) + the matches themselves; keyword chips
@@ -7731,9 +7751,9 @@
       } catch (e) { toast("Search failed: " + e.message, "err"); }
     }
 
-    function exportResults(fmt) {
-      const p = searchParams(); p.set("format", fmt);
-      window.open("/api/articles/export?" + p.toString(), "_blank");
+    function exportResults(fmt, p) {
+      const params = p || searchParams(); params.set("format", fmt);
+      window.open("/api/articles/export?" + params.toString(), "_blank");
     }
 
     async function synthesizeResults(btn) {
@@ -7788,9 +7808,9 @@
       } catch (e) { toast(`${action} failed: ` + e.message, "err"); }
     }
 
-    async function exportMethods() {
+    async function exportMethods(qArg) {
       // RM-07: the *how* behind the current search, as a downloadable document.
-      const q = $("q").value.trim();
+      const q = (qArg != null ? qArg : $("q").value.trim());
       if (!q) { toast("Run a search first — the appendix records the query.", "err"); return; }
       try {
         const r = await api("/api/reports/methods",
@@ -7861,8 +7881,8 @@
       }
     }
 
-    async function exportEvidence() {
-      const q = $("q").value.trim();
+    async function exportEvidence(qArg) {
+      const q = (qArg != null ? qArg : $("q").value.trim());
       if (!q) { toast("Enter a search query to scope the evidence bundle.", "err"); return; }
       try {
         const bundle = await api("/api/reports/evidence",

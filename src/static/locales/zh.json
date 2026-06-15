@@ -713,5 +713,9 @@
   "…or subscribe by URL (webcal / https)": "…或通过网址订阅（webcal / https）",
   "Add from URL": "从网址添加",
   "Enter a calendar URL first.": "请先输入日历网址。",
-  "Fetch a calendar from a URL you provided": "从你提供的网址获取日历"
+  "Fetch a calendar from a URL you provided": "从你提供的网址获取日历",
+  "Export this analysis:": "导出此分析：",
+  "Export signed evidence": "导出签名证据",
+  "Signed, reproducible record of the query + method behind this analysis": "本次分析所用查询与方法的签名、可复现记录",
+  "Signed, tamper-evident bundle of the analysed articles": "已分析文章的签名、防篡改捆绑包"
 }

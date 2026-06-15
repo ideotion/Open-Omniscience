@@ -894,3 +894,23 @@ def test_agenda_add_calendar_by_url():
     assert "/feeds/import-url" in api and "make_fetcher()" in api, "backend fetches via the guarded fetcher"
     feeds = (_SRC / "events" / "feeds.py").read_text(encoding="utf-8")
     assert "def import_ics_url" in feeds and "webcal://" in feeds, "URL import + webcal normalization"
+
+
+def test_analysis_window_absorbs_exports():
+    """Item I (toward one search entry): the analysis window exports its OWN analysed
+    set — CSV/JSON/methods appendix/signed evidence — built from its Advanced inputs,
+    not the Search tab's. The Search-tab call sites stay back-compatible (optional
+    args), so nothing is lost while capability migrates off the Search tab.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "function anParams" in html and "function anQuery" in html, "analysis-scoped params required"
+    assert "exportResults('csv', anParams())" in html and "exportResults('json', anParams())" in html
+    assert "exportMethods(anQuery())" in html and "exportEvidence(anQuery())" in html
+    # functions made param-aware (back-compatible defaults)
+    assert "function exportResults(fmt, p)" in html
+    assert "function exportMethods(qArg)" in html and "function exportEvidence(qArg)" in html
+    # the Search-tab call sites are unchanged (no-arg) — nothing lost
+    assert "exportResults('csv')" in html and "exportMethods()" in html and "exportEvidence()" in html
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert "Export this analysis:" in en
