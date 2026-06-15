@@ -19,9 +19,10 @@
 **Context:** the mission lists the whole RC backlog. A single session cannot ship it
 all at quality, and the project's ethic punishes half-working code.
 **Decision:** deliver (1) a run-verified audit + the docs-honesty fixes it surfaced,
-then (2) three well-diagnosed, low-risk, maintainer-reported bug fixes (field-test
-Items V, R, H), each its own green PR. Defer everything large or ruling-dependent
-with a recorded reason.
+then (2) the well-diagnosed, low-risk, maintainer-reported bug fixes that verify as
+genuinely OPEN at HEAD (field-test Items **V, R** shipped; **H was found already-done**
+and dropped — see D-06/OO-D14-012), each its own green PR. Defer everything large or
+ruling-dependent with a recorded reason.
 **Rationale:** the highest-value, lowest-risk contribution is closing real honesty
 bugs and truing up the docs, not rushing a flagship (corpora/agenda) into an
 unreviewable diff. Matches "ship honest, working increments" + "leave the repo
@@ -32,18 +33,19 @@ analysis window) instead of the bug stack, say so and I'll re-sequence next sess
 
 ---
 
-### D-02 · PR structure: one disjoint audit PR + a 3-PR linear stack   [Class A]   [status: decided]
-**Context:** PRs 2–4 all touch `index.html`, the 12 locale files, and `CLAUDE.md`;
-PR 1 touches only docs (audit, README, RC gate). You merge oldest-first by hand,
-later.
-**Decision:** PR 1 is cut from `0.09` and is **disjoint** (no overlap with 2–4).
-PRs 2→3→4 are a **linear stack** (3 cut from 2's head, 4 from 3's head), each PR's
-diff being only its own increment. PR 1 deliberately does **not** touch `CLAUDE.md`
-or `index.html`, so it never conflicts with the stack.
+### D-02 · PR structure: one disjoint audit PR + a linear stack   [Class A]   [status: decided]
+**Context:** the bug-fix PRs all touch `index.html`, the 12 locale files, and
+`CLAUDE.md`; PR 1 touches only docs (audit, README, RC gate). You merge oldest-first
+by hand, later.
+**Decision:** PR 1 (#222) is cut from `0.09` and is **disjoint** (no overlap with the
+stack). The bug-fix PRs are a **linear stack** (PR 3 cut from PR 2's head), each PR's
+diff being only its own increment. PR 1 deliberately does **not** touch `CLAUDE.md` or
+`index.html`, so it never conflicts with the stack. (PR 4 was planned then cancelled,
+so the stack is PR 2 → PR 3.)
 **Rationale:** the contract's conflict-free-by-construction rule; the documented
 near-miss about stale-base ledger edits.
 **Reversibility:** N/A.
-**Confirm-or-overrule:** merge order is **PR1 (any time) ; PR2 → PR3 → PR4 in order**.
+**Confirm-or-overrule:** merge order is **#222 (any time) ; #223 → #224 in order**.
 GitHub auto-retargets a stacked PR's base to `0.09` when its parent merges.
 
 ---
@@ -53,17 +55,20 @@ GitHub auto-retargets a stacked PR's base to `0.09` when its parent merges.
 stops), but the activity chip keeps painting green "Collecting…". The fix needs a
 label string and a color. The field-test left two open choices: *"Collecting paused"*
 vs *"Paused (airplane mode)"*; and which color.
-**Options considered:** (a) "Collecting paused"; (b) "Paused (airplane mode)";
-for color (a) reuse the direction-aware **go-off calm/grounded** accent (invariant
-#14c), (b) a brand-new red.
-**Decision:** label = **"Collecting paused"** (short, fits the chip, the cause is
+**Options considered:** label (a) "Collecting paused" vs (b) "Paused (airplane mode)";
+color (a) the literal go-off accent (invariant #14c), (b) a brand-new red, (c) the
+existing **muted/grounded** chip color with the **spinner stopped**.
+**Decision:** label = **"Collecting paused"** (short, fits the chip; the cause is
 already conveyed by the lit airplane glyph next to it — informed-consent by
-layering). Color = **reuse the go-off calm/grounded accent**, NOT a new red.
-**Rationale (rational · critical · ethical):** a fresh red would conflate "paused"
-with "error/danger" and re-introduce exactly the two-meanings-one-color confusion
-invariant #14c was written to kill. Reusing the existing go-off accent keeps the
-visual language coherent. Ethically this *removes* a fabricated status (green =
-"actively collecting" while it is not), satisfying degrade-loudly / no-theater.
+layering). Color = **(c) muted/grounded + spinner stopped**.
+**Rationale (rational · critical · ethical):** I started from the field-test's
+"reuse the go-off accent" but on reading the CSS the go-off flash is `var(--ok)` =
+**the same green** as the active-collecting chip — so literally reusing it would
+*conflate* paused with active (the exact bug). A fresh red would conflate "paused"
+with "error". So the honest choice is the chip's base **muted** color with the
+**spinner halted** (nothing is being fetched) — clearly inactive, neither active-green
+nor alarm-red. Ethically this *removes* a fabricated status (green "Collecting…" while
+the kill switch has stopped the pass), satisfying degrade-loudly / no-theater.
 **Reversibility & blast radius:** tiny — one module var + a branch in `_paintActivity`
 + one keyed string; trivially reworded/recolored.
 **Confirm-or-overrule:** the wording and the reuse-the-go-off-accent choice.
@@ -101,39 +106,49 @@ ship the bar rule + the #16 test flip as a dedicated PR next session.
 button (`toggleSidebar`), but in the collapsed rail there is no obvious "expand"
 affordance — the same top-bar button toggles back, but its title still says
 "Collapse sidebar" and nothing in the rail invites expansion.
-**Options considered:** (a) make the existing top-bar toggle button *state-aware*
-(its title/aria-label flips Collapse↔Expand, and the glyph reflects state); (b) add a
-second, separate expand button in the rail.
-**Decision:** (a) — make the one existing toggle button state-aware: title/aria-label
-read "Expand sidebar" when collapsed and "Collapse sidebar" when expanded, and the
-chevron glyph points the way it will move. One control, honest label, no new chrome.
-**Rationale:** one control for one concept (no redundant buttons), keeps the constant
-top-bar footprint (invariant #3), and the title feeds the #oo-tip hover (invariant
-#17) so the affordance is discoverable on hover/focus. +1 keyed string ("Expand
-sidebar") ×12.
-**Reversibility:** tiny.
-**Confirm-or-overrule:** the one-state-aware-button choice over a second button.
+**Options considered:** (a) one toggle button with a JS state-aware title/aria-label
+(flips Collapse↔Expand); (b) two static buttons toggled by CSS (collapse shown when
+expanded, expand shown when collapsed).
+**Decision (REFINED during implementation):** **(b)** — two CSS-toggled buttons
+(`#sb-collapse` left-chevron, `#sb-expand` right-chevron) sharing the slot, each a
+**static keyed string**. I initially chose (a) but the i18n engine makes a single
+element's *title* unreliable to swap: it caches the first-seen English title per
+element in a private WeakMap (`origAttr`) and re-translates **from that cached
+original on every `apply()`** (which runs on language change AND on any DOM
+mutation), so a JS-swapped "Expand sidebar" gets clobbered back to translated
+"Collapse sidebar". Two static keyed buttons toggled by pure CSS sidesteps the cache
+entirely and gives a **state-accurate translated hover** in both states (which a
+single generic title would not).
+**Rationale (rational · critical · ethical):** correctness over elegance — (a) looks
+tidier but is subtly broken under this i18n architecture (I verified the WeakMap
+clobber by reading `i18n.js`). (b) is robust, fully translated, and the chevron
+direction is the real visual affordance. Same intent, same +1 string ("Expand
+sidebar") ×12, same single concept (both buttons call `toggleSidebar()`).
+**Reversibility:** tiny (markup + 2 CSS rules).
+**Confirm-or-overrule:** the two-CSS-button realization (vs a single button). The
+button lives in the sidebar foot, not the top bar, so invariant #3 is unaffected.
 
 ---
 
-### D-06 · Item H — Home stat labels + all-zeros empty-state   [Class B]   [PR 4]   [status: decided]
-**Context / the question:** the Home at-a-glance strip prints raw server `counts`
-keys (`source_groups`, `commodity_prices`, …) which CSS then uppercases
-("SOURCE_GROUPS"). The field-test asked for human, translated labels and a friendly
-empty-state on a fresh (all-zero) corpus.
-**Decision:** map each known key → a keyed human label **in the UI layer**
-(`OOI18N.t`), leaving the server `counts` keys untouched (the Database tab + cache
-rely on them as identifiers — the ledger's explicit recommended split). Show the
-existing "library is empty" empty-state when every count is 0 (today it never fires
-because the keys exist). I am shipping H(b)+(c); the live-update H(a) is deferred
-(shared mechanism with Item F).
-**Rationale:** raw DB identifiers shown to a user is a small honesty/clarity bug;
-fixing it in the UI layer avoids renaming server identifiers (no churn, no risk to
-the Database tab/cache). Keys not in the dict fall back to the prettified key, so a
-new count never renders blank.
-**Reversibility:** small (a label dict + an all-zero guard in `loadHome`).
-**Confirm-or-overrule:** the UI-layer mapping (vs renaming server keys) and shipping
-labels now while deferring live-refresh.
+### D-06 · Item H — found ALREADY RESOLVED at HEAD; PR 4 cancelled   [Class A]   [status: decided]
+**Context / the question:** I planned PR 4 to fix the Home at-a-glance strip showing
+raw `snake_case` keys ("SOURCE_GROUPS") + add an all-zero empty-state.
+**What I found (verify-before-implement):** at HEAD the code **already does all of
+it** — `homeStatLabel(k)` maps via a `HOME_STAT_LABELS` dict to keyed human labels
+("Source groups", "Commodity prices", …, all present ×12; i18n 100%), `renderHomeStats`
+already shows the "library is empty" empty-state when every count is 0
+(`index.html:3452`), the status strings ("Automatic collection"/"running"/"stopped")
+are keyed, and the live-Home registry self-updates the strip (`:3475`, "no Refresh
+button"). The field-test ledger was logged *before* those commits landed.
+**Decision:** **cancel PR 4.** Shipping it would be redundant and a false "fix"
+(honesty-by-construction). Recorded as OO-D14-012 (the ledger is substantially stale
+vs the fast-merged code; re-ground every item before building — the hand-verify
+lesson, which is exactly why this was caught and NOT shipped blind).
+**Rationale:** the strongest move is the one *not* made — no redundant diff, no
+overstated changelog. The same verify-pass also found C-b (agenda view buttons) and
+C-e (agenda country flags) already shipped.
+**Confirm-or-overrule:** nothing to confirm; flagging that PR 4 was planned then
+correctly dropped on evidence.
 
 ---
 

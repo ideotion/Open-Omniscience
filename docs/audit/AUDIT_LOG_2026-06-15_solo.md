@@ -105,8 +105,8 @@ the maintainer with the conservative default taken.
 |---|---|---|---|
 | **V** | Airplane-mode ON still paints green "Collecting…" (should show *paused*) | `_paintActivity` (`:2369`) never reads online state; `_paintNetwork` (`:2578`) knows it | **SHIP** — honesty bug, PR 2 |
 | **R** | Sidebar has a collapse button but no discoverable EXPAND affordance | `toggleSidebar` (`:3206`) flips state; collapse btn at `:744`; collapsed rail hides labels | **SHIP** — quick win, PR 3 |
-| **H** | Home "at a glance" stats show raw `snake_case` table keys; not translated | `loadHome` (`:3245`) prints `esc(k)` raw; CSS uppercases → "SOURCE_GROUPS" | **SHIP (labels + empty-state)** — i18n/honesty bug, PR 4 |
-| F | Home/Briefing auto-refresh (remove Refresh button) | painted only by `loadHome` | defer (live-update mechanism; larger; pairs with H(a)) |
+| **H** | Home "at a glance" stats show raw `snake_case` table keys; not translated | **ALREADY FIXED at HEAD** — `homeStatLabel` maps via `HOME_STAT_LABELS` to keyed human labels (all present ×12); all-zero empty-state guard at `:3452`; status strings keyed | **DROPPED** — verify-before-implement caught it; **PR 4 cancelled** |
+| F | Home/Briefing auto-refresh (remove Refresh button) | **ALREADY FIXED at HEAD** — the live-Home registry self-updates the strip + briefing (`:3475` "no Refresh button") | no action |
 | Y | App-wide chart rule: n<10 → BAR (amends invariant #16) | both renderers identified | **DEFER w/ DEFERRED decision** — has a real bar-baseline honesty question (Class B); needs the invariant-#16 test flipped; recorded for a dedicated slice |
 | D, G | dropdown `<option>` labels untranslated (i18n long tail) | confirmed | defer (i18n long-tail sweep; its own batch) |
 | X | "Task manager doesn't open" | code path verified correct at HEAD; suspected stale/cached build | **no code change** — cannot reproduce statically; recorded as needs-live-repro |
@@ -115,10 +115,22 @@ the maintainer with the conservative default taken.
 | N | "Trust" tabs rethink (dissolve/spread) | — | **Class C** — maintainer explicitly "help me decide"; recorded, not touched |
 | T, S, U, AA, AB, AC | keyword-quality / trans-language lexicon rework | data-quality | defer (large, design-collaborative) |
 | Z, M | diagnostics keyword-log is 60 MB → make a digest | `/keywords` serialises 80k fat entries | defer (good candidate; backend; its own PR) |
-| C, E | Agenda space/buttons/flags + auto-populate + source manager | mostly NEW | defer (agenda batch) |
+| C, E | Agenda space/buttons/flags + auto-populate + source manager | **partly ALREADY at HEAD** — view switch is real buttons (`#agenda-views`, C-b done); country picker shows flags (`agFlag()` at `:4069`, C-e done) | defer the genuine remainder (auto-populate + sortable source manager) |
 | O | tabs right-clickable → open in new window | NEW | defer (routing rework) |
 | Q | in-app docs translated + auto-inherited | translation open | defer |
 | P | remove Help & docs sidebar tab | **already shipped** (`:732`) | ✅ done (README catch-up = OO-D14-011) |
+
+> **OO-D14-012 (S3) — the field-test ledger is substantially STALE vs HEAD.** A
+> material share of its `[NEW]` / `⏭ capture-only` items were implemented in commits
+> *after* the field session was logged: **H** (stat labels + empty-state + live
+> update), **C-b** (agenda view buttons), **C-e** (agenda country flags), **P** (Help
+> tab removal), **B-chrome** (Ctrl-K removal + translated hover) all verify as **done**
+> at HEAD. **Consequence (a process finding, not a bug):** every ledger item MUST be
+> re-grounded against HEAD before implementing — the hand-verify lesson. This pass did
+> exactly that and **cancelled PR 4 (Item H)** when the code proved it already shipped,
+> rather than push a redundant "fix." Genuinely-open, verified items became PRs (V, R);
+> already-done items did not. Same theme as OO-D14-010: the living docs/backlogs lag
+> the fast-merged code, and `CLAUDE.md` is the most current ledger.
 
 ## 4. Carried-forward open findings (from 06-14, still open — not re-litigated)
 

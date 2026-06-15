@@ -17,8 +17,9 @@ Legend: ✅ shipped+verified · 📝 documented decision (maintainer call surfac
 | OO-D14-011 | S3 | Correct the README stale sidebar sentence (no System/Help tab; search is the omnibar) | ✅ | PR 1 |
 | Item V | S2 | Airplane-mode ON → activity chip shows a *paused* (calm/grounded, not green) "Collecting paused" — kill the fabricated green | ✅ | PR 2 |
 | Item R | S3 | Add a discoverable EXPAND affordance to the collapsed sidebar rail | ✅ | PR 3 |
-| Item H(b)(c) | S2 | Map Home stat keys → human, translated labels (UI layer); show the friendly empty-state on all-zeros | ✅ | PR 4 |
-| Item H(a) / Item F | S3 | Live Home self-update | ⏭️ | larger; shared mechanism; own PR |
+| Item H(b)(c) | S2 | Map Home stat keys → human, translated labels + all-zero empty-state | ⏭️ **ALREADY at HEAD** | **PR 4 CANCELLED** — `HOME_STAT_LABELS` + `:3452` guard already shipped; verify-before-implement caught it |
+| Item H(a) / Item F | S3 | Live Home self-update | ⏭️ ALREADY at HEAD | live-Home registry already self-updates (`:3475`) |
+| OO-D14-012 | S3 | field-test ledger substantially stale vs HEAD (H/C-b/C-e/P/B-chrome done) | 📝 | process finding — re-ground every ledger item before building |
 | Item Y | S2 | App-wide n<10 → bar chart (amends invariant #16) | 📝 ⏭️ | DEFERRED — real bar-baseline honesty Q (see D-04); needs the #16 test flipped |
 | Item N | — | "Trust" tabs dissolve/spread | 📝 | Class C — maintainer "help me decide"; recorded, untouched |
 | Item X | — | Task manager "doesn't open" | ⏭️ | cannot reproduce statically; needs live repro (likely stale build) |
@@ -35,9 +36,9 @@ Legend: ✅ shipped+verified · 📝 documented decision (maintainer call surfac
 | PR | Branch | Touches | Gate |
 |---|---|---|---|
 | 1 | `claude/solo-audit-2026-06-15` | audit docs, README, RC gate, session docs | docs-only; suite re-run green |
-| 2 | `claude/solo-item-v-airplane-paused` | `index.html`, locales ×12, `CLAUDE.md` | full gate green |
-| 3 | `claude/solo-item-r-sidebar-expand` | `index.html`, locales ×12, `CLAUDE.md` | full gate green |
-| 4 | `claude/solo-item-h-stat-labels` | `index.html`, locales ×12, `CLAUDE.md` | full gate green |
+| 2 | `claude/solo-item-v-airplane-paused` | `index.html`, locales ×12, `CLAUDE.md` | full gate green (1306 passed) |
+| 3 | `claude/solo-item-r-sidebar-expand` | `index.html`, locales ×12, `CLAUDE.md` | full gate green (1306 passed) |
+| ~~4~~ | ~~`claude/solo-item-h-stat-labels`~~ | — | **CANCELLED** — Item H already resolved at HEAD (see OO-D14-012) |
 
 ## Verification protocol (run after every PR, before push)
 
