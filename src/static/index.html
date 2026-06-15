@@ -479,6 +479,31 @@
     nav.tabs button[aria-selected="true"] { color:var(--fg); background:var(--panel2); border-color:var(--border); }
     nav.tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
+    /* ---- ooTimeScope: reusable time-range control ------------------- */
+    /* From/To dates + a visual draggable range bar + quick presets. The
+       dates and the bar are the REAL control; the presets are one-click
+       shortcuts (maintainer UX: "dates + a visual range bar", not 5 buttons).
+       Pure CSS, theme-driven (var(--accent)/--border/--panel2). */
+    .ts { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; }
+    .ts-dates { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+    .ts-dates input[type=date] { background:var(--panel2); color:var(--fg);
+      border:1px solid var(--border); border-radius:6px; padding:4px 7px; font:inherit; font-size:12px; }
+    .ts-bar { position:relative; flex:1 1 200px; min-width:160px; height:24px;
+      cursor:pointer; touch-action:none; }
+    .ts-track { position:absolute; top:50%; left:0; right:0; height:6px; margin-top:-3px;
+      background:var(--panel2); border:1px solid var(--border); border-radius:4px; }
+    .ts-sel { position:absolute; top:50%; height:6px; margin-top:-3px;
+      background:var(--accent); border-radius:4px; opacity:.55; }
+    .ts-handle { position:absolute; top:50%; width:14px; height:14px; margin:-7px 0 0 -7px;
+      background:var(--accent); border:2px solid var(--bg); border-radius:50%;
+      cursor:ew-resize; touch-action:none; box-shadow:0 0 0 1px var(--border); }
+    .ts-handle:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .ts-presets { display:flex; flex-wrap:wrap; gap:4px; }
+    .ts-presets button { background:transparent; color:var(--muted); border:1px solid var(--border);
+      border-radius:7px; margin:0; padding:4px 10px; font:inherit; font-size:11.5px; cursor:pointer; }
+    .ts-presets button:hover { color:var(--fg); background:var(--panel2); }
+    .ts-presets button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
     #toast { position:fixed; right:18px; bottom:18px; display:grid; gap:8px; z-index:200; }
     .note { padding:11px 15px; border-radius:var(--radius-sm); background:var(--panel);
       border:1px solid var(--border); box-shadow:var(--shadow); max-width:360px; font-size:14px;
@@ -1145,11 +1170,8 @@
         downloaded file — nothing scraped or guessed.</p>
       <div class="row">
         <div style="flex:0 0 auto"><button onclick="loadMarketData(this)">Load / refresh market data</button></div>
-        <div><label for="mkt-scale">Time scale</label>
-          <select id="mkt-scale" onchange="renderDashboard()">
-            <option value="30">1 month</option><option value="182">6 months</option>
-            <option value="365" selected>1 year</option><option value="1825">5 years</option>
-            <option value="0">All</option></select></div>
+        <div style="flex:1 1 360px"><label>Time range</label>
+          <div id="mkt-timescope"></div></div>
         <div id="mkt-dash-status" class="hint" style="align-self:center"></div>
         <div id="mkt-verdicts" class="hint" style="flex-basis:100%"></div>
       </div>
@@ -5800,14 +5822,62 @@
         }
         status.textContent = `${MKT_SERIES.length} series`;
         await Promise.all(MKT_SERIES.map(s => fetchPrices(s.symbol)));
+        // (Re)build the time-range control from the freshly loaded data span,
+        // defaulting the window to the last year (or all if <1y). It calls
+        // renderDashboard() on every change; render once now for the default.
+        buildMktTimeScope();
         renderDashboard();
       } catch (e) { status.textContent = "Could not load series: " + e.message; }
     }
 
-    function windowPrices(points, days) {
-      if (!days || !points.length) return points;
-      const cutoff = new Date(Date.now() - days*86400000).toISOString().slice(0, 10);
-      return points.filter(p => p.observed_on >= cutoff);
+    // The commodities board is windowed by ABSOLUTE dates [from,to] (the
+    // ooTimeScope control), not a trailing `days` count. Within the window the
+    // FULL-RESOLUTION series is kept (invariant #16) — never thinned; sparse
+    // windows render as honest dots downstream (dashChartSvg).
+    let _mktScope = {from: null, to: null};   // current window (ISO YYYY-MM-DD)
+    let _mktTimeScope = null;                  // the ooTimeScope handle
+    function windowPricesRange(points, from, to) {
+      if (!points.length) return points;
+      if (!from && !to) return points;
+      return points.filter(p =>
+        (!from || p.observed_on >= from) && (!to || p.observed_on <= to));
+    }
+    // The data span across ALL loaded commodity series (oldest → newest point),
+    // used to bound the control. Indices are excluded (not commodities).
+    function mktDataSpan() {
+      let min = null, max = null;
+      for (const s of MKT_SERIES) {
+        if (s.category === "index") continue;
+        const pts = MKT_PRICES[s.symbol] || [];
+        for (const p of pts) {
+          const d = p.observed_on;
+          if (!d) continue;
+          if (min === null || d < min) min = d;
+          if (max === null || d > max) max = d;
+        }
+      }
+      return {min, max};
+    }
+    // Default window = the last 1 year of the data (or the whole span if the
+    // data covers less than a year). Anchored to the data's max, never "now".
+    function mktDefaultWindow(span) {
+      if (!span.min || !span.max) return {from: span.min, to: span.max};
+      const maxD = new Date(span.max + "T00:00:00Z");
+      const yearAgo = new Date(maxD); yearAgo.setUTCFullYear(maxD.getUTCFullYear() - 1);
+      const from = yearAgo.toISOString().slice(0, 10);
+      return {from: from > span.min ? from : span.min, to: span.max};
+    }
+    function buildMktTimeScope() {
+      const box = $("mkt-timescope");
+      if (!box) return;
+      const span = mktDataSpan();
+      if (!span.min || !span.max) { _mktTimeScope = ooTimeScope(box, {}); return; }
+      const def = mktDefaultWindow(span);
+      _mktScope = {from: def.from, to: def.to};
+      _mktTimeScope = ooTimeScope(box, {
+        min: span.min, max: span.max, from: def.from, to: def.to,
+        onChange: ({from, to}) => { _mktScope = {from, to}; renderDashboard(); },
+      });
     }
 
     // Smart number formatting (maintainer-ruled, app-wide): significant digits
@@ -5905,7 +5975,9 @@
     function renderDashboard() {
       if (!MKT_SERIES.length) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const days = Number($("mkt-scale").value);
+      // Window by ABSOLUTE dates [from,to] from the ooTimeScope control (no
+      // longer a trailing `days` count).
+      const from = _mktScope.from, to = _mktScope.to;
       // Indices are NOT commodities (maintainer-ruled): they live in the
       // Indices tab; the board shows everything else, grouped by category.
       // The category comes straight from the series data (s.category), not a
@@ -5929,10 +6001,11 @@
         seriesFor(k).map(s => {
           const all = MKT_PRICES[s.symbol] || [];
           // RESPECT the window (invariant #16): never silently expand a narrow
-          // window to the full history. A sparse window renders as honest dots
-          // (handled in dashChartSvg), so the smallest scale no longer dumps the
-          // entire series — it shows exactly the points that fall in the window.
-          const pts = windowPrices(all, days);
+          // window to the full history, never downsample within it. A sparse
+          // window renders as honest dots (handled in dashChartSvg), so the
+          // smallest scale no longer dumps the entire series — it shows exactly
+          // the FULL-RESOLUTION points that fall in [from,to].
+          const pts = windowPricesRange(all, from, to);
           const last = pts.length ? pts[pts.length-1] : (all.length ? all[all.length-1] : null);
           const first = pts.length ? pts[0] : null;
           let change = "";
@@ -6401,6 +6474,171 @@
       else paint((btns.filter(b => b.classList.contains("active"))[0] || btns[0]).dataset.tab);
       return { select: select, paint: paint };
     }
+
+    // ooTimeScope — ONE reusable time-range control (maintainer UX: "dates +
+    // a visual range bar", NOT 5 buttons). Renders into `container`:
+    //   (a) From / To <input type=date> fields,
+    //   (b) a horizontal track with the selected span + two draggable handles,
+    //   (c) quick presets (1M·6M·1Y·5Y·All) as one-click SHORTCUTS.
+    // The three stay in sync; onChange({from,to}) fires (ISO YYYY-MM-DD) on any
+    // change. Exposes { set(from,to), get() }. Pure DOM + CSS, no deps,
+    // deterministic. Drag math mirrors the temporal-map slider helpers
+    // (value↔pixel over [min,max], here in days since epoch). Wired to Markets
+    // now; reusable later (Insights / agenda / corpus windows).
+    const _TS_DAY = 86400000;
+    function _tsParse(iso) {                       // ISO date -> integer days since epoch (UTC)
+      if (!iso) return null;
+      const t = Date.parse(iso + "T00:00:00Z");
+      return isFinite(t) ? Math.round(t / _TS_DAY) : null;
+    }
+    function _tsIso(days) {                        // integer days since epoch -> ISO date
+      return new Date(days * _TS_DAY).toISOString().slice(0, 10);
+    }
+    // Quick-preset spans in CALENDAR units, anchored to the data's max date.
+    // "All" = the full [min,max] span. Labels are keyed for ×12 translation.
+    const _TS_PRESETS = [
+      ["1M", d => { const x = new Date(d * _TS_DAY); x.setUTCMonth(x.getUTCMonth() - 1); return Math.round(x.getTime() / _TS_DAY); }],
+      ["6M", d => { const x = new Date(d * _TS_DAY); x.setUTCMonth(x.getUTCMonth() - 6); return Math.round(x.getTime() / _TS_DAY); }],
+      ["1Y", d => { const x = new Date(d * _TS_DAY); x.setUTCFullYear(x.getUTCFullYear() - 1); return Math.round(x.getTime() / _TS_DAY); }],
+      ["5Y", d => { const x = new Date(d * _TS_DAY); x.setUTCFullYear(x.getUTCFullYear() - 5); return Math.round(x.getTime() / _TS_DAY); }],
+      ["All", () => null],   // sentinel: clamp to min
+    ];
+    function ooTimeScope(container, opts) {
+      if (!container) return null;
+      opts = opts || {};
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s => s);
+      const min = _tsParse(opts.min), max = _tsParse(opts.max);
+      // Degrade loudly if the span is unusable (no/identical bounds).
+      if (min == null || max == null || max <= min) {
+        container.innerHTML = `<span class="hint muted">${esc(t("not enough data for a time range"))}</span>`;
+        return { set: () => {}, get: () => ({from: opts.from || null, to: opts.to || null}) };
+      }
+      let from = _tsParse(opts.from); let to = _tsParse(opts.to);
+      if (from == null) from = min; if (to == null) to = max;
+      const clamp = v => Math.max(min, Math.min(max, v));
+      from = clamp(from); to = clamp(to);
+      if (from > to) { const s = from; from = to; to = s; }
+
+      container.classList.add("ts");
+      container.innerHTML =
+        `<div class="ts-dates">
+           <label>${esc(t("From"))} <input type="date" class="ts-from"></label>
+           <label>${esc(t("To"))} <input type="date" class="ts-to"></label>
+         </div>
+         <div class="ts-bar" tabindex="-1">
+           <div class="ts-track"></div><div class="ts-sel"></div>
+           <div class="ts-handle ts-h-from" role="slider" tabindex="0"
+                aria-label="${esc(t("From"))}"></div>
+           <div class="ts-handle ts-h-to" role="slider" tabindex="0"
+                aria-label="${esc(t("To"))}"></div>
+         </div>
+         <div class="ts-presets">` +
+        _TS_PRESETS.map(([k]) =>
+          `<button type="button" data-preset="${esc(k)}">${esc(t(k))}</button>`).join("") +
+        `</div>`;
+
+      const inFrom = container.querySelector(".ts-from");
+      const inTo   = container.querySelector(".ts-to");
+      const bar    = container.querySelector(".ts-bar");
+      const sel    = container.querySelector(".ts-sel");
+      const hFrom  = container.querySelector(".ts-h-from");
+      const hTo    = container.querySelector(".ts-h-to");
+      // date inputs carry the absolute bounds so the native picker is bounded.
+      const minIso = _tsIso(min), maxIso = _tsIso(max);
+      [inFrom, inTo].forEach(el => { el.min = minIso; el.max = maxIso; });
+
+      function frac(v) { return (v - min) / (max - min); }     // value -> 0..1
+      function paint() {
+        inFrom.value = _tsIso(from); inTo.value = _tsIso(to);
+        const a = frac(from) * 100, b = frac(to) * 100;
+        sel.style.left = a + "%"; sel.style.width = (b - a) + "%";
+        hFrom.style.left = a + "%"; hTo.style.left = b + "%";
+        [[hFrom, from], [hTo, to]].forEach(([h, v]) => {
+          h.setAttribute("aria-valuemin", minIso);
+          h.setAttribute("aria-valuemax", maxIso);
+          h.setAttribute("aria-valuenow", _tsIso(v));
+        });
+      }
+      function fire() {
+        if (typeof opts.onChange === "function") opts.onChange({from: _tsIso(from), to: _tsIso(to)});
+      }
+      function setRange(a, b, notify) {
+        a = clamp(a); b = clamp(b);
+        if (a > b) { const s = a; a = b; b = s; }
+        const changed = a !== from || b !== to;
+        from = a; to = b; paint();
+        if (notify && changed) fire();
+      }
+      // x pixel within the bar -> value in [min,max] (mirrors sliderToT).
+      function pxToVal(clientX) {
+        const r = bar.getBoundingClientRect();
+        const f = r.width ? Math.max(0, Math.min(1, (clientX - r.left) / r.width)) : 0;
+        return Math.round(min + f * (max - min));
+      }
+
+      // -- pointer drag (mouse + touch via Pointer Events) ------------------ //
+      let dragging = null;   // "from" | "to" | null
+      function onDown(which, e) {
+        dragging = which; e.preventDefault();
+        (which === "from" ? hFrom : hTo).focus();
+        try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
+      }
+      function onMove(e) {
+        if (!dragging) return;
+        const v = pxToVal(e.clientX);
+        if (dragging === "from") setRange(v, to, true); else setRange(from, v, true);
+      }
+      function onUp() { dragging = null; }
+      hFrom.addEventListener("pointerdown", e => onDown("from", e));
+      hTo.addEventListener("pointerdown", e => onDown("to", e));
+      bar.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      // Click on the track (not a handle) moves the NEARER handle there.
+      bar.addEventListener("pointerdown", e => {
+        if (e.target.classList.contains("ts-handle")) return;
+        const v = pxToVal(e.clientX);
+        if (Math.abs(v - from) <= Math.abs(v - to)) setRange(v, to, true);
+        else setRange(from, v, true);
+      });
+
+      // -- keyboard on handles (a11y plus) ---------------------------------- //
+      function onKey(which, e) {
+        let step = 0;
+        if (e.key === "ArrowLeft" || e.key === "ArrowDown") step = -1;
+        else if (e.key === "ArrowRight" || e.key === "ArrowUp") step = 1;
+        else if (e.key === "PageDown") step = -30;
+        else if (e.key === "PageUp") step = 30;
+        else if (e.key === "Home") { which === "from" ? setRange(min, to, true) : setRange(from, from, true); e.preventDefault(); return; }
+        else if (e.key === "End") { which === "from" ? setRange(to, to, true) : setRange(from, max, true); e.preventDefault(); return; }
+        else return;
+        e.preventDefault();
+        if (which === "from") setRange(from + step, to, true); else setRange(from, to + step, true);
+      }
+      hFrom.addEventListener("keydown", e => onKey("from", e));
+      hTo.addEventListener("keydown", e => onKey("to", e));
+
+      // -- date inputs ------------------------------------------------------ //
+      inFrom.addEventListener("change", () => { const v = _tsParse(inFrom.value); if (v != null) setRange(v, to, true); else paint(); });
+      inTo.addEventListener("change",   () => { const v = _tsParse(inTo.value);   if (v != null) setRange(from, v, true); else paint(); });
+
+      // -- presets (one-click shortcuts; from = max - span, to = max) ------- //
+      container.querySelector(".ts-presets").addEventListener("click", e => {
+        const b = e.target.closest("[data-preset]");
+        if (!b) return;
+        const def = _TS_PRESETS.find(([k]) => k === b.dataset.preset);
+        if (!def) return;
+        const startFn = def[1];
+        const start = startFn(max);                 // null sentinel => "All"
+        setRange(start == null ? min : start, max, true);
+      });
+
+      paint();
+      return {
+        set: (a, b) => setRange(_tsParse(a) ?? from, _tsParse(b) ?? to, false),
+        get: () => ({from: _tsIso(from), to: _tsIso(to)}),
+      };
+    }
+
     let _insSubtabs = null, _setSubtabs = null, _corpusSubtabs = null;
 
     // -- Insights (keyword & entity analytics) ------------------------------ //

@@ -852,5 +852,11 @@
   "Summarizing locally…": "Meringkas secara lokal…",
   "Translating locally…": "Menerjemahkan secara lokal…",
   "Other": "Lainnya",
-  "co-occurrence in your corpus, never causation": "ko-kemunculan dalam korpus Anda, bukan sebab-akibat"
+  "co-occurrence in your corpus, never causation": "ko-kemunculan dalam korpus Anda, bukan sebab-akibat",
+  "Time range": "Rentang waktu",
+  "not enough data for a time range": "data tidak cukup untuk rentang waktu",
+  "1M": "1M",
+  "6M": "6M",
+  "1Y": "1Y",
+  "5Y": "5Y"
 }

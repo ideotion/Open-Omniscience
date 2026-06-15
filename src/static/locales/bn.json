@@ -852,5 +852,11 @@
   "Summarizing locally…": "স্থানীয়ভাবে সারসংক্ষেপ করা হচ্ছে…",
   "Translating locally…": "স্থানীয়ভাবে অনুবাদ করা হচ্ছে…",
   "Other": "অন্যান্য",
-  "co-occurrence in your corpus, never causation": "আপনার কর্পাসে সহ-উপস্থিতি, কখনোই কার্যকারণ নয়"
+  "co-occurrence in your corpus, never causation": "আপনার কর্পাসে সহ-উপস্থিতি, কখনোই কার্যকারণ নয়",
+  "Time range": "সময়সীমা",
+  "not enough data for a time range": "সময়সীমার জন্য পর্যাপ্ত ডেটা নেই",
+  "1M": "1M",
+  "6M": "6M",
+  "1Y": "1Y",
+  "5Y": "5Y"
 }

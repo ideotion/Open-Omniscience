@@ -852,5 +852,11 @@
   "Summarizing locally…": "ローカルで要約中…",
   "Translating locally…": "ローカルで翻訳中…",
   "Other": "その他",
-  "co-occurrence in your corpus, never causation": "コーパス内の共起であり、因果関係ではありません"
+  "co-occurrence in your corpus, never causation": "コーパス内の共起であり、因果関係ではありません",
+  "Time range": "期間",
+  "not enough data for a time range": "期間を設定するにはデータが不足しています",
+  "1M": "1M",
+  "6M": "6M",
+  "1Y": "1Y",
+  "5Y": "5Y"
 }
