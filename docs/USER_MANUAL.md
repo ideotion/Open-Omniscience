@@ -312,8 +312,11 @@ background, from any tab.
   parentheses with correct precedence, e.g.
   `(climate OR energy) AND policy NOT opinion`. Backed by SQLite FTS5 and fully
   parameterised (no injection).
-- **Filters:** Source (exact name), Language (code like `en`), and a **From/To**
-  date range. All optional.
+- **Filters:** Source (exact name), Language (code like `en`), and a **time-range**
+  control — From/To date fields, a draggable range bar, and quick presets
+  (1M · 6M · 1Y · 5Y · All) — the *same* control used on Markets, Insights and the
+  Analysis window. Left at its full span it excludes nothing; narrow it to scope the
+  search to a period. All optional.
 - **Search** runs the query; the results table shows **Title · Source · Published ·
   Language**, and a count (`N result(s)`, and how many are shown if truncated).
 - **Per-row actions:** **open** (a clean offline copy of the stored article),
@@ -442,8 +445,11 @@ sources reach.
 relating them to news volume.
 
 - **Market trends dashboard:** a card per price series — symbol, % change, latest
-  price (currency/unit), point count, and a mini sparkline. A **Time scale**
-  selector (1 month → all) reshapes every card. Click a card for a full chart plus
+  price (currency/unit), point count, and a mini sparkline. A **time-range** control
+  — From/To date fields, a draggable range bar, and quick presets (1M · 6M · 1Y ·
+  5Y · All) — reshapes every card by an exact start/end window (not a fixed list of
+  scales); the full series is always drawn at full resolution within it, never
+  thinned. Click a card for a full chart plus
   a **price↔news correlation** (real Pearson/Spearman coefficient, p-value and
   sample size — never a guessed number). **Load / refresh market data** imports the
   curated official feeds.
@@ -537,6 +543,16 @@ date tags**: open an article's offline reader to see them listed, **confirm or r
 each candidate, or **extract** on demand; the corpus can then be filtered by a mentioned
 date (`GET /api/article-dates/by-date`). High-precision only — bare years and relative
 phrases ("last week") are deliberately not extracted.
+
+**Places your corpus *mentions*:** toggle **📍 places** to plot the locations your
+articles *talk about* (not where they were published) — drawn from the When/Where/Who
+extracted at ingest and placed at a gazetteer coordinate. Each marker's **area scales
+with how many articles mention that place** (raw article spread — never a score);
+click one for its name, article spread, total mentions and the **"Deduced from text,
+never confirmed."** caveat (the same caveat rides in the layer's legend). Places with
+no known coordinate aren't drawn — their count is stated honestly ("N places not
+mapped"), never dropped onto (0, 0). The layer is **off by default** (the curated
+anchors stay primary; you opt in).
 
 **Honesty by construction:** a pin needs **both** a coordinate and a date — anything
 missing one is simply absent, never dropped onto (0, 0), and the caveat says so.
