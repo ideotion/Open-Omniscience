@@ -729,5 +729,7 @@
   "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "এই মেশিনের কর্পাস, কী ও ক্যাশে অপরিবর্তনীয়ভাবে মুছে ফেলে, তারপর অ্যাপটি পুনরায় চালু করতে হবে।",
   "This cannot be undone.": "এটি পূর্বাবস্থায় ফেরানো যাবে না।",
   "API reference (Swagger) ↗": "API রেফারেন্স (Swagger) ↗",
-  "Pick a document on the left.": "বাঁ দিকে একটি নথি বেছে নিন।"
+  "Pick a document on the left.": "বাঁ দিকে একটি নথি বেছে নিন।",
+  "CJK not segmented — unreliable": "CJK খণ্ডিত নয় — অনির্ভরযোগ্য",
+  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "কীওয়ার্ড নিষ্কাশন স্পেস ও যতিচিহ্নে বিভক্ত করে; এটি চীনা, জাপানি বা কোরীয় ভাষা খণ্ডন করে না, তাই এখানে দেখানো CJK কীওয়ার্ড সমষ্টি অনির্ভরযোগ্য।"
 }

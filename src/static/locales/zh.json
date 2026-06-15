@@ -729,5 +729,7 @@
   "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "不可逆地删除本机上的语料库、密钥和缓存，之后必须重启应用。",
   "This cannot be undone.": "此操作无法撤销。",
   "API reference (Swagger) ↗": "API 参考（Swagger）↗",
-  "Pick a document on the left.": "在左侧选择一个文档。"
+  "Pick a document on the left.": "在左侧选择一个文档。",
+  "CJK not segmented — unreliable": "中日韩未分词 — 不可靠",
+  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "关键词提取按空格和标点切分；它不对中文、日文或韩文进行分词，因此这里显示的中日韩关键词聚合结果不可靠。"
 }

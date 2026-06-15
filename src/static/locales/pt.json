@@ -729,5 +729,7 @@
   "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted.": "Exclui irreversivelmente o corpus, as chaves e os caches desta máquina; depois o aplicativo precisa ser reiniciado.",
   "This cannot be undone.": "Isto não pode ser desfeito.",
   "API reference (Swagger) ↗": "Referência da API (Swagger) ↗",
-  "Pick a document on the left.": "Escolha um documento à esquerda."
+  "Pick a document on the left.": "Escolha um documento à esquerda.",
+  "CJK not segmented — unreliable": "CJK não segmentado — pouco fiável",
+  "Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable.": "A extração de palavras-chave divide por espaços e pontuação; NÃO segmenta chinês, japonês nem coreano, por isso os agregados de palavras-chave CJK aqui apresentados são pouco fiáveis."
 }
