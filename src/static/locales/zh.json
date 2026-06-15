@@ -709,5 +709,9 @@
   "diverged": "已偏离",
   "All articles match their capture-time hash.": "所有文章均与其采集时的哈希值一致。",
   "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "篇文章与其采集时的哈希值不符——存在篡改或位衰减的迹象。未更改任何内容。",
-  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "重新计算每篇已存文章的哈希值，并与采集时记录的哈希值进行比对。不一致即表示存储内容已与其采集时的哈希值不符——存在篡改或位衰减的迹象。不会更改任何内容；该检查在本地进行，且为只读。"
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "重新计算每篇已存文章的哈希值，并与采集时记录的哈希值进行比对。不一致即表示存储内容已与其采集时的哈希值不符——存在篡改或位衰减的迹象。不会更改任何内容；该检查在本地进行，且为只读。",
+  "…or subscribe by URL (webcal / https)": "…或通过网址订阅（webcal / https）",
+  "Add from URL": "从网址添加",
+  "Enter a calendar URL first.": "请先输入日历网址。",
+  "Fetch a calendar from a URL you provided": "从你提供的网址获取日历"
 }

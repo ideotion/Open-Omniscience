@@ -63,3 +63,35 @@ def test_import_ics_rejects_oversize():
 def test_blank_name_defaults():
     r = F.import_ics_text("", ICS)
     assert r["family"] == "user-calendar" and r["name"] == "My calendar"
+
+
+class _UrlResult:
+    def __init__(self, content):
+        self.content = content
+
+
+class _UrlFetcher:
+    def __init__(self, payload):
+        self.payload = payload
+        self.url = None
+
+    def fetch(self, url, *, require_html=True):
+        self.url = url
+        return _UrlResult(self.payload)
+
+
+def test_import_ics_url_normalizes_webcal_and_imports():
+    f = _UrlFetcher(ICS)
+    r = F.import_ics_url(f, "webcal://example.org/cal.ics", "Web Cal")
+    assert f.url == "https://example.org/cal.ics"   # webcal:// -> https://
+    assert r["added"] == 2 and r["family"] == "user-web-cal"
+    assert any(x["key"] == "user-web-cal" for x in F.list_user_feeds())
+
+
+def test_import_ics_url_rejects_non_http_without_fetching():
+    class _Never:
+        def fetch(self, url, **k):
+            raise AssertionError("must never fetch a non-http(s) scheme")
+
+    with pytest.raises(ValueError):
+        F.import_ics_url(_Never(), "ftp://x/y.ics", "X")

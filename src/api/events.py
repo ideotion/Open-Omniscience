@@ -118,6 +118,26 @@ def feed_import_ics(payload: dict = Body(...)) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)[:300]) from exc
 
 
+@router.post("/feeds/import-url")
+def feed_import_url(payload: dict = Body(...)) -> dict:
+    """Add a calendar by URL (NETWORK — gated by the UI's ONE consent popup). Fetched
+    through the ethical fetcher (robots fail-closed / kill switch / politeness / proxy),
+    then imported like an uploaded .ics (deduped, user-owned, removable)."""
+    url = str(payload.get("url") or "").strip()
+    name = str(payload.get("name") or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="No URL provided.")
+    from src.events.feeds import import_ics_url
+    from src.safety.fetcher import make_fetcher
+
+    try:
+        return import_ics_url(make_fetcher(), url, name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:300]) from exc
+    except Exception as exc:  # noqa: BLE001 - surface the fetch refusal honestly
+        raise HTTPException(status_code=502, detail=str(exc)[:300]) from exc
+
+
 @router.get("/feeds/user")
 def feed_list_user() -> dict:
     """The user's own uploaded calendars (removable)."""

@@ -709,5 +709,9 @@
   "diverged": "বিচ্যুত",
   "All articles match their capture-time hash.": "সব নিবন্ধ তাদের ধারণকালের হ্যাশের সাথে মিলে যায়।",
   "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "নিবন্ধ তাদের ধারণকালের হ্যাশ থেকে বিচ্যুত — কারসাজি বা বিট-ক্ষয়ের প্রমাণ। কিছুই পরিবর্তন করা হয়নি।",
-  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "প্রতিটি সংরক্ষিত নিবন্ধের হ্যাশ পুনরায় গণনা করে এবং ধারণের সময় নথিভুক্ত হ্যাশের সাথে তুলনা করে। অমিল মানে সংরক্ষিত বিষয়বস্তু আর তার ধারণকালের হ্যাশের সাথে মেলে না — কারসাজি বা বিট-ক্ষয়ের প্রমাণ। কিছুই পরিবর্তন করা হয় না; এই যাচাই স্থানীয় ও কেবল-পঠনযোগ্য।"
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "প্রতিটি সংরক্ষিত নিবন্ধের হ্যাশ পুনরায় গণনা করে এবং ধারণের সময় নথিভুক্ত হ্যাশের সাথে তুলনা করে। অমিল মানে সংরক্ষিত বিষয়বস্তু আর তার ধারণকালের হ্যাশের সাথে মেলে না — কারসাজি বা বিট-ক্ষয়ের প্রমাণ। কিছুই পরিবর্তন করা হয় না; এই যাচাই স্থানীয় ও কেবল-পঠনযোগ্য।",
+  "…or subscribe by URL (webcal / https)": "…বা URL দিয়ে সাবস্ক্রাইব করুন (webcal / https)",
+  "Add from URL": "URL থেকে যোগ করুন",
+  "Enter a calendar URL first.": "প্রথমে একটি ক্যালেন্ডার URL লিখুন।",
+  "Fetch a calendar from a URL you provided": "আপনার দেওয়া URL থেকে ক্যালেন্ডার আনুন"
 }

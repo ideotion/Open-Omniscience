@@ -709,5 +709,9 @@
   "diverged": "menyimpang",
   "All articles match their capture-time hash.": "Semua artikel cocok dengan hash saat pengambilannya.",
   "articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.": "artikel menyimpang dari hash saat pengambilannya — bukti adanya manipulasi atau kerusakan bit. Tidak ada yang diubah.",
-  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Menghitung ulang hash setiap artikel tersimpan dan membandingkannya dengan hash yang dicatat saat artikel diambil. Ketidakcocokan berarti konten tersimpan tidak lagi cocok dengan hash saat pengambilannya — bukti adanya manipulasi atau kerusakan bit. Tidak ada yang diubah; pemeriksaan bersifat lokal dan hanya-baca."
+  "Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.": "Menghitung ulang hash setiap artikel tersimpan dan membandingkannya dengan hash yang dicatat saat artikel diambil. Ketidakcocokan berarti konten tersimpan tidak lagi cocok dengan hash saat pengambilannya — bukti adanya manipulasi atau kerusakan bit. Tidak ada yang diubah; pemeriksaan bersifat lokal dan hanya-baca.",
+  "…or subscribe by URL (webcal / https)": "…atau berlangganan via URL (webcal / https)",
+  "Add from URL": "Tambah dari URL",
+  "Enter a calendar URL first.": "Masukkan URL kalender terlebih dahulu.",
+  "Fetch a calendar from a URL you provided": "Ambil kalender dari URL yang Anda berikan"
 }
