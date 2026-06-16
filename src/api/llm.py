@@ -62,6 +62,18 @@ def get_llm_client() -> OllamaClient:
     return _client
 
 
+def active_model() -> str:
+    """The operator's chosen default model — the STORED UI setting (maintainer Q10)
+    if set, else ``DEFAULT_MODEL`` (env ``OO_LLM_MODEL`` / built-in). A per-request
+    ``model`` still overrides it. Never fatal: any settings error falls back."""
+    try:
+        from src.config.app_settings import load_settings
+
+        return load_settings().llm_model or DEFAULT_MODEL
+    except Exception:  # noqa: BLE001 - a settings hiccup must not break inference
+        return DEFAULT_MODEL
+
+
 class GenerateRequest(BaseModel):
     prompt: str
     model: str | None = None
@@ -110,6 +122,7 @@ def llm_models(client: OllamaClient = Depends(get_llm_client)) -> dict:
     return {
         "available": available,
         "default": DEFAULT_MODEL,
+        "active": active_model(),  # the stored UI choice (Q10), or the default
         "total_ram_gb": total_ram_gb(),
         "catalog_as_of": CATALOG_AS_OF,
         "catalog": annotate_catalog(),
@@ -120,7 +133,7 @@ def llm_models(client: OllamaClient = Depends(get_llm_client)) -> dict:
 @router.post("/generate")
 def llm_generate(req: GenerateRequest, client: OllamaClient = Depends(get_llm_client)) -> dict:
     """Single-shot generation. 503 if Ollama/model unavailable."""
-    model = req.model or DEFAULT_MODEL
+    model = req.model or active_model()
     try:
         result = client.generate(req.prompt, model=model, system=req.system)
     except LLMUnavailable as exc:
@@ -190,7 +203,7 @@ def summarize_article(
     if not article.content:
         raise HTTPException(status_code=400, detail="Article has no content to summarize.")
 
-    model = req.model or DEFAULT_MODEL
+    model = req.model or active_model()
     prompt = f"Article title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
     try:
         result = client.generate(prompt, model=model, system=_SUMMARY_SYSTEM)
@@ -239,7 +252,7 @@ def translate_article(
     if not article.content:
         raise HTTPException(status_code=400, detail="Article has no content to translate.")
 
-    model = req.model or DEFAULT_MODEL
+    model = req.model or active_model()
     system = _TRANSLATE_SYSTEM.format(target=req.target_language)
     prompt = f"Title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
     try:
@@ -345,7 +358,7 @@ def synthesize_articles(
             f"[{i}] {a.title or '(untitled)'} ({src}, {pub})\n{a.content[:per_article]}"
         )
     prompt = "\n\n---\n\n".join(parts)
-    model = req.model or DEFAULT_MODEL
+    model = req.model or active_model()
 
     try:
         result = client.generate(prompt, model=model, system=_SYNTHESIS_SYSTEM)

@@ -29,6 +29,8 @@ class SettingsUpdate(BaseModel):
     default_result_limit: int | None = None
     # Investigation-recipe producers to switch off (0.0.8 WP8 / RM-20).
     recipes_disabled: list[str] | None = None
+    # Active local LLM model tag (maintainer Q10): "" / null clears the override.
+    llm_model: str | None = None
 
 
 def _payload() -> dict:
