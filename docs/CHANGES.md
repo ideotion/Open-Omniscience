@@ -11,6 +11,12 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Honest "collecting" status in airplane mode.** When you switch airplane mode on while
+  a background collection pass is running, the top-bar activity chip now clearly reads
+  **"Collecting paused…" in red** (the same colour as the engaged airplane button) with the
+  spinner stopped — it can no longer briefly keep showing the green "Collecting…" after the
+  network is cut. The chip follows the real collector state by construction, never a
+  fabricated one.
 - **Two monoliths decomposed (audit PR H — no behaviour change).** The single-page UI
   shed its giant inline blocks: the CSS and JavaScript now live in cached
   `/static/app.css` and `/static/app.js` (a classic script loaded at the same point, so

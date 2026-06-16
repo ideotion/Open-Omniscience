@@ -1751,7 +1751,18 @@ ruling, a contingency, or a deliberate-omission note.
     autonomous "muted, not alarm-red" choice. Update test_ui_invariants if it pins
     the muted color. (Q11=No 2026-06-16: maintainer declined a planning-session
     live repro — root-cause at implementation; the color/text change ships
-    regardless.) PENDING.
+    regardless.) **SHIPPED 2026-06-16 (this session, branch claude/item-v-paused-status-honesty):**
+    `.activity.paused` color + spinner border-top → `var(--err)` (the engaged-airplane
+    red; --err is theme-defined so it holds across all themes); label now
+    `T("Collecting paused") + "…"` (ellipsis appended in code = ×12 by construction, no
+    locale-key churn, i18n stays 100%). ROOT CAUSE FOUND (more than a hardening): the fast
+    `_pollActivity` poll repainted the green "Collecting…" chip from `s.active` WITHOUT
+    consulting offline state, overwriting the paused state between the slower network
+    polls — it now honors the `s.online` the scheduler already returns (scheduler.py:59),
+    flipping `_netOnline` + repainting on a change, so the chip cannot lag green.
+    test_ui_invariants #14d added (paused chip var(--err) not muted; label appends …; poll
+    honors s.online). NB the earlier index.html:2742 pointer is stale post-#236 — the code
+    now lives in src/static/app.js.
   - **Item R SHIPPED — discoverable sidebar EXPAND affordance:** the collapsed
     rail showed only a "Collapse sidebar"-titled button (left chevron) with no
     discoverable way back. Now TWO CSS-toggled buttons share the slot: `#sb-collapse`

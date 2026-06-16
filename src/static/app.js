@@ -49,7 +49,7 @@
         el.hidden = false;
         el.classList.toggle("bg", !paused);
         el.classList.toggle("paused", paused);
-        $("activity-label").textContent = paused ? T("Collecting paused") : _bg;
+        $("activity-label").textContent = paused ? T("Collecting paused") + "…" : _bg;
         host.textContent = paused ? "" : (_curHost || "");
       }
       else if (_inflight > 0) { el.hidden = false; el.classList.remove("bg"); el.classList.remove("paused");
@@ -418,6 +418,15 @@
     async function _pollActivity() {
       try {
         const s = await api("/api/scheduler/status");
+        // Honor the online flag the scheduler already reports (online = not
+        // kill_switch_active()): the activity poll runs fast while a pass is live,
+        // so without this it could repaint a green "Collecting…" chip AFTER airplane
+        // mode paused the pass (the slower network poll lands later). Flip + repaint
+        // on a change, even though setBackgroundActivity keeps the same label. (Item V)
+        if (s && typeof s.online === "boolean" && s.online !== _netOnline) {
+          _netOnline = s.online;
+          _paintActivity();
+        }
         const active = !!(s && s.active);
         setBackgroundActivity(active ? "Collecting…" : null);
         return active;  // live (fast) while a scrape runs; backs off when idle

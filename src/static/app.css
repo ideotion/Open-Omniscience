@@ -217,13 +217,15 @@
       border:2px solid color-mix(in srgb,var(--fg) 22%,transparent); border-top-color:var(--accent);
       animation:oo-spin .7s linear infinite; }
     .activity.bg .spin { border-top-color:var(--ok); }
-    /* Collection paused (airplane mode trips the kill switch): grounded/muted, NOT
-       the active green — and the spinner STOPS, because nothing is being fetched.
-       Honest status by construction (no fabricated "collecting" while paused). */
-    .activity.paused { color:var(--muted); border-color:var(--border);
+    /* Collection paused (airplane mode trips the kill switch): the SAME red as the
+       ENGAGED airplane button (var(--err)) so the chip reads as the airplane-mode
+       cause (maintainer-ruled 2026-06-16, reversing the earlier muted treatment) —
+       the spinner STOPS and the border is dashed (inactive), because nothing is being
+       fetched. Honest status by construction (no fabricated "collecting" while paused). */
+    .activity.paused { color:var(--err); border-color:color-mix(in srgb,var(--err) 45%,var(--border));
       border-style:dashed; }
-    .activity.paused .spin { animation:none; border-top-color:var(--muted);
-      border-color:color-mix(in srgb,var(--muted) 45%,transparent); }
+    .activity.paused .spin { animation:none; border-top-color:var(--err);
+      border-color:color-mix(in srgb,var(--err) 45%,transparent); }
     /* Fixed-width slot for the live fetch URL so the topbar never reflows as URLs change. */
     .act-host { display:inline-block; width:160px; overflow:hidden; text-overflow:ellipsis;
       white-space:nowrap; vertical-align:bottom; }
