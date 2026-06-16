@@ -11,6 +11,28 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **See a commodity's price next to your coverage of it.** Open a commodity from the
+  Markets board (its title or **Analyse ↗**) and the analysis window now offers a **Price**
+  tab that lays the **price curve over your corpus's coverage timeline** for that topic —
+  each on its own labelled axis, on a shared time line, so you can see *when* coverage rose
+  or fell around price moves. It says plainly that this is **co-occurrence in your corpus,
+  never causation**, and it never invents a shared scale or a hidden score.
+- **A "Trending now" glance on Home.** Home now shows the **past-week rising keywords** at a
+  glance, each with a small honest chart, and a click opens that keyword's full analysis
+  ("More in Insights →" jumps to the complete Trends view). It's a launchpad, not a new
+  number — every item links to where the real detail lives, the rising measure is the plain
+  recent-vs-earlier rate (never a score), and the panel simply stays hidden until there's
+  something trending.
+- **Manage every download from the task manager.** The task-manager window's controls now
+  cover **offline-map (OpenStreetMap) region downloads** as well as Wikipedia dumps — pause,
+  reorder in the queue, and a new **Resume** for any paused or failed download (resuming
+  asks the one network-consent prompt first, since it reopens a connection). Progress shows
+  the real bytes and percent; a download rate/ETA is deliberately *not* shown until the
+  download itself reports one (no guessed numbers).
+- **Zoom into a trend.** Each sparkline in the Insights → Trends "past 24h / week / month"
+  panel now has a **maximize** control that opens that keyword's daily series as a full
+  interactive chart (zoom, pan, hover-readout) in a dialog — the same honest chart toolkit
+  used across the app (it draws bars, not a fake curve, when there are few data points).
 - **Read and analyse an article in one place — reader tabs.** The offline article reader
   now opens with a tab bar: **Read · Keywords · Sentiment · Related · Links**. Reading,
   related articles, and the links the article cites are there as before; two new tabs

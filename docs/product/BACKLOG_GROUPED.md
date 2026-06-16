@@ -37,6 +37,30 @@
 > nav-to-top + Home→dashboard + 3D explorer; Markets category subtabs + click→analysis;
 > agenda content; task-manager remainder; in-app Ollama installer; geo/OSM (Group M);
 > official-statistics (Group N); convergence Watches view; Win/mac install + release eng.
+>
+> **AUTONOMOUS SESSION 2026-06-16 (cont.) — draft PRs #272–278 onto `0.09` (same gate: full
+> local suite green · mypy 112 · node --check · i18n 100% ×12; each PR conservative + flagged
+> where browser-unverifiable). Shipped (all 5 merged, +2 open):** (1) **#272** Item 1 — Trends
+> sparkline **click-to-enlarge** into the interactive `ooChart` via a reusable
+> `chart-enlarge` dialog (invariant #21b++). (2) **#273** Item 2 — task-manager **per-job
+> controls extended to OSM** downloads + a **Resume** action for paused/failed downloads
+> (`_dl_actions`, `jobResume`→`ensureOnline`→`/api/jobs/{id}/resume`, manager `resume()`;
+> invariant #20d). (3) **#274** Item 5-core — offline **SDMX-JSON + World Bank parser**
+> (`src/stats/sdmx.py`, `StatFigure`; no score, vintages, gaps→None). (4) **#275** Item 3 —
+> commodity **price × coverage overlay** in the analysis window (commodity-gated Price subtab,
+> dual-axis `commodityOverlaySvg`, co-occurrence-never-causation; invariant #22b). (5) **#276**
+> Item 4b — Home **"Trending now"** dashboard glance (redundant/deep-linking; invariant #19c).
+> (6) **#277** docs — CHANGES.md user-facing 0.09 entries. (7) **#278** Item 5 — **live SDMX
+> fetch client** (`src/stats/fetch.py`, guarded-factory, kill-switch-refuses-up-front,
+> delegates to the parser). NEXT (unstarted): Item 4 big pieces — **nav-to-top facet strip**
+> (#2/#3/#4), **Insights = canonical Leads home** + remove its search bar (gated on the omnibar
+> absorbing term-exploration), **named parallel Analysis tabs + #an↔#corpus consolidation**
+> (architecturally significant), the **3D keyword explorer** (hand-rolled canvas 2.5D), Home(2)
+> remainder (top ooChart graphs · carousel · most-recent-by-tag) — ALL need browser
+> verification; Item 5 follow-ups (consented endpoint+job over `fetch.py` · figure-level
+> provenance/vintages **DB schema** · triangulation · registered-sources view); Item 6
+> release-eng (win/mac install paths · version 0.0.9→0.1 sweep · release artifacts+SHA256SUMS ·
+> docs↔code reciprocity sweep · final RC review).
 
 ## The keystones (shared building blocks that unblock many items)
 
