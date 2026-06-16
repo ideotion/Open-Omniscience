@@ -996,8 +996,14 @@ ruling, a contingency, or a deliberate-omission note.
   self-contained themed SVG in reader.js (labels OUTSIDE the nodes for contrast,
   role=img + aria-label, "+N more" honesty, method + caveat visible); reader stays
   STANDALONE + English-only. tests: `test_article_graph_is_a_deterministic_outward_radial`
-  + the endpoint contract + the tab structure. REMAINING (next slice): a richer
-  Source/WWW profile tab.
+  + the endpoint contract + the tab structure. **SOURCE PROFILE TAB ALSO SHIPPED
+  2026-06-16 (same PR):** a SERVER-RENDERED "Source" pane (like Related/Links, no
+  extra fetch) showing the source's catalogue provenance (name · domain · place ·
+  type · language · tags) + its corpus FOOTPRINT ("N articles collected from this
+  source") — DESCRIPTIVE only, NO score/ranking/verdict (reliability_score
+  deliberately not shown, per the operator-set guard). Reader tabs are now
+  Read·Keywords·Mindmap·Sentiment·Related·Source·Links; When/Where/Who already live
+  in the Read pane, so the reader-tabs flagship (RC-BLOCKING) is essentially complete.
 - **SEARCH = ONE CENTRAL ANALYTICAL TOOL (field reports #3/#4 + 2026-06-12
   refinements; supersedes-and-extends the 2026-06-10 global-search design):**
   instant index-backed omnibar (never scan-on-type), federated over articles
