@@ -51,12 +51,14 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   from a **Chain of custody** UI panel, with the effective state always shown
   honestly (see [docs/USER_MANUAL.md](docs/USER_MANUAL.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
-- ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust ·
-  System*) covering Home, Search, **Analysis**, Insights, Temporal map, World law,
-  Agenda, Indices, Commodities, Library, Evidence &amp; custody, Source integrity and an
-  in-app Help/docs reader. A **minimal top bar** carries the search/command palette
-  (Ctrl/⌘-K), live status, a **task-manager** button, the **airplane-mode** network
-  toggle, a **language switcher** and Help; **Settings** opens from the top-bar gear.
+- ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust*)
+  covering Home, **Analysis**, Insights, Temporal map, World law, Agenda, Indices,
+  Commodities, Library, Evidence &amp; custody and Source integrity. A **minimal top
+  bar** carries the always-on **search** omnibar (also the Ctrl/⌘-K command palette),
+  live status, a **task-manager** button, the **airplane-mode** network toggle, a
+  **language switcher** and an in-app **Help/docs** reader (the top-bar `?`);
+  **Settings** opens from the top-bar gear. (Search is the top-bar omnibar — there is
+  no separate Search sidebar tab; the full Boolean search opens from it.)
   *Content-first reorg:* the acquisition surfaces — **Collect**, **Sources** and
   **Wikipedia** — now live as **Settings** sections (the sidebar shows the *data*).
   Appearance customization in **Settings → Appearance** (themes, accent, density, text

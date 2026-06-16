@@ -146,16 +146,20 @@ ruling, a contingency, or a deliberate-omission note.
    Wired: markets symbol chart + insights trend (slice 1); commodity CARDS
    keep the static detailed SVG (tiny multiples; interactivity there is the
    enlarge path, later slice). Enforced in test_ui_invariants (#16).
-   **AMENDED (ruled 2026-06-15, impl PENDING — field-test LEDGER Item Y):** the sparse rule
-   changes app-wide — **n<10 datapoints → a BAR graph** (replaces the dots treatment), n≥10 →
+   **AMENDED (ruled 2026-06-15; SHIPPED 2026-06-15 solo session, Item Y):** the sparse rule
+   changed app-wide — **n<10 datapoints → a BAR graph** (replaced the dots treatment), n≥10 →
    the full-resolution line; the "early corpus … no curve interpolated through sparse points"
-   caveat is **REMOVED app-wide — keep ONLY n=x**; applies through BOTH `ooChart` (index.html
-   ~5622) + `dashChartSvg` (~5387). OPEN (honesty, must settle BEFORE shipping): zero-baseline
-   bars MISLEAD price-LEVEL series ($1900 vs $1950 ≈ equal full-height bars — a distortion the
-   no-fabricated-visuals ethic forbids) — choose the baseline (window-min-anchored LABELED axis
-   for level data vs true-zero only for naturally zero-based/count series) + irregular-time bar
-   placement. test #16 currently asserts "early corpus" present (test_repo_invariants.py:359) —
-   it updates when this lands.
+   caveat is **REMOVED app-wide — only n=x kept**; applied through BOTH `ooChart` + `dashChartSvg`
+   via the shared `_SPARSE_BAR_MAX=10`. **BASELINE-HONESTY QUESTION RESOLVED (autonomous Class-B
+   decision, per the maintainer's own leaning + "make all decisions"):** bars anchor to the plot
+   baseline `Yof(yMin)` — which is **true ZERO for `zeroBase`/count series** and the **window-MIN
+   for price-LEVEL series**, and the gridlines ALREADY LABEL that min, so a level difference stays
+   visible and honest (NEVER a fabricated zero). A 2px **value-cap** is drawn at each bar's true
+   value so a flush min / equal-value / single point stays VISIBLE (the cap marks the value, never
+   an invented height — this resolves the degenerate-invisible-bar case a naive window-min impl
+   would have regressed). Bar x-placement: TRUE time position in `ooChart` (real time axis with
+   zoom/pan), date-tick-aligned `X(i)` in the tiny `dashChartSvg` cards. test #16 updated:
+   asserts `_SPARSE_BAR_MAX` + `barMode` in both renderers + the sparse caveat string GONE.
 17. **The universal hover-for-information convention (ruled 2026-06-12; the
    informed-consent instrument, SHIPPED same day):** every element carrying
    layered info (= anything with a translated `title`) is marked
@@ -211,6 +215,18 @@ ruling, a contingency, or a deliberate-omission note.
    Insights opens (the "N to index" count ticks to 0 on its own); the button +
    its palette action are removed. Insights sections were already subtabs (#127).
    Enforced in test_ui_invariants (#21).
+23. **BRIEFING CAVEATS ARE VISIBLE BY DEFAULT (audit PR A, 2026-06-15 — enforces
+   the permanent informed-consent non-negotiable; resolves a REGRESSION):** every
+   Home briefing card renders `c.caveat` inline in a visible `.card-caveat` line
+   under the summary — NEVER behind the "Show method" toggle. The toggle (`#brief-methods`,
+   was "Show method & caveat") now gates ONLY the verbose Method/math (`.mc`); the
+   caveat left the toggle-gated block entirely. Caveat text uses a theme-aware
+   `var(--caveat)` (dark `#eab44e` / light `#8a4d0a`) that clears WCAG AA 4.5:1 on
+   EVERY panel of all 17 themes (the old hardcoded `#c98a1b` failed 8/17, `#b45309`
+   failed 17/17 — verified by contrast math); the corpus-tier early caveat + the
+   custody OTS warning adopt the same variable. Label/title re-keyed ×12. Enforced
+   in test_ui_invariants (#23): the caveat must render in `.card-caveat` and must NOT
+   appear inside the `hidden` `.mc` block.
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First
@@ -1390,6 +1406,49 @@ ruling, a contingency, or a deliberate-omission note.
   so the honesty non-negotiable forbade the literal "make it say 20/9"); (5) README
   task-manager window + Wikipedia tracked-changes *timeline* tab moved to "In progress
   / next" matching the RC gate 🔶 (the shipped halves stay accurately ✅).
+- **SOLO SESSION 2026-06-15 (autonomous; maintainer away) — audit + honesty
+  bug-fix stack (draft PRs onto 0.09; full audit + every Class-B/C call in
+  `docs/SOLO_SESSION_DECISIONS.md` + `docs/audit/*_2026-06-15_solo.md`):**
+  - **Item V SHIPPED — airplane-mode PAUSED status (status-honesty bug):** the
+    activity chip painted green "Collecting…" while airplane mode had tripped the
+    kill switch (the pass really stops) = a FABRICATED status. Now `_paintNetwork`
+    persists `_netOnline` + repaints; `_paintActivity` shows a GROUNDED/muted
+    "Collecting paused" with the SPINNER STOPPED when a background pass is in flight
+    while offline — never the active green. Class-B choice (D-03): muted/grounded,
+    NOT the literal go-off accent (which is `--ok` green here = would conflate with
+    active-green) and NOT a new alarm-red. +1 string ("Collecting paused") ×12.
+  - **Item R SHIPPED — discoverable sidebar EXPAND affordance:** the collapsed
+    rail showed only a "Collapse sidebar"-titled button (left chevron) with no
+    discoverable way back. Now TWO CSS-toggled buttons share the slot: `#sb-collapse`
+    (left chevron, "Collapse sidebar") when expanded, `#sb-expand` (right chevron,
+    "Expand sidebar") in the collapsed rail. REFINES decision D-05 (a single
+    state-aware *title* is unreliable: the i18n engine caches the first-seen English
+    title per element in a private WeakMap and re-translates from it on every apply,
+    clobbering a swapped title — so two STATIC keyed buttons toggled by pure CSS is
+    the i18n-robust realization of the same intent). +1 string ("Expand sidebar") ×12.
+  - **Item Z SHIPPED — keyword-log DIGEST mode (diagnostics usability):** the
+    `/api/diagnostics/keywords` log measured ~60 MB live (5000 keywords × ~16 langs ×
+    a per-keyword language_signature) — unusable in the maintainer→dev channel it
+    exists for. NEW `?digest=1` ships the bounded aggregates (families,
+    per_source_concentration, totals) + a top-100-by-mentions keyword SAMPLE plus an
+    honest `keywords_digest` block (sample/shown/total/omitted) so a digest is never
+    mistaken for a complete log. ADDITIVE: the default (full) stream is byte-for-byte
+    unchanged (the perf byte-parity contract test still passes); the digest is its own
+    branch + `tests/test_keyword_log_digest_mode`. No score; method+caveat preserved.
+  - **Item Y SHIPPED — app-wide n<10 → BAR charts (amends invariant #16, see #16
+    above for the full ruling + the resolved baseline-honesty decision):** both chart
+    renderers (`ooChart` canvas + `dashChartSvg` SVG) now render <10 datapoints as
+    honest bars (anchored to the LABELED baseline — true-zero for counts, window-min
+    for price levels — with a value-cap so no point is ever invisible) and ≥10 as the
+    full-resolution line; the sparse "early corpus" caveat is removed app-wide (only
+    n=x kept). node --check clean; test_ui_invariants #16 updated + green; i18n 100%.
+  - **B2 FIXITY — VERIFY-BEFORE-IMPLEMENT CORRECTION (no code):** an earlier solo PR
+    (#226) added a DUPLICATE fixity audit (`src/integrity/fixity.py` +
+    `/api/diagnostics/fixity`) — but the B2 fixity audit ALREADY EXISTED at 0.09
+    (`src/verification/fixity.py` + `GET /api/integrity/fixity` + the `runFixity()`
+    Settings UI). The duplicate was caught by hand-verification (the recurring lesson)
+    and REMOVED from the stack; PR #226 is closed as redundant. B2 is DONE (it was
+    already), nothing to ship. Reinforces: grep for an existing impl BEFORE building.
 - **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
   subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
   visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:

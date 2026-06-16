@@ -24,6 +24,16 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   29/29 FIXED); and the **task-manager window** + **Wikipedia tracked-changes timeline
   tab** moved to "In progress / next" to match the RC gate's honest 🔶 (their shipped
   halves stay ✅).
+- **Briefing caveats are now visible by default (ethics regression fix).** Each Home
+  briefing card showed its **Caveat** only when you turned on a default-OFF "Show
+  method & caveat" toggle — a regression against the permanent informed-consent rule
+  that caveats are *visible by default, never hidden behind a calm-UI toggle*. The
+  caveat now renders inline under every card's summary; the toggle (renamed **Show
+  method**) gates only the verbose method/math. The caveat colour is now theme-aware
+  so it clears **WCAG AA 4.5:1 on all 17 themes** (the old hardcoded amber failed
+  contrast on the light themes); the corpus-tier and chain-of-custody warnings adopt
+  the same colour. A new UI invariant (`#23`) locks the visibility in so it cannot
+  regress again.
 
 - **Collect, Sources, and Wikipedia moved into Settings (content-first).** The three
   acquisition/configuration tabs left the sidebar; their controls now live under
