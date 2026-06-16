@@ -571,7 +571,7 @@ def _validate_date(value: str | None, field_name: str) -> None:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid {field_name} format. Use YYYY-MM-DD.",
-            )
+            ) from None
 
 
 def _structured_filters(
@@ -654,7 +654,7 @@ def _query_articles(
         try:
             fts_ids = search_ids(session, query)
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}")
+            raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}") from exc
 
     if fts_ids is not None:
         # A text query was given. fts_ids is relevance-ordered (best first).

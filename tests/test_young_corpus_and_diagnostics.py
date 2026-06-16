@@ -239,7 +239,7 @@ def test_bundled_supergroups_seed_idempotent_and_user_wins(client):
 
     s = SessionLocal()
     try:
-        r1 = seed_supergroups(s)
+        seed_supergroups(s)
         names = {sg.name for sg in s.query(KeywordSuperGroup).all()}
         assert "Artificial intelligence" in names and "Middle East conflict" in names
         # Second run: nothing duplicated.

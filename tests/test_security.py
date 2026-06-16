@@ -422,7 +422,7 @@ class TestSecurityConstants:
         except SecurityError as e:
             assert str(e) == "Test error"
         except Exception:
-            assert False, "Should have caught SecurityError"
+            raise AssertionError("Should have caught SecurityError") from None
 
 
 if __name__ == "__main__":

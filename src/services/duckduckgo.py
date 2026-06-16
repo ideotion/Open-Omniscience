@@ -183,23 +183,13 @@ class DuckDuckGoSearch:
         """
         results = []
 
-        # DuckDuckGo result pattern
-        # Results are in <div class="result"> elements
-        result_pattern = re.compile(
-            r'<div class="result">.*?<a class="result__url" href="(.*?)".*?'
-            r'<a class="result__a" href="(.*?)">(.*?)</a>.*?'
-            r'<a class="result__snippet-link"[^>]*>(.*?)</a>',
-            re.DOTALL,
-        )
-
-        # Alternative pattern for DuckDuckGo results
-        # Try to find all result links
+        # DuckDuckGo result links: <a class="result__a" href="...">title</a>
         link_pattern = re.compile(r'<a class="result__a" href="(.*?)">(.*?)</a>', re.DOTALL)
 
         # Find all result links
         matches = link_pattern.findall(html)
 
-        for i, (url, title) in enumerate(matches[:max_results]):
+        for _i, (url, title) in enumerate(matches[:max_results]):
             # Clean up the URL
             url = cls._clean_url(url)
             if not url:

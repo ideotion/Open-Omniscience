@@ -1371,6 +1371,23 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR D = CI HYGIENE (draft onto 0.09, CI
+  subscribed):** `.github/workflows/ci.yml` gains (1) top-level `permissions:
+  contents: read` (least privilege — CI only reads + tests); (2) action SHA pins —
+  actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 (# v4.2.2) +
+  actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 (# v5.6.0), both
+  SHAs verified live, tag comments for Dependabot; (3) a BLOCKING correctness lane
+  `ruff check --select=F,B --extend-ignore=B008` (catches F821 etc.; the full style
+  sweep stays advisory `continue-on-error`) — NOTE CLI `--select` drops config
+  ignores so B008 (the FastAPI Depends pattern) is re-applied via --extend-ignore;
+  (4) `concurrency` with cancel-in-progress. To make the blocking lane GREEN, swept
+  the pre-existing 49 F/B violations: 14 B904 (proper `raise … from err`/`from
+  None`), F401 dead imports + try/except probe trims (scipy/statsmodels — probe
+  intact) + crypto/__init__ re-exports via redundant alias, F841 dead vars (incl.
+  removing an orphaned dead std-error calc in statistical_tests), B011/B007.
+  Verified: lane fails on an injected F821, passes clean; suite green; mypy 114≤127;
+  the existing pinned gates (mypy 2.1.0, bandit 1.9.4, pip-audit 2.10.1, i18n
+  --min 100, 3-OS sqlcipher smoke) untouched.
 - **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
   subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
   visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:
