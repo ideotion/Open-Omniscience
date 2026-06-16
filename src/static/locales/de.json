@@ -963,5 +963,10 @@
   "tracker wrappers flagged": "Tracker-Wrapper markiert",
   "Import failed": "Import fehlgeschlagen",
   "Newsletters imported.": "Newsletter importiert.",
-  "Open in analysis — the article selection behind this card": "In der Analyse öffnen — die Artikelauswahl hinter dieser Karte"
+  "Open in analysis — the article selection behind this card": "In der Analyse öffnen — die Artikelauswahl hinter dieser Karte",
+  "Open in analysis — explore this event in your corpus": "In der Analyse öffnen — dieses Ereignis in Ihrem Korpus erkunden",
+  "March equinox": "Märztagundnachtgleiche",
+  "June solstice": "Junisonnenwende",
+  "September equinox": "Septembertagundnachtgleiche",
+  "December solstice": "Dezembersonnenwende"
 }

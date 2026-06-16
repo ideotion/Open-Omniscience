@@ -4368,8 +4368,11 @@
       const variants = (e.date_variants && e.date_variants.length > 1)
         ? `<div class="hint" style="color:var(--warn)">date varies by source: ${esc(e.date_variants.join(' · '))}</div>` : "";
       const src = e.official_url ? " · " + extLink(e.official_url, "official source ↗") : "";
+      // The event title opens the unified analysis window over this event in your
+      // corpus (maintainer 2026-06-16: agenda content "highly visible and clickable").
+      const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" onclick="event.stopPropagation();openAnalysisFor(${esc(JSON.stringify(e.title))})">${esc(e.title)}</b>`;
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
-        <div class="ag-body"><div><b>${esc(e.title)}</b> <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}${imp}</div>
+        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}${imp}</div>
           ${variants}
           <div class="hint">${tags} ${e.note?"· "+esc(e.note):""}${src}</div></div></div>`;
     }
@@ -4552,16 +4555,22 @@
     function agShowDay(d) { AGV.day = d; renderAgenda(); }
     // T11: the astronomy layer (Meeus, computed locally) — moon glyphs in the
     // month grid; method+accuracy ride the hover convention (informed consent).
-    let _astroYear = null, _astroByDate = {};
+    let _astroYear = null, _astroByDate = {}, _seasonByDate = {};
     async function _ensureAstro(year) {
       if (_astroYear === year) return;
       try {
         const d = await api(`/api/events/astronomy?year=${year}`);
-        _astroByDate = {};
+        _astroByDate = {}; _seasonByDate = {};
         for (const fm of (d.full_moons || [])) _astroByDate[fm.date] = {glyph: "\u{1F315}", kind: "full", time: fm.time_utc, method: d.method, acc: d.accuracy};
         for (const nm of (d.new_moons || [])) _astroByDate[nm.date] = {glyph: "\u{1F311}", kind: "new", time: nm.time_utc, method: d.method, acc: d.accuracy};
+        // Seasons (equinoxes/solstices, Meeus ch.27) — named astronomically
+        // (hemisphere-honest); a solstice sun glyph, an equinox star.
+        for (const s of (d.seasons || [])) {
+          _seasonByDate[s.date] = {glyph: /solstice/i.test(s.event) ? "☀" : "✦",
+            name: s.event, time: s.time_utc, method: d.method, acc: d.accuracy};
+        }
         _astroYear = year;
-      } catch (_e) { _astroByDate = {}; _astroYear = null; }
+      } catch (_e) { _astroByDate = {}; _seasonByDate = {}; _astroYear = null; }
     }
     function renderAgendaMonth(rows) {
       const box = $("agenda-month"), dayBox = $("agenda-day");
@@ -4602,11 +4611,15 @@
         const moonHtml = moon
           ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc((moon.kind === "full" ? t9m("Full moon") : t9m("New moon")) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
           : "";
+        const season = _seasonByDate[iso];
+        const seasonHtml = season
+          ? `<span class="ag-season" style="float:inline-end;font-size:11px;margin-inline-end:2px" title="${esc(t9m(season.name) + " " + season.time + " UTC — " + season.method + "; " + season.acc)}">${season.glyph}</span>`
+          : "";
         const chips = evs.slice(0, 3).map(e =>
           `<span class="ag-chip${e.confirmed ? "" : " approx"}" title="${esc(e.title)}${e.confirmed ? "" : " — exact date moves; check the official source"}">${esc(e.title.length > 22 ? e.title.slice(0, 21) + "…" : e.title)}</span>`).join("");
         const more = evs.length > 3 ? `<span class="ag-more">+${evs.length - 3}</span>` : "";
         return `<div class="ag-cell${today ? " today" : ""}${evs.length ? " has" : ""}${AGV.day === c.d ? " sel" : ""}" onclick="agShowDay(${c.d})">
-          <span class="ag-dn">${c.d}</span>${moonHtml}${chips}${more}</div>`;
+          <span class="ag-dn">${c.d}</span>${moonHtml}${seasonHtml}${chips}${more}</div>`;
       }).join("") + `</div>`;
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (monthOnly.length)

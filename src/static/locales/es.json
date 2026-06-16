@@ -963,5 +963,10 @@
   "tracker wrappers flagged": "envoltorios de rastreo marcados",
   "Import failed": "Error de importación",
   "Newsletters imported.": "Boletines importados.",
-  "Open in analysis — the article selection behind this card": "Abrir en análisis — la selección de artículos detrás de esta tarjeta"
+  "Open in analysis — the article selection behind this card": "Abrir en análisis — la selección de artículos detrás de esta tarjeta",
+  "Open in analysis — explore this event in your corpus": "Abrir en análisis — explorar este evento en tu corpus",
+  "March equinox": "Equinoccio de marzo",
+  "June solstice": "Solsticio de junio",
+  "September equinox": "Equinoccio de septiembre",
+  "December solstice": "Solsticio de diciembre"
 }
