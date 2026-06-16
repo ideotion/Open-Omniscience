@@ -1090,6 +1090,20 @@ ruling, a contingency, or a deliberate-omission note.
   ruling above (dump-as-baseline + recentchanges-delta) and the
   SCRAPING_AUTOMATION_PLAN download subsystem. Scale honesty still applies
   (enwiki ≈ 100k edits/day vs the 2-core VM) — tiered depth + visible consent.
+  **INLINE AUTO SIZE ESTIMATES (ruled 2026-06-16): show EACH dump-eligible
+  edition's estimated size INLINE & AUTOMATICALLY in the picker — drop the
+  per-selection click + the "Estimate size" button** (today #dump-lang multi-select
+  → probeDump() → GET /api/wiki/dumps/probe = a LIVE per-edition network HEAD to
+  the dump server, index.html ~1721-1736 / wiki.py:271 probe_size). HONEST
+  CONSTRAINT (binding): showing all sizes must NOT fire N network probes at open
+  (breaks zero-network boot + airplane). SO: ship a BUNDLED, DATE-STAMPED
+  per-edition size TABLE (WIKI_SIZES_AS_OF + a freshness test — the model-catalog
+  CATALOG_AS_OF pattern; tiny metadata, NOT the dumps) rendered inline with an
+  "estimate · as of DATE · exact on download" caveat ×12 — zero-network, instant.
+  REPLACE the per-edition probe with ONE consented "refresh exact sizes" that
+  fetches live sizes in a SINGLE call (the dump date's dumpstatus.json lists every
+  edition at once, not N HEADs) through the guarded factory + the ONE consent
+  (#14). Delivers the cleaner UX without a network burst.
 - **WIKIPEDIA (field report #4; T14 SLICE 1 SHIPPED 2026-06-12):** the RULED
   dump-list limit SHIPPED (/api/wiki/languages?scope=dumps serves only
   APP_LANGUAGE_CODES = 12 UI locales + 5 stoplist-evidenced corpus languages;
