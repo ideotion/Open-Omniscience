@@ -58,6 +58,46 @@ def _dump_jobs() -> list[dict]:
     return jobs
 
 
+def _osm_jobs() -> list[dict]:
+    """OSM offline-map region downloads as visible jobs (Group M), mirroring the
+    wiki-dump aggregation: a FILE download (no DB-writer contention), parallel up
+    to capacity with a reorderable queue. Aggregated live from the OSM download
+    manager — no shadow state."""
+    from src.geo.osm_downloads import get_manager
+
+    mgr = get_manager()
+    order = mgr.queue_order()
+    jobs = []
+    for e in mgr.list():
+        state = {
+            "downloading": "running",
+            "queued": "queued",
+            "paused": "paused",
+            "done": "done",
+            "error": "failed",
+        }.get(e["status"], e["status"])
+        jobs.append(
+            {
+                "id": f"osm:{e['key']}",
+                "kind": "osm-map",
+                "label": e.get("name") or e["code"],
+                "state": state,
+                "queue_position": (order.index(e["key"]) + 1) if e["key"] in order else None,
+                "progress": {
+                    "done": e["downloaded_bytes"],
+                    "total": e["total_bytes"] or None,
+                    "unit": "bytes",
+                    "percent": e["percent"],
+                },
+                "error": e.get("error"),
+                "actions": ["pause", "cancel"] if state == "running" else (
+                    ["reorder", "cancel"] if state == "queued" else ["cancel"]
+                ),
+            }
+        )
+    return jobs
+
+
 def _collect_job() -> dict | None:
     from src.scheduler.runner import get_scheduler
 
@@ -102,13 +142,14 @@ def _live_fetch() -> dict | None:
 @router.get("")
 def list_jobs() -> dict:
     """Every visible job, aggregated LIVE from the owning systems (no shadow
-    state): the collection loop/pass, each wiki-dump download with its real
-    queue position, and the fetch currently on the wire (domain only)."""
+    state): the collection loop/pass, each wiki-dump and OSM-region download with
+    its real queue position, and the fetch currently on the wire (domain only)."""
     jobs: list[dict] = []
     j = _collect_job()
     if j:
         jobs.append(j)
     jobs.extend(_dump_jobs())
+    jobs.extend(_osm_jobs())
     f = _live_fetch()
     if f:
         jobs.append(f)
@@ -148,6 +189,14 @@ def reorder_dumps(body: ReorderBody) -> dict:
     return {"queue_order": get_manager().reorder(body.keys)}
 
 
+@router.post("/osm/reorder")
+def reorder_osm(body: ReorderBody) -> dict:
+    """Reorder the QUEUED OSM region downloads (same prioritisation as dumps)."""
+    from src.geo.osm_downloads import get_manager
+
+    return {"queue_order": get_manager().reorder(body.keys)}
+
+
 @router.post("/{job_id}/cancel")
 def cancel_job(job_id: str) -> dict:
     """Cancel/stop a job via its OWNING system, honestly named per kind."""
@@ -160,6 +209,14 @@ def cancel_job(job_id: str) -> dict:
         if not ok:
             raise HTTPException(status_code=404, detail=f"unknown dump {key!r}")
         return {"cancelled": job_id, "detail": "download paused (resumable; delete it in Settings → Wikipedia)"}
+    if job_id.startswith("osm:"):
+        from src.geo.osm_downloads import get_manager as get_osm_manager
+
+        key = job_id.split(":", 1)[1]
+        ok = get_osm_manager().pause(key)
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
+        return {"cancelled": job_id, "detail": "download paused (resumable; delete it in Settings → Offline map)"}
     if job_id == "collect:current":
         from src.ingest import activate_kill_switch, kill_switch_active
         from src.scheduler.runner import get_scheduler
