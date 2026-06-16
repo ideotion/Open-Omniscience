@@ -2833,7 +2833,8 @@
       try {
         const r = await fetch("/api/backup/v2", {method: "POST", headers: {"Content-Type": "application/json"},
           body: JSON.stringify(plaintext ? {plaintext: true} : {passphrase: pass})});
-        if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+        if (!r.ok) { const d = await r.json().catch(() => ({}));
+          throw new Error(d.detail || r.statusText); }
         const blob = await r.blob();
         const cd = r.headers.get("Content-Disposition") || "";
         const m = cd.match(/filename="?([^";]+)"?/);

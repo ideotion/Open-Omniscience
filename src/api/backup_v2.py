@@ -76,6 +76,15 @@ def backup_v2(body: BackupBody) -> FileResponse:
     except (BackupError, ArtifactError) as exc:
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        # Any OTHER failure (e.g. a full temp volume raising sqlite3.OperationalError
+        # while the ~DB-sized snapshot is written) must STILL return a JSON {detail},
+        # never a bare plain-text 500: the browser calls res.json() on the error body
+        # and would otherwise report only "JSON.parse: unexpected character", masking
+        # the real cause. Log the traceback so it is recoverable from the server log.
+        dest.unlink(missing_ok=True)
+        _LOG.exception("backup v2 build failed")
+        raise HTTPException(status_code=500, detail=f"backup failed: {exc}") from exc
     return FileResponse(
         dest,
         media_type="application/octet-stream",
