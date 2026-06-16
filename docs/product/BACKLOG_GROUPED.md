@@ -415,9 +415,21 @@ makes the rest fall out cheaply:
   pill + the continents-covered coverage line; home URLs via `extLink` so they open the
   LOCAL preview, invariant #6; no figures/score) + a one-click "Register as sources" button
   over `POST /api/stats/sources/ingest` (idempotent local DB write, no consent gate, tally +
-  caveat shown); +19 i18n ×12; test_ui_invariants. REMAINING: SDMX/API fetch before
-  scraping, figure-level provenance + vintages + comparability guards, side-by-side
-  triangulation, IPCC forecast-tracking; a filterable view of the registered stats sources.
+  caveat shown); +19 i18n ×12; test_ui_invariants.
+  SDMX/WORLD-BANK PARSER CORE SHIPPED 2026-06-16 (Item 5, offline): `src/stats/sdmx.py` —
+  a PURE (network-free) parser turning already-decoded official responses into
+  provenance-rich `StatFigure` rows. `parse_worldbank` (World Bank API v2 JSON
+  `[meta,[obs]]`) + `parse_sdmx_json` (SDMX-JSON 2.1 data message, Eurostat/IMF — resolves
+  each series+observation key back to its dimension value ids: ref_area / indicator /
+  time_period, surfacing unit/adjustment/base_year ONLY when stated). Honesty enforced in
+  code: NO score/ranking, never averages producers; `extracted_at` is the caller-stamped
+  VINTAGE (verbatim, never overwritten); a published gap → `value=None` (Eurostat's `:`
+  too) — never 0, never dropped. `tests/test_sdmx_parse.py` (9: both shapes, gaps, absent
+  vs present comparability, base-year-only-when-stated, vintage stamping, no-score). The
+  LIVE fetch through the guarded factory + consent + a visible job, the figure-level
+  provenance/vintages DB schema, side-by-side triangulation, and the filterable registered-
+  sources view are the REMAINING follow-up slices (this PR is the offline, fixture-tested
+  parser only).
 
 ---
 

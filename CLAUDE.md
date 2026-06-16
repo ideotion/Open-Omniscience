@@ -357,9 +357,15 @@ ruling, a contingency, or a deliberate-omission note.
   (ingest_agencies_as_sources → DISABLED controversial Sources, idempotent, no
   fabricated score) + GET /api/stats/agencies + POST /api/stats/sources/ingest + a Settings →
   Statistics SUBTAB (descriptive directory + register-as-sources button, home URLs via
-  extLink #6, +19 i18n ×12, shipped 2026-06-16); see BACKLOG Group N. REMAINING: SDMX/API
-  fetch + figure-level provenance/vintages/comparability/triangulation + a filterable
-  registered-sources view]. THE FOUR FORKS
+  extLink #6, +19 i18n ×12, shipped 2026-06-16); SDMX/WORLD-BANK PARSER CORE SHIPPED
+  2026-06-16 (Item 5, offline/fixture-tested): src/stats/sdmx.py = a PURE network-free
+  parser — parse_worldbank (WB API v2 JSON) + parse_sdmx_json (SDMX-JSON 2.1, Eurostat/IMF,
+  resolves dimension index paths → ref_area/indicator/time_period + unit/adjustment/base_year
+  only-when-stated) → provenance-rich StatFigure; NO score, never averages, extracted_at =
+  caller-stamped vintage, published gap → value=None (Eurostat ':' too); tests/test_sdmx_parse.py
+  (9). see BACKLOG Group N. REMAINING: the LIVE fetch through the guarded factory + consent +
+  visible job; figure-level provenance/vintages DB schema; comparability/triangulation; a
+  filterable registered-sources view]. THE FOUR FORKS
   (ruled 2026-06-16): (1) the offline READER stays STANDALONE (not folded into #an);
   (2) the convergence WATCH engine = the FULL 'Watches view + history' UX (saved local
   conditions → a Lead card on match + a dedicated Watches panel: history +
