@@ -977,5 +977,6 @@
   "Past 24h": "Последние 24 ч",
   "Past week": "Прошлая неделя",
   "Past month": "Прошлый месяц",
-  "No rising keywords in this window yet.": "В этом окне пока нет растущих ключевых слов."
+  "No rising keywords in this window yet.": "В этом окне пока нет растущих ключевых слов.",
+  "Airplane mode here controls only this app's network — it does not switch off your device's network or stop other apps. A userspace app can never equal a hardware switch.": "Режим полёта здесь управляет только сетью этого приложения — он не отключает сеть устройства и не останавливает другие приложения. Приложение в пользовательском пространстве никогда не заменит аппаратный переключатель."
 }
