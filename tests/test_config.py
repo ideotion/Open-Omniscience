@@ -44,11 +44,6 @@ def temp_config_dir():
         with open(configs_dir / "sources.yml", "w", encoding="utf-8") as f:
             yaml.dump(sources, f)
 
-        # Mock the repo_root
-        original_repo_root = None
-        if hasattr(get_config(), "repo_root"):
-            original_repo_root = get_config().repo_root
-
         yield tmpdir, configs_dir
 
         # Cleanup
@@ -71,7 +66,6 @@ class TestConfig:
         reset_config()
 
         # Temporarily rename configs directory to prevent loading
-        configs_dir = Path(__file__).parent.parent / "src" / "config"
         repo_configs = Path(__file__).parent.parent / "configs"
 
         # Backup and remove configs directory temporarily
@@ -238,8 +232,6 @@ class TestYamlLoading:
         # Mock repo_root
         from config.settings import Config
 
-        original_init = Config.__init__
-
         def mock_init(self):
             self.repo_root = Path(tmpdir)
             self.extra = {}
@@ -263,8 +255,6 @@ class TestYamlLoading:
 
         # Mock repo_root
         from config.settings import Config
-
-        original_init = Config.__init__
 
         def mock_init(self):
             self.repo_root = Path(tmpdir)
@@ -302,7 +292,7 @@ class TestValidation:
 
         try:
             with pytest.raises(ValueError, match="Database URL is not configured"):
-                config = Config(database_url="")
+                Config(database_url="")
         finally:
             # Restore configs directory
             if configs_existed:

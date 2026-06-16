@@ -1409,6 +1409,54 @@ ruling, a contingency, or a deliberate-omission note.
   + #palette have aria-modal + `_trapTab` focus trap + focus save/restore
   (_vitalsPrevFocus/_palPrevFocus). Enforced in test_ui_invariants (#24 charts,
   #25 adaptive poll). node --check clean; i18n 100% ×12; suite green.
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR F = TEST COVERAGE + FLAKY GUARD (draft onto
+  0.09):** three NEW unit-isolated test files for under-tested modules: (1)
+  test_merge_engine.py drives src/backup/merge.merge_corpus DIRECTLY on tiny plaintext
+  SQLite corpora (no subprocess torture harness) — proves FK remap (article source_id
+  rewritten to the LOCAL source matched by domain), bit-level dedup (same hash+content),
+  conflict (same hash, diff content → LOCAL kept + BOTH reported), and merged_rows
+  provenance; (2) test_producers_card_shapes.py runs EVERY _DEFAULT_PRODUCERS producer
+  over a small corpus and asserts each card's SHAPE (non-empty type/title/summary/bucket/
+  method/caveat, valid bucket, serialisable, no composite-score key in signal/evidence)
+  + the run_all failure-isolation contract — complements test_briefing.py's _trigger
+  check; (3) test_scheduler_runner.py drives BackgroundScheduler via injected
+  run_once_fn/settings_provider + threading.Events (NO sleep assertions): continuous
+  back-to-back, interval-mode runs-once-then-idles + prompt stop, failing-pass-recorded-
+  not-fatal, run_now non-overlap, + round_robin_interleave per-country/order-preserving.
+  Each verified to FAIL on a scratch source mutation (reverted). FLAKY ITEM re-checked:
+  test_rate_limit_timing + test_cache already use deterministic fake clocks (OO-D15-006);
+  test_feed_backoff's absolute-seconds bounds gained a skip-when-inconclusive guard
+  (_skip_if_clock_inconclusive) for a pathologically slow box — the backoff LOGIC stays
+  asserted unconditionally. Suite green; new tests stable across repeats.
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR E = reliability_score GUARD (draft onto 0.09;
+  DEFAULT APPLIED, maintainer may override):** the field is operator-set provenance
+  (migration f4b5c6d7e8a9 already NULLed the fabricated =5), but it shipped via
+  /api/sources named "...score" with no method/caveat and was guarded only for
+  credibility_score/political_bias. DEFAULT chosen (reversible): KEEP it as
+  operator-asserted metadata + (a) ETHICS.md documents it as the ONE intentional
+  exemption to no-composite-score (never computed/defaulted/derived); (b) new invariant
+  test_reliability_score_is_operator_set_never_computed asserts it stays in card.py's
+  forbidden-score set AND no analytics module assigns/derives it; (c) the only UI
+  surface (the CSV-import column doc) now labels it "operator-set, not computed" with
+  the long-form in the #oo-tip hover, +2 strings ×12. source_io serialization gains a
+  clarifying comment. PR body flags the default for maintainer override.
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR D = CI HYGIENE (draft onto 0.09, CI
+  subscribed):** `.github/workflows/ci.yml` gains (1) top-level `permissions:
+  contents: read` (least privilege — CI only reads + tests); (2) action SHA pins —
+  actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 (# v4.2.2) +
+  actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 (# v5.6.0), both
+  SHAs verified live, tag comments for Dependabot; (3) a BLOCKING correctness lane
+  `ruff check --select=F,B --extend-ignore=B008` (catches F821 etc.; the full style
+  sweep stays advisory `continue-on-error`) — NOTE CLI `--select` drops config
+  ignores so B008 (the FastAPI Depends pattern) is re-applied via --extend-ignore;
+  (4) `concurrency` with cancel-in-progress. To make the blocking lane GREEN, swept
+  the pre-existing 49 F/B violations: 14 B904 (proper `raise … from err`/`from
+  None`), F401 dead imports + try/except probe trims (scipy/statsmodels — probe
+  intact) + crypto/__init__ re-exports via redundant alias, F841 dead vars (incl.
+  removing an orphaned dead std-error calc in statistical_tests), B011/B007.
+  Verified: lane fails on an injected F821, passes clean; suite green; mypy 114≤127;
+  the existing pinned gates (mypy 2.1.0, bandit 1.9.4, pip-audit 2.10.1, i18n
+  --min 100, 3-OS sqlcipher smoke) untouched.
 - **AUTONOMOUS AUDIT 2026-06-15/16 — PR C = SAFETY & PRIVACY HARDENING (draft onto
   0.09, CI subscribed):** (1) **scripts/import_eml.py DELETED** (the ledger-flagged
   retirement — broken vs the live Article schema AND it captured To/Cc/Bcc = the

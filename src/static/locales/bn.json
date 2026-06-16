@@ -939,6 +939,8 @@
   "How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.": "প্রতিটি উৎস এই ধারণাকে কীভাবে দেখে, পাশাপাশি — পরিমাণ (সঠিক নিবন্ধ সংখ্যা), স্বর (VADER গড় + লেবেল), সময় (প্রথম→শেষ প্রকাশ), এবং সেই আউটলেটের স্বতন্ত্র জোরালো শব্দ। উৎসগুলি কীভাবে পৃথক তার একটি বর্ণনামূলক তুলনা, কখনও র‍্যাঙ্কিং, বিজয়ী বা বিশ্বাসযোগ্যতা বিচার নয়: কোনো সমন্বিত স্কোর নেই। স্বর হলো VADER (ইংরেজি অভিধান, অ-ইংরেজি কভারেজের জন্য অনির্ভরযোগ্য)। একটিমাত্র উৎস থাকলে তুলনা করার কিছু নেই।",
   "Analyse": "বিশ্লেষণ",
   "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "এটি বিশ্লেষণ উইন্ডোতে খুলুন — এর কর্পাস কভারেজ (আপনার কর্পাসে সহ-উপস্থিতি, কখনও কার্যকারণ নয়)",
+  "operator-set, not computed": "অপারেটর-নির্ধারিত, গণনাকৃত নয়",
+  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score একটি উৎস-মেটাডেটা যা আপনি (অপারেটর) প্রতিটি উৎসের জন্য নির্ধারণ করেন। অ্যাপটি কখনও এটি গণনা করে না, ডিফল্ট মান দেয় না, নিবন্ধের লেখা থেকে অনুমান করে না, এবং এটি থেকে কোনো কার্ড বা স্কোর তৈরি করে না।",
   "Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}": "চার্ট, {label}: {n} পয়েন্ট, {a} থেকে {b}, {lo} থেকে {hi}",
   "Chart data": "চার্ট ডেটা",
   "Date": "তারিখ",

@@ -20,6 +20,33 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   when the tab is hidden), cutting the idle polling load on the encrypted database
   while live state stays fresh via the scheduler/airplane push updates. (Toasts and
   the task-manager/command-palette dialogs already announced and trapped focus.)
+- **Deeper test coverage (audit PR F).** Three new unit-isolated test files pin
+  previously thinly-tested logic directly (not only via the heavy subprocess torture
+  harness): the **backup-merge engine** (FK remap, bit-level dedup, conflict-keeps-local
+  -and-reports-both, merge provenance), **every briefing producer's card shape** (valid
+  fields/bucket, serialisable, no composite-score key), and the **background
+  scheduler's** continuous/idle loop, run-now non-overlap and failure isolation (driven
+  by events, not timing). The feed-backoff timing tests gained a skip-when-inconclusive
+  guard so a pathologically slow CI box can't redden the absolute-seconds bound while
+  the backoff logic stays asserted.
+- **`reliability_score` honesty guard (audit PR E).** The per-source
+  `reliability_score` (1–10) is **operator-set provenance** — a value *you* assign,
+  never a quality verdict the app computes. It's now documented in
+  [ETHICS.md](ETHICS.md) as the one intentional exemption to the no-composite-score
+  rule, labelled **"operator-set, not computed"** in the UI (with the full
+  explanation in the hover, ×12 locales), and locked by a repo invariant so it can
+  never quietly become a derived/computed score. *(Default applied; the maintainer
+  can choose to retire it from the API instead.)*
+
+
+- **CI hygiene (audit PR D).** The CI workflow now declares least-privilege
+  `permissions: contents: read`, **pins** `actions/checkout`/`actions/setup-python`
+  to full commit SHAs (with version comments for Dependabot), adds a **blocking**
+  correctness-lint lane (`ruff --select=F,B`, undefined-names + likely-bugs; the full
+  style sweep stays advisory), and cancels superseded runs (`concurrency`). Enabling
+  the blocking lane meant clearing the pre-existing F/B backlog: proper exception
+  chaining (`raise … from …`), dead-import/dead-variable removal, and a couple of
+  trivial bugbear fixes — all behavior-preserving (full suite green).
 
 
 - **Safety & privacy hardening (audit PR C).** Closed a handful of edge gaps:
