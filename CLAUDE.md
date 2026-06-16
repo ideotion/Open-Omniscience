@@ -1129,9 +1129,12 @@ ruling, a contingency, or a deliberate-omission note.
   triangulation), metric=distinct_sources (NO score), verbatim "never causation …
   a prompt to read, not proof anything happened" caveat on every cluster. No
   endpoint/frontend/migration (read-only over T12 tables). tests/test_convergence.py.
+  **ENDPOINT SHIPPED (2026-06-15 solo session): GET /api/insights/convergences** exposes
+  find_convergences read-only (honest gates + per-cluster method+caveat + totals, NO
+  score; test_convergences_endpoint proves the independence gate flows through the API).
   REMAINING: the user-defined "if-this-then-WATCH" alert engine (explainable, off by
   default, local-only) — its UX is a GENUINE RULING to bring to the maintainer
-  before building; plus a dedicated convergence VIEW (needs an endpoint + frontend).
+  before building; plus the convergence FRONTEND view (the endpoint is its substrate).
 - **Temporal map remainder:** logarithmic time scale (agreed: linear/log
   toggle, labelled ticks, no hidden warp); feed mention-layer with extracted
   event-places.
@@ -1468,6 +1471,14 @@ ruling, a contingency, or a deliberate-omission note.
     Settings UI). The duplicate was caught by hand-verification (the recurring lesson)
     and REMOVED from the stack; PR #226 is closed as redundant. B2 is DONE (it was
     already), nothing to ship. Reinforces: grep for an existing impl BEFORE building.
+  - **CONVERGENCE ENDPOINT SHIPPED — GET /api/insights/convergences (flagship view
+    substrate):** the convergence slice-1 logic (find_convergences) was read-only with
+    no API; now a thin insights route exposes it (window/lookback/min_articles/
+    min_sources/limit), honest gates + per-cluster method+caveat + totals preserved,
+    NO score. tests/test_convergence.py::test_convergences_endpoint proves the
+    distinct-sources independence gate flows through the API. The watch-rule alert
+    engine stays DEFERRED (Class-C: its UX is a genuine maintainer ruling); the
+    frontend convergence view is the remaining slice (now unblocked by this endpoint).
 - **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
   subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
   visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:
