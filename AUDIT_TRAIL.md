@@ -5,6 +5,42 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
 
 ---
 
+## 2026-06-15 · Autonomous solo session — run-verified audit + docs-honesty fixes
+
+- **Base commit:** `00923bb` (tip of `0.09`, PR #221 merged).
+- **Branch:** `claude/solo-audit-2026-06-15` → PR onto `0.09` (docs-only).
+- **Environment advantage:** Python 3.13.12 + all extras + node 22, so **every gate
+  was executed**, not inferred. Baseline RE-ESTABLISHED green: **1306 passed / 4
+  skipped**; mypy 114 ≤ 127; bandit clean; pip-audit clean; i18n 100% ×12; alembic
+  applies + no drift; `compileall` clean; 0 `TODO/FIXME` in `src`. ruff 239 (advisory,
+  `continue-on-error`). vulture/radon not installed → not run (noted, not asserted).
+- **Headline findings (both honesty / D14, both *under*-stating reality — no
+  overstatement violation, but misleading):**
+  - **OO-D14-010 (S2):** the RC gate `RELEASE_0.1_RC_GATE.md` understates shipped
+    progress — agenda views, corpus sub-tabs, indices-on-`ooChart`, `ooTimeScope`,
+    reader-reads-stored-rows and convergence slice 1 are all shipped in code yet
+    listed ⬜/🔶. Reconciled conservatively (only code-spot-checked rows advanced).
+  - **OO-D14-011 (S3):** the README sidebar sentence is stale (lists a "System" group
+    + a "Search" sidebar tab + a "Help/docs reader" sidebar entry that no longer match
+    the shipped nav — System group removed 2026-06-15; search is the top-bar omnibar;
+    Help is the top-bar `?`). Code is correct; the doc was fixed.
+  - **No new S0/S1 code finding.** The single-fetcher / kill-switch / no-composite-score
+    / robots-fail-closed / loopback-bind / zero-network-boot controls re-confirmed by
+    the passing invariant suite.
+- **Backlog triage:** `field-test-2026-06-15/LEDGER.md` items A–AC re-grounded; three
+  well-diagnosed, low-risk maintainer-reported bugs shipped as their own PRs this
+  session (V airplane-paused-status, R sidebar-expand, H stat-labels). Item Y (bar
+  charts) DEFERRED on a real bar-baseline honesty question; Item N (Trust tabs) is a
+  Class-C "help me decide" left untouched; Item X (TM doesn't open) not reproducible
+  statically (likely stale build).
+- **Full log:** [`docs/audit/AUDIT_LOG_2026-06-15_solo.md`](docs/audit/AUDIT_LOG_2026-06-15_solo.md)
+- **Action plan / decisions / PR stack:**
+  [`docs/audit/ACTION_PLAN_2026-06-15_solo.md`](docs/audit/ACTION_PLAN_2026-06-15_solo.md) ·
+  [`docs/SOLO_SESSION_DECISIONS.md`](docs/SOLO_SESSION_DECISIONS.md) ·
+  [`docs/SOLO_SESSION_PR_PLAN.md`](docs/SOLO_SESSION_PR_PLAN.md)
+
+---
+
 ## 2026-06-15 · Audit remediation pass (acts on the 2026-06-14 findings)
 
 - **Base commit:** `6b4ff13` (tip of `0.09`; the #158 claim sweep already landed).

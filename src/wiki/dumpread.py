@@ -34,7 +34,7 @@ from pathlib import Path
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as _safe_fromstring
 
-from src.wiki.dumps import dump_filename
+from src.wiki.dumps import dump_filename, validate_wiki_code
 
 _LOG = logging.getLogger(__name__)
 
@@ -43,6 +43,9 @@ _READ_CHUNK = 1024 * 256
 
 def dump_paths(wiki: str, base_dir: Path | None = None) -> dict:
     """Where the multistream pair (and the legacy file) would live for ``wiki``."""
+    # Validate first so an unsafe edition code can never reach a filesystem path
+    # (path-traversal defense in depth; dump_filename re-checks).
+    wiki = validate_wiki_code(wiki)
     if base_dir is None:
         from src.paths import data_dir
 

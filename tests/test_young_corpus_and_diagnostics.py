@@ -169,6 +169,78 @@ def test_keyword_log_envelope_and_content(client):
     assert all("score" not in k for k in data["keywords"])
 
 
+def test_keyword_log_digest_mode(client, monkeypatch):
+    """Item Z: digest=1 ships the bounded aggregates + a top-N keyword SAMPLE
+    instead of the full per-keyword list (so the file is small enough to ingest),
+    with an honest keywords_digest block. The default (full) path is unchanged."""
+    from src.database.models import Keyword, KeywordMention, SessionLocal
+
+    s = SessionLocal()
+    try:
+        src = Source(name="Digest source", domain="digest.test")
+        s.add(src)
+        s.flush()
+        # Three keywords with distinct, large mention counts so the top-2 are
+        # deterministic regardless of any other keywords already in the corpus.
+        for i, (term, cnt) in enumerate(
+            [("zdigest-aaa", 9001), ("zdigest-bbb", 9000), ("zdigest-ccc", 8999)]
+        ):
+            art = Article(
+                url=f"https://digest.test/{i}",
+                canonical_url=f"https://digest.test/{i}",
+                source_id=src.id,
+                title=f"Digest seed {i}",
+                hash=f"digest-h{i}",
+                language="en",
+                content=f"{term} appears here.",
+                created_at=datetime.now(UTC),
+            )
+            s.add(art)
+            kw = Keyword(term=term, normalized_term=term)
+            s.add(kw)
+            s.flush()
+            s.add(
+                KeywordMention(
+                    keyword_id=kw.id,
+                    article_id=art.id,
+                    count=cnt,
+                    observed_on=datetime.now(UTC).date(),
+                )
+            )
+        s.commit()
+    finally:
+        s.close()
+
+    # Shrink the sample so the omission path is exercised without 100+ keywords.
+    monkeypatch.setattr("src.api.diagnostics._DIGEST_SAMPLE", 2)
+
+    r = client.get("/api/diagnostics/keywords", params={"digest": "1"})
+    assert r.status_code == 200
+    assert "oo-keyword-digest-" in r.headers.get("content-disposition", "")
+    data = r.json()["data"]
+    # The bounded aggregates are still present (they ARE the analysis).
+    for key in ("corpus", "method", "keywords", "families", "supergroups",
+                "per_source_concentration"):
+        assert key in data
+    # The honest digest provenance block: a sample, never mistaken for complete.
+    dg = data["keywords_digest"]
+    assert dg["sample"] is True and dg["sort"] == "mentions desc"
+    assert dg["shown"] == 2 == len(data["keywords"])      # capped to the sample
+    assert dg["total"] >= 3 and dg["omitted"] == dg["total"] - dg["shown"]
+    assert dg["omitted"] >= 1                              # something WAS omitted
+    # The sample is the top-by-mentions, and carries no composite score.
+    shown = {k["normalized"] for k in data["keywords"]}
+    assert shown == {"zdigest-aaa", "zdigest-bbb"}
+    assert all("score" not in k for k in data["keywords"])
+    assert "DIGEST MODE" in data["method"]
+
+    # The DEFAULT path is unchanged: full list, no digest block.
+    full = client.get("/api/diagnostics/keywords").json()["data"]
+    assert "keywords_digest" not in full
+    assert "DIGEST MODE" not in full["method"]
+    assert len(full["keywords"]) >= 3      # the long tail is present in full mode
+
+
 # --------------------------------------------------------------------------- #
 #  Translated docs: ?lang= serving + honest fallback (ruled 2026-06-10)
 # --------------------------------------------------------------------------- #

@@ -24,6 +24,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -45,6 +46,16 @@ def session():
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
+
+
+@pytest.fixture()
+def client():
+    # The shared app DB (TestClient) -- the endpoint test seeds via SessionLocal and
+    # asserts membership by a unique place marker, so other rows never interfere.
+    from src.api.main import app
+
+    with TestClient(app) as c:
+        yield c
 
 
 def _add_article(s, *, aid: int, source_id: int) -> Article:
@@ -241,3 +252,50 @@ def test_empty_corpus_degrades_loudly_not_a_fake_card(session):
     assert out["clusters"] == []
     assert out["clusters_total"] == 0
     assert "never causation" in out["caveat"]
+
+
+def test_convergences_endpoint(client):
+    """The read-only /api/insights/convergences view surfaces find_convergences over
+    the seeded When×Where×Who substrate, with the honest gates + caveat preserved and
+    NO score — and the distinct-sources independence gate is enforced through the API."""
+    from src.database.models import SessionLocal
+
+    s = SessionLocal()
+    try:
+        s.add(Source(id=901, name="ConvAlpha", domain="convalpha.test", country="fr"))
+        s.add(Source(id=902, name="ConvBeta", domain="convbeta.test", country="us"))
+        s.flush()
+        # 3 articles, 2 distinct sources, all on "Convtown" within a 7-day window.
+        for aid, src in ((9001, 901), (9002, 902), (9003, 901)):
+            s.add(Article(
+                id=aid, url=f"https://conv.test/{aid}", canonical_url=f"https://conv.test/{aid}",
+                source_id=src, title=f"Conv {aid}", content="event body text",
+                hash=f"convh{aid}", language="en",
+                published_at=datetime(2024, 5, 10, tzinfo=UTC),
+                created_at=datetime(2024, 5, 10, tzinfo=UTC),
+            ))
+            s.add(ArticleMentionedPlace(
+                article_id=aid, name="Convtown", country="ps", kind="city",
+                mentions=1, lat=31.5, lon=34.45, extractor="lexical-v1",
+            ))
+            s.add(ArticleMentionedDate(
+                article_id=aid, mentioned_on=date(2024, 5, 10 + (aid - 9000)),
+                precision="day", extractor="dateextract", status="candidate",
+            ))
+        s.commit()
+    finally:
+        s.close()
+
+    out = client.get(
+        "/api/insights/convergences",
+        params={"window_days": 7, "min_articles": 3, "min_sources": 2},
+    ).json()
+    mine = [c for c in out["clusters"] if c["place"] == "Convtown"]
+    assert mine, out
+    c = mine[0]
+    assert c["distinct_sources"] == 2 and c["n_articles"] == 3   # honest independence measure
+    assert "never causation" in c["caveat"] and "score" not in c
+    # The independence gate flows through the API: require 3 distinct sources and the
+    # 2-source cluster is no longer surfaced (a chatty source can't manufacture one).
+    out2 = client.get("/api/insights/convergences", params={"min_sources": 3}).json()
+    assert not [c for c in out2["clusters"] if c["place"] == "Convtown"]
