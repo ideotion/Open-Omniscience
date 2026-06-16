@@ -1406,6 +1406,13 @@ ruling, a contingency, or a deliberate-omission note.
     CLARIFIED 2026-06-16 (maintainer asked):** Trends is the Insights tab → Trends
     subtab (#ins-trends). THIRD-WINDOW SPAN RESOLVED 2026-06-16 → PAST MONTH
     (the three windows = past 24h · past week · past month, side by side).
+    **BACKEND SUBSTRATE SHIPPED 2026-06-16:** `queries.trending_windows` +
+    `GET /api/insights/trending-windows` return the THREE preset windows side by
+    side (24h/7d/30d, each its own prior-period baseline), reusing `trending` (the
+    same disclosed recent-vs-prior RATE RATIO, never a score); each term carries its
+    raw `recent` count (n) + the early-corpus caveat travels with the data.
+    tests/test_trending_windows.py. REMAINING: the #ins-trends FRONTEND (three
+    columns + the top-5 ooChart time series per window) — the app.js slice.
   - **(6) UNIFIED 3D KEYWORD EXPLORER (ruled 2026-06-16; maintainer FLAGSHIP —
     "important to me", "incredible UI/UX"; evolves the mind-map rules + #mm-kit;
     lives in Insights per (5)):** THREE fixes + one big rework. FIXES: (a) the
