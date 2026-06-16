@@ -104,7 +104,7 @@ closed or consciously accepted, and the closure verifiable.*
 |---|---|---|
 | 0.0.9 full-audit remediation queue (`docs/audit/06_FULL_AUDIT_0_0_9.md`) — top: "stays on this machine" wording ×12 (qualified default applied 2026-06-15), caveats-visible-vs-calm (✅ RULED visible-by-default + ENFORCED for briefing cards, audit PR A 2026-06-15, invariant #23), reliability_score=5 + language="en" defaults removal, inline-onclick retirement, a11y batch, ETHICS.md tense rewrite | 🔶 several fixed in-audit | RC-BLOCKING (each row closed or accepted-with-reason in the report) |
 | bandit/pip-audit: blocking in CI + weekly | ✅ | stays green |
-| Threat-model statements shipped wherever crypto/network claims appear (seized-machine vs compromised-session; which layer the kill switch controls) | 🔶 backup/design done; UI pending PR-E + network batch | RC-BLOCKING |
+| Threat-model statements shipped wherever crypto/network claims appear (seized-machine vs compromised-session; which layer the kill switch controls) | 🔶 at-rest done (unlock.html ×2 + Settings encryption panel: "protects a seized/copied file, not a compromised running session" + no-recovery); network WHICH-LAYER done 2026-06-16 (the consent popup states airplane mode controls only THIS app's network, never device/OS/hardware — `test_ui_invariants` #14e) | RC-BLOCKING |
 | External-link guard, robots fail-closed, kill switch, no-composite-scores (CardSchemaError), provenance columns | ✅ | invariant-tested |
 | Fresh full review pass over the RC diff (the 06-audit method: agents + hand-verification of every critical) | ⬜ | RC-BLOCKING — scheduled as the LAST batch before tagging |
 

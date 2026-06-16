@@ -373,6 +373,13 @@ def test_ui_invariants():
     assert 'id="net-consent"' in html and "ensureOnline(" in html, (
         "every online transition must pass the consent popup"
     )
+    # 14e. Threat-model honesty (RC §4 + non-negotiable): the consent popup names
+    #      WHICH LAYER the kill switch controls — only THIS app's network, never the
+    #      device/OS/hardware; a userspace app can never equal a hardware switch.
+    assert "controls only this app's network" in html and "hardware switch" in html, (
+        "the network-consent popup must state that airplane mode controls only this "
+        "app's traffic (the which-layer threat-model honesty, CLAUDE.md non-negotiable)"
+    )
     for fn in ("schedulerStart", "schedulerRunNow", "firstRun"):
         body = html.split(f"async function {fn}(", 1)[1].split("async function", 1)[0]
         assert "ensureOnline(" in body, f"{fn} must consent before going online"
