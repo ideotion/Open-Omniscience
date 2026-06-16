@@ -117,9 +117,6 @@ class TestDataProvenance(unittest.TestCase):
         original = DataProvenance("id", "data", "source", {"key": "value"})
         data_dict = original.to_dict()
 
-        # Remove timestamp for comparison (it will be different)
-        data_dict_copy = data_dict.copy()
-
         restored = DataProvenance.from_dict(data_dict)
 
         self.assertEqual(restored.data_id, original.data_id)
@@ -457,7 +454,6 @@ class TestIntegration(unittest.TestCase):
         self.assertFalse(current_provenance.is_unchanged())
 
         # Step 7: Verify original hash is still valid for original data
-        original_data = {"id": 1, "content": "Document A", "timestamp": "2024-01-01"}
         is_valid = self.ledger.verify_data_integrity("doc1", provenance.original_hash)
         self.assertFalse(is_valid)  # Current data is different from original
 

@@ -35,7 +35,11 @@ from .merkle_tree import MerkleNode, MerkleTree
 from .provenance import DataProvenance, ProvenanceLedger
 
 try:
-    from .signatures import GPGNotAvailableError, GPGSigner, SignatureResult
+    # Redundant aliases mark these as intentional re-exports (added to __all__
+    # below) so the optional-signing API is importable from `src.crypto`.
+    from .signatures import GPGNotAvailableError as GPGNotAvailableError
+    from .signatures import GPGSigner as GPGSigner
+    from .signatures import SignatureResult as SignatureResult
 
     HAS_SIGNATURES = True
 except Exception:

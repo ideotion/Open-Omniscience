@@ -363,7 +363,7 @@ def shared_links(
     member, with which members cite them — counts and structure, never a
     credibility verdict.
     """
-    from sqlalchemy import func, text as _text
+    from sqlalchemy import func
 
     from src.analytics import queries as q
     from src.database.models import Article, ArticleLink, KeywordMention

@@ -21,7 +21,9 @@
 
 > **`0.0.9` is the active cycle** (branch `0.09`). The `0.0.8` cycle shipped in full —
 > the whole product-roadmap push (trust hardening, the investigation-recipe cards and
-> `/investigate` dashboards, the typed ORM, all 29 audit findings closed, the methods
+> `/investigate` dashboards, the typed ORM, all 29 audit findings closed — the `0.07`
+> audit fixed 20 and deferred 9 with rationale; the 9 were closed in `0.0.8`
+> ([`findings.csv`](docs/audit/findings.csv) reads 29/29 FIXED) — the methods
 > appendix and provenance-preserving exports, corpus LLM synthesis, offline source
 > discovery), then the live-test hardening batches (temporal map + agenda, themes and
 > bundled fonts, entity/location/date extractors, network-mode switch, field-test
@@ -49,12 +51,14 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   from a **Chain of custody** UI panel, with the effective state always shown
   honestly (see [docs/USER_MANUAL.md](docs/USER_MANUAL.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
-- ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust ·
-  System*) covering Home, Search, **Analysis**, Insights, Temporal map, World law,
-  Agenda, Indices, Commodities, Library, Evidence &amp; custody, Source integrity and an
-  in-app Help/docs reader. A **minimal top bar** carries the search/command palette
-  (Ctrl/⌘-K), live status, a **task-manager** button, the **airplane-mode** network
-  toggle, a **language switcher** and Help; **Settings** opens from the top-bar gear.
+- ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust*)
+  covering Home, **Analysis**, Insights, Temporal map, World law, Agenda, Indices,
+  Commodities, Library, Evidence &amp; custody and Source integrity. A **minimal top
+  bar** carries the always-on **search** omnibar (also the Ctrl/⌘-K command palette),
+  live status, a **task-manager** button, the **airplane-mode** network toggle, a
+  **language switcher** and an in-app **Help/docs** reader (the top-bar `?`);
+  **Settings** opens from the top-bar gear. (Search is the top-bar omnibar — there is
+  no separate Search sidebar tab; the full Boolean search opens from it.)
   *Content-first reorg:* the acquisition surfaces — **Collect**, **Sources** and
   **Wikipedia** — now live as **Settings** sections (the sidebar shows the *data*).
   Appearance customization in **Settings → Appearance** (themes, accent, density, text
@@ -126,8 +130,9 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   diffs/deltas (not re-copies), with honest large-edit/revisionism flagging (size
   delta, revert/blank tags, anon/burst, optional **ORES** scores), a flagged-edit
   feed and diff viewer, plus an optional **offline baseline downloader**
-  (per-language, resumable, size-probed) kept separate from live tracking. See
-  [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
+  (per-language, resumable, size-probed) kept separate from live tracking. (The
+  richer **per-article tracked-changes *timeline* tab** — the living-source view —
+  is in progress; see below.) See [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
 
 - ✅ **Source integrity & anti-amplification** (the **Source integrity** tab, `0.06`
   Phases B–D): the pure `src/signals/` substrate — **concentration** (Gini), **near-dup /
@@ -153,6 +158,13 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
 **In progress / next:**
 - 🚧 Structured per-edit legal diffs (Akoma Ntoso / ELI) and patent/docket parsing into a
   price-feed-style series, on top of the seeded IP/legal primary sources.
+- 🚧 The **task-manager window** (a top-bar button opens it today with a live jobs view
+  and the reorderable wiki-dump download queue) is growing toward the full spec —
+  per-country scrape priority, download arbitration (queue/prioritize/cancel) and richer
+  pass-time estimates (RC gate 🔶).
+- 🚧 The **Wikipedia per-article tracked-changes timeline tab** (the living-source view
+  that lets you scroll and analyse a page's edits over time) — the existing flagged-edit
+  feed and diff viewer ship today.
 - 🚧 Local LLM analysis via Ollama; email + monitoring; cross-linking Wikipedia
   diffs into the Insights keyword analytics.
 
