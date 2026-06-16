@@ -244,6 +244,41 @@ def test_keyword_export_cap_bounds_work_per_language(client, seeded, monkeypatch
     assert "en" in body["data"]["corpus"]["capped_languages"]  # alpha won, gamma capped
 
 
+def test_keyword_export_decoupled_from_interactive_deadline(client, seeded, monkeypatch):
+    """The full-corpus keyword export must NOT inherit the 60s interactive
+    deadline. At field scale (≈940k mentions) the two full keyword_mentions scans
+    legitimately run past 60s and the export was ABORTED with a 503 -- a cap on the
+    crunching, which the maintainer's keyword policy forbids. It now carries its OWN
+    budget (OO_KEYWORD_EXPORT_TIMEOUT_S, default 0 = no ceiling). Spy on the deadline
+    so the contract holds regardless of corpus size."""
+    from src.api import diagnostics as d
+
+    seen: list = []
+    real = d.statement_deadline
+
+    def spy(session, seconds=None):
+        seen.append(seconds)
+        return real(session, seconds=seconds)
+
+    monkeypatch.setattr(d, "statement_deadline", spy)
+    # Even with the interactive deadline set absurdly low, the export completes:
+    # it never consults OO_STATEMENT_TIMEOUT_S.
+    monkeypatch.setenv("OO_STATEMENT_TIMEOUT_S", "0.0001")
+    assert client.get("/api/diagnostics/keywords").status_code == 200
+    # An EXPLICIT budget was passed (never None = the interactive default), and the
+    # default for this deliberate, streamed export is 0 (no ceiling).
+    assert seen == [0.0]
+
+
+def test_keyword_export_budget_env_is_honoured(monkeypatch):
+    from src.api import diagnostics as d
+
+    monkeypatch.setenv("OO_KEYWORD_EXPORT_TIMEOUT_S", "120")
+    assert d._export_deadline_seconds() == 120.0
+    monkeypatch.setenv("OO_KEYWORD_EXPORT_TIMEOUT_S", "not-a-number")  # never crash on junk
+    assert d._export_deadline_seconds() == 0.0
+
+
 # --------------------------------------------------------------------------- #
 # Cached counts (freshness disclosed) + the VACUUM tool
 # --------------------------------------------------------------------------- #
