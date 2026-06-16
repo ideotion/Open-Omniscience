@@ -616,6 +616,7 @@
         <button data-tab="families">Families</button>
         <button data-tab="supergroups">Groups</button>
         <button data-tab="map">Map</button>
+        <button data-tab="convergence">Convergence</button>
       </nav>
     </section>
 
@@ -764,6 +765,20 @@
       <div style="overflow:auto"><table id="map-countries"></table></div>
       <h2 style="margin:12px 0 6px;font-size:13px">By city</h2>
       <div style="overflow:auto"><table id="map-cities"></table></div>
+    </section>
+
+    <section class="panel ins-view" id="ins-convergence" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Convergence <span class="muted">— same place, same window</span></h2>
+      <p class="hint" style="margin-top:0">Clusters of articles that converge on the <em>same place</em> within a
+        time window, on the <em>date mentioned in the text</em>. Independence is measured by distinct sources, not
+        article count. Co-occurrence is never causation — a prompt to read, not proof anything happened. Click a
+        cluster to assemble its exact article set.</p>
+      <div class="row" style="align-items:center">
+        <div><label for="cv-window">Window (days)</label><input id="cv-window" type="number" value="7" min="1" max="3650" onkeydown="if(event.key==='Enter')loadConvergences()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="loadConvergences()">Refresh</button></div>
+      </div>
+      <div id="cv-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="cv-method" class="hint" style="margin-top:8px"></div>
     </section>
     </div>
 

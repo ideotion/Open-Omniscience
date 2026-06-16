@@ -978,5 +978,10 @@
   "Past week": "গত সপ্তাহ",
   "Past month": "গত মাস",
   "No rising keywords in this window yet.": "এই উইন্ডোতে এখনও কোনো বাড়তে থাকা কীওয়ার্ড নেই।",
-  "Airplane mode here controls only this app's network — it does not switch off your device's network or stop other apps. A userspace app can never equal a hardware switch.": "এখানে এয়ারপ্লেন মোড শুধু এই অ্যাপের নেটওয়ার্ক নিয়ন্ত্রণ করে — এটি আপনার ডিভাইসের নেটওয়ার্ক বন্ধ করে না বা অন্য অ্যাপ থামায় না। ইউজার-স্পেস অ্যাপ কখনোই হার্ডওয়্যার সুইচের সমান হতে পারে না।"
+  "Airplane mode here controls only this app's network — it does not switch off your device's network or stop other apps. A userspace app can never equal a hardware switch.": "এখানে এয়ারপ্লেন মোড শুধু এই অ্যাপের নেটওয়ার্ক নিয়ন্ত্রণ করে — এটি আপনার ডিভাইসের নেটওয়ার্ক বন্ধ করে না বা অন্য অ্যাপ থামায় না। ইউজার-স্পেস অ্যাপ কখনোই হার্ডওয়্যার সুইচের সমান হতে পারে না।",
+  "sources": "উৎস",
+  "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "এখনও কোনো অভিসৃতি নেই। একটি ক্লাস্টারের জন্য উইন্ডোর মধ্যে একই স্থান ভাগ করে নেওয়া অন্তত {a} নিবন্ধ এবং অন্তত {s} উৎস প্রয়োজন।",
+  "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n}টি অভিন্ন-উৎস লিঙ্ক — উৎসগুলি একই উদ্ধৃতি প্রতিধ্বনিত করতে পারে, স্বাধীন নিশ্চিতকরণ নয়।",
+  "Showing {n} of {t} clusters.": "{t}টির মধ্যে {n}টি ক্লাস্টার দেখানো হচ্ছে।",
+  "Could not load": "লোড করা যায়নি"
 }
