@@ -399,6 +399,26 @@ def test_ui_invariants():
         "the coach 'Go online' must route through toggleNetwork()/ensureOnline — "
         "the invitation layer must never bypass the consent popup (CLAUDE.md #14)"
     )
+    # 14d. Item V — airplane-mode PAUSED status honesty (ruled 2026-06-16, reversing
+    #      the earlier muted treatment): a background pass that airplane mode has
+    #      paused must NOT keep painting the active-green "Collecting…" chip. The
+    #      paused chip is the SAME red as the engaged airplane button (var(--err)),
+    #      the label is the keyed "Collecting paused…", and the fast activity poll
+    #      honors the scheduler's own online flag so the chip can never lag green.
+    assert ".activity.paused { color:var(--err)" in html, (
+        "the paused activity chip must be red (var(--err), the airplane-button color), "
+        "never muted (CLAUDE.md Item V, ruled 2026-06-16)"
+    )
+    assert ".activity.paused { color:var(--muted)" not in html, (
+        "the paused chip must NOT use the reverted muted color (CLAUDE.md Item V)"
+    )
+    assert 'T("Collecting paused") + "…"' in html, (
+        "the paused label must read 'Collecting paused…' (CLAUDE.md Item V)"
+    )
+    assert "s.online !== _netOnline" in html, (
+        "the activity poll must honor the scheduler's online flag so a paused pass "
+        "never lags as green Collecting… (CLAUDE.md Item V hardening)"
+    )
     # 15. a PERMANENT language switcher lives in the top bar (ruled, RC gate):
     #     flag = visual convention only, the NATIVE NAME is the identifier;
     #     one click switches the whole UI via the one i18n engine.
