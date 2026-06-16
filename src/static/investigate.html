@@ -98,7 +98,7 @@ const panel = (title, bodyHtml, srcNote) =>
 const suggestion = (label, href, what) =>
   `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}<span class="what">${esc(what)}</span></a>`;
 const caveatBlock = text =>
-  `<div class="caveat"><b>Caveat (from the card):</b> ${esc(text)}</div>`;
+  `<div class="caveat"><b>Caveat (from the Lead):</b> ${esc(text)}</div>`;
 
 // ---------------------------------------------------------------- promise --- //
 async function viewPromise() {

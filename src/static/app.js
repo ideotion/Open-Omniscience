@@ -1231,7 +1231,7 @@
       // long form. Built from keyed sentence fragments + the real numbers so the
       // bubble is translated ×12 by construction (i18n.t on each fragment).
       const meaning = t(tier === "early"
-          ? "Early stage: the cards rest on thin evidence — read them as first hints, not established patterns."
+          ? "Early stage: the Leads rest on thin evidence — read them as first hints, not established patterns."
           : tier === "established"
           ? "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict."
           : "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.");
@@ -1262,8 +1262,8 @@
       if (gen) gen.textContent = data.generated_at ? (t("updated") + " " + fmtDateTime(data.generated_at)) : "";
       if (!data.buckets || !data.buckets.length) {
         feed.innerHTML = `<div class="card">
-          <h4>No cards yet — that's expected on a young corpus</h4>
-          <p class="sum">Cards are computed from YOUR collected material; an empty feed means the
+          <h4>No Leads yet — that's expected on a young corpus</h4>
+          <p class="sum">Leads are computed from YOUR collected material; an empty feed means the
           signals haven't accumulated, never that the engine is gone. As the corpus grows you'll see:
           <b>Rising now</b> (terms accelerating vs their own baseline), <b>Overtold/Undertold</b>,
           <b>framing splits</b>, <b>promises due</b> (a mentioned future date arrives),
@@ -1287,7 +1287,7 @@
           + `<h3>${esc(b.label)} <span class="ct">· ${b.cards.length}</span></h3>`
           + `<div class="cards">${cards}</div></div>`;
       }).join("");
-      const famTabs = `<button class="active" data-tab="__all">${esc(t("All cards"))}</button>`
+      const famTabs = `<button class="active" data-tab="__all">${esc(t("All Leads"))}</button>`
         + data.buckets.map((b, bi) =>
             `<button data-tab="${bi}"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}</button>`).join("");
       feed.innerHTML = (data.buckets.length > 1
@@ -1388,7 +1388,7 @@
         ? `openAnalysisForIds(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))})`
         : `openAnalysisFor(${esc(JSON.stringify(_aq))})`;
       const cardOpen = _aq
-        ? ` style="cursor:pointer" title="Open in analysis — the article selection behind this card" onclick="if(!event.target.closest('button,a,details,summary,input,label'))${_aOpen}"`
+        ? ` style="cursor:pointer" title="Open in analysis — the article selection behind this Lead" onclick="if(!event.target.closest('button,a,details,summary,input,label'))${_aOpen}"`
         : "";
       // The CAVEAT is visible by default (informed-consent mandate: never hidden
       // behind a calm-UI toggle). Only the verbose Method/math stays in the
@@ -1572,7 +1572,7 @@
         const d = await api("/api/briefing/draft");
         updateDraftCount((d.items||[]).length);
         const t = $("draft-title"); if (t) t.value = d.title || "";
-        if (!d.items || !d.items.length) { box.innerHTML = '<div class="muted">No cards pinned yet. Use “+ Add to draft” on a briefing card.</div>'; return; }
+        if (!d.items || !d.items.length) { box.innerHTML = '<div class="muted">No Leads pinned yet. Use “+ Add to draft” on a briefing Lead.</div>'; return; }
         box.innerHTML = d.items.map(it => {
           const c = it.card;
           return `<div class="draft-item" data-id="${c.id}">
@@ -1599,7 +1599,7 @@
       catch (e) { toast(e.message, "err"); }
     }
     async function clearDraft() {
-      if (!confirm("Clear all pinned cards from the draft?")) return;
+      if (!confirm("Clear all pinned Leads from the draft?")) return;
       try { await api("/api/briefing/draft/clear", {method:"POST"}); updateDraftCount(0); renderDraft(); }
       catch (e) { toast(e.message, "err"); }
     }
@@ -6629,7 +6629,7 @@
       $("an-adv-query").value = ""; $("an-adv-source").value = "";
       $("an-adv-lang").value = ""; $("an-adv-from").value = ""; $("an-adv-to").value = "";
       $("an-query").textContent = label ? `“${label}”` : t("(the selected article set)");
-      $("an-adv-note").textContent = t("Showing the exact article set behind this card.");
+      $("an-adv-note").textContent = t("Showing the exact article set behind this Lead.");
       showTab("analyze");
       loadAnalysis(anParams());
     }

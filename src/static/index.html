@@ -167,7 +167,7 @@
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
           <span id="brief-generated" class="hint" style="margin:0"></span></div>
         <div class="brief-toolbar">
-          <label class="switch" title="Transparency: show how every figure was computed. The caveat is always shown on each card.">
+          <label class="switch" title="Transparency: show how every figure was computed. The caveat is always shown on each Lead.">
             <input type="checkbox" id="brief-methods" onchange="toggleMethods()"> Show method</label>
           <span class="sp"></span>
           <button class="secondary tiny" onclick="openDraft()">Draft (<span id="draft-count">0</span>) →</button>
@@ -175,7 +175,7 @@
         <!-- Whole-sentence nodes (the i18n exact-match pattern; see the Agenda intro). -->
         <p class="hint" style="margin-top:8px"><span>Equal view — every source is counted once; no source is de-amplified in this version.</span>
           <span><b>The app gathers and measures; you judge.</b></span>
-          <span>Each card is one measured signal with its evidence and caveat, never a verdict.</span></p>
+          <span>Each Lead is one measured signal with its evidence and caveat, never a verdict.</span></p>
         <div id="briefing-feed" style="margin-top:6px"><div class="muted">Loading the briefing…</div></div>
       </section>
 
@@ -190,7 +190,7 @@
         <div class="row" style="margin-top:10px">
           <button class="danger tiny" onclick="clearDraft()" style="flex:0">Clear draft</button>
         </div>
-        <p class="hint">Each pinned card exports with its source links, method and caveat — reproducible by
+        <p class="hint">Each pinned Lead exports with its source links, method and caveat — reproducible by
           design. For a signed, tamper-evident copy of the underlying articles, use Evidence &amp; custody.</p>
       </section>
 
@@ -916,7 +916,7 @@
       </div>
 
       <h3 style="margin-bottom:6px">Investigation recipes on Home</h3>
-      <p class="muted" style="margin-top:0">Space-time scenario cards that watch your own corpus
+      <p class="muted" style="margin-top:0">Space-time scenario Leads that watch your own corpus
         (all local, no network) and offer a one-click investigation view. Untick to switch one off.</p>
       <div class="row" id="recipes-toggles">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
@@ -1345,7 +1345,7 @@
         <code>source_type</code>, <code>country</code> (2-letter), <code>language</code>,
         <code>region</code>, <code>tags</code> (comma-separated, quote the cell),
         <code>priority</code> (1–3), <code>rate_limit_ms</code>, <code>enabled</code>,
-        <code>reliability_score</code> (1–10, <span title="reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.">operator-set, not computed</span>). Import upserts by domain (new ones created,
+        <code>reliability_score</code> (1–10, <span title="reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.">operator-set, not computed</span>). Import upserts by domain (new ones created,
         existing updated); bad rows are reported, not dropped.
       </div>
       <div class="row">
@@ -1511,7 +1511,7 @@
           <input id="doc-find" placeholder="Find on this page…" style="max-width:240px;margin:0"
                  oninput="filterDoc()" onkeydown="if(event.key==='Escape'){this.value='';filterDoc();}">
         </div>
-        <p class="hint" style="margin-top:0">Tabs opened from cards and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.</p>
+        <p class="hint" style="margin-top:0">Tabs opened from Leads and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.</p>
         <p class="muted" style="margin-top:0">Everything you need to operate the tool — rendered here,
           offline. The <strong>User Manual</strong> is the detailed notice; the other guides go deeper on
           specific subjects. Developers: the raw

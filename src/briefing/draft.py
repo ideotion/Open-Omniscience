@@ -117,7 +117,7 @@ def export_markdown(draft: dict | None = None) -> str:
     lines: list[str] = [f"# {title}", "", f"*Compiled {generated} with Open Omniscience.*", ""]
 
     if not draft.get("items"):
-        lines += ["_No cards pinned yet. Add cards from the Home briefing to build an issue._", ""]
+        lines += ["_No Leads pinned yet. Add Leads from the Home briefing to build an issue._", ""]
         return "\n".join(lines)
 
     for item in draft["items"]:

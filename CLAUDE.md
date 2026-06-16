@@ -1389,7 +1389,16 @@ ruling, a contingency, or a deliberate-omission note.
     Readouts · Vantages (NOTE: "Signals" collides with src/signals/). **RESOLVED
     2026-06-16 → "LEADS"** (a card = a Lead: an investigative starting point to
     dig). Rename the USER-FACING label ×12 locales; the internal src/briefing
-    module + bucket names can stay or rename later (cosmetic).
+    module + bucket names can stay or rename later (cosmetic). **SHIPPED 2026-06-16:**
+    17 i18n-keyed user-facing strings renamed card→Lead/cards→Leads (key + value ×12,
+    existing professional translations with only the card-word swapped: fr piste · de
+    Spur · es/pt pista · ru зацепка all cases · ar خيط · zh 线索 · ja 手がかり · hi सुराग
+    · bn সূত্র · id petunjuk — AI-drafted, flagged for native review) + ~9 non-keyed
+    English-only strings, across app.js · index.html · investigate.html ·
+    briefing/producers.py · briefing/draft.py. NO CSS class / JS identifier / dict
+    key / bucket name touched (internal stays "card"); markets.py "price card" left
+    as-is (not a briefing card). test_ui_invariants #19b re-keyed "All cards"→"All
+    Leads". i18n 100% ×12, audit-chrome "card"-clean, full suite green, mypy 112.
   - **(4) ANALYSIS = NAMED, PARALLEL, SPAWNED TABS (ruled 2026-06-16; fixes the
     "weird empty Analysis tab" + likely retires the TWO-windows debt):** today
     clicking the sidebar "Analysis" tab opens the SINGLETON #an EMPTY (no corpus
