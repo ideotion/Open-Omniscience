@@ -296,6 +296,57 @@ ruling, a contingency, or a deliberate-omission note.
   missing route can't fail them).
 
 ## Open queue (when maintainer says proceed)
+- **AUTONOMOUS 'EVERYTHING' BATCH (ruled 2026-06-16) — the V0.1-alpha push, run
+  UNSUPERVISED.** SCOPE = the V0.1 RC mandate IN FULL ('absolutely everything' from
+  this ledger + FUTURE_DEVELOPMENTS): every RC-BLOCKING + SHOULD + POST row in
+  docs/product/RELEASE_0.1_RC_GATE.md + docs/product/BACKLOG_GROUPED.md, PLUS the
+  promotions below. SOURCE OF TRUTH = those two docs + this ledger; NO new taxonomy
+  (any earlier 'T1–T17' framing is RETIRED). WORKING MODE: one PR per slice, small +
+  ADDITIVE, DRAFT onto 0.09, CI subscribed, branches STACKED (accumulate; rebase on a
+  freshly-fetched 0.09 as bottoms merge). MERGE POLICY (fork-4): the MAINTAINER MERGES
+  EVERYTHING — nothing self-merges, every PR stays a draft (the human review gate
+  stays). Skip-and-note ONLY a genuine maintainer-ruling gate (residual set below);
+  security-sensitivity is NOT a skip trigger — build exec/elevation FULLY with consent
+  + a VISIBLE elevation step + verify-before-exec through the guarded factory + tests.
+  PROMOTIONS (design-only/POST → ACTIVE): (a) the UI RETHINK is the CENTERPIECE (entry
+  below, header amended; #an↔#corpus consolidation now in scope, reader standalone per
+  fork-1); (b) in-app Ollama installer + a model-management Settings SUBTAB; (c) GUI
+  self-update — gated snapshot→verify→staged-migrate→atomic-swap→rollback MECHANICS
+  only, default OFF; (d) NEW GEO/OFFLINE MAPPING — an OSM per-region download manager
+  (managed like wiki dumps: own task-manager job, files/no DB-writer contention,
+  parallel, reorderable queue, rate/%/ETA/pause/resume/cap, inline DATED size table +
+  one consented refresh) + a HAND-ROLLED lightweight offline vector map (canvas 2.5D /
+  CSS-3D, NO WebGL/Three.js; reuse the bundled Natural-Earth coastline) + the
+  temporal-map remainder (linear/log toggle; mention layer fed by event-places); (e)
+  NEW OFFICIAL-STATISTICS INGESTION (the FUTURE_DEVELOPMENTS design — gov +
+  international agencies as CONTROVERSIAL sources; producing-state + agency + pub-date +
+  methodology-ref per figure; VINTAGES; comparability guards SA/NSA/base-year; SDMX/API
+  before scraping; triangulate never average; forecasts join IPCC-tracking;
+  per-continent coverage; deliberately BRICS/Africa/forgotten-region). THE FOUR FORKS
+  (ruled 2026-06-16): (1) the offline READER stays STANDALONE (not folded into #an);
+  (2) the convergence WATCH engine = the FULL 'Watches view + history' UX (saved local
+  conditions → a Lead card on match + a dedicated Watches panel: history +
+  per-watch enable/edit/delete; off by default, local-only, NO notifications/network/
+  telemetry); (3) browser-unverifiable UI ships CONSERVATIVE + FLAGGED (node-check +
+  extend test_ui_invariants + defensive states; 'browser-unverified, needs
+  click-through'; no headless harness, no dark flag); (4) the maintainer merges
+  everything. DEFAULTS (override anytime): self-update = MECHANICS ONLY (a fully
+  verified auto-updater needs a maintainer-supplied trust root/signing key — its 5 open
+  questions stay a ruling); the RULING-HEAVY design-only verticals (elections/civic,
+  in-app Tor/Stem, voice mode, two-hop keyword graphs, autonomous onboarding) stay
+  DEFERRED (each needs its own design session); Open Commons Mirror = a separate SISTER
+  PROJECT (new repo, only when mature), NOT this session's work. DRIFT RECONCILED: both
+  honesty bugs CLOSED (airplane-paused→red #245; back-button fixed — Group K,
+  tests/test_back_button_nav); Reader-tabs SLICE 1 shipped STANDALONE (#246:
+  Read/Keywords/Sentiment/Related/Links — REMAINING: a Mindmap tab via /api/insights/
+  graph article_ids + a richer Source/WWW tab); exact-article-id card seeding
+  (#241/#242), .eml importer (#237), convergence endpoint /api/insights/convergences
+  (#231) all merged; Item Y (n<10→bars) SHIPPED app-wide (the RC-gate row was stale).
+  RESIDUAL SKIP-SET (genuine rulings — note, don't build): self-update's 5 open Qs;
+  'stays on this machine' exact wording (default applied); CI win/mac
+  graduate-to-REQUIRED + signing/notarization; the deferred verticals above; any
+  watch-engine escalation to push/'urgent' alert tiers beyond the local Lead-card +
+  Watches view.
 - **ELECTIONS & CIVIC VERTICAL + POLL ANALYSIS + MANIPULATION-PATTERN CARD
   MODELS (maintainer design session 2026-06-15; DESIGN-ONLY, not built — full
   design + the nine card maths in `docs/FUTURE_DEVELOPMENTS.md`):** elections as
@@ -889,10 +940,15 @@ ruling, a contingency, or a deliberate-omission note.
   PRs #214-218 (Trend·Articles·Links·Mindmap·Sentiment·Keywords·Sources·
   Competitive) — DUPLICATING five sub-tabs the #an window already had. Cause: long
   session + context summarization lost track of the Item I window. CONSOLIDATION
-  DEFERRED by maintainer; when resumed, the recommended target is the #an flagship
-  (route openCorpus → #an, port #corpus's Trend + Competitive over, retire the
-  modal). Until then BOTH exist and work; do NOT build new sub-tabs on either
-  without first deciding the canonical window.** **EARLIER NOTE: full sub-tab set complete
+  NOW IN SCOPE (ruled 2026-06-16 — the 'leave it for now' is LIFTED; built as
+  UI-rethink item 4, the named parallel analysis tabs): route openCorpus → the #an
+  flagship, port #corpus's Trend + Competitive over, retire the modal ⇒ ONE in-SPA
+  analysis window (#an is canonical for the SPA). SEPARATE RULING (fork-1, 2026-06-16):
+  the OFFLINE READER (#246, /api/articles/{id}/view) STAYS STANDALONE — its own
+  server-rendered page + reader.js/reader.css, NOT folded into #an; the unified window
+  serves search/corpus, the reader serves the single article. Two analysis codepaths is
+  the ACCEPTED cost; share the article_ids-aware endpoints, NEVER regress the reader's
+  tabs.** **EARLIER NOTE: full sub-tab set complete
   on the #corpus modal (PRs #214-218):
   (PRs #214-218, 2026-06-15): Mindmap (reuses renderGraph via a relocatable
   #mm-kit, null-guarded return), Sentiment (reuses /api/framing, VADER
@@ -1264,7 +1320,12 @@ ruling, a contingency, or a deliberate-omission note.
   per-family HUE shown as a tab dot and a card left-accent (--fam); "All" stays
   the single prioritised feed (lens not a wall). test_ui_invariants #19/#19b
   pin it. Home empty-state fail-safe preserved (subtab bar only when >1 bucket).
-- **UI RETHINK — MAINTAINER PLANNING SESSION 2026-06-16 (DESIGN-ONLY, not built;
+- **UI RETHINK — MAINTAINER PLANNING SESSION 2026-06-16 (NOW THE ACTIVE CENTERPIECE,
+  ruled 2026-06-16 — supersedes 'design-only'; the autonomous 'everything' batch builds
+  this FIRST among the big items. Browser-unverifiable here ⇒ ships CONSERVATIVE +
+  FLAGGED per fork-3: node --check + EXTEND test_ui_invariants + defensive states, each
+  PR marked 'browser-unverified, needs click-through' (no headless harness, no dark
+  feature-flag).
   ONE coherent vision spanning nav + Home + Analysis; REVISES invariants
   #2/#3/#4/#18/#19 + UI_SHELL_REDESIGN_PLAN §1/§5 + the TWO-windows debt — all
   test_ui_invariants-enforced, so any change ripples into that test):**
@@ -1343,8 +1404,8 @@ ruling, a contingency, or a deliberate-omission note.
     rising = window-vs-baseline RATE (method stated, no momentum score); top =
     most-mentioned ordering (basis stated), never a composite score. **LOCATION
     CLARIFIED 2026-06-16 (maintainer asked):** Trends is the Insights tab → Trends
-    subtab (#ins-trends). THIRD-WINDOW SPAN still PENDING the maintainer's pick
-    (month / year / all-time).
+    subtab (#ins-trends). THIRD-WINDOW SPAN RESOLVED 2026-06-16 → PAST MONTH
+    (the three windows = past 24h · past week · past month, side by side).
   - **(6) UNIFIED 3D KEYWORD EXPLORER (ruled 2026-06-16; maintainer FLAGSHIP —
     "important to me", "incredible UI/UX"; evolves the mind-map rules + #mm-kit;
     lives in Insights per (5)):** THREE fixes + one big rework. FIXES: (a) the
