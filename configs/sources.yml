@@ -1126,6 +1126,7 @@ sources:
   priority: 3
 - name: TASS (Russia)
   domain: tass.com
+  country: ru
   rss_url: https://tass.com/rss
   region: global
   rate_limit_ms: 3000
@@ -1136,6 +1137,7 @@ sources:
   priority: 2
 - name: Anadolu Agency (Turkey)
   domain: aa.com.tr
+  country: tr
   rss_url: https://www.aa.com.tr/en/rss
   region: global
   rate_limit_ms: 2000
@@ -1146,6 +1148,7 @@ sources:
   priority: 2
 - name: Australian Associated Press (AAP)
   domain: aap.com.au
+  country: au
   rss_url: https://www.aap.com.au/rss
   region: global
   rate_limit_ms: 1000
@@ -1176,6 +1179,7 @@ sources:
   priority: 3
 - name: Nigerian News Agency (NAN)
   domain: nannews.ng
+  country: ng
   rss_url: https://newsnan.com.ng/feed/
   region: africa
   rate_limit_ms: 2000
@@ -1206,6 +1210,7 @@ sources:
   priority: 2
 - name: Qatar News Agency (QNA)
   domain: qna.org.qa
+  country: qa
   rss_url: https://www.qna.org.qa/en/rss
   region: middle-east
   rate_limit_ms: 2000
@@ -1216,6 +1221,7 @@ sources:
   priority: 3
 - name: Bernama (Malaysia)
   domain: bernama.com
+  country: my
   rss_url: https://www.bernama.com/rss
   region: asia
   rate_limit_ms: 2000
@@ -1226,6 +1232,7 @@ sources:
   priority: 2
 - name: Antara (Indonesia)
   domain: antaranews.com
+  country: id
   rss_url: https://en.antaranews.com/rss
   region: asia
   rate_limit_ms: 2000
@@ -1236,6 +1243,7 @@ sources:
   priority: 2
 - name: The Wall Street Journal (USA)
   domain: wsj.com
+  country: us
   rss_url: https://feeds.a.dj.com/rss/RSSWorldNews.xml
   rate_limit_ms: 3000
   enabled: true
@@ -1247,6 +1255,7 @@ sources:
   priority: 2
 - name: The Moscow Times (Russia)
   domain: themoscowtimes.com
+  country: ru
   rss_url: https://www.themoscowtimes.com/rss/news
   region: global
   rate_limit_ms: 3000
@@ -1270,6 +1279,7 @@ sources:
   priority: 1
 - name: The Hindu (India)
   domain: thehindu.com
+  country: in
   rss_url: https://www.thehindu.com/feeder/default.rss
   region: asia
   rate_limit_ms: 2000
@@ -1281,6 +1291,7 @@ sources:
   priority: 2
 - name: Folha de S.Paulo (Brazil)
   domain: folha.uol.com.br
+  country: br
   rss_url: https://feeds.folha.uol.com.br/emcimadahora/rss091.xml
   region: south-america
   rate_limit_ms: 2000
@@ -1303,6 +1314,7 @@ sources:
   priority: 1
 - name: El País (Spain)
   domain: elpais.com
+  country: es
   rss_url: https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada
   region: europe
   rate_limit_ms: 1000
@@ -1326,6 +1338,7 @@ sources:
   priority: 1
 - name: Le Figaro (France)
   domain: lefigaro.fr
+  country: fr
   rss_url: http://rss.lefigaro.fr/lefigaro/actualites
   region: europe
   rate_limit_ms: 1000
@@ -1336,6 +1349,7 @@ sources:
   priority: 1
 - name: Le Monde Diplomatique (France)
   domain: mondediplo.com
+  country: fr
   rss_url: https://mondediplo.com/spip.php?page=backend-rss
   rate_limit_ms: 2000
   enabled: true
@@ -1346,6 +1360,7 @@ sources:
   priority: 2
 - name: Courrier International (France)
   domain: courrierinternational.com
+  country: fr
   rss_url: https://www.courrierinternational.com/flux-rss
   region: europe
   rate_limit_ms: 2000
@@ -1356,6 +1371,7 @@ sources:
   priority: 2
 - name: Der Spiegel (Germany)
   domain: spiegel.de
+  country: de
   rss_url: https://www.spiegel.de/international/index.rss
   region: europe
   rate_limit_ms: 1000
@@ -1366,6 +1382,7 @@ sources:
   priority: 1
 - name: La Repubblica (Italy)
   domain: repubblica.it
+  country: it
   rss_url: https://www.repubblica.it/rss/homepage/rss2.0.xml
   region: europe
   rate_limit_ms: 1000
@@ -1377,6 +1394,7 @@ sources:
   priority: 1
 - name: Le Soir (Belgium)
   domain: lesoir.be
+  country: be
   rss_url: https://www.lesoir.be/rss/
   region: europe
   rate_limit_ms: 2000
@@ -1387,6 +1405,7 @@ sources:
   priority: 2
 - name: NRC Handelsblad (Netherlands)
   domain: nrc.nl
+  country: nl
   rss_url: https://www.nrc.nl/rss/
   region: europe
   rate_limit_ms: 2000
@@ -1397,6 +1416,7 @@ sources:
   priority: 2
 - name: Dagens Nyheter (Sweden)
   domain: dn.se
+  country: se
   rss_url: https://www.dn.se/rss/
   region: europe
   rate_limit_ms: 2000
@@ -1407,6 +1427,7 @@ sources:
   priority: 2
 - name: El Mundo (Spain)
   domain: elmundo.es
+  country: es
   rss_url: https://www.elmundo.es/rss/
   region: europe
   rate_limit_ms: 1000
@@ -1417,6 +1438,7 @@ sources:
   priority: 1
 - name: Der Tagesspiegel (Germany)
   domain: tagesspiegel.de
+  country: de
   rss_url: https://www.tagesspiegel.de/feed/rss.xml
   region: europe
   rate_limit_ms: 2000
@@ -1427,6 +1449,7 @@ sources:
   priority: 2
 - name: O Globo (Brazil)
   domain: oglobo.globo.com
+  country: br
   rss_url: https://oglobo.globo.com/rss/
   region: south-america
   rate_limit_ms: 2000
@@ -1437,6 +1460,7 @@ sources:
   priority: 2
 - name: Clarín (Argentina)
   domain: clarin.com
+  country: ar
   rss_url: https://www.clarin.com/rss/
   region: south-america
   rate_limit_ms: 2000
@@ -1447,6 +1471,7 @@ sources:
   priority: 2
 - name: El Tiempo (Colombia)
   domain: eltiempo.com
+  country: co
   rss_url: https://www.eltiempo.com/rss/
   region: south-america
   rate_limit_ms: 2000
@@ -1457,6 +1482,7 @@ sources:
   priority: 2
 - name: El Universal (Mexico)
   domain: eluniversal.com.mx
+  country: mx
   rss_url: https://www.eluniversal.com.mx/seccion/1671/rss.xml
   region: north-america
   rate_limit_ms: 2000
@@ -1491,6 +1517,7 @@ sources:
   priority: 1
 - name: The New Zealand Herald
   domain: nzherald.co.nz
+  country: nz
   rss_url: https://www.nzherald.co.nz/rss/
   region: oceania
   rate_limit_ms: 2000
@@ -1501,6 +1528,7 @@ sources:
   priority: 2
 - name: O Estado de S. Paulo (Brazil)
   domain: estadao.com.br
+  country: br
   rss_url: https://www.estadao.com.br/rss
   region: south-america
   rate_limit_ms: 2000
@@ -1511,6 +1539,7 @@ sources:
   priority: 2
 - name: La Nación (Argentina)
   domain: lanacion.com.ar
+  country: ar
   rss_url: https://www.lanacion.com.ar/rss/
   region: south-america
   rate_limit_ms: 2000
@@ -1521,6 +1550,7 @@ sources:
   priority: 2
 - name: El Comercio (Peru)
   domain: elcomercio.pe
+  country: pe
   rss_url: https://elcomercio.pe/rss/
   region: south-america
   rate_limit_ms: 2000
@@ -1998,6 +2028,7 @@ sources:
   priority: 1
 - name: Telam (Argentina)
   domain: telam.com.ar
+  country: ar
   rss_url: https://www.telam.com.ar/rss
   language: es
   rate_limit_ms: 2000
@@ -2018,6 +2049,7 @@ sources:
   priority: 3
 - name: Andina (Peru)
   domain: andina.pe
+  country: pe
   rss_url: https://andina.pe/agencia/Rss.aspx
   language: en
   rate_limit_ms: 2000
@@ -2068,6 +2100,7 @@ sources:
   priority: 2
 - name: RT (Russia Today)
   domain: rt.com
+  country: ru
   rss_url: https://www.rt.com/rss/
   language: en
   rate_limit_ms: 2000
@@ -2099,6 +2132,7 @@ sources:
   priority: 2
 - name: The Asahi Shimbun (Japan)
   domain: asahi.com
+  country: jp
   rss_url: http://rss.asahi.com/rss/asahi/newsheadlines.rdf
   language: en
   rate_limit_ms: 2000
@@ -2110,6 +2144,7 @@ sources:
   priority: 2
 - name: The Mainichi (Japan)
   domain: mainichi.jp
+  country: jp
   rss_url: https://mainichi.jp/rss/
   language: en
   rate_limit_ms: 2000
@@ -2120,6 +2155,7 @@ sources:
   priority: 2
 - name: The Straits Times (Singapore)
   domain: straitstimes.com
+  country: sg
   rss_url: https://www.straitstimes.com/rss
   language: en
   rate_limit_ms: 2000
@@ -2130,6 +2166,7 @@ sources:
   priority: 2
 - name: The Jakarta Post (Indonesia)
   domain: thejakartapost.com
+  country: id
   rss_url: https://www.thejakartapost.com/rss/
   language: en
   rate_limit_ms: 2000
@@ -2140,6 +2177,7 @@ sources:
   priority: 2
 - name: The Korea Herald (South Korea)
   domain: koreaherald.com
+  country: kr
   rss_url: http://www.koreaherald.com/rss/
   language: en
   rate_limit_ms: 2000
@@ -2150,6 +2188,7 @@ sources:
   priority: 2
 - name: ABC News (Australia)
   domain: abc.net.au
+  country: au
   rss_url: https://www.abc.net.au/news/feed/1948/rss.xml
   language: en
   rate_limit_ms: 2000
@@ -2171,6 +2210,7 @@ sources:
   priority: 2
 - name: Australian Financial Review
   domain: afr.com
+  country: au
   rss_url: https://www.afr.com/rss/feed.xml
   language: en
   rate_limit_ms: 2000
@@ -2201,6 +2241,7 @@ sources:
   priority: 2
 - name: China Daily
   domain: chinadaily.com.cn
+  country: cn
   rss_url: https://www.chinadaily.com.cn/rss/china_rss.xml
   language: en
   rate_limit_ms: 2000
@@ -2211,6 +2252,7 @@ sources:
   priority: 2
 - name: China News Service
   domain: ecns.cn
+  country: cn
   rss_url: https://www.ecns.cn/rss
   language: en
   rate_limit_ms: 2000
@@ -2261,6 +2303,7 @@ sources:
   priority: 2
 - name: Press TV (Iran)
   domain: presstv.ir
+  country: ir
   rss_url: https://www.presstv.ir/rss
   language: en
   rate_limit_ms: 2000
@@ -2530,6 +2573,7 @@ sources:
   priority: 3
 - name: The Canary (UK)
   domain: thecanary.co
+  country: gb
   rss_url: https://www.thecanary.co/feed/
   language: en
   rate_limit_ms: 2000
@@ -2906,6 +2950,7 @@ sources:
   priority: 2
 - name: Correctiv (Germany)
   domain: correctiv.org
+  country: de
   rss_url: https://correctiv.org/en/feed/
   language: en
   rate_limit_ms: 2000
@@ -2916,6 +2961,7 @@ sources:
   priority: 1
 - name: The Bureau of Investigative Journalism (UK)
   domain: thebureauinvestigates.com
+  country: gb
   rss_url: https://www.thebureauinvestigates.com/feed/
   language: en
   rate_limit_ms: 2000
@@ -2966,6 +3012,7 @@ sources:
   priority: 2
 - name: Convoca (Peru)
   domain: convoca.pe
+  country: pe
   rss_url: https://convoca.pe/feed/
   language: es
   rate_limit_ms: 2000
@@ -2976,6 +3023,7 @@ sources:
   priority: 2
 - name: La Nación Data (Argentina)
   domain: lanacion.com.ar
+  country: ar
   rss_url: https://www.lanacion.com.ar/data/feed
   language: es
   rate_limit_ms: 2000
@@ -2986,6 +3034,7 @@ sources:
   priority: 2
 - name: Africa Uncensored (Kenya)
   domain: africuncensored.net
+  country: ke
   rss_url: https://africuncensored.net/feed/
   language: en
   rate_limit_ms: 2000
@@ -2996,6 +3045,7 @@ sources:
   priority: 2
 - name: Premium Times (Nigeria)
   domain: premiumtimesng.com
+  country: ng
   rss_url: https://www.premiumtimesng.com/feed
   language: en
   rate_limit_ms: 2000
@@ -3037,6 +3087,7 @@ sources:
   priority: 2
 - name: KRIK (Serbia)
   domain: krik.rs
+  country: rs
   rss_url: https://www.krik.rs/en/feed/
   language: en
   rate_limit_ms: 2000
@@ -3057,6 +3108,7 @@ sources:
   priority: 2
 - name: Daraj (Lebanon)
   domain: daraj.press
+  country: lb
   rss_url: https://daraj.press/en/feed/
   language: en
   rate_limit_ms: 2000
@@ -3067,6 +3119,7 @@ sources:
   priority: 2
 - name: Megahed (Egypt)
   domain: megahed.net
+  country: eg
   rss_url: https://megahed.net/en/feed/
   language: en
   rate_limit_ms: 2000
@@ -3209,6 +3262,7 @@ sources:
   priority: 2
 - name: The Business Times (Singapore)
   domain: businesstimes.com.sg
+  country: sg
   rss_url: https://www.businesstimes.com.sg/rss
   language: en
   rate_limit_ms: 2000
@@ -3249,6 +3303,7 @@ sources:
   priority: 2
 - name: Les Echos (France)
   domain: lesechos.fr
+  country: fr
   rss_url: https://www.lesechos.fr/rss/les-echos-en.xml
   language: en
   rate_limit_ms: 2000
@@ -3259,6 +3314,7 @@ sources:
   priority: 2
 - name: La Tribune (France)
   domain: latribune.fr
+  country: fr
   rss_url: https://www.latribune.fr/rss
   language: en
   rate_limit_ms: 2000
@@ -3269,6 +3325,7 @@ sources:
   priority: 2
 - name: Handelsblatt (Germany)
   domain: handelsblatt.com
+  country: de
   rss_url: https://www.handelsblatt.com/feed/rss
   language: en
   rate_limit_ms: 2000
@@ -3279,6 +3336,7 @@ sources:
   priority: 2
 - name: WirtschaftsWoche (Germany)
   domain: wiwo.de
+  country: de
   rss_url: https://www.wiwo.de/rss
   language: en
   rate_limit_ms: 2000
@@ -3289,6 +3347,7 @@ sources:
   priority: 2
 - name: Expansión (Spain)
   domain: expansion.com
+  country: es
   rss_url: https://e00-expansion.uecdn.es/rss/portada.xml
   language: en
   rate_limit_ms: 2000
@@ -3300,6 +3359,7 @@ sources:
   priority: 2
 - name: BNN Bloomberg (Canada)
   domain: bnnbloomberg.ca
+  country: ca
   rss_url: https://www.bnnbloomberg.ca/feed
   language: en
   rate_limit_ms: 2000
@@ -3310,6 +3370,7 @@ sources:
   priority: 2
 - name: Financial Post (Canada)
   domain: financialpost.com
+  country: ca
   rss_url: https://business.financialpost.com/feed/
   language: en
   rate_limit_ms: 2000
@@ -3321,6 +3382,7 @@ sources:
   priority: 2
 - name: Ámbito Financiero (Argentina)
   domain: ambito.com
+  country: ar
   rss_url: https://www.ambito.com/rss
   language: es
   rate_limit_ms: 2000
@@ -3331,6 +3393,7 @@ sources:
   priority: 2
 - name: El Cronista (Argentina)
   domain: cronista.com
+  country: ar
   rss_url: https://www.cronista.com/rss
   language: es
   rate_limit_ms: 2000
@@ -3381,6 +3444,7 @@ sources:
   priority: 2
 - name: Business Day (South Africa)
   domain: businesslive.co.za
+  country: za
   rss_url: https://www.businesslive.co.za/bd/feed/
   language: en
   rate_limit_ms: 2000
@@ -3391,6 +3455,7 @@ sources:
   priority: 2
 - name: Fin24 (South Africa)
   domain: fin24.com
+  country: za
   rss_url: https://www.fin24.com/rss
   language: en
   rate_limit_ms: 2000
@@ -3751,6 +3816,7 @@ sources:
   priority: 3
 - name: Morning Star (UK)
   domain: morningstaronline.co.uk
+  country: gb
   rss_url: https://morningstaronline.co.uk/feed/
   language: en
   rate_limit_ms: 2000
@@ -5373,6 +5439,7 @@ sources:
   priority: 2
 - name: Bundestag (German Parliament) News
   domain: bundestag.de
+  country: de
   rss_url: https://www.bundestag.de/rss/en
   language: en
   rate_limit_ms: 2000
@@ -5393,6 +5460,7 @@ sources:
   priority: 2
 - name: Civil Service World (UK)
   domain: civilserviceworld.com
+  country: gb
   rss_url: https://www.civilserviceworld.com/feed
   language: en
   rate_limit_ms: 2000
@@ -5463,6 +5531,7 @@ sources:
   priority: 2
 - name: Lowy Institute (Australia)
   domain: lowyinstitute.org
+  country: au
   rss_url: https://www.lowyinstitute.org/feed
   language: en
   rate_limit_ms: 2000
@@ -5473,6 +5542,7 @@ sources:
   priority: 2
 - name: RSIS (Singapore)
   domain: rsis.edu.sg
+  country: sg
   rss_url: https://www.rsis.edu.sg/feed
   language: en
   rate_limit_ms: 2000
@@ -10416,6 +10486,7 @@ sources:
   priority: 2
 - name: Presidency of Brazil (Planalto)
   domain: gov.br
+  country: br
   rss_url: https://www.gov.br/planalto/en/feed
   language: pt
   rate_limit_ms: 2000
@@ -10426,6 +10497,7 @@ sources:
   priority: 1
 - name: National Congress of Brazil
   domain: congressonacional.leg.br
+  country: br
   rss_url: https://www.congressonacional.leg.br/rss
   language: pt
   rate_limit_ms: 2000
@@ -10518,6 +10590,7 @@ sources:
   priority: 2
 - name: Kremlin (President of Russia)
   domain: en.kremlin.ru
+  country: ru
   rss_url: http://en.kremlin.ru/feed
   language: en
   rate_limit_ms: 2000
@@ -10528,6 +10601,7 @@ sources:
   priority: 1
 - name: Government of Russia
   domain: government.ru
+  country: ru
   rss_url: http://government.ru/en/feed
   language: en
   rate_limit_ms: 2000
@@ -10538,6 +10612,7 @@ sources:
   priority: 1
 - name: Ministry of Foreign Affairs of Russia
   domain: mid.ru
+  country: ru
   rss_url: https://www.mid.ru/en/feed
   language: en
   rate_limit_ms: 2000
@@ -10578,6 +10653,7 @@ sources:
   priority: 2
 - name: CNews (Russian IT News)
   domain: cnews.ru
+  country: ru
   rss_url: https://www.cnews.ru/rss
   language: ru
   rate_limit_ms: 2000
@@ -10588,6 +10664,7 @@ sources:
   priority: 2
 - name: Russian Academy of Sciences
   domain: ras.ru
+  country: ru
   rss_url: https://www.ras.ru/en/feed
   language: en
   rate_limit_ms: 2000
@@ -10618,6 +10695,7 @@ sources:
   priority: 2
 - name: The Times of India
   domain: timesofindia.indiatimes.com
+  country: in
   rss_url: https://timesofindia.indiatimes.com/rssfeedstopstories.cms
   language: en
   rate_limit_ms: 2000
@@ -10629,6 +10707,7 @@ sources:
   priority: 1
 - name: The Indian Express
   domain: indianexpress.com
+  country: in
   rss_url: https://indianexpress.com/feed/
   language: en
   rate_limit_ms: 2000
@@ -10660,6 +10739,7 @@ sources:
   priority: 1
 - name: India Today
   domain: indiatoday.in
+  country: in
   rss_url: https://www.indiatoday.in/rss/home
   language: en
   rate_limit_ms: 2000
@@ -10711,6 +10791,7 @@ sources:
   priority: 1
 - name: Prime Minister's Office (PMO) India
   domain: pmindia.gov.in
+  country: in
   rss_url: https://www.pmindia.gov.in/en/feed
   language: en
   rate_limit_ms: 2000
@@ -10895,6 +10976,7 @@ sources:
   priority: 2
 - name: Business Day - Markets
   domain: businesslive.co.za
+  country: za
   rss_url: https://www.businesslive.co.za/bd/markets/feed
   language: en
   rate_limit_ms: 2000
@@ -11375,6 +11457,7 @@ sources:
   priority: 2
 - name: Permaculture France
   domain: permaculture.fr
+  country: fr
   rss_url: https://www.permaculture.fr/feed
   language: fr
   rate_limit_ms: 2000
@@ -11385,6 +11468,7 @@ sources:
   priority: 2
 - name: Permaculture Australia
   domain: permacultureaustralia.org.au
+  country: au
   rss_url: https://permacultureaustralia.org.au/feed
   language: en
   rate_limit_ms: 2000
@@ -11475,6 +11559,7 @@ sources:
   priority: 1
 - name: BMJ (British Medical Journal)
   domain: bmj.com
+  country: gb
   rss_url: https://www.bmj.com/rss
   language: en
   rate_limit_ms: 2000
@@ -12475,6 +12560,7 @@ sources:
   priority: 2
 - name: Biotech Canada
   domain: biotech.ca
+  country: ca
   rss_url: https://biotech.ca/feed
   language: en
   rate_limit_ms: 2000
@@ -13225,6 +13311,7 @@ sources:
   priority: 2
 - name: The British Museum
   domain: britishmuseum.org
+  country: gb
   rss_url: https://www.britishmuseum.org/feed
   language: en
   rate_limit_ms: 2000
@@ -13255,6 +13342,7 @@ sources:
   priority: 2
 - name: The National Archives (UK)
   domain: nationalarchives.gov.uk
+  country: gb
   rss_url: https://www.nationalarchives.gov.uk/feed
   language: en
   rate_limit_ms: 2000
@@ -13265,6 +13353,7 @@ sources:
   priority: 2
 - name: The National Archives (US)
   domain: archives.gov
+  country: us
   rss_url: https://www.archives.gov/feed
   language: en
   rate_limit_ms: 2000
@@ -13486,6 +13575,7 @@ sources:
   priority: 2
 - name: The Korea Herald - History
   domain: koreaherald.com
+  country: kr
   rss_url: https://www.koreaherald.com/rss/020000000000.xml
   language: en
   rate_limit_ms: 2000
@@ -13506,6 +13596,7 @@ sources:
   priority: 2
 - name: Vietnam News - History
   domain: vietnamnews.vn
+  country: vn
   rss_url: https://vietnamnews.vn/rss/home.rss
   language: en
   rate_limit_ms: 2000
@@ -13806,6 +13897,7 @@ sources:
   priority: 2
 - name: Egypt Today - History
   domain: egypttoday.com
+  country: eg
   rss_url: https://www.egypttoday.com/rss
   language: en
   rate_limit_ms: 2000
@@ -13816,6 +13908,7 @@ sources:
   priority: 2
 - name: Nigerian Tribune - History
   domain: tribuneonlineng.com
+  country: ng
   rss_url: https://tribuneonlineng.com/category/history/feed
   language: en
   rate_limit_ms: 2000
@@ -13826,6 +13919,7 @@ sources:
   priority: 2
 - name: Ghana News Agency - History
   domain: gna.org.gh
+  country: gh
   rss_url: https://gna.org.gh/feed/
   language: en
   rate_limit_ms: 2000
@@ -13836,6 +13930,7 @@ sources:
   priority: 2
 - name: The Star (Kenya) - History
   domain: the-star.co.ke
+  country: ke
   rss_url: https://www.the-star.co.ke/feed/
   language: en
   rate_limit_ms: 2000
@@ -13936,6 +14031,7 @@ sources:
   priority: 1
 - name: France Info - Vrai ou Fake
   domain: francetvinfo.fr
+  country: fr
   rss_url: https://www.francetvinfo.fr/titres.rss
   language: fr
   rate_limit_ms: 2000
@@ -14347,6 +14443,7 @@ sources:
   priority: 2
 - name: La Nación - Verificación
   domain: lanacion.com.ar
+  country: ar
   rss_url: https://www.lanacion.com.ar/verificacion/feed
   language: es
   rate_limit_ms: 2000
@@ -14699,6 +14796,7 @@ sources:
   priority: 2
 - name: FactCheck Initiative Japan (FCIJ)
   domain: factcheck.jp
+  country: jp
   rss_url: https://factcheck.jp/feed
   language: ja
   rate_limit_ms: 2000
@@ -14870,6 +14968,7 @@ sources:
   priority: 2
 - name: Estadao Verifica
   domain: estadao.com.br
+  country: br
   rss_url: https://www.estadao.com.br/rss/ultimas.xml
   language: pt
   rate_limit_ms: 2000
@@ -14910,6 +15009,7 @@ sources:
   priority: 1
 - name: Dutch News - Fact Check
   domain: dutchnews.nl
+  country: nl
   rss_url: https://www.dutchnews.nl/feed/
   language: nl
   rate_limit_ms: 2000
@@ -15000,6 +15100,7 @@ sources:
   priority: 2
 - name: Mafindo (Masyarakat Anti Fitnah Indonesia)
   domain: mafindo.or.id
+  country: id
   rss_url: https://www.mafindo.or.id/feed/
   language: id
   rate_limit_ms: 2000
@@ -21220,6 +21321,7 @@ sources:
   priority: 3
 - name: Cook Islands News
   domain: cookislandsnews.com
+  country: ck
   rss_url: https://www.cookislandsnews.com/feed/
   language: en
   region: oceania
@@ -21963,6 +22065,7 @@ sources:
   priority: 2
 - name: ASPI The Strategist (Australia)
   domain: aspistrategist.org.au
+  country: au
   rss_url: https://www.aspistrategist.org.au/feed/
   language: en
   region: oceania
@@ -22296,6 +22399,7 @@ sources:
   priority: 1
 - name: France 24 Arabic
   domain: france24.com
+  country: fr
   rss_url: https://www.france24.com/ar/rss
   language: ar
   region: middle-east
@@ -22778,6 +22882,7 @@ sources:
   priority: 3
 - name: Pacific Daily News (Guam)
   domain: guampdn.com
+  country: gu
   rss_url: https://www.guampdn.com/search/?f=rss
   language: en
   region: oceania
@@ -22790,6 +22895,7 @@ sources:
   priority: 3
 - name: Marshall Islands Journal
   domain: marshallislandsjournal.com
+  country: mh
   rss_url: https://marshallislandsjournal.com/feed/
   language: en
   region: oceania
@@ -29371,6 +29477,7 @@ sources:
   priority: 3
 - name: Dominica News Online
   domain: dominicanewsonline.com
+  country: dm
   rss_url: https://dominicanewsonline.com/news/feed/
   language: en
   region: americas
@@ -29383,6 +29490,7 @@ sources:
   priority: 3
 - name: NOW Grenada
   domain: nowgrenada.com
+  country: gd
   rss_url: https://www.nowgrenada.com/feed/
   language: en
   region: americas
@@ -29407,6 +29515,7 @@ sources:
   priority: 3
 - name: The Royal Gazette (Bermuda)
   domain: royalgazette.com
+  country: bm
   rss_url: https://www.royalgazette.com/rss/
   language: en
   region: americas
@@ -30938,6 +31047,7 @@ sources:
   priority: 2
 - name: Canadian Press (Canada)
   domain: thecanadianpress.com
+  country: ca
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -31891,6 +32001,7 @@ sources:
   priority: 2
 - name: Permaculture Germany
   domain: permakultur.de
+  country: de
   rss_url: ''
   language: de
   rate_limit_ms: 2000
@@ -31901,6 +32012,7 @@ sources:
   priority: 2
 - name: Permaculture Spain
   domain: permacultura.es
+  country: es
   rss_url: ''
   language: es
   rate_limit_ms: 2000
@@ -31911,6 +32023,7 @@ sources:
   priority: 2
 - name: Permaculture India
   domain: permacultureindia.org
+  country: in
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -31921,6 +32034,7 @@ sources:
   priority: 2
 - name: Permaculture Japan
   domain: permaculturejapan.com
+  country: jp
   rss_url: ''
   language: ja
   rate_limit_ms: 2000
@@ -31931,6 +32045,7 @@ sources:
   priority: 2
 - name: Permaculture Kenya
   domain: permaculturekenya.org
+  country: ke
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -31941,6 +32056,7 @@ sources:
   priority: 2
 - name: Permaculture Ethiopia
   domain: permacultureethiopia.org
+  country: et
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -31961,6 +32077,7 @@ sources:
   priority: 2
 - name: Permaculture Brazil
   domain: permacultura.org.br
+  country: br
   rss_url: ''
   language: pt
   rate_limit_ms: 2000
@@ -31971,6 +32088,7 @@ sources:
   priority: 2
 - name: Permaculture Mexico
   domain: permaculturamexico.org
+  country: mx
   rss_url: ''
   language: es
   rate_limit_ms: 2000
@@ -32451,6 +32569,7 @@ sources:
   priority: 2
 - name: Deutschland Bio (Germany)
   domain: deutschland-bio.de
+  country: de
   rss_url: ''
   language: de
   rate_limit_ms: 2000
@@ -32461,6 +32580,7 @@ sources:
   priority: 2
 - name: France Biotech
   domain: francebiotech.org
+  country: fr
   rss_url: ''
   language: fr
   rate_limit_ms: 2000
@@ -32481,6 +32601,7 @@ sources:
   priority: 2
 - name: Japan Bioindustry Association (JBA)
   domain: jba.or.jp
+  country: jp
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -32721,6 +32842,7 @@ sources:
   priority: 2
 - name: British Psychological Society (BPS) - Intelligence
   domain: bps.org.uk
+  country: gb
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -33211,6 +33333,7 @@ sources:
   priority: 2
 - name: Bundesarchiv (Federal Archive of Germany)
   domain: bundesarchiv.de
+  country: de
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -33531,6 +33654,7 @@ sources:
   priority: 2
 - name: National Museum of China
   domain: en.chnmuseum.cn
+  country: cn
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -33601,6 +33725,7 @@ sources:
   priority: 2
 - name: Indian Council of Historical Research
   domain: ichr.ac.in
+  country: in
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -33641,6 +33766,7 @@ sources:
   priority: 2
 - name: Vietnam Academy of Social Sciences - History
   domain: vass.gov.vn
+  country: vn
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -33651,6 +33777,7 @@ sources:
   priority: 2
 - name: The Egyptian Museum - Cairo
   domain: egyptianmuseumcairo.eg
+  country: eg
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -34221,6 +34348,7 @@ sources:
   priority: 2
 - name: Egyptian State Information Service - History
   domain: sis.gov.eg
+  country: eg
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -34821,6 +34949,7 @@ sources:
   priority: 2
 - name: France.tv Éducation - Esprit Critique
   domain: education.francetv.fr
+  country: fr
   rss_url: ''
   language: fr
   rate_limit_ms: 2000

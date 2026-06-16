@@ -673,6 +673,36 @@ ruling, a contingency, or a deliberate-omission note.
   coverage report = acceptance metric):** the Wikidata generator run for the
   73 named gaps (network step, maintainer's machine) + raising the located
   share (49% of domains carry no country).
+  **SOURCE-COUNTRY PROVENANCE FIX SHIPPED 2026-06-16 (maintainer-ruled "also
+  apply demonyms" after the investigation):** the seeder resolved country from
+  ONLY the explicit field + a ccTLD fallback — it never read the title, yet the
+  catalog already encodes origin two ways. (1) The `Name (Country)` SUFFIX is a
+  real, trusted convention (635/636 agreement on already-countried sources); 68
+  uncountried entries used it but left the field blank — pure omission. Promoted
+  all into `configs/sources.yml` (35 were NULL → net-new located; the rest
+  asserted-not-inferred). (2) A hand-reviewed pass over demonym/country-name
+  titles added 57 more REAL national entities (news agencies, national papers,
+  governments, museums, national assoc. chapters), spread across under-represented
+  countries (Dominica, Grenada, Marshall Islands, Ethiopia, Ghana, Kenya, Qatar…)
+  so it HELPS the balance (zero US added). DELIBERATELY left NULL (honesty — a
+  wrong country is worse than none, and would undo this very balance work):
+  language-edition markers (`Kyodo News (English)` is Japanese, not GB), TOPIC
+  sites (`German History`/OUP, `Greek History Podcast`, `Theoi Project`,
+  ancient-X portals, academic journals on a country), US orgs named after places
+  (`German Marshall Fund`, `ChinaFile`, Perseus/Tufts), generic content series
+  (`* Robotics News`), domain-contradicts-name (`chinaknowledge.de`), and ALL
+  `International`/`int` bodies (no valid 2-letter code; genuinely transnational).
+  Diff is PURELY ADDITIVE (129 `country:` lines, 0 deletions); sources.yml located
+  share 40.4%→44.4%. SEEDER HARDENED: `country_from_title()`
+  (src/catalog/normalize.py) reads ONLY the explicit trailing parenthetical (never
+  scans for demonym/country words — too noisy to automate), wired between the
+  explicit field and the ccTLD (human marker outranks a domain guess); demonym/
+  name fixes live in the DATA, hand-reviewed, never auto-inferred. REGRESSION
+  GUARD: test_seed_sources.py::test_catalog_honours_its_own_country_suffix_convention
+  asserts every `(Country)`-suffix entry carries the matching field forever.
+  Net-new located ≈54 + ~70 provenance upgrades. (The Wikidata generator run for
+  the 73 named gaps is still the big remaining lever; this closes the
+  title-evident gap that needed no network.)
 - **LIVE-TEST FIELD REPORT #2 (2026-06-11, seven items — facts code-verified;
   implementation queued; proposed order at the end):**
   (1) NETWORK TOGGLE — UI SEMANTICS + CONSENT SHIPPED (T2, invariant #14):

@@ -24,6 +24,18 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   slow collection has an honest, shareable explanation. *A target is best-effort, not a
   guarantee — real speed is bounded by the sources, your connection (much lower over
   Tor), your CPU and the single encrypted writer.*
+- **More sources now carry their country.** Hundreds of catalog sources stated their
+  country only in their title (e.g. *TASS (Russia)*, *El País (Spain)*, *The Indian Express*)
+  but left the structured field blank, so they were invisible to every geographic view. We
+  promoted those titles into the real `country` field and added a hand-reviewed pass for
+  national outlets, agencies, governments and institutions — lifting coverage across
+  under-represented places (Dominica, Grenada, the Marshall Islands, Ethiopia, Ghana, Kenya,
+  Qatar and more), with **zero US sources added**. The seeder now honours the
+  *Name (Country)* convention automatically. We deliberately leave a source's country
+  **blank rather than guess wrong**: a title that names a *topic* (*German History*,
+  *Greek History Podcast*), a *language edition* (*Kyodo News (English)* is Japanese), an
+  *international* body, or a place an org is merely named after (the US-based *German
+  Marshall Fund*) is never mistaken for an origin — a wrong country is worse than none.
 - **See a commodity's price next to your coverage of it.** Open a commodity from the
   Markets board (its title or **Analyse ↗**) and the analysis window now offers a **Price**
   tab that lays the **price curve over your corpus's coverage timeline** for that topic —

@@ -80,11 +80,59 @@ def test_seed_is_idempotent(tmp_path):
     s.close()
 
 
+_COUNTRY_YAML = """
+sources:
+  - name: Title Paper (France)      # no country field -> read from the title suffix
+    domain: title.example
+  - name: Explicit (France)         # explicit field outranks the title suffix
+    domain: explicit.example
+    country: us
+  - name: Plain Paper               # no signal but a ccTLD -> ccTLD fallback
+    domain: plain.example.de
+  - name: Override (France)         # title suffix outranks the ccTLD
+    domain: override.example.de
+"""
+
+
+def test_seed_backfills_country_from_title_with_correct_precedence(tmp_path):
+    p = tmp_path / "c.yaml"
+    p.write_text(_COUNTRY_YAML, encoding="utf-8")
+    s = _session()
+    seed_sources(s, load_sources_from_yaml(p))
+    by = {row.domain: row.country for row in s.query(Source).all()}
+    assert by["title.example"] == "fr"  # backfilled from "(France)"
+    assert by["explicit.example"] == "us"  # explicit field wins over the title
+    assert by["plain.example.de"] == "de"  # ccTLD fallback (no title signal)
+    assert by["override.example.de"] == "fr"  # human title beats the ccTLD guess
+    s.close()
+
+
 def test_default_catalog_is_large_and_valid():
     # The shipped catalog (configs/sources.yml) must parse and be substantial.
     rows = load_sources_from_yaml(DEFAULT_SOURCES_PATH)
     assert len(rows) >= 500
     assert all(r.get("name") and r.get("domain") for r in rows)
+
+
+def test_catalog_honours_its_own_country_suffix_convention():
+    """Every ``Name (Country)`` entry must carry the matching ``country`` field.
+
+    The catalog uses a trailing ``(Country)`` suffix as a human-authored origin
+    marker; leaving the structured field blank where the title states the country
+    is the provenance gap this guards against (a source the title says is from
+    Spain must not be invisible to every geographic view). Regression guard for
+    the country-provenance fix.
+    """
+    from src.catalog.normalize import country_from_title
+
+    rows = load_sources_from_yaml(DEFAULT_SOURCES_PATH)
+    missing = [
+        r["name"]
+        for r in rows
+        if (code := country_from_title(r.get("name")))
+        and (r.get("country") or "").strip().lower() != code
+    ]
+    assert not missing, f"{len(missing)} catalog entries name a country but omit it: {missing[:10]}"
 
 
 def test_seed_default_catalog_dedupes_by_domain():

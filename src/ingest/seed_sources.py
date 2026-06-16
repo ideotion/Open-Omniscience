@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from src.catalog.cctld import infer_country, infer_language
 from src.catalog.countries import normalize_country
+from src.catalog.normalize import country_from_title
 from src.database.models import Source
 
 # The full curated catalog shipped with the project.
@@ -82,8 +83,10 @@ def _to_source_kwargs(s: dict) -> dict:
     """Map a catalog entry to Source constructor kwargs (tags list -> CSV).
 
     Also (a) records *provenance* as a ``via:<origin>`` tag when known, and
-    (b) backfills missing ``country``/``language`` from the domain's ccTLD so the
-    catalogue's geographic/linguistic skew is measurable (conservative — see
+    (b) backfills a missing ``country`` from the catalog's explicit
+    ``Name (Country)`` title convention, then from the domain's ccTLD, and a
+    missing ``language`` from the ccTLD — so the catalogue's geographic/linguistic
+    skew is measurable (conservative — see ``src/catalog/normalize.py`` and
     ``src/catalog/cctld.py``; never overrides an explicit value).
     """
     kwargs = {"name": s["name"], "domain": s["domain"]}
@@ -104,6 +107,12 @@ def _to_source_kwargs(s: dict) -> dict:
         kwargs["country"] = normalize_country(str(kwargs["country"]))
         if kwargs["country"] is None:
             del kwargs["country"]
+    # Honour the explicit "Name (Country)" title convention before the ccTLD:
+    # a human-authored origin marker outranks a guess from the domain suffix.
+    if not kwargs.get("country"):
+        from_title = country_from_title(s.get("name"))
+        if from_title:
+            kwargs["country"] = from_title
     if not kwargs.get("country"):
         c = infer_country(s["domain"])
         if c:

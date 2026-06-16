@@ -90,7 +90,7 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 | Home cards → per-type investigate views | ⬜ | SHOULD | every card clickable |
 | Evidence-tiered cards remaining slices; corpus tier header | ⬜ | SHOULD | plain sentence + math, translated |
 | Custody tab UX (rename/explain/guided) | ⬜ | SHOULD | non-expert comprehension test |
-| De-US-centring remainder: Wikidata gap run (maintainer's machine) + raise located share (49% unlocated) | 🔶 | SHOULD | coverage report metric moves |
+| De-US-centring remainder: Wikidata gap run (maintainer's machine) + raise located share (49% unlocated) | 🔶 2026-06-16 (title-evident gap CLOSED: seeder now reads the `Name (Country)` convention + a hand-reviewed demonym/name pass; 129 additive `country:` entries, sources.yml located 40.4%→44.4%, all non-US, topic/edition/international titles kept NULL by design; regression-guarded) | SHOULD | REMAINING: the Wikidata gap run (maintainer's machine) for the deeper unlocated share; coverage report metric moves |
 | Trans-language equivalence rings → LIVE analytics merging | ✅ 2026-06-16 (slice 1) | SHOULD | wired into top/trending/associations/graph via src/analytics/equivalence.py; fr:élection+en:election+de:wahl = one concept, per-language counts visible (language_breakdown), signature-supported join honours fr:main≠en:main, user can split, OO_KEYWORD_EQUIV=0 off. REMAINING: cross-country split, map view, frontend breakdown |
 | Offline LLM kit (RM-08); translated-docs drafting run (needs a machine with a model) | ⬜ | POST | — |
 | Wikipedia-as-a-source; smart calendars; event-family merge/split UI; offline vector map; onboarding track | ⬜ | POST | recorded designs |
