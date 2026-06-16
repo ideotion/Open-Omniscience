@@ -21,6 +21,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -44,16 +45,41 @@ DUMP_KINDS = (
 )
 
 
+# A Wikipedia edition code is lowercase alphanumeric segments joined by single
+# hyphens (en, fr, simple, zh-min-nan, bat-smg, be-x-old, zh-classical). This
+# deliberately allows MORE than the suggested ^[a-z]{2,3}(-[a-z]+)?$ (which would
+# wrongly reject "simple" and multi-hyphen editions) while still forbidding the
+# only thing that matters for safety: anything that could escape the dumps
+# directory. The code flows into a filesystem path (dump_filename ->
+# data_dir()/wiki_dumps/<code>wiki-...) AND into dump_url's path, so a "../",
+# "/", "\\", whitespace or "." would be a path-traversal vector — all rejected.
+_WIKI_CODE_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def validate_wiki_code(wiki: str) -> str:
+    """Normalise + validate a Wikipedia edition code; raise on anything unsafe.
+
+    Returns the lowercased, stripped code. Raises ``ValueError`` for empty input
+    or any code that is not pure ``[a-z0-9]`` segments joined by single hyphens —
+    blocking ``../`` / ``/`` / ``\\`` path-traversal before the value can reach a
+    filesystem path or a fetch URL. The API converts the ValueError to HTTP 400.
+    """
+    w = (wiki or "").strip().lower()
+    if not w or len(w) > 32 or not _WIKI_CODE_RE.match(w):
+        raise ValueError(f"invalid Wikipedia edition code: {wiki!r}")
+    return w
+
+
 def dump_filename(wiki: str, kind: str) -> str:
     """Official 'latest' filename for an edition+kind (the index is .txt, not .xml)."""
-    w = (wiki or "en").strip().lower()
+    w = validate_wiki_code(wiki)
     suffix = ".txt.bz2" if kind.endswith("-index") else ".xml.bz2"
     return f"{w}wiki-latest-{kind}{suffix}"
 
 
 def dump_url(wiki: str, kind: str = "pages-articles-multistream") -> str:
     """Official 'latest' dump URL for a language edition."""
-    w = (wiki or "en").strip().lower()
+    w = validate_wiki_code(wiki or "en")
     return f"https://dumps.wikimedia.org/{w}wiki/latest/{dump_filename(w, kind)}"
 
 
