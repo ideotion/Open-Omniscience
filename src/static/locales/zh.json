@@ -954,5 +954,6 @@
   "tracker tokens stripped": "已剥离追踪令牌",
   "tracker wrappers flagged": "已标记追踪包装",
   "Import failed": "导入失败",
-  "Newsletters imported.": "新闻邮件已导入。"
+  "Newsletters imported.": "新闻邮件已导入。",
+  "Open in analysis — the article selection behind this card": "在分析中打开——此卡片背后的文章选集"
 }

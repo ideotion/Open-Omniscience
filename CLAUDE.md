@@ -1125,10 +1125,24 @@ ruling, a contingency, or a deliberate-omission note.
 - **Temporal map remainder:** logarithmic time scale (agreed: linear/log
   toggle, labelled ticks, no hidden warp); feed mention-layer with extracted
   event-places.
-- **Home cards remainder:** per-card-TYPE /investigate views so EVERY card
-  is clickable (rising→trend+associations; diet/coverage→sources;
-  echo→integrity; law/wiki→reader). Card-feed visual/UX remake still wanted
-  (flagship surface). **REMOVE the home HERO card — SHIPPED 2026-06-14:** the
+- **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
+  maintainer-ruled "clickable cards open an advanced search / the unified interface
+  with all analytics subtabs, whose corpus corresponds to the selection of articles
+  the card identified"):** every card body now opens the UNIFIED analysis window
+  (#tab-analyze) via the proven `openAnalysisFor(query)` — NOT the standalone
+  /investigate new tab (that stays as the explicit "Open investigation ↗" button).
+  The seed query = `cardAnalyzeQuery(c)`: the quoted term in the title (original
+  searchable surface form) → the serialized card `key` (normalized term/identity; NOW
+  added to Card.to_dict) → the bare title. For keyword/topic cards (the majority) this
+  reproduces the EXACT, FULL selection (openAnalysisFor re-runs the same FTS search);
+  for set-based cards it is the closest honest query and the analysis window states
+  its scope. Clicks on inner buttons/links/inputs are ignored. +1 hover title ×12.
+  AUTONOMOUS CALL: query-seed v1 (no backend change beyond serializing `key`);
+  ARTICLE-ID-EXACT seeding for set-based cards (echo/convergence/diet) = a clean
+  follow-up (an `article_ids` param on the corpus-* endpoints + producers surfacing
+  their full set). Earlier note kept: per-card-TYPE investigate views
+  (rising→trend+associations; diet/coverage→sources; echo→integrity; law/wiki→reader)
+  + the card-feed visual/UX remake still wanted (flagship surface). **REMOVE the home HERO card — SHIPPED 2026-06-14:** the
   "Understand the world as it really is. / Your private, offline research
   desk…" hero block + its #hero-greet time-of-day greeting JS (in loadHome) +
   the dedicated `.hero` CSS are DELETED; no greeting survives (none to key).

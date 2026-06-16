@@ -954,5 +954,6 @@
   "tracker tokens stripped": "токены трекеров удалены",
   "tracker wrappers flagged": "обёртки трекеров помечены",
   "Import failed": "Сбой импорта",
-  "Newsletters imported.": "Рассылки импортированы."
+  "Newsletters imported.": "Рассылки импортированы.",
+  "Open in analysis — the article selection behind this card": "Открыть в анализе — подборка статей за этой карточкой"
 }

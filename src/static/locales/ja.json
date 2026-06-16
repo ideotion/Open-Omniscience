@@ -954,5 +954,6 @@
   "tracker tokens stripped": "トラッカートークンを除去",
   "tracker wrappers flagged": "トラッカーラッパーに印",
   "Import failed": "インポート失敗",
-  "Newsletters imported.": "ニュースレターをインポートしました。"
+  "Newsletters imported.": "ニュースレターをインポートしました。",
+  "Open in analysis — the article selection behind this card": "分析で開く — このカードの基になった記事の選択"
 }

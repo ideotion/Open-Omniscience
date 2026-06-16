@@ -189,6 +189,10 @@ class Card:
             "caveat": self.caveat,
             "evidence": self.evidence,
             "n": self.n,
+            # The within-type identity (often the keyword/term the card is about);
+            # the UI uses it as a fallback seed when a card is clicked to open the
+            # analysis window over the card's article selection. Never a score.
+            "key": self.key,
             "created_at": self.created_at,
             "dismissible": self.dismissible,
             "recipe": self.recipe,
