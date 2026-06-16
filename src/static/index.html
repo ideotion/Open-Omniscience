@@ -3664,6 +3664,20 @@
       });
     }
 
+    // The query that reproduces a card's article selection in the analysis window
+    // (maintainer 2026-06-16: clicking a card opens the unified analysis interface
+    // "whose corpus corresponds to the selection of articles the card identified").
+    // Prefer the quoted term in the title (the original searchable surface form),
+    // then the card key (the normalized term/identity), then the bare title. For
+    // keyword/topic cards this is the EXACT, full selection (openAnalysisFor re-runs
+    // the same FTS search); for set-based cards it is the closest honest query and
+    // the analysis window states its scope.
+    function cardAnalyzeQuery(c) {
+      const m = (c.title || "").match(/[“"]([^”"]{2,})[”"]/);
+      if (m && m[1].trim()) return m[1].trim();
+      if (c.key && String(c.key).trim()) return String(c.key).trim();
+      return (c.title || "").replace(/[“”"]/g, "").trim();
+    }
     function cardHtml(c) {
       const sig = c.signal || {};
       const sigLine = (sig.metric != null && sig.value != null)
@@ -3723,8 +3737,13 @@
           ${rows ? `<div class="why-mathlabel">The exact math</div><table class="why-math">${rows}</table>` : ""}
         </details>`;
       }
-      const cardOpen = (c.recipe && c.recipe.view)
-        ? ` style="cursor:pointer" title="Open the dedicated investigation view" onclick="if(!event.target.closest('button,a,details,summary'))window.open('/investigate?'+new URLSearchParams({view:'${esc(c.recipe.view)}', ...${esc(JSON.stringify(c.recipe.params||{}))}}).toString(),'_blank')"`
+      // EVERY card is clickable (maintainer 2026-06-16): the card body opens the
+      // unified analysis window over the card's article selection (never the
+      // standalone /investigate new tab — that stays as the explicit "Open
+      // investigation ↗" button below). Clicks on inner controls are ignored.
+      const _aq = cardAnalyzeQuery(c);
+      const cardOpen = _aq
+        ? ` style="cursor:pointer" title="Open in analysis — the article selection behind this card" onclick="if(!event.target.closest('button,a,details,summary,input,label'))openAnalysisFor(${esc(JSON.stringify(_aq))})"`
         : "";
       // The CAVEAT is visible by default (informed-consent mandate: never hidden
       // behind a calm-UI toggle). Only the verbose Method/math stays in the

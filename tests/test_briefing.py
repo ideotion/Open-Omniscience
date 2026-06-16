@@ -73,6 +73,19 @@ def test_card_stable_id_from_type_and_key():
     assert a.id == b.id  # identity is type+key, not the (volatile) title
 
 
+def test_card_to_dict_carries_key_for_clickable_analysis_seed():
+    """Item I (clickable cards): the UI seeds the analysis window over a card's
+    article selection from the card key (the normalized term/identity) when the
+    title has no quoted term — so to_dict MUST expose `key`. It is an identity
+    string, never a score (the §6 ban still holds)."""
+    d = Card(
+        type="rising", title="A", summary="s", bucket="rising",
+        method="m", caveat="c", key="election",
+    ).to_dict()
+    assert d["key"] == "election"
+    assert all("score" not in k for k in d)
+
+
 # --------------------------------------------------------------------------- #
 #  Producers over a real, small indexed corpus
 # --------------------------------------------------------------------------- #
