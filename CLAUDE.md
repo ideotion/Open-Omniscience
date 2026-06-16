@@ -555,8 +555,9 @@ ruling, a contingency, or a deliberate-omission note.
   2026-06-12, + political_bias=0.0; migration f4b5c6d7e8a9 NULLs the
   fabricated 5s; languages stay — catalog-asserted); ~~ETHICS.md tense~~
   (verified closed: the one "will" is the doc's own review cadence);
-  REMAINING: inline-onclick retirement (199×, needs a browser-verified
-  sweep); a11y batch.
+  REMAINING: inline-handler retirement (295 inline on*= as of 2026-06-15 —
+  229 onclick + 35 onchange + 15 onkeydown + 14 oninput + 2 onmouse*; the earlier
+  onclick-only audit figure is stale — needs a browser-verified sweep); a11y batch.
 - **De-US-centring — REMAINING (first batch shipped 2026-06-11: ISO-2
   canonical storage via src/catalog/countries.py, migration a3b4c5d6e7f8
   fixed the fabricated US default + the `[:2]` country-truncation corruption;
@@ -1387,6 +1388,24 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS AUDIT 2026-06-15/16 (draft PRs A–H onto 0.09, CI subscribed; each
+  hand-verified before shipping — the 06-audit false-positive lesson):** PR A
+  (caveats-visible, invariant #23 — above). PR B = DOC ACCURACY (docs-only):
+  (1) the stale inline-handler figure (an onclick-only count from the 2026-06-14
+  audit) is now the verified **295** (229 onclick + 35 onchange + 15 onkeydown + 14 oninput +
+  2 onmouse*) everywhere in CLAUDE.md + docs/audit; (2) ETHICS.md license-header /
+  copyright-notice checklist reworded honestly (196/213 src .py carry a
+  GPL-3.0-or-later notice — NOT "all"; GPL needs no per-file header, LICENSE is
+  authoritative) — note the audit's "0 exist" premise was a FALSE POSITIVE
+  (re-verified); (3) the dead `audit/scrape_log.csv` / `audit/errors.log` runtime
+  mandate in ETHICS.md replaced with the REAL on-click mechanism (data/*_preflight.jsonl
+  + field_test.jsonl + app_errors.jsonl → Settings debug bundle, never
+  auto-transmitted); (4) README "all 29 audit findings closed" CLARIFIED (it is
+  TRUE — findings.csv reads 29/29 FIXED; the audit's "contradicts 20-fixed-9-deferred"
+  premise was a FALSE POSITIVE conflating the 0.07 snapshot with the 0.0.8 close —
+  so the honesty non-negotiable forbade the literal "make it say 20/9"); (5) README
+  task-manager window + Wikipedia tracked-changes *timeline* tab moved to "In progress
+  / next" matching the RC gate 🔶 (the shipped halves stay accurately ✅).
 - **SOLO SESSION 2026-06-15 (autonomous; maintainer away) — audit + honesty
   bug-fix stack (draft PRs onto 0.09; full audit + every Class-B/C call in
   `docs/SOLO_SESSION_DECISIONS.md` + `docs/audit/*_2026-06-15_solo.md`):**
@@ -1486,8 +1505,8 @@ ruling, a contingency, or a deliberate-omission note.
   rebuild + search + corpus-window) with a documented 100k profile; OO-D5-001
   GOVERNANCE states custody-trail is opt-in (one-click enable) — **default-flip is a
   maintainer call**; OO-D2-003 SSRF TOCTOU residual documented in SECURITY. DEFERRED
-  (raised as PR questions): OO-D12-001+D2-002 the 199-inline-handler→CSP migration
-  (large + browser-unverifiable here), OO-D15-002/003 ruff-blocking + win/mac
+  (raised as PR questions): OO-D12-001+D2-002 the inline-handler→CSP migration
+  (295 inline on*= as of 2026-06-15; large + browser-unverifiable here), OO-D15-002/003 ruff-blocking + win/mac
   graduation. New locale strings are AI-drafted (flagged for native review).
 - **QUARANTINE REMOVED TO AN ARCHIVE BRANCH (2026-06-14, maintainer-chosen):** the
   ~79.5k-line `quarantine/` tree (legacy six-pillar trees + fabricated/dead modules,
