@@ -121,24 +121,24 @@ def corpus_links(
     end_date: str | None = None,
     language: str | None = None,
     tags: str | None = None,
+    article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
     min_citations: int = Query(2, ge=1, le=100),
     limit: int = Query(40, ge=1, le=200),
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Outbound links SHARED across the matched article set (the analysis window's
-    Links tab). Surfaces shared-ORIGIN structure: a URL cited by several of the
-    matched articles. Convergence corroborates ONLY when the paths are independent
-    -- several articles citing the SAME origin are one source wearing several hats,
-    NOT independent confirmation. Counts only; bounded to the top ``cap`` matched
-    articles (disclosed via ``total_matched``/``capped``)."""
-    from src.api.main import _query_articles
+    """Outbound links SHARED across the analysis corpus (an explicit article-id set or
+    the search) — the Links tab. Surfaces shared-ORIGIN structure: a URL cited by
+    several of the articles. Convergence corroborates ONLY when the paths are
+    independent -- several articles citing the SAME origin are one source wearing
+    several hats, NOT independent confirmation. Counts only; bounded to ``cap``
+    (disclosed via ``total_matched``/``capped``)."""
+    from src.api.insights import _resolve_corpus
 
-    articles, total = _query_articles(
-        db, query=query, source=source, start_date=start_date, end_date=end_date,
-        language=language, tags=tags, limit=cap, offset=0,
+    ids, total = _resolve_corpus(
+        db, article_ids, query=query, source=source, start_date=start_date,
+        end_date=end_date, language=language, tags=tags, cap=cap,
     )
-    ids = [a.id for a in articles]
     items: list[dict] = []
     if ids:
         cit = func.count(func.distinct(ArticleLink.article_id))
