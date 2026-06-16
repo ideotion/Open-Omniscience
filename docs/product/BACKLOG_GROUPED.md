@@ -289,9 +289,18 @@ makes the rest fall out cheaply:
 - 🔨 **In-app Ollama + model installer** — backend slice 1 SHIPPED: `OllamaClient.pull`
   (streams ollama's real /api/pull progress) + `.remove`; `POST /api/llm/pull` (NDJSON
   StreamingResponse) + `POST /api/llm/remove`; kill-switch + loopback + model-name
-  validation; tests in test_llm_ollama.py. REMAINING: the Settings LLM SUBTAB UI
-  (consent #14 + clearnet disclosure + task-manager job), the binary installer (verify
-  + visible elevation), live library browse, stored active-model setting.
+  validation; tests in test_llm_ollama.py.
+  SETTINGS LLM SUBTAB UI SHIPPED 2026-06-16 (conservative, browser-unverified): a dedicated
+  Settings → **Models** subtab (`data-tab="models"` / `#set-models`, Q6=A — the read-only
+  panel moved out of General) with explicit actions over the existing endpoints — **pull**
+  (raw `fetch` reading the NDJSON stream → live status/percent, invariant #20), **remove**,
+  and the **active-model** picker (`Set active` → `PUT /api/settings {llm_model}`, Q10) +
+  per-catalog-row Pull buttons + a free-text "pull any tag" box (Q8). Pulling is gated by
+  the ONE consent (`ensureOnline`, #14) with a VISIBLE clearnet-egress disclosure (the
+  bytes go over clearnet via the Ollama process, NOT Tor — Q9); +27 i18n ×12;
+  `test_ui_invariants` #28. REMAINING: the binary installer (Q7=B — BLOCKED offline: needs
+  real per-OS installer checksums verified against clearnet, can't fabricate; do on a
+  networked machine), the live ollama.com library browse (Q8), pulls as task-manager jobs.
 - ⬜ **In-app Ollama + model installer (orig note)** — detect/install, catalog picker (size/
   RAM/license, never a score), pulls as task-manager jobs. (designed)
 - ⬜ **App self-update via the GUI** — signed backup → install snapshot → staged

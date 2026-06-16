@@ -923,10 +923,18 @@ ruling, a contingency, or a deliberate-omission note.
   transport honesty in the docstring) + loopback-only; a strict model-name regex
   blocks path injection (tests assert no ollama call for a bad name). tests in
   test_llm_ollama.py (stream parse, remove+404, kill-switch refuses pull/remove,
-  bad-name 400). REMAINING: the Settings LLM SUBTAB UI (pull/remove buttons + the
-  ONE consent #14 + clearnet disclosure + task-manager job); the binary-installer
-  (Q7=B download+verify+run official installer with a VISIBLE elevation step); live
-  ollama.com library browse (Q8).
+  bad-name 400). **SETTINGS LLM SUBTAB UI SHIPPED 2026-06-16 (conservative,
+  browser-unverified):** a dedicated Settings → Models subtab (`data-tab="models"` /
+  `#set-models`, Q6=A — the read-only panel moved out of General) with explicit actions —
+  pull (raw fetch reading the NDJSON stream → live status/percent, invariant #20), remove,
+  the active-model picker (`Set active` → PUT /api/settings {llm_model}, Q10) + per-catalog
+  Pull buttons + a free-text pull-any-tag box (Q8). Pull gated by the ONE consent
+  (ensureOnline #14) + a VISIBLE clearnet-egress disclosure (bytes go over clearnet via the
+  ollama process, NOT Tor — Q9); +27 i18n ×12; test_ui_invariants #28. REMAINING: the
+  binary-installer (Q7=B download+verify+run official installer with a VISIBLE elevation
+  step) — BLOCKED OFFLINE (needs real per-OS installer checksums verified against clearnet;
+  fabricating them = forbidden — do on a networked machine); live ollama.com library
+  browse (Q8); pulls as task-manager jobs.
   **Q10 SHIPPED 2026-06-16 (backend):** `AppSettings.llm_model` (a persisted UI
   preference, model-name-validated against injection; "" clears it) replaces env-only
   `OO_LLM_MODEL` as the operator default; `api.llm.active_model()` resolves stored ||

@@ -959,6 +959,7 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow
+      if (cat === "models") loadLlmModels();          // the dedicated LLM-management subtab (Q6)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") loadAtRestState();       // honest at-rest attestation (doctor)
@@ -2635,36 +2636,103 @@
     const _media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
 
     async function loadLlmModels() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("llm-models-box");
       if (!box) return;
       let d;
       try { d = await api("/api/llm/models"); }
-      catch (e) { box.innerHTML = `<p class="muted">Model info unavailable: ${esc(e.message)}</p>`; return; }
+      catch (e) { box.innerHTML = `<p class="muted">${esc(t("Model info unavailable:"))} ${esc(e.message)}</p>`; return; }
       if (!d.available) {
-        box.innerHTML = `<p class="muted">Ollama isn't running. Start it (or install it) to use
-          the LLM features; once running, your installed models appear here.</p>`;
+        box.innerHTML = `<p class="muted">${esc(t("Ollama isn't running. Start it (or install it) to use the LLM features; once running, your installed models appear here."))}</p>`;
         return;
       }
       const FIT = {fits:["✓ fits","ok"], tight:["~ tight","warn"], too_large:["✗ too large","err"], unknown:["?","muted"]};
-      const ram = d.total_ram_gb ? `${d.total_ram_gb} GB RAM detected` : "RAM unknown";
+      const ram = d.total_ram_gb ? `${d.total_ram_gb} GB RAM detected` : t("RAM unknown");
+      const active = d.active || d.default;   // the stored UI choice (Q10), else the default
       const installed = (d.installed || []).length
-        ? "<table><tr><th>Installed model</th><th>Size</th><th>Updated</th></tr>" +
-          d.installed.map(m => `<tr><td><code>${esc(m.tag)}</code>${m.tag === d.default ? ' <span class="pill ok">default</span>' : ''}</td>` +
-            `<td>${m.size_gb != null ? m.size_gb + " GB" : ""}</td><td>${esc((m.modified || "").slice(0,10))}</td></tr>`).join("") + "</table>"
-        : '<p class="muted">No models installed yet — pull one below.</p>';
+        ? `<table><tr><th>${esc(t("Installed model"))}</th><th>${esc(t("Size"))}</th><th>${esc(t("Updated"))}</th><th></th></tr>` +
+          d.installed.map(m => {
+            const isActive = m.tag === active;
+            const badge = isActive ? ` <span class="pill ok">${esc(t("active"))}</span>` : "";
+            const setBtn = isActive ? "" : `<button class="tiny secondary" onclick="setActiveModel(${esc(JSON.stringify(m.tag))})">${esc(t("Set active"))}</button> `;
+            return `<tr><td><code>${esc(m.tag)}</code>${badge}</td>` +
+              `<td>${m.size_gb != null ? m.size_gb + " GB" : ""}</td><td>${esc((m.modified || "").slice(0,10))}</td>` +
+              `<td style="white-space:nowrap">${setBtn}<button class="tiny danger" onclick="removeModel(${esc(JSON.stringify(m.tag))})">${esc(t("Remove"))}</button></td></tr>`;
+          }).join("") + "</table>"
+        : `<p class="muted">${esc(t("No models installed yet — pull one below."))}</p>`;
       const cat = (d.catalog || []).map(m => {
         const [lbl, cls] = FIT[m.fit] || FIT.unknown;
         return `<tr><td><code>${esc(m.tag)}</code></td><td>${esc(m.size)}</td>` +
           `<td class="${cls === 'ok' ? '' : cls}"><span class="pill ${cls === 'err' ? 'err' : (cls === 'warn' ? 'warn' : 'ok')}">${esc(lbl)}</span></td>` +
           `<td class="muted">${esc(m.note)}</td>` +
-          `<td><code>ollama pull ${esc(m.tag)}</code></td></tr>`;
+          `<td><button class="tiny" onclick="pullModel(${esc(JSON.stringify(m.tag))})">${esc(t("Pull"))}</button></td></tr>`;
       }).join("");
       box.innerHTML = `<p class="muted">${esc(ram)}.</p>` + installed +
-        `<h3 style="margin:14px 0 4px">Suggested models <span class="muted" style="font-weight:400">(as of ${esc(d.catalog_as_of)} — newer likely exist)</span></h3>` +
-        `<table><tr><th>Model</th><th>Size</th><th>Your hardware</th><th>Note</th><th>To install</th></tr>${cat}</table>` +
-        `<div class="hint">Hardware fit is advisory — it informs your choice, it doesn't decide. Pull any model from
-         <a href="https://ollama.com/library" target="_blank" rel="noopener">the full library</a>; set the active one with
-         <code>OO_LLM_MODEL</code> or per request.</div>`;
+        `<h3 style="margin:14px 0 4px">${esc(t("Suggested models"))} <span class="muted" style="font-weight:400">(${esc(t("as of"))} ${esc(d.catalog_as_of)} — ${esc(t("newer likely exist"))})</span></h3>` +
+        `<table><tr><th>${esc(t("Model"))}</th><th>${esc(t("Size"))}</th><th>${esc(t("Your hardware"))}</th><th>${esc(t("Note"))}</th><th></th></tr>${cat}</table>` +
+        `<div class="hint">${esc(t("Hardware fit is advisory — it informs your choice, it doesn't decide. Pull any model from the full library below."))}</div>`;
+    }
+    async function setActiveModel(tag) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        await api("/api/settings", {method: "PUT", body: JSON.stringify({llm_model: tag})});
+        toast(t("Active model set:") + " " + tag); loadLlmModels();
+      } catch (e) { toast(t("Could not set the active model:") + " " + e.message, "err"); }
+    }
+    async function removeModel(tag) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Remove this model and free its disk space?") + "\n" + tag)) return;
+      try {
+        await api("/api/llm/remove", {method: "POST", body: JSON.stringify({model: tag})});
+        toast(t("Removed") + " " + tag); loadLlmModels();
+      } catch (e) { toast(t("Remove failed:") + " " + e.message, "err"); }
+    }
+    function pullModelFromBox() {
+      const el = $("llm-pull-tag"); if (!el) return;
+      const tag = el.value.trim();
+      if (tag) pullModel(tag);
+    }
+    // Pull a model: a NETWORK action over CLEARNET via the Ollama process (NOT this
+    // app's Tor proxy), so it passes the ONE consent popup (ensureOnline, invariant
+    // #14) and is refused under airplane mode (the backend OllamaClient enforces the
+    // kill switch too). Streams Ollama's REAL NDJSON progress (invariant #20 — never
+    // a fabricated bar); degrades to a status line, never throws.
+    async function pullModel(tag) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!tag) return;
+      if (!await ensureOnline(t("Pull a local model (downloads over the clear internet via Ollama)"))) return;
+      const prog = $("llm-pull-progress");
+      if (prog) prog.textContent = t("Starting…") + " " + tag;
+      try {
+        const resp = await fetch("/api/llm/pull", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({model: tag}),
+        });
+        if (!resp.ok || !resp.body) {
+          if (prog) prog.textContent = t("Pull failed.") + " (" + resp.status + ")";
+          return;
+        }
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        for (;;) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, {stream: true});
+          const lines = buf.split("\n");
+          buf = lines.pop();   // keep the partial last line for the next chunk
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            let o; try { o = JSON.parse(line); } catch { continue; }
+            if (o.error) { if (prog) prog.textContent = t("Pull failed:") + " " + o.error; return; }
+            const pct = (o.total && o.completed) ? " — " + Math.round(100 * o.completed / o.total) + "%" : "";
+            if (prog) prog.textContent = tag + ": " + (o.status || "") + pct;
+          }
+        }
+        if (prog) prog.textContent = t("Pulled") + " " + tag;
+        const el = $("llm-pull-tag"); if (el) el.value = "";
+        loadLlmModels();
+      } catch (e) { if (prog) prog.textContent = t("Pull failed:") + " " + e.message; }
     }
 
     async function loadSettings() {
@@ -2684,7 +2752,7 @@
         syncThemeSelect();
         _syncRerunGuide();   // reflect the local one-time guide state in the toggle
       } catch (e) { toast("Could not load settings: " + e.message, "err"); }
-      loadLlmModels();
+      // LLM models load lazily when the dedicated Models subtab opens (showSetCat).
       // Backup support is backend-dependent; reflect reality, never assume.
       try {
         const st = await api("/api/database/stats");
