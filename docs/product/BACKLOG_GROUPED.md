@@ -347,9 +347,14 @@ makes the rest fall out cheaply:
   `loadOsmDownloads` / `startOsmDownload` / `pauseOsm` / `resumeOsm` / `deleteOsm`, mirroring
   the wiki dump UI); STARTING a download passes the ONE consent popup (`ensureOnline`,
   invariant #14) so it is refused under airplane mode; +9 i18n keys ×12; `test_ui_invariants`
-  #27 asserts the panel + loader + endpoints + the ensureOnline gate. REMAINING: the
-  task-manager WINDOW wiring (per-job rate/%/ETA/cap controls + reorder UI — backend
-  `reorder`/`resume` endpoints already exist), country sub-extracts, the consented exact-size
+  #27 asserts the panel + loader + endpoints + the ensureOnline gate.
+  TASK-MANAGER JOBS WIRING SHIPPED 2026-06-16: `_osm_jobs()` in `src/api/jobs.py` surfaces
+  OSM region downloads in the unified `/api/jobs` view alongside wiki dumps (kind
+  `osm-map`, real queue_position, progress, actions) — aggregated live, no shadow state;
+  a downloading extract writes a FILE so it never trips the DB-writer arbitration ask;
+  `cancel_job` handles `osm:` ids (pause, resumable) + `POST /api/jobs/osm/reorder`.
+  tests/test_osm_jobs.py. REMAINING: the per-job rate/%/ETA/cap CONTROLS in the
+  task-manager window UI (frontend), country sub-extracts, the consented exact-size
   refresh, and the hand-rolled offline map renderer.
 - ⬜ **Hand-rolled offline vector map** — canvas 2.5D / CSS-3D, NO WebGL/Three.js; reuse
   the bundled Natural-Earth coastline + the temporal-map projection.
