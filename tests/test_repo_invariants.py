@@ -87,6 +87,49 @@ def test_dormant_credibility_columns_never_serialized():
     )
 
 
+def test_reliability_score_is_operator_set_never_computed():
+    """``reliability_score`` is an INTENTIONAL exemption to the no-composite-score
+    rule (audit PR E, DEFAULT APPLIED): it is operator-asserted provenance metadata
+    (a 1-10 number the operator sets per source via config/CSV import), NOT a value
+    the app computes. The fabricated ``=5`` default was already NULLed (migration
+    f4b5c6d7e8a9). Unlike credibility_score/political_bias (never serialized), this
+    field IS exposed — so the guard here is different: it must never be DERIVED from
+    article data, and a briefing card can never present it as a score.
+
+    This pins the exemption so a future contributor cannot quietly turn it into a
+    computed quality verdict (the exact honesty violation the project forbids).
+    """
+    # 1. A briefing card can NEVER carry it — it stays in card.py's forbidden
+    #    score-field set (mechanically rejected by the card schema).
+    card_src = (_SRC / "briefing" / "card.py").read_text(encoding="utf-8")
+    assert '"reliability_score"' in card_src, (
+        "reliability_score must remain in card.py's forbidden score-field set "
+        "(a card may never present it as a computed score)"
+    )
+    # 2. No analytics/derivation module may ASSIGN it — it is only ever set from
+    #    operator config/import (catalog/csv_io, ingest/seed) or left None. A
+    #    computed write here would resurrect a fabricated quality score.
+    write = re.compile(
+        r"\.reliability_score\s*=(?!=)|\[[\"']reliability_score[\"']\]\s*=(?!=)"
+    )
+    for sub in ("analysis", "analytics", "awareness", "briefing", "integrity", "signals"):
+        d = _SRC / sub
+        if not d.exists():
+            continue
+        for p in d.rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            assert not write.search(p.read_text(encoding="utf-8")), (
+                f"{p.relative_to(_ROOT)}: reliability_score must never be computed/"
+                "derived by analytics — it is operator-set only (CLAUDE.md exemption)"
+            )
+    # 3. It stays an operator-importable column (the legitimate input path).
+    csv_src = (_SRC / "catalog" / "csv_io.py").read_text(encoding="utf-8")
+    assert "reliability_score" in csv_src, (
+        "reliability_score must stay an operator-set CSV-import column"
+    )
+
+
 def test_no_dangerous_eval_or_deserialization_sinks():
     """S-010: live code must stay free of code-exec / unsafe-deserialization sinks."""
     banned = re.compile(

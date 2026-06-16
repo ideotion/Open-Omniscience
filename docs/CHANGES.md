@@ -20,6 +20,14 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   by events, not timing). The feed-backoff timing tests gained a skip-when-inconclusive
   guard so a pathologically slow CI box can't redden the absolute-seconds bound while
   the backoff logic stays asserted.
+- **`reliability_score` honesty guard (audit PR E).** The per-source
+  `reliability_score` (1–10) is **operator-set provenance** — a value *you* assign,
+  never a quality verdict the app computes. It's now documented in
+  [ETHICS.md](ETHICS.md) as the one intentional exemption to the no-composite-score
+  rule, labelled **"operator-set, not computed"** in the UI (with the full
+  explanation in the hover, ×12 locales), and locked by a repo invariant so it can
+  never quietly become a derived/computed score. *(Default applied; the maintainer
+  can choose to retire it from the API instead.)*
 
 
 - **CI hygiene (audit PR D).** The CI workflow now declares least-privilege
