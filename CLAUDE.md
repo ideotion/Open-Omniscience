@@ -1501,8 +1501,13 @@ ruling, a contingency, or a deliberate-omission note.
     caveat), reusing `termListHtml`; ADDITIVE — the adjustable single-window Rising/Top
     view stays below (the Desk lesson); defensive (error leaves the single-window view
     intact). +5 strings ×12; test_ui_invariants #21b pins `#trd-windows` + the loader.
-    REMAINING: the per-window top-5 ooChart time series + the maintainer's wider Trends
-    redesign (remove the Insights search bar once the omnibar absorbs term-exploration).
+    SERIES BACKEND SHIPPED 2026-06-16: `/api/insights/trending-windows?series_top=N` (an
+    ADDITIVE param, default 0 = unchanged) attaches a daily `series:[{date,count}]` to the
+    first N terms of each window, REUSING `queries.trend(bucket="day")` sliced to the window
+    range so the numbers match the existing trend chart (counts only, no score;
+    tests/test_trending_windows_series.py). REMAINING: the per-window top-5 ooChart FRONTEND
+    consuming `series_top` + the maintainer's wider Trends redesign (remove the Insights
+    search bar once the omnibar absorbs term-exploration).
   - **(6) UNIFIED 3D KEYWORD EXPLORER (ruled 2026-06-16; maintainer FLAGSHIP —
     "important to me", "incredible UI/UX"; evolves the mind-map rules + #mm-kit;
     lives in Insights per (5)):** THREE fixes + one big rework. FIXES: (a) the
