@@ -157,11 +157,10 @@ def test_dump_language_list_is_limited_to_app_languages(client):
     assert "eo" in full_codes  # the full picker keeps Esperanto...
     assert "eo" not in dump_codes  # ...the heavy dump surface does not
     assert {"en", "fr", "ar", "zh"} <= dump_codes
-    # the grouped form is filtered consistently
-    grouped_codes = {
-        lang["code"] for g in dumps["groups"] for lang in g["languages"]
-    }
-    assert grouped_codes == dump_codes
+    # Invariant #1 amendment (2026-06-16): the by-continent groups are GONE — the
+    # endpoint emits ONE flat list (both scopes), so the dump scope no longer
+    # carries a `groups` form to cross-check.
+    assert "groups" not in dumps and "groups" not in full
 
 
 def test_multistream_is_the_default_and_index_rides_along(client, tmp_path, monkeypatch):
