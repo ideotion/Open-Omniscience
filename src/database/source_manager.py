@@ -489,7 +489,6 @@ class SourceManager:
             return 0
 
         sources = self.session.query(Source).filter(Source.id.in_(source_ids)).all()
-        source_set = set(sources)
 
         # Get current sources in group
         current_sources = group.sources.all()
