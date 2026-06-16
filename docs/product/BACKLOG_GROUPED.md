@@ -241,6 +241,12 @@ makes the rest fall out cheaply:
   pins the flat/UI-first/`no groups` contract.
 - ⬜ **Auto-watch all 12 UI-language editions by default.**
 - ⬜ **Wikipedia tab → Settings** (test-gated).
+- 🔨 **Inline auto size estimates** (invariant ruling 2026-06-16) — BUNDLED-TABLE
+  HALF SHIPPED: `src/wiki/dump_sizes.py` (`DUMP_SIZES_AS_OF` + per-edition approx
+  multistream sizes + freshness test) feeds `/api/wiki/languages?scope=dumps`
+  (`size_estimate_bytes` + `size_estimate_as_of`); the picker shows `· ~X GB`
+  inline + a dated caveat (×12), zero-network. REMAINING: drop the per-edition
+  "Estimate size" probe, replace with ONE consented single-call dumpstatus refresh.
 - ⬜ **Dumps decided at first run; non-blocking; task-manager controls**
   (rate/%/speed/cap/ETA/pause/resume/prioritize).
 - ⬜ **Dedicated tracked-changes tab** (the full-attention GUI).

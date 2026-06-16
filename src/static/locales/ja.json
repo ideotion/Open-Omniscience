@@ -970,5 +970,7 @@
   "September equinox": "9月分点",
   "December solstice": "12月至点",
   "(the selected article set)": "（選択した記事の集合）",
-  "Showing the exact article set behind this card.": "このカードの基になった正確な記事の集合を表示しています。"
+  "Showing the exact article set behind this card.": "このカードの基になった正確な記事の集合を表示しています。",
+  "Inline sizes are estimates — the exact size is read on download.": "表示サイズは推定値です — 正確なサイズはダウンロード時に取得されます。",
+  "reviewed": "確認"
 }

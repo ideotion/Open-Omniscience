@@ -1041,9 +1041,11 @@
         <div id="dump-estimate" class="hint" style="align-self:center"></div>
       </div>
       <div class="hint">The list is limited to the app's languages — the editions this app can read and analyze.
-        <strong>Type in the box to filter</strong> by name, autonym or code. Sizes shown are coarse heaviness
-        hints, while <em>Estimate size</em> reports the exact current dump size from the server. You can also
-        type any edition code that isn't listed.</div>
+        <strong>Type in the box to filter</strong> by name, autonym or code. Each edition shows a coarse size
+        tier and an estimated download size inline, while <em>Estimate size</em> reports the exact current dump
+        size from the server. You can also type any edition code that isn't listed.</div>
+      <div id="dump-size-note" class="hint" hidden><span>Inline sizes are estimates — the exact size is read on download.</span>
+        <span class="muted">· <span>reviewed</span> <span id="dump-size-asof"></span></span></div>
       <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>
       <h3 style="margin-top:14px">Read a page from a downloaded dump</h3>
       <div class="row">
