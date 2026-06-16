@@ -918,6 +918,20 @@ ruling, a contingency, or a deliberate-omission note.
   echo/lineage signals. READER bar (repeated ×2): sleek, data-oriented,
   visually rich, ethical, scientifically driven. The two-class metadata
   header (source-asserted vs app-deduced) already shipped.
+  **READER TABS SLICE 1 SHIPPED 2026-06-16 (Tier 1, PR1):** the offline reader
+  (`/api/articles/{id}/view`) gained a sub-tab bar — Read · Keywords · Sentiment ·
+  Related · Links — via a self-contained `/static/reader.js` + `reader.css`. AUTONOMOUS
+  ARCHITECTURE CALL: the reader is a STANDALONE server page that doesn't load the SPA
+  bundle, so it gets its OWN small module (chosen over routing the article into the
+  in-SPA #an window — that would brush the deferred two-windows consolidation debt).
+  Read/Related/Links reuse the already-server-rendered sections (now tab panes);
+  Keywords + Sentiment LAZY-fetch the article_ids-aware insights endpoints
+  (corpus-keywords / corpus-sentiment) at n=1 (article = corpus of 1) — counts only
+  (no score), method + the VADER English-only caveat VISIBLE by default (B1). The
+  reader page is English-only (no i18n engine there — consistent with the existing
+  reader; the SPA chrome is the i18n target). tests/test_reader_tabs.py + node --check.
+  REMAINING (next stacked slice, PR1b): Mindmap (needs /api/insights/graph to accept
+  article_ids, today term=-centred) + a richer Source/WWW profile tab.
 - **SEARCH = ONE CENTRAL ANALYTICAL TOOL (field reports #3/#4 + 2026-06-12
   refinements; supersedes-and-extends the 2026-06-10 global-search design):**
   instant index-backed omnibar (never scan-on-type), federated over articles
@@ -1404,7 +1418,13 @@ ruling, a contingency, or a deliberate-omission note.
   uses history.replaceState (index.html:2524, no history entries) and a
   locked API response does location.href="/unlock" (index.html:2451), so
   Back lands on /unlock; fix = pushState for tab nav + replaceState to "/"
-  after unlock. (b) "Scraping STOPPED" is NOT a crash — the scheduler idles
+  after unlock. **VERIFIED ALREADY FIXED 2026-06-16 (Tier-0 pass, no code change
+  needed): all three are done in code — tab nav uses pushState (src/static/app.js,
+  with replaceState only for the initial load), the locked-API response uses
+  location.replace("/unlock") (no history entry), and unlock.html redirects via
+  location.replace("/") ("replace so /unlock never sits in history"). The
+  index.html:2524/2451 pointers predate the #236 decomposition; that JS lives in
+  app.js/unlock.html now.** (b) "Scraping STOPPED" is NOT a crash — the scheduler idles
   interval_minutes between passes (runner.py:326); the content-first
   continuous-collection ruling makes the idle gap + the in-face arbitration
   modal disappear (app boots in AIRPLANE MODE; permanent scraping when
