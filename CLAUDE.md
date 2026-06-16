@@ -1219,10 +1219,20 @@ ruling, a contingency, or a deliberate-omission note.
   reproduces the EXACT, FULL selection (openAnalysisFor re-runs the same FTS search);
   for set-based cards it is the closest honest query and the analysis window states
   its scope. Clicks on inner buttons/links/inputs are ignored. +1 hover title ×12.
-  AUTONOMOUS CALL: query-seed v1 (no backend change beyond serializing `key`);
-  ARTICLE-ID-EXACT seeding for set-based cards (echo/convergence/diet) = a clean
-  follow-up (an `article_ids` param on the corpus-* endpoints + producers surfacing
-  their full set). Earlier note kept: per-card-TYPE investigate views
+  AUTONOMOUS CALL: query-seed v1 (no backend change beyond serializing `key`).
+  **ARTICLE-ID-EXACT SEEDING SHIPPED 2026-06-16 (maintainer-ruled "exact set for every
+  card", PRs #241 + producers/frontend):** all 5 analysis endpoints (corpus-keywords/
+  www/sentiment/sources + links/corpus) accept an explicit `article_ids` set via the
+  shared `_resolve_corpus` (explicit set wins over search; deduped/bounded/total
+  disclosed; search path byte-unchanged); set-based cards carry their FULL set on the
+  Card (`article_ids` field + to_dict) — convergence = `c["article_ids"]`, echo-chamber
+  = ALL coordinated representatives (not the 4-item sample); the frontend
+  `openAnalysisForIds(ids,label)` + `_anIds` threads them through every subtab via
+  `anParams` (cleared on a fresh query / Advanced refine). PER-PRODUCER NUANCE (ruled
+  by the data, not uniform): reading-diet is a WHOLE-CORPUS source distribution with no
+  single clean set → it keeps the query/source seed, NOT a fabricated id list. Tests:
+  test_corpus_endpoints_accept_explicit_article_ids + the convergence producer asserts
+  card.article_ids == the exact converging set. Earlier note kept: per-card-TYPE investigate views
   (rising→trend+associations; diet/coverage→sources; echo→integrity; law/wiki→reader)
   + the card-feed visual/UX remake still wanted (flagship surface). **REMOVE the home HERO card — SHIPPED 2026-06-14:** the
   "Understand the world as it really is. / Your private, offline research

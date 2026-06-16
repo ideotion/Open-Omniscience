@@ -3742,8 +3742,15 @@
       // standalone /investigate new tab — that stays as the explicit "Open
       // investigation ↗" button below). Clicks on inner controls are ignored.
       const _aq = cardAnalyzeQuery(c);
+      // Set-based cards (echo / convergence) carry their EXACT article set: open the
+      // analysis window over precisely those ids. Keyword/topic/whole-corpus cards
+      // fall back to the query (which reproduces their selection via the same search).
+      const _aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
+      const _aOpen = _aIds
+        ? `openAnalysisForIds(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))})`
+        : `openAnalysisFor(${esc(JSON.stringify(_aq))})`;
       const cardOpen = _aq
-        ? ` style="cursor:pointer" title="Open in analysis — the article selection behind this card" onclick="if(!event.target.closest('button,a,details,summary,input,label'))openAnalysisFor(${esc(JSON.stringify(_aq))})"`
+        ? ` style="cursor:pointer" title="Open in analysis — the article selection behind this card" onclick="if(!event.target.closest('button,a,details,summary,input,label'))${_aOpen}"`
         : "";
       // The CAVEAT is visible by default (informed-consent mandate: never hidden
       // behind a calm-UI toggle). Only the verbose Method/math stays in the
@@ -8963,14 +8970,33 @@
     // window's exports describe exactly the article set it is analysing (the Search-tab
     // capabilities are absorbed here, toward the one-search-entry goal).
     function anQuery() { return ($("an-adv-query").value || "").trim(); }
+    // The EXACT article set behind a clicked card (maintainer-ruled 2026-06-16). When
+    // set, the analysis window's corpus IS precisely these articles — every subtab
+    // passes article_ids, and the backend's _resolve_corpus prefers them over a
+    // search. null = the normal omnibar/Advanced search path.
+    let _anIds = null;
     function anParams() {
       const p = new URLSearchParams();
+      if (_anIds && _anIds.length) { p.set("article_ids", _anIds.join(",")); return p; }
       const q = anQuery(); if (q) p.set("query", q);
       const src = $("an-adv-source").value.trim(); if (src) p.set("source", src);
       const lang = $("an-adv-lang").value.trim(); if (lang) p.set("language", lang);
       if ($("an-adv-from").value) p.set("start_date", $("an-adv-from").value);
       if ($("an-adv-to").value) p.set("end_date", $("an-adv-to").value);
       return p;
+    }
+    // Open the analysis window over an EXACT article set (a set-based card's precise
+    // selection — echo / convergence). The corpus is exactly these ids, not a re-run
+    // search. The Advanced tab can refine FROM here (which clears the fixed set).
+    function openAnalysisForIds(ids, label) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _anIds = Array.isArray(ids) ? ids.slice(0, 5000) : null;
+      $("an-adv-query").value = ""; $("an-adv-source").value = "";
+      $("an-adv-lang").value = ""; $("an-adv-from").value = ""; $("an-adv-to").value = "";
+      $("an-query").textContent = label ? `“${label}”` : t("(the selected article set)");
+      $("an-adv-note").textContent = t("Showing the exact article set behind this card.");
+      showTab("analyze");
+      loadAnalysis(anParams());
     }
 
     // --- Analysis window (Group F): analytics over the articles a search matched.
@@ -8979,6 +9005,7 @@
     // Open the analysis window seeded with an explicit query (the omnibar Enter
     // path — ruled: Enter -> a corpus-of-articles window, not the Search tab).
     function openAnalysisFor(query) {
+      _anIds = null;   // a fresh query, not a fixed article set
       const q = (query || "").trim();
       $("an-adv-query").value = q;
       $("an-adv-source").value = ""; $("an-adv-lang").value = "";
@@ -9009,6 +9036,7 @@
     // Advanced tab: refine the analyzed article set in-place. loadAnalysis re-runs
     // EVERY subtab from the params, so this is the whole wiring.
     function anRunAdvanced() {
+      _anIds = null;   // refining via Advanced search replaces any fixed article set
       const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const p = new URLSearchParams();
       const q = $("an-adv-query").value.trim(); if (q) p.set("query", q);

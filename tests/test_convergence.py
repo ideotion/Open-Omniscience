@@ -245,6 +245,11 @@ def test_producer_emits_valid_card_with_trigger_and_no_score(session):
     assert any(r["value"] == "2" for r in rows)
     # Evidence links back to the corpus.
     assert any(ev.get("url") for ev in card.evidence)
+    # Exact-corpus seeding (maintainer 2026-06-16): the card carries the FULL
+    # converging article set (not just the 4-item evidence sample) so the UI opens
+    # the analysis window over PRECISELY these articles, never a re-run search.
+    assert sorted(card.article_ids) == [1, 2, 3]
+    assert card.to_dict()["article_ids"] == card.article_ids
 
 
 def test_empty_corpus_degrades_loudly_not_a_fake_card(session):
