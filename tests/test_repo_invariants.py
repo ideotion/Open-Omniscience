@@ -590,6 +590,13 @@ def test_ui_invariants():
     assert "function autoIndexInsights(" in html and "autoIndexInsights()" in html, (
         "Insights must auto-index in the background (UI_SHELL §6)"
     )
+    # 21b. Insights Trends shows the THREE preset windows side by side (24h · week ·
+    #      month) — the ruled Trends redesign (2026-06-16). Additive to the
+    #      adjustable single-window view; fed by /api/insights/trending-windows.
+    assert 'id="trd-windows"' in html, "the Trends 3-window panel container must exist (Trends redesign)"
+    assert "function loadTrendWindows(" in html and "/api/insights/trending-windows" in html, (
+        "loadTrendWindows() must render the three preset windows from /trending-windows"
+    )
     # 22. The analysis window (Group F, keystone #4): a full-screen #analyze tab
     #     driven by the universal subtab component, fed by the article-SET keyword
     #     endpoint, opened from the Search tab's Analyze button. Counts, no verdict.

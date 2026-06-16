@@ -1443,8 +1443,14 @@ ruling, a contingency, or a deliberate-omission note.
     side (24h/7d/30d, each its own prior-period baseline), reusing `trending` (the
     same disclosed recent-vs-prior RATE RATIO, never a score); each term carries its
     raw `recent` count (n) + the early-corpus caveat travels with the data.
-    tests/test_trending_windows.py. REMAINING: the #ins-trends FRONTEND (three
-    columns + the top-5 ooChart time series per window) — the app.js slice.
+    tests/test_trending_windows.py. **FRONTEND SLICE 1 SHIPPED 2026-06-16 (conservative,
+    browser-unverified):** `#trd-windows` panel + `loadTrendWindows()` render the THREE
+    windows side by side (translated "Past 24h/week/month" labels + per-window n + the
+    caveat), reusing `termListHtml`; ADDITIVE — the adjustable single-window Rising/Top
+    view stays below (the Desk lesson); defensive (error leaves the single-window view
+    intact). +5 strings ×12; test_ui_invariants #21b pins `#trd-windows` + the loader.
+    REMAINING: the per-window top-5 ooChart time series + the maintainer's wider Trends
+    redesign (remove the Insights search bar once the omnibar absorbs term-exploration).
   - **(6) UNIFIED 3D KEYWORD EXPLORER (ruled 2026-06-16; maintainer FLAGSHIP —
     "important to me", "incredible UI/UX"; evolves the mind-map rules + #mm-kit;
     lives in Insights per (5)):** THREE fixes + one big rework. FIXES: (a) the

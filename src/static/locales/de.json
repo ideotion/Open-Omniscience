@@ -972,5 +972,10 @@
   "Early stage: the Leads rest on thin evidence — read them as first hints, not established patterns.": "Frühes Stadium: Die Spuren beruhen auf dünner Beleglage — als erste Hinweise lesen, nicht als gesicherte Muster.",
   "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.": "reliability_score ist ein Herkunfts-Metadatum, das Sie als Betreiber je Quelle festlegen. Die App berechnet es nie, vergibt keinen Standardwert und leitet es nie aus Artikeltext ab; sie baut daraus weder Spur noch Score.",
   "Open in analysis — the article selection behind this Lead": "In der Analyse öffnen — die Artikelauswahl hinter dieser Spur",
-  "Showing the exact article set behind this Lead.": "Zeigt die exakte Artikelmenge hinter dieser Spur."
+  "Showing the exact article set behind this Lead.": "Zeigt die exakte Artikelmenge hinter dieser Spur.",
+  "Rising — three windows": "Im Aufwind — drei Zeitfenster",
+  "Past 24h": "Letzte 24 Std.",
+  "Past week": "Letzte Woche",
+  "Past month": "Letzter Monat",
+  "No rising keywords in this window yet.": "Noch keine aufsteigenden Schlüsselwörter in diesem Zeitfenster."
 }

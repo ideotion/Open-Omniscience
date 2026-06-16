@@ -972,5 +972,10 @@
   "Early stage: the Leads rest on thin evidence — read them as first hints, not established patterns.": "初期段階：手がかりは薄い根拠に基づきます——確立したパターンではなく最初の手がかりとして読んでください。",
   "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.": "reliability_score は、オペレーターであるあなたがソースごとに設定する来歴メタデータです。アプリが計算したり、既定値を与えたり、記事本文から導出したりすることは一切なく、これから手がかりやスコアを作ることもありません。",
   "Open in analysis — the article selection behind this Lead": "分析で開く — この手がかりの基になった記事の選択",
-  "Showing the exact article set behind this Lead.": "この手がかりの基になった正確な記事の集合を表示しています。"
+  "Showing the exact article set behind this Lead.": "この手がかりの基になった正確な記事の集合を表示しています。",
+  "Rising — three windows": "上昇中 — 3つの期間",
+  "Past 24h": "過去24時間",
+  "Past week": "過去1週間",
+  "Past month": "過去1か月",
+  "No rising keywords in this window yet.": "この期間に上昇中のキーワードはまだありません。"
 }

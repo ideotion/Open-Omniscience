@@ -972,5 +972,10 @@
   "Early stage: the Leads rest on thin evidence — read them as first hints, not established patterns.": "प्रारंभिक चरण: सुराग अल्प साक्ष्य पर टिके हैं — इन्हें पहले संकेत के रूप में पढ़ें, स्थापित प्रवृत्ति के रूप में नहीं।",
   "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.": "reliability_score एक उद्गम-मेटाडेटा है जिसे आप (ऑपरेटर) प्रति स्रोत निर्धारित करते हैं। ऐप इसे कभी गणना नहीं करता, न कोई डिफ़ॉल्ट देता है, न लेख-पाठ से निकालता है, और न ही इससे कोई सुराग या स्कोर बनाता है।",
   "Open in analysis — the article selection behind this Lead": "विश्लेषण में खोलें — इस सुराग के पीछे के लेखों का चयन",
-  "Showing the exact article set behind this Lead.": "इस सुराग के पीछे का सटीक लेख समूह दिखाया जा रहा है।"
+  "Showing the exact article set behind this Lead.": "इस सुराग के पीछे का सटीक लेख समूह दिखाया जा रहा है।",
+  "Rising — three windows": "बढ़ते हुए — तीन विंडो",
+  "Past 24h": "पिछले 24 घंटे",
+  "Past week": "पिछला सप्ताह",
+  "Past month": "पिछला महीना",
+  "No rising keywords in this window yet.": "इस विंडो में अभी तक कोई बढ़ता कीवर्ड नहीं है।"
 }
