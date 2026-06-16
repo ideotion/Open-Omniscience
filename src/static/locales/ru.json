@@ -983,5 +983,14 @@
   "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "Пока нет совпадений. Кластеру нужно минимум {a} статей И минимум {s} источников, указывающих одно место в пределах окна.",
   "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n} ссылок с общим источником — источники могут повторять одну цитату, а не независимое подтверждение.",
   "Showing {n} of {t} clusters.": "Показано {n} из {t} кластеров.",
-  "Could not load": "Не удалось загрузить"
+  "Could not load": "Не удалось загрузить",
+  "Progress": "Прогресс",
+  "Resume": "Возобновить",
+  "Delete": "Удалить",
+  "No offline downloads.": "Нет офлайн-загрузок.",
+  "Delete this download and its file?": "Удалить эту загрузку и её файл?",
+  "No regions.": "Нет регионов.",
+  "Could not load regions.": "Не удалось загрузить регионы.",
+  "Download an offline map region": "Загрузить регион офлайн-карты",
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "Загрузить этот регион офлайн-карты? Они могут быть очень большими (от нескольких ГБ до десятков ГБ)."
 }

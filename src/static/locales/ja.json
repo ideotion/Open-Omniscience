@@ -983,5 +983,14 @@
   "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "まだ収束はありません。クラスタには、ウィンドウ内で同じ場所を共有する記事が {a} 件以上かつソースが {s} 件以上必要です。",
   "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n} 件の同一出典リンク — 各ソースは独立した裏付けではなく、同じ引用を反復している可能性があります。",
   "Showing {n} of {t} clusters.": "{t} 件中 {n} 件のクラスタを表示しています。",
-  "Could not load": "読み込めませんでした"
+  "Could not load": "読み込めませんでした",
+  "Progress": "進捗",
+  "Resume": "再開",
+  "Delete": "削除",
+  "No offline downloads.": "オフラインダウンロードはありません。",
+  "Delete this download and its file?": "このダウンロードとそのファイルを削除しますか？",
+  "No regions.": "地域がありません。",
+  "Could not load regions.": "地域を読み込めませんでした。",
+  "Download an offline map region": "オフライン地図の地域をダウンロード",
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "このオフライン地図の地域をダウンロードしますか？非常に大きい場合があります（数 GB～数十 GB）。"
 }

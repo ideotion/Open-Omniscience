@@ -340,10 +340,17 @@ makes the rest fall out cheaply:
   `DELETE /downloads`, `POST /downloads/reorder`; catalog-validated → 404 for unknown
   regions, path-safe → 400). tests/test_osm_downloads.py (19: URL/path-safety, the
   download loop, parallel+queue+reorder, reload demotion, the guarded-token transport,
-  the API). REMAINING: the task-manager WINDOW wiring (a visible job + the per-job
-  rate/%/ETA/pause/resume/cap controls — the frontend gates `start` behind the ONE
-  consent popup #14), country sub-extracts, the consented exact-size refresh, and the
-  hand-rolled offline map renderer.
+  the API). SETTINGS FRONTEND SHIPPED 2026-06-16 (conservative, browser-unverified):
+  a new **Settings → Offline map** subtab (`data-tab="offlinemap"` / `#set-offlinemap`,
+  in `showSetCat`) with a zero-network region picker over `/api/geo/regions` (dated `~X GB`
+  estimates) + a resumable download-job table over `/api/geo/downloads` (`loadOsmMap` /
+  `loadOsmDownloads` / `startOsmDownload` / `pauseOsm` / `resumeOsm` / `deleteOsm`, mirroring
+  the wiki dump UI); STARTING a download passes the ONE consent popup (`ensureOnline`,
+  invariant #14) so it is refused under airplane mode; +9 i18n keys ×12; `test_ui_invariants`
+  #27 asserts the panel + loader + endpoints + the ensureOnline gate. REMAINING: the
+  task-manager WINDOW wiring (per-job rate/%/ETA/cap controls + reorder UI — backend
+  `reorder`/`resume` endpoints already exist), country sub-extracts, the consented exact-size
+  refresh, and the hand-rolled offline map renderer.
 - ⬜ **Hand-rolled offline vector map** — canvas 2.5D / CSS-3D, NO WebGL/Three.js; reuse
   the bundled Natural-Earth coastline + the temporal-map projection.
 - ⬜ **Temporal-map remainder** — linear/log toggle + mention layer fed by event-places.

@@ -983,5 +983,14 @@
   "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "Belum ada konvergensi. Sebuah klaster perlu setidaknya {a} artikel DAN setidaknya {s} sumber yang berbagi satu tempat dalam rentang waktu.",
   "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n} tautan beririsan sumber — sumber mungkin mengulang satu kutipan, bukan konfirmasi independen.",
   "Showing {n} of {t} clusters.": "Menampilkan {n} dari {t} klaster.",
-  "Could not load": "Tidak dapat memuat"
+  "Could not load": "Tidak dapat memuat",
+  "Progress": "Kemajuan",
+  "Resume": "Lanjutkan",
+  "Delete": "Hapus",
+  "No offline downloads.": "Tidak ada unduhan offline.",
+  "Delete this download and its file?": "Hapus unduhan ini dan filenya?",
+  "No regions.": "Tidak ada wilayah.",
+  "Could not load regions.": "Tidak dapat memuat wilayah.",
+  "Download an offline map region": "Unduh wilayah peta offline",
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "Unduh wilayah peta offline ini? Ukurannya bisa sangat besar (beberapa GB hingga puluhan GB)."
 }

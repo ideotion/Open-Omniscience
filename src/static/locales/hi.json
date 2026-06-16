@@ -983,5 +983,14 @@
   "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "अभी तक कोई अभिसरण नहीं। एक क्लस्टर के लिए विंडो के भीतर एक ही स्थान साझा करने वाले कम से कम {a} लेख और कम से कम {s} स्रोत चाहिए।",
   "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n} साझा-स्रोत लिंक — स्रोत एक ही उद्धरण दोहरा सकते हैं, यह स्वतंत्र पुष्टि नहीं है।",
   "Showing {n} of {t} clusters.": "{t} में से {n} क्लस्टर दिखाए जा रहे हैं।",
-  "Could not load": "लोड नहीं हो सका"
+  "Could not load": "लोड नहीं हो सका",
+  "Progress": "प्रगति",
+  "Resume": "फिर से शुरू करें",
+  "Delete": "हटाएं",
+  "No offline downloads.": "कोई ऑफ़लाइन डाउनलोड नहीं।",
+  "Delete this download and its file?": "इस डाउनलोड और इसकी फ़ाइल को हटाएं?",
+  "No regions.": "कोई क्षेत्र नहीं।",
+  "Could not load regions.": "क्षेत्र लोड नहीं हो सके।",
+  "Download an offline map region": "एक ऑफ़लाइन मानचित्र क्षेत्र डाउनलोड करें",
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "इस ऑफ़लाइन मानचित्र क्षेत्र को डाउनलोड करें? ये बहुत बड़े हो सकते हैं (कई GB से दसियों GB तक)।"
 }

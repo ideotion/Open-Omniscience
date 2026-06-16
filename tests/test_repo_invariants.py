@@ -714,6 +714,23 @@ def test_ui_invariants():
     assert raw.index("/static/i18n.js") < raw.index("/static/app.js"), (
         "i18n.js must still load before app.js (load order preserved)"
     )
+    # 27. Offline-map (Group M) download manager in Settings: a region picker over
+    #     /api/geo/regions + a resumable download-job table over /api/geo/downloads,
+    #     living in a Settings subtab. Starting a download is a NETWORK action, so it
+    #     MUST pass the ONE consent popup (ensureOnline, invariant #14) — assert the
+    #     gate is present in the start path so it can't regress to a silent fetch.
+    assert 'data-tab="offlinemap"' in html and 'id="set-offlinemap"' in html, (
+        "the Offline map Settings subtab button + panel must exist (Group M frontend)"
+    )
+    assert "function loadOsmMap(" in html and 'cat === "offlinemap"' in html, (
+        "loadOsmMap() must exist and be lazy-loaded from showSetCat()"
+    )
+    assert "/api/geo/regions" in html and "/api/geo/downloads" in html, (
+        "the offline-map view must read the region catalogue + the download jobs"
+    )
+    assert "function startOsmDownload(" in html and "ensureOnline(" in html, (
+        "starting an OSM download must pass the ONE consent popup (ensureOnline, invariant #14)"
+    )
 
 
 def test_corpus_tier_header():
@@ -928,6 +945,7 @@ def test_dropdown_option_labels_are_translatable():
         "wiki-lang",       # wiki edition data, e.g. "English (en)"
         "dump-lang",       # dynamic placeholder, replaced by edition data
         "dumpread-wiki",   # dynamic placeholder ("—")
+        "osm-region",      # dynamic placeholder, replaced by /api/geo/regions data
     }
 
     unkeyed: list[str] = []

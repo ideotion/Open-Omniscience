@@ -983,5 +983,14 @@
   "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "لا توجد تقاطعات بعد. يحتاج العنقود إلى {a} مقالات على الأقل و{s} مصادر على الأقل تشترك في مكان واحد ضمن النافذة.",
   "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n} روابط ذات أصل مشترك — قد تردّد المصادر اقتباسًا واحدًا، لا تأكيدًا مستقلًا.",
   "Showing {n} of {t} clusters.": "عرض {n} من {t} عنقودًا.",
-  "Could not load": "تعذّر التحميل"
+  "Could not load": "تعذّر التحميل",
+  "Progress": "التقدم",
+  "Resume": "استئناف",
+  "Delete": "حذف",
+  "No offline downloads.": "لا توجد تنزيلات دون اتصال.",
+  "Delete this download and its file?": "حذف هذا التنزيل وملفه؟",
+  "No regions.": "لا توجد مناطق.",
+  "Could not load regions.": "تعذّر تحميل المناطق.",
+  "Download an offline map region": "تنزيل منطقة خريطة دون اتصال",
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "تنزيل منطقة الخريطة هذه دون اتصال؟ قد تكون كبيرة جدًا (من عدة جيجابايت إلى عشرات الجيجابايت)."
 }

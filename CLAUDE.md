@@ -321,8 +321,11 @@ ruling, a contingency, or a deliberate-omission note.
   one consented refresh) [CATALOG + DOWNLOAD-MANAGER BACKEND SHIPPED 2026-06-16:
   src/geo/osm_regions.py + src/geo/osm_downloads.py (OsmDownloadManager mirrors
   wiki.dumps, guarded-fetch + Tor circuit isolation + kill switch) + GET/POST
-  /api/geo/regions|downloads; see BACKLOG Group M. REMAINING: task-manager UI wiring +
-  the renderer] + a HAND-ROLLED lightweight offline vector map (canvas 2.5D /
+  /api/geo/regions|downloads; SETTINGS FRONTEND SHIPPED 2026-06-16 (Settings → Offline
+  map subtab: region picker + resumable download-job table, start gated by ensureOnline
+  #14, +9 i18n ×12, test #27); see BACKLOG Group M. REMAINING: task-manager WINDOW
+  wiring (per-job controls/reorder) + the renderer] + a HAND-ROLLED lightweight offline
+  vector map (canvas 2.5D /
   CSS-3D, NO WebGL/Three.js; reuse the bundled Natural-Earth coastline) + the
   temporal-map remainder (linear/log toggle; mention layer fed by event-places); (e)
   NEW OFFICIAL-STATISTICS INGESTION (the FUTURE_DEVELOPMENTS design — gov +
