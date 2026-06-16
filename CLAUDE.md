@@ -1594,6 +1594,31 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR H = MONOLITH DECOMPOSITION (draft onto 0.09;
+  behaviorally INERT — pure extraction; RE-CUT FRESH on current 0.09 2026-06-16, the
+  maintainer's choice over resolving the stale ~8k-line conflict, so NO recent
+  index.html feature is lost):** (1) FRONTEND: the ONE inline `<style>` + ONE inline
+  `<script>` were programmatically extracted from index.html into cached
+  `/static/app.css` (691 lines) + `/static/app.js` (7302 lines) — index.html
+  9677→1682 lines. The extraction is REVERSAL-VERIFIED (re-inlining reproduces the
+  original byte-for-byte = inert by construction). app.js is a CLASSIC external script
+  at the same end-of-body position AFTER /static/i18n.js, so globals + inline on*=
+  handlers + load order are preserved (the 295-handler→addEventListener + CSP work is
+  NOT done — needs a headless browser; OO-D12-001 stays deferred). main.py now registers
+  `text/javascript`/`text/css` explicitly so the assets serve correctly on EVERY
+  platform (Windows' registry could map .js→text/jscript). tests/test_static_assets.py
+  asserts both serve (200 + right content-type + content-identical to disk,
+  newline-normalised for CRLF checkouts). The test-sites that grepped index.html for
+  JS/CSS read a `_ui_source()` concat (index.html+app.js+app.css) — a MOVE not a loss;
+  node --check on app.js clean. (2) BACKEND: the ~37 `app.include_router` calls + imports
+  + the optional-[analysis] conditional moved from main.py into
+  `src/api/_wiring.py:wire(app)` (imports LOCAL to wire() — deferred, no import cycle);
+  main.py holds ZERO include_router and calls `wire(app)`. ROUTE SET proven identical
+  (tests/test_api_wiring.py, anchored to _wiring/main SOURCE + each router's OWN
+  router.routes + TestClient dispatch — never a positive app.routes singleton read).
+  0.09's CORS/exception-chaining main.py edits preserved. Enforced in test_ui_invariants
+  (#26). NOT done (documented follow-up): observability.py extraction (Prometheus +
+  CORS/SlowAPI/CSRF middleware coupling).
 - **AUTONOMOUS AUDIT 2026-06-15/16 — PR G = FRONTEND A11Y + POLLING BACKOFF (draft
   onto 0.09; browser-unverifiable here, so conservative + node-checked):** (1) CHART
   a11y — `ooChart` (canvas) gains role="img" + a translated aria-label summary + a

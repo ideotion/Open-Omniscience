@@ -68,19 +68,25 @@ def test_replace_restore_endpoints_are_gone_and_merge_remains():
     assert "/api/safety/restore/encrypted" not in live_paths
 
     # The ONE restore — the additive merge — must remain: (a) /v2/restore is
-    # DECLARED on the backup-v2 router, and (b) src/api/main.py INCLUDES that
-    # router unconditionally. A regression that deleted the route or dropped the
+    # DECLARED on the backup-v2 router, and (b) the router is wired unconditionally.
+    # The include_router calls moved from main.py into src/api/_wiring.py (audit PR H),
+    # so the registration is anchored there (the immutable wiring source) + main's
+    # delegation to wire(). A regression that deleted the route or dropped the
     # registration still fails the build.
     assert any("/v2/restore" in p for p in backup_v2_paths), (
         "the merge restore endpoint must remain: no /v2/restore route is declared "
         "on the backup-v2 router"
     )
-    main_src = (Path(__file__).resolve().parents[1] / "src" / "api" / "main.py").read_text(
-        encoding="utf-8"
+    _api_dir = Path(__file__).resolve().parents[1] / "src" / "api"
+    main_src = (_api_dir / "main.py").read_text(encoding="utf-8")
+    wiring_src = (_api_dir / "_wiring.py").read_text(encoding="utf-8")
+    assert "wire(app)" in main_src, "main.py must delegate router wiring to wire(app)"
+    assert "from src.api.backup_v2 import router as backup_v2_router" in wiring_src, (
+        "the merge restore endpoint must remain: _wiring.py must import the backup-v2 router"
     )
-    assert re.search(r"^\s*app\.include_router\(backup_v2_router\)", main_src, re.MULTILINE), (
-        "the merge restore endpoint must remain: src/api/main.py must include the "
-        "backup-v2 router unconditionally"
+    assert re.search(r"^\s*backup_v2_router,", wiring_src, re.MULTILINE), (
+        "the merge restore endpoint must remain: _wiring.py must include the "
+        "backup-v2 router unconditionally (in the iterated spine list)"
     )
 
     # Backup CREATION endpoints remain (creating a backup is not a replace) —

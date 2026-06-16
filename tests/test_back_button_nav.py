@@ -15,7 +15,13 @@ from __future__ import annotations
 from pathlib import Path
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
-_INDEX = (_STATIC / "index.html").read_text(encoding="utf-8")
+# index.html's JS was externalised into cached app.js (audit PR H); the tab-nav
+# history logic now lives there, so read both (a MOVE, not a loss).
+_INDEX = "\n".join(
+    (_STATIC / f).read_text(encoding="utf-8")
+    for f in ("index.html", "app.js", "app.css")
+    if (_STATIC / f).exists()
+)
 _UNLOCK = (_STATIC / "unlock.html").read_text(encoding="utf-8")
 
 
