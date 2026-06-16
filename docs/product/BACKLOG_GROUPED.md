@@ -323,9 +323,15 @@ makes the rest fall out cheaply:
 
 ## M. Geo / offline mapping (promoted active 2026-06-16)
 
-- ⬜ **OSM per-region download manager** — Geofabrik-style extracts managed like wiki
+- 🔨 **OSM per-region download manager** — Geofabrik-style extracts managed like wiki
   dumps (task-manager job, parallel, reorderable, rate/%/ETA/pause/resume/cap, inline
   dated `OSM_SIZES_AS_OF` size table + one consented refresh). (CLAUDE.md geo ruling)
+  CATALOG SUBSTRATE SHIPPED 2026-06-16: `src/geo/osm_regions.py` (`OSM_SIZES_AS_OF` +
+  continent/planet extracts with approx dated `.osm.pbf` sizes + path-safe code
+  validation + freshness test, mirroring `wiki/dump_sizes`) + `GET /api/geo/regions`
+  (zero-network, largest-first, dated caveat). tests/test_osm_regions.py. REMAINING:
+  the download manager itself (task-manager job, controls), country sub-extracts, the
+  consented exact-size refresh, and the hand-rolled offline map renderer.
 - ⬜ **Hand-rolled offline vector map** — canvas 2.5D / CSS-3D, NO WebGL/Three.js; reuse
   the bundled Natural-Earth coastline + the temporal-map projection.
 - ⬜ **Temporal-map remainder** — linear/log toggle + mention layer fed by event-places.
