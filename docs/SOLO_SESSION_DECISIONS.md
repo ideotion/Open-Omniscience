@@ -75,7 +75,18 @@ the kill switch has stopped the pass), satisfying degrade-loudly / no-theater.
 
 ---
 
-### D-04 · Item Y — app-wide n<10 → bar chart: DEFERRED   [Class C]   [status: DEFERRED]
+### D-04 · Item Y — app-wide n<10 → bar chart: RESOLVED + SHIPPED (#228)   [Class B]   [status: decided]
+> **Updated in the autonomous phase** (you ruled "make all relevant decisions").
+> Originally DEFERRED below; now resolved and shipped — the baseline-honesty question
+> was settled per the recommendation, with one addition that the naive impl missed:
+> a **2px value-cap** on every bar so a flush-min / equal-value / SINGLE point stays
+> visible (a window-min baseline alone makes the lowest/only bar 0-height = invisible,
+> which would have *regressed* the common sparse case). Bars anchor to `Yof(yMin)` =
+> true-zero for `zeroBase`/count series, labeled window-min for price levels; true time
+> x in `ooChart`, date-tick-aligned in `dashChartSvg`; `test_ui_invariants` #16 updated.
+> **Confirm-or-overrule:** the value-cap + baseline rule (field-test the bars visually).
+>
+> _Original deferral, kept for the record:_
 **Context / the question:** you ruled (field-test Item Y, recorded in CLAUDE.md #16)
 that every chart with <10 datapoints should render as a **bar** graph (not dots) and
 that the "early corpus … no curve interpolated" caveat be removed (keep n=x). The
@@ -190,3 +201,43 @@ long-running field instance.
 **Rationale:** faithful reporting — don't claim a fix for something I can't reproduce.
 **Confirm-or-overrule:** hard-refresh/relaunch and re-test; if it still fails, the
 browser-console error would let me find a real cause.
+
+---
+
+## Autonomous-continuation phase (2026-06-16) — "implement everything, don't stop, make all decisions"
+
+### D-10 · B2 fixity (#226) — built a DUPLICATE, then removed it   [Class A]   [status: corrected]
+**What happened:** I implemented a "local fixity audit" (`src/integrity/fixity.py` +
+`GET /api/diagnostics/fixity`) for audit-07 finding B2, and shipped it as #226 — then,
+while wiring a Settings surface, hand-verification found B2 was **already fully shipped
+at 0.09**: `src/verification/fixity.py` + `GET /api/integrity/fixity` + the `runFixity()`
+"Check corpus integrity" button. My PR was a pure duplicate.
+**Decision:** **close #226** and **re-base the downstream PRs (#228 Item Y, #231
+convergence) onto #225 (Z)** so the redundant code never reaches `0.09`. Corrected the
+`CLAUDE.md` ledger. Nothing of value lost (B2 already worked).
+**Rationale (the lesson):** "leave the repo greener" forbids shipping a duplicate;
+honesty forbids claiming B2 as new work. This is the project's recorded
+*verify-before-implement* lesson — I should have grepped for an existing fixity impl
+first. Recording it so the next session doesn't repeat it.
+**Confirm-or-overrule:** none needed; flagging the error + its clean correction.
+
+### D-11 · Autonomous-phase scope: ship the verifiable, document the rest honestly   [Class A]   [status: decided]
+**Context / the question:** you directed me to "implement everything … don't stop."
+The remaining backlog (FUTURE_DEVELOPMENTS + CLAUDE.md) is genuinely many sessions and
+includes work I *cannot* land honestly in one autonomous pass.
+**Decision:** keep shipping every item that is **genuinely open, bounded, and verifiable
+here** (Z digest, Y bars, the convergence endpoint), each its own green PR; and for the
+rest, **document it precisely with the reason it wasn't done** (see the "Remaining work"
+section of `SOLO_SESSION_PR_PLAN.md`) rather than ship it blind. I did NOT: (a) decide
+Class-C rulings you reserved (watch-rule UX, Trust-tab dissolution, two-windows
+consolidation, encryption/recovery, version sweep); (b) ship large frontend flagships I
+can't visually verify as if verified; (c) act on network-only/unverifiable claims (the
+dead-feed prune); (d) AI-draft thousands of i18n strings in one unreviewable PR.
+**Rationale (rational · critical · ethical):** Prime Directives #1–2 (never violate an
+invariant; never ship something that pretends) **outrank** "finish the list." "Implement
+everything" is best served over multiple sessions; the honest single-session contribution
+is the verified increments + an accurate map of what remains and why — which is what this
+delivers. A correct refusal to ship something dishonest/redundant is a success, not a stop.
+**Confirm-or-overrule:** if you want me to push a specific frontend flagship (e.g. the
+convergence view or the temporal-map log toggle) accepting the "not visually verified"
+caveat, name it and I'll build it next; likewise, rule any Class-C item and I'll implement it.
