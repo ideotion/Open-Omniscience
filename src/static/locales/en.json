@@ -986,6 +986,8 @@
   "Could not load": "Could not load",
   "Progress": "Progress",
   "Resume": "Resume",
+  "Resume a paused download": "Resume a paused download",
+  "Resumed.": "Resumed.",
   "Delete": "Delete",
   "No offline downloads.": "No offline downloads.",
   "Delete this download and its file?": "Delete this download and its file?",

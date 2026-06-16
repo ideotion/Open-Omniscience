@@ -986,6 +986,8 @@
   "Could not load": "Не удалось загрузить",
   "Progress": "Прогресс",
   "Resume": "Возобновить",
+  "Resume a paused download": "Возобновить приостановленную загрузку",
+  "Resumed.": "Возобновлено.",
   "Delete": "Удалить",
   "No offline downloads.": "Нет офлайн-загрузок.",
   "Delete this download and its file?": "Удалить эту загрузку и её файл?",

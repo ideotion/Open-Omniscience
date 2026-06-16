@@ -986,6 +986,8 @@
   "Could not load": "लोड नहीं हो सका",
   "Progress": "प्रगति",
   "Resume": "फिर से शुरू करें",
+  "Resume a paused download": "रुका हुआ डाउनलोड फिर से शुरू करें",
+  "Resumed.": "फिर से शुरू किया गया।",
   "Delete": "हटाएं",
   "No offline downloads.": "कोई ऑफ़लाइन डाउनलोड नहीं।",
   "Delete this download and its file?": "इस डाउनलोड और इसकी फ़ाइल को हटाएं?",

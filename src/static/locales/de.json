@@ -986,6 +986,8 @@
   "Could not load": "Konnte nicht geladen werden",
   "Progress": "Fortschritt",
   "Resume": "Fortsetzen",
+  "Resume a paused download": "Einen pausierten Download fortsetzen",
+  "Resumed.": "Fortgesetzt.",
   "Delete": "Löschen",
   "No offline downloads.": "Keine Offline-Downloads.",
   "Delete this download and its file?": "Diesen Download und seine Datei löschen?",

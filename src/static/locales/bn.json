@@ -986,6 +986,8 @@
   "Could not load": "লোড করা যায়নি",
   "Progress": "অগ্রগতি",
   "Resume": "পুনরায় শুরু",
+  "Resume a paused download": "থেমে থাকা ডাউনলোড পুনরায় শুরু করুন",
+  "Resumed.": "পুনরায় শুরু হয়েছে।",
   "Delete": "মুছুন",
   "No offline downloads.": "কোনো অফলাইন ডাউনলোড নেই।",
   "Delete this download and its file?": "এই ডাউনলোড এবং এর ফাইল মুছবেন?",

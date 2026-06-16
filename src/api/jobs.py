@@ -22,6 +22,23 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
+def _dl_actions(state: str) -> list[str]:
+    """Honest action set per download state, shared by the dump + OSM jobs.
+
+    A 'cancel' on an already-paused download would re-call the owner's pause()
+    and fail (it is not queued and has no live stop event), so paused/failed
+    offer RESUME instead — permanent removal stays in the owning Settings tab
+    (Wikipedia / Offline map), as the pause/cancel detail messages already say.
+    """
+    if state == "running":
+        return ["pause", "cancel"]
+    if state == "queued":
+        return ["reorder", "cancel"]
+    if state in ("paused", "failed"):
+        return ["resume"]
+    return []
+
+
 def _dump_jobs() -> list[dict]:
     from src.wiki.dumps import get_manager
 
@@ -50,9 +67,7 @@ def _dump_jobs() -> list[dict]:
                     "percent": e["percent"],
                 },
                 "error": e.get("error"),
-                "actions": ["pause", "cancel"] if state == "running" else (
-                    ["reorder", "cancel"] if state == "queued" else ["cancel"]
-                ),
+                "actions": _dl_actions(state),
             }
         )
     return jobs
@@ -90,9 +105,7 @@ def _osm_jobs() -> list[dict]:
                     "percent": e["percent"],
                 },
                 "error": e.get("error"),
-                "actions": ["pause", "cancel"] if state == "running" else (
-                    ["reorder", "cancel"] if state == "queued" else ["cancel"]
-                ),
+                "actions": _dl_actions(state),
             }
         )
     return jobs
@@ -233,3 +246,26 @@ def cancel_job(job_id: str) -> dict:
             "detail": "collection stopped; the network kill switch is now engaged",
         }
     raise HTTPException(status_code=404, detail=f"unknown or uncancellable job {job_id!r}")
+
+
+@router.post("/{job_id}/resume")
+def resume_job(job_id: str) -> dict:
+    """Resume a PAUSED/failed download via its OWNING system (start() continues
+    the partial file from where it stopped). The frontend gates this through the
+    ONE network-consent popup first (invariant #14) — a resume re-opens a fetch;
+    the download path itself still refuses while the kill switch is engaged."""
+    if job_id.startswith("dump:"):
+        from src.wiki.dumps import get_manager
+
+        key = job_id.split(":", 1)[1]
+        if get_manager().resume(key) is None:
+            raise HTTPException(status_code=404, detail=f"unknown dump {key!r}")
+        return {"resumed": job_id, "detail": "download resumed"}
+    if job_id.startswith("osm:"):
+        from src.geo.osm_downloads import get_manager as get_osm_manager
+
+        key = job_id.split(":", 1)[1]
+        if get_osm_manager().resume(key) is None:
+            raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
+        return {"resumed": job_id, "detail": "download resumed"}
+    raise HTTPException(status_code=404, detail=f"unknown or unresumable job {job_id!r}")
