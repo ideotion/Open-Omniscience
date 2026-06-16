@@ -940,5 +940,9 @@
   "Analyse": "تحليل",
   "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "افتح هذا في نافذة التحليل — تغطيته في المجموعة (تزامن في مجموعتك، وليست سببية أبدًا)",
   "operator-set, not computed": "مضبوط من المُشغِّل، غير محسوب",
-  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score هي بيانات وصفية للمصدر تُحدِّدها أنت (المُشغِّل) لكل مصدر. لا يحسبها التطبيق أبدًا، ولا يضع لها قيمة افتراضية، ولا يستنتجها من نص المقالات، ولا يبني منها بطاقة أو تقييمًا."
+  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score هي بيانات وصفية للمصدر تُحدِّدها أنت (المُشغِّل) لكل مصدر. لا يحسبها التطبيق أبدًا، ولا يضع لها قيمة افتراضية، ولا يستنتجها من نص المقالات، ولا يبني منها بطاقة أو تقييمًا.",
+  "Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}": "رسم بياني، {label}: {n} نقطة، من {a} إلى {b}، من {lo} إلى {hi}",
+  "Chart data": "بيانات الرسم البياني",
+  "Date": "التاريخ",
+  "Value": "القيمة"
 }

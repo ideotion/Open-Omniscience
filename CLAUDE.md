@@ -1391,6 +1391,24 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR G = FRONTEND A11Y + POLLING BACKOFF (draft
+  onto 0.09; browser-unverifiable here, so conservative + node-checked):** (1) CHART
+  a11y — `ooChart` (canvas) gains role="img" + a translated aria-label summary + a
+  visually-hidden per-series `.sr-only` data table; `dashChartSvg` (svg, already
+  role=img) gains the aria-label + sr-table. Shared `_chartAria`/`_chartSrTable`
+  helpers build the summary from t9() fragments (a dynamic attribute is never matched
+  by the i18n exact-key engine), +4 strings ×12. (2) POLLING — the two always-on
+  chrome polls (network + activity, both fixed 5 s) now route through one
+  `_adaptivePoll` helper: fast (5 s) while state changes, backing off to 20 s once
+  nothing changes for 45 s; pauses while the tab is hidden; resets to fast on
+  refocus or an observed change (network flip / scrape active). Self-reschedules in
+  EVERY path (can neither stall nor hot-spin); zero extra boot network (one initial
+  tick, as before); leans on the existing scheduler/airplane PUSH repaints so state
+  stays event-fresh. Cuts field-log finding B's idle storm. RE-VERIFIED already-done
+  (OO-D13-001, no change): #toast/#activity/#net-coach carry aria-live; #vitals-pop
+  + #palette have aria-modal + `_trapTab` focus trap + focus save/restore
+  (_vitalsPrevFocus/_palPrevFocus). Enforced in test_ui_invariants (#24 charts,
+  #25 adaptive poll). node --check clean; i18n 100% ×12; suite green.
 - **AUTONOMOUS AUDIT 2026-06-15/16 — PR F = TEST COVERAGE + FLAKY GUARD (draft onto
   0.09):** three NEW unit-isolated test files for under-tested modules: (1)
   test_merge_engine.py drives src/backup/merge.merge_corpus DIRECTLY on tiny plaintext

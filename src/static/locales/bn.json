@@ -940,5 +940,9 @@
   "Analyse": "বিশ্লেষণ",
   "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "এটি বিশ্লেষণ উইন্ডোতে খুলুন — এর কর্পাস কভারেজ (আপনার কর্পাসে সহ-উপস্থিতি, কখনও কার্যকারণ নয়)",
   "operator-set, not computed": "অপারেটর-নির্ধারিত, গণনাকৃত নয়",
-  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score একটি উৎস-মেটাডেটা যা আপনি (অপারেটর) প্রতিটি উৎসের জন্য নির্ধারণ করেন। অ্যাপটি কখনও এটি গণনা করে না, ডিফল্ট মান দেয় না, নিবন্ধের লেখা থেকে অনুমান করে না, এবং এটি থেকে কোনো কার্ড বা স্কোর তৈরি করে না।"
+  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score একটি উৎস-মেটাডেটা যা আপনি (অপারেটর) প্রতিটি উৎসের জন্য নির্ধারণ করেন। অ্যাপটি কখনও এটি গণনা করে না, ডিফল্ট মান দেয় না, নিবন্ধের লেখা থেকে অনুমান করে না, এবং এটি থেকে কোনো কার্ড বা স্কোর তৈরি করে না।",
+  "Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}": "চার্ট, {label}: {n} পয়েন্ট, {a} থেকে {b}, {lo} থেকে {hi}",
+  "Chart data": "চার্ট ডেটা",
+  "Date": "তারিখ",
+  "Value": "মান"
 }

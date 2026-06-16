@@ -940,5 +940,9 @@
   "Analyse": "Analyse",
   "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)",
   "operator-set, not computed": "operator-set, not computed",
-  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it."
+  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.",
+  "Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}": "Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}",
+  "Chart data": "Chart data",
+  "Date": "Date",
+  "Value": "Value"
 }

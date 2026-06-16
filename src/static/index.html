@@ -2733,16 +2733,50 @@
     // primary repaint rides scheduler responses). Vitals are no longer polled here
     // -- they live in the task-manager window's System tab, polled only while that
     // window is open or a scrape is live (§2: vitals moved out of the chrome).
-    async function _pollNetwork() {
-      if (document.hidden) return;
-      try { const nm = await api("/api/system/network"); _paintNetwork(nm.online); } catch (_e) {}
+    // Adaptive background poll (audit PR G): poll at `fast` while state is changing,
+    // backing off to `slow` once nothing has changed for `quietMs` — this cuts the
+    // idle polling storm (field-log finding B) without adding any boot-time network.
+    // State stays event-fresh because scheduler/airplane transitions push immediate
+    // repaints; this governs only the passive refresh. Work pauses while the tab is
+    // hidden. It self-reschedules in EVERY path, so it can neither stall nor
+    // hot-spin. `fn` returns truthy when it observed a change/activity (-> reset to
+    // fast). Returns {wake} to force fast from the outside.
+    function _adaptivePoll(fn, {fast = 5000, slow = 20000, quietMs = 45000} = {}) {
+      let lastActive = Date.now();
+      const tick = async () => {
+        if (!document.hidden) {
+          try { if (await fn()) lastActive = Date.now(); } catch (_e) { /* transient */ }
+        }
+        const idle = document.hidden || (Date.now() - lastActive) > quietMs;
+        setTimeout(tick, idle ? slow : fast);
+      };
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) lastActive = Date.now();  // refocus -> poll fast again
+      });
+      tick();
+      return {wake: () => { lastActive = Date.now(); }};
     }
-    setInterval(_pollNetwork, 5000); _pollNetwork();
+
+    let _lastOnline = null;
+    async function _pollNetwork() {
+      if (document.hidden) return false;
+      try {
+        const nm = await api("/api/system/network");
+        const changed = nm.online !== _lastOnline;
+        _lastOnline = nm.online;
+        _paintNetwork(nm.online);
+        return changed;  // a flip resets the adaptive poll to fast
+      } catch (_e) { return false; }
+    }
+    _adaptivePoll(_pollNetwork);
 
     async function _pollActivity() {
-      try { const s = await api("/api/scheduler/status");
-        setBackgroundActivity(s && s.active ? "Collecting…" : null);
-      } catch { /* transient: keep the last known state */ }
+      try {
+        const s = await api("/api/scheduler/status");
+        const active = !!(s && s.active);
+        setBackgroundActivity(active ? "Collecting…" : null);
+        return active;  // live (fast) while a scrape runs; backs off when idle
+      } catch { return false; /* transient: keep the last known state */ }
     }
 
     // -- Live vitals (CPU/RAM/disk + real, app-attributed scraping throughput) -- //
@@ -6144,6 +6178,34 @@
     // render as a BAR graph (not dots), n>=10 as the full-resolution line. Shared by
     // BOTH chart renderers (dashChartSvg + ooChart).
     const _SPARSE_BAR_MAX = 10;
+    // --- chart accessibility (audit PR G) -------------------------------- //
+    // <svg>/<canvas> charts are opaque to screen readers. Give each a role="img"
+    // + a translated aria-label SUMMARY, and a visually-hidden data table so the
+    // actual series is readable. Aria text is built from t9() fragments (a dynamic
+    // attribute value is never matched by the i18n engine's exact-key lookup, so it
+    // must be pre-translated here).
+    function _chartAria(label, n, a, b, lo, hi) {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return t9("Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}")
+        .replace("{label}", label || t9("Value")).replace("{n}", String(n))
+        .replace("{a}", String(a)).replace("{b}", String(b))
+        .replace("{lo}", String(lo)).replace("{hi}", String(hi));
+    }
+    function _chartSrTable(rows, label) {
+      // rows: [{date, value}]; capped so a dense series can't bloat the DOM (the
+      // aria-label already states the true n; a truncated table ends with an
+      // ellipsis row). Visually hidden (.sr-only) — no visual change.
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const CAP = 500;
+      const body = rows.slice(0, CAP).map(
+        r => `<tr><td>${esc(String(r.date))}</td><td>${esc(String(r.value))}</td></tr>`).join("");
+      const more = rows.length > CAP ? '<tr><td colspan="2">…</td></tr>' : "";
+      const cap = label ? `${t9("Chart data")} — ${esc(String(label))}` : esc(t9("Chart data"));
+      return `<table class="sr-only"><caption>${cap}</caption>`
+        + `<thead><tr><th>${esc(t9("Date"))}</th><th>${esc(t9("Value"))}</th></tr></thead>`
+        + `<tbody>${body}${more}</tbody></table>`;
+    }
+
     function dashChartSvg(points, unit) {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!points.length) {
@@ -6190,9 +6252,14 @@
       const caveat = lineMode ? "" :
         `<div class="hint muted" style="margin-top:1px">n=${n}</div>`;
       const range = n >= 2 ? `${points[0].observed_on} → ${points[n-1].observed_on}` : points[0].observed_on;
-      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block" role="img">
+      // a11y: a translated summary + a visually-hidden data table (audit PR G).
+      const aria = _chartAria(unit || "", n, points[0].observed_on.slice(0, 7),
+        points[n - 1].observed_on.slice(0, 7), fmtNum(minY), fmtNum(maxY));
+      const srTable = _chartSrTable(
+        points.map(p => ({date: p.observed_on, value: fmtNum(p.price)})), unit || "");
+      return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block" role="img" aria-label="${esc(aria)}">
         ${grid}
-        ${body}${xticks}</svg>
+        ${body}${xticks}</svg>${srTable}
         <div class="hint" style="display:flex;justify-content:space-between;margin-top:2px">
           <span><span style="display:inline-block;width:14px;height:0;border-top:2px solid ${col};vertical-align:middle"></span>
             ${esc(unit || "")}</span><span>${range}</span></div>${caveat}`;
@@ -6521,6 +6588,18 @@
       const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n) || "#888";
       const fmtV = (v) => (typeof fmtNum === "function") ? fmtNum(v) : String(v);
       const fmtT = (ms) => new Date(ms).toISOString().slice(0, 10);
+      // a11y (audit PR G): the canvas is opaque to screen readers — give it a
+      // role + translated summary, and a visually-hidden per-series data table.
+      const allV = all.flatMap(s => s.pts.map(p => p.v));
+      cv.setAttribute("role", "img");
+      cv.setAttribute("aria-label", _chartAria(
+        all.map(s => s.label).join(", "), allV.length, fmtT(tMin), fmtT(tMax),
+        fmtV(Math.min(...allV)), fmtV(Math.max(...allV))));
+      const srWrap = document.createElement("div");
+      srWrap.className = "sr-only";
+      srWrap.innerHTML = all.map(
+        s => _chartSrTable(s.pts.map(p => ({date: fmtT(p.t), value: fmtV(p.v)})), s.label)).join("");
+      wrap.appendChild(srWrap);
       const plotW = W - padL - padR, plotH = H - padT - padB;
       const Xof = (ms) => padL + plotW * ((ms - t0) / Math.max(t1 - t0, 1));
 
@@ -9371,9 +9450,9 @@
     });
     loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus();
     // Keep the background-activity chip live app-wide (e.g. a scheduled scrape that
-    // the user didn't trigger from the current tab). Cheap loopback poll; paused
-    // while the tab is hidden.
-    _pollActivity(); setInterval(() => { if (!document.hidden) _pollActivity(); }, 5000);
+    // the user didn't trigger from the current tab). Adaptive: fast while a scrape
+    // is active, backing off when idle; paused while the tab is hidden (audit PR G).
+    _adaptivePoll(_pollActivity);
     // Dismiss the vitals popover on Escape or an outside click.
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && _vitalsOpen) toggleVitals(); });
 

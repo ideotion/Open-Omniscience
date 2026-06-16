@@ -940,5 +940,9 @@
   "Analyse": "Analisis",
   "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "Buka ini di jendela analisis — cakupan korpusnya (kemunculan bersama dalam korpus Anda, bukan kausalitas)",
   "operator-set, not computed": "ditetapkan operator, bukan dihitung",
-  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score adalah metadata provenans yang Anda (operator) tetapkan per sumber. Aplikasi tidak pernah menghitung, memberi nilai bawaan, atau menurunkannya dari teks artikel, dan tidak pernah membuat kartu atau skor darinya."
+  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score adalah metadata provenans yang Anda (operator) tetapkan per sumber. Aplikasi tidak pernah menghitung, memberi nilai bawaan, atau menurunkannya dari teks artikel, dan tidak pernah membuat kartu atau skor darinya.",
+  "Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}": "Bagan, {label}: {n} titik, {a} hingga {b}, {lo} hingga {hi}",
+  "Chart data": "Data bagan",
+  "Date": "Tanggal",
+  "Value": "Nilai"
 }

@@ -940,5 +940,9 @@
   "Analyse": "Analysieren",
   "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "Dies im Analysefenster öffnen — seine Korpusabdeckung (Kookkurrenz in Ihrem Korpus, nie Kausalität)",
   "operator-set, not computed": "vom Betreiber gesetzt, nicht berechnet",
-  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score ist ein Herkunfts-Metadatum, das Sie als Betreiber je Quelle festlegen. Die App berechnet es nie, vergibt keinen Standardwert und leitet es nie aus Artikeltext ab; sie baut daraus weder Karte noch Score."
+  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score ist ein Herkunfts-Metadatum, das Sie als Betreiber je Quelle festlegen. Die App berechnet es nie, vergibt keinen Standardwert und leitet es nie aus Artikeltext ab; sie baut daraus weder Karte noch Score.",
+  "Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}": "Diagramm, {label}: {n} Punkte, {a} bis {b}, {lo} bis {hi}",
+  "Chart data": "Diagrammdaten",
+  "Date": "Datum",
+  "Value": "Wert"
 }

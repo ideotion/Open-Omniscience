@@ -940,5 +940,9 @@
   "Analyse": "分析",
   "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "分析ウィンドウで開く——コーパスでの扱い（コーパス内の共起であり、因果ではありません）",
   "operator-set, not computed": "オペレーター設定、自動計算なし",
-  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score は、オペレーターであるあなたがソースごとに設定する来歴メタデータです。アプリが計算したり、既定値を与えたり、記事本文から導出したりすることは一切なく、これからカードやスコアを作ることもありません。"
+  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score は、オペレーターであるあなたがソースごとに設定する来歴メタデータです。アプリが計算したり、既定値を与えたり、記事本文から導出したりすることは一切なく、これからカードやスコアを作ることもありません。",
+  "Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}": "グラフ、{label}：{n} 点、{a}〜{b}、{lo}〜{hi}",
+  "Chart data": "グラフのデータ",
+  "Date": "日付",
+  "Value": "値"
 }
