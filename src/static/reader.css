@@ -1,0 +1,71 @@
+/* Reader analysis tabs (Tier 1, PR1). Self-contained styling for the offline
+   article reader's sub-tab bar + the lazy Keywords / Sentiment panes. Reuses the
+   reader page's OWN CSS variables (--paper/--fg/--mut/--line/--accent/--card/
+   --warn defined in the page <style>), so the tabs match the reader theme and the
+   light/dark switch with zero extra config. No framework, no network. */
+
+.rtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0 0 18px;
+  border-bottom: 1px solid var(--line);
+  font: 600 13px/1 system-ui, sans-serif;
+}
+.rtab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--mut);
+  padding: 9px 13px;
+  cursor: pointer;
+}
+.rtab:hover { color: var(--fg); }
+.rtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.rtab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+
+.rpane { font: 14px/1.6 system-ui, sans-serif; }
+.rpane[hidden] { display: none; }
+/* The Read pane keeps the article's reading typography (the body <article> still
+   inherits the serif from the page <style>); only the analysis panes use system-ui. */
+#rp-read { font: inherit; }
+
+.r-h2 {
+  font: 600 14px system-ui, sans-serif;
+  color: var(--mut);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin: 0 0 10px;
+}
+.r-muted { color: var(--mut); }
+
+.r-kwlist { margin: 0; padding: 0; list-style: none; }
+.r-kwlist li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.r-kwlist li:first-child { border-top: 0; }
+.r-kw { font-weight: 600; }
+.r-kn { color: var(--mut); white-space: nowrap; }
+
+.r-chip {
+  display: inline-block;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 10px;
+  margin: 2px 4px 2px 0;
+  font: 13px system-ui, sans-serif;
+}
+.r-score { font: 15px/1.6 system-ui, sans-serif; }
+
+.r-method { color: var(--mut); font-size: 12px; margin: 12px 0 2px; }
+/* Caveats are VISIBLE BY DEFAULT (informed-consent non-negotiable): the VADER
+   English-only disclosure + the counts-not-a-score note are always shown, never
+   hidden behind a toggle. --warn is the reader page's amber. */
+.r-caveat { color: var(--warn); font-size: 12px; margin: 2px 0 0; }
+.r-warn { color: var(--warn); font-weight: 600; }

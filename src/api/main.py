@@ -995,6 +995,16 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     except Exception:  # noqa: BLE001 - related list is optional, never breaks the reader
         logger.warning("related-articles block failed", exc_info=True)
 
+    # Tab panes always exist (consistent tab bar); an empty Related/Links pane
+    # shows an honest empty state instead of vanishing.
+    related_block = related_html or (
+        "<p class='muted'>No related articles yet — they appear once this and "
+        "other articles share extracted keywords.</p>"
+    )
+    links_block = cites_html or (
+        "<p class='muted'>No external links are recorded in your stored copy.</p>"
+    )
+
     doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{(title[:40] + "…") if len(title) > 40 else title} · FOOS</title><style>
@@ -1037,13 +1047,29 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     font: 13px/1.6 system-ui,sans-serif; color: var(--mut); }}
   .src-link {{ font-weight:500; word-break:break-all; }}
   .ext-note {{ font-size:12px; }}
-</style></head><body>
-<div class="wrap">
+</style>
+<link rel="stylesheet" href="/static/reader.css">
+<script src="/static/reader.js" defer></script>
+</head><body>
+<div class="wrap" data-article-id="{a.id}">
   <div class="crumb"><span class="dot"></span> Open Omniscience · offline stored copy</div>
-  <article><h1>{title}</h1><div class="meta">{meta_rows}</div>{paras}</article>
-  {related_html}
-  {cites_html}
-  {dates_section}
+  <h1>{title}</h1>
+  <nav class="rtabs" role="tablist" aria-label="Article views">
+    <button class="rtab active" data-rtab="read" role="tab" aria-selected="true" tabindex="0">Read</button>
+    <button class="rtab" data-rtab="keywords" role="tab" aria-selected="false" tabindex="-1">Keywords</button>
+    <button class="rtab" data-rtab="sentiment" role="tab" aria-selected="false" tabindex="-1">Sentiment</button>
+    <button class="rtab" data-rtab="related" role="tab" aria-selected="false" tabindex="-1">Related</button>
+    <button class="rtab" data-rtab="links" role="tab" aria-selected="false" tabindex="-1">Links</button>
+  </nav>
+  <section class="rpane" id="rp-read" role="tabpanel" aria-label="Read">
+    <div class="meta">{meta_rows}</div>
+    <article>{paras}</article>
+    {dates_section}
+  </section>
+  <section class="rpane" id="rp-keywords" role="tabpanel" aria-label="Keywords" data-lazy="keywords" hidden></section>
+  <section class="rpane" id="rp-sentiment" role="tabpanel" aria-label="Sentiment" data-lazy="sentiment" hidden></section>
+  <section class="rpane" id="rp-related" role="tabpanel" aria-label="Related" hidden>{related_block}</section>
+  <section class="rpane" id="rp-links" role="tabpanel" aria-label="Links" hidden>{links_block}</section>
   <footer>
     This is the copy captured at ingest — it does not change if the source is later edited or removed.
     <div style="margin-top:8px">{orig_html}</div>

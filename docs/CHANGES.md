@@ -11,6 +11,13 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Read and analyse an article in one place — reader tabs.** The offline article reader
+  now opens with a tab bar: **Read · Keywords · Sentiment · Related · Links**. Reading,
+  related articles, and the links the article cites are there as before; two new tabs
+  analyse just that one article — its top **keywords** (by how often each is mentioned)
+  and its **tone** (shown with the honest note that the tone method is English-only, so
+  non-English scores are unreliable). Everything stays local, and the analysis tabs load
+  only when you open them.
 - **Honest "collecting" status in airplane mode.** When you switch airplane mode on while
   a background collection pass is running, the top-bar activity chip now clearly reads
   **"Collecting paused…" in red** (the same colour as the engaged airplane button) with the
