@@ -234,6 +234,61 @@ _EXTRA_STOPWORD_TEXT = (
     "januari februari maart april mei juni juli augustus oktober "
     "января февраля марта апреля мая июня июля августа сентября октября ноября декабря "
     "январь февраль март апрель май июнь июль август сентябрь октябрь ноябрь декабрь "
+    # ----------------------------------------------------------------------- #
+    # Field log (2026-06-14 keyword-diagnostics export, 1,201-article corpus;
+    # surfaced via scripts/analyze_keyword_log.py). The de-US-centred corpus kept
+    # leaking per-language FUNCTION words the earlier passes missed, plus WEEKDAY
+    # names (the month blocks above never covered weekdays: "Sunday"/"sábado"/
+    # "lørdag" sat among the top keywords) and comment-widget/paywall BOILERPLATE.
+    # Net-new vs the blocks above; applied retroactively by global_stopwords().
+    # Names, places and content words the analyzer flagged stay OUT (its 'review'
+    # bucket); cross-language collisions (sea/tom/fin/laut…) deliberately omitted
+    # because this set is unioned across ALL languages.
+    # Weekday names across the corpus languages (fr weekdays already covered above)
+    "monday tuesday wednesday thursday friday saturday sunday "
+    "lunes martes miércoles miercoles jueves viernes sábado sabado domingo "
+    "montag dienstag mittwoch donnerstag freitag samstag sonntag "
+    "lunedì lunedi martedì martedi mercoledì mercoledi giovedì giovedi venerdì venerdi sabato domenica "
+    "segunda terça terca quarta quinta sexta "
+    "maandag dinsdag woensdag donderdag vrijdag zaterdag zondag "
+    "mandag tirsdag onsdag torsdag fredag lørdag lordag søndag sondag "
+    "poniedziałek poniedzialek wtorek środa sroda czwartek piątek piatek sobota niedziela "
+    "hétfő hetfo kedd szerda csütörtök csutortok péntek pentek szombat vasárnap vasarnap "
+    "ponedeljak utorak sreda četvrtak cetvrtak petak subota nedelja nedjelja "
+    "ponedeljek torek četrtek cetrtek petek "
+    "senin selasa rabu kamis jumat sabtu minggu "
+    "понедельник вторник среда четверг пятница суббота воскресенье "
+    "الاثنين الإثنين الثلاثاء الأربعاء الخميس الجمعة السبت الأحد "
+    # French function words still leaking (afin/lire la suite/doit/soit/à travers)
+    "afin lire doit soit travers a-t-il n'a "
+    # Spanish function words + number/temporal generics
+    "vez tres gran días después bien "
+    # German modals / conjunctions / adverbs
+    "können sondern solche dazu sollte oft selbst deshalb bereits dadurch keinen "
+    # Italian auxiliaries / prepositions / adverbs
+    "poi sarà dalla nei nelle sotto sarebbe oggi tempo "
+    # Portuguese function words
+    "ainda pelo pelas num numa deste apesar "
+    # Russian conjunctions / pronouns / adverbs / aux
+    "чтобы которые около там было даже время стать можете знать однако сейчас ранее прямо "
+    # Danish function words + paywall/comment boilerplate (læs/adgang/dagens)
+    "kun ikke godt ingen vil hele efter første læs adgang dagens "
+    # Polish function words + temporal
+    "które tym oraz może jej można aby również jednak jego nich roku "
+    # Hungarian function words + temporal/number generics
+    "meg azt pedig majd szerint ezt így után olyan kell arra első fel lehet "
+    "mondta egyik ahogy volna miatt akkor két perc "
+    # Serbian/Croatian function words + comment-widget boilerplate
+    "ili ovoj temi vaše nije što kao koja godine tako nakon "
+    "pročitajte komentare diskusiji oglas mišljenje "
+    # Slovenian function words
+    "tudi kot zelo vse tem ter bodo bolj jih kar naj nekaj veliko sicer saj "
+    "potem tega res kjer zaradi lahko "
+    # Arabic prepositions / conjunctions
+    "خلال قبل ضمن بعد وفي ومن حول بشكل داخل وهو أجل حيث بما "
+    # Indonesian function words
+    "dalam oleh bisa bagi menjadi sebagai satu dapat hari secara agar tidak "
+    "maupun melalui merupakan "
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any

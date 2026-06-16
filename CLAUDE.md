@@ -1228,6 +1228,31 @@ ruling, a contingency, or a deliberate-omission note.
   source, ≥25% of its articles, both ≥10 — flagged with real counts, never
   auto-hidden); language_mismatch flag per keyword (stored vs dominant
   signature language — evidence, not a correction).
+  **KEYWORD-LOG OPTIMIZATION LOOP — TOOL + BATCH SHIPPED 2026-06-16 (draft PR onto
+  0.09; operationalizes the maintainer's "the logging system creates manageable
+  documents you can ingest" intent):** `scripts/analyze_keyword_log.py` (stdlib-only,
+  runs without the app installed) ingests a `keyword-diagnostics` export (oo-export-1)
+  and emits REVIEW-ready proposals — net-new per-language stopword candidates (diffed
+  vs the live `_EXTRA_STOPWORD_TEXT`+stopwords.py, split high-confidence vs review using
+  language_signature CONCENTRATION so names/loan-words that SPREAD demote to review),
+  weekday leaks, cross-source + per_source_concentration boilerplate, sentence-initial
+  false-entity candidates, cross-language ring candidates (top-concepts-per-language for
+  hand-mapping + LOW-confidence cognate hints), and singular/plural family-merge pairs.
+  It PROPOSES, never edits data (honesty by construction). FIRST BATCH APPLIED from the
+  2026-06-14 export (1,201-art corpus): a new dated `_EXTRA_STOPWORD_TEXT` block adds the
+  surfaced FUNCTION words ×14 langs (de können/sondern, ru чтобы/которые, hu szerint/
+  pedig, id dalam/oleh, sl tudi/kot, ar خلال/قبل, it/pt/pl/da/sr/es/fr…), the missing
+  WEEKDAY names ×16 langs (the month passes never covered weekdays — "Sunday"/"sábado"/
+  "lørdag" were top keywords), and sr comment-widget + da paywall BOILERPLATE; applied
+  retroactively at query time (no migration/re-index). Cross-language COLLISIONS
+  deliberately omitted (sea/tom/fin/laut — global_stopwords() is unioned across all
+  langs). tests/test_keyword_log_analyzer.py (10) covers the analyzer + a regression
+  guard that the batch words ARE filtered and the collisions are NOT. REMAINING (queued,
+  bigger): wire keyword_equivalents.yml into LIVE analytics (the "Trans-language
+  equivalence" entry — verified NOT wired); fix sentence-initial-capital false entities
+  (~1041 common words tagged kind=entity); singular/plural family merge (~2753 pairs,
+  display-layer, risk of over-merge — guarded); the Item AC pre-tagged per-language
+  baseline + keyword-management Settings subtab (endorsed, unbuilt).
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,
