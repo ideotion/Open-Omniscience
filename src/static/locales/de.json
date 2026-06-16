@@ -992,5 +992,9 @@
   "No regions.": "Keine Regionen.",
   "Could not load regions.": "Regionen konnten nicht geladen werden.",
   "Download an offline map region": "Eine Offline-Kartenregion herunterladen",
-  "Download this offline map region? These can be very large (several GB to tens of GB).": "Diese Offline-Kartenregion herunterladen? Sie können sehr groß sein (mehrere GB bis zu Dutzenden GB)."
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "Diese Offline-Kartenregion herunterladen? Sie können sehr groß sein (mehrere GB bis zu Dutzenden GB).",
+  "{n} articles mention this date": "{n} Artikel erwähnen dieses Datum",
+  "Deduced from {n} articles ({s} sources), never confirmed.": "Abgeleitet aus {n} Artikeln ({s} Quellen), nie bestätigt.",
+  "A date your articles mention — deduced from text, never confirmed.": "Ein von Ihren Artikeln erwähntes Datum — aus dem Text abgeleitet, nie bestätigt.",
+  "deduced · never confirmed": "abgeleitet · nie bestätigt"
 }

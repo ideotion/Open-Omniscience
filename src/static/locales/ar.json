@@ -992,5 +992,9 @@
   "No regions.": "لا توجد مناطق.",
   "Could not load regions.": "تعذّر تحميل المناطق.",
   "Download an offline map region": "تنزيل منطقة خريطة دون اتصال",
-  "Download this offline map region? These can be very large (several GB to tens of GB).": "تنزيل منطقة الخريطة هذه دون اتصال؟ قد تكون كبيرة جدًا (من عدة جيجابايت إلى عشرات الجيجابايت)."
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "تنزيل منطقة الخريطة هذه دون اتصال؟ قد تكون كبيرة جدًا (من عدة جيجابايت إلى عشرات الجيجابايت).",
+  "{n} articles mention this date": "{n} مقالات تذكر هذا التاريخ",
+  "Deduced from {n} articles ({s} sources), never confirmed.": "مُستنتج من {n} مقالات ({s} مصادر)، غير مؤكد أبدًا.",
+  "A date your articles mention — deduced from text, never confirmed.": "تاريخ تذكره مقالاتك — مُستنتج من النص، غير مؤكد أبدًا.",
+  "deduced · never confirmed": "مُستنتج · غير مؤكد"
 }

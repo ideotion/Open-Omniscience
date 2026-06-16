@@ -992,5 +992,9 @@
   "No regions.": "Tidak ada wilayah.",
   "Could not load regions.": "Tidak dapat memuat wilayah.",
   "Download an offline map region": "Unduh wilayah peta offline",
-  "Download this offline map region? These can be very large (several GB to tens of GB).": "Unduh wilayah peta offline ini? Ukurannya bisa sangat besar (beberapa GB hingga puluhan GB)."
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "Unduh wilayah peta offline ini? Ukurannya bisa sangat besar (beberapa GB hingga puluhan GB).",
+  "{n} articles mention this date": "{n} artikel menyebutkan tanggal ini",
+  "Deduced from {n} articles ({s} sources), never confirmed.": "Disimpulkan dari {n} artikel ({s} sumber), tidak pernah dikonfirmasi.",
+  "A date your articles mention — deduced from text, never confirmed.": "Tanggal yang disebutkan artikel Anda — disimpulkan dari teks, tidak pernah dikonfirmasi.",
+  "deduced · never confirmed": "disimpulkan · tidak dikonfirmasi"
 }

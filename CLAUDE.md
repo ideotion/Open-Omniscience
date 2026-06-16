@@ -1310,7 +1310,14 @@ ruling, a contingency, or a deliberate-omission note.
   in articles as agenda candidates — grouped by date with distinct-article + distinct-source
   counts, a ≥min_articles surfacing gate, the article-id set for corpus open-through; "deduced
   from text, never confirmed" caveat, counts only/no score (tests/test_deduced_dates.py).
-  REMAINING: render them in the agenda views ("deduced from N articles", clickable).
+  FRONTEND SHIPPED 2026-06-16 (conservative, browser-unverified): `mapDeducedToAgenda`
+  maps `/api/events/deduced` into the `AG.events` pipeline like imported events (so EVERY
+  agenda view places them via `next_occurrence` for free), as a distinct filterable
+  "deduced" category; each row shows a VISIBLE "deduced · never confirmed" pill + the
+  "Deduced from N articles (S sources), never confirmed." note, and the title opens the
+  EXACT article set via `openAnalysisForIds` (agRow branch). +4 i18n ×12; test #13b.
+  REMAINING: deduced events as FIRST-CLASS agenda events with ⊞ keyword links (parity with
+  the moon/season glyph treatment); recurrence/world-calendars/astronomy slices.
 - **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51) —
   SLICE 1 SHIPPED (PR #212, 2026-06-15; unblocked now that When×Where×Who
   persists):** READ-ONLY space-time co-occurrence in src/analytics/convergence.py

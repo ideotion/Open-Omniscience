@@ -992,5 +992,9 @@
   "No regions.": "কোনো অঞ্চল নেই।",
   "Could not load regions.": "অঞ্চল লোড করা যায়নি।",
   "Download an offline map region": "একটি অফলাইন মানচিত্র অঞ্চল ডাউনলোড করুন",
-  "Download this offline map region? These can be very large (several GB to tens of GB).": "এই অফলাইন মানচিত্র অঞ্চল ডাউনলোড করবেন? এগুলি খুব বড় হতে পারে (কয়েক GB থেকে কয়েক দশ GB)।"
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "এই অফলাইন মানচিত্র অঞ্চল ডাউনলোড করবেন? এগুলি খুব বড় হতে পারে (কয়েক GB থেকে কয়েক দশ GB)।",
+  "{n} articles mention this date": "{n}টি নিবন্ধ এই তারিখ উল্লেখ করে",
+  "Deduced from {n} articles ({s} sources), never confirmed.": "{n}টি নিবন্ধ ({s}টি উৎস) থেকে অনুমান, কখনও নিশ্চিত নয়।",
+  "A date your articles mention — deduced from text, never confirmed.": "আপনার নিবন্ধে উল্লিখিত একটি তারিখ — পাঠ্য থেকে অনুমান, কখনও নিশ্চিত নয়।",
+  "deduced · never confirmed": "অনুমান · কখনও নিশ্চিত নয়"
 }

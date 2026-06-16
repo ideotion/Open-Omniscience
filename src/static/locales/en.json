@@ -992,5 +992,9 @@
   "No regions.": "No regions.",
   "Could not load regions.": "Could not load regions.",
   "Download an offline map region": "Download an offline map region",
-  "Download this offline map region? These can be very large (several GB to tens of GB).": "Download this offline map region? These can be very large (several GB to tens of GB)."
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "Download this offline map region? These can be very large (several GB to tens of GB).",
+  "{n} articles mention this date": "{n} articles mention this date",
+  "Deduced from {n} articles ({s} sources), never confirmed.": "Deduced from {n} articles ({s} sources), never confirmed.",
+  "A date your articles mention — deduced from text, never confirmed.": "A date your articles mention — deduced from text, never confirmed.",
+  "deduced · never confirmed": "deduced · never confirmed"
 }
