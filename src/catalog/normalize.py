@@ -12,7 +12,10 @@ domain both within a batch and against the already-shipped catalogs.
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urlparse
+
+from src.catalog.countries import normalize_country
 
 # Hosts excluded for now: social networks / link aggregators / video & chat
 # platforms. Matched by registrable domain or as a suffix (so m.facebook.com,
@@ -80,6 +83,36 @@ def is_social(domain: str | None) -> bool:
         return False
     d = domain.lower()
     return any(d == h or d.endswith("." + h) for h in SOCIAL_HOSTS)
+
+
+# The catalog uses a trailing ``(Country)`` suffix as a human-authored origin
+# marker (``TASS (Russia)``, ``El País (Spain)``). Only the *last* parenthetical
+# group, anchored to the end, is considered.
+_TITLE_COUNTRY_RE = re.compile(r"\(([^()]+)\)\s*$")
+
+
+def country_from_title(name: str | None) -> str | None:
+    """Extract an ISO-2 country from a trailing ``Name (Country)`` annotation.
+
+    Returns the lowercase 2-letter code only when the trailing parenthetical
+    resolves to a real ISO country: language/edition markers (``(English)``) and
+    supranational tags (``(International)`` -> ``int``, which is not a 2-letter
+    country code) yield ``None`` so the caller can fall back to the ccTLD.
+
+    Deliberately CONSERVATIVE -- it reads only this explicit, delimited
+    convention and never scans the whole title for a country word or demonym.
+    That breadth would be far too noisy to apply automatically: ``Kyodo News
+    (English)`` is Japanese (not British), ``German Marshall Fund`` is American,
+    and ``Greek History Podcast`` names a topic, not an origin. Such matches are
+    curated into the catalog by hand, never inferred at seed time.
+    """
+    if not name:
+        return None
+    m = _TITLE_COUNTRY_RE.search(name)
+    if not m:
+        return None
+    code = normalize_country(m.group(1).strip())
+    return code if code and len(code) == 2 else None
 
 
 def to_entry(

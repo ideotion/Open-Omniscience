@@ -11,6 +11,7 @@ reduction, social-host exclusion and dedup are pinned without any live calls.
 from __future__ import annotations
 
 from src.catalog.normalize import (
+    country_from_title,
     dedup_entries,
     is_social,
     registrable_domain,
@@ -57,6 +58,29 @@ def test_to_entry_shape_and_tags():
     assert e["country"] == "fr"  # lowercased 2-letter
     assert e["language"] == "fr"
     assert "news" in e["tags"] and "world" in e["tags"]
+
+
+def test_country_from_title_reads_the_explicit_suffix_convention():
+    # The "Name (Country)" suffix -> a real ISO-2 code (names, codes, shorthand).
+    assert country_from_title("TASS (Russia)") == "ru"
+    assert country_from_title("El País (Spain)") == "es"
+    assert country_from_title("The Wall Street Journal (USA)") == "us"
+    assert country_from_title("The Canary (UK)") == "gb"
+    # only the *trailing* parenthetical is read
+    assert country_from_title("Foo (Bar) News (France)") == "fr"
+
+
+def test_country_from_title_is_conservative_about_non_countries():
+    # language/edition markers and topics are NOT countries -> None (fall back to ccTLD)
+    assert country_from_title("Kyodo News (English)") is None
+    assert country_from_title("CNN (Live)") is None
+    # supranational tag normalises to "int" (3 chars), not a 2-letter country -> None
+    assert country_from_title("The Guardian (International)") is None
+    # no trailing parenthetical, or a country word only *inside* the title -> None
+    assert country_from_title("German Marshall Fund") is None
+    assert country_from_title("Greek History Podcast") is None
+    assert country_from_title("") is None
+    assert country_from_title(None) is None
 
 
 def test_dedup_within_batch_and_against_existing():
