@@ -79,7 +79,16 @@ ruling, a contingency, or a deliberate-omission note.
 
 ## UI invariants (maintainer-ruled; do not regress)
 1. **Wikipedia edition picker is a `<select>` dropdown** (id `wiki-lang`), fed
-   by `/api/wiki/languages` with continent `<optgroup>`s. Never a free-text input.
+   by `/api/wiki/languages`. Never a free-text input.
+   **AMENDED (ruled 2026-06-16, PENDING build): DROP the continent `<optgroup>`
+   grouping** — editions are LANGUAGE-based, not country/continent-based (a
+   language spans many continents), so the continent split is a category error
+   and "not useful anymore." Render a FLAT list instead (default order: UI-locales
+   / largest-edition-first; native-name labels per invariant #15). Applies to BOTH
+   pickers fed by the endpoint (`wiki-lang` watched editions + `dump-lang` dumps);
+   `/api/wiki/languages` stops emitting/using the by-continent `groups`. The
+   `<select>`/never-free-text CORE stays (test #1 unchanged — it never asserted the
+   optgroups; do NOT add a grouping assertion).
 2. **Left sidebar lists all tabs and stays visible** — it may collapse to an
    icon rail, but must never disappear off-canvas above 600 px width.
 3. **Top bar elements have constant footprints**: `.act-host` keeps its 160 px
@@ -803,6 +812,41 @@ ruling, a contingency, or a deliberate-omission note.
   pulls models from the GUI (checksum-verified through the guarded factory,
   catalog picker with size/RAM/license shown never a score, pulls are
   task-manager jobs, clearnet stated prerequisite, hardware fit MEASURED).
+  **RE-RAISED + NOW ACTIVE (maintainer 2026-06-16): build it as a DEDICATED
+  Settings SUBTAB for LLM management (invariant-#18 grammar, not the lone
+  read-only panel), with explicit actions — download+install the Ollama
+  BINARY, EXPLORE models, download/pull, install/RUN, REMOVE. VERIFIED STATE
+  2026-06-16: substrate exists (src/llm/ollama.py OllamaClient
+  health/list_installed[_detailed]/generate; /api/llm health·models·generate·
+  summarize·translate·synthesize; #llm top-bar pill; the 'Local models'
+  Settings panel) but is READ-ONLY — it shows installed + the 5-model dated
+  catalog and tells the user to use a TERMINAL ('ollama pull <tag>' as COPY
+  TEXT, not a button); NO pull/remove/install-binary endpoints or buttons exist
+  yet. Pull/rm can stream REAL bytes from ollama's own /api/pull·/api/delete
+  (honest progress, invariant #20); pulls = task-manager jobs, GATED by the ONE
+  consent (#14). OPEN DECISIONS filed for a maintainer ruling: (a) how far the
+  binary install goes — guided+verified vs per-OS auto-exec an installer vs
+  user-space tarball auto-run (security/elevation trade-off); (b) model
+  exploration — curated dated catalog (zero-network) + an OPT-IN consented
+  live-ollama.com-library browse + a free-text 'pull any tag' box, vs always
+  live-browse; (c) TRANSPORT HONESTY — pulls egress via the OLLAMA PROCESS over
+  CLEARNET, NOT our Tor proxy/guarded factory, so airplane+Tor don't cover them
+  (state at consent; the USB offline kit stays the air-gapped path); (d) active
+  model moves from env-only OO_LLM_MODEL to a stored UI setting.**
+  **RULINGS 2026-06-16 (maintainer answered): placement = a Settings SUBTAB
+  (Q6=A); (a) binary install = Q7=B — the app DOWNLOADS + RUNS the official per-OS
+  Ollama installer (verify checksum/signature BEFORE exec through the guarded
+  factory; consent + a VISIBLE explicit OS elevation step, NEVER silent; honest
+  about what is run); (b) model exploration = Q8=A + ELABORATION — the curated
+  dated catalog PLUS a SEARCHABLE consented live-ollama.com-library browse (the
+  full library is too large to list), FILTERABLE/sortable by PROVIDER · DATE ·
+  SIZE (+ hardware-fit + license), showing ONLY app-APPLICABLE models. APP
+  COMPATIBILITY CLARIFIED: our features (summarize/translate/synthesize) use PLAIN
+  /api/generate text generation — NO tool/function-calling — so any instruct/chat
+  TEXT model that fits the hardware works; filter OUT non-applicable kinds
+  (embedding-only, vision-only); 'compatible' = text-generation that fits RAM, not
+  a special protocol; (c) transport = Q9=YES (clearnet via the ollama process,
+  disclosed at consent); (d) active model = Q10=YES (stored UI setting).**
   SELF-UPDATE via GUI: consented check vs GitHub releases → signed
   oo-backup-2 + install-tree snapshot BEFORE anything → verified release →
   migrations on a STAGED copy → atomic swap + relaunch → rollback on failure;
@@ -1081,6 +1125,20 @@ ruling, a contingency, or a deliberate-omission note.
   ruling above (dump-as-baseline + recentchanges-delta) and the
   SCRAPING_AUTOMATION_PLAN download subsystem. Scale honesty still applies
   (enwiki ≈ 100k edits/day vs the 2-core VM) — tiered depth + visible consent.
+  **INLINE AUTO SIZE ESTIMATES (ruled 2026-06-16): show EACH dump-eligible
+  edition's estimated size INLINE & AUTOMATICALLY in the picker — drop the
+  per-selection click + the "Estimate size" button** (today #dump-lang multi-select
+  → probeDump() → GET /api/wiki/dumps/probe = a LIVE per-edition network HEAD to
+  the dump server, index.html ~1721-1736 / wiki.py:271 probe_size). HONEST
+  CONSTRAINT (binding): showing all sizes must NOT fire N network probes at open
+  (breaks zero-network boot + airplane). SO: ship a BUNDLED, DATE-STAMPED
+  per-edition size TABLE (WIKI_SIZES_AS_OF + a freshness test — the model-catalog
+  CATALOG_AS_OF pattern; tiny metadata, NOT the dumps) rendered inline with an
+  "estimate · as of DATE · exact on download" caveat ×12 — zero-network, instant.
+  REPLACE the per-edition probe with ONE consented "refresh exact sizes" that
+  fetches live sizes in a SINGLE call (the dump date's dumpstatus.json lists every
+  edition at once, not N HEADs) through the guarded factory + the ONE consent
+  (#14). Delivers the cleaner UX without a network burst.
 - **WIKIPEDIA (field report #4; T14 SLICE 1 SHIPPED 2026-06-12):** the RULED
   dump-list limit SHIPPED (/api/wiki/languages?scope=dumps serves only
   APP_LANGUAGE_CODES = 12 UI locales + 5 stoplist-evidenced corpus languages;
@@ -1182,6 +1240,116 @@ ruling, a contingency, or a deliberate-omission note.
   per-family HUE shown as a tab dot and a card left-accent (--fam); "All" stays
   the single prioritised feed (lens not a wall). test_ui_invariants #19/#19b
   pin it. Home empty-state fail-safe preserved (subtab bar only when >1 bucket).
+- **UI RETHINK — MAINTAINER PLANNING SESSION 2026-06-16 (DESIGN-ONLY, not built;
+  ONE coherent vision spanning nav + Home + Analysis; REVISES invariants
+  #2/#3/#4/#18/#19 + UI_SHELL_REDESIGN_PLAN §1/§5 + the TWO-windows debt — all
+  test_ui_invariants-enforced, so any change ripples into that test):**
+  - **(1) NAV MOVES TO THE TOP (revisits #2/#3/#4/#18):** the tabs move to a
+    FULL-WIDTH horizontal bar at the VERY TOP, beneath a THIN status bar that
+    holds only simple action toggles (search · status · airplane · language ·
+    help). Tabs FILL the width with a MAX reasonable width each; the active tab is
+    CLEARLY indicated while inactive tabs are discreet-but-clearly-visible.
+    **RESOLVED 2026-06-16 → B: KEEP the left sidebar for MAIN sections (invariant
+    #2 INTACT); move ONLY the in-section FACET subtabs to the full-width top bar
+    beneath the thin status bar. Layout: thin status bar (top) → full-width
+    facet-subtab strip → left sidebar + content. The parallel analysis tabs (item
+    4) fit naturally in that top strip within the Analysis section, named by query;
+    the per-analysis facets (Keywords/Mindmap/…) stay an inner row — the exact
+    two-level presentation is a build detail. UI_SHELL_REDESIGN_PLAN §1 stands
+    (sidebar = main tabs); this only RELOCATES the facet subtabs to the very top.**
+  - **(2) HOME → DASHBOARD / HELICOPTER VIEW (extends #19; everything REDUNDANT
+    per #8 — Home gives NO unique information):** Home becomes a landing the user
+    is HAPPY to reach + a launchpad to start digging into the specialized tabs;
+    nothing on it is unique (every element deep-links to its real tab). SECTIONS
+    (maintainer list, more invited): top GRAPHS (ooChart, sparse→bars per Item Y),
+    keyword TRENDS, top CARDS, DYNAMIC data-driven sections (e.g. a commodity's
+    price graph surfaces WHEN its keyword family is trending), a CAROUSEL of
+    rolling/simplified/SYNTHESIZED cards, "most recent" articles by TAG. Selection
+    is INDUCED by background analytics over the DB yet TWEAKABLE (build on the
+    recipes.py producer toggles). HONESTY GUARDRAILS (binding): "top"/ranking is an
+    HONEST ordering (evidence tier + recency + corpus spread + _trigger), NEVER a
+    hidden importance score (assert_no_score_fields); "synthesized" = LOCAL
+    ANALYTIC synthesis, NEVER LLM output (zero-network Home; LLM-less is the asset);
+    caveats VISIBLE by default (#23) even in compact tiles; the carousel is
+    user-controlled + a11y (pausable/keyboard) and NEVER hides a caveat behind a
+    timed rotation; Home never blank-and-silent (fail-safe empty state).
+  - **(3) NAME THE CARD SYSTEM (brainstorm WITH the maintainer — NO name chosen
+    yet):** today = "briefing cards" / "producers" / "buckets" (src/briefing). A
+    card = one measured signal + evidence + method + caveat = a SOURCED, CAVEATED
+    PROMPT TO INVESTIGATE ("assistance never a verdict"; "a microscope not a
+    detector"; "name the shape"). Seeded candidates: Leads · Cues · Soundings ·
+    Readouts · Vantages (NOTE: "Signals" collides with src/signals/). **RESOLVED
+    2026-06-16 → "LEADS"** (a card = a Lead: an investigative starting point to
+    dig). Rename the USER-FACING label ×12 locales; the internal src/briefing
+    module + bucket names can stay or rename later (cosmetic).
+  - **(4) ANALYSIS = NAMED, PARALLEL, SPAWNED TABS (ruled 2026-06-16; fixes the
+    "weird empty Analysis tab" + likely retires the TWO-windows debt):** today
+    clicking the sidebar "Analysis" tab opens the SINGLETON #an EMPTY (no corpus
+    until you search; #an-query shows "(all articles matching your filters)") and
+    openAnalysis/openAnalysisFor REUSE that one tab = confusing. RULING: a
+    search/term OPENS A NEW analysis tab (one instance per search), TITLED by the
+    query term (or "synthesis" for a composite), and SEVERAL parallel searches
+    coexist as DIFFERENT tabs (a multi-document workspace). The empty singleton
+    Analysis entry goes away (a launcher at most). DEPENDS ON (1) (where spawned
+    tabs live) + folds in the #an ↔ #corpus-win consolidation. **RESOLVED
+    2026-06-16:** tabs are CLOSEABLE, soft-CAPPED, and PERSISTED across sessions
+    (restored on reload). With nav=B, the spawned tabs live in the top
+    facet-subtab strip under the Analysis section.
+  - **(5) INSIGHTS = THE NON-SEARCHABLE OVERVIEW + THE CANONICAL HOME OF THE CARDS
+    (ruled 2026-06-16; clarifies #8/#21 + the Home(2)↔Insights split):** REMOVE the
+    Insights search bar (#ins-term + the Explore button + exploreTerm, index.html
+    ~1315) — typing a term IS search and belongs to the omnibar → a spawned
+    analysis tab (item 4); the removal is GATED on that absorption so the
+    term-exploration (mind-map for a term, its trend) is NEVER lost (the Desk
+    lesson). Insights then shows ONLY non-searchable aggregates: a recently-
+    TRENDING-keywords graph, keyword FAMILIES + SUPER-GROUPS, TRENDING SOURCES,
+    UPCOMING EVENTS, etc. (the existing Trends/Families/Groups/Sources/Map subtabs
+    + the click-to-zoom landscape & mind-map become the BROWSE path; deep digging
+    into one term = the analysis tab). THE CARDS MOVE from Home INTO Insights =
+    their canonical home; Home(2) keeps only a REDUNDANT curated "top cards" subset
+    (consistent with #8 + the Home-is-redundant principle). "Upcoming events" here
+    is a redundant lens onto the Agenda tab (fine, by design). **TRENDS SUBTAB
+    SPEC (maintainer 2026-06-16):** show RISING keywords across THREE preset
+    windows — past 24h · past week · a longer one (month/all-time, exact span TBD)
+    — side by side (today it is ONE adjustable window via /api/insights/trending
+    window_days+baseline_days) + the TOP 5 keywords each rendered with a rich
+    time-series GRAPH (ooChart, full-resolution invariant #16, sparse→bars per
+    Item Y; today #trd-top is a plain list via /api/insights/top). HONESTY: 24h is
+    sparse on a young corpus → n shown + early-corpus caveat + honest empty state;
+    rising = window-vs-baseline RATE (method stated, no momentum score); top =
+    most-mentioned ordering (basis stated), never a composite score. **LOCATION
+    CLARIFIED 2026-06-16 (maintainer asked):** Trends is the Insights tab → Trends
+    subtab (#ins-trends). THIRD-WINDOW SPAN still PENDING the maintainer's pick
+    (month / year / all-time).
+  - **(6) UNIFIED 3D KEYWORD EXPLORER (ruled 2026-06-16; maintainer FLAGSHIP —
+    "important to me", "incredible UI/UX"; evolves the mind-map rules + #mm-kit;
+    lives in Insights per (5)):** THREE fixes + one big rework. FIXES: (a) the
+    control buttons (#mm-levels + #mm-views + period/size/enlarge, index.html
+    ~1336 flex row) OVERLAP — fix the responsive layout (largely SUBSUMED once the
+    levels unify); (b) "Enlarge" (mmExpand today only toggles a .mm-big CSS class,
+    NOT real fullscreen) → TRUE Fullscreen API (requestFullscreen) with a CLEAR
+    visible EXIT control IN ADDITION to Esc. REWORK: UNIFY Keywords / Families /
+    Super-groups (today 3 toggled levels via mmLevel) into ONE continuous
+    exploration — a 3D LAYERED hierarchy: super-groups ABOVE families ABOVE
+    keywords (depth = level), navigated continuously (zoom/drill + LOD) rather than
+    switched. HONEST VISUAL ENCODINGS for trends · importance · language-spread ·
+    territory-spread, etc. — each mapped to a REAL measured quantity with a stated
+    method, NEVER a composite "importance score" (assert_no_score discipline
+    carries to the viz): size ∝ real mention/spread count (n shown); trend =
+    windowed rise/fall (early-corpus caveat + Item-Y sparse honesty); language
+    spread = distinct languages (signatures); territory spread = distinct countries
+    (per-source-country split + the When×Where gazetteer). DECISIONS/CONSTRAINTS to
+    settle at build: (i) 3D TECH = a dependency/architecture RULING — bundled-local
+    WebGL (Three.js, heavier) vs hand-rolled canvas 2.5D / CSS-3D (lighter,
+    deterministic, fits local-first + deterministic-mind-map + no-heavy-deps); my
+    lean = the lightest approach that still reads as 3D, bundled LOOPBACK-ONLY (no
+    CDN). **RESOLVED 2026-06-16 → A: lightweight, hand-rolled (canvas 2.5D /
+    CSS-3D); NO Three.js/WebGL dependency.** (ii) PERFORMANCE/LOD: 62k+ keywords live — cannot render all; LOD
+    (super-groups → drill a family → its keywords), bounded. (iii) a11y +
+    REDUNDANCY: 3D must NOT be the ONLY access path — keep the tabular
+    Families/Groups views + the word-cloud second view; the deterministic mind-map
+    rules (outward, no cross-tangle, no fabricated structure) carry into the layered
+    3D form. date-spectrum + text-size controls stay (plus fullscreen).
 - **UI SHELL REDESIGN (ruled 2026-06-13; full plan in
   `docs/product/UI_SHELL_REDESIGN_PLAN.md`):** (1) ONE universal nav grammar
   app-wide — LATERAL sidebar = main tabs, VERTICAL subtabs near the top =
@@ -1530,6 +1698,25 @@ ruling, a contingency, or a deliberate-omission note.
     while offline — never the active green. Class-B choice (D-03): muted/grounded,
     NOT the literal go-off accent (which is `--ok` green here = would conflate with
     active-green) and NOT a new alarm-red. +1 string ("Collecting paused") ×12.
+    **RE-OPENED 2026-06-16 (maintainer field test): still sees GREEN "Collecting…"
+    after engaging airplane. STATIC RE-VERIFY 2026-06-16: the shipped frontend
+    logic reads CORRECT — `_paintActivity` flips to muted `.activity.paused`
+    ("Collecting paused", spinner stopped) whenever `_netOnline===false`, and the
+    backend rides `online = not kill_switch_active()` on BOTH /api/system/network
+    (system.py:122) and every /api/scheduler/status (scheduler.py:59), so airplane
+    DOES report offline. Could NOT reproduce green by code-reading ⇒ NEEDS A LIVE
+    REPRO (start a collect, engage airplane, watch the 2 s/5 s poll interleaving +
+    the exact `s.active`/`online` values during the transition; confirm `_netOnline`
+    is never left undefined; note `_pollActivity` (index.html:2742) ignores the
+    `s.online` it already receives — make it honor it as a hardening). MAINTAINER
+    COLOR/TEXT OVERRIDE OF D-03 (ruled 2026-06-16): the paused chip must use the
+    SAME color as the ENGAGED airplane button = `var(--err)` (red), NOT the muted
+    grey — so `.activity.paused` color + spinner border-top → `var(--err)`; text
+    "Collecting paused…" (add the ellipsis). This consciously REVERSES the
+    autonomous "muted, not alarm-red" choice. Update test_ui_invariants if it pins
+    the muted color. (Q11=No 2026-06-16: maintainer declined a planning-session
+    live repro — root-cause at implementation; the color/text change ships
+    regardless.) PENDING.
   - **Item R SHIPPED — discoverable sidebar EXPAND affordance:** the collapsed
     rail showed only a "Collapse sidebar"-titled button (left chevron) with no
     discoverable way back. Now TWO CSS-toggled buttons share the slot: `#sb-collapse`
