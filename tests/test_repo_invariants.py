@@ -744,6 +744,25 @@ def test_ui_invariants():
     assert "function startOsmDownload(" in html and "ensureOnline(" in html, (
         "starting an OSM download must pass the ONE consent popup (ensureOnline, invariant #14)"
     )
+    # 28. LLM model management is a DEDICATED Settings subtab (Q6=A) with explicit
+    #     actions over the existing endpoints — pull (NDJSON stream), remove, and the
+    #     active-model picker (PUT /api/settings llm_model). Pulling is a network
+    #     action over CLEARNET via Ollama, so it MUST pass the ONE consent popup
+    #     (ensureOnline, invariant #14) — asserted so it can't regress to a silent pull.
+    assert 'data-tab="models"' in html and 'id="set-models"' in html, (
+        "the Models Settings subtab button + panel must exist (LLM management, Q6)"
+    )
+    assert "function pullModel(" in html and "function removeModel(" in html and (
+        "function setActiveModel(" in html
+    ), "the LLM subtab must wire pull / remove / set-active actions"
+    assert "/api/llm/pull" in html and "/api/llm/remove" in html, (
+        "the LLM subtab must call the pull + remove endpoints"
+    )
+    assert '"/api/settings", {method: "PUT"' in html or "llm_model" in html, (
+        "set-active must persist the choice via PUT /api/settings {llm_model}"
+    )
+    # the pull path is gated by the ONE consent popup (clearnet egress via Ollama)
+    assert "ensureOnline(" in html, "pulling a model must pass ensureOnline (invariant #14)"
 
 
 def test_corpus_tier_header():
