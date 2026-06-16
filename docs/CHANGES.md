@@ -11,6 +11,20 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Documentation accuracy pass (audit PR B, docs-only).** Brought the docs back in
+  line with the code: the stale inline-handler figure (an old `onclick`-only count) is
+  now the verified **295** (229 `onclick` + 35 `onchange` + 15 `onkeydown` + 14 `oninput` + 2 `onmouse*`)
+  across CLAUDE.md and the audit log; the **ETHICS.md GPLv3 checklist** no longer
+  overstates per-file headers (most modules carry an SPDX notice; the `LICENSE` file is
+  authoritative — GPL needs no per-file header); the dead **`audit/scrape_log.csv`**
+  runtime mandate was replaced with the real on-click diagnostics mechanism
+  (`data/*_preflight.jsonl` + `field_test.jsonl` → the Settings debug bundle, never
+  auto-transmitted); the README's "all 29 audit findings closed" now spells out that
+  the `0.07` audit fixed 20 and deferred 9, all closed in `0.0.8` (`findings.csv` reads
+  29/29 FIXED); and the **task-manager window** + **Wikipedia tracked-changes timeline
+  tab** moved to "In progress / next" to match the RC gate's honest 🔶 (their shipped
+  halves stay ✅).
+
 - **Collect, Sources, and Wikipedia moved into Settings (content-first).** The three
   acquisition/configuration tabs left the sidebar; their controls now live under
   **Settings → Collect** (scheduler, manual ingest, batch picker), **Settings →

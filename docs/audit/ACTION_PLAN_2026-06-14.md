@@ -29,8 +29,8 @@ for review. So the audit's three tiers map as:
 - **Safe-to-auto** → fixed and verified here.
 - **Needs-operator-sign-off** → implemented the honest, reversible version and
   verified it; the *judgement call* is called out in the PR for the maintainer.
-- **Discuss-before-touching** → only the 199-inline-handler→CSP migration
-  (D12-001/D2-002) lands here, because it is large **and** unverifiable without a
+- **Discuss-before-touching** → only the inline-handler→CSP migration
+  (D12-001/D2-002, 295 inline on*= as of 2026-06-15) lands here, because it is large **and** unverifiable without a
   browser. We ship the safe, additive sibling fixes and the groundwork, and
   document the full migration as the single deferred item with its plan — rather
   than push a blind rewrite that could break the UI (faithful-reporting rule).
@@ -89,7 +89,7 @@ fixed at HEAD.
 | OO-D12-002 | S3 | `collapseAction()` signature wrapped in `esc()` (consistency/defense-in-depth) | ✅ |
 | OO-D13-001 | S2 | Palette + task-manager dialogs: `aria-modal`, focus save/restore, Tab trap | ✅ (node-checked) |
 | OO-D13-002 | S3 | Recipe/family checkboxes get `aria-label` | ✅ (node-checked) |
-| OO-D12-001 | S2 | 199 inline handlers → `data-*`+delegation: large **and** browser-unverifiable here | 📝 deferred w/ plan |
+| OO-D12-001 | S2 | 295 inline handlers → `data-*`+delegation: large **and** browser-unverifiable here | 📝 deferred w/ plan |
 | OO-D2-002 | S2 | Drop CSP `'unsafe-inline'`: blocked on D12-001 | 📝 deferred (depends on D12-001) |
 
 ### WP-5 / WP-7 / D6 — rulings, scale, licenses
@@ -145,7 +145,7 @@ HEAD `6b4ff13` already included the #158 claim sweep). Commit → findings:
   gap was the *framing* surface (empty caveat), now fixed + test-enforced.
 
 **Deferred (with reason), surfaced as questions below:**
-- **OO-D12-001 / OO-D2-002** — the 199-inline-handler→`data-*` migration + CSP
+- **OO-D12-001 / OO-D2-002** — the inline-handler→`data-*` migration + CSP
   `unsafe-inline` drop. Large *and* unverifiable without a headless browser (a
   blind rewrite risks breaking the whole UI). The safe sibling fixes shipped
   (a11y, esc()); the full migration is a dedicated browser-verified PR.
