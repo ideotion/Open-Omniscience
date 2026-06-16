@@ -619,7 +619,7 @@ def diet_self_audit(session) -> list[Card]:
             type="diet_self_audit",
             trigger=_trigger(
                 "Most of what you've collected recently comes from just a few sources. "
-                "This card shows you that share, so you can decide whether your reading "
+                "This Lead shows you that share, so you can decide whether your reading "
                 "mix is what you want it to be.",
                 math_rows,
             ),
@@ -716,7 +716,7 @@ def echo_chamber(session) -> list[Card]:
         math_rows = [
             ("Sources that published near-identical text", str(n)),
             ("Stories they shared", str(actor.shared_stories)),
-            ("Minimum sources for this card", f"≥ {_ECHO_MIN_SOURCES} ✓"),
+            ("Minimum sources for this Lead", f"≥ {_ECHO_MIN_SOURCES} ✓"),
             (
                 "Hours between the first and the median copy",
                 str(actor.median_span_hours) if actor.median_span_hours is not None else "—",
@@ -788,7 +788,7 @@ def lonely_signal(session) -> list[Card]:
                 trigger=_trigger(
                     "Only one of your sources carried this story, and nobody else "
                     "repeated it. That can mean an exclusive worth a look — or just a "
-                    "minor item. The card makes no judgement; you decide.",
+                    "minor item. The Lead makes no judgement; you decide.",
                     [
                         ("Sources that carried this story", "1"),
                         ("Sources that repeated it (near-identical text)", "0"),
@@ -854,7 +854,7 @@ def capacity_implausible(session) -> list[Card]:
     math_rows = [
         (f"Fastest source: articles per day (last {_CAPACITY_DAYS} days)", str(top["per_day"])),
         ("Typical source in your corpus (median per day)", str(round(median, 2))),
-        ("Absolute floor before this card can appear", f"≥ {_CAPACITY_MIN_PER_DAY} ✓"),
+        ("Absolute floor before this Lead can appear", f"≥ {_CAPACITY_MIN_PER_DAY} ✓"),
         (
             "Must also be many times the typical rate",
             f"{top['per_day']} ≥ {_CAPACITY_FACTOR:.0f} × {round(median, 2)} ✓",
@@ -866,7 +866,7 @@ def capacity_implausible(session) -> list[Card]:
             trigger=_trigger(
                 "One of your sources is publishing far faster than the others — so fast "
                 "that it's worth asking how. Big newsrooms and wire agencies can be this "
-                "fast legitimately; this card only raises the question.",
+                "fast legitimately; this Lead only raises the question.",
                 math_rows,
             ),
             title=f"{len(flagged)} source(s) publishing unusually fast",
@@ -1090,7 +1090,7 @@ def ownership_change(session) -> list[Card]:
         ("Recent articles scanned for deal language", str(len(rows))),
         ("Of which match an acquisition/merger/divestiture verb", str(len(matches))),
         ("Recency window scanned (days)", str(_IP_DAYS)),
-        ("Most this card surfaces at once", str(_MAX_DEAL)),
+        ("Most this Lead surfaces at once", str(_MAX_DEAL)),
     ]
     return [
         Card(
@@ -1401,14 +1401,14 @@ def coverage_advisor(session) -> list[Card]:
             "How sure can we be? (95% interval)",
             f"{round(ci.low * 100)}% – {round(ci.high * 100)}%" if ci else "—",
         ),
-        ("Threshold for this card: one origin at or above 60%", f"{pct}% ≥ 60% ✓"),
+        ("Threshold for this Lead: one origin at or above 60%", f"{pct}% ≥ 60% ✓"),
     ]
     return [
         Card(
             type="coverage_advisor",
             trigger=_trigger(
                 "More than half of your recent collection comes from one single country "
-                "or language. That can quietly narrow what you see — this card points it "
+                "or language. That can quietly narrow what you see — this Lead points it "
                 "out so you can balance your sources if you want to.",
                 math_rows,
             ),
@@ -1487,7 +1487,7 @@ def weather_corroboration(session) -> list[Card]:
                     "exact lexical match of the curated multilingual climate-event vocabulary "
                     "(configs/corroboration_rules.yml) against indexed keywords, joined to "
                     "deduced place mentions (lexical-v1) and article dates; computed locally — "
-                    "this card made no network call"
+                    "this Lead made no network call"
                 ),
                 caveat=(
                     "Word–place co-occurrence is not a confirmed event: articles may discuss "
@@ -1592,8 +1592,8 @@ def space_time_convergence(session) -> list[Card]:
         math_rows = [
             ("Articles converging on this place + window", str(c["n_articles"])),
             ("Distinct sources (the independence measure)", str(c["distinct_sources"])),
-            ("Minimum distinct sources for this card", f"≥ {found['min_sources']} ✓"),
-            ("Minimum articles for this card", f"≥ {found['min_articles']} ✓"),
+            ("Minimum distinct sources for this Lead", f"≥ {found['min_sources']} ✓"),
+            ("Minimum articles for this Lead", f"≥ {found['min_articles']} ✓"),
             ("Time window (deduced event dates)", f"{c['window_start']} → {c['window_end']}"),
             (
                 "Outbound links shared by >1 member (false-triangulation flag)",
