@@ -1391,6 +1391,18 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR E = reliability_score GUARD (draft onto 0.09;
+  DEFAULT APPLIED, maintainer may override):** the field is operator-set provenance
+  (migration f4b5c6d7e8a9 already NULLed the fabricated =5), but it shipped via
+  /api/sources named "...score" with no method/caveat and was guarded only for
+  credibility_score/political_bias. DEFAULT chosen (reversible): KEEP it as
+  operator-asserted metadata + (a) ETHICS.md documents it as the ONE intentional
+  exemption to no-composite-score (never computed/defaulted/derived); (b) new invariant
+  test_reliability_score_is_operator_set_never_computed asserts it stays in card.py's
+  forbidden-score set AND no analytics module assigns/derives it; (c) the only UI
+  surface (the CSV-import column doc) now labels it "operator-set, not computed" with
+  the long-form in the #oo-tip hover, +2 strings ×12. source_io serialization gains a
+  clarifying comment. PR body flags the default for maintainer override.
 - **AUTONOMOUS AUDIT 2026-06-15/16 — PR D = CI HYGIENE (draft onto 0.09, CI
   subscribed):** `.github/workflows/ci.yml` gains (1) top-level `permissions:
   contents: read` (least privilege — CI only reads + tests); (2) action SHA pins —

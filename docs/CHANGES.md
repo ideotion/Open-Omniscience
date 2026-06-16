@@ -11,6 +11,16 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **`reliability_score` honesty guard (audit PR E).** The per-source
+  `reliability_score` (1–10) is **operator-set provenance** — a value *you* assign,
+  never a quality verdict the app computes. It's now documented in
+  [ETHICS.md](ETHICS.md) as the one intentional exemption to the no-composite-score
+  rule, labelled **"operator-set, not computed"** in the UI (with the full
+  explanation in the hover, ×12 locales), and locked by a repo invariant so it can
+  never quietly become a derived/computed score. *(Default applied; the maintainer
+  can choose to retire it from the API instead.)*
+
+
 - **CI hygiene (audit PR D).** The CI workflow now declares least-privilege
   `permissions: contents: read`, **pins** `actions/checkout`/`actions/setup-python`
   to full commit SHAs (with version comments for Dependabot), adds a **blocking**
