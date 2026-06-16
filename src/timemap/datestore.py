@@ -158,3 +158,79 @@ def articles_for_date(
             }
         )
     return out
+
+
+def upcoming_deduced(
+    db: Session,
+    *,
+    days_ahead: int = 120,
+    min_articles: int = 2,
+    limit: int = 80,
+    today: date | None = None,
+) -> dict:
+    """Future dates DEDUCED from article text — the agenda's article-extracted
+    events layer.
+
+    Groups ``article_mentioned_dates`` whose date falls in ``[today, today +
+    days_ahead]``, counting DISTINCT articles + DISTINCT sources per date. A
+    surfacing gate (``>= min_articles``) keeps single-mention noise out; rejected
+    tags are excluded. Each event carries the article-id set so the agenda can open
+    that exact corpus. Counts only — NO score. Deduced from text, never a confirmed
+    event (a date an article MENTIONS, not proof anything will happen)."""
+    from datetime import timedelta
+
+    from sqlalchemy import func
+
+    t0 = today or date.today()
+    horizon = t0 + timedelta(days=days_ahead)
+    rows = (
+        db.query(
+            ArticleMentionedDate.mentioned_on,
+            func.count(func.distinct(ArticleMentionedDate.article_id)),
+            func.count(func.distinct(Article.source_id)),
+        )
+        .join(Article, Article.id == ArticleMentionedDate.article_id)
+        .filter(
+            ArticleMentionedDate.mentioned_on >= t0,
+            ArticleMentionedDate.mentioned_on <= horizon,
+            ArticleMentionedDate.status != "rejected",
+        )
+        .group_by(ArticleMentionedDate.mentioned_on)
+        .having(func.count(func.distinct(ArticleMentionedDate.article_id)) >= min_articles)
+        .order_by(ArticleMentionedDate.mentioned_on)
+        .limit(limit)
+        .all()
+    )
+    events = []
+    for on, n_arts, n_srcs in rows:
+        aids = [
+            a
+            for (a,) in db.query(ArticleMentionedDate.article_id)
+            .filter(
+                ArticleMentionedDate.mentioned_on == on,
+                ArticleMentionedDate.status != "rejected",
+            )
+            .distinct()
+            .limit(200)
+            .all()
+        ]
+        events.append(
+            {
+                "date": on.isoformat(),
+                "n_articles": int(n_arts),
+                "n_sources": int(n_srcs),
+                "article_ids": aids,
+            }
+        )
+    return {
+        "events": events,
+        "count": len(events),
+        "method": (
+            "Future dates MENTIONED in your articles, grouped by date (distinct "
+            f"articles + distinct sources); surfacing gate ≥ {min_articles} articles."
+        ),
+        "caveat": (
+            "Deduced from article text, never confirmed — a date an article mentions, "
+            "not proof an event will happen. Rejected tags excluded."
+        ),
+    }

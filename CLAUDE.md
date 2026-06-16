@@ -1278,7 +1278,12 @@ ruling, a contingency, or a deliberate-omission note.
   the map; the EVENT-places feed remains. REMAINING: wiki articles join when the
   living-source design lands. NEXT for the extractors themselves: feed the temporal
   map's mention layer with event-places too; extend the country table; aggregate
-  entities corpus-wide.
+  entities corpus-wide. **AGENDA ARTICLE-EXTRACTED DATES — BACKEND SHIPPED 2026-06-16:**
+  `datestore.upcoming_deduced` + `GET /api/events/deduced` surface FUTURE dates MENTIONED
+  in articles as agenda candidates — grouped by date with distinct-article + distinct-source
+  counts, a ≥min_articles surfacing gate, the article-id set for corpus open-through; "deduced
+  from text, never confirmed" caveat, counts only/no score (tests/test_deduced_dates.py).
+  REMAINING: render them in the agenda views ("deduced from N articles", clickable).
 - **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51) —
   SLICE 1 SHIPPED (PR #212, 2026-06-15; unblocked now that When×Where×Who
   persists):** READ-ONLY space-time co-occurrence in src/analytics/convergence.py
