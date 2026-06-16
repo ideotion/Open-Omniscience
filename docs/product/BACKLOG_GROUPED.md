@@ -286,7 +286,13 @@ makes the rest fall out cheaply:
 
 ## J. Settings additions
 
-- ⬜ **In-app Ollama + model installer** — detect/install, catalog picker (size/
+- 🔨 **In-app Ollama + model installer** — backend slice 1 SHIPPED: `OllamaClient.pull`
+  (streams ollama's real /api/pull progress) + `.remove`; `POST /api/llm/pull` (NDJSON
+  StreamingResponse) + `POST /api/llm/remove`; kill-switch + loopback + model-name
+  validation; tests in test_llm_ollama.py. REMAINING: the Settings LLM SUBTAB UI
+  (consent #14 + clearnet disclosure + task-manager job), the binary installer (verify
+  + visible elevation), live library browse, stored active-model setting.
+- ⬜ **In-app Ollama + model installer (orig note)** — detect/install, catalog picker (size/
   RAM/license, never a score), pulls as task-manager jobs. (designed)
 - ⬜ **App self-update via the GUI** — signed backup → install snapshot → staged
   migration → atomic swap → rollback; data/keys survive by construction.

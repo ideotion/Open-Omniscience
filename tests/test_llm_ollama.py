@@ -76,6 +76,33 @@ def test_missing_model_raises_with_hint():
     assert "ollama pull nope:1b" in str(exc.value)
 
 
+def test_pull_streams_progress_objects():
+    def handler(request):
+        assert request.url.path == "/api/pull"
+        body = b'{"status":"pulling manifest"}\n{"status":"downloading","completed":5}\n{"status":"success"}\n'
+        return httpx.Response(200, content=body)
+
+    client = _client_with(handler)
+    progress = list(client.pull("llama3.2:3b"))
+    assert progress[0]["status"] == "pulling manifest"
+    assert progress[-1]["status"] == "success"
+    assert any(p.get("completed") == 5 for p in progress)
+
+
+def test_remove_deletes_and_404_is_loud():
+    def ok(request):
+        assert request.method == "DELETE" and request.url.path == "/api/delete"
+        return httpx.Response(200, json={})
+
+    assert _client_with(ok).remove("gemma2:2b") is True
+
+    def missing(request):
+        return httpx.Response(404, json={"error": "model not found"})
+
+    with pytest.raises(LLMUnavailable):
+        _client_with(missing).remove("nope:1b")
+
+
 # --------------------------------------------------------------------------- #
 # kill switch + loopback constraint (audit PR C — privacy/safety hardening)
 # --------------------------------------------------------------------------- #
@@ -105,6 +132,29 @@ def test_kill_switch_blocks_ollama_call():
         clear_kill_switch()
     # Cleared again -> the same client works (the gate is not sticky).
     assert client.list_installed() == ["llama3.2:3b"]
+
+
+def test_kill_switch_blocks_pull_and_remove():
+    """Airplane mode must refuse model pull/remove too — no socket while offline
+    (the pull would egress over clearnet, exactly what airplane mode forbids)."""
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    called = {"n": 0}
+
+    def handler(request):
+        called["n"] += 1
+        return httpx.Response(200, json={})
+
+    client = _client_with(handler)
+    activate_kill_switch()
+    try:
+        with pytest.raises(LLMUnavailable):
+            list(client.pull("llama3.2:3b"))  # generator: kill-switch fires on first iter
+        with pytest.raises(LLMUnavailable):
+            client.remove("llama3.2:3b")
+        assert called["n"] == 0, "no Ollama request may be attempted while offline"
+    finally:
+        clear_kill_switch()
 
 
 def test_non_loopback_ollama_url_refused():
@@ -181,6 +231,44 @@ def test_generate_503_when_down(client):
     app.dependency_overrides[get_llm_client] = lambda: mk(down)
     r = c.post("/api/llm/generate", json={"prompt": "hi"})
     assert r.status_code == 503
+
+
+def test_pull_endpoint_streams_ndjson(client):
+    c, mk = client
+
+    def ok(request):
+        assert request.url.path == "/api/pull"
+        return httpx.Response(200, content=b'{"status":"pulling"}\n{"status":"success"}\n')
+
+    app.dependency_overrides[get_llm_client] = lambda: mk(ok)
+    r = c.post("/api/llm/pull", json={"model": "gemma2:2b"})
+    assert r.status_code == 200
+    assert "ndjson" in r.headers.get("content-type", "")
+    lines = [ln for ln in r.text.splitlines() if ln.strip()]
+    assert lines[-1] == '{"status":"success"}'
+
+
+def test_remove_endpoint_ok(client):
+    c, mk = client
+
+    def ok(request):
+        return httpx.Response(200, json={})
+
+    app.dependency_overrides[get_llm_client] = lambda: mk(ok)
+    r = c.post("/api/llm/remove", json={"model": "gemma2:2b"})
+    assert r.status_code == 200 and r.json()["ok"] is True
+
+
+def test_pull_remove_reject_bad_model_name(client):
+    c, mk = client
+
+    def boom(request):  # must never be reached — validation rejects first
+        raise AssertionError("no Ollama call for an invalid model name")
+
+    app.dependency_overrides[get_llm_client] = lambda: mk(boom)
+    for path in ("/api/llm/pull", "/api/llm/remove"):
+        assert c.post(path, json={"model": "../etc/passwd"}).status_code == 400
+        assert c.post(path, json={"model": ""}).status_code == 400
 
 
 def test_summarize_persists_with_provenance(client):
