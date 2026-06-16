@@ -532,12 +532,31 @@ _TREND_WINDOWS: tuple[tuple[str, int, int], ...] = (
 )
 
 
+def _window_daily_series(
+    session, term: str, *, days: int, country: str | None = None
+) -> list[dict]:
+    """Daily mention-count series for ``term`` over the last ``days`` days.
+
+    REUSES :func:`trend` (bucket="day") so the numbers match the existing trend
+    chart exactly, then slices its full-history points to this window's date range
+    ``[today - days, today]``. Counts only, no interpolation: only days that carry
+    mentions appear (zero-count days are omitted, exactly as :func:`trend` does).
+    """
+    day_keys = trend(session, term, bucket="day", country=country)["points"]
+    today = date.today()
+    lo = (today - timedelta(days=days)).isoformat()
+    hi = today.isoformat()
+    # ISO date strings (YYYY-MM-DD) sort chronologically, so a string range is exact.
+    return [p for p in day_keys if lo <= p["date"] <= hi]
+
+
 def trending_windows(
     session,
     *,
     country: str | None = None,
     kind: str | None = None,
     limit: int = 10,
+    series_top: int = 0,
 ) -> dict:
     """Rising keywords across THREE preset windows side by side (24h · 7d · 30d).
 
@@ -546,6 +565,13 @@ def trending_windows(
     ratio, never a composite score). Short windows are sparse on a young corpus, so
     each term carries its raw ``recent`` count (n) and the caller states the
     early-corpus honesty. No score; the ratio is a disclosed method.
+
+    ADDITIVE: with ``series_top > 0``, the first ``series_top`` terms of each window
+    gain a ``series`` list of ``{"date", "count"}`` daily points spanning that
+    window's range (24h→1 day, 7d→7 days, 30d→30 days), so the frontend can draw an
+    ooChart per term. The series REUSES :func:`trend` (bucket="day") — the numbers
+    match the existing trend chart, counts only. ``series_top == 0`` (the default)
+    returns the unchanged response (no ``series`` keys).
     """
     windows = []
     for label, wdays, bdays in _TREND_WINDOWS:
@@ -559,12 +585,18 @@ def trending_windows(
             # 24h on a young corpus is thin — don't gate it out; show n + caveat.
             min_recent=1 if wdays == 1 else 2,
         )
+        terms = res["terms"]
+        if series_top > 0:
+            for t in terms[:series_top]:
+                t["series"] = _window_daily_series(
+                    session, t["normalized"], days=wdays, country=country
+                )
         windows.append(
             {
                 "label": label,
                 "window_days": wdays,
                 "baseline_days": bdays,
-                "terms": res["terms"],
+                "terms": terms,
                 "count": res["count"],
                 "scanned": res["scanned"],
             }

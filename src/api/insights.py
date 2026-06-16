@@ -284,13 +284,26 @@ def insights_trending_windows(
     country: str | None = None,
     kind: str | None = None,
     limit: int = Query(10, ge=1, le=50),
+    series_top: int = Query(
+        0,
+        ge=0,
+        le=10,
+        description="Attach a daily mention-count series to the first N terms of "
+        "each window (0 = none; reuses the /trend day series, counts only).",
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
     """Rising keywords across THREE preset windows side by side — past 24h · past
     week · past month — for the Insights "Trends" redesign (maintainer-ruled
     2026-06-16). Each window is the transparent recent-vs-prior ratio (no score);
-    short windows are sparse, so n + the early-corpus caveat travel with the data."""
-    return q.trending_windows(db, country=country, kind=_kind(kind), limit=limit)
+    short windows are sparse, so n + the early-corpus caveat travel with the data.
+
+    ADDITIVE: ``series_top > 0`` attaches a per-term daily ``series`` (reusing the
+    /trend day buckets) to the top terms so the frontend can draw an ooChart each;
+    ``series_top=0`` (default) is byte-identical to the prior response."""
+    return q.trending_windows(
+        db, country=country, kind=_kind(kind), limit=limit, series_top=series_top
+    )
 
 
 @router.get("/trend")
