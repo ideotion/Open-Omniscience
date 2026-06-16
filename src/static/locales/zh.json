@@ -936,5 +936,7 @@
   "How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed.": "各来源如何处理该概念，并排呈现：数量（精确文章数）、语气（VADER 均值+标签）、时间（首篇→末篇发布）以及该媒体独特的强调词汇。这是观察分歧的显微镜，而非定论——不将任一来源排在另一之上，不评判质量，不计算综合评分。",
   "How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.": "各来源如何处理该概念，并排呈现——数量（精确文章数）、语气（VADER 均值+标签）、时间（首篇→末篇发布）以及该媒体独特的强调词汇。这是对来源差异的描述性比较，绝非排名、赢家或可信度评判：无综合评分。语气为 VADER（英语词典，对非英语报道不可靠）。仅一个来源时无可比较。",
   "Analyse": "分析",
-  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "在分析窗口中打开——它在语料库中的报道（语料库中的共现，绝非因果）"
+  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "在分析窗口中打开——它在语料库中的报道（语料库中的共现，绝非因果）",
+  "operator-set, not computed": "由操作者设定，非计算得出",
+  "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.": "reliability_score 是您（操作者）为每个来源设定的来源元数据。应用绝不会计算它、为其设默认值或从文章正文推导它，也绝不会据此生成卡片或评分。"
 }

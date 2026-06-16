@@ -2011,7 +2011,7 @@
         <code>source_type</code>, <code>country</code> (2-letter), <code>language</code>,
         <code>region</code>, <code>tags</code> (comma-separated, quote the cell),
         <code>priority</code> (1–3), <code>rate_limit_ms</code>, <code>enabled</code>,
-        <code>reliability_score</code> (1–10). Import upserts by domain (new ones created,
+        <code>reliability_score</code> (1–10, <span title="reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a card or score from it.">operator-set, not computed</span>). Import upserts by domain (new ones created,
         existing updated); bad rows are reported, not dropped.
       </div>
       <div class="row">

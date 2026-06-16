@@ -221,6 +221,27 @@ To prevent misuse and ensure ethical scraping, Open Omniscience implements the f
 
 ---
 
+## 📐 Honest metrics — no fabricated scores
+
+Honesty by construction: the app never presents a **composite trust / quality /
+credibility score**. Every signal it computes carries its method, a caveat and its
+*n*; a card that tried to ship a blended score is mechanically rejected by the card
+schema. Dormant scoring columns (`credibility_score`, `political_bias`) are kept
+NULL and never serialised to any API response.
+
+**One intentional, narrow exemption — `reliability_score`.** This per-source `1–10`
+field is **operator-asserted provenance metadata**: a number *you* (the operator)
+set per source via config or CSV import. It is **never computed, never defaulted,
+and never derived from article data** by the app — the earlier fabricated `=5`
+default was removed (NULLed by migration `f4b5c6d7e8a9`). Because it is your own
+assertion (not a verdict the tool manufactured), it is exposed in the source list
+and labelled **"operator-set, not computed"** wherever it appears; a briefing card
+can still never present it as a score. A repo invariant
+(`tests/test_repo_invariants.py::test_reliability_score_is_operator_set_never_computed`)
+keeps it that way, so it cannot quietly become a computed quality verdict.
+
+---
+
 ## 📢 Reporting Violations
 
 If you encounter or suspect unethical use of Open Omniscience:

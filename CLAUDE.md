@@ -537,7 +537,11 @@ ruling, a contingency, or a deliberate-omission note.
   caveats-visible-by-default vs calm UI (AWAITS RULING — U3);
   ~~reliability_score=5 + language="en" defaults removal~~ (SHIPPED T5,
   2026-06-12, + political_bias=0.0; migration f4b5c6d7e8a9 NULLs the
-  fabricated 5s; languages stay — catalog-asserted); ~~ETHICS.md tense~~
+  fabricated 5s; languages stay — catalog-asserted); reliability_score GUARD
+  closed in audit PR E (2026-06-16): kept as the operator-set provenance exemption,
+  documented in ETHICS.md, UI-labelled "operator-set, not computed" ×12, and pinned
+  by test_reliability_score_is_operator_set_never_computed (never derived from
+  article data; never a card score); ~~ETHICS.md tense~~
   (verified closed: the one "will" is the doc's own review cadence);
   REMAINING: inline-onclick retirement (199×, needs a browser-verified
   sweep); a11y batch.
@@ -1371,6 +1375,18 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR E = reliability_score GUARD (draft onto 0.09;
+  DEFAULT APPLIED, maintainer may override):** the field is operator-set provenance
+  (migration f4b5c6d7e8a9 already NULLed the fabricated =5), but it shipped via
+  /api/sources named "...score" with no method/caveat and was guarded only for
+  credibility_score/political_bias. DEFAULT chosen (reversible): KEEP it as
+  operator-asserted metadata + (a) ETHICS.md documents it as the ONE intentional
+  exemption to no-composite-score (never computed/defaulted/derived); (b) new invariant
+  test_reliability_score_is_operator_set_never_computed asserts it stays in card.py's
+  forbidden-score set AND no analytics module assigns/derives it; (c) the only UI
+  surface (the CSV-import column doc) now labels it "operator-set, not computed" with
+  the long-form in the #oo-tip hover, +2 strings ×12. source_io serialization gains a
+  clarifying comment. PR body flags the default for maintainer override.
 - **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
   subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
   visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:
