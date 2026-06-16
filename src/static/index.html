@@ -6126,14 +6126,17 @@
     // when the window is dense enough (lineMin=8); fewer points render as
     // discrete dots with n + the early-corpus caveat — never a curve faked
     // through a handful of points.
-    const _DASH_LINE_MIN = 8;
+    // Item Y (ruled 2026-06-15, amends invariant #16): app-wide, n<10 datapoints
+    // render as a BAR graph (not dots), n>=10 as the full-resolution line. Shared by
+    // BOTH chart renderers (dashChartSvg + ooChart).
+    const _SPARSE_BAR_MAX = 10;
     function dashChartSvg(points, unit) {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!points.length) {
         return `<div class="muted" style="padding:18px 0;font-size:12px">${esc(t9("not enough points in this window"))}</div>`;
       }
       const w = 300, h = 120, padL = 44, padR = 8, padT = 8, padB = 18;
-      const n = points.length, lineMode = n >= _DASH_LINE_MIN;
+      const n = points.length, lineMode = n >= _SPARSE_BAR_MAX;
       const ys = points.map(p => p.price), minY = Math.min(...ys), maxY = Math.max(...ys), span = (maxY - minY) || 1;
       const X = i => padL + (w - padL - padR) * (n < 2 ? 0.5 : i/(n-1));
       const Y = v => padT + (h - padT - padB) * (1 - (v - minY)/span);
@@ -6149,15 +6152,29 @@
       const xticks = [...new Set([0, Math.floor((n-1)/2), n-1])].map(i =>
         `<text x="${X(i).toFixed(1)}" y="${h-5}" text-anchor="${i===0?'start':i===n-1?'end':'middle'}"
            font-size="8.5" fill="var(--muted)">${esc(points[i].observed_on.slice(0,7))}</text>`).join("");
-      // The series itself: a line when dense, otherwise honest discrete dots.
+      // The series itself: a line when dense (n>=10), otherwise honest BARS (Item Y).
+      // Bars anchor to the window-MIN — which the gridlines above already LABEL — so a
+      // price-LEVEL difference stays visible and honest (NEVER a fabricated zero
+      // baseline). A 2px cap is drawn at the true value so a flush min / equal / single
+      // point stays visible (the cap marks the value, never an invented height).
+      const baseY = Y(minY);
+      const slot = (w - padL - padR) / Math.max(n, 1);
+      const bw = Math.max(3, Math.min(slot * 0.62, 22));
       const body = lineMode
         ? `<polyline fill="none" stroke="${col}" stroke-width="1.6" points="${
             points.map((p, i) => `${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(" ")}"></polyline>
            <circle cx="${X(n-1).toFixed(1)}" cy="${Y(points[n-1].price).toFixed(1)}" r="2.4" fill="${col}"></circle>`
-        : points.map((p, i) =>
-            `<circle cx="${X(i).toFixed(1)}" cy="${Y(p.price).toFixed(1)}" r="2.2" fill="${col}"></circle>`).join("");
+        : points.map((p, i) => {
+            const cx = X(i), by = Y(p.price);
+            const x0 = Math.max(padL, cx - bw / 2), x1 = Math.min(w - padR, cx + bw / 2);
+            const bwc = Math.max(1, x1 - x0).toFixed(1);
+            return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${Math.max(0, baseY - by).toFixed(1)}" fill="${col}" opacity="0.72"></rect>`
+                 + `<rect x="${x0.toFixed(1)}" y="${(by - 0.5).toFixed(1)}" width="${bwc}" height="2" fill="${col}"></rect>`;
+          }).join("");
+      // Item Y: the sparse "dots shown / no curve interpolated" caveat is removed
+      // app-wide; only the datapoint count is kept.
       const caveat = lineMode ? "" :
-        `<div class="hint muted" style="margin-top:1px">⚠ ${esc(t9("early corpus: dots shown, no curve interpolated through sparse points"))} (n=${n})</div>`;
+        `<div class="hint muted" style="margin-top:1px">n=${n}</div>`;
       const range = n >= 2 ? `${points[0].observed_on} → ${points[n-1].observed_on}` : points[0].observed_on;
       return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block" role="img">
         ${grid}
@@ -6516,21 +6533,31 @@
           const ms = t0 + (t1 - t0) * g / nTicks;
           ctx.fillText(fmtT(ms), Math.min(Math.max(Xof(ms), padL + 28), W - padR - 28), H - 8);
         }
-        let sparse = false;
         for (const s of vs) {
           if (!s.vis.length) continue;
           const n = s.vis.length, pxPer = plotW / Math.max(n - 1, 1);
-          const lineOK = n >= (opts.lineMin || 8);          // a line only when density supports it
-          if (!lineOK) sparse = true;
+          const barMode = n < _SPARSE_BAR_MAX;              // Item Y: n<10 -> bars, n>=10 -> line
           ctx.strokeStyle = s.color.startsWith("var(") ? cssVar(s.color.slice(4, -1)) : s.color;
           ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = 1.8;
-          if (lineOK) {
+          if (barMode) {
+            // Bars anchor to the plot baseline Yof(yMin): true ZERO for zeroBase
+            // (count) series, else the window-MIN which the gridlines LABEL (price
+            // levels) — never a fabricated zero. Bars sit at their TRUE time x; a 2px
+            // cap marks the value so a flush/equal/single point stays visible.
+            const baseY = Yof(yMin);
+            const bw = Math.max(3, Math.min(plotW / (n * 1.5), 26));
+            for (const p of s.vis) {
+              const x = Xof(p.t), y = Yof(p.v);
+              ctx.globalAlpha = 0.72; ctx.fillRect(x - bw / 2, y, bw, Math.max(0, baseY - y));
+              ctx.globalAlpha = 1;    ctx.fillRect(x - bw / 2, y - 1, bw, 2);
+            }
+          } else {
             ctx.beginPath();
             s.vis.forEach((p, i) => { const x = Xof(p.t), y = Yof(p.v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
             ctx.stroke();
-          }
-          if (!lineOK || pxPer > 9) {                        // honest dots when sparse or roomy
-            for (const p of s.vis) { ctx.beginPath(); ctx.arc(Xof(p.t), Yof(p.v), lineOK ? 2 : 3, 0, 7); ctx.fill(); }
+            if (pxPer > 9) {                                 // honest dots on a roomy line
+              for (const p of s.vis) { ctx.beginPath(); ctx.arc(Xof(p.t), Yof(p.v), 2, 0, 7); ctx.fill(); }
+            }
           }
         }
         if (pinned) {
@@ -6544,7 +6571,7 @@
           return `<span style="cursor:pointer;${s.hidden ? "opacity:.4" : ""}" onclick="this._oo&&this._oo()" data-oo-leg="${i}">` +
             `<span style="display:inline-block;width:14px;height:0;border-top:3px solid ${s.color};vertical-align:middle;margin-inline-end:4px"></span>` +
             `${esc(s.label)} <span class="muted">n=${s.vis.length}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></span>`;
-        }).join("") + (sparse ? `<span class="muted">\u26a0 ${esc(t9("early corpus: dots shown, no curve interpolated through sparse points"))}</span>` : "");
+        }).join("");
         legend.querySelectorAll("[data-oo-leg]").forEach(elm => {
           elm._oo = () => { all[+elm.dataset.ooLeg].hidden = !all[+elm.dataset.ooLeg].hidden; draw(); };
         });

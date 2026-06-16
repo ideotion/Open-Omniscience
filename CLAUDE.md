@@ -146,16 +146,20 @@ ruling, a contingency, or a deliberate-omission note.
    Wired: markets symbol chart + insights trend (slice 1); commodity CARDS
    keep the static detailed SVG (tiny multiples; interactivity there is the
    enlarge path, later slice). Enforced in test_ui_invariants (#16).
-   **AMENDED (ruled 2026-06-15, impl PENDING — field-test LEDGER Item Y):** the sparse rule
-   changes app-wide — **n<10 datapoints → a BAR graph** (replaces the dots treatment), n≥10 →
+   **AMENDED (ruled 2026-06-15; SHIPPED 2026-06-15 solo session, Item Y):** the sparse rule
+   changed app-wide — **n<10 datapoints → a BAR graph** (replaced the dots treatment), n≥10 →
    the full-resolution line; the "early corpus … no curve interpolated through sparse points"
-   caveat is **REMOVED app-wide — keep ONLY n=x**; applies through BOTH `ooChart` (index.html
-   ~5622) + `dashChartSvg` (~5387). OPEN (honesty, must settle BEFORE shipping): zero-baseline
-   bars MISLEAD price-LEVEL series ($1900 vs $1950 ≈ equal full-height bars — a distortion the
-   no-fabricated-visuals ethic forbids) — choose the baseline (window-min-anchored LABELED axis
-   for level data vs true-zero only for naturally zero-based/count series) + irregular-time bar
-   placement. test #16 currently asserts "early corpus" present (test_repo_invariants.py:359) —
-   it updates when this lands.
+   caveat is **REMOVED app-wide — only n=x kept**; applied through BOTH `ooChart` + `dashChartSvg`
+   via the shared `_SPARSE_BAR_MAX=10`. **BASELINE-HONESTY QUESTION RESOLVED (autonomous Class-B
+   decision, per the maintainer's own leaning + "make all decisions"):** bars anchor to the plot
+   baseline `Yof(yMin)` — which is **true ZERO for `zeroBase`/count series** and the **window-MIN
+   for price-LEVEL series**, and the gridlines ALREADY LABEL that min, so a level difference stays
+   visible and honest (NEVER a fabricated zero). A 2px **value-cap** is drawn at each bar's true
+   value so a flush min / equal-value / single point stays VISIBLE (the cap marks the value, never
+   an invented height — this resolves the degenerate-invisible-bar case a naive window-min impl
+   would have regressed). Bar x-placement: TRUE time position in `ooChart` (real time axis with
+   zoom/pan), date-tick-aligned `X(i)` in the tiny `dashChartSvg` cards. test #16 updated:
+   asserts `_SPARSE_BAR_MAX` + `barMode` in both renderers + the sparse caveat string GONE.
 17. **The universal hover-for-information convention (ruled 2026-06-12; the
    informed-consent instrument, SHIPPED same day):** every element carrying
    layered info (= anything with a translated `title`) is marked
@@ -1400,6 +1404,20 @@ ruling, a contingency, or a deliberate-omission note.
     mistaken for a complete log. ADDITIVE: the default (full) stream is byte-for-byte
     unchanged (the perf byte-parity contract test still passes); the digest is its own
     branch + `tests/test_keyword_log_digest_mode`. No score; method+caveat preserved.
+  - **Item Y SHIPPED — app-wide n<10 → BAR charts (amends invariant #16, see #16
+    above for the full ruling + the resolved baseline-honesty decision):** both chart
+    renderers (`ooChart` canvas + `dashChartSvg` SVG) now render <10 datapoints as
+    honest bars (anchored to the LABELED baseline — true-zero for counts, window-min
+    for price levels — with a value-cap so no point is ever invisible) and ≥10 as the
+    full-resolution line; the sparse "early corpus" caveat is removed app-wide (only
+    n=x kept). node --check clean; test_ui_invariants #16 updated + green; i18n 100%.
+  - **B2 FIXITY — VERIFY-BEFORE-IMPLEMENT CORRECTION (no code):** an earlier solo PR
+    (#226) added a DUPLICATE fixity audit (`src/integrity/fixity.py` +
+    `/api/diagnostics/fixity`) — but the B2 fixity audit ALREADY EXISTED at 0.09
+    (`src/verification/fixity.py` + `GET /api/integrity/fixity` + the `runFixity()`
+    Settings UI). The duplicate was caught by hand-verification (the recurring lesson)
+    and REMOVED from the stack; PR #226 is closed as redundant. B2 is DONE (it was
+    already), nothing to ship. Reinforces: grep for an existing impl BEFORE building.
 - **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
   subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
   visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:
