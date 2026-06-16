@@ -1766,13 +1766,26 @@ ruling, a contingency, or a deliberate-omission note.
   NO score; thresholds <200 art or <14d → early, ≥1000 art and ≥90d → established;
   visible early caveat + invariant-#17 threshold hover as ONE atomic placeholder
   sentence ×12). REMAINING slices: power-style "what's missing"; BH-FDR later.
-- **Trans-language equivalence — LIVE analytics layer (elevated):** rings
-  merge inside grouped trends/trending/associations/graph levels
-  (fr:élections + en:elections = ONE concept); cross-country recognition via
-  per-source-country split; guards stay (language-qualified members only,
-  signature-supported joins, per-language counts visible, user can split).
-  Groundwork shipped (signatures in the log + curated ring file + first 10
-  rings from field log #1).
+- **Trans-language equivalence — LIVE analytics layer — SLICE 1 SHIPPED 2026-06-16
+  (draft PR onto 0.09; was elevated/groundwork-only):** `src/analytics/equivalence.py`
+  is the LIVE consumer `configs/keyword_equivalents.yml` always lacked (verified NOT
+  wired before). Rings now merge inside the grouped `top_terms`
+  (`/api/insights/top?group=true`), `trending`/`trending-windows`, and
+  `associations`/`graph` (keyword + family levels) — `fr:élection + en:election +
+  de:wahl` collapse to ONE concept. Layered ON TOP of within-language families. Honesty
+  held (all the standing guards): a keyword joins a ring only when its EFFECTIVE language
+  matches the member's — stored `Keyword.language`, else the dominant `language_signature`
+  (the signature-supported join, computed cheaply only for unknown-language ring
+  candidates), so an en-dominant "main" stays OUT of the fr `hand` ring; per-language
+  counts stay VISIBLE (`language_breakdown` + `members` on every merged row); a user
+  `KeywordFamilyOverride` split keeps a member out; method/caveat disclosed
+  (`rings_merged`+`caveat`); `OO_KEYWORD_EQUIV=0` disables; missing/empty file = no-op
+  (never invents). Reusable `group_rows` primitive so each view aggregates its OWN fields
+  (mentions / cooccur+pmi / recent+prior). tests/test_keyword_equivalence.py (8: pure +
+  in-memory integration incl. the signature fallback + polysemy + split). REMAINING:
+  cross-country recognition (split a ring's trend per source country); the map view;
+  surfacing `language_breakdown` in the frontend; the local LLM PROPOSING candidate rings
+  (the analyzer from PR #279 already emits ring candidates from the diagnostics logs).
 - **TRUST TABS → DISSOLVE + SPREAD (RULED 2026-06-15; supersedes the old "Custody tab UX"
   note; full design = field-test LEDGER Item N):** the "Trust" sidebar group (Evidence &
   custody + Source integrity) is DISSOLVED (invariant #8 content-first; absorption-test-gated,
