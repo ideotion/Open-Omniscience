@@ -1319,9 +1319,16 @@ ruling, a contingency, or a deliberate-omission note.
   **ENDPOINT SHIPPED (2026-06-15 solo session): GET /api/insights/convergences** exposes
   find_convergences read-only (honest gates + per-cluster method+caveat + totals, NO
   score; test_convergences_endpoint proves the independence gate flows through the API).
-  REMAINING: the user-defined "if-this-then-WATCH" alert engine (explainable, off by
-  default, local-only) — its UX is a GENUINE RULING to bring to the maintainer
-  before building; plus the convergence FRONTEND view (the endpoint is its substrate).
+  **FRONTEND VIEW SHIPPED 2026-06-16 (conservative, browser-unverified):** a read-only
+  Insights → Convergence subtab (`data-tab="convergence"` / `#ins-convergence`,
+  `loadConvergences` lazy-loaded from `showInsightCat`) renders each cluster (place +
+  country, window, n_articles / distinct_sources, source names), the title opening the
+  EXACT converging article set via `openAnalysisForIds`; the API method + caveat
+  (non-causation) are VISIBLE by default, the shared-origin-links flag shows a visible
+  `var(--caveat)` warning, honest empty state names the gate, NO score; +5 i18n ×12;
+  test #21c. REMAINING: the user-defined "if-this-then-WATCH" alert engine (explainable,
+  off by default, local-only) — its UX is a GENUINE RULING to bring to the maintainer
+  before building (the Watches view + history, fork-2).
 - **Temporal map remainder:** logarithmic time scale (agreed: linear/log
   toggle, labelled ticks, no hidden warp); feed mention-layer with extracted
   event-places.
