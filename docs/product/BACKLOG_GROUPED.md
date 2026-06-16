@@ -18,6 +18,25 @@
 > was written: Item V airplane-red (#245), Reader-tabs slice 1 (#246), exact-article-id
 > card seeding (#241/#242), .eml importer (#237), convergence endpoint (#231), Item Y
 > (n<10→bars).
+>
+> **AUTONOMOUS SESSION 2026-06-16 — draft PRs #248–254 onto `0.09` (CI runner-backlogged
+> the whole session, so each gated on the FULL local suite: pytest green · mypy 112≤127 ·
+> node --check · i18n 100% ×12). Shipped:** (1) **#248** flat Wikipedia edition picker —
+> drop the continent optgroups, one flat UI-locales-first list, `/api/wiki/languages` no
+> longer emits `groups` (invariant #1 amendment). (2) **#249** inline DATED dump-size
+> estimates in the picker (`src/wiki/dump_sizes.py` + `DUMP_SIZES_AS_OF` + freshness test;
+> zero-network). (3) **#250** the reader-tabs FLAGSHIP completed (RC-BLOCKING → ✅):
+> **Mindmap** tab via `/api/insights/graph?article_ids=` + `queries.article_graph` radial,
+> and a server-rendered **Source** profile tab; reader stays standalone. (4) **#251**
+> `queries.trending_windows` + `/api/insights/trending-windows` (24h/7d/30d substrate).
+> (5) **#252** the **LEADS** rename — briefing "cards" → "Leads" user-facing ×12 (worktree
+> agent + hand-verified). (6) **#253** Insights **Trends** frontend slice 1 — the three
+> preset windows side by side (`#trd-windows`, additive). (7) **#254** the network-consent
+> popup now states WHICH LAYER airplane mode controls (RC §4 threat-model honesty). Per-PR
+> ledger entries in CLAUDE.md are authoritative. NEXT (this batch, unstarted): the UI-rethink
+> nav-to-top + Home→dashboard + 3D explorer; Markets category subtabs + click→analysis;
+> agenda content; task-manager remainder; in-app Ollama installer; geo/OSM (Group M);
+> official-statistics (Group N); convergence Watches view; Win/mac install + release eng.
 
 ## The keystones (shared building blocks that unblock many items)
 
