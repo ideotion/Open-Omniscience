@@ -354,6 +354,19 @@ def test_ui_invariants():
     assert 'return localStorage.getItem("oo.agenda.view") || "month"' in html, (
         "MONTH is the ruled default agenda view"
     )
+    # 13b. Agenda article-DEDUCED dates layer: /api/events/deduced flows through the
+    #      AG.events pipeline like imported events (so every view renders it), as a
+    #      distinct filterable "deduced" category, with the never-confirmed caveat
+    #      VISIBLE and the title opening the EXACT article set (openAnalysisForIds).
+    assert "function mapDeducedToAgenda(" in html and "/api/events/deduced" in html, (
+        "the agenda must map /api/events/deduced into the event pipeline (deduced layer)"
+    )
+    assert 'category: "deduced"' in html and 'deduced.length ? ["deduced"]' in html, (
+        "deduced events must be their own filterable category, surfaced only when present"
+    )
+    assert "e.deduced && Array.isArray(e.article_ids)" in html and "openAnalysisForIds(" in html, (
+        "a deduced agenda event's title must open its exact article set (never-confirmed, clickable)"
+    )
     # 14. the network toggle is AIRPLANE-MODE (ruled 2026-06-12): one constant
     #     glyph whose FILL is the state — never ▶/⏸ action glyphs — and EVERY
     #     offline→online transition passes the ONE consent popup (local

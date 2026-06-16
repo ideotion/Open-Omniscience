@@ -992,5 +992,9 @@
   "No regions.": "没有区域。",
   "Could not load regions.": "无法加载区域。",
   "Download an offline map region": "下载离线地图区域",
-  "Download this offline map region? These can be very large (several GB to tens of GB).": "下载此离线地图区域？文件可能非常大（几 GB 到数十 GB）。"
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "下载此离线地图区域？文件可能非常大（几 GB 到数十 GB）。",
+  "{n} articles mention this date": "{n} 篇文章提到此日期",
+  "Deduced from {n} articles ({s} sources), never confirmed.": "根据 {n} 篇文章（{s} 个来源）推断，从未确认。",
+  "A date your articles mention — deduced from text, never confirmed.": "您的文章提到的日期——根据文本推断，从未确认。",
+  "deduced · never confirmed": "推断 · 未确认"
 }

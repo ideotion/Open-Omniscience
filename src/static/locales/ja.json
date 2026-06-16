@@ -992,5 +992,9 @@
   "No regions.": "地域がありません。",
   "Could not load regions.": "地域を読み込めませんでした。",
   "Download an offline map region": "オフライン地図の地域をダウンロード",
-  "Download this offline map region? These can be very large (several GB to tens of GB).": "このオフライン地図の地域をダウンロードしますか？非常に大きい場合があります（数 GB～数十 GB）。"
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "このオフライン地図の地域をダウンロードしますか？非常に大きい場合があります（数 GB～数十 GB）。",
+  "{n} articles mention this date": "{n} 件の記事がこの日付に言及",
+  "Deduced from {n} articles ({s} sources), never confirmed.": "{n} 件の記事（{s} 件の情報源）から推測、未確認。",
+  "A date your articles mention — deduced from text, never confirmed.": "あなたの記事が言及する日付——本文から推測、未確認。",
+  "deduced · never confirmed": "推測 · 未確認"
 }

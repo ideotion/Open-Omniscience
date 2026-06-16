@@ -1777,21 +1777,46 @@
         imported: true,
       };
     }
+    // Article-DEDUCED dates → the agenda event shape (mirrors mapImportedToAgenda so
+    // every view places them via next_occurrence for free). DEDUCED, never confirmed:
+    // a date the text MENTIONS, not proof an event will happen. Clicking opens the
+    // exact article set (openAnalysisForIds, via agRow). Counts only, no score.
+    function mapDeducedToAgenda(e) {
+      const d = e.date || "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return {
+        title: t("{n} articles mention this date").replace("{n}", e.n_articles),
+        category: "deduced", country: null, tags: [],
+        confirmed: false,                      // deduced from text — never a confirmed event
+        next_occurrence: d,
+        month: d.length >= 7 ? +d.slice(5, 7) : null,
+        day: d.length >= 10 ? +d.slice(8, 10) : null,
+        calendar: "deduced", deduced: true,
+        article_ids: e.article_ids || [], n_articles: e.n_articles, n_sources: e.n_sources,
+        note: t("Deduced from {n} articles ({s} sources), never confirmed.")
+          .replace("{n}", e.n_articles).replace("{s}", e.n_sources),
+      };
+    }
     async function loadAgenda() {
       const box = $("agenda-list");
       box.innerHTML = '<div class="muted">Loading…</div>';
       try {
         const today = new Date().toISOString().slice(0, 10);
-        const [ev, fac, imp] = await Promise.all([
+        const [ev, fac, imp, ded] = await Promise.all([
           api("/api/events"), api("/api/events/calendars"),
           api("/api/events/imported?from=" + today).catch(() => ({ events: [] })),
+          // Article-DEDUCED upcoming dates (the agenda's article-extracted layer).
+          // Degrade quietly — never break the agenda if this is unavailable.
+          api("/api/events/deduced").catch(() => ({ events: [] })),
         ]);
         const excl = agExcluded();
         const imported = (imp.events || []).map(mapImportedToAgenda).filter(e => !excl.has(e.calendar));
-        AG.events = ev.events.concat(imported); AG.caveat = ev.caveat; AG.cals = fac.calendars;
-        // Imported events are their own filterable category (a distinct provenance
-        // class, like DDG-discovered sources) — surface it as a chip only when present.
-        AG.categories = (fac.categories || []).concat(imported.length ? ["imported"] : []);
+        const deduced = (ded.events || []).map(mapDeducedToAgenda).filter(e => !excl.has(e.calendar));
+        AG.events = ev.events.concat(imported, deduced); AG.caveat = ev.caveat; AG.cals = fac.calendars;
+        // Imported + deduced events are each their own filterable category (distinct
+        // provenance classes, like DDG-discovered sources) — a chip only when present.
+        AG.categories = (fac.categories || []).concat(
+          imported.length ? ["imported"] : [], deduced.length ? ["deduced"] : []);
         AG.meta = Object.fromEntries(fac.calendars.map(c => [c.key, c]));
         // First run: subscribe to all calendars so the agenda isn't empty.
         if (localStorage.getItem("oo.agenda.subs") == null) agSaveSubs(new Set(fac.calendars.map(c => c.key)));
@@ -2005,8 +2030,11 @@
         : `<span class="pill" title="exact date moves each year">${e.month ? esc(_MONTHS[e.month-1]) : esc(e.cadence||"")}</span>`;
     }
     function agRow(e) {
-      const conf = e.confirmed ? '<span class="pill ok" title="fixed annual date">confirmed</span>'
-                               : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const conf = e.deduced
+        ? `<span class="pill warn" title="${esc(T("A date your articles mention — deduced from text, never confirmed."))}">${esc(T("deduced · never confirmed"))}</span>`
+        : e.confirmed ? '<span class="pill ok" title="fixed annual date">confirmed</span>'
+                      : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
       const tags = (e.tags||[]).map(t => `<span class="ag-tag" onclick="$('agenda-tag').value='${esc(t)}';renderAgenda()">${esc(t)}</span>`).join("");
       const alsoIn = (e.also_in && e.also_in.length) ? ` <span class="pill" title="this event also appears in: ${esc(e.also_in.join(', '))}">also in ${e.also_in.length}</span>` : "";
       const imp = (e.imported && e.source_count > 1)
@@ -2016,7 +2044,12 @@
       const src = e.official_url ? " · " + extLink(e.official_url, "official source ↗") : "";
       // The event title opens the unified analysis window over this event in your
       // corpus (maintainer 2026-06-16: agenda content "highly visible and clickable").
-      const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" onclick="event.stopPropagation();openAnalysisFor(${esc(JSON.stringify(e.title))})">${esc(e.title)}</b>`;
+      // A DEDUCED event opens its EXACT article set (the dates came from those
+      // articles); other events open a search over the title.
+      const openExpr = (e.deduced && Array.isArray(e.article_ids) && e.article_ids.length)
+        ? `openAnalysisForIds(${esc(JSON.stringify(e.article_ids))}, ${esc(JSON.stringify(e.title))})`
+        : `openAnalysisFor(${esc(JSON.stringify(e.title))})`;
+      const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" onclick="event.stopPropagation();${openExpr}">${esc(e.title)}</b>`;
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
         <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}${imp}</div>
           ${variants}

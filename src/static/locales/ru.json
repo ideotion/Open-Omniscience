@@ -992,5 +992,9 @@
   "No regions.": "Нет регионов.",
   "Could not load regions.": "Не удалось загрузить регионы.",
   "Download an offline map region": "Загрузить регион офлайн-карты",
-  "Download this offline map region? These can be very large (several GB to tens of GB).": "Загрузить этот регион офлайн-карты? Они могут быть очень большими (от нескольких ГБ до десятков ГБ)."
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "Загрузить этот регион офлайн-карты? Они могут быть очень большими (от нескольких ГБ до десятков ГБ).",
+  "{n} articles mention this date": "{n} статей упоминают эту дату",
+  "Deduced from {n} articles ({s} sources), never confirmed.": "Выведено из {n} статей ({s} источников), не подтверждено.",
+  "A date your articles mention — deduced from text, never confirmed.": "Дата, упомянутая в ваших статьях — выведена из текста, не подтверждена.",
+  "deduced · never confirmed": "выведено · не подтверждено"
 }

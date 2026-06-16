@@ -992,5 +992,9 @@
   "No regions.": "कोई क्षेत्र नहीं।",
   "Could not load regions.": "क्षेत्र लोड नहीं हो सके।",
   "Download an offline map region": "एक ऑफ़लाइन मानचित्र क्षेत्र डाउनलोड करें",
-  "Download this offline map region? These can be very large (several GB to tens of GB).": "इस ऑफ़लाइन मानचित्र क्षेत्र को डाउनलोड करें? ये बहुत बड़े हो सकते हैं (कई GB से दसियों GB तक)।"
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "इस ऑफ़लाइन मानचित्र क्षेत्र को डाउनलोड करें? ये बहुत बड़े हो सकते हैं (कई GB से दसियों GB तक)।",
+  "{n} articles mention this date": "{n} लेख इस तारीख का उल्लेख करते हैं",
+  "Deduced from {n} articles ({s} sources), never confirmed.": "{n} लेखों ({s} स्रोत) से अनुमानित, कभी पुष्ट नहीं।",
+  "A date your articles mention — deduced from text, never confirmed.": "एक तारीख जिसका आपके लेख उल्लेख करते हैं — पाठ से अनुमानित, कभी पुष्ट नहीं।",
+  "deduced · never confirmed": "अनुमानित · कभी पुष्ट नहीं"
 }
