@@ -363,9 +363,15 @@ ruling, a contingency, or a deliberate-omission note.
   resolves dimension index paths → ref_area/indicator/time_period + unit/adjustment/base_year
   only-when-stated) → provenance-rich StatFigure; NO score, never averages, extracted_at =
   caller-stamped vintage, published gap → value=None (Eurostat ':' too); tests/test_sdmx_parse.py
-  (9). see BACKLOG Group N. REMAINING: the LIVE fetch through the guarded factory + consent +
-  visible job; figure-level provenance/vintages DB schema; comparability/triangulation; a
-  filterable registered-sources view]. THE FOUR FORKS
+  (9). LIVE FETCH CLIENT SHIPPED 2026-06-16 (Item 5, fixture-tested): src/stats/fetch.py = the
+  ONLY networked stats layer — worldbank_url/eurostat_url builders + fetch_worldbank/
+  fetch_eurostat that GET through guarded_session (kill switch + Tor proxy, transport never
+  downgraded; per-URL circuit isolation), REFUSE up front while airplane mode is engaged, and
+  DELEGATE all parsing to sdmx.py (no robots here — documented API endpoints follow their own
+  etiquette). Injectable getter → network-free tests incl. a kill-switch test proving NO socket
+  is attempted offline (tests/test_stats_fetch.py, 11). see BACKLOG Group N. REMAINING: a
+  CONSENTED API endpoint + a visible task-manager job over fetch.py; figure-level provenance/
+  vintages DB schema; comparability/triangulation; a filterable registered-sources view]. THE FOUR FORKS
   (ruled 2026-06-16): (1) the offline READER stays STANDALONE (not folded into #an);
   (2) the convergence WATCH engine = the FULL 'Watches view + history' UX (saved local
   conditions → a Lead card on match + a dedicated Watches panel: history +

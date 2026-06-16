@@ -442,11 +442,17 @@ makes the rest fall out cheaply:
   code: NO score/ranking, never averages producers; `extracted_at` is the caller-stamped
   VINTAGE (verbatim, never overwritten); a published gap → `value=None` (Eurostat's `:`
   too) — never 0, never dropped. `tests/test_sdmx_parse.py` (9: both shapes, gaps, absent
-  vs present comparability, base-year-only-when-stated, vintage stamping, no-score). The
-  LIVE fetch through the guarded factory + consent + a visible job, the figure-level
-  provenance/vintages DB schema, side-by-side triangulation, and the filterable registered-
-  sources view are the REMAINING follow-up slices (this PR is the offline, fixture-tested
-  parser only).
+  vs present comparability, base-year-only-when-stated, vintage stamping, no-score).
+  LIVE FETCH CLIENT SHIPPED 2026-06-16 (Item 5, fixture-tested): `src/stats/fetch.py` — the
+  ONLY networked stats layer. `worldbank_url`/`eurostat_url` builders + `fetch_worldbank`/
+  `fetch_eurostat` GET through `guarded_session` (kill switch + Tor proxy, transport never
+  downgraded, per-URL circuit isolation), REFUSE up front under airplane mode, and DELEGATE
+  parsing to `sdmx.py` (no robots — documented API endpoints follow their own etiquette).
+  Injectable getter → network-free tests incl. a kill-switch test proving no socket is
+  attempted offline (`tests/test_stats_fetch.py`, 11). REMAINING follow-up slices: a
+  CONSENTED API endpoint + a visible task-manager job over `fetch.py`; the figure-level
+  provenance/vintages **DB schema**; comparability-guarded **side-by-side triangulation**
+  (never averaged); the filterable **registered-sources view**.
 
 ---
 
