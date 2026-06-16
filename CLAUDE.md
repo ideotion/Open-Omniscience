@@ -913,7 +913,14 @@ ruling, a contingency, or a deliberate-omission note.
   bad-name 400). REMAINING: the Settings LLM SUBTAB UI (pull/remove buttons + the
   ONE consent #14 + clearnet disclosure + task-manager job); the binary-installer
   (Q7=B download+verify+run official installer with a VISIBLE elevation step); live
-  ollama.com library browse (Q8); stored active-model setting (Q10).
+  ollama.com library browse (Q8).
+  **Q10 SHIPPED 2026-06-16 (backend):** `AppSettings.llm_model` (a persisted UI
+  preference, model-name-validated against injection; "" clears it) replaces env-only
+  `OO_LLM_MODEL` as the operator default; `api.llm.active_model()` resolves stored ||
+  DEFAULT_MODEL and the generate/summarize/translate/synthesize endpoints + the picker
+  (`/api/llm/models` gains `active`) honor it; settable via the existing PUT
+  /api/settings. tests/test_llm_active_model.py. REMAINING: the Settings LLM subtab UI
+  to choose it from the live installed-models list.
   SELF-UPDATE via GUI: consented check vs GitHub releases → signed
   oo-backup-2 + install-tree snapshot BEFORE anything → verified release →
   migrations on a STAGED copy → atomic swap + relaunch → rollback on failure;
