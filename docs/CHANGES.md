@@ -11,6 +11,16 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Accessibility + a calmer poll (audit PR G).** Charts now expose a **text
+  alternative** for screen readers — every chart carries `role="img"` with a
+  translated summary (series, point count, date range, value range) plus a
+  visually-hidden data table of the actual points. The always-on background polls
+  (network state, collection activity) now use **adaptive idle backoff**: they refresh
+  quickly while something is changing and slow down when the app is idle (and pause
+  when the tab is hidden), cutting the idle polling load on the encrypted database
+  while live state stays fresh via the scheduler/airplane push updates. (Toasts and
+  the task-manager/command-palette dialogs already announced and trapped focus.)
+
 - **Collect, Sources, and Wikipedia moved into Settings (content-first).** The three
   acquisition/configuration tabs left the sidebar; their controls now live under
   **Settings → Collect** (scheduler, manual ingest, batch picker), **Settings →

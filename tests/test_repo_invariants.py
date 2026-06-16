@@ -531,6 +531,33 @@ def test_ui_invariants():
         "the analysis window must carry the Advanced-search tab that re-runs the "
         "analysis from refined filters (Group F, keystone #4)"
     )
+    # 24. Charts expose a text alternative (audit PR G, a11y): <canvas>/<svg> charts
+    #     are opaque to screen readers, so every chart carries role="img" + a
+    #     translated aria-label SUMMARY and a visually-hidden data table.
+    assert "function _chartAria(" in html and "function _chartSrTable(" in html, (
+        "charts must build a translated aria summary + a visually-hidden data table"
+    )
+    assert 'cv.setAttribute("role", "img")' in html and 'cv.setAttribute("aria-label"' in html, (
+        "the ooChart canvas must expose role=img + an aria-label (a11y)"
+    )
+    assert 'role="img" aria-label="${esc(aria)}"' in html, (
+        "the dashChartSvg <svg> must carry a translated aria-label (a11y)"
+    )
+    assert '<table class="sr-only">' in html, (
+        "charts must ship a visually-hidden data-table fallback (a11y)"
+    )
+    # 25. Adaptive idle polling (audit PR G): the always-on chrome polls back off
+    #     when idle instead of hammering the encrypted DB (field-log finding B). The
+    #     network/activity polls route through the one adaptive helper.
+    assert "function _adaptivePoll(" in html, (
+        "the adaptive idle-backoff poll helper must exist (UI polling storm fix)"
+    )
+    assert "_adaptivePoll(_pollNetwork)" in html and "_adaptivePoll(_pollActivity)" in html, (
+        "the always-on network/activity polls must use the adaptive backoff helper"
+    )
+    assert "setInterval(_pollNetwork" not in html, (
+        "the fixed-interval network poll must be replaced by the adaptive backoff"
+    )
 
 
 def test_corpus_tier_header():
