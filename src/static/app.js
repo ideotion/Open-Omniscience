@@ -983,6 +983,7 @@
       // switches the panel + does the section's one-time setup.
       document.querySelectorAll("#tab-settings .set-view").forEach(v =>
         v.style.display = (v.id === "set-" + cat) ? "" : "none");
+      if (cat !== "collect") stopSchedRatePoll();   // stop the live download-rate poll when leaving Collect
       if (cat === "appearance") buildDrawer();      // (re)paint theme/accent/module state
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
@@ -3766,6 +3767,39 @@
              : '<span class="muted">No run yet.</span>');
     }
 
+    // Collection-speed slider stops (kbps = kilobits/s, the consumer "download
+    // speed" unit). The last stop is "Maximum" (governor mode = maximum).
+    const SCHED_SPEED_STOPS = [100, 250, 500, 1000, 2500, 5000, "max"];
+    function schedSpeedLabel() {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s => s);
+      const sl = $("sch-speed"); if (!sl) return;
+      const v = SCHED_SPEED_STOPS[Number(sl.value)];
+      const el = $("sch-speed-val");
+      if (el) el.textContent = (v === "max") ? T("Maximum") : (v + " kbps");
+    }
+    // Live "Now: X kbps" readout — polls the activity endpoint ONLY while the
+    // Collect settings panel is visible (self-stops when it isn't).
+    let _schedRateTimer = null;
+    async function _pollSchedRate() {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s => s);
+      const el = $("sch-speed-now"), view = $("set-collect");
+      if (!el || !view || view.style.display === "none") { stopSchedRatePoll(); return; }
+      let a; try { a = await api("/api/scheduler/activity"); } catch { return; }
+      const r = a && a.download_rate_kbps, cp = a && a.collect_perf;
+      if (r == null || !a.active) { el.textContent = ""; return; }
+      let txt = T("Now") + ": " + r + " kbps";
+      if (cp && cp.active_workers != null) txt += " · " + cp.active_workers + " " + T("workers");
+      el.textContent = txt;
+    }
+    function startSchedRatePoll() {
+      stopSchedRatePoll();
+      _pollSchedRate();
+      _schedRateTimer = setInterval(() => { if (!document.hidden) _pollSchedRate(); }, 3000);
+    }
+    function stopSchedRatePoll() {
+      if (_schedRateTimer) { clearInterval(_schedRateTimer); _schedRateTimer = null; }
+    }
+
     function applySchedConfig(c) {
       $("sch-interval").value = c.interval_minutes;
       $("sch-mode").value = c.mode;
@@ -3776,6 +3810,19 @@
       $("sch-types").value = (c.select_source_types || []).join(", ");
       $("sch-tags").value = (c.select_tags || []).join(", ");
       if ($("sch-export-dir")) $("sch-export-dir").value = c.export_dir || "";
+      // Collection speed: map the stored rate mode/target onto the slider stops.
+      if ($("sch-speed")) {
+        let idx = 2; // 500 kbps default
+        if (c.collect_rate_mode === "maximum") {
+          idx = SCHED_SPEED_STOPS.length - 1;
+        } else {
+          const t = Number(c.collect_target_kbps) || 500;
+          idx = SCHED_SPEED_STOPS.findIndex(v => v !== "max" && v >= t);
+          if (idx < 0) idx = SCHED_SPEED_STOPS.length - 2;  // largest numeric stop
+        }
+        $("sch-speed").value = idx;
+        schedSpeedLabel();
+      }
       toggleCrawlFields();
     }
 
@@ -3788,6 +3835,7 @@
       catch (e) { /* config panel stays at defaults */ }
       previewTargets();
       loadBatchPicker();
+      startSchedRatePoll();
     }
 
     async function previewTargets() {
@@ -3844,6 +3892,13 @@
         select_tags: _csv("sch-tags"),
         export_dir: $("sch-export-dir") ? $("sch-export-dir").value.trim() : "",
       };
+      // Collection speed: the slider's last stop is "Maximum" (governor mode),
+      // every other stop is a download-rate target in kbps.
+      if ($("sch-speed")) {
+        const sv = SCHED_SPEED_STOPS[Number($("sch-speed").value)];
+        if (sv === "max") { body.collect_rate_mode = "maximum"; }
+        else { body.collect_rate_mode = "target"; body.collect_target_kbps = sv; }
+      }
       try { applySchedConfig(await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify(body)}));
         toast("Schedule saved."); previewTargets(); } catch (e) { toast("Save failed: " + e.message, "err"); }
     }

@@ -1049,5 +1049,11 @@
   "already present": "sudah ada",
   "skipped (no domain)": "dilewati (tanpa domain)",
   "Statistics producers registered.": "Produsen statistik telah didaftarkan.",
-  "Could not register the producers.": "Tidak dapat mendaftarkan produsen."
+  "Could not register the producers.": "Tidak dapat mendaftarkan produsen.",
+  "Collection speed (download-rate target)": "Kecepatan pengumpulan (target laju unduh)",
+  "Maximum": "Maksimum",
+  "Now": "Sekarang",
+  "workers": "pekerja",
+  "Download rate is steered by concurrency: more parallel hosts means higher throughput, up to a safe ceiling. The app measures its own real download rate and raises or lowers the number of concurrent hosts to track your target, backing off automatically when CPU, memory or the single encrypted writer become the limit (see the collection-performance log in the debug bundle). Per-host politeness is never traded for speed.": "Laju unduh dikendalikan oleh konkurensi: makin banyak host paralel berarti throughput lebih tinggi, hingga batas aman. Aplikasi mengukur laju unduh nyatanya sendiri dan menaikkan atau menurunkan jumlah host serentak untuk mengejar target Anda, mundur secara otomatis ketika CPU, memori, atau satu-satunya penulis terenkripsi menjadi batasnya (lihat log kinerja pengumpulan di paket debug). Kesopanan per host tidak pernah dikorbankan demi kecepatan.",
+  "A target, not a guarantee. The app adjusts how many sources it fetches at once to approach this rate — always across DIFFERENT sites, never hammering one (robots.txt and per-host limits are respected). Actual speed is limited by the sources, your connection (much lower over Tor), your CPU and the encrypted database. “Maximum” fetches as fast as your machine and the sources allow.": "Sebuah target, bukan jaminan. Aplikasi menyesuaikan berapa banyak sumber yang diambil sekaligus untuk mendekati laju ini — selalu lintas situs BERBEDA, tidak pernah membebani satu situs (robots.txt dan batas per host dihormati). Kecepatan sebenarnya dibatasi oleh sumber, koneksi Anda (jauh lebih rendah melalui Tor), CPU Anda, dan basis data terenkripsi. “Maksimum” mengambil secepat yang diizinkan mesin dan sumber Anda."
 }

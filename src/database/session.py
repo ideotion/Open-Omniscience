@@ -62,7 +62,20 @@ def _build_engine() -> Engine:
 
             return connect(db_path, check_same_thread=False, timeout=30)
 
-        return create_engine(DATABASE_URL, future=True, creator=_creator)
+        # Pool sized for the bandwidth-governed collector: up to ~50 workers may
+        # hold a session concurrently (reads; writes still serialise through the
+        # single-writer gate), so the default QueuePool (5 + 10 overflow) would
+        # block them. Overflow connections beyond pool_size are closed on return
+        # (each re-open re-derives the SQLCipher key — a known, logged cost); the
+        # governor's memory back-off keeps the number actually open in check.
+        return create_engine(
+            DATABASE_URL,
+            future=True,
+            creator=_creator,
+            pool_size=int(os.getenv("OO_DB_POOL_SIZE", "8")),
+            max_overflow=int(os.getenv("OO_DB_MAX_OVERFLOW", "64")),
+            pool_timeout=float(os.getenv("OO_DB_POOL_TIMEOUT", "30")),
+        )
     # PostgreSQL / other: modest pool suitable for a single-user server.
     return create_engine(
         DATABASE_URL,

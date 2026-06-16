@@ -169,6 +169,21 @@ class EthicalFetcher:
         self.proxy = proxy or None
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
+        # Size the connection pool for parallel collection: with up to ~50
+        # concurrent DISTINCT hosts (per-host concurrency stays 1 via the host
+        # lock), the default urllib3 pool (10) would churn host-pools and warn.
+        # A generous adapter keeps warm keep-alive connections reused across a
+        # pass. Real session only (an injected test stub manages its own I/O).
+        if isinstance(self.session, requests.Session):
+            try:
+                from requests.adapters import HTTPAdapter
+
+                pool_n = max(1, int(os.getenv("OO_HTTP_POOL", "64")))
+                adapter = HTTPAdapter(pool_connections=pool_n, pool_maxsize=pool_n)
+                self.session.mount("http://", adapter)
+                self.session.mount("https://", adapter)
+            except Exception:  # noqa: BLE001 - pool sizing is an optimisation, never required
+                pass
         # Protected fetch (Theme 2): route through the user's proxy (e.g. Tor at
         # socks5://127.0.0.1:9050). We *use* the proxy and verify it is set; we do NOT
         # guarantee anonymity — the user must run and trust the proxy. SOCKS proxies need
@@ -275,7 +290,7 @@ class EthicalFetcher:
         # (network errors, 429, and 5xx) -- finding BUG-02. Deterministic refusals
         # (4xx, non-HTML, robots/SSRF) are never retried. Per-host rate limiting is
         # honoured before every attempt so retries stay polite.
-        activity_monitor.fetch_started(url)
+        fetch_token = activity_monitor.fetch_started(url)
         try:
             attempt = 0
             while True:
@@ -332,7 +347,7 @@ class EthicalFetcher:
             if require_html and "html" not in content_type.lower():
                 raise FetchFailed(f"non-HTML content ({content_type!r}) for {url}")
 
-            content = self._read_body(response, url)
+            content = self._read_body(response, url, token=fetch_token)
 
             return FetchResult(
                 requested_url=url,
@@ -345,7 +360,7 @@ class EthicalFetcher:
                 last_modified=last_modified,
             )
         finally:
-            activity_monitor.fetch_finished()
+            activity_monitor.fetch_finished(fetch_token)
 
     # -- SSRF guard + bounded redirects + size-capped body ----------------- #
 
@@ -461,7 +476,7 @@ class EthicalFetcher:
             return resp, str(getattr(resp, "url", current) or current)
         raise FetchFailed(f"too many redirects for {url}")
 
-    def _read_body(self, response, url: str) -> str:
+    def _read_body(self, response, url: str, *, token: int | None = None) -> str:
         """Decode the body, enforcing ``max_bytes`` *before* materialising it (DoS).
 
         A declared Content-Length over the cap is rejected up front; for the real
@@ -484,7 +499,7 @@ class EthicalFetcher:
                     raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
                 chunks.append(chunk)
             raw = b"".join(chunks)
-            activity_monitor.fetch_bytes(total)  # real, app-attributed download size
+            activity_monitor.fetch_bytes(total, token)  # real, app-attributed download size
             # Pick a text encoding WITHOUT touching response.apparent_encoding: on a
             # streamed response the body is already consumed, so apparent_encoding
             # re-reads it and raises "content already consumed" (crashing the scrape).
@@ -509,7 +524,7 @@ class EthicalFetcher:
         # Injected (test) session: not streamed; check the already-materialised body.
         if response.content and len(response.content) > self.max_bytes:
             raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
-        activity_monitor.fetch_bytes(len(response.content or b""))
+        activity_monitor.fetch_bytes(len(response.content or b""), token)
         return response.text
 
     # -- robots ------------------------------------------------------------ #

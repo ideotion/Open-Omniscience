@@ -11,6 +11,19 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Set a download speed, not a worker count — the bandwidth-governed collector.**
+  Settings → Collect now offers a **collection-speed slider** (a download-rate target in
+  kbps) with a **“Maximum”** end-stop and a live **“Now: X kbps”** readout. Behind it, a
+  bandwidth governor raises or lowers how many sources are fetched at once to approach
+  your target — always across **different** sites, never hammering one (robots.txt and
+  per-host rate limits are unchanged) — and **backs off automatically** when the CPU,
+  memory or the encrypted database become the limit. The default now targets **≥ 500
+  kbps** out of the box. A new **collection-performance log** (in the debug bundle)
+  records the real download rate, in-flight fetches, writer-gate contention and CPU/
+  memory each second, and classifies the limiting factor at the end of each pass, so a
+  slow collection has an honest, shareable explanation. *A target is best-effort, not a
+  guarantee — real speed is bounded by the sources, your connection (much lower over
+  Tor), your CPU and the single encrypted writer.*
 - **See a commodity's price next to your coverage of it.** Open a commodity from the
   Markets board (its title or **Analyse ↗**) and the analysis window now offers a **Price**
   tab that lays the **price curve over your corpus's coverage timeline** for that topic —

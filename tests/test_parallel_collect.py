@@ -149,6 +149,33 @@ def test_run_scrape_once_parallel_processes_all_sources():
 
 def test_collect_parallelism_setting_round_trips(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    assert load_settings().collect_parallelism == 1  # default sequential
+    # The bandwidth-governed collector: the default targets >= 500 kbps with a
+    # concurrency CEILING of 50 (maintainer ruling 2026-06-16, supersedes the old
+    # opt-in default of 1 worker).
+    d = load_settings()
+    assert d.collect_parallelism == 50  # hard ceiling (the governor's upper bound)
+    assert d.collect_rate_mode == "target"
+    assert d.collect_target_kbps == 500
     save_settings({"collect_parallelism": 4})
     assert load_settings().collect_parallelism == 4
+
+
+def test_collect_rate_settings_validate_and_clamp(tmp_path, monkeypatch):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    import pytest
+
+    from src.scheduler.settings import SchedulerSettingsError
+
+    # Ceiling raised to 50; >50 is rejected on save, clamped on load.
+    save_settings({"collect_parallelism": 50})
+    assert load_settings().collect_parallelism == 50
+    with pytest.raises(SchedulerSettingsError):
+        save_settings({"collect_parallelism": 51})
+
+    # Download-rate target + mode round-trip; bad mode is rejected.
+    save_settings({"collect_rate_mode": "maximum", "collect_target_kbps": 1000})
+    s = load_settings()
+    assert s.collect_rate_mode == "maximum"
+    assert s.collect_target_kbps == 1000
+    with pytest.raises(SchedulerSettingsError):
+        save_settings({"collect_rate_mode": "warp-speed"})
