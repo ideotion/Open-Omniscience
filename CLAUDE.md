@@ -219,8 +219,24 @@ ruling, a contingency, or a deliberate-omission note.
    countdown. `_renderSchedule` reuses the `_actData` the window ALREADY polls
    from /api/scheduler/activity (no new endpoint, no extra poll; only while the
    window is open); honest empty state ×12; +20 strings ×12. Enforced in
-   test_ui_invariants (#20 + #20b + #20c). REMAINING: History, per-job
-   bandwidth/ETA controls.
+   test_ui_invariants (#20 + #20b + #20c). PER-JOB CONTROLS EXTENDED (Item 2,
+   SHIPPED 2026-06-16, conservative/browser-unverified): the ONE `_jobRow`
+   renderer now serves BOTH bulk-download kinds — OSM-region downloads gained the
+   wiki-dump control grammar (pause/↑↓-reorder/cancel) and EVERY paused/failed
+   download (wiki + OSM) gained a RESUME button. Reorder is kind-aware
+   (`_reorderEndpoint`: /api/jobs/dumps/reorder vs /osm/reorder — each manager
+   owns its queue; `queuedKeysByKind` so ↑↓ never crosses kinds). Resume =
+   `jobResume(id)` → ensureOnline (invariant #14, a resume re-opens a fetch) →
+   POST `/api/jobs/{id}/resume`; backend `_dl_actions` makes paused/failed offer
+   `["resume"]` (a re-cancel would 404 on the owner — permanent delete stays in
+   Settings, as the cancel detail says), routed to new `DumpDownloadManager.resume`
+   / `OsmDownloadManager.resume` (both call start() to continue the partial file).
+   +2 strings ×12 (Resume a paused download · Resumed.); test_ui_invariants #20d +
+   tests/test_jobs_resume.py. REMAINING: History; per-job RATE/ETA/bandwidth-cap —
+   DELIBERATELY omitted (the owners report only bytes/percent, NOT a rate; an
+   honest rate needs owner-measured bytes-over-time in the manager — never a
+   client-side guess across the adaptive poll; the cap needs a backend that
+   supports throttling, which it does not yet).
 21. **INSIGHTS auto-indexes; no "Index corpus" button (UI_SHELL §6, SHIPPED
    #132):** indexing follows ingest (the index_article hook) + a SILENT
    background top-up (`autoIndexInsights`) clears any legacy backlog when
@@ -324,9 +340,12 @@ ruling, a contingency, or a deliberate-omission note.
   /api/geo/regions|downloads; SETTINGS FRONTEND SHIPPED 2026-06-16 (Settings → Offline
   map subtab: region picker + resumable download-job table, start gated by ensureOnline
   #14, +9 i18n ×12, test #27); OSM downloads SURFACE IN /api/jobs 2026-06-16 (_osm_jobs
-  + osm: cancel + /api/jobs/osm/reorder, tests/test_osm_jobs.py); see BACKLOG Group M.
-  REMAINING: the per-job rate/%/ETA/cap CONTROLS in the task-manager window UI + the
-  renderer] + a HAND-ROLLED lightweight offline vector map (canvas 2.5D /
+  + osm: cancel + /api/jobs/osm/reorder, tests/test_osm_jobs.py); PER-JOB UI CONTROLS
+  SHIPPED 2026-06-16 (Item 2): the task-manager `_jobRow` now renders pause/↑↓-reorder/
+  cancel + RESUME for OSM downloads (kind-aware reorder; resume gated by ensureOnline) —
+  see the #20 ledger entry. REMAINING: per-job RATE/ETA + bandwidth CAP (deferred —
+  owners report bytes/percent only, not a rate; needs owner-measured bytes-over-time +
+  a throttling backend, never a client-side guess)] + a HAND-ROLLED lightweight offline vector map (canvas 2.5D /
   CSS-3D, NO WebGL/Three.js; reuse the bundled Natural-Earth coastline) + the
   temporal-map remainder (linear/log toggle; mention layer fed by event-places); (e)
   NEW OFFICIAL-STATISTICS INGESTION (the FUTURE_DEVELOPMENTS design — gov +

@@ -543,7 +543,15 @@
     }
     // ---- T9: the visible-jobs section of the task manager ---- //
     let _jobsData = null;
-    function _jobRow(j, queuedKeys, t) {
+    // The two resumable bulk-download kinds (wiki dumps + OSM regions) share the
+    // SAME control grammar: pause (running) / up-down reorder (queued) / resume
+    // (paused/failed). The reorder endpoint differs per kind (each manager owns
+    // its own queue), so jobMove takes the kind. The id is "<prefix>:<key>"; the
+    // key may itself contain ':' so slice after the FIRST colon, never a fixed N.
+    const _isDownloadKind = (k) => k === "wiki-dump" || k === "osm-map";
+    const _dlKey = (j) => j.id.slice(j.id.indexOf(":") + 1);
+    const _reorderEndpoint = (k) => k === "osm-map" ? "/api/jobs/osm/reorder" : "/api/jobs/dumps/reorder";
+    function _jobRow(j, queuedKeysByKind, t) {
         const pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
         let prog = "";
         if (j.progress && j.progress.total) {
@@ -553,13 +561,17 @@
         }
         const acts = [];
         if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" onclick="jobCancel('${esc(j.id)}')">${esc(t("Stop"))}</button>`);
-        if (j.kind === "wiki-dump" && j.state === "running") acts.push(`<button class="tiny secondary" onclick="jobCancel('${esc(j.id)}')">${esc(t("Pause"))}</button>`);
-        if (j.kind === "wiki-dump" && j.state === "queued") {
-          const k = j.id.slice(5), idx = queuedKeys.indexOf(k);
-          if (idx > 0) acts.push(`<button class="tiny secondary" onclick="jobMove('${esc(k)}', -1)" title="${esc(t("Move earlier in the queue"))}">\u2191</button>`);
-          if (idx >= 0 && idx < queuedKeys.length - 1) acts.push(`<button class="tiny secondary" onclick="jobMove('${esc(k)}', 1)" title="${esc(t("Move later in the queue"))}">\u2193</button>`);
+        if (_isDownloadKind(j.kind) && j.state === "running") acts.push(`<button class="tiny secondary" onclick="jobCancel('${esc(j.id)}')">${esc(t("Pause"))}</button>`);
+        if (_isDownloadKind(j.kind) && j.state === "queued") {
+          const k = _dlKey(j), keys = queuedKeysByKind[j.kind] || [], idx = keys.indexOf(k);
+          if (idx > 0) acts.push(`<button class="tiny secondary" onclick="jobMove('${esc(k)}', -1, '${esc(j.kind)}')" title="${esc(t("Move earlier in the queue"))}">\u2191</button>`);
+          if (idx >= 0 && idx < keys.length - 1) acts.push(`<button class="tiny secondary" onclick="jobMove('${esc(k)}', 1, '${esc(j.kind)}')" title="${esc(t("Move later in the queue"))}">\u2193</button>`);
           acts.push(`<button class="tiny secondary" onclick="jobCancel('${esc(j.id)}')">${esc(t("Cancel"))}</button>`);
         }
+        // Paused/failed downloads gain a Resume control (start() continues the
+        // partial file). It routes through the ONE network-consent popup.
+        if (_isDownloadKind(j.kind) && (j.state === "paused" || j.state === "failed"))
+          acts.push(`<button class="tiny secondary" onclick="jobResume('${esc(j.id)}')">${esc(t("Resume"))}</button>`);
         const qpos = j.queue_position ? ` <span class="muted">#${j.queue_position} ${esc(t("in queue"))}</span>` : "";
         return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">` +
           `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(j.label)}</b>${qpos}` +
@@ -573,21 +585,25 @@
       try { _jobsData = await api("/api/jobs"); }
       catch { if (elA) elA.innerHTML = ""; if (elQ) elQ.innerHTML = ""; return; }
       const jobs = (_jobsData.jobs || []).filter(j => j.state !== "done");
-      // Queue = jobs waiting their turn (the single-download dump queue, in order).
+      // Queue = jobs waiting their turn (each manager's single-download queue, in
+      // order). Per-kind queued keys (dumps + OSM each have their OWN order), so a
+      // reorder up/down never crosses kinds.
       const queued = jobs.filter(j => j.state === "queued")
                          .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0));
-      const queuedKeys = queued.filter(j => j.kind === "wiki-dump").map(j => j.id.slice(5));
+      const queuedKeysByKind = {};
+      for (const j of queued) if (_isDownloadKind(j.kind))
+        (queuedKeysByKind[j.kind] = queuedKeysByKind[j.kind] || []).push(_dlKey(j));
       // Active = everything else that is not done (a running pass, downloading
       // dumps, the in-flight fetch, the idle loop, paused/failed downloads).
       const active = jobs.filter(j => j.state !== "queued");
       if (elA) {
         elA.innerHTML = `<div class="vsect">${esc(t("Active"))}</div>` + (active.length
-          ? active.map(j => _jobRow(j, queuedKeys, t)).join("")
+          ? active.map(j => _jobRow(j, queuedKeysByKind, t)).join("")
           : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here."))}</div>`);
       }
       if (elQ) {
         elQ.innerHTML = `<div class="vsect">${esc(t("Queue"))}</div>` + (queued.length
-          ? queued.map(j => _jobRow(j, queuedKeys, t)).join("")
+          ? queued.map(j => _jobRow(j, queuedKeysByKind, t)).join("")
           : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them."))}</div>`);
       }
     }
@@ -600,15 +616,27 @@
         _renderJobs();
       } catch (e) { toast(e.message, "err"); }
     }
-    async function jobMove(key, dir) {
+    async function jobResume(id) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      // A resume re-opens a network fetch -> the ONE consent popup first
+      // (invariant #14; a no-op when already online). The download path itself
+      // still refuses while the kill switch is engaged.
+      if (typeof ensureOnline === "function" && !await ensureOnline(t("Resume a paused download"))) return;
+      try {
+        const r = await api(`/api/jobs/${encodeURIComponent(id)}/resume`, {method: "POST"});
+        toast(r.detail || t("Resumed."));
+        _renderJobs();
+      } catch (e) { toast(e.message, "err"); }
+    }
+    async function jobMove(key, dir, kind) {
       const jobs = (_jobsData && _jobsData.jobs) || [];
-      const queued = jobs.filter(j => j.state === "queued" && j.kind === "wiki-dump")
+      const queued = jobs.filter(j => j.state === "queued" && j.kind === kind)
                          .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0))
-                         .map(j => j.id.slice(5));
+                         .map(_dlKey);
       const i = queued.indexOf(key);
       if (i < 0 || i + dir < 0 || i + dir >= queued.length) return;
       [queued[i], queued[i + dir]] = [queued[i + dir], queued[i]];
-      try { await api("/api/jobs/dumps/reorder", {method: "POST", body: JSON.stringify({keys: queued})}); _renderJobs(); }
+      try { await api(_reorderEndpoint(kind), {method: "POST", body: JSON.stringify({keys: queued})}); _renderJobs(); }
       catch (e) { toast(e.message, "err"); }
     }
     // ---- Schedule tab (CLAUDE.md #20 REMAINING "Sources/Schedule") ---- //

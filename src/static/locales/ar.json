@@ -986,6 +986,8 @@
   "Could not load": "تعذّر التحميل",
   "Progress": "التقدم",
   "Resume": "استئناف",
+  "Resume a paused download": "استئناف تنزيل متوقف مؤقتًا",
+  "Resumed.": "تم الاستئناف.",
   "Delete": "حذف",
   "No offline downloads.": "لا توجد تنزيلات دون اتصال.",
   "Delete this download and its file?": "حذف هذا التنزيل وملفه؟",

@@ -571,12 +571,30 @@ def test_ui_invariants():
     assert 'data-tab="queue"' in html and "onclick" not in (
         html.split('id="tm-subtabs"', 1)[1].split("</nav>", 1)[0]
     ), "the Queue subtab must use data-tab via ooSubtabs, never inline onclick (CLAUDE.md #18)"
-    assert "function _jobRow(" in html and "_jobRow(j, queuedKeys, t)" in html, (
+    assert "function _jobRow(" in html and "_jobRow(j, queuedKeysByKind, t)" in html, (
         "Active and Queue must share ONE job-row renderer (_jobRow) so controls stay identical"
     )
     # The Queue must still drive the real reorder endpoint (no invented backend).
     assert "/api/jobs/dumps/reorder" in html, (
         "the Queue reorder must POST the existing /api/jobs/dumps/reorder endpoint"
+    )
+    # 20d. Per-job controls extended to OSM-region downloads + a Resume action
+    #      for paused/failed downloads (Item 2, Groups C/M). ONE row renderer now
+    #      serves BOTH bulk-download kinds (wiki dumps + OSM regions); reorder is
+    #      kind-aware (each manager owns its queue) and resume routes through the
+    #      ONE network-consent popup (a resume re-opens a fetch — invariant #14).
+    assert '_isDownloadKind(' in html and 'k === "osm-map"' in html, (
+        "the job-row controls must cover OSM-region downloads, not only wiki dumps (Item 2)"
+    )
+    assert "/api/jobs/osm/reorder" in html, (
+        "OSM queued downloads must reorder via the existing /api/jobs/osm/reorder endpoint"
+    )
+    assert "function jobResume(" in html and "/resume" in html, (
+        "paused/failed downloads must offer Resume via jobResume() -> /api/jobs/{id}/resume"
+    )
+    _resume_body = html.split("function jobResume(", 1)[1][:500]
+    assert "ensureOnline(" in _resume_body, (
+        "jobResume must pass the ONE network-consent popup (invariant #14) before resuming"
     )
     # 20c. Sources/Schedule (CLAUDE.md #20 REMAINING): the same window gains a
     #      Schedule subtab surfacing the REAL collection schedule/activity. It is

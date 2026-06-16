@@ -158,8 +158,15 @@ makes the rest fall out cheaply:
   (Tasks + System) opened from the activity chip; render/poll reused unchanged
   (`test_ui_invariants` #20). REMAINING: split Tasks → Active/Queue, add
   History + Sources/Schedule, and the per-job controls below.
-- ⬜ **Per-job controls**: rate · % · speed · bandwidth cap · ETA · pause ·
-  resume · prioritize · de-prioritize.
+- 🔨 **Per-job controls**: pause · resume · cancel · ↑/↓ reorder SHIPPED for BOTH
+  bulk-download kinds (wiki dumps + OSM regions) via the ONE `_jobRow` renderer
+  (Item 2, 2026-06-16; resume routes through `ensureOnline`, invariant #14;
+  `_dl_actions` makes paused/failed offer Resume; `test_ui_invariants` #20d +
+  `tests/test_jobs_resume.py`). REMAINING: % is shown; rate · speed · ETA ·
+  bandwidth cap are DEFERRED — the owners report only bytes/percent, so an honest
+  rate/ETA needs owner-measured bytes-over-time in the managers (never a
+  client-side guess across the adaptive poll) and the cap needs a throttling
+  backend that does not exist yet.
 - ⬜ **Download-manager arbitration**: every network task a visible job;
   new requests queue, never a swallowed modal. (SCRAPING plan Step 7)
 
@@ -370,6 +377,10 @@ makes the rest fall out cheaply:
   `osm-map`, real queue_position, progress, actions) — aggregated live, no shadow state;
   a downloading extract writes a FILE so it never trips the DB-writer arbitration ask;
   `cancel_job` handles `osm:` ids (pause, resumable) + `POST /api/jobs/osm/reorder`.
+  PER-JOB UI CONTROLS SHIPPED 2026-06-16 (Item 2): the task-manager `_jobRow` now
+  renders OSM downloads with pause/↑↓-reorder/cancel + a RESUME button for paused/failed
+  jobs (kind-aware reorder; `jobResume` → `ensureOnline` → `POST /api/jobs/{id}/resume`,
+  backed by new `OsmDownloadManager.resume` / `DumpDownloadManager.resume`); see Group C.
   tests/test_osm_jobs.py. REMAINING: the per-job rate/%/ETA/cap CONTROLS in the
   task-manager window UI (frontend), country sub-extracts, the consented exact-size
   refresh, and the hand-rolled offline map renderer.

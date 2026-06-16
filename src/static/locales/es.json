@@ -986,6 +986,8 @@
   "Could not load": "No se pudo cargar",
   "Progress": "Progreso",
   "Resume": "Reanudar",
+  "Resume a paused download": "Reanudar una descarga en pausa",
+  "Resumed.": "Reanudado.",
   "Delete": "Eliminar",
   "No offline downloads.": "No hay descargas sin conexión.",
   "Delete this download and its file?": "¿Eliminar esta descarga y su archivo?",

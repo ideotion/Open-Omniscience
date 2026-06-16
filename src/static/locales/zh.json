@@ -986,6 +986,8 @@
   "Could not load": "无法加载",
   "Progress": "进度",
   "Resume": "继续",
+  "Resume a paused download": "继续已暂停的下载",
+  "Resumed.": "已继续。",
   "Delete": "删除",
   "No offline downloads.": "没有离线下载。",
   "Delete this download and its file?": "删除此下载及其文件？",

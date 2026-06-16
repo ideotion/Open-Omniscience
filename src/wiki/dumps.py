@@ -358,6 +358,16 @@ class DumpDownloadManager:
             return True
         return False
 
+    def resume(self, key: str) -> dict | None:
+        """Resume a paused/failed download by re-entering the queue / starting a
+        slot — start() continues the partial file from ``downloaded_bytes`` via an
+        HTTP Range request. Returns the entry dict, or None for an unknown key."""
+        with self._lock:
+            e = self._entries.get(key)
+        if e is None:
+            return None
+        return self.start(e.wiki, e.kind)
+
     def delete(self, key: str) -> bool:
         self.pause(key)
         with self._lock:

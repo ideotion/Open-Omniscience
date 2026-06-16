@@ -986,6 +986,8 @@
   "Could not load": "読み込めませんでした",
   "Progress": "進捗",
   "Resume": "再開",
+  "Resume a paused download": "一時停止したダウンロードを再開",
+  "Resumed.": "再開しました。",
   "Delete": "削除",
   "No offline downloads.": "オフラインダウンロードはありません。",
   "Delete this download and its file?": "このダウンロードとそのファイルを削除しますか？",
