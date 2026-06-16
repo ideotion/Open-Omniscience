@@ -88,7 +88,13 @@ Users of Open Omniscience claim:
 2. **Rate Limiting:** Implement and respect configurable delays between requests to avoid overloading servers.
    - Default: **1 request per second per domain** (adjustable in `sources.yml`).
    - Sensitive domains (e.g., government, small news sites): **3 seconds or more**. 
-3. **Transparency:** Maintain detailed audit logs of all scraping activities in `audit/scrape_log.csv`.
+3. **Transparency:** Fetch activity is recorded locally for the operator's own
+   review — per-source/feed verdicts in `data/source_preflight.jsonl` and
+   `data/feed_preflight.jsonl`, field-test outcomes in `data/field_test.jsonl`, and
+   app errors in `data/app_errors.jsonl`. These stay on the machine and are bundled,
+   **on click only**, into the Settings → diagnostics **debug bundle** — never
+   auto-transmitted. (There is no `audit/scrape_log.csv`; that was an early design
+   that the local-first, no-telemetry posture replaced.)
 4. **Data Minimization:** Only collect and store data necessary for the platform's core functionality (URL, title, content, metadata).
 5. **Non-Malicious Use:** Open Omniscience must not be used for:
    - Spam or harassment.
@@ -107,7 +113,8 @@ Before scraping a new source, verify the following:
 - [ ] The source does **not** require authentication or violate paywalls.
 - [ ] Rate limits are configured to avoid **>1 request per second** by default (adjust for sensitive domains).
 - [ ] The User-Agent string identifies Open Omniscience (e.g., `OpenOmniscience/1.0`).
-- [ ] Audit logging is enabled for all requests.
+- [x] Fetch verdicts are recorded locally (`data/*_preflight.jsonl`), surfaced
+  on-click via the Settings debug bundle — never auto-transmitted.
 
 ---
 
@@ -138,28 +145,25 @@ The following domains are **explicitly prohibited** from scraping due to legal, 
 
 ## 📊 Audit and Accountability
 
-All scraping activities **must** be logged in the `audit/` directory. Logs should include:
-- Timestamp (ISO 8601 format, UTC)
-- Target URL
-- Source domain
-- HTTP status code
-- Rate limit applied (ms)
-- Number of retries
-- User-Agent string
+Fetch activity is recorded **locally**, for the operator's own review, and is shared
+**only on click** — never auto-transmitted (no telemetry; local-first by design). The
+real mechanism (the early `audit/scrape_log.csv` design was replaced by this):
 
-### Example Log Format (CSV):
-```csv
-Timestamp,URL,Source,Status,Rate_Limit_ms,Retries,User_Agent
-2026-05-07T12:00:00Z,https://example.com/article,Example News,200,1000,0,OpenOmniscience/1.0
-2026-05-07T12:00:02Z,https://another-example.com/news,Another News,BLOCKED_BY_ROBOTS,2000,0,OpenOmniscience/1.0
-```
+- **Preflight verdicts** — per-source and per-feed reachability/robots/transport
+  outcomes are appended to `data/source_preflight.jsonl` and
+  `data/feed_preflight.jsonl` (each line: timestamp, source/domain, the transport-aware
+  verdict, and the honest reason). These power the "Retry failed feeds" UX and the
+  Indices/markets per-feed verdicts.
+- **Field-test outcomes** — when field-test mode is on, fetch-surface exercises are
+  written verbatim to `data/field_test.jsonl`.
+- **App errors** — bounded to `data/app_errors.jsonl` (newest lines kept).
 
-### Error Logging:
-Errors (e.g., timeouts, connection failures) must be logged to `audit/errors.log` with:
-- Timestamp
-- Error type
-- Affected URL
-- Stack trace (for debugging)
+### Sharing for support
+
+There is no auto-uploaded CSV/`errors.log`. The operator can build one **debug bundle**
+(Settings → diagnostics) that aggregates the JSONL logs above plus the keyword/network
+diagnostics; it is written to disk and shared by the operator's explicit action only.
+This is the maintainer protocol: click through the app, then hand over the bundle.
 
 ---
 
@@ -314,8 +318,13 @@ following freedoms (the software is a working, tested pre-alpha — these apply 
 
 - [x] **License File**: Full GPLv3 text included in [LICENSE](LICENSE)
 - [x] **Source Code Availability**: All source code is publicly available in this repository
-- [x] **Copyright Notices**: All files include proper copyright notices
-- [x] **License Headers**: All source files include GPLv3 license headers
+- [x] **Copyright Notices**: Source modules carry a `Copyright (C) 2026 Ideotion`
+  notice; the project [LICENSE](LICENSE) governs the work as a whole
+- [x] **License Headers**: Most source modules carry a `GPL-3.0-or-later` SPDX-style
+  header (a handful of empty package `__init__.py` markers and a few small modules do
+  not). GPLv3 does **not** require a per-file header — the [LICENSE](LICENSE) file is
+  authoritative for the whole work; the per-module notices are a courtesy, not a claim
+  that every file carries one
 - [x] **No Additional Restrictions**: No further restrictions beyond GPLv3 are imposed
 - [x] **Modified Versions**: All modifications carry prominent notices (Section 5a)
 - [x] **Installation Information**: Not applicable (not a User Product as defined in GPLv3)
