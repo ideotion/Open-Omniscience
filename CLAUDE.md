@@ -1391,6 +1391,15 @@ ruling, a contingency, or a deliberate-omission note.
     title per element in a private WeakMap and re-translates from it on every apply,
     clobbering a swapped title — so two STATIC keyed buttons toggled by pure CSS is
     the i18n-robust realization of the same intent). +1 string ("Expand sidebar") ×12.
+  - **Item Z SHIPPED — keyword-log DIGEST mode (diagnostics usability):** the
+    `/api/diagnostics/keywords` log measured ~60 MB live (5000 keywords × ~16 langs ×
+    a per-keyword language_signature) — unusable in the maintainer→dev channel it
+    exists for. NEW `?digest=1` ships the bounded aggregates (families,
+    per_source_concentration, totals) + a top-100-by-mentions keyword SAMPLE plus an
+    honest `keywords_digest` block (sample/shown/total/omitted) so a digest is never
+    mistaken for a complete log. ADDITIVE: the default (full) stream is byte-for-byte
+    unchanged (the perf byte-parity contract test still passes); the digest is its own
+    branch + `tests/test_keyword_log_digest_mode`. No score; method+caveat preserved.
 - **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
   subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
   visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:

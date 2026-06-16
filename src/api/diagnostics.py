@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
@@ -54,11 +54,35 @@ def _in_batches(ids: list[int], size: int = 800):
         yield ids[i : i + size]
 
 
+# Digest mode keeps the same bounded aggregates but ships only the top-N
+# most-mentioned keywords instead of the full per-keyword list, so the file is
+# small enough to actually ingest in the maintainer->dev channel (field-test
+# 2026-06-15 Item Z: a full log measured ~60 MB and was unusable in the very
+# channel it exists for). The aggregates ARE the analysis; the long tail is not.
+_DIGEST_SAMPLE = 100
+
+
 @router.get("/keywords")
-def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
+def keyword_log(
+    db: Session = Depends(get_db),
+    digest: bool = Query(
+        False,
+        description=(
+            "Digest mode: ship the bounded aggregates (families, per-source "
+            "concentration, totals) + a top-N keyword sample instead of the full "
+            "per-keyword list, for a small, ingestible file (Item Z). The default "
+            "(full) stream is byte-for-byte unchanged."
+        ),
+    ),
+) -> StreamingResponse:
     """The keyword diagnostics log: every gathered keyword (bounded, mentions-desc)
     with its counts, plus the computed families, the user's merge/split overrides
     and the super-groups — exactly the structures the grouping logic works on.
+
+    ``digest=1`` keeps every bounded aggregate but replaces the (potentially
+    tens-of-MB) per-keyword list with a top-``_DIGEST_SAMPLE`` sample by mentions
+    plus an honest ``keywords_digest`` provenance block (shown/total/omitted) so a
+    digest is never mistaken for a complete log. The default path is untouched.
 
     Performance batch 2026-06-12 (failed live at 228k keywords): the per-language
     cap now bounds the WORK, not just the output — totals scan the covering
@@ -317,20 +341,52 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
         "200 — flagged with real counts, never auto-hidden. No scores, no inference."
     )
 
+    digest_note = (
+        f" DIGEST MODE: the per-keyword list is the top {_DIGEST_SAMPLE} keywords by "
+        "mentions; keywords_digest reports how many were omitted. Re-request without "
+        "digest=1 for the complete per-keyword log."
+    )
+
     def _stream():
         head = envelope(
-            kind="keyword-diagnostics", query={}, count=len(survivors), payload=None
+            kind="keyword-diagnostics",
+            query={"digest": True} if digest else {},
+            count=len(survivors),
+            payload=None,
         )
         del head["data"]
         yield json.dumps(head, separators=(",", ":"))[:-1] + ', "data": {'
         yield '"corpus": ' + json.dumps(corpus, separators=(",", ":"))
-        yield ', "method": ' + json.dumps(method, separators=(",", ":"))
-        yield ', "keywords": ['
-        for i in range(0, len(survivors), 1000):
-            chunk = survivors[i : i + 1000]
-            prefix = "" if i == 0 else ","
-            yield prefix + ",".join(json.dumps(_entry(s), separators=(",", ":")) for s in chunk)
-        yield '], "families": ' + json.dumps(families, separators=(",", ":"))
+        yield ', "method": ' + json.dumps(
+            method + (digest_note if digest else ""), separators=(",", ":")
+        )
+        if digest:
+            # Top-N by mentions (s[1]); ties keep scan order. The aggregates below
+            # are unchanged — they ARE the analysis; only the long tail is dropped.
+            sample = sorted(survivors, key=lambda s: s[1], reverse=True)[:_DIGEST_SAMPLE]
+            yield ', "keywords": [' + ",".join(
+                json.dumps(_entry(s), separators=(",", ":")) for s in sample
+            ) + "]"
+            yield ', "keywords_digest": ' + json.dumps(
+                {
+                    "sample": True,
+                    "shown": len(sample),
+                    "total": len(survivors),
+                    "omitted": len(survivors) - len(sample),
+                    "sort": "mentions desc",
+                },
+                separators=(",", ":"),
+            )
+        else:
+            yield ', "keywords": ['
+            for i in range(0, len(survivors), 1000):
+                chunk = survivors[i : i + 1000]
+                prefix = "" if i == 0 else ","
+                yield prefix + ",".join(
+                    json.dumps(_entry(s), separators=(",", ":")) for s in chunk
+                )
+            yield "]"
+        yield ', "families": ' + json.dumps(families, separators=(",", ":"))
         yield ', "overrides": ' + json.dumps(
             [{"normalized_term": term, **data} for term, data in sorted(overrides.items())],
             separators=(",", ":"),
@@ -352,7 +408,8 @@ def keyword_log(db: Session = Depends(get_db)) -> StreamingResponse:
         )
         yield "}}"
 
-    fname = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d')}.json"
+    kind_tag = "digest" if digest else "log"
+    fname = f"oo-keyword-{kind_tag}-{datetime.now().strftime('%Y%m%d')}.json"
     return StreamingResponse(
         _stream(),
         media_type="application/json",
