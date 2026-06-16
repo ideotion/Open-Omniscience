@@ -676,6 +676,26 @@ def test_ui_invariants():
         "the analysis window must carry the Advanced-search tab that re-runs the "
         "analysis from refined filters (Group F, keystone #4)"
     )
+    # 22b. Markets commodity overlay (Item 3, Group G): a commodity click opens the
+    #      analysis window with a conditionally-shown Price subtab that overlays the
+    #      PRICE curve with the corpus COVERAGE timeline on a SHARED time axis —
+    #      co-occurrence, NEVER causation (shown visible). Dual LABELLED axes (each
+    #      series its own scale; no magnitude conflation); reuses existing endpoints.
+    assert 'data-tab="price"' in html and 'id="an-price-tab"' in html and 'id="an-price"' in html, (
+        "the analysis window must carry the (commodity-gated) Price overlay subtab (Item 3)"
+    )
+    assert "function commodityOverlaySvg(" in html and "function renderAnPrice(" in html, (
+        "the price x coverage overlay renderer + its loader must exist (Item 3)"
+    )
+    # Seeded by the commodity card (the title/Analyse buttons pass {commodity:...})
+    # and threaded through openAnalysisFor's opts into _anCommodity.
+    assert "_anCommodity" in html and "opts && opts.commodity" in html and "{commodity:" in html, (
+        "the commodity identity must thread from the card into the Price overlay (Item 3)"
+    )
+    # The binding caveat must be VISIBLE in the overlay panel (informed consent).
+    assert (
+        'co-occurrence in your corpus, never causation' in html.split("function renderAnPrice(", 1)[1][:1500]
+    ), "the Price overlay must show the co-occurrence-never-causation caveat (Item 3)"
     # 23. Caveats are VISIBLE BY DEFAULT (permanent informed-consent invariant —
     #     CLAUDE.md Non-negotiables): a briefing card's CAVEAT renders in a visible
     #     .card-caveat line, NEVER hidden behind the method toggle. Only the verbose
@@ -1667,9 +1687,11 @@ def test_commodity_corpus_entry():
         "the graph must carry a keyed 'Analyse' affordance"
     )
     # that affordance opens the analysis window WITHOUT hijacking the card's own
-    # price-detail click (stopPropagation), and seeds the curated family query
-    assert "event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))})" in html, (
-        "the commodity graph 'Analyse' must open the window on the family query"
+    # price-detail click (stopPropagation), seeds the curated family query, AND
+    # carries the commodity identity (Item 3) so the Price overlay subtab can show
+    # the price curve x corpus coverage.
+    assert "event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})" in html, (
+        "the commodity graph 'Analyse' must open the window on the family query + commodity opts"
     )
     # the PRICE-DETAIL + correlation path is NOT removed (the Desk lesson)
     assert "function chartSymbol(" in html, "the commodity price-detail handler must stay"
