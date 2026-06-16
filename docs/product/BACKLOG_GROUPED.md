@@ -366,9 +366,18 @@ makes the rest fall out cheaply:
   directory — IGOs + national producers across all 6 inhabited continents, BRICS +
   Africa deliberately included; each flagged `controversial`, descriptive only, no
   figures/scores/network) + `GET /api/stats/agencies` (+ `continents_covered` coverage
-  metric). tests/test_stat_agencies.py. REMAINING: ingest them as Sources (SDMX/API
-  before scraping), figure-level provenance + vintages + comparability guards,
-  side-by-side triangulation, IPCC forecast-tracking.
+  metric). tests/test_stat_agencies.py.
+  INGEST-AS-SOURCES SHIPPED 2026-06-16: `src/stats/ingest.py`
+  (`ingest_agencies_as_sources`) registers each agency as a DISABLED `Source`
+  (`enabled=False`, `source_type="statistics"`, low priority, country lowercased / None
+  for IGOs, `language=None`, tags `official-statistics,controversial,<region-slug>`;
+  `reliability_score` left NULL — never fabricated) keyed by `registrable_domain`;
+  ADDITIVE + IDEMPOTENT (existing domains untouched, never clobbered); caller owns the
+  txn (single-writer gate). `POST /api/stats/sources/ingest` runs it (LOCAL DB write, no
+  network/consent). tests/test_stats_ingest.py (11: disabled/controversial/no-score,
+  idempotent, skip-existing-without-clobber, endpoint). REMAINING: SDMX/API fetch
+  before scraping, figure-level provenance + vintages + comparability guards,
+  side-by-side triangulation, IPCC forecast-tracking; a Settings button to trigger it.
 
 ---
 
