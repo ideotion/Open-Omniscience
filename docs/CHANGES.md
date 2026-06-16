@@ -11,6 +11,15 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Deeper test coverage (audit PR F).** Three new unit-isolated test files pin
+  previously thinly-tested logic directly (not only via the heavy subprocess torture
+  harness): the **backup-merge engine** (FK remap, bit-level dedup, conflict-keeps-local
+  -and-reports-both, merge provenance), **every briefing producer's card shape** (valid
+  fields/bucket, serialisable, no composite-score key), and the **background
+  scheduler's** continuous/idle loop, run-now non-overlap and failure isolation (driven
+  by events, not timing). The feed-backoff timing tests gained a skip-when-inconclusive
+  guard so a pathologically slow CI box can't redden the absolute-seconds bound while
+  the backoff logic stays asserted.
 - **`reliability_score` honesty guard (audit PR E).** The per-source
   `reliability_score` (1–10) is **operator-set provenance** — a value *you* assign,
   never a quality verdict the app computes. It's now documented in

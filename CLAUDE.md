@@ -1391,6 +1391,25 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR F = TEST COVERAGE + FLAKY GUARD (draft onto
+  0.09):** three NEW unit-isolated test files for under-tested modules: (1)
+  test_merge_engine.py drives src/backup/merge.merge_corpus DIRECTLY on tiny plaintext
+  SQLite corpora (no subprocess torture harness) — proves FK remap (article source_id
+  rewritten to the LOCAL source matched by domain), bit-level dedup (same hash+content),
+  conflict (same hash, diff content → LOCAL kept + BOTH reported), and merged_rows
+  provenance; (2) test_producers_card_shapes.py runs EVERY _DEFAULT_PRODUCERS producer
+  over a small corpus and asserts each card's SHAPE (non-empty type/title/summary/bucket/
+  method/caveat, valid bucket, serialisable, no composite-score key in signal/evidence)
+  + the run_all failure-isolation contract — complements test_briefing.py's _trigger
+  check; (3) test_scheduler_runner.py drives BackgroundScheduler via injected
+  run_once_fn/settings_provider + threading.Events (NO sleep assertions): continuous
+  back-to-back, interval-mode runs-once-then-idles + prompt stop, failing-pass-recorded-
+  not-fatal, run_now non-overlap, + round_robin_interleave per-country/order-preserving.
+  Each verified to FAIL on a scratch source mutation (reverted). FLAKY ITEM re-checked:
+  test_rate_limit_timing + test_cache already use deterministic fake clocks (OO-D15-006);
+  test_feed_backoff's absolute-seconds bounds gained a skip-when-inconclusive guard
+  (_skip_if_clock_inconclusive) for a pathologically slow box — the backoff LOGIC stays
+  asserted unconditionally. Suite green; new tests stable across repeats.
 - **AUTONOMOUS AUDIT 2026-06-15/16 — PR E = reliability_score GUARD (draft onto 0.09;
   DEFAULT APPLIED, maintainer may override):** the field is operator-set provenance
   (migration f4b5c6d7e8a9 already NULLed the fabricated =5), but it shipped via
