@@ -1235,6 +1235,34 @@ ruling, a contingency, or a deliberate-omission note.
     their canonical home; Home(2) keeps only a REDUNDANT curated "top cards" subset
     (consistent with #8 + the Home-is-redundant principle). "Upcoming events" here
     is a redundant lens onto the Agenda tab (fine, by design).
+  - **(6) UNIFIED 3D KEYWORD EXPLORER (ruled 2026-06-16; maintainer FLAGSHIP —
+    "important to me", "incredible UI/UX"; evolves the mind-map rules + #mm-kit;
+    lives in Insights per (5)):** THREE fixes + one big rework. FIXES: (a) the
+    control buttons (#mm-levels + #mm-views + period/size/enlarge, index.html
+    ~1336 flex row) OVERLAP — fix the responsive layout (largely SUBSUMED once the
+    levels unify); (b) "Enlarge" (mmExpand today only toggles a .mm-big CSS class,
+    NOT real fullscreen) → TRUE Fullscreen API (requestFullscreen) with a CLEAR
+    visible EXIT control IN ADDITION to Esc. REWORK: UNIFY Keywords / Families /
+    Super-groups (today 3 toggled levels via mmLevel) into ONE continuous
+    exploration — a 3D LAYERED hierarchy: super-groups ABOVE families ABOVE
+    keywords (depth = level), navigated continuously (zoom/drill + LOD) rather than
+    switched. HONEST VISUAL ENCODINGS for trends · importance · language-spread ·
+    territory-spread, etc. — each mapped to a REAL measured quantity with a stated
+    method, NEVER a composite "importance score" (assert_no_score discipline
+    carries to the viz): size ∝ real mention/spread count (n shown); trend =
+    windowed rise/fall (early-corpus caveat + Item-Y sparse honesty); language
+    spread = distinct languages (signatures); territory spread = distinct countries
+    (per-source-country split + the When×Where gazetteer). DECISIONS/CONSTRAINTS to
+    settle at build: (i) 3D TECH = a dependency/architecture RULING — bundled-local
+    WebGL (Three.js, heavier) vs hand-rolled canvas 2.5D / CSS-3D (lighter,
+    deterministic, fits local-first + deterministic-mind-map + no-heavy-deps); my
+    lean = the lightest approach that still reads as 3D, bundled LOOPBACK-ONLY (no
+    CDN). (ii) PERFORMANCE/LOD: 62k+ keywords live — cannot render all; LOD
+    (super-groups → drill a family → its keywords), bounded. (iii) a11y +
+    REDUNDANCY: 3D must NOT be the ONLY access path — keep the tabular
+    Families/Groups views + the word-cloud second view; the deterministic mind-map
+    rules (outward, no cross-tangle, no fabricated structure) carry into the layered
+    3D form. date-spectrum + text-size controls stay (plus fullscreen).
 - **UI SHELL REDESIGN (ruled 2026-06-13; full plan in
   `docs/product/UI_SHELL_REDESIGN_PLAN.md`):** (1) ONE universal nav grammar
   app-wide — LATERAL sidebar = main tabs, VERTICAL subtabs near the top =
