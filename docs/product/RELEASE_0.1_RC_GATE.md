@@ -88,7 +88,7 @@ closed or consciously accepted, and the closure verifiable.*
 
 | Item | Status | Gate |
 |---|---|---|
-| 0.0.9 full-audit remediation queue (`docs/audit/06_FULL_AUDIT_0_0_9.md`) — top: "stays on this machine" wording ×12 (AWAITS MAINTAINER RULING), caveats-visible-vs-calm (AWAITS RULING), reliability_score=5 + language="en" defaults removal, inline-onclick retirement, a11y batch, ETHICS.md tense rewrite | 🔶 several fixed in-audit | RC-BLOCKING (each row closed or accepted-with-reason in the report) |
+| 0.0.9 full-audit remediation queue (`docs/audit/06_FULL_AUDIT_0_0_9.md`) — top: "stays on this machine" wording ×12 (qualified default applied 2026-06-15), caveats-visible-vs-calm (✅ RULED visible-by-default + ENFORCED for briefing cards, audit PR A 2026-06-15, invariant #23), reliability_score=5 + language="en" defaults removal, inline-onclick retirement, a11y batch, ETHICS.md tense rewrite | 🔶 several fixed in-audit | RC-BLOCKING (each row closed or accepted-with-reason in the report) |
 | bandit/pip-audit: blocking in CI + weekly | ✅ | stays green |
 | Threat-model statements shipped wherever crypto/network claims appear (seized-machine vs compromised-session; which layer the kill switch controls) | 🔶 backup/design done; UI pending PR-E + network batch | RC-BLOCKING |
 | External-link guard, robots fail-closed, kill switch, no-composite-scores (CardSchemaError), provenance columns | ✅ | invariant-tested |

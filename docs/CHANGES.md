@@ -11,6 +11,17 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Briefing caveats are now visible by default (ethics regression fix).** Each Home
+  briefing card showed its **Caveat** only when you turned on a default-OFF "Show
+  method & caveat" toggle — a regression against the permanent informed-consent rule
+  that caveats are *visible by default, never hidden behind a calm-UI toggle*. The
+  caveat now renders inline under every card's summary; the toggle (renamed **Show
+  method**) gates only the verbose method/math. The caveat colour is now theme-aware
+  so it clears **WCAG AA 4.5:1 on all 17 themes** (the old hardcoded amber failed
+  contrast on the light themes); the corpus-tier and chain-of-custody warnings adopt
+  the same colour. A new UI invariant (`#23`) locks the visibility in so it cannot
+  regress again.
+
 - **Collect, Sources, and Wikipedia moved into Settings (content-first).** The three
   acquisition/configuration tabs left the sidebar; their controls now live under
   **Settings → Collect** (scheduler, manual ingest, batch picker), **Settings →

@@ -211,6 +211,18 @@ ruling, a contingency, or a deliberate-omission note.
    Insights opens (the "N to index" count ticks to 0 on its own); the button +
    its palette action are removed. Insights sections were already subtabs (#127).
    Enforced in test_ui_invariants (#21).
+23. **BRIEFING CAVEATS ARE VISIBLE BY DEFAULT (audit PR A, 2026-06-15 — enforces
+   the permanent informed-consent non-negotiable; resolves a REGRESSION):** every
+   Home briefing card renders `c.caveat` inline in a visible `.card-caveat` line
+   under the summary — NEVER behind the "Show method" toggle. The toggle (`#brief-methods`,
+   was "Show method & caveat") now gates ONLY the verbose Method/math (`.mc`); the
+   caveat left the toggle-gated block entirely. Caveat text uses a theme-aware
+   `var(--caveat)` (dark `#eab44e` / light `#8a4d0a`) that clears WCAG AA 4.5:1 on
+   EVERY panel of all 17 themes (the old hardcoded `#c98a1b` failed 8/17, `#b45309`
+   failed 17/17 — verified by contrast math); the corpus-tier early caveat + the
+   custody OTS warning adopt the same variable. Label/title re-keyed ×12. Enforced
+   in test_ui_invariants (#23): the caveat must render in `.card-caveat` and must NOT
+   appear inside the `hidden` `.mc` block.
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First
