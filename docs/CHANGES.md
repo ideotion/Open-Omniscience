@@ -11,6 +11,20 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Safety & privacy hardening (audit PR C).** Closed a handful of edge gaps:
+  the Wikipedia dump **edition code is now validated** before it can reach a
+  filesystem path or fetch URL (a `../`/`/` in `wiki` is rejected with a clean 400 —
+  path-traversal guard, at both the helpers and the four dump API endpoints); the
+  **local LLM (Ollama)** now refuses to run while **airplane mode** is engaged and
+  refuses a non-loopback `OO_OLLAMA_URL` (the local model never talks to a remote
+  host); **CORS** was trimmed (dropped the dead `Authorization`/`Origin`/`User-Agent`
+  allow-headers, shortened the preflight cache); DuckDuckGo discovery now passes its
+  result URLs through the existing `http(s)` scheme allowlist; and the broken,
+  recipient-capturing **`scripts/import_eml.py`** was removed (it referenced columns
+  the live schema doesn't have and stored `To`/`Cc` addresses, against the
+  anonymize-at-ingest rule).
+
+
 - **Documentation accuracy pass (audit PR B, docs-only).** Brought the docs back in
   line with the code: the stale inline-handler figure (an old `onclick`-only count) is
   now the verified **295** (229 `onclick` + 35 `onchange` + 15 `onkeydown` + 14 `oninput` + 2 `onmouse*`)

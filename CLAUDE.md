@@ -1388,6 +1388,25 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR C = SAFETY & PRIVACY HARDENING (draft onto
+  0.09, CI subscribed):** (1) **scripts/import_eml.py DELETED** (the ledger-flagged
+  retirement — broken vs the live Article schema AND it captured To/Cc/Bcc = the
+  excluded recipient identity, violating anonymize-at-ingest; surfaced not silent;
+  scripts/README row removed). (2) **Wikipedia dump edition-code path-traversal
+  CLOSED:** new `validate_wiki_code()` (src/wiki/dumps.py) rejects anything but
+  `^[a-z0-9]+(-[a-z0-9]+)*$` (≤32) — wired into `dump_filename`/`dump_url`/`dump_paths`
+  (defense in depth) AND the 4 API endpoints (probe/start/page/corpus-ingest → clean
+  400). Chose a wider-than-suggested regex so real editions (simple, zh-min-nan,
+  bat-smg) still work. tests/test_wiki_path_safety.py. (3) **Ollama kill-switch gap
+  CLOSED:** OllamaClient now refuses every request while the kill switch (airplane
+  mode) is engaged AND refuses a non-loopback OO_OLLAMA_URL when it opens the socket
+  (privacy: LLM never talks to a remote host); tests in test_llm_ollama.py prove no
+  socket is attempted offline. (4) **CORS trimmed:** allow_headers → Content-Type+Accept
+  (Authorization was dead surface; Origin/User-Agent are browser-controlled),
+  preflight cache 24h→10m. (5) **DDG discovery defense-in-depth:** `_clean_url` now
+  runs results through `safe_href` (http(s)-only) — the fetch already re-guards.
+  Pre-existing duckduckgo.py lint (F841/B007) left for PR D's F/B sweep. Suite green;
+  mypy 114≤127.
 - **AUTONOMOUS AUDIT 2026-06-15/16 (draft PRs A–H onto 0.09, CI subscribed; each
   hand-verified before shipping — the 06-audit false-positive lesson):** PR A
   (caveats-visible, invariant #23 — above). PR B = DOC ACCURACY (docs-only):

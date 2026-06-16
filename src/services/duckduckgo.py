@@ -37,6 +37,7 @@ import time
 from urllib.parse import urljoin, urlparse
 
 from src.utils.logging_config import setup_logging
+from src.utils.security import safe_href
 
 logger = setup_logging("duckduckgo")
 
@@ -246,10 +247,16 @@ class DuckDuckGoSearch:
             parsed = urlparse(url)
             if not parsed.scheme or not parsed.netloc:
                 return None
-            return url
         except ValueError as e:  # e.g. invalid IPv6 literal in netloc
             logger.debug(f"URL validation failed for {url!r}: {e}")
             return None
+        # Belt-and-braces scheme allowlist: only http(s) is a real source URL. The
+        # downstream fetch re-guards (robots/SSRF/scheme), but a discovery result
+        # carrying javascript:/data:/file: should never leave this function.
+        if not safe_href(url):
+            logger.debug(f"URL rejected (non-http(s) scheme): {url!r}")
+            return None
+        return url
 
     @classmethod
     def _extract_domain(cls, url: str) -> str:

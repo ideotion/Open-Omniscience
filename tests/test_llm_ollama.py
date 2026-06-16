@@ -77,6 +77,50 @@ def test_missing_model_raises_with_hint():
 
 
 # --------------------------------------------------------------------------- #
+# kill switch + loopback constraint (audit PR C — privacy/safety hardening)
+# --------------------------------------------------------------------------- #
+
+
+def test_kill_switch_blocks_ollama_call():
+    """Airplane mode (the global kill switch) must refuse Ollama requests LOUDLY,
+    without even attempting the call (no socket while the operator is offline)."""
+    from src.ingest import activate_kill_switch, clear_kill_switch
+    from src.llm.ollama import LLMUnavailable
+
+    called = {"n": 0}
+
+    def handler(request):
+        called["n"] += 1
+        return httpx.Response(200, json={"models": [{"name": "llama3.2:3b"}]})
+
+    client = _client_with(handler)
+    activate_kill_switch()
+    try:
+        with pytest.raises(LLMUnavailable):
+            client.list_installed()
+        with pytest.raises(LLMUnavailable):
+            client.generate("hi", model="llama3.2:3b")
+        assert called["n"] == 0, "no Ollama request may be attempted while offline"
+    finally:
+        clear_kill_switch()
+    # Cleared again -> the same client works (the gate is not sticky).
+    assert client.list_installed() == ["llama3.2:3b"]
+
+
+def test_non_loopback_ollama_url_refused():
+    """A non-loopback OO_OLLAMA_URL must fail LOUDLY when WE open the socket —
+    the local LLM never talks to a remote host (privacy by construction)."""
+    from src.llm.ollama import LLMError, OllamaClient
+
+    for bad in ("http://evil.example:11434", "http://10.0.0.5:11434", "http://[::ffff:8.8.8.8]"):
+        with pytest.raises(LLMError):
+            OllamaClient(base_url=bad)  # client=None -> we open the socket -> enforced
+    # Loopback forms are accepted.
+    for ok in ("http://127.0.0.1:11434", "http://localhost:11434", "http://[::1]:11434"):
+        OllamaClient(base_url=ok)
+
+
+# --------------------------------------------------------------------------- #
 # API tests
 # --------------------------------------------------------------------------- #
 
