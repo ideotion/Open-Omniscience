@@ -100,3 +100,22 @@ def test_restore_rejects_garbage(client):
         files={"file": ("x.bin", b"this is not a backup at all")},
     )
     assert bad.status_code == 400
+
+
+def test_backup_v2_unexpected_error_returns_json_detail(client, monkeypatch):
+    """An UNEXPECTED builder failure (not BackupError/ArtifactError -- e.g. a full
+    temp volume raising sqlite3.OperationalError during the snapshot) must surface
+    as a JSON {detail} 500, never a plain-text 'Internal Server Error'. The browser
+    does res.json() on the error body, so a plain-text 500 shows the user only the
+    useless 'JSON.parse: unexpected character at line 1 column 1'."""
+    import src.backup.artifact as artifact
+
+    def boom(*_a, **_k):
+        raise RuntimeError("simulated full temp volume")
+
+    # The endpoint imports write_backup_v2 from the module at call time.
+    monkeypatch.setattr(artifact, "write_backup_v2", boom)
+    r = client.post("/api/backup/v2", json={"plaintext": True})
+    assert r.status_code == 500
+    assert r.headers["content-type"].startswith("application/json")
+    assert "simulated full temp volume" in r.json()["detail"]
