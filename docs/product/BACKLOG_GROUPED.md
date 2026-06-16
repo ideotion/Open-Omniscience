@@ -329,9 +329,21 @@ makes the rest fall out cheaply:
   CATALOG SUBSTRATE SHIPPED 2026-06-16: `src/geo/osm_regions.py` (`OSM_SIZES_AS_OF` +
   continent/planet extracts with approx dated `.osm.pbf` sizes + path-safe code
   validation + freshness test, mirroring `wiki/dump_sizes`) + `GET /api/geo/regions`
-  (zero-network, largest-first, dated caveat). tests/test_osm_regions.py. REMAINING:
-  the download manager itself (task-manager job, controls), country sub-extracts, the
-  consented exact-size refresh, and the hand-rolled offline map renderer.
+  (zero-network, largest-first, dated caveat). tests/test_osm_regions.py.
+  DOWNLOAD-MANAGER BACKEND SHIPPED 2026-06-16: `src/geo/osm_downloads.py`
+  (`OsmDownloadManager`, a self-contained mirror of `wiki.dumps.DumpDownloadManager`
+  keyed on region code — resumable HTTP-Range, persisted reorderable queue, parallel up
+  to `OO_OSM_CONCURRENCY` (default 2) with the excess QUEUING, pause/resume/cancel; every
+  fetch through `guarded_session` so the kill switch refuses it + per-URL Tor circuit
+  isolation; planet → the OSM planet mirror, continents → Geofabrik) + the additive
+  endpoints in `src/api/geo.py` (`GET /downloads`, `POST /downloads/start|pause|resume`,
+  `DELETE /downloads`, `POST /downloads/reorder`; catalog-validated → 404 for unknown
+  regions, path-safe → 400). tests/test_osm_downloads.py (19: URL/path-safety, the
+  download loop, parallel+queue+reorder, reload demotion, the guarded-token transport,
+  the API). REMAINING: the task-manager WINDOW wiring (a visible job + the per-job
+  rate/%/ETA/pause/resume/cap controls — the frontend gates `start` behind the ONE
+  consent popup #14), country sub-extracts, the consented exact-size refresh, and the
+  hand-rolled offline map renderer.
 - ⬜ **Hand-rolled offline vector map** — canvas 2.5D / CSS-3D, NO WebGL/Three.js; reuse
   the bundled Natural-Earth coastline + the temporal-map projection.
 - ⬜ **Temporal-map remainder** — linear/log toggle + mention layer fed by event-places.
