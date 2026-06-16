@@ -791,6 +791,27 @@ ruling, a contingency, or a deliberate-omission note.
   pulls models from the GUI (checksum-verified through the guarded factory,
   catalog picker with size/RAM/license shown never a score, pulls are
   task-manager jobs, clearnet stated prerequisite, hardware fit MEASURED).
+  **RE-RAISED + NOW ACTIVE (maintainer 2026-06-16): build it as a DEDICATED
+  Settings SUBTAB for LLM management (invariant-#18 grammar, not the lone
+  read-only panel), with explicit actions — download+install the Ollama
+  BINARY, EXPLORE models, download/pull, install/RUN, REMOVE. VERIFIED STATE
+  2026-06-16: substrate exists (src/llm/ollama.py OllamaClient
+  health/list_installed[_detailed]/generate; /api/llm health·models·generate·
+  summarize·translate·synthesize; #llm top-bar pill; the 'Local models'
+  Settings panel) but is READ-ONLY — it shows installed + the 5-model dated
+  catalog and tells the user to use a TERMINAL ('ollama pull <tag>' as COPY
+  TEXT, not a button); NO pull/remove/install-binary endpoints or buttons exist
+  yet. Pull/rm can stream REAL bytes from ollama's own /api/pull·/api/delete
+  (honest progress, invariant #20); pulls = task-manager jobs, GATED by the ONE
+  consent (#14). OPEN DECISIONS filed for a maintainer ruling: (a) how far the
+  binary install goes — guided+verified vs per-OS auto-exec an installer vs
+  user-space tarball auto-run (security/elevation trade-off); (b) model
+  exploration — curated dated catalog (zero-network) + an OPT-IN consented
+  live-ollama.com-library browse + a free-text 'pull any tag' box, vs always
+  live-browse; (c) TRANSPORT HONESTY — pulls egress via the OLLAMA PROCESS over
+  CLEARNET, NOT our Tor proxy/guarded factory, so airplane+Tor don't cover them
+  (state at consent; the USB offline kit stays the air-gapped path); (d) active
+  model moves from env-only OO_LLM_MODEL to a stored UI setting.**
   SELF-UPDATE via GUI: consented check vs GitHub releases → signed
   oo-backup-2 + install-tree snapshot BEFORE anything → verified release →
   migrations on a STAGED copy → atomic swap + relaunch → rollback on failure;
@@ -1398,6 +1419,23 @@ ruling, a contingency, or a deliberate-omission note.
     while offline — never the active green. Class-B choice (D-03): muted/grounded,
     NOT the literal go-off accent (which is `--ok` green here = would conflate with
     active-green) and NOT a new alarm-red. +1 string ("Collecting paused") ×12.
+    **RE-OPENED 2026-06-16 (maintainer field test): still sees GREEN "Collecting…"
+    after engaging airplane. STATIC RE-VERIFY 2026-06-16: the shipped frontend
+    logic reads CORRECT — `_paintActivity` flips to muted `.activity.paused`
+    ("Collecting paused", spinner stopped) whenever `_netOnline===false`, and the
+    backend rides `online = not kill_switch_active()` on BOTH /api/system/network
+    (system.py:122) and every /api/scheduler/status (scheduler.py:59), so airplane
+    DOES report offline. Could NOT reproduce green by code-reading ⇒ NEEDS A LIVE
+    REPRO (start a collect, engage airplane, watch the 2 s/5 s poll interleaving +
+    the exact `s.active`/`online` values during the transition; confirm `_netOnline`
+    is never left undefined; note `_pollActivity` (index.html:2742) ignores the
+    `s.online` it already receives — make it honor it as a hardening). MAINTAINER
+    COLOR/TEXT OVERRIDE OF D-03 (ruled 2026-06-16): the paused chip must use the
+    SAME color as the ENGAGED airplane button = `var(--err)` (red), NOT the muted
+    grey — so `.activity.paused` color + spinner border-top → `var(--err)`; text
+    "Collecting paused…" (add the ellipsis). This consciously REVERSES the
+    autonomous "muted, not alarm-red" choice. Update test_ui_invariants if it pins
+    the muted color. PENDING.
   - **Item R SHIPPED — discoverable sidebar EXPAND affordance:** the collapsed
     rail showed only a "Collapse sidebar"-titled button (left chevron) with no
     discoverable way back. Now TWO CSS-toggled buttons share the slot: `#sb-collapse`
