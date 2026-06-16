@@ -821,6 +821,20 @@ ruling, a contingency, or a deliberate-omission note.
   CLEARNET, NOT our Tor proxy/guarded factory, so airplane+Tor don't cover them
   (state at consent; the USB offline kit stays the air-gapped path); (d) active
   model moves from env-only OO_LLM_MODEL to a stored UI setting.**
+  **RULINGS 2026-06-16 (maintainer answered): placement = a Settings SUBTAB
+  (Q6=A); (a) binary install = Q7=B — the app DOWNLOADS + RUNS the official per-OS
+  Ollama installer (verify checksum/signature BEFORE exec through the guarded
+  factory; consent + a VISIBLE explicit OS elevation step, NEVER silent; honest
+  about what is run); (b) model exploration = Q8=A + ELABORATION — the curated
+  dated catalog PLUS a SEARCHABLE consented live-ollama.com-library browse (the
+  full library is too large to list), FILTERABLE/sortable by PROVIDER · DATE ·
+  SIZE (+ hardware-fit + license), showing ONLY app-APPLICABLE models. APP
+  COMPATIBILITY CLARIFIED: our features (summarize/translate/synthesize) use PLAIN
+  /api/generate text generation — NO tool/function-calling — so any instruct/chat
+  TEXT model that fits the hardware works; filter OUT non-applicable kinds
+  (embedding-only, vision-only); 'compatible' = text-generation that fits RAM, not
+  a special protocol; (c) transport = Q9=YES (clearnet via the ollama process,
+  disclosed at consent); (d) active model = Q10=YES (stored UI setting).**
   SELF-UPDATE via GUI: consented check vs GitHub releases → signed
   oo-backup-2 + install-tree snapshot BEFORE anything → verified release →
   migrations on a STAGED copy → atomic swap + relaunch → rollback on failure;
@@ -1205,11 +1219,15 @@ ruling, a contingency, or a deliberate-omission note.
     FULL-WIDTH horizontal bar at the VERY TOP, beneath a THIN status bar that
     holds only simple action toggles (search · status · airplane · language ·
     help). Tabs FILL the width with a MAX reasonable width each; the active tab is
-    CLEARLY indicated while inactive tabs are discreet-but-clearly-visible. **OPEN
-    QUESTION (asked 2026-06-16, UNANSWERED — genuine ruling, do NOT build until
-    answered): which nav LEVEL goes to the top — the MAIN sections (replace the
-    left sidebar, overriding #2), the in-section FACET subtabs only (keep the
-    sidebar), or a UNIFIED single context-aware top strip (no sidebar)?**
+    CLEARLY indicated while inactive tabs are discreet-but-clearly-visible.
+    **RESOLVED 2026-06-16 → B: KEEP the left sidebar for MAIN sections (invariant
+    #2 INTACT); move ONLY the in-section FACET subtabs to the full-width top bar
+    beneath the thin status bar. Layout: thin status bar (top) → full-width
+    facet-subtab strip → left sidebar + content. The parallel analysis tabs (item
+    4) fit naturally in that top strip within the Analysis section, named by query;
+    the per-analysis facets (Keywords/Mindmap/…) stay an inner row — the exact
+    two-level presentation is a build detail. UI_SHELL_REDESIGN_PLAN §1 stands
+    (sidebar = main tabs); this only RELOCATES the facet subtabs to the very top.**
   - **(2) HOME → DASHBOARD / HELICOPTER VIEW (extends #19; everything REDUNDANT
     per #8 — Home gives NO unique information):** Home becomes a landing the user
     is HAPPY to reach + a launchpad to start digging into the specialized tabs;
@@ -1231,8 +1249,10 @@ ruling, a contingency, or a deliberate-omission note.
     card = one measured signal + evidence + method + caveat = a SOURCED, CAVEATED
     PROMPT TO INVESTIGATE ("assistance never a verdict"; "a microscope not a
     detector"; "name the shape"). Seeded candidates: Leads · Cues · Soundings ·
-    Readouts · Vantages (NOTE: "Signals" collides with src/signals/). DECISION
-    PENDING — maintainer wants to choose together.
+    Readouts · Vantages (NOTE: "Signals" collides with src/signals/). **RESOLVED
+    2026-06-16 → "LEADS"** (a card = a Lead: an investigative starting point to
+    dig). Rename the USER-FACING label ×12 locales; the internal src/briefing
+    module + bucket names can stay or rename later (cosmetic).
   - **(4) ANALYSIS = NAMED, PARALLEL, SPAWNED TABS (ruled 2026-06-16; fixes the
     "weird empty Analysis tab" + likely retires the TWO-windows debt):** today
     clicking the sidebar "Analysis" tab opens the SINGLETON #an EMPTY (no corpus
@@ -1242,8 +1262,10 @@ ruling, a contingency, or a deliberate-omission note.
     query term (or "synthesis" for a composite), and SEVERAL parallel searches
     coexist as DIFFERENT tabs (a multi-document workspace). The empty singleton
     Analysis entry goes away (a launcher at most). DEPENDS ON (1) (where spawned
-    tabs live) + folds in the #an ↔ #corpus-win consolidation. Build sub-questions:
-    are tabs closeable / capped / session-persisted?
+    tabs live) + folds in the #an ↔ #corpus-win consolidation. **RESOLVED
+    2026-06-16:** tabs are CLOSEABLE, soft-CAPPED, and PERSISTED across sessions
+    (restored on reload). With nav=B, the spawned tabs live in the top
+    facet-subtab strip under the Analysis section.
   - **(5) INSIGHTS = THE NON-SEARCHABLE OVERVIEW + THE CANONICAL HOME OF THE CARDS
     (ruled 2026-06-16; clarifies #8/#21 + the Home(2)↔Insights split):** REMOVE the
     Insights search bar (#ins-term + the Explore button + exploreTerm, index.html
@@ -1266,7 +1288,10 @@ ruling, a contingency, or a deliberate-omission note.
     Item Y; today #trd-top is a plain list via /api/insights/top). HONESTY: 24h is
     sparse on a young corpus → n shown + early-corpus caveat + honest empty state;
     rising = window-vs-baseline RATE (method stated, no momentum score); top =
-    most-mentioned ordering (basis stated), never a composite score.
+    most-mentioned ordering (basis stated), never a composite score. **LOCATION
+    CLARIFIED 2026-06-16 (maintainer asked):** Trends is the Insights tab → Trends
+    subtab (#ins-trends). THIRD-WINDOW SPAN still PENDING the maintainer's pick
+    (month / year / all-time).
   - **(6) UNIFIED 3D KEYWORD EXPLORER (ruled 2026-06-16; maintainer FLAGSHIP —
     "important to me", "incredible UI/UX"; evolves the mind-map rules + #mm-kit;
     lives in Insights per (5)):** THREE fixes + one big rework. FIXES: (a) the
@@ -1289,7 +1314,8 @@ ruling, a contingency, or a deliberate-omission note.
     WebGL (Three.js, heavier) vs hand-rolled canvas 2.5D / CSS-3D (lighter,
     deterministic, fits local-first + deterministic-mind-map + no-heavy-deps); my
     lean = the lightest approach that still reads as 3D, bundled LOOPBACK-ONLY (no
-    CDN). (ii) PERFORMANCE/LOD: 62k+ keywords live — cannot render all; LOD
+    CDN). **RESOLVED 2026-06-16 → A: lightweight, hand-rolled (canvas 2.5D /
+    CSS-3D); NO Three.js/WebGL dependency.** (ii) PERFORMANCE/LOD: 62k+ keywords live — cannot render all; LOD
     (super-groups → drill a family → its keywords), bounded. (iii) a11y +
     REDUNDANCY: 3D must NOT be the ONLY access path — keep the tabular
     Families/Groups views + the word-cloud second view; the deterministic mind-map
@@ -1556,7 +1582,9 @@ ruling, a contingency, or a deliberate-omission note.
     grey — so `.activity.paused` color + spinner border-top → `var(--err)`; text
     "Collecting paused…" (add the ellipsis). This consciously REVERSES the
     autonomous "muted, not alarm-red" choice. Update test_ui_invariants if it pins
-    the muted color. PENDING.
+    the muted color. (Q11=No 2026-06-16: maintainer declined a planning-session
+    live repro — root-cause at implementation; the color/text change ships
+    regardless.) PENDING.
   - **Item R SHIPPED — discoverable sidebar EXPAND affordance:** the collapsed
     rail showed only a "Collapse sidebar"-titled button (left chevron) with no
     discoverable way back. Now TWO CSS-toggled buttons share the slot: `#sb-collapse`
