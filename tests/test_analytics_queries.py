@@ -251,3 +251,57 @@ def test_corpus_sources_groups_matched_articles_by_source(db):
     assert by["S"]["first"] and by["S"]["last"]  # timing span present
     assert "credibility" in r["caveat"]
     assert q.corpus_sources(db, article_ids=[])["count"] == 0
+
+
+def test_corpus_endpoints_accept_explicit_article_ids(tmp_path):
+    """Exact-corpus card seeding (maintainer-ruled 2026-06-16): the analysis-window
+    endpoints take an EXPLICIT article-id set (a card / agenda event's precise
+    selection) instead of re-running a search, so the corpus is exactly the articles
+    the card identified. Parsing is robust (dedupe, whitespace, non-numeric dropped)
+    and totals stay honest."""
+    from src.database.session import get_db
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'ex.db'}", future=True,
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    with Sess() as s:
+        s.add(Source(name="S", domain="x.test", country="fr"))
+        s.commit()
+        for i in range(1, 4):  # articles 1, 2, 3
+            s.add(Article(
+                url=f"https://x.test/{i}", canonical_url=f"https://x.test/{i}",
+                source_id=1, title=f"T{i}", content="Body text about an event here.",
+                hash=f"h{i}", country="fr", language="en",
+                published_at=datetime(2024, 4, i, tzinfo=UTC), created_at=datetime.now(UTC),
+            ))
+        s.commit()
+
+    def _override():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    from src.api.main import app
+
+    app.dependency_overrides[get_db] = _override
+    try:
+        with TestClient(app) as client:
+            # Explicit set of exactly two articles -> the corpus IS those two.
+            r = client.get("/api/insights/corpus-www", params={"article_ids": "1,2"}).json()
+            assert r["n_articles"] == 2 and r["total_matched"] == 2 and r["capped"] is False
+            # Robust parse: whitespace, duplicates and non-numeric tokens are handled;
+            # {2, 1} dedups to 2 valid ids (order preserved, bogus dropped).
+            r2 = client.get("/api/insights/corpus-www", params={"article_ids": " 2, 2 ,1, foo, -5 "}).json()
+            assert r2["n_articles"] == 2
+            # The same param flows through the other analysis subtabs (counts only).
+            ks = client.get("/api/insights/corpus-keywords", params={"article_ids": "1,2,3"}).json()
+            assert ks["total_matched"] == 3 and "score" not in ks
+            src = client.get("/api/insights/corpus-sources", params={"article_ids": "1"}).json()
+            assert src["total_matched"] == 1
+    finally:
+        app.dependency_overrides.pop(get_db, None)

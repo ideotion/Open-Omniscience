@@ -25,6 +25,47 @@ router = APIRouter(prefix="/api/insights", tags=["insights"])
 _VALID_KINDS = ("term", "entity", "person", "org", "location")
 
 
+def _resolve_corpus(
+    db: Session,
+    article_ids: str | None,
+    *,
+    query: str | None,
+    source: str | None,
+    start_date: str | None,
+    end_date: str | None,
+    language: str | None,
+    tags: str | None,
+    cap: int,
+) -> tuple[list[int], int]:
+    """Resolve the analysis corpus to ``(ids, total)``.
+
+    An EXPLICIT article-id set (a Home card / agenda event's *precise* selection,
+    comma-separated) takes precedence — deduped, order-preserving, bounded by ``cap``;
+    ``total`` discloses the full requested size so the endpoints' ``capped`` flag stays
+    honest. Otherwise the article SEARCH runs (the omnibar path), byte-for-byte
+    unchanged. This is the substrate for exact-corpus card seeding (maintainer-ruled
+    2026-06-16: a card opens the analysis window over the EXACT articles it identified).
+    """
+    if article_ids:
+        seen: set[int] = set()
+        ids: list[int] = []
+        for tok in article_ids.split(","):
+            tok = tok.strip()
+            if tok.isdigit():
+                v = int(tok)
+                if v not in seen:
+                    seen.add(v)
+                    ids.append(v)
+        return ids[:cap], len(ids)
+    from src.api.main import _query_articles
+
+    articles, total = _query_articles(
+        db, query=query, source=source, start_date=start_date, end_date=end_date,
+        language=language, tags=tags, limit=cap, offset=0,
+    )
+    return [a.id for a in articles], total
+
+
 class KeywordFilterUpdate(BaseModel):
     excluded: list[str] | str | None = None
     min_length: int | None = None
@@ -94,26 +135,21 @@ def insights_corpus_keywords(
     language: str | None = None,
     tags: str | None = None,
     kind: str | None = Query(None),
+    article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
     limit: int = Query(30, ge=1, le=100),
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Top keywords across the articles matched by a search — the analysis window.
+    """Top keywords across the analysis corpus — either an EXPLICIT article-id set (a
+    card / agenda event's exact selection) or the article SEARCH (the omnibar path).
 
-    Re-runs the SAME article search as /api/articles, bounded to the top ``cap``
-    matched articles (by relevance/recency), then aggregates their keywords. The
-    bound is DISCLOSED (``total_matched``/``capped``) — it scopes the analysis,
-    it is not a hidden cut. No score; counts only, with an honest caveat.
+    Bounded to ``cap`` articles; the bound is DISCLOSED (``total_matched``/``capped``)
+    — it scopes the analysis, never a hidden cut. No score; counts only, honest caveat.
     """
-    # Lazy import: main.py includes this router, so a module-level import would
-    # be circular.
-    from src.api.main import _query_articles
-
-    articles, total = _query_articles(
-        db, query=query, source=source, start_date=start_date, end_date=end_date,
-        language=language, tags=tags, limit=cap, offset=0,
+    ids, total = _resolve_corpus(
+        db, article_ids, query=query, source=source, start_date=start_date,
+        end_date=end_date, language=language, tags=tags, cap=cap,
     )
-    ids = [a.id for a in articles]
     res = q.corpus_keywords(db, article_ids=ids, kind=_kind(kind), limit=limit)
     res["total_matched"] = total
     res["capped"] = total > len(ids)
@@ -133,20 +169,18 @@ def insights_corpus_www(
     end_date: str | None = None,
     language: str | None = None,
     tags: str | None = None,
+    article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
     limit: int = Query(40, ge=1, le=200),
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Who (people/orgs) + Where (places) DEDUCED across the matched articles —
-    the analysis window's When/Where/Who. Deduced from text, never confirmed; no
-    score. Bounded to the top ``cap`` matched articles (disclosed)."""
-    from src.api.main import _query_articles
-
-    articles, total = _query_articles(
-        db, query=query, source=source, start_date=start_date, end_date=end_date,
-        language=language, tags=tags, limit=cap, offset=0,
+    """Who (people/orgs) + Where (places) DEDUCED across the analysis corpus (an
+    explicit article-id set or the search) — the analysis window's When/Where/Who.
+    Deduced from text, never confirmed; no score. Bounded to ``cap`` (disclosed)."""
+    ids, total = _resolve_corpus(
+        db, article_ids, query=query, source=source, start_date=start_date,
+        end_date=end_date, language=language, tags=tags, cap=cap,
     )
-    ids = [a.id for a in articles]
     return {
         "who": q.corpus_who(db, article_ids=ids, limit=limit),
         "where": q.corpus_where(db, article_ids=ids, limit=limit),
@@ -165,21 +199,19 @@ def insights_corpus_sentiment(
     end_date: str | None = None,
     language: str | None = None,
     tags: str | None = None,
+    article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Tone distribution across the matched articles (the analysis window's Sentiment
-    tab), from the STORED per-article VADER valence. VADER is English-lexicon based,
-    so the response carries the English share + a caveat that non-English scores are
-    unreliable. Counts only; tone is a measured word-valence, never a verdict. Bounded
-    to the top ``cap`` matched articles (disclosed)."""
-    from src.api.main import _query_articles
-
-    articles, total = _query_articles(
-        db, query=query, source=source, start_date=start_date, end_date=end_date,
-        language=language, tags=tags, limit=cap, offset=0,
+    """Tone distribution across the analysis corpus (an explicit article-id set or the
+    search) — the Sentiment tab — from the STORED per-article VADER valence. VADER is
+    English-lexicon based, so the response carries the English share + a caveat that
+    non-English scores are unreliable. Counts only; tone is a measured word-valence,
+    never a verdict. Bounded to ``cap`` (disclosed)."""
+    ids, total = _resolve_corpus(
+        db, article_ids, query=query, source=source, start_date=start_date,
+        end_date=end_date, language=language, tags=tags, cap=cap,
     )
-    ids = [a.id for a in articles]
     res = q.corpus_sentiment(db, article_ids=ids)
     res["total_matched"] = total
     res["capped"] = total > len(ids)
@@ -194,21 +226,19 @@ def insights_corpus_sources(
     end_date: str | None = None,
     language: str | None = None,
     tags: str | None = None,
+    article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
     limit: int = Query(40, ge=1, le=200),
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
-    """How each SOURCE covers the matched set (the analysis window's source view):
-    per-source volume, mean tone, and publication span. Counts + dates exact; mean
-    tone inherits the VADER English caveat. No ranking, no verdict -- coverage, not
-    credibility. Bounded to the top ``cap`` matched articles (disclosed)."""
-    from src.api.main import _query_articles
-
-    articles, total = _query_articles(
-        db, query=query, source=source, start_date=start_date, end_date=end_date,
-        language=language, tags=tags, limit=cap, offset=0,
+    """How each SOURCE covers the analysis corpus (an explicit article-id set or the
+    search) — the source view: per-source volume, mean tone, publication span. Counts +
+    dates exact; mean tone inherits the VADER English caveat. No ranking, no verdict —
+    coverage, not credibility. Bounded to ``cap`` (disclosed)."""
+    ids, total = _resolve_corpus(
+        db, article_ids, query=query, source=source, start_date=start_date,
+        end_date=end_date, language=language, tags=tags, cap=cap,
     )
-    ids = [a.id for a in articles]
     res = q.corpus_sources(db, article_ids=ids, limit=limit)
     res["n_articles"] = len(ids)
     res["total_matched"] = total
