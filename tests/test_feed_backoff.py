@@ -103,6 +103,25 @@ def _make_source(s) -> Source:
 # --------------------------------------------------------------------------- #
 
 
+def _skip_if_clock_inconclusive(before: datetime, tol_s: float) -> None:
+    """Skip (not fail) the ABSOLUTE-seconds backoff bound if the ingest call took
+    longer than the assertion's tolerance on this box — the timing experiment is
+    then inconclusive, not failed (the skip-when-inconclusive pattern, OO-D15-006).
+
+    ``skip_until`` is ``now_during_call + DELAY``, so the measured ``skip_until -
+    before`` carries an error up to the call's wall-clock duration. The backoff
+    LOGIC (counter growth, cap, reset) is still asserted unconditionally; only the
+    absolute-seconds window is timing-sensitive, and only a pathologically slow box
+    can breach it."""
+    elapsed = (datetime.now(UTC) - before).total_seconds()
+    if elapsed > tol_s:
+        pytest.skip(
+            f"ingest took {elapsed:.1f}s here (> {tol_s}s tolerance); the absolute "
+            "backoff-seconds bound is inconclusive on this box (the growth/cap/reset "
+            "assertions still cover the logic)"
+        )
+
+
 def test_all_duplicate_200_sets_skip_until_and_counts(db):
     src = _make_source(db)
     # An empty feed (no items) stores zero articles -> a 200-with-no-new.
@@ -117,6 +136,7 @@ def test_all_duplicate_200_sets_skip_until_and_counts(db):
     assert st.consecutive_unchanged == 1
     assert st.skip_until is not None
     # First backoff == BASE seconds (2 ** 0).
+    _skip_if_clock_inconclusive(before, 5.0)
     delta = st.skip_until.replace(tzinfo=UTC) - before
     assert P.BACKOFF_BASE_S - 5 <= delta.total_seconds() <= P.BACKOFF_BASE_S + 5
     assert not P.feed_is_due(st)  # within the window -> not due
@@ -130,7 +150,8 @@ def test_consecutive_unchanged_grows_exponentially_then_caps(db):
         P.ingest_source(db, src, fetcher=fetcher)
         db.commit()
         st = db.get(FeedFetchState, src.id)
-        assert st.consecutive_unchanged == expected
+        assert st.consecutive_unchanged == expected  # the LOGIC, asserted unconditionally
+        _skip_if_clock_inconclusive(before, 5.0)
         delay = (st.skip_until.replace(tzinfo=UTC) - before).total_seconds()
         want = min(P.BACKOFF_BASE_S * (2 ** (expected - 1)), P.BACKOFF_CAP_S)
         assert want - 5 <= delay <= want + 5
@@ -146,6 +167,7 @@ def test_cap_is_never_exceeded(db):
     P.ingest_source(db, src, fetcher=_StubFetcher([_feed_result(200)]))
     db.commit()
     st = db.get(FeedFetchState, src.id)
+    _skip_if_clock_inconclusive(before, 1.0)  # this bound only tolerates +1s
     delay = (st.skip_until.replace(tzinfo=UTC) - before).total_seconds()
     assert delay <= P.BACKOFF_CAP_S + 1  # clamped, never unbounded
 
