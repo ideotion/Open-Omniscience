@@ -1221,6 +1221,20 @@ ruling, a contingency, or a deliberate-omission note.
     Analysis entry goes away (a launcher at most). DEPENDS ON (1) (where spawned
     tabs live) + folds in the #an ↔ #corpus-win consolidation. Build sub-questions:
     are tabs closeable / capped / session-persisted?
+  - **(5) INSIGHTS = THE NON-SEARCHABLE OVERVIEW + THE CANONICAL HOME OF THE CARDS
+    (ruled 2026-06-16; clarifies #8/#21 + the Home(2)↔Insights split):** REMOVE the
+    Insights search bar (#ins-term + the Explore button + exploreTerm, index.html
+    ~1315) — typing a term IS search and belongs to the omnibar → a spawned
+    analysis tab (item 4); the removal is GATED on that absorption so the
+    term-exploration (mind-map for a term, its trend) is NEVER lost (the Desk
+    lesson). Insights then shows ONLY non-searchable aggregates: a recently-
+    TRENDING-keywords graph, keyword FAMILIES + SUPER-GROUPS, TRENDING SOURCES,
+    UPCOMING EVENTS, etc. (the existing Trends/Families/Groups/Sources/Map subtabs
+    + the click-to-zoom landscape & mind-map become the BROWSE path; deep digging
+    into one term = the analysis tab). THE CARDS MOVE from Home INTO Insights =
+    their canonical home; Home(2) keeps only a REDUNDANT curated "top cards" subset
+    (consistent with #8 + the Home-is-redundant principle). "Upcoming events" here
+    is a redundant lens onto the Agenda tab (fine, by design).
 - **UI SHELL REDESIGN (ruled 2026-06-13; full plan in
   `docs/product/UI_SHELL_REDESIGN_PLAN.md`):** (1) ONE universal nav grammar
   app-wide — LATERAL sidebar = main tabs, VERTICAL subtabs near the top =
