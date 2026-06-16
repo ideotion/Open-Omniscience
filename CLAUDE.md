@@ -318,7 +318,11 @@ ruling, a contingency, or a deliberate-omission note.
   only, default OFF; (d) NEW GEO/OFFLINE MAPPING — an OSM per-region download manager
   (managed like wiki dumps: own task-manager job, files/no DB-writer contention,
   parallel, reorderable queue, rate/%/ETA/pause/resume/cap, inline DATED size table +
-  one consented refresh) + a HAND-ROLLED lightweight offline vector map (canvas 2.5D /
+  one consented refresh) [CATALOG + DOWNLOAD-MANAGER BACKEND SHIPPED 2026-06-16:
+  src/geo/osm_regions.py + src/geo/osm_downloads.py (OsmDownloadManager mirrors
+  wiki.dumps, guarded-fetch + Tor circuit isolation + kill switch) + GET/POST
+  /api/geo/regions|downloads; see BACKLOG Group M. REMAINING: task-manager UI wiring +
+  the renderer] + a HAND-ROLLED lightweight offline vector map (canvas 2.5D /
   CSS-3D, NO WebGL/Three.js; reuse the bundled Natural-Earth coastline) + the
   temporal-map remainder (linear/log toggle; mention layer fed by event-places); (e)
   NEW OFFICIAL-STATISTICS INGESTION (the FUTURE_DEVELOPMENTS design — gov +
