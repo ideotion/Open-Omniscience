@@ -213,6 +213,15 @@ makes the rest fall out cheaply:
   strip pinned at the TOP; Quick actions removed (#128); denser cards (4+) + card
   families as vertical subtabs via `ooSubtabs` with an "All cards" default lens +
   family-color accents (#129). `test_ui_invariants` #19/#19b.
+- 🔨 **Home → dashboard / helicopter view** (UI rethink, Item 4b) — FIRST section
+  shipped: a compact **"Trending now"** glance (`#home-trends-panel` / `loadHomeTrends`)
+  = the past-week rising keywords (disclosed window-vs-baseline rate, never a score)
+  as chips + honest sparklines (`dashChartSvg`), each deep-linking to its analysis
+  window; "More in Insights →" deep-links to the Trends subtab. REDUNDANT by design
+  (#8); panel hidden until there's data (never blank-and-silent); reuses the existing
+  endpoint (no new backend/poll); `test_ui_invariants` #19c. Browser-unverified.
+  REMAINING: top ooChart graphs, a pausable/a11y synthesized-Leads carousel, dynamic
+  commodity-when-trending sections, most-recent-by-tag.
 - ✅ **Insights** — sections already presented as subtabs (via `ooSubtabs`, #127);
   the "Index corpus" button + palette action are removed and replaced by a silent
   background top-up that runs on Insights open when behind (`autoIndexInsights`),

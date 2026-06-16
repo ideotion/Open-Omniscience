@@ -1198,7 +1198,40 @@
       try { const sc = await api("/api/scheduler/status"); renderHomeStatus(sc.running); }
       catch (e) { renderHomeStatus(false); }
       loadBriefing();
+      loadHomeTrends();
       refreshDraftCount();
+    }
+    // Home "Trending now" glance (UI rethink, Home → helicopter view). Compact +
+    // REDUNDANT by design: the past-week RISING keywords (the disclosed window-vs-
+    // baseline RATE — never a score), each a chip that deep-links to its own
+    // analysis window; a small honest sparkline rides along (dashChartSvg: line
+    // when dense, Item-Y bars when sparse). The panel HIDES when nothing is
+    // trending yet (Home is never blank-and-silent — the Briefing still renders);
+    // "More in Insights →" deep-links to the canonical Trends view. Reuses
+    // /api/insights/trending-windows + dashChartSvg; no new backend, no new poll.
+    async function loadHomeTrends() {
+      const panel = $("home-trends-panel"), box = $("home-trends");
+      if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const d = await api("/api/insights/trending-windows?limit=4&series_top=4");
+        const wk = (d.windows || []).find(w => w.label === "7d") || (d.windows || [])[0];
+        const terms = (wk && wk.terms) || [];
+        if (!terms.length) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
+        if (panel) panel.hidden = false;
+        const cards = terms.map(x => {
+          const spark = Array.isArray(x.series)
+            ? dashChartSvg(x.series.map(p => ({observed_on: p.date, price: p.count})), "")
+            : "";
+          return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
+            <div style="display:flex;align-items:baseline;gap:6px">
+              <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}</a>
+              <span class="muted" style="font-size:12px">↑${esc(String(x.growth))}× · ${esc(String(x.recent))}</span>
+            </div>${spark}</div>`;
+        }).join("");
+        box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
+          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
+      } catch (e) { if (panel) panel.hidden = true; box.innerHTML = ""; }
     }
     // Live Home (the at-a-glance strip + briefing self-update; no Refresh button).
     // Only runs while Home is the active, visible tab (the LIVE registry). Cheap:
@@ -1211,6 +1244,7 @@
         const data = await api("/api/briefing");
         if (data.generated_at !== _lastBriefGen) renderBriefing(data);
       } catch (e) {}
+      loadHomeTrends();
     }
 
     // -- The Home briefing (triage cards) ----------------------------------- //

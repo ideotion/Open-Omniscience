@@ -1474,6 +1474,20 @@ ruling, a contingency, or a deliberate-omission note.
     caveats VISIBLE by default (#23) even in compact tiles; the carousel is
     user-controlled + a11y (pausable/keyboard) and NEVER hides a caveat behind a
     timed rotation; Home never blank-and-silent (fail-safe empty state).
+    **TRENDS GLANCE SHIPPED 2026-06-16 (Item 4b, first dashboard section,
+    conservative/browser-unverified):** a compact "Trending now" panel
+    (`#home-trends-panel`/`#home-trends`, `loadHomeTrends`) renders the PAST-WEEK
+    rising keywords (the disclosed window-vs-baseline RATE from
+    /api/insights/trending-windows — NEVER a score) as chips with a small honest
+    sparkline (`dashChartSvg`: line dense / Item-Y bars sparse). REDUNDANT by
+    construction (#8): each term DEEP-LINKS to its analysis window (openAnalysisFor),
+    "More in Insights →" deep-links to the canonical Trends subtab; the API caveat
+    is VISIBLE; the panel DEFAULTS HIDDEN and only appears when something is trending
+    (Home never blank-and-silent — the Briefing still renders). Reuses the existing
+    endpoint + renderer (no new backend, no new poll — rides loadHome +
+    refreshHomeLive). +2 i18n ×12; test_ui_invariants #19c. REMAINING: top
+    ooChart graphs, the synthesized-Leads carousel (pausable/a11y), dynamic
+    commodity-when-trending sections, most-recent-by-tag.
   - **(3) NAME THE CARD SYSTEM (brainstorm WITH the maintainer — NO name chosen
     yet):** today = "briefing cards" / "producers" / "buckets" (src/briefing). A
     card = one measured signal + evidence + method + caveat = a SOURCED, CAVEATED
