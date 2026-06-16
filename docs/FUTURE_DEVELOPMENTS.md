@@ -199,7 +199,13 @@ oracle. A rule is a conjunction over **real stored signals**; a match surfaces
 user's labelled hypothesis, presented as a prompt to investigate. Rules are
 user-owned, editable, reversible; example rules ship **off by default**; no
 black-box scoring (the quarantined credibility analyzer remains the cautionary
-tale).
+tale). **RESOLVED 2026-06-16 (fork-2) — NOW ACTIVE: build the FULL "Watches view +
+history" UX.** A saved watch (a conjunction over real stored signals) is evaluated
+LOCALLY by the existing background analytics pass and surfaces a Lead card on a match;
+PLUS a dedicated Watches panel — saved watches · match history · per-watch
+enable/edit/delete. Off by default, local-only, NO notifications / network / telemetry.
+The convergence frontend VIEW + the shipped `GET /api/insights/convergences` endpoint
+(#231) are its substrate.
 
 ### New Home producers once 3+4 exist
 "Converging now" · "On the horizon" (agenda ∩ tracked keywords) · "Through
@@ -647,7 +653,15 @@ one small model, provisioned on a connected machine, carried by USB to
 `~/.ollama/models`. The principled path for Tor/air-gapped operators (model
 downloads don't work over Tor; inference is loopback and unaffected).
 
-### In-app Ollama + model installer (maintainer ask 2026-06-13)
+### In-app Ollama + model installer (maintainer ask 2026-06-13) — PROMOTED TO ACTIVE 2026-06-16
+
+**Build now as a dedicated Settings SUBTAB** (the 2026-06-16 rulings Q7=B / Q8 / Q9 /
+Q10 in CLAUDE.md apply): download + verify (checksum/signature) + RUN the official
+per-OS Ollama installer behind consent + a VISIBLE elevation step (never silent); a
+curated dated catalog PLUS a consented searchable live-ollama.com-library browse filtered
+to app-applicable text-generation models that fit the measured hardware; pull / run /
+remove streaming real bytes (task-manager jobs); the active model becomes a stored UI
+setting; clearnet-via-the-ollama-process is disclosed at consent.
 
 Settings should let the user **install Ollama and pull models from the GUI**
 — no terminal. Design intent:
@@ -671,7 +685,12 @@ Settings should let the user **install Ollama and pull models from the GUI**
 
 ---
 
-## In-app self-update — keep the corpus and settings safe (maintainer ask 2026-06-13)
+## In-app self-update — keep the corpus and settings safe (maintainer ask 2026-06-13) — PROMOTED TO ACTIVE 2026-06-16 (MECHANICS ONLY)
+
+**Build now: the gated snapshot→verify→staged-migrate→atomic-swap→rollback MECHANICS,
+default OFF.** The 5 OPEN QUESTIONS below remain a maintainer ruling and are SKIPPED by
+the unsupervised session — a fully verified auto-updater needs a maintainer-supplied
+trust root / signing key, so it cannot be completed unattended.
 
 "Can the app update itself through the GUI — download the updated GitHub
 repo, launch the reinstall, keep the database and all settings safe?"
@@ -713,6 +732,29 @@ ship the maintainer's public key in-tree so releases are verified offline?
 git clones, does update re-run `install.sh` or do an in-place tree swap? (5)
 how does self-update interact with the Open Commons Mirror's tamper-evident
 ethos — should each update anchor its release hash?
+
+---
+
+## Geo / offline mapping (PROMOTED TO ACTIVE 2026-06-16)
+
+Two pieces, both LOCAL-first and zero-network at boot:
+- **OSM per-region download manager** — download OpenStreetMap extracts (e.g. Geofabrik
+  region PBFs) managed EXACTLY like the Wikipedia dump downloads: its own task-manager
+  job, files (no DB-writer contention), parallel, a reorderable single-download queue,
+  per-job rate / % / ETA / pause / resume / prioritize / bandwidth-cap, and INLINE DATED
+  size estimates (a bundled `OSM_SIZES_AS_OF` table + freshness test — the model-catalog
+  pattern; NO N network probes at open) with one consented "refresh exact sizes" call
+  through the guarded factory. Robots / kill-switch / honest-UA inherited; clearnet stated.
+- **Hand-rolled offline vector map renderer** — render the downloaded extracts (and the
+  existing bundled Natural-Earth coastline + gazetteer pins) with a LIGHTWEIGHT,
+  HAND-ROLLED canvas 2.5D / CSS-3D approach — NO WebGL, NO Three.js, NO map-tile CDN
+  (parity with the 3D-keyword-explorer fork + local-first). Deterministic; the temporal
+  map's projection (`lon2x`/`lat2y`) is reused, not forked.
+- **Temporal-map remainder:** the linear/log time-scale toggle (labelled ticks, no
+  hidden warp) + feed the mention layer with EVENT-places (today it plots
+  article-mention places only).
+
+Honesty: an offline extract is a SNAPSHOT (dated, stated); never presented as live.
 
 ---
 

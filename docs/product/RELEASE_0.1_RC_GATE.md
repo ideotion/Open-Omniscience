@@ -24,6 +24,14 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 > safe, over-claim is not — the audit ethic). **`CLAUDE.md` is the live ledger**; this
 > gate is a periodic snapshot and may still lag it between reconciliations.
 
+> **Reconciled 2026-06-16 (autonomous 'everything' batch — CLAUDE.md is authoritative).**
+> Scope is now the full V0.1 mandate + promotions. Rows advanced this pass: both honesty
+> bugs ✅ (airplane-paused #245; back-button); Reader TABS → 🔶 slice 1 (#246, standalone);
+> Item Y (n<10→bars) ✅. Newly ACTIVE (were design-only/POST): the UI rethink (centerpiece),
+> the in-app Ollama installer, GUI self-update (mechanics only), + two new verticals (geo /
+> offline map; official-statistics ingestion). The convergence WATCH engine is greenlit as
+> "Watches view + history".
+
 ## 1. The trust core (data integrity + crypto + safety)
 
 | Item | Status | Gate | Acceptance check |
@@ -62,9 +70,9 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 | Agenda content: recurrence schema (+origin years, month-spans), worldwide bank holidays, religious calendars (computed/moon ±1d caveat; sourced tables), astronomy layer (Meeus moons tested vs almanac + eclipse canon), article-extracted dated events layer | ⬜ | RC-BLOCKING (the maintainer's "all and everything accessible") | every entry carries method+accuracy; zero-network boot kept |
 | Agenda: remaining views (week/trimester/semester/year/decade) | ✅ 2026-06-14 (PR #206) | SHOULD | all shipped — Month/Week/Trimester/Semester/Year/Decade/List view buttons present in the agenda tab (`index.html` agenda view bar) |
 | Task manager window (repeat ×2; acceptance: reorder fr-before-en wiki dumps; per-country scrape priority) + download arbitration (queue/prioritize/cancel) | 🔶 2026-06-12 (T9 slice 1: visible jobs view, REAL reorderable dump queue — fr-before-en works end-to-end and is tested; arbitration ask on collect) | RC-BLOCKING (twice-repeated ask) | REMAINING: per-country scrape priority; arbitration ask on remaining starters; richer pass-time estimates |
-| Reader TABS (mindmap/related/source/keywords/sentiment) | 🔶 2026-06-16 (PR1: Read·Keywords·Sentiment·Related·Links via /static/reader.js; n=1 insights endpoints; caveats visible; tests/test_reader_tabs.py) | RC-BLOCKING (twice-repeated ask) | REMAINING: Mindmap (needs /api/insights/graph to accept article_ids) + richer Source/WWW tab |
+| Reader TABS (mindmap/related/source/keywords/sentiment) | 🔶 2026-06-16 (PR1: Read·Keywords·Sentiment·Related·Links via /static/reader.js; n=1 insights endpoints; caveats visible; tests/test_reader_tabs.py) | RC-BLOCKING (twice-repeated ask) | fork-1 (2026-06-16): the reader stays STANDALONE, NOT folded into #an. REMAINING: Mindmap (needs /api/insights/graph to accept article_ids) + richer Source/WWW tab |
 | The ONE corpora system (6 entries: hand/tag-selection/tag-click/commodity-click/keyword-click/date-keyword-click; keyword windows = same sub-tabs + events sub-tab + TIME-SCOPE control) | 🔶 advanced 2026-06-15 | RC-BLOCKING (the flagship analysis object) | sub-tab set built out on the `#corpus` modal (Mindmap/Sentiment/Keywords/Sources/Competitive, PRs #214–218) AND the Group F `#analyze` window (invariant #22); TIME-SCOPE shipped as `ooTimeScope` (PRs #197–201). REMAINING: the **two-windows consolidation** (known debt, CLAUDE.md) + the remaining entry points |
-| Interactive charts (zoom/pan/X-Y readout/legends; kill the 5-point cap; real curves) | 🔶 advanced 2026-06-15 | RC-BLOCKING (live-test complaint) | full series at all scales; **indices board detail rolled onto `ooChart`** (PR #205; invariant #16 asserts `ooChart($("idx-chart-oo")`). REMAINING: commodity-card enlarge; the n<10→bar rule (Item Y, DEFERRED on a baseline-honesty Q) |
+| Interactive charts (zoom/pan/X-Y readout/legends; kill the 5-point cap; real curves) | 🔶 advanced 2026-06-15 | RC-BLOCKING (live-test complaint) | full series at all scales; **indices board detail rolled onto `ooChart`** (PR #205; invariant #16 asserts `ooChart($("idx-chart-oo")`). REMAINING: commodity-card enlarge → `ooChart` (the n<10→bar rule, Item Y, SHIPPED app-wide 2026-06-15 in both renderers) |
 | Commodity → keyword-family pivot (price curve + article-timeline overlay; symbol→family seed table) | ⬜ | SHOULD | co-occurrence framing, never causation |
 | Continuous collection (per-country round-robin + first-run approval + onboarding country/language picker; explainable schedule) | 🔶 2026-06-13 (slice 1: boot-in-airplane-mode + continuous loop + per-country round-robin ordering, tested) | SHOULD | consent design shared with network popup; REMAINING: onboarding picker, explainable cycle detail, demote arbitration modal, parallel fetch |
 | When×Where×Who extraction at ingest + backfill (confirmed GO) | 🔶 advanced 2026-06-15 | SHOULD (substrate for convergence) | reader now reads STORED rows (PR #202, `datestore.for_article`); WHO+WHERE corpus aggregates shipped (`/api/insights/who` + `/where`); temporal-map mention layer (PR #200). REMAINING: map gains EVENT-places too |

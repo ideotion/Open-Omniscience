@@ -6,6 +6,19 @@
 > `UI_SHELL_REDESIGN_PLAN.md`, `FUTURE_DEVELOPMENTS.md`) and the CLAUDE.md ledger.
 > Legend: ✅ shipped (PR) · 🔨 in progress / next · ⬜ queued · 🐛 bug.
 
+> **2026-06-16 — AUTONOMOUS 'EVERYTHING' BATCH** (full ruling: CLAUDE.md "AUTONOMOUS
+> 'EVERYTHING' BATCH"). Scope = the V0.1 RC mandate in full + promotions. The UI RETHINK
+> is now the ACTIVE CENTERPIECE — nav-to-top facet strip + Home→dashboard + Insights
+> overview / Trends (24h · week · MONTH) + the 3D keyword explorer land in Group E; the
+> named parallel Analysis tabs + the #an↔#corpus-win CONSOLIDATION land in Group F. The
+> offline READER stays STANDALONE (#246, fork-1). The convergence WATCH engine = the full
+> "Watches view + history" (fork-2). Two NEW groups below: **M** geo/offline map, **N**
+> official-statistics. Browser-unverifiable UI ships conservative + flagged (fork-3); the
+> MAINTAINER MERGES EVERYTHING (fork-4 — drafts stack). Recently shipped since this doc
+> was written: Item V airplane-red (#245), Reader-tabs slice 1 (#246), exact-article-id
+> card seeding (#241/#242), .eml importer (#237), convergence endpoint (#231), Item Y
+> (n<10→bars).
+
 ## The keystones (shared building blocks that unblock many items)
 
 Almost everything below reduces to **six reusable pieces**. Building these well
@@ -270,6 +283,23 @@ makes the rest fall out cheaply:
   tests/test_network_consent.py).
 - ✅ **Ledger figure drift** — test count → 1118 (collected 2026-06-14); chrome
   tail → ~423 untranslatable (263 keyed of 686).
+
+## M. Geo / offline mapping (promoted active 2026-06-16)
+
+- ⬜ **OSM per-region download manager** — Geofabrik-style extracts managed like wiki
+  dumps (task-manager job, parallel, reorderable, rate/%/ETA/pause/resume/cap, inline
+  dated `OSM_SIZES_AS_OF` size table + one consented refresh). (CLAUDE.md geo ruling)
+- ⬜ **Hand-rolled offline vector map** — canvas 2.5D / CSS-3D, NO WebGL/Three.js; reuse
+  the bundled Natural-Earth coastline + the temporal-map projection.
+- ⬜ **Temporal-map remainder** — linear/log toggle + mention layer fed by event-places.
+
+## N. Official-statistics ingestion (promoted active 2026-06-16)
+
+- ⬜ Gov + international agencies as CONTROVERSIAL sources; producing-state + agency +
+  pub-date + methodology-ref per figure; VINTAGES; comparability guards (SA/NSA/base
+  year); SDMX/API before scraping; triangulate side-by-side never averaged; forecasts
+  join IPCC-tracking; per-continent coverage; deliberately BRICS/Africa/forgotten-region.
+  (FUTURE_DEVELOPMENTS design)
 
 ---
 
