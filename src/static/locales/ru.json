@@ -972,5 +972,10 @@
   "Early stage: the Leads rest on thin evidence — read them as first hints, not established patterns.": "Ранняя стадия: зацепки опираются на скудные данные — читайте их как первые подсказки, а не устоявшиеся закономерности.",
   "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.": "reliability_score — это метаданные происхождения, которые вы, оператор, задаёте для каждого источника. Приложение никогда их не вычисляет, не задаёт по умолчанию и не выводит из текста статей; оно никогда не строит из них зацепку или оценку.",
   "Open in analysis — the article selection behind this Lead": "Открыть в анализе — подборка статей за этой зацепкой",
-  "Showing the exact article set behind this Lead.": "Показан точный набор статей за этой зацепкой."
+  "Showing the exact article set behind this Lead.": "Показан точный набор статей за этой зацепкой.",
+  "Rising — three windows": "Растущие — три окна",
+  "Past 24h": "Последние 24 ч",
+  "Past week": "Прошлая неделя",
+  "Past month": "Прошлый месяц",
+  "No rising keywords in this window yet.": "В этом окне пока нет растущих ключевых слов."
 }

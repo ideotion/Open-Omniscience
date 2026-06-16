@@ -5773,6 +5773,27 @@
         $("trd-top").innerHTML = termListHtml(top.terms, t => `${t.mentions} mentions · ${t.articles} articles`);
         $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
       } catch (e) { toast("Trends failed: " + e.message, "err"); }
+      loadTrendWindows();
+    }
+
+    // The three preset windows side by side (24h · week · month) — the ruled
+    // Trends redesign (2026-06-16). Reads /api/insights/trending-windows (no
+    // controls; fixed presets); each column reuses termListHtml. Honest n + the
+    // early-corpus caveat travel from the API. Additive to the single-window view.
+    async function loadTrendWindows() {
+      const box = $("trd-windows"); if (!box) return;
+      const LABELS = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
+      try {
+        const d = await api("/api/insights/trending-windows?limit=8");
+        box.innerHTML = (d.windows || []).map(w => {
+          const head = `<h2 style="font-size:13px">${esc(LABELS[w.label] || w.label)} <span class="muted">· n=${w.count}</span></h2>`;
+          const list = (w.terms && w.terms.length)
+            ? termListHtml(w.terms, t => `↑${t.growth}× · ${t.recent} recent`)
+            : `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`;
+          return `<div style="flex:1;min-width:200px">${head}${list}</div>`;
+        }).join("") || `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`;
+        const note = $("trd-windows-note"); if (note) note.textContent = d.caveat || "";
+      } catch (e) { /* additive panel — leave the single-window view intact on error */ }
     }
 
     // World map: equirectangular projection, viewBox-based zoom/pan (no deps).

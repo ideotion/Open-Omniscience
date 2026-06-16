@@ -972,5 +972,10 @@
   "Early stage: the Leads rest on thin evidence — read them as first hints, not established patterns.": "早期阶段：线索基于薄弱证据——将其视为初步线索，而非确立的模式。",
   "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.": "reliability_score 是您（操作者）为每个来源设定的来源元数据。应用绝不会计算它、为其设默认值或从文章正文推导它，也绝不会据此生成线索或评分。",
   "Open in analysis — the article selection behind this Lead": "在分析中打开——此线索背后的文章选集",
-  "Showing the exact article set behind this Lead.": "显示此线索背后的确切文章集。"
+  "Showing the exact article set behind this Lead.": "显示此线索背后的确切文章集。",
+  "Rising — three windows": "上升中——三个时间窗",
+  "Past 24h": "过去24小时",
+  "Past week": "过去一周",
+  "Past month": "过去一个月",
+  "No rising keywords in this window yet.": "此时间窗内暂无上升关键词。"
 }

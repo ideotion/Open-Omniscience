@@ -972,5 +972,10 @@
   "Early stage: the Leads rest on thin evidence — read them as first hints, not established patterns.": "Early stage: the Leads rest on thin evidence — read them as first hints, not established patterns.",
   "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.": "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.",
   "Open in analysis — the article selection behind this Lead": "Open in analysis — the article selection behind this Lead",
-  "Showing the exact article set behind this Lead.": "Showing the exact article set behind this Lead."
+  "Showing the exact article set behind this Lead.": "Showing the exact article set behind this Lead.",
+  "Rising — three windows": "Rising — three windows",
+  "Past 24h": "Past 24h",
+  "Past week": "Past week",
+  "Past month": "Past month",
+  "No rising keywords in this window yet.": "No rising keywords in this window yet."
 }
