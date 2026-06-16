@@ -1513,9 +1513,13 @@ ruling, a contingency, or a deliberate-omission note.
     ADDITIVE param, default 0 = unchanged) attaches a daily `series:[{date,count}]` to the
     first N terms of each window, REUSING `queries.trend(bucket="day")` sliced to the window
     range so the numbers match the existing trend chart (counts only, no score;
-    tests/test_trending_windows_series.py). REMAINING: the per-window top-5 ooChart FRONTEND
-    consuming `series_top` + the maintainer's wider Trends redesign (remove the Insights
-    search bar once the omnibar absorbs term-exploration).
+    tests/test_trending_windows_series.py). FRONTEND SHIPPED 2026-06-16 (conservative,
+    browser-unverified): `loadTrendWindows` requests `series_top=5` and renders each top
+    term's daily series as a small honest sparkline via the shared `dashChartSvg` (line when
+    dense, Item-Y bars when sparse — NEVER an interpolated curve); the rest stay the plain
+    list; ZERO new i18n keys (reuses existing strings); test_ui_invariants #21b+. REMAINING:
+    a click-to-enlarge interactive `ooChart` per term + the maintainer's wider Trends
+    redesign (remove the Insights search bar once the omnibar absorbs term-exploration).
   - **(6) UNIFIED 3D KEYWORD EXPLORER (ruled 2026-06-16; maintainer FLAGSHIP —
     "important to me", "incredible UI/UX"; evolves the mind-map rules + #mm-kit;
     lives in Insights per (5)):** THREE fixes + one big rework. FIXES: (a) the
