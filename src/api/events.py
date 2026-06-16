@@ -175,6 +175,26 @@ def imported_events(
     return {"count": len(items), "occurrences": occurrences, "events": items}
 
 
+@router.get("/deduced")
+def deduced_events(
+    days_ahead: int = Query(120, ge=1, le=3650),
+    min_articles: int = Query(2, ge=1, le=50),
+    limit: int = Query(80, ge=1, le=365),
+) -> dict:
+    """Upcoming dates DEDUCED from article text — the agenda's article-extracted
+    events layer. Groups future mentioned-dates with distinct article + source
+    counts + the article-id set (so the agenda can open that exact corpus). A
+    surfacing gate (``min_articles``) drops single-mention noise; rejected tags are
+    excluded. Deduced from text, NEVER a confirmed event; counts only, no score."""
+    from src.database.session import session_scope
+    from src.timemap import datestore
+
+    with session_scope() as db:
+        return datestore.upcoming_deduced(
+            db, days_ahead=days_ahead, min_articles=min_articles, limit=limit
+        )
+
+
 @router.post("/feeds/verify-batch")
 def feed_verify_batch(limit: int = Query(25, ge=1, le=100)) -> dict:
     """Verify the next ``limit`` UNCHECKED feeds (operator-initiated, bounded).
