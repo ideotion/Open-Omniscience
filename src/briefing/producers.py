@@ -696,7 +696,10 @@ def echo_chamber(session) -> list[Card]:
             break
         sig = actor.signature
         applied = bool(sig and is_applied(sig))
-        rep_ids = [ev.representative for ev in actor.events][:4]
+        # The FULL coordinated set (deduped, order-preserving) for exact analysis-window
+        # seeding; the evidence is a 4-item sample of the same.
+        all_ids = list(dict.fromkeys(ev.representative for ev in actor.events))
+        rep_ids = all_ids[:4]
         ev_lookup = _articles_by_id(session, rep_ids)
         evidence = [ev_lookup[i] for i in rep_ids if i in ev_lookup]
         n = len(actor.sources)
@@ -748,6 +751,9 @@ def echo_chamber(session) -> list[Card]:
                 method=result.method,
                 caveat=result.caveat,
                 evidence=evidence,
+                # The EXACT coordinated article set, so the card opens the analysis
+                # window over precisely these articles (the actor's near-duplicates).
+                article_ids=all_ids,
                 n=n,
                 key=sig or ",".join(actor.sources),
             )
@@ -1629,6 +1635,9 @@ def space_time_convergence(session) -> list[Card]:
                 method=c["method"],
                 caveat=CONVERGENCE_CAVEAT,
                 evidence=evidence,
+                # The EXACT converging article set, so clicking the card opens the
+                # analysis window over precisely these articles (not a re-run search).
+                article_ids=list(c.get("article_ids", [])),
                 n=c["n_articles"],
                 key=f"{c['place_country'] or ''}|{c['place']}|{c['window_start']}",
                 trigger=_trigger(

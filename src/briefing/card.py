@@ -132,6 +132,13 @@ class Card:
     caveat: str
     signal: dict = field(default_factory=dict)
     evidence: list[dict] = field(default_factory=list)
+    # The FULL article set the card is built from (set-based cards only — convergence,
+    # echo-chamber). The UI seeds the analysis window with this exact set so the
+    # corpus IS the articles the card identified (maintainer-ruled 2026-06-16), not a
+    # re-run search that only approximates a set-based selection. Empty for cards whose
+    # selection is a keyword/topic (the query reproduces those) or a whole-corpus
+    # distribution (e.g. reading-diet). A list of ids, never a score.
+    article_ids: list[int] = field(default_factory=list)
     n: int | None = None
     key: str = ""
     id: str = ""
@@ -188,6 +195,9 @@ class Card:
             "method": self.method,
             "caveat": self.caveat,
             "evidence": self.evidence,
+            # The full article set behind a set-based card (exact analysis-window
+            # corpus). Empty for keyword/topic/whole-corpus cards. Never a score.
+            "article_ids": self.article_ids,
             "n": self.n,
             # The within-type identity (often the keyword/term the card is about);
             # the UI uses it as a fallback seed when a card is clicked to open the
