@@ -14,7 +14,6 @@ root; none are needed for normal app use. Network-touching scripts say so.
 | `build_world_outline.py` | Rebuild the bundled Natural-Earth coastline outline. | download |
 | `i18n_report.py` | Locale completeness report; `--audit-chrome` diffs every UI text node against `en.json` (the long-tail number). | no |
 | `translate_docs.py` | Draft `docs/i18n/<lang>/` translations with the LOCAL Ollama (provenance banner, resumable). | loopback (Ollama) |
-| `import_eml.py` | Import `.eml` newsletters into the corpus. | no |
 | `setup_llm.py` | Provision the local Ollama model (see the clearnet notice in `install.sh`). | Ollama registry |
 | `benchmark_audit.py` | The performance gates recorded during the v0.0.7 audit. | no |
 | `verify_custody.py` / `verify_evidence.py` | Offline verification of the signed custody log / evidence bundles. | no |

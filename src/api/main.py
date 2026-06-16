@@ -319,9 +319,13 @@ app.add_middleware(
     # them is a latent misconfiguration if origins are ever widened (S-007).
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "User-Agent"],
+    # The app has NO authentication, so `Authorization` was dead surface; `Origin` and
+    # `User-Agent` are browser-controlled headers a page cannot set in a CORS request, so
+    # listing them bought nothing. The frontend only ever sends JSON, so `Content-Type`
+    # (plus the simple `Accept`) is all the preflight needs.
+    allow_headers=["Content-Type", "Accept"],
     expose_headers=["Content-Length", "Content-Type"],
-    max_age=86400,  # 24 hours
+    max_age=600,  # 10 minutes: a no-auth loopback API gains little from a 24h preflight cache
 )
 
 # --- CSRF (S-003) + security headers (S-006) -------------------------------- #
@@ -571,7 +575,7 @@ def _validate_date(value: str | None, field_name: str) -> None:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid {field_name} format. Use YYYY-MM-DD.",
-            )
+            ) from None
 
 
 def _structured_filters(
@@ -654,7 +658,7 @@ def _query_articles(
         try:
             fts_ids = search_ids(session, query)
         except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}")
+            raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}") from exc
 
     if fts_ids is not None:
         # A text query was given. fts_ids is relevance-ordered (best first).

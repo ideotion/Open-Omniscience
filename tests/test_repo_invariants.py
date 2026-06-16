@@ -87,6 +87,49 @@ def test_dormant_credibility_columns_never_serialized():
     )
 
 
+def test_reliability_score_is_operator_set_never_computed():
+    """``reliability_score`` is an INTENTIONAL exemption to the no-composite-score
+    rule (audit PR E, DEFAULT APPLIED): it is operator-asserted provenance metadata
+    (a 1-10 number the operator sets per source via config/CSV import), NOT a value
+    the app computes. The fabricated ``=5`` default was already NULLed (migration
+    f4b5c6d7e8a9). Unlike credibility_score/political_bias (never serialized), this
+    field IS exposed — so the guard here is different: it must never be DERIVED from
+    article data, and a briefing card can never present it as a score.
+
+    This pins the exemption so a future contributor cannot quietly turn it into a
+    computed quality verdict (the exact honesty violation the project forbids).
+    """
+    # 1. A briefing card can NEVER carry it — it stays in card.py's forbidden
+    #    score-field set (mechanically rejected by the card schema).
+    card_src = (_SRC / "briefing" / "card.py").read_text(encoding="utf-8")
+    assert '"reliability_score"' in card_src, (
+        "reliability_score must remain in card.py's forbidden score-field set "
+        "(a card may never present it as a computed score)"
+    )
+    # 2. No analytics/derivation module may ASSIGN it — it is only ever set from
+    #    operator config/import (catalog/csv_io, ingest/seed) or left None. A
+    #    computed write here would resurrect a fabricated quality score.
+    write = re.compile(
+        r"\.reliability_score\s*=(?!=)|\[[\"']reliability_score[\"']\]\s*=(?!=)"
+    )
+    for sub in ("analysis", "analytics", "awareness", "briefing", "integrity", "signals"):
+        d = _SRC / sub
+        if not d.exists():
+            continue
+        for p in d.rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            assert not write.search(p.read_text(encoding="utf-8")), (
+                f"{p.relative_to(_ROOT)}: reliability_score must never be computed/"
+                "derived by analytics — it is operator-set only (CLAUDE.md exemption)"
+            )
+    # 3. It stays an operator-importable column (the legitimate input path).
+    csv_src = (_SRC / "catalog" / "csv_io.py").read_text(encoding="utf-8")
+    assert "reliability_score" in csv_src, (
+        "reliability_score must stay an operator-set CSV-import column"
+    )
+
+
 def test_no_dangerous_eval_or_deserialization_sinks():
     """S-010: live code must stay free of code-exec / unsafe-deserialization sinks."""
     banned = re.compile(
@@ -349,9 +392,8 @@ def test_ui_invariants():
     )
     assert "OOI18N.setLang(code)" in html, "the switcher must use THE i18n engine"
     for native in ("Français", "中文", "العربية", "Русский", "日本語"):
-        assert native in html or native in open(
-            _SRC / "static" / "index.html", encoding="utf-8"
-        ).read(), f"native name {native!r} must appear in the menu data"
+        # html already IS index.html's content (read at the top of this test).
+        assert native in html, f"native name {native!r} must appear in the menu data"
     # 16. ONE chart toolkit, detailed-curves SYSTEMATIC (ruled 2026-06-12):
     #     full series always (no thinning), wheel zoom / drag pan / pinned readout.
     #     AMENDED by Item Y (ruled 2026-06-15): sparse series (n<10) render as a BAR
@@ -541,6 +583,55 @@ def test_ui_invariants():
     assert 'id="an-advanced"' in html and "function anRunAdvanced(" in html, (
         "the analysis window must carry the Advanced-search tab that re-runs the "
         "analysis from refined filters (Group F, keystone #4)"
+    )
+    # 23. Caveats are VISIBLE BY DEFAULT (permanent informed-consent invariant —
+    #     CLAUDE.md Non-negotiables): a briefing card's CAVEAT renders in a visible
+    #     .card-caveat line, NEVER hidden behind the method toggle. Only the verbose
+    #     method/math stays in the toggle-gated .mc block. (This regressed once: the
+    #     .mc block held BOTH method AND caveat behind a default-OFF checkbox.)
+    assert 'class="card-caveat">${esc(c.caveat)}' in html, (
+        "every briefing card must render its caveat VISIBLE BY DEFAULT (CLAUDE.md "
+        "informed-consent: caveats are never hidden behind a calm-UI toggle)"
+    )
+    mc_block = html.split('<div class="mc" hidden>', 1)[1].split("</div>", 1)[0]
+    assert "c.caveat" not in mc_block, (
+        "the per-card caveat must NOT live inside the toggle-gated .mc block — it is "
+        "visible by default (CLAUDE.md informed-consent mandate)"
+    )
+    assert "c.method" in mc_block, (
+        "the verbose method/math stays behind the 'Show method' toggle (.mc)"
+    )
+    # The caveat colour must be theme-aware (var(--caveat)), not a hardcoded hex that
+    # fails WCAG AA on light themes — the most ethically important strings stay legible.
+    assert "--caveat:" in html and "color:var(--caveat)" in html, (
+        "caveat text must use the theme-aware var(--caveat) (WCAG AA across all 17 themes)"
+    )
+    # 24. Charts expose a text alternative (audit PR G, a11y): <canvas>/<svg> charts
+    #     are opaque to screen readers, so every chart carries role="img" + a
+    #     translated aria-label SUMMARY and a visually-hidden data table.
+    assert "function _chartAria(" in html and "function _chartSrTable(" in html, (
+        "charts must build a translated aria summary + a visually-hidden data table"
+    )
+    assert 'cv.setAttribute("role", "img")' in html and 'cv.setAttribute("aria-label"' in html, (
+        "the ooChart canvas must expose role=img + an aria-label (a11y)"
+    )
+    assert 'role="img" aria-label="${esc(aria)}"' in html, (
+        "the dashChartSvg <svg> must carry a translated aria-label (a11y)"
+    )
+    assert '<table class="sr-only">' in html, (
+        "charts must ship a visually-hidden data-table fallback (a11y)"
+    )
+    # 25. Adaptive idle polling (audit PR G): the always-on chrome polls back off
+    #     when idle instead of hammering the encrypted DB (field-log finding B). The
+    #     network/activity polls route through the one adaptive helper.
+    assert "function _adaptivePoll(" in html, (
+        "the adaptive idle-backoff poll helper must exist (UI polling storm fix)"
+    )
+    assert "_adaptivePoll(_pollNetwork)" in html and "_adaptivePoll(_pollActivity)" in html, (
+        "the always-on network/activity polls must use the adaptive backoff helper"
+    )
+    assert "setInterval(_pollNetwork" not in html, (
+        "the fixed-interval network poll must be replaced by the adaptive backoff"
     )
 
 
