@@ -11,6 +11,16 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **CI hygiene (audit PR D).** The CI workflow now declares least-privilege
+  `permissions: contents: read`, **pins** `actions/checkout`/`actions/setup-python`
+  to full commit SHAs (with version comments for Dependabot), adds a **blocking**
+  correctness-lint lane (`ruff --select=F,B`, undefined-names + likely-bugs; the full
+  style sweep stays advisory), and cancels superseded runs (`concurrency`). Enabling
+  the blocking lane meant clearing the pre-existing F/B backlog: proper exception
+  chaining (`raise … from …`), dead-import/dead-variable removal, and a couple of
+  trivial bugbear fixes — all behavior-preserving (full suite green).
+
+
 - **Safety & privacy hardening (audit PR C).** Closed a handful of edge gaps:
   the Wikipedia dump **edition code is now validated** before it can reach a
   filesystem path or fetch URL (a `../`/`/` in `wiki` is rejected with a clean 400 —

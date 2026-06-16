@@ -206,7 +206,9 @@ def safe_path_join(base_path: str | Path, *parts: str) -> Path:
     try:
         result_path.relative_to(base_path)
     except ValueError:
-        raise SecurityError(f"Path {result_path} is outside base directory {base_path}")
+        raise SecurityError(
+            f"Path {result_path} is outside base directory {base_path}"
+        ) from None
 
     return result_path
 
