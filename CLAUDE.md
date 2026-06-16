@@ -219,8 +219,24 @@ ruling, a contingency, or a deliberate-omission note.
    countdown. `_renderSchedule` reuses the `_actData` the window ALREADY polls
    from /api/scheduler/activity (no new endpoint, no extra poll; only while the
    window is open); honest empty state ×12; +20 strings ×12. Enforced in
-   test_ui_invariants (#20 + #20b + #20c). REMAINING: History, per-job
-   bandwidth/ETA controls.
+   test_ui_invariants (#20 + #20b + #20c). PER-JOB CONTROLS EXTENDED (Item 2,
+   SHIPPED 2026-06-16, conservative/browser-unverified): the ONE `_jobRow`
+   renderer now serves BOTH bulk-download kinds — OSM-region downloads gained the
+   wiki-dump control grammar (pause/↑↓-reorder/cancel) and EVERY paused/failed
+   download (wiki + OSM) gained a RESUME button. Reorder is kind-aware
+   (`_reorderEndpoint`: /api/jobs/dumps/reorder vs /osm/reorder — each manager
+   owns its queue; `queuedKeysByKind` so ↑↓ never crosses kinds). Resume =
+   `jobResume(id)` → ensureOnline (invariant #14, a resume re-opens a fetch) →
+   POST `/api/jobs/{id}/resume`; backend `_dl_actions` makes paused/failed offer
+   `["resume"]` (a re-cancel would 404 on the owner — permanent delete stays in
+   Settings, as the cancel detail says), routed to new `DumpDownloadManager.resume`
+   / `OsmDownloadManager.resume` (both call start() to continue the partial file).
+   +2 strings ×12 (Resume a paused download · Resumed.); test_ui_invariants #20d +
+   tests/test_jobs_resume.py. REMAINING: History; per-job RATE/ETA/bandwidth-cap —
+   DELIBERATELY omitted (the owners report only bytes/percent, NOT a rate; an
+   honest rate needs owner-measured bytes-over-time in the manager — never a
+   client-side guess across the adaptive poll; the cap needs a backend that
+   supports throttling, which it does not yet).
 21. **INSIGHTS auto-indexes; no "Index corpus" button (UI_SHELL §6, SHIPPED
    #132):** indexing follows ingest (the index_article hook) + a SILENT
    background top-up (`autoIndexInsights`) clears any legacy backlog when
@@ -324,9 +340,12 @@ ruling, a contingency, or a deliberate-omission note.
   /api/geo/regions|downloads; SETTINGS FRONTEND SHIPPED 2026-06-16 (Settings → Offline
   map subtab: region picker + resumable download-job table, start gated by ensureOnline
   #14, +9 i18n ×12, test #27); OSM downloads SURFACE IN /api/jobs 2026-06-16 (_osm_jobs
-  + osm: cancel + /api/jobs/osm/reorder, tests/test_osm_jobs.py); see BACKLOG Group M.
-  REMAINING: the per-job rate/%/ETA/cap CONTROLS in the task-manager window UI + the
-  renderer] + a HAND-ROLLED lightweight offline vector map (canvas 2.5D /
+  + osm: cancel + /api/jobs/osm/reorder, tests/test_osm_jobs.py); PER-JOB UI CONTROLS
+  SHIPPED 2026-06-16 (Item 2): the task-manager `_jobRow` now renders pause/↑↓-reorder/
+  cancel + RESUME for OSM downloads (kind-aware reorder; resume gated by ensureOnline) —
+  see the #20 ledger entry. REMAINING: per-job RATE/ETA + bandwidth CAP (deferred —
+  owners report bytes/percent only, not a rate; needs owner-measured bytes-over-time +
+  a throttling backend, never a client-side guess)] + a HAND-ROLLED lightweight offline vector map (canvas 2.5D /
   CSS-3D, NO WebGL/Three.js; reuse the bundled Natural-Earth coastline) + the
   temporal-map remainder (linear/log toggle; mention layer fed by event-places); (e)
   NEW OFFICIAL-STATISTICS INGESTION (the FUTURE_DEVELOPMENTS design — gov +
@@ -338,9 +357,21 @@ ruling, a contingency, or a deliberate-omission note.
   (ingest_agencies_as_sources → DISABLED controversial Sources, idempotent, no
   fabricated score) + GET /api/stats/agencies + POST /api/stats/sources/ingest + a Settings →
   Statistics SUBTAB (descriptive directory + register-as-sources button, home URLs via
-  extLink #6, +19 i18n ×12, shipped 2026-06-16); see BACKLOG Group N. REMAINING: SDMX/API
-  fetch + figure-level provenance/vintages/comparability/triangulation + a filterable
-  registered-sources view]. THE FOUR FORKS
+  extLink #6, +19 i18n ×12, shipped 2026-06-16); SDMX/WORLD-BANK PARSER CORE SHIPPED
+  2026-06-16 (Item 5, offline/fixture-tested): src/stats/sdmx.py = a PURE network-free
+  parser — parse_worldbank (WB API v2 JSON) + parse_sdmx_json (SDMX-JSON 2.1, Eurostat/IMF,
+  resolves dimension index paths → ref_area/indicator/time_period + unit/adjustment/base_year
+  only-when-stated) → provenance-rich StatFigure; NO score, never averages, extracted_at =
+  caller-stamped vintage, published gap → value=None (Eurostat ':' too); tests/test_sdmx_parse.py
+  (9). LIVE FETCH CLIENT SHIPPED 2026-06-16 (Item 5, fixture-tested): src/stats/fetch.py = the
+  ONLY networked stats layer — worldbank_url/eurostat_url builders + fetch_worldbank/
+  fetch_eurostat that GET through guarded_session (kill switch + Tor proxy, transport never
+  downgraded; per-URL circuit isolation), REFUSE up front while airplane mode is engaged, and
+  DELEGATE all parsing to sdmx.py (no robots here — documented API endpoints follow their own
+  etiquette). Injectable getter → network-free tests incl. a kill-switch test proving NO socket
+  is attempted offline (tests/test_stats_fetch.py, 11). see BACKLOG Group N. REMAINING: a
+  CONSENTED API endpoint + a visible task-manager job over fetch.py; figure-level provenance/
+  vintages DB schema; comparability/triangulation; a filterable registered-sources view]. THE FOUR FORKS
   (ruled 2026-06-16): (1) the offline READER stays STANDALONE (not folded into #an);
   (2) the convergence WATCH engine = the FULL 'Watches view + history' UX (saved local
   conditions → a Lead card on match + a dedicated Watches panel: history +
@@ -1146,18 +1177,24 @@ ruling, a contingency, or a deliberate-omission note.
   honestly — a connecting line ONLY when dense (lineMin=8), otherwise discrete
   DOTS with n + the early-corpus caveat (reused keyed string, ×12), 0 points =
   "not enough points in this window"; never a curve faked through a handful of
-  points. Enforced by test_ui_invariants #16. REMAINING in this commodities item:
-  (1) category subtabs, (2) the time-scope range control, (4) click-a-graph →
-  the analysis window. Precision limited ONLY by gathered data + renderer.
-  (4) CLICK A GRAPH → a DEDICATED WINDOW/TAB (like search results), NOT the
-  bottom-of-page #mkt-chart (index.html:1214, current onclick chartSymbol →
-  detail+correlation at the bottom). The window IS the corpora flagship with
-  the coherent sub-tabs: keywords · When/Where/Who · mindmap · corpus
-  analytics · source analytics · links · the price curve with the article
-  timeline OVERLAID (commodity-click → keyword-family corpus, already ruled in
-  the corpora entry; co-occurrence NEVER causation). S&P500 is an INDEX, not a
-  commodity — reclassify; expand feeds (rare
-  earths, oil, gas, LNG, sand, cereals, sugar…). **Tor/indices diagnosis
+  points. Enforced by test_ui_invariants #16. COMMODITIES ITEM STATUS: (1) category
+  subtabs SHIPPED (ooSubtabs `_mktCatTabs`/`selectCommodityCat`, data-driven from
+  `s.category`, "All" default lens), (2) the time-scope range control SHIPPED
+  (ooTimeScope, PR #197), (4) click-a-graph → the analysis window SHIPPED (title ⊞ +
+  "Analyse ↗" → openAnalysisFor). PRICE × COVERAGE OVERLAY SHIPPED 2026-06-16 (Item 3,
+  conservative/browser-unverified): the analysis window gained a commodity-GATED Price
+  subtab (`#an-price-tab`/`#an-price`, hidden unless `_anCommodity` is set) — the card
+  passes `{commodity:{symbol,name,unit}}` through openAnalysisFor's new opts arg, and
+  `commodityOverlaySvg` draws a TRUE time-aligned DUAL-AXIS SVG: the PRICE curve (left
+  axis, line + real sample dots) over the corpus COVERAGE (right axis, bars from
+  /api/insights/trend) on a SHARED time X — each series on its OWN labelled scale (no
+  magnitude conflation, no fabricated shared baseline), reusing existing endpoints (no
+  new backend). The co-occurrence-NEVER-causation caveat is VISIBLE; honest empty states
+  (no price / no coverage). +3 i18n ×12 (Price · Price × coverage · No corpus coverage to
+  overlay yet.); test_ui_invariants #22b. Precision limited ONLY by gathered data +
+  renderer. REMAINING: S&P500 is an INDEX, not a commodity — reclassify; expand feeds
+  (rare earths, oil, gas, LNG, sand, cereals, sugar…); the bottom-of-page #mkt-chart
+  price-detail (chartSymbol) stays as the in-place detail (the Desk lesson — not removed). **Tor/indices diagnosis
   (logs analyzed 2026-06-12) — SHIPPED in T4:** transport-aware verdict
   taxonomy (refused ≠ robots-disallowed ≠ dead-series ≠ unreachable ≠
   offline) + one bounded feed-level retry for transient verdicts only +
@@ -1191,6 +1228,31 @@ ruling, a contingency, or a deliberate-omission note.
   source, ≥25% of its articles, both ≥10 — flagged with real counts, never
   auto-hidden); language_mismatch flag per keyword (stored vs dominant
   signature language — evidence, not a correction).
+  **KEYWORD-LOG OPTIMIZATION LOOP — TOOL + BATCH SHIPPED 2026-06-16 (draft PR onto
+  0.09; operationalizes the maintainer's "the logging system creates manageable
+  documents you can ingest" intent):** `scripts/analyze_keyword_log.py` (stdlib-only,
+  runs without the app installed) ingests a `keyword-diagnostics` export (oo-export-1)
+  and emits REVIEW-ready proposals — net-new per-language stopword candidates (diffed
+  vs the live `_EXTRA_STOPWORD_TEXT`+stopwords.py, split high-confidence vs review using
+  language_signature CONCENTRATION so names/loan-words that SPREAD demote to review),
+  weekday leaks, cross-source + per_source_concentration boilerplate, sentence-initial
+  false-entity candidates, cross-language ring candidates (top-concepts-per-language for
+  hand-mapping + LOW-confidence cognate hints), and singular/plural family-merge pairs.
+  It PROPOSES, never edits data (honesty by construction). FIRST BATCH APPLIED from the
+  2026-06-14 export (1,201-art corpus): a new dated `_EXTRA_STOPWORD_TEXT` block adds the
+  surfaced FUNCTION words ×14 langs (de können/sondern, ru чтобы/которые, hu szerint/
+  pedig, id dalam/oleh, sl tudi/kot, ar خلال/قبل, it/pt/pl/da/sr/es/fr…), the missing
+  WEEKDAY names ×16 langs (the month passes never covered weekdays — "Sunday"/"sábado"/
+  "lørdag" were top keywords), and sr comment-widget + da paywall BOILERPLATE; applied
+  retroactively at query time (no migration/re-index). Cross-language COLLISIONS
+  deliberately omitted (sea/tom/fin/laut — global_stopwords() is unioned across all
+  langs). tests/test_keyword_log_analyzer.py (10) covers the analyzer + a regression
+  guard that the batch words ARE filtered and the collisions are NOT. REMAINING (queued,
+  bigger): wire keyword_equivalents.yml into LIVE analytics (the "Trans-language
+  equivalence" entry — verified NOT wired); fix sentence-initial-capital false entities
+  (~1041 common words tagged kind=entity); singular/plural family merge (~2753 pairs,
+  display-layer, risk of over-merge — guarded); the Item AC pre-tagged per-language
+  baseline + keyword-management Settings subtab (endorsed, unbuilt).
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,
@@ -1443,6 +1505,20 @@ ruling, a contingency, or a deliberate-omission note.
     caveats VISIBLE by default (#23) even in compact tiles; the carousel is
     user-controlled + a11y (pausable/keyboard) and NEVER hides a caveat behind a
     timed rotation; Home never blank-and-silent (fail-safe empty state).
+    **TRENDS GLANCE SHIPPED 2026-06-16 (Item 4b, first dashboard section,
+    conservative/browser-unverified):** a compact "Trending now" panel
+    (`#home-trends-panel`/`#home-trends`, `loadHomeTrends`) renders the PAST-WEEK
+    rising keywords (the disclosed window-vs-baseline RATE from
+    /api/insights/trending-windows — NEVER a score) as chips with a small honest
+    sparkline (`dashChartSvg`: line dense / Item-Y bars sparse). REDUNDANT by
+    construction (#8): each term DEEP-LINKS to its analysis window (openAnalysisFor),
+    "More in Insights →" deep-links to the canonical Trends subtab; the API caveat
+    is VISIBLE; the panel DEFAULTS HIDDEN and only appears when something is trending
+    (Home never blank-and-silent — the Briefing still renders). Reuses the existing
+    endpoint + renderer (no new backend, no new poll — rides loadHome +
+    refreshHomeLive). +2 i18n ×12; test_ui_invariants #19c. REMAINING: top
+    ooChart graphs, the synthesized-Leads carousel (pausable/a11y), dynamic
+    commodity-when-trending sections, most-recent-by-tag.
   - **(3) NAME THE CARD SYSTEM (brainstorm WITH the maintainer — NO name chosen
     yet):** today = "briefing cards" / "producers" / "buckets" (src/briefing). A
     card = one measured signal + evidence + method + caveat = a SOURCED, CAVEATED

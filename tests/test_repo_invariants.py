@@ -544,6 +544,29 @@ def test_ui_invariants():
         "the family lens must default to an 'All Leads' subtab (§5)"
     )
     assert "--fam:" in html, "cards must carry the family-hue left accent (§5)"
+    # 19c. Home → dashboard / helicopter view (UI rethink, Item 4b): a compact
+    #      "Trending now" glance is REDUNDANT by design — it hides when nothing is
+    #      trending (Home never blank-and-silent: the Briefing still renders) and
+    #      every term DEEP-LINKS to its real tab (the analysis window; "More in
+    #      Insights →" to the canonical Trends view). Fed by the disclosed
+    #      window-vs-baseline rate (never a score); reuses the existing endpoint.
+    assert 'id="home-trends-panel"' in home and 'id="home-trends"' in home, (
+        "Home must carry the (redundant, deep-linking) Trending-now dashboard panel (Item 4b)"
+    )
+    assert "function loadHomeTrends(" in html and "loadHomeTrends()" in html, (
+        "loadHomeTrends() must render Home trends and be called from loadHome (Item 4b)"
+    )
+    assert "/api/insights/trending-windows" in html.split("function loadHomeTrends(", 1)[1][:600], (
+        "Home trends must reuse the trending-windows endpoint (no new backend, Item 4b)"
+    )
+    # Redundant + deep-linking: the panel is hidden until there is data, and a term
+    # opens the analysis window (openAnalysisFor); nothing on Home is unique (#8).
+    assert 'id="home-trends-panel" hidden' in home, (
+        "the Home trends panel must default hidden (Home never blank-and-silent, Item 4b)"
+    )
+    assert "_insSubtabs&&_insSubtabs.select('trends')" in home, (
+        "the Home 'More in Insights' link must deep-link to the Trends subtab (Item 4b)"
+    )
     # 20. Task-manager window (ruled ×3): the vitals BUBBLE graduates to a
     #     dedicated tabbed WINDOW driven by the universal subtab component, with
     #     at least Tasks + System tabs. (Slice 1 — reuses the proven render/poll.)
@@ -571,12 +594,30 @@ def test_ui_invariants():
     assert 'data-tab="queue"' in html and "onclick" not in (
         html.split('id="tm-subtabs"', 1)[1].split("</nav>", 1)[0]
     ), "the Queue subtab must use data-tab via ooSubtabs, never inline onclick (CLAUDE.md #18)"
-    assert "function _jobRow(" in html and "_jobRow(j, queuedKeys, t)" in html, (
+    assert "function _jobRow(" in html and "_jobRow(j, queuedKeysByKind, t)" in html, (
         "Active and Queue must share ONE job-row renderer (_jobRow) so controls stay identical"
     )
     # The Queue must still drive the real reorder endpoint (no invented backend).
     assert "/api/jobs/dumps/reorder" in html, (
         "the Queue reorder must POST the existing /api/jobs/dumps/reorder endpoint"
+    )
+    # 20d. Per-job controls extended to OSM-region downloads + a Resume action
+    #      for paused/failed downloads (Item 2, Groups C/M). ONE row renderer now
+    #      serves BOTH bulk-download kinds (wiki dumps + OSM regions); reorder is
+    #      kind-aware (each manager owns its queue) and resume routes through the
+    #      ONE network-consent popup (a resume re-opens a fetch — invariant #14).
+    assert '_isDownloadKind(' in html and 'k === "osm-map"' in html, (
+        "the job-row controls must cover OSM-region downloads, not only wiki dumps (Item 2)"
+    )
+    assert "/api/jobs/osm/reorder" in html, (
+        "OSM queued downloads must reorder via the existing /api/jobs/osm/reorder endpoint"
+    )
+    assert "function jobResume(" in html and "/resume" in html, (
+        "paused/failed downloads must offer Resume via jobResume() -> /api/jobs/{id}/resume"
+    )
+    _resume_body = html.split("function jobResume(", 1)[1][:500]
+    assert "ensureOnline(" in _resume_body, (
+        "jobResume must pass the ONE network-consent popup (invariant #14) before resuming"
     )
     # 20c. Sources/Schedule (CLAUDE.md #20 REMAINING): the same window gains a
     #      Schedule subtab surfacing the REAL collection schedule/activity. It is
@@ -676,6 +717,26 @@ def test_ui_invariants():
         "the analysis window must carry the Advanced-search tab that re-runs the "
         "analysis from refined filters (Group F, keystone #4)"
     )
+    # 22b. Markets commodity overlay (Item 3, Group G): a commodity click opens the
+    #      analysis window with a conditionally-shown Price subtab that overlays the
+    #      PRICE curve with the corpus COVERAGE timeline on a SHARED time axis —
+    #      co-occurrence, NEVER causation (shown visible). Dual LABELLED axes (each
+    #      series its own scale; no magnitude conflation); reuses existing endpoints.
+    assert 'data-tab="price"' in html and 'id="an-price-tab"' in html and 'id="an-price"' in html, (
+        "the analysis window must carry the (commodity-gated) Price overlay subtab (Item 3)"
+    )
+    assert "function commodityOverlaySvg(" in html and "function renderAnPrice(" in html, (
+        "the price x coverage overlay renderer + its loader must exist (Item 3)"
+    )
+    # Seeded by the commodity card (the title/Analyse buttons pass {commodity:...})
+    # and threaded through openAnalysisFor's opts into _anCommodity.
+    assert "_anCommodity" in html and "opts && opts.commodity" in html and "{commodity:" in html, (
+        "the commodity identity must thread from the card into the Price overlay (Item 3)"
+    )
+    # The binding caveat must be VISIBLE in the overlay panel (informed consent).
+    assert (
+        'co-occurrence in your corpus, never causation' in html.split("function renderAnPrice(", 1)[1][:1500]
+    ), "the Price overlay must show the co-occurrence-never-causation caveat (Item 3)"
     # 23. Caveats are VISIBLE BY DEFAULT (permanent informed-consent invariant —
     #     CLAUDE.md Non-negotiables): a briefing card's CAVEAT renders in a visible
     #     .card-caveat line, NEVER hidden behind the method toggle. Only the verbose
@@ -1689,9 +1750,11 @@ def test_commodity_corpus_entry():
         "the graph must carry a keyed 'Analyse' affordance"
     )
     # that affordance opens the analysis window WITHOUT hijacking the card's own
-    # price-detail click (stopPropagation), and seeds the curated family query
-    assert "event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))})" in html, (
-        "the commodity graph 'Analyse' must open the window on the family query"
+    # price-detail click (stopPropagation), seeds the curated family query, AND
+    # carries the commodity identity (Item 3) so the Price overlay subtab can show
+    # the price curve x corpus coverage.
+    assert "event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})" in html, (
+        "the commodity graph 'Analyse' must open the window on the family query + commodity opts"
     )
     # the PRICE-DETAIL + correlation path is NOT removed (the Desk lesson)
     assert "function chartSymbol(" in html, "the commodity price-detail handler must stay"

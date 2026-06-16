@@ -163,6 +163,17 @@
         <div id="home-status" class="hint" style="margin:0"></div>
       </div>
 
+      <!-- Home dashboard: a compact "Trending now" glance (UI rethink, Home →
+           helicopter view). REDUNDANT by design — every term deep-links to its
+           real tab (the analysis window / Insights → Trends); nothing here is
+           unique. Populated by loadHomeTrends() from /api/insights/trending-
+           windows (the disclosed window-vs-baseline rate, never a score). -->
+      <section class="panel" id="home-trends-panel" hidden>
+        <div class="phead"><h2>Trending now</h2><span class="sp"></span>
+          <a href="#insights" class="hint" style="margin:0" onclick="showTab('insights');_insSubtabs&&_insSubtabs.select('trends');return false">More in Insights →</a></div>
+        <div id="home-trends"><div class="muted">Loading…</div></div>
+      </section>
+
       <section class="panel">
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
           <span id="brief-generated" class="hint" style="margin:0"></span></div>
@@ -242,6 +253,7 @@
         <button data-tab="links">Links</button>
         <button data-tab="sentiment">Sentiment</button>
         <button data-tab="sources">Sources</button>
+        <button data-tab="price" id="an-price-tab" style="display:none">Price</button>
         <button data-tab="advanced">Advanced</button>
       </nav>
       <div class="an-panel" id="an-keywords" style="margin-top:10px">
@@ -253,6 +265,7 @@
       <div class="an-panel" id="an-links" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-sentiment" style="display:none;margin-top:10px"></div>
       <div class="an-panel" id="an-sources" style="display:none;margin-top:10px;overflow:auto"></div>
+      <div class="an-panel" id="an-price" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-advanced" style="display:none;margin-top:10px">
         <div class="hint muted">Refine which articles this window analyzes.</div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:8px">

@@ -37,6 +37,30 @@
 > nav-to-top + Home→dashboard + 3D explorer; Markets category subtabs + click→analysis;
 > agenda content; task-manager remainder; in-app Ollama installer; geo/OSM (Group M);
 > official-statistics (Group N); convergence Watches view; Win/mac install + release eng.
+>
+> **AUTONOMOUS SESSION 2026-06-16 (cont.) — draft PRs #272–278 onto `0.09` (same gate: full
+> local suite green · mypy 112 · node --check · i18n 100% ×12; each PR conservative + flagged
+> where browser-unverifiable). Shipped (all 5 merged, +2 open):** (1) **#272** Item 1 — Trends
+> sparkline **click-to-enlarge** into the interactive `ooChart` via a reusable
+> `chart-enlarge` dialog (invariant #21b++). (2) **#273** Item 2 — task-manager **per-job
+> controls extended to OSM** downloads + a **Resume** action for paused/failed downloads
+> (`_dl_actions`, `jobResume`→`ensureOnline`→`/api/jobs/{id}/resume`, manager `resume()`;
+> invariant #20d). (3) **#274** Item 5-core — offline **SDMX-JSON + World Bank parser**
+> (`src/stats/sdmx.py`, `StatFigure`; no score, vintages, gaps→None). (4) **#275** Item 3 —
+> commodity **price × coverage overlay** in the analysis window (commodity-gated Price subtab,
+> dual-axis `commodityOverlaySvg`, co-occurrence-never-causation; invariant #22b). (5) **#276**
+> Item 4b — Home **"Trending now"** dashboard glance (redundant/deep-linking; invariant #19c).
+> (6) **#277** docs — CHANGES.md user-facing 0.09 entries. (7) **#278** Item 5 — **live SDMX
+> fetch client** (`src/stats/fetch.py`, guarded-factory, kill-switch-refuses-up-front,
+> delegates to the parser). NEXT (unstarted): Item 4 big pieces — **nav-to-top facet strip**
+> (#2/#3/#4), **Insights = canonical Leads home** + remove its search bar (gated on the omnibar
+> absorbing term-exploration), **named parallel Analysis tabs + #an↔#corpus consolidation**
+> (architecturally significant), the **3D keyword explorer** (hand-rolled canvas 2.5D), Home(2)
+> remainder (top ooChart graphs · carousel · most-recent-by-tag) — ALL need browser
+> verification; Item 5 follow-ups (consented endpoint+job over `fetch.py` · figure-level
+> provenance/vintages **DB schema** · triangulation · registered-sources view); Item 6
+> release-eng (win/mac install paths · version 0.0.9→0.1 sweep · release artifacts+SHA256SUMS ·
+> docs↔code reciprocity sweep · final RC review).
 
 ## The keystones (shared building blocks that unblock many items)
 
@@ -158,8 +182,15 @@ makes the rest fall out cheaply:
   (Tasks + System) opened from the activity chip; render/poll reused unchanged
   (`test_ui_invariants` #20). REMAINING: split Tasks → Active/Queue, add
   History + Sources/Schedule, and the per-job controls below.
-- ⬜ **Per-job controls**: rate · % · speed · bandwidth cap · ETA · pause ·
-  resume · prioritize · de-prioritize.
+- 🔨 **Per-job controls**: pause · resume · cancel · ↑/↓ reorder SHIPPED for BOTH
+  bulk-download kinds (wiki dumps + OSM regions) via the ONE `_jobRow` renderer
+  (Item 2, 2026-06-16; resume routes through `ensureOnline`, invariant #14;
+  `_dl_actions` makes paused/failed offer Resume; `test_ui_invariants` #20d +
+  `tests/test_jobs_resume.py`). REMAINING: % is shown; rate · speed · ETA ·
+  bandwidth cap are DEFERRED — the owners report only bytes/percent, so an honest
+  rate/ETA needs owner-measured bytes-over-time in the managers (never a
+  client-side guess across the adaptive poll) and the cap needs a throttling
+  backend that does not exist yet.
 - ⬜ **Download-manager arbitration**: every network task a visible job;
   new requests queue, never a swallowed modal. (SCRAPING plan Step 7)
 
@@ -206,6 +237,15 @@ makes the rest fall out cheaply:
   strip pinned at the TOP; Quick actions removed (#128); denser cards (4+) + card
   families as vertical subtabs via `ooSubtabs` with an "All cards" default lens +
   family-color accents (#129). `test_ui_invariants` #19/#19b.
+- 🔨 **Home → dashboard / helicopter view** (UI rethink, Item 4b) — FIRST section
+  shipped: a compact **"Trending now"** glance (`#home-trends-panel` / `loadHomeTrends`)
+  = the past-week rising keywords (disclosed window-vs-baseline rate, never a score)
+  as chips + honest sparklines (`dashChartSvg`), each deep-linking to its analysis
+  window; "More in Insights →" deep-links to the Trends subtab. REDUNDANT by design
+  (#8); panel hidden until there's data (never blank-and-silent); reuses the existing
+  endpoint (no new backend/poll); `test_ui_invariants` #19c. Browser-unverified.
+  REMAINING: top ooChart graphs, a pausable/a11y synthesized-Leads carousel, dynamic
+  commodity-when-trending sections, most-recent-by-tag.
 - ✅ **Insights** — sections already presented as subtabs (via `ooSubtabs`, #127);
   the "Index corpus" button + palette action are removed and replaced by a silent
   background top-up that runs on Insights open when behind (`autoIndexInsights`),
@@ -241,16 +281,24 @@ makes the rest fall out cheaply:
 
 ## G. Markets / commodities
 
-- ⬜ **Split graphs into category tabs** (universal subtabs).
-- ⬜ **Time-scope picker** replaces the 5-choice range (begin/end/timescale,
-  built once, shared with search).
+- ✅ **Split graphs into category tabs** (universal subtabs) — `renderDashboard`
+  groups by `s.category` into `ooSubtabs` (`_mktCatTabs` / `selectCommodityCat`),
+  data-driven (only present categories), "All" default lens, skip when one category.
+- ✅ **Time-scope picker** replaces the 5-choice range (begin/end/timescale,
+  built once as `ooTimeScope`, shared with search; PR #197).
 - ✅ **Sparse-series data-point bug** — the `<2`-points fallback that dumped full
   history (so "1 month" paradoxically showed the most points) is gone:
   `renderDashboard` respects the window and `dashChartSvg` renders honestly — a
   line only when dense (`lineMin=8`), else discrete dots with `n` + the
   early-corpus caveat. (invariant #16; `test_ui_invariants`)
-- ⬜ **Click a graph → the analysis window** (group F), not bottom-of-page;
-  price curve with the article timeline overlaid.
+- ✅ **Click a graph → the analysis window** (Item 3, Group F) — the card title ⊞ +
+  "Analyse ↗" open `openAnalysisFor` (the bottom-of-page `#mkt-chart` price detail stays,
+  the Desk lesson). The **price curve + article-timeline OVERLAY** ships as a
+  commodity-gated **Price** subtab (`#an-price`): `commodityOverlaySvg` draws a
+  time-aligned DUAL-AXIS SVG — price line (left axis, real sample dots) over corpus
+  coverage bars (right axis) on a shared time X, each on its OWN labelled scale (no
+  magnitude conflation). Seed map = `COMMODITY_QUERY`; co-occurrence never causation
+  (visible); reuses existing endpoints; `test_ui_invariants` #22b. Browser-unverified.
 - ✅ **S&P500 reclassify** — already an index: it lives in `index_feeds.yml`
   (category `index`) and `list_series` excludes index symbols from the commodities
   board; the dashboard filters `category !== "index"`. Test-guarded now. REMAINING
@@ -370,6 +418,10 @@ makes the rest fall out cheaply:
   `osm-map`, real queue_position, progress, actions) — aggregated live, no shadow state;
   a downloading extract writes a FILE so it never trips the DB-writer arbitration ask;
   `cancel_job` handles `osm:` ids (pause, resumable) + `POST /api/jobs/osm/reorder`.
+  PER-JOB UI CONTROLS SHIPPED 2026-06-16 (Item 2): the task-manager `_jobRow` now
+  renders OSM downloads with pause/↑↓-reorder/cancel + a RESUME button for paused/failed
+  jobs (kind-aware reorder; `jobResume` → `ensureOnline` → `POST /api/jobs/{id}/resume`,
+  backed by new `OsmDownloadManager.resume` / `DumpDownloadManager.resume`); see Group C.
   tests/test_osm_jobs.py. REMAINING: the per-job rate/%/ETA/cap CONTROLS in the
   task-manager window UI (frontend), country sub-extracts, the consented exact-size
   refresh, and the hand-rolled offline map renderer.
@@ -404,9 +456,27 @@ makes the rest fall out cheaply:
   pill + the continents-covered coverage line; home URLs via `extLink` so they open the
   LOCAL preview, invariant #6; no figures/score) + a one-click "Register as sources" button
   over `POST /api/stats/sources/ingest` (idempotent local DB write, no consent gate, tally +
-  caveat shown); +19 i18n ×12; test_ui_invariants. REMAINING: SDMX/API fetch before
-  scraping, figure-level provenance + vintages + comparability guards, side-by-side
-  triangulation, IPCC forecast-tracking; a filterable view of the registered stats sources.
+  caveat shown); +19 i18n ×12; test_ui_invariants.
+  SDMX/WORLD-BANK PARSER CORE SHIPPED 2026-06-16 (Item 5, offline): `src/stats/sdmx.py` —
+  a PURE (network-free) parser turning already-decoded official responses into
+  provenance-rich `StatFigure` rows. `parse_worldbank` (World Bank API v2 JSON
+  `[meta,[obs]]`) + `parse_sdmx_json` (SDMX-JSON 2.1 data message, Eurostat/IMF — resolves
+  each series+observation key back to its dimension value ids: ref_area / indicator /
+  time_period, surfacing unit/adjustment/base_year ONLY when stated). Honesty enforced in
+  code: NO score/ranking, never averages producers; `extracted_at` is the caller-stamped
+  VINTAGE (verbatim, never overwritten); a published gap → `value=None` (Eurostat's `:`
+  too) — never 0, never dropped. `tests/test_sdmx_parse.py` (9: both shapes, gaps, absent
+  vs present comparability, base-year-only-when-stated, vintage stamping, no-score).
+  LIVE FETCH CLIENT SHIPPED 2026-06-16 (Item 5, fixture-tested): `src/stats/fetch.py` — the
+  ONLY networked stats layer. `worldbank_url`/`eurostat_url` builders + `fetch_worldbank`/
+  `fetch_eurostat` GET through `guarded_session` (kill switch + Tor proxy, transport never
+  downgraded, per-URL circuit isolation), REFUSE up front under airplane mode, and DELEGATE
+  parsing to `sdmx.py` (no robots — documented API endpoints follow their own etiquette).
+  Injectable getter → network-free tests incl. a kill-switch test proving no socket is
+  attempted offline (`tests/test_stats_fetch.py`, 11). REMAINING follow-up slices: a
+  CONSENTED API endpoint + a visible task-manager job over `fetch.py`; the figure-level
+  provenance/vintages **DB schema**; comparability-guarded **side-by-side triangulation**
+  (never averaged); the filterable **registered-sources view**.
 
 ---
 

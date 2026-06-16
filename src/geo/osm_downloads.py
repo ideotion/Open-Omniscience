@@ -348,6 +348,17 @@ class OsmDownloadManager:
             return True
         return False
 
+    def resume(self, key: str) -> dict | None:
+        """Resume a paused/failed region download via start() (continues the
+        partial file from ``downloaded_bytes``). Returns the entry dict, or None
+        for an unknown key."""
+        key = (key or "").strip().lower()
+        with self._lock:
+            e = self._entries.get(key)
+        if e is None:
+            return None
+        return self.start(e.code, e.name)
+
     def delete(self, key: str) -> bool:
         key = (key or "").strip().lower()
         self.pause(key)
