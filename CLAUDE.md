@@ -1234,7 +1234,16 @@ ruling, a contingency, or a deliberate-omission note.
     into one term = the analysis tab). THE CARDS MOVE from Home INTO Insights =
     their canonical home; Home(2) keeps only a REDUNDANT curated "top cards" subset
     (consistent with #8 + the Home-is-redundant principle). "Upcoming events" here
-    is a redundant lens onto the Agenda tab (fine, by design).
+    is a redundant lens onto the Agenda tab (fine, by design). **TRENDS SUBTAB
+    SPEC (maintainer 2026-06-16):** show RISING keywords across THREE preset
+    windows — past 24h · past week · a longer one (month/all-time, exact span TBD)
+    — side by side (today it is ONE adjustable window via /api/insights/trending
+    window_days+baseline_days) + the TOP 5 keywords each rendered with a rich
+    time-series GRAPH (ooChart, full-resolution invariant #16, sparse→bars per
+    Item Y; today #trd-top is a plain list via /api/insights/top). HONESTY: 24h is
+    sparse on a young corpus → n shown + early-corpus caveat + honest empty state;
+    rising = window-vs-baseline RATE (method stated, no momentum score); top =
+    most-mentioned ordering (basis stated), never a composite score.
   - **(6) UNIFIED 3D KEYWORD EXPLORER (ruled 2026-06-16; maintainer FLAGSHIP —
     "important to me", "incredible UI/UX"; evolves the mind-map rules + #mm-kit;
     lives in Insights per (5)):** THREE fixes + one big rework. FIXES: (a) the
