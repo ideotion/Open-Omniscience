@@ -163,6 +163,17 @@
         <div id="home-status" class="hint" style="margin:0"></div>
       </div>
 
+      <!-- Home dashboard: a compact "Trending now" glance (UI rethink, Home →
+           helicopter view). REDUNDANT by design — every term deep-links to its
+           real tab (the analysis window / Insights → Trends); nothing here is
+           unique. Populated by loadHomeTrends() from /api/insights/trending-
+           windows (the disclosed window-vs-baseline rate, never a score). -->
+      <section class="panel" id="home-trends-panel" hidden>
+        <div class="phead"><h2>Trending now</h2><span class="sp"></span>
+          <a href="#insights" class="hint" style="margin:0" onclick="showTab('insights');_insSubtabs&&_insSubtabs.select('trends');return false">More in Insights →</a></div>
+        <div id="home-trends"><div class="muted">Loading…</div></div>
+      </section>
+
       <section class="panel">
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
           <span id="brief-generated" class="hint" style="margin:0"></span></div>

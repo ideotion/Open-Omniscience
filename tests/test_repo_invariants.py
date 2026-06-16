@@ -544,6 +544,29 @@ def test_ui_invariants():
         "the family lens must default to an 'All Leads' subtab (§5)"
     )
     assert "--fam:" in html, "cards must carry the family-hue left accent (§5)"
+    # 19c. Home → dashboard / helicopter view (UI rethink, Item 4b): a compact
+    #      "Trending now" glance is REDUNDANT by design — it hides when nothing is
+    #      trending (Home never blank-and-silent: the Briefing still renders) and
+    #      every term DEEP-LINKS to its real tab (the analysis window; "More in
+    #      Insights →" to the canonical Trends view). Fed by the disclosed
+    #      window-vs-baseline rate (never a score); reuses the existing endpoint.
+    assert 'id="home-trends-panel"' in home and 'id="home-trends"' in home, (
+        "Home must carry the (redundant, deep-linking) Trending-now dashboard panel (Item 4b)"
+    )
+    assert "function loadHomeTrends(" in html and "loadHomeTrends()" in html, (
+        "loadHomeTrends() must render Home trends and be called from loadHome (Item 4b)"
+    )
+    assert "/api/insights/trending-windows" in html.split("function loadHomeTrends(", 1)[1][:600], (
+        "Home trends must reuse the trending-windows endpoint (no new backend, Item 4b)"
+    )
+    # Redundant + deep-linking: the panel is hidden until there is data, and a term
+    # opens the analysis window (openAnalysisFor); nothing on Home is unique (#8).
+    assert 'id="home-trends-panel" hidden' in home, (
+        "the Home trends panel must default hidden (Home never blank-and-silent, Item 4b)"
+    )
+    assert "_insSubtabs&&_insSubtabs.select('trends')" in home, (
+        "the Home 'More in Insights' link must deep-link to the Trends subtab (Item 4b)"
+    )
     # 20. Task-manager window (ruled ×3): the vitals BUBBLE graduates to a
     #     dedicated tabbed WINDOW driven by the universal subtab component, with
     #     at least Tasks + System tabs. (Slice 1 — reuses the proven render/poll.)
