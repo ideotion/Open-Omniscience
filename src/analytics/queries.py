@@ -522,6 +522,66 @@ def trending(
     }
 
 
+# Preset windows for the Insights "Trends" view (maintainer-ruled 2026-06-16):
+# rising keywords across past 24h · past week · past month, side by side. Each
+# carries its own prior-period baseline (a longer look-back for the longer window).
+_TREND_WINDOWS: tuple[tuple[str, int, int], ...] = (
+    ("24h", 1, 7),    # 1-day window vs the prior 7 days
+    ("7d", 7, 30),    # 1-week window vs the prior 30 days
+    ("30d", 30, 90),  # 1-month window vs the prior 90 days
+)
+
+
+def trending_windows(
+    session,
+    *,
+    country: str | None = None,
+    kind: str | None = None,
+    limit: int = 10,
+) -> dict:
+    """Rising keywords across THREE preset windows side by side (24h · 7d · 30d).
+
+    The substrate for the Insights "Trends" redesign (maintainer-ruled 2026-06-16):
+    each window reuses :func:`trending` (the SAME transparent recent-vs-prior rate
+    ratio, never a composite score). Short windows are sparse on a young corpus, so
+    each term carries its raw ``recent`` count (n) and the caller states the
+    early-corpus honesty. No score; the ratio is a disclosed method.
+    """
+    windows = []
+    for label, wdays, bdays in _TREND_WINDOWS:
+        res = trending(
+            session,
+            window_days=wdays,
+            baseline_days=bdays,
+            country=country,
+            kind=kind,
+            limit=limit,
+            # 24h on a young corpus is thin — don't gate it out; show n + caveat.
+            min_recent=1 if wdays == 1 else 2,
+        )
+        windows.append(
+            {
+                "label": label,
+                "window_days": wdays,
+                "baseline_days": bdays,
+                "terms": res["terms"],
+                "count": res["count"],
+                "scanned": res["scanned"],
+            }
+        )
+    return {
+        "windows": windows,
+        "method": (
+            "Rising keywords per window: recent volume vs the prior-period rate "
+            "(a disclosed ratio, never a score)."
+        ),
+        "caveat": (
+            "Short windows (24h) are sparse on a young corpus — read the count (n) "
+            "before the ratio; with many terms scanned, some ratios run high by chance."
+        ),
+    }
+
+
 def _group_pairs(pairs: list[dict], overrides: dict[str, dict] | None = None) -> list[dict]:
     """Merge co-occurring surface variants into one family node (for the mind-map).
 

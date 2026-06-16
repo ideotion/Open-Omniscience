@@ -279,6 +279,20 @@ def insights_trending(
     )
 
 
+@router.get("/trending-windows")
+def insights_trending_windows(
+    country: str | None = None,
+    kind: str | None = None,
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Rising keywords across THREE preset windows side by side — past 24h · past
+    week · past month — for the Insights "Trends" redesign (maintainer-ruled
+    2026-06-16). Each window is the transparent recent-vs-prior ratio (no score);
+    short windows are sparse, so n + the early-corpus caveat travel with the data."""
+    return q.trending_windows(db, country=country, kind=_kind(kind), limit=limit)
+
+
 @router.get("/trend")
 def insights_trend(
     term: str,
