@@ -1042,5 +1042,11 @@
   "already present": "موجودة بالفعل",
   "skipped (no domain)": "تم تخطّيها (بلا نطاق)",
   "Statistics producers registered.": "تم تسجيل جهات إنتاج الإحصاءات.",
-  "Could not register the producers.": "تعذّر تسجيل الجهات المنتِجة."
+  "Could not register the producers.": "تعذّر تسجيل الجهات المنتِجة.",
+  "Collection speed (download-rate target)": "سرعة الجمع (معدل التنزيل المستهدف)",
+  "Maximum": "الحد الأقصى",
+  "Now": "الآن",
+  "workers": "مهام",
+  "Download rate is steered by concurrency: more parallel hosts means higher throughput, up to a safe ceiling. The app measures its own real download rate and raises or lowers the number of concurrent hosts to track your target, backing off automatically when CPU, memory or the single encrypted writer become the limit (see the collection-performance log in the debug bundle). Per-host politeness is never traded for speed.": "يُتحكَّم في معدل التنزيل عبر التوازي: المزيد من المضيفين المتوازيين يعني إنتاجية أعلى، حتى حدّ آمن. يقيس التطبيق معدل التنزيل الحقيقي الخاص به ويزيد أو يقلّل عدد المضيفين المتزامنين لتتبّع هدفك، مع التراجع تلقائيًا عندما يصبح المعالج أو الذاكرة أو الكاتب المشفّر الوحيد هو القيد (انظر سجل أداء الجمع في حزمة التصحيح). لا يُضحّى أبدًا بالتأدّب تجاه كل مضيف من أجل السرعة.",
+  "A target, not a guarantee. The app adjusts how many sources it fetches at once to approach this rate — always across DIFFERENT sites, never hammering one (robots.txt and per-host limits are respected). Actual speed is limited by the sources, your connection (much lower over Tor), your CPU and the encrypted database. “Maximum” fetches as fast as your machine and the sources allow.": "هدف وليس ضمانًا. يضبط التطبيق عدد المصادر التي يجلبها في وقت واحد للاقتراب من هذا المعدل — دائمًا عبر مواقع مختلفة، ولا يُثقل أبدًا على موقع واحد (يُحترَم robots.txt والحدود لكل مضيف). السرعة الفعلية محدودة بالمصادر واتصالك (أقل بكثير عبر Tor) ومعالجك وقاعدة البيانات المشفّرة. ”الحد الأقصى“ يجلب بأسرع ما تسمح به آلتك والمصادر."
 }

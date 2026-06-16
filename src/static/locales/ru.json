@@ -1042,5 +1042,11 @@
   "already present": "уже есть",
   "skipped (no domain)": "пропущено (нет домена)",
   "Statistics producers registered.": "Производители статистики зарегистрированы.",
-  "Could not register the producers.": "Не удалось зарегистрировать производителей."
+  "Could not register the producers.": "Не удалось зарегистрировать производителей.",
+  "Collection speed (download-rate target)": "Скорость сбора (целевая скорость загрузки)",
+  "Maximum": "Максимум",
+  "Now": "Сейчас",
+  "workers": "потоков",
+  "Download rate is steered by concurrency: more parallel hosts means higher throughput, up to a safe ceiling. The app measures its own real download rate and raises or lowers the number of concurrent hosts to track your target, backing off automatically when CPU, memory or the single encrypted writer become the limit (see the collection-performance log in the debug bundle). Per-host politeness is never traded for speed.": "Скорость загрузки регулируется параллелизмом: больше параллельных хостов — выше пропускная способность, вплоть до безопасного предела. Приложение измеряет собственную реальную скорость загрузки и увеличивает или уменьшает число одновременных хостов, чтобы выдержать вашу цель, автоматически снижая нагрузку, когда узким местом становятся процессор, память или единственный шифрованный писатель (см. журнал производительности сбора в пакете отладки). Вежливость к каждому хосту никогда не приносится в жертву скорости.",
+  "A target, not a guarantee. The app adjusts how many sources it fetches at once to approach this rate — always across DIFFERENT sites, never hammering one (robots.txt and per-host limits are respected). Actual speed is limited by the sources, your connection (much lower over Tor), your CPU and the encrypted database. “Maximum” fetches as fast as your machine and the sources allow.": "Цель, а не гарантия. Приложение регулирует, сколько источников загружается одновременно, чтобы приблизиться к этой скорости — всегда на РАЗНЫХ сайтах, никогда не перегружая один (robots.txt и ограничения для каждого хоста соблюдаются). Реальная скорость ограничена источниками, вашим соединением (намного ниже через Tor), вашим процессором и зашифрованной базой данных. «Максимум» загружает так быстро, как позволяют ваша машина и источники."
 }

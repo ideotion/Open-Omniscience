@@ -19,6 +19,11 @@ _LOG = logging.getLogger(__name__)
 
 SETTINGS_VERSION = "oo-scheduler-settings-1"
 VALID_MODES = ("rss", "crawl", "markets", "wiki", "law")
+VALID_RATE_MODES = ("target", "maximum")
+# Bounds for the download-rate target (KiB/s): a generous, honest range.
+_MIN_TARGET_KBPS, _MAX_TARGET_KBPS = 50, 50_000
+# Hard ceiling on concurrent fetches (the governor's upper bound).
+_MAX_PARALLELISM = 50
 _MIN_INTERVAL, _MAX_INTERVAL = 1, 7 * 24 * 60  # minutes: 1 min .. 1 week
 
 
@@ -38,13 +43,22 @@ class SchedulerSettings:
     # between them — so when the operator is online, collection is permanent.
     # Set False to restore the old run-once-then-wait-``interval_minutes`` cadence.
     continuous: bool = True
-    # Parallel collection: how many sources to FETCH concurrently in one pass.
-    # 1 (the default) = the sequential loop, unchanged. >1 = a bounded worker pool
-    # that fetches DIFFERENT hosts at once (each on its own Tor circuit) while the
-    # single SQLite writer keeps writes serialised. Per-host politeness is never
-    # traded for speed: one host is fetched by at most one worker at a time. Kept
-    # default 1 (opt-in) until field-validated; the task manager will tune it.
-    collect_parallelism: int = 1
+    # Collection speed is expressed as a DOWNLOAD-RATE target, not a raw worker
+    # count (maintainer ruling 2026-06-16). The bandwidth governor varies how many
+    # sources are fetched at once to APPROACH the target — always across DIFFERENT
+    # hosts, each on its own Tor circuit, while the single SQLite writer keeps
+    # writes serialised. Per-host politeness is never traded for speed: one host is
+    # fetched by at most one worker at a time.
+    #   collect_rate_mode  : "target" (track collect_target_kbps) | "maximum"
+    #   collect_target_kbps: best-effort download-rate goal in KiB/s (target mode)
+    #   collect_parallelism: the hard CEILING on concurrent fetches (the governor's
+    #                        upper bound). 1 = the sequential loop (governor off).
+    # The default targets >= 500 kbps out of the box (supersedes the old opt-in
+    # default of 1 worker); the governor backs off automatically under CPU/memory/
+    # writer contention (logged in src/monitoring/collect_perf.py).
+    collect_rate_mode: str = "target"
+    collect_target_kbps: int = 500
+    collect_parallelism: int = 50
     mode: str = "rss"  # "rss" (feeds) or "crawl" (bounded recursion)
     # 0 = UNBOUNDED (cover every source / watched item) -- the default. Any cap
     # silently SELECTS which sources to skip, which cannot be justified
@@ -124,13 +138,22 @@ def load_settings() -> SchedulerSettings:
     if mode not in VALID_MODES:
         _LOG.warning("ignoring invalid stored scheduler mode %r", mode)
         mode = d.mode
+    rate_mode = raw.get("collect_rate_mode", d.collect_rate_mode)
+    if rate_mode not in VALID_RATE_MODES:
+        rate_mode = d.collect_rate_mode
     return SchedulerSettings(
         autostart=_coerce_bool(raw.get("autostart"), d.autostart),
         interval_minutes=_coerce_int(
             raw.get("interval_minutes"), d.interval_minutes, _MIN_INTERVAL, _MAX_INTERVAL
         ),
         continuous=_coerce_bool(raw.get("continuous"), d.continuous),
-        collect_parallelism=_coerce_int(raw.get("collect_parallelism"), d.collect_parallelism, 1, 16),
+        collect_rate_mode=rate_mode,
+        collect_target_kbps=_coerce_int(
+            raw.get("collect_target_kbps"), d.collect_target_kbps, _MIN_TARGET_KBPS, _MAX_TARGET_KBPS
+        ),
+        collect_parallelism=_coerce_int(
+            raw.get("collect_parallelism"), d.collect_parallelism, 1, _MAX_PARALLELISM
+        ),
         mode=mode,
         # lo=0 allows the unbounded default; hi is a generous safety ceiling for
         # an explicit soft cap, never a selection imposed by us.
@@ -162,6 +185,13 @@ def save_settings(updates: dict) -> SchedulerSettings:
         current.autostart = _coerce_bool(updates["autostart"], current.autostart)
     if "continuous" in updates and updates["continuous"] is not None:
         current.continuous = _coerce_bool(updates["continuous"], current.continuous)
+    if "collect_rate_mode" in updates and updates["collect_rate_mode"] is not None:
+        rm = str(updates["collect_rate_mode"])
+        if rm not in VALID_RATE_MODES:
+            raise SchedulerSettingsError(
+                f"collect_rate_mode must be one of: {', '.join(VALID_RATE_MODES)}"
+            )
+        current.collect_rate_mode = rm
 
     def _ranged(key: str, lo: int, hi: int, label: str) -> None:
         if key in updates and updates[key] is not None:
@@ -177,7 +207,8 @@ def save_settings(updates: dict) -> SchedulerSettings:
         current.export_dir = str(updates["export_dir"]).strip()
 
     _ranged("discovery_per_run", 0, 100, "discovery_per_run")
-    _ranged("collect_parallelism", 1, 16, "collect_parallelism")
+    _ranged("collect_parallelism", 1, _MAX_PARALLELISM, "collect_parallelism")
+    _ranged("collect_target_kbps", _MIN_TARGET_KBPS, _MAX_TARGET_KBPS, "collect_target_kbps")
     _ranged("interval_minutes", _MIN_INTERVAL, _MAX_INTERVAL, "interval_minutes")
     _ranged("max_sources_per_run", 1, 1000, "max_sources_per_run")
     _ranged("crawl_max_depth", 0, 6, "crawl_max_depth")

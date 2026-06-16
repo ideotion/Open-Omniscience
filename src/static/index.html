@@ -1279,6 +1279,16 @@
         <button class="secondary" onclick="schedulerRunNow()" title="Run one pass immediately">Scrape now</button>
       </div>
 
+      <div class="row" style="margin-top:12px">
+        <div style="flex:2">
+          <label for="sch-speed" title="Download rate is steered by concurrency: more parallel hosts means higher throughput, up to a safe ceiling. The app measures its own real download rate and raises or lowers the number of concurrent hosts to track your target, backing off automatically when CPU, memory or the single encrypted writer become the limit (see the collection-performance log in the debug bundle). Per-host politeness is never traded for speed.">Collection speed (download-rate target)</label>
+          <span class="muted">— <strong id="sch-speed-val">500 kbps</strong></span>
+          <span id="sch-speed-now" class="pill" style="margin-inline-start:6px"></span>
+          <input id="sch-speed" type="range" min="0" max="6" step="1" value="2" oninput="schedSpeedLabel()" style="width:100%;margin-top:4px">
+          <div class="hint">A target, not a guarantee. The app adjusts how many sources it fetches at once to approach this rate — always across DIFFERENT sites, never hammering one (robots.txt and per-host limits are respected). Actual speed is limited by the sources, your connection (much lower over Tor), your CPU and the encrypted database. “Maximum” fetches as fast as your machine and the sources allow.</div>
+        </div>
+      </div>
+
       <hr>
 
       <div class="row">

@@ -1042,5 +1042,11 @@
   "already present": "ya presentes",
   "skipped (no domain)": "omitidos (sin dominio)",
   "Statistics producers registered.": "Productores de estadísticas registrados.",
-  "Could not register the producers.": "No se pudieron registrar los productores."
+  "Could not register the producers.": "No se pudieron registrar los productores.",
+  "Collection speed (download-rate target)": "Velocidad de recopilación (objetivo de velocidad de descarga)",
+  "Maximum": "Máximo",
+  "Now": "Ahora",
+  "workers": "trabajos",
+  "Download rate is steered by concurrency: more parallel hosts means higher throughput, up to a safe ceiling. The app measures its own real download rate and raises or lowers the number of concurrent hosts to track your target, backing off automatically when CPU, memory or the single encrypted writer become the limit (see the collection-performance log in the debug bundle). Per-host politeness is never traded for speed.": "La velocidad de descarga se controla mediante la concurrencia: más hosts en paralelo significan mayor rendimiento, hasta un límite seguro. La aplicación mide su propia velocidad de descarga real y aumenta o reduce el número de hosts simultáneos para alcanzar tu objetivo, reduciéndose automáticamente cuando la CPU, la memoria o el único escritor cifrado se convierten en el límite (consulta el registro de rendimiento de recopilación en el paquete de depuración). La cortesía por host nunca se sacrifica por velocidad.",
+  "A target, not a guarantee. The app adjusts how many sources it fetches at once to approach this rate — always across DIFFERENT sites, never hammering one (robots.txt and per-host limits are respected). Actual speed is limited by the sources, your connection (much lower over Tor), your CPU and the encrypted database. “Maximum” fetches as fast as your machine and the sources allow.": "Un objetivo, no una garantía. La aplicación ajusta cuántas fuentes obtiene a la vez para acercarse a esta velocidad, siempre en sitios DISTINTOS, nunca sobrecargando uno solo (se respetan robots.txt y los límites por host). La velocidad real está limitada por las fuentes, tu conexión (mucho menor a través de Tor), tu CPU y la base de datos cifrada. “Máximo” obtiene tan rápido como lo permitan tu máquina y las fuentes."
 }

@@ -1042,5 +1042,11 @@
   "already present": "既に存在",
   "skipped (no domain)": "スキップ（ドメインなし）",
   "Statistics producers registered.": "統計作成機関を登録しました。",
-  "Could not register the producers.": "作成機関を登録できませんでした。"
+  "Could not register the producers.": "作成機関を登録できませんでした。",
+  "Collection speed (download-rate target)": "収集速度（ダウンロード速度の目標）",
+  "Maximum": "最大",
+  "Now": "現在",
+  "workers": "ワーカー",
+  "Download rate is steered by concurrency: more parallel hosts means higher throughput, up to a safe ceiling. The app measures its own real download rate and raises or lowers the number of concurrent hosts to track your target, backing off automatically when CPU, memory or the single encrypted writer become the limit (see the collection-performance log in the debug bundle). Per-host politeness is never traded for speed.": "ダウンロード速度は並列度で調整されます。並行するホストが多いほどスループットは高くなり、安全な上限まで上がります。アプリは自身の実際のダウンロード速度を測定し、目標に追従するように同時ホスト数を増減させ、CPU・メモリ・単一の暗号化ライターがボトルネックになると自動的に抑えます（デバッグバンドル内の収集パフォーマンスログを参照）。ホストごとの礼儀正しさが速度のために犠牲にされることは決してありません。",
+  "A target, not a guarantee. The app adjusts how many sources it fetches at once to approach this rate — always across DIFFERENT sites, never hammering one (robots.txt and per-host limits are respected). Actual speed is limited by the sources, your connection (much lower over Tor), your CPU and the encrypted database. “Maximum” fetches as fast as your machine and the sources allow.": "これは目標であり、保証ではありません。アプリはこの速度に近づけるよう、一度に取得するソース数を調整します——常に異なるサイトにまたがって行い、一つのサイトに集中して負荷をかけることはありません（robots.txt とホストごとの制限を尊重します）。実際の速度は、ソース、接続（Tor 経由では大幅に低下）、CPU、暗号化データベースによって制限されます。「最大」は、お使いのマシンとソースが許す限り高速に取得します。"
 }

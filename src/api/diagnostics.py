@@ -688,6 +688,7 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
 
     from src.events.feeds import load_imports, load_verdicts
     from src.monitoring import feed_preflight
+    from src.monitoring.collect_perf import recent_samples as _collect_perf_samples
     from src.monitoring.errorlog import recent_errors
     from src.monitoring.field_test import recent_results as _field_test_results
     from src.monitoring.preflight import recent_results as source_results
@@ -787,6 +788,10 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
         },
         "law_documents": law_docs,
         "wiki_pages": wiki_pages,
+        # Collection-performance timeline + end-of-pass bottleneck classification
+        # (download rate, in-flight fetches, writer-gate contention, CPU/memory).
+        # The bandwidth governor's own log — what to read when collection is slow.
+        "collect_perf": _collect_perf_samples(),
         # TEMPORARY (0.0.8 live-test cycle): automated field-test outcomes —
         # see src/monitoring/field_test.py for purpose + the OO_FIELD_TEST=0
         # opt-out. Will be removed when the cycle ends.

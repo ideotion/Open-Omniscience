@@ -1042,5 +1042,11 @@
   "already present": "已存在",
   "skipped (no domain)": "已跳过（无域名）",
   "Statistics producers registered.": "统计机构已注册。",
-  "Could not register the producers.": "无法注册这些机构。"
+  "Could not register the producers.": "无法注册这些机构。",
+  "Collection speed (download-rate target)": "采集速度（下载速率目标）",
+  "Maximum": "最大",
+  "Now": "当前",
+  "workers": "并发任务",
+  "Download rate is steered by concurrency: more parallel hosts means higher throughput, up to a safe ceiling. The app measures its own real download rate and raises or lowers the number of concurrent hosts to track your target, backing off automatically when CPU, memory or the single encrypted writer become the limit (see the collection-performance log in the debug bundle). Per-host politeness is never traded for speed.": "下载速率通过并发来调节：并行的主机越多，吞吐量越高，直至一个安全上限。应用会测量自身真实的下载速率，并增加或减少同时访问的主机数量以追踪你的目标；当 CPU、内存或唯一的加密写入器成为瓶颈时会自动回退（参见调试包中的采集性能日志）。绝不会为了速度而牺牲对每个主机的礼貌。",
+  "A target, not a guarantee. The app adjusts how many sources it fetches at once to approach this rate — always across DIFFERENT sites, never hammering one (robots.txt and per-host limits are respected). Actual speed is limited by the sources, your connection (much lower over Tor), your CPU and the encrypted database. “Maximum” fetches as fast as your machine and the sources allow.": "这是目标，而非保证。应用会调整同时抓取的来源数量以接近该速率——始终跨不同的站点，绝不集中冲击某一个（遵守 robots.txt 和每主机限制）。实际速度受来源、你的网络连接（通过 Tor 会低得多）、你的 CPU 以及加密数据库的限制。“最大”会以你的机器和来源所允许的最快速度抓取。"
 }

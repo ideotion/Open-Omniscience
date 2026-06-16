@@ -1042,5 +1042,11 @@
   "already present": "पहले से मौजूद",
   "skipped (no domain)": "छोड़े गए (कोई डोमेन नहीं)",
   "Statistics producers registered.": "सांख्यिकी निर्माता पंजीकृत हो गए।",
-  "Could not register the producers.": "निर्माताओं को पंजीकृत नहीं किया जा सका।"
+  "Could not register the producers.": "निर्माताओं को पंजीकृत नहीं किया जा सका।",
+  "Collection speed (download-rate target)": "संग्रह गति (डाउनलोड दर लक्ष्य)",
+  "Maximum": "अधिकतम",
+  "Now": "अभी",
+  "workers": "वर्कर",
+  "Download rate is steered by concurrency: more parallel hosts means higher throughput, up to a safe ceiling. The app measures its own real download rate and raises or lowers the number of concurrent hosts to track your target, backing off automatically when CPU, memory or the single encrypted writer become the limit (see the collection-performance log in the debug bundle). Per-host politeness is never traded for speed.": "डाउनलोड दर समानांतरता से नियंत्रित होती है: जितने अधिक समानांतर होस्ट, उतनी अधिक थ्रूपुट, एक सुरक्षित सीमा तक। ऐप अपनी वास्तविक डाउनलोड दर मापता है और आपके लक्ष्य का अनुसरण करने के लिए एक साथ चल रहे होस्ट की संख्या बढ़ाता या घटाता है, और जब CPU, मेमोरी या एकमात्र एन्क्रिप्टेड राइटर सीमा बन जाते हैं तो स्वतः पीछे हट जाता है (डिबग बंडल में संग्रह-प्रदर्शन लॉग देखें)। प्रति-होस्ट शिष्टाचार को कभी भी गति के लिए नहीं छोड़ा जाता।",
+  "A target, not a guarantee. The app adjusts how many sources it fetches at once to approach this rate — always across DIFFERENT sites, never hammering one (robots.txt and per-host limits are respected). Actual speed is limited by the sources, your connection (much lower over Tor), your CPU and the encrypted database. “Maximum” fetches as fast as your machine and the sources allow.": "यह एक लक्ष्य है, गारंटी नहीं। ऐप इस दर के करीब पहुँचने के लिए समायोजित करता है कि एक बार में कितने स्रोत प्राप्त किए जाएँ — हमेशा अलग-अलग साइटों पर, कभी किसी एक पर अत्यधिक भार नहीं डालता (robots.txt और प्रति-होस्ट सीमाओं का सम्मान किया जाता है)। वास्तविक गति स्रोतों, आपके कनेक्शन (Tor पर काफी कम), आपके CPU और एन्क्रिप्टेड डेटाबेस से सीमित होती है। “अधिकतम” उतनी तेज़ी से प्राप्त करता है जितना आपकी मशीन और स्रोत अनुमति दें।"
 }

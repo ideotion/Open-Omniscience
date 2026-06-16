@@ -1798,6 +1798,37 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **BANDWIDTH-GOVERNED COLLECTOR (maintainer ruling 2026-06-16, SHIPPED on
+  claude/vibrant-hypatia-1g6e96):** the user-facing collection control is now a
+  DOWNLOAD-RATE target (kbps = kilobits/s, the consumer unit), NOT a raw task count —
+  "more intuitive". A `BandwidthGovernor` (src/scheduler/bandwidth.py) varies how many
+  sources are fetched at once (an adjustable-permit semaphore + damped AIMD) to track
+  the target, with IMMEDIATE contention back-off when CPU / memory / the single
+  encrypted writer become the limit. **RULING — the default now targets ≥500 kbps out
+  of the box (seed ~25 workers, hard ceiling 50), SUPERSEDING the old "collect_parallelism
+  default 1, opt-in".** Source-respect is INVARIANT (the per-host lock + per-host interval
+  are untouched; concurrency only ever fans out across DIFFERENT hosts — proven by
+  test_parallel_collect_guardrails). New settings: `collect_rate_mode` (target|maximum),
+  `collect_target_kbps` (default 500), `collect_parallelism` REPURPOSED as the hard
+  ceiling (default 50, cap 16→50). UI: Settings → Collect gains a rate slider with a
+  "Maximum" end-stop + a live "Now: X kbps" readout + a VISIBLE "target not a guarantee"
+  caveat (invariant #23) and the per-host-politeness guarantee in the #oo-tip hover; +6
+  i18n ×12 (AI-drafted, flagged for native review). NEW BOTTLENECK-FINDING LOG
+  (maintainer-asked): src/monitoring/collect_perf.py samples rate/in-flight/writer-gate/
+  CPU/memory every ~1.5 s to data/collect_perf.jsonl (bounded, local-only, in the debug
+  bundle) + an end-of-pass TRANSPARENT bottleneck classifier (memory|writer|cpu|network-
+  or-source|target-met, raw numbers beside the label, no composite score). ActivityMonitor
+  reworked to token-keyed in-flight tracking (fixes per-host rate attribution under
+  parallelism; adds download_rate_kbps + inflight_count). Connection pools sized to the
+  ceiling: the EthicalFetcher's requests.Session HTTPAdapter (OO_HTTP_POOL) + the SQLite
+  engine max_overflow (OO_DB_MAX_OVERFLOW) so ramping isn't theater; the governor's memory
+  back-off keeps the count actually open in check. Parallel path engages ONLY when the
+  caller's session is the gated GLOBAL engine (a custom/in-memory session runs sequentially
+  — fixes the cross-engine worker-session hazard). Tests: test_bandwidth_governor.py,
+  test_collect_perf_monitor.py, extended test_parallel_collect.py + test_ui_invariants
+  (#collection-speed). Full suite green; mypy 112≤127; i18n 100% ×12; node --check clean.
+  REMAINING (recommend with evidence from the new log, not built here): batched per-source
+  writes if writer-bound; a ProcessPool parse stage if CPU-bound.
 - **AUTONOMOUS AUDIT 2026-06-15/16 — PR H = MONOLITH DECOMPOSITION (draft onto 0.09;
   behaviorally INERT — pure extraction; RE-CUT FRESH on current 0.09 2026-06-16, the
   maintainer's choice over resolving the stale ~8k-line conflict, so NO recent

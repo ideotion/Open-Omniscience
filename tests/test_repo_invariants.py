@@ -932,6 +932,28 @@ def test_collect_tab_moved_into_settings():
     )
 
 
+def test_collection_speed_control_is_a_download_rate_target_with_maximum():
+    """Bandwidth-governed collection (maintainer ruling 2026-06-16): the user-facing
+    control is a DOWNLOAD-RATE target slider (kbps) with a 'Maximum' end-stop, not a
+    raw task count. Honesty by construction — the visible caveat states it is a
+    target not a guarantee and that per-host politeness is never traded for speed."""
+    html = _ui_source()
+    # The slider + its live "now" readout exist in the Collect subtab.
+    assert 'id="sch-speed"' in html and 'type="range"' in html, "rate slider missing"
+    assert 'id="sch-speed-now"' in html, "live measured-rate readout missing"
+    # The stops drive a rate target, with the last stop = Maximum (governor mode).
+    assert "SCHED_SPEED_STOPS" in html, "speed-stop mapping missing"
+    # Save wires the download-rate model, never a bare worker count.
+    assert "collect_rate_mode" in html and "collect_target_kbps" in html, (
+        "the save must send the download-rate model (mode + target kbps)"
+    )
+    # Caveats VISIBLE by default (informed consent): the honest framing must ship.
+    assert "A target, not a guarantee." in html, "the honest 'target not guarantee' caveat is required"
+    assert "Per-host politeness is never traded for speed." in html, (
+        "the source-respect guarantee must be stated in the control's hover"
+    )
+
+
 def test_sources_tab_moved_into_settings():
     """Content-first (§6, ruled 2026-06-13): the Sources tab LEFT the sidebar for a
     Settings subtab, same pattern as Collect. Nothing lost — the managed-sources

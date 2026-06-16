@@ -356,39 +356,97 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         if settings.mode == "crawl"
         else None
     )
-    parallelism = max(1, getattr(settings, "collect_parallelism", 1) or 1)
+    # The hard ceiling on concurrent fetches (the governor's upper bound). 1 =
+    # the sequential loop (governor off, unchanged behaviour).
+    w_max = max(1, getattr(settings, "collect_parallelism", 1) or 1)
+    # Parallel collection requires the gated GLOBAL engine: worker threads open
+    # their OWN sessions (through the single-writer gate). A caller that passes a
+    # session bound to a DIFFERENT engine (e.g. a test's in-memory DB, where
+    # ``:memory:`` hands each thread a SEPARATE database) runs sequentially on that
+    # same session — correct on any engine, parallel only where it is safe.
+    use_pool = w_max > 1 and len(sources) > 1
+    if use_pool:
+        try:
+            from src.database.session import engine as _global_engine
+
+            use_pool = session.get_bind() is _global_engine
+        except Exception:  # noqa: BLE001 - any doubt -> the safe sequential path
+            use_pool = False
     try:
-        if parallelism > 1:
-            # Parallel FETCH across DIFFERENT hosts (round-robin order already
-            # interleaves countries/hosts, so concurrent sources are different
-            # hosts → different Tor circuits). Each worker gets its OWN DB session;
-            # writes still serialise through the single-writer gate, and the shared
-            # fetcher's per-host lock keeps politeness intact. Results are
-            # aggregated in THIS thread (ex.map yields here), so no aggregation lock.
-            from concurrent.futures import ThreadPoolExecutor
+        if use_pool:
+            # Bandwidth-governed parallel FETCH across DIFFERENT hosts (round-robin
+            # order already interleaves countries/hosts, so concurrent sources are
+            # different hosts → different Tor circuits). The BandwidthGovernor
+            # varies how many workers may fetch at once to track the download-rate
+            # target, backing off under CPU/memory/writer contention. Each worker
+            # gets its OWN DB session AFTER it holds a permit (so a throttled worker
+            # holds no connection); writes still serialise through the single-writer
+            # gate, and the shared fetcher's per-host lock keeps politeness intact.
+            from concurrent.futures import ThreadPoolExecutor, as_completed
 
             from src.database.session import session_scope
+            from src.monitoring.collect_perf import CollectionMonitor
+            from src.scheduler.bandwidth import BandwidthGovernor
+
+            governor = BandwidthGovernor(
+                mode=getattr(settings, "collect_rate_mode", "target"),
+                target_kbps=getattr(settings, "collect_target_kbps", 500),
+                w_max=w_max,
+            )
+            monitor = CollectionMonitor(
+                governor=governor,
+                pass_id=started.isoformat(timespec="seconds"),
+                mode=settings.mode,
+            )
 
             def _worker(source):
-                with session_scope() as worker_session:
-                    return _process_source(
-                        source,
-                        session=worker_session,
-                        fetcher=fetcher,
-                        mode=settings.mode,
-                        crawl_cfg=crawl_cfg,
-                    )
+                # Acquire a governor permit BEFORE opening a DB session, so a
+                # throttled (parked) worker holds no connection or key in memory.
+                governor.acquire()
+                try:
+                    with session_scope() as worker_session:
+                        return _process_source(
+                            source,
+                            session=worker_session,
+                            fetcher=fetcher,
+                            mode=settings.mode,
+                            crawl_cfg=crawl_cfg,
+                        )
+                finally:
+                    governor.release()
 
             done = 0
-            with ThreadPoolExecutor(
-                max_workers=parallelism, thread_name_prefix="oo-collect"
-            ) as pool:
-                for tally, pages, processed in pool.map(_worker, sources):
-                    _add(tally)
-                    pages_fetched += pages
-                    sources_processed += processed
-                    done += 1
-                    _progress_set(done=done, pages=pages_fetched)
+            monitor.start()
+            try:
+                with ThreadPoolExecutor(
+                    max_workers=w_max, thread_name_prefix="oo-collect"
+                ) as pool:
+                    futures = [pool.submit(_worker, s) for s in sources]
+                    for fut in as_completed(futures):
+                        tally, pages, processed = fut.result()
+                        _add(tally)
+                        pages_fetched += pages
+                        sources_processed += processed
+                        done += 1
+                        _progress_set(
+                            done=done,
+                            pages=pages_fetched,
+                            active=governor.active,
+                            permits=governor.permits,
+                        )
+            finally:
+                summary = monitor.stop(
+                    result={
+                        "articles_stored": agg.get("stored", 0),
+                        "sources_processed": sources_processed,
+                        "pages_fetched": pages_fetched,
+                    }
+                )
+                if summary:
+                    _LOG.info(
+                        "collect perf: bottleneck=%s",
+                        summary.get("bottleneck", {}).get("verdict"),
+                    )
         else:
             for idx, source in enumerate(sources):
                 _progress_set(current=source.domain, done=idx, pages=pages_fetched)
@@ -647,6 +705,7 @@ class BackgroundScheduler:
     def activity(self, session) -> dict:
         """The collection-activity panel's payload: status + plan + transfer rates."""
         from src.monitoring.activity import activity_monitor
+        from src.monitoring.collect_perf import get_latest
 
         with self._state_lock:
             last = self._last_result
@@ -654,6 +713,10 @@ class BackgroundScheduler:
             **self.status(),
             "plan": plan_preview(session, self._settings_provider(), last_result=last),
             "per_host_rates": activity_monitor.per_host_rates(),
+            # The app's OWN measured download rate (KiB/s, wall-clock) + the latest
+            # bandwidth-governor sample, so the Collect UI can show target vs actual.
+            "download_rate_kbps": activity_monitor.download_rate_kbps(),
+            "collect_perf": get_latest(),
         }
 
 
