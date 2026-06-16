@@ -27,6 +27,7 @@ For inquiries, contact: open-omniscience@ideotion.com
 
 import csv
 import io
+import mimetypes
 import os
 import re
 import time
@@ -54,114 +55,8 @@ from slowapi.util import get_remote_address
 # Import database models and session
 from sqlalchemy.orm import Session
 
-# Commodity, scientific-analysis and keyword routers all depend on the [analysis]
-# extra (numpy/scipy/pandas/scikit-learn). Import them defensively so a core-only
-# install still boots with the spine (ingest + search + export); they are included
-# below only when their dependencies are present.
-try:
-    from src.api.analysis import router as analysis_router
-    from src.api.commodity import router as commodity_router
-    from src.api.framing import router as framing_router
-    from src.api.keyword_analysis import router as keyword_analysis_router
-    from src.api.keyword_management import router as keyword_management_router
-
-    _ANALYSIS_AVAILABLE = True
-except ImportError:
-    commodity_router = analysis_router = None
-    keyword_analysis_router = keyword_management_router = framing_router = None
-    _ANALYSIS_AVAILABLE = False
-
-# Import ingestion router (ethical scrape -> extract -> store)
-# Import annotations router (signed, portable, web-of-trust source annotations)
-from src.api.annotations import router as annotations_router
-
-# Import article date-tag router (extracted, human-confirmable dates mentioned in text)
-from src.api.article_dates import router as article_dates_router
-
-# Import database overview router (honest read-only corpus statistics + backup/restore)
-from src.api.backup_v2 import router as backup_v2_router
-
-# Import briefing router (the Home triage feed of honest "cards" + draft accumulator)
-from src.api.briefing import router as briefing_router
-
-# Import custody router (append-only signed chain-of-custody log + anchoring)
-from src.api.custody import router as custody_router
-from src.api.database import router as database_router
-
-# Import diagnostics router (shareable, on-demand back-end syntheses — CLAUDE.md)
-from src.api.diagnostics import router as diagnostics_router
-
-# Import world-events agenda router (curated, offline calendar of major events)
-from src.api.events import router as events_router
-
-# Import hazards router (open natural-hazard/weather feeds, space-time relay)
-from src.api.hazards import router as hazards_router
-from src.api.ingestion import router as ingestion_router
-
-# Import insights router (keyword & entity analytics)
-from src.api.insights import router as insights_router
-
-# Import source-integrity router (no-composite profile + user-guided actor-collapse)
-from src.api.integrity import router as integrity_router
-
-# Import world-law change-tracking router (statutes/gazettes/IP, baseline→diff→flag)
-from src.api.law import router as law_router
-
-# Import link / co-citation analysis router (honest counts only)
-from src.api.link_analysis import router as link_analysis_router
-
-# Import link-preview router (invariant #6 extension: the local popup's extraction)
-from src.api.link_preview import router as link_preview_router
-
-# Link-analysis router quarantined in v0.4: its services (credibility scorer,
-# source scraper, network analyzer) produced fabricated outputs (see docs/HISTORY.md).
-# Import LLM router (clean Ollama HTTP client; replaces the legacy routes.llm)
-from src.api.llm import router as llm_router
-
-# Import markets router (per-source price-extraction rules + structured ingest)
-from src.api.markets import router as markets_router
-
-# Import monitoring router (real source uptime + corpus anomalies)
-from src.api.monitoring import router as monitoring_router
-
-# Import personality router (bundled, local quotes + fun facts — UI flourishes)
-from src.api.personality import router as personality_router
-
-# Import reporting router (signed, tamper-evident evidence bundles)
-from src.api.reporting import router as reporting_router
-
-# Import safety router (at-risk-user safety: fetch-mode/proxy, encrypted backup, panic)
-from src.api.safety import router as safety_router
-
-# Import scheduler router (in-app background ingester control surface)
-from src.api.scheduler import router as scheduler_router
-
-# Import omnibar federated-search router (T13: instant, index-backed)
-from src.api.search_omni import router as search_omni_router
-
-# Import application settings router (GUI-editable preferences)
-from src.api.settings import router as settings_router
-
-# Import source-catalog CSV import/export router
-from src.api.source_io import router as source_io_router
-
-# Import source management router
-from src.api.source_management import router as source_management_router
-
-# Import system router (loopback-only self-observation: live scraping + vitals)
-from src.api.system import router as system_router
-
-# Import temporal-map router (space-time signals on one zoomable map + time axis)
-from src.api.timemap import router as timemap_router
-
-# Import verification router (honest image metadata/EXIF)
-from src.api.verification import router as verification_router
-
-# Import weather router (consented, bounded Open-Meteo reanalysis slices)
-from src.api.weather import router as weather_router
-
-# Import Wikipedia change-tracking router
-from src.api.wiki import router as wiki_router
+# Router wiring (every include_router call) lives in _wiring.py (audit PR H).
+from src.api._wiring import wire
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -381,102 +276,8 @@ async def csrf_and_security_headers(request: Request, call_next):
     return response
 
 
-# Include source management router
-app.include_router(source_management_router)
-
-# Include database overview router
-app.include_router(database_router)
-app.include_router(backup_v2_router)
-
-# Include application settings router
-app.include_router(settings_router)
-
-# Include scheduler router
-app.include_router(scheduler_router)
-
-# Include markets router
-app.include_router(markets_router)
-
-# Include source-catalog CSV import/export router
-app.include_router(source_io_router)
-
-# Include insights router
-app.include_router(insights_router)
-# Diagnostics log (shareable, on-demand back-end syntheses — CLAUDE.md ruling)
-app.include_router(diagnostics_router)
-
-# Include briefing router (Home triage feed + newsletter draft)
-app.include_router(briefing_router)
-
-# Include source-integrity router (profile + anti-amplification)
-app.include_router(integrity_router)
-
-# Include annotations router (crowdsourced signed source annotations)
-app.include_router(annotations_router)
-
-# Include world-law change-tracking router
-app.include_router(law_router)
-
-# Include link / co-citation analysis router
-app.include_router(link_analysis_router)
-app.include_router(link_preview_router)
-
-# Include Wikipedia change-tracking router
-app.include_router(wiki_router)
-
-# Include LLM router
-app.include_router(llm_router)
-
-# Include ingestion router
-app.include_router(ingestion_router)
-
-# Include system router (live scraping URL + process vitals; loopback-only)
-app.include_router(system_router)
-
-# Jobs view + download arbitration (T9): every network task is a visible job.
-from src.api.jobs import router as jobs_router  # noqa: E402 - after app exists
-
-app.include_router(jobs_router)
-from src.api.unlock import router as unlock_router  # noqa: E402 - after app exists
-
-app.include_router(unlock_router)
-app.include_router(hazards_router)
-app.include_router(events_router)
-app.include_router(weather_router)
-app.include_router(search_omni_router)
-app.include_router(personality_router)
-
-# Include temporal-map router (offline by default; hazards layer opt-in)
-app.include_router(timemap_router)
-
-# Include article date-tag router (extracted dates as human-confirmable per-article tags)
-app.include_router(article_dates_router)
-
-# Include analysis-dependent routers only if the [analysis] extra is installed.
-if _ANALYSIS_AVAILABLE:
-    app.include_router(commodity_router)
-    app.include_router(analysis_router)
-    app.include_router(keyword_management_router)
-    app.include_router(keyword_analysis_router)
-    app.include_router(framing_router)
-else:
-    logger.warning(
-        "Commodity, statistical-analysis & keyword endpoints disabled: install the "
-        "[analysis] extra (pip install -e '.[analysis]') to enable them."
-    )
-
-# Include monitoring router
-app.include_router(monitoring_router)
-
-# Include reporting router
-app.include_router(reporting_router)
-app.include_router(custody_router)
-
-# Include verification router
-app.include_router(verification_router)
-
-# Include safety router (encrypted backup, panic, protected-fetch settings)
-app.include_router(safety_router)
+# Wire every API router (after the app + middleware exist). See _wiring.py.
+wire(app)
 
 
 # General health check endpoint
@@ -490,7 +291,12 @@ async def health_check():
     }
 
 
-# Serve static files (HTML5 frontend)
+# Serve static files (HTML5 frontend). Register the JS/CSS MIME types explicitly so
+# the externalised /static/app.js + app.css are served as text/javascript & text/css
+# on EVERY platform: StaticFiles falls back to the OS registry otherwise, and Windows
+# can map .js to "text/jscript" (PR H decomposition relies on correct script serving).
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
 app.mount(
     "/static",
     StaticFiles(directory=str(Path(__file__).parent.parent / "static"), html=True),

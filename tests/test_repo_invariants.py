@@ -44,6 +44,21 @@ def _live_py_files() -> list[Path]:
     return [p for p in _SRC.rglob("*.py") if "__pycache__" not in p.parts]
 
 
+def _ui_source() -> str:
+    """The full UI source = index.html + the externalised app.js + app.css (audit
+    PR H decomposed index.html into cached static assets). Invariants that grep the
+    UI read all three so the assertions are a MOVE, not a loss; app.js/app.css are
+    appended after the markup, so markup-scoped splits still resolve to the markup
+    region while whole-source / JS-marker-scoped assertions see the script too."""
+    base = _SRC / "static"
+    parts = [(base / "index.html").read_text(encoding="utf-8")]
+    for extra in ("app.js", "app.css"):
+        p = base / extra
+        if p.exists():
+            parts.append(p.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
@@ -255,7 +270,7 @@ def test_llm_catalog_freshness():
 def test_ui_invariants():
     """Maintainer-ruled UI invariants (see CLAUDE.md). These regressed once
     between sessions; now they fail CI instead of relying on memory."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # 1. Wikipedia edition picker is a dropdown, never a text input
     assert '<select id="wiki-lang"' in html, "wiki-lang must be a <select> (CLAUDE.md #1)"
     assert '<input id="wiki-lang"' not in html
@@ -633,6 +648,24 @@ def test_ui_invariants():
     assert "setInterval(_pollNetwork" not in html, (
         "the fixed-interval network poll must be replaced by the adaptive backoff"
     )
+    # 26. index.html monolith decomposed (audit PR H): the inline <style>/<script>
+    #     were externalised into cached /static/app.css + /static/app.js (classic
+    #     script, same load order, globals + inline handlers preserved). The markup
+    #     file must LINK both and carry no inline blocks. (Read index.html alone here
+    #     — the rest of this test uses _ui_source() so the moved JS/CSS still grep.)
+    raw = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert '<link rel="stylesheet" href="/static/app.css">' in raw, (
+        "index.html must link the externalised stylesheet (PR H)"
+    )
+    assert '<script src="/static/app.js"></script>' in raw, (
+        "index.html must load the externalised app.js (PR H)"
+    )
+    assert "<style>" not in raw and "\n  <script>\n" not in raw, (
+        "no inline <style>/<script> may remain in index.html (PR H decomposition)"
+    )
+    assert raw.index("/static/i18n.js") < raw.index("/static/app.js"), (
+        "i18n.js must still load before app.js (load order preserved)"
+    )
 
 
 def test_corpus_tier_header():
@@ -647,7 +680,7 @@ def test_corpus_tier_header():
       * the LONG explanation AND the exact thresholds live in the #oo-tip hover
         (invariant #17 — a translated title) — never hidden behind a toggle;
       * it is descriptive, NEVER a score bar / composite."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     home = html.split('id="tab-home"', 1)[1].split('id="tab-search"', 1)[0]
     # 1. the tier element sits inside the glance strip, above the Briefing.
     assert 'id="home-tier"' in home and "corpus-tier" in home, (
@@ -692,7 +725,7 @@ def test_first_launch_guide_wizard():
         firstRun()/toggleNetwork() flow (which calls ensureOnline); the wizard
         must NOT POST /api/system/network itself;
       * the one-time state is a USER-VISIBLE setting, not a hidden flag."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # 1. the wizard shell exists (stepped dialog with the standard nav).
     assert 'id="guide-wizard"' in html, "the first-launch guided wizard must exist (CLAUDE.md)"
     assert "function openGuide(" in html, "the wizard must be openable (openGuide)"
@@ -746,7 +779,7 @@ def test_collect_tab_moved_into_settings():
     manual-ingest + batch-picker controls now live under #set-collect, reachable via
     the Collect subtab AND the showTab('ingest') redirect (so the palette + the
     'Collect now' buttons still land); the sidebar no longer offers it."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     sidebar = html.split('id="set-subtabs"')[0]
     assert 'data-tab="ingest"' not in sidebar, "Collect must leave the sidebar (content-first)"
     assert 'id="set-collect"' in html and '<button data-tab="collect">' in html, (
@@ -769,7 +802,7 @@ def test_sources_tab_moved_into_settings():
     Settings subtab, same pattern as Collect. Nothing lost — the managed-sources
     table, candidates panel, and add-source form live under #set-sources, reachable
     via the Sources subtab AND the showTab('sources') redirect; the sidebar drops it."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert '<button class="nav-item" data-tab="sources"' not in html, (
         "Sources must leave the sidebar (content-first)"
     )
@@ -792,7 +825,7 @@ def test_wikipedia_tab_moved_into_settings():
     now live under #set-wikipedia, reachable via the existing Wikipedia subtab AND the
     showTab('wiki') redirect; the sidebar drops it. The invariant-#1 #wiki-lang <select>
     moved intact (also pinned by the edition-picker invariant)."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert '<button class="nav-item" data-tab="wiki"' not in html, (
         "Wikipedia must leave the sidebar (content-first)"
     )
@@ -838,7 +871,7 @@ def test_dropdown_option_labels_are_translatable():
     """
     import json
 
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     en = set(json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8")))
 
     # Selects whose option labels are DATA or native-by-design (not chrome):
@@ -885,7 +918,7 @@ def test_agenda_view_switch_and_week_view():
     buttons wired through ooSubtabs; the Week renderer + its date helpers + the
     full-width rule all exist.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
 
     assert 'id="agenda-view"' not in html, "the Month/List <select> must be replaced by the subtab switch"
     assert 'id="agenda-views"' in html, "the view switch must be a <nav id='agenda-views'>"
@@ -905,7 +938,7 @@ def test_agenda_category_chips_and_country_flags():
     emoji beside the code (the code stays the unambiguous identifier — flags ≠
     identity).
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
 
     assert 'id="agenda-cat"' not in html, "the Category <select> must be replaced by colored chips"
     assert 'id="agenda-cats"' in html, "the category chips need their container"
@@ -928,7 +961,7 @@ def test_dates_render_in_app_language_not_browser_locale():
     language). The browser-locale anti-pattern ``new Date(x).toLocaleString()`` —
     which ignores the app language entirely — must not reappear for date display.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert "function fmtDateTime" in html and "Intl.DateTimeFormat(OOI18N.current()" in html, (
         "the shared locale-aware date/time formatter must exist"
     )
@@ -945,7 +978,7 @@ def test_agenda_source_manager_sort_and_status_filter():
     and the folder-health helper exist; the new control labels are keyed ×12 (the
     dropdown-translatable gate also enforces this).
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert 'id="feeddir-sort"' in html and 'id="feeddir-status-filter"' in html, (
         "the source manager needs a Sort control and a Status filter"
     )
@@ -962,7 +995,7 @@ def test_agenda_merges_imported_events_as_filterable_class():
     "imported" provenance class — never silently blended with curated events, and
     shown even under 'subscribed only' (they were explicitly imported).
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert "function mapImportedToAgenda" in html, "imported events must map into the agenda shape"
     assert "/api/events/imported?from=" in html, "loadAgenda must pull imported events (forward-looking)"
     assert 'category: "imported"' in html and "imported: true" in html, "imported events are their own class"
@@ -978,7 +1011,7 @@ def test_agenda_feeds_reversible_exclude():
     folders keep their honest verdicts in the directory (anti-hiding) but
     contribute no imported events, and can be re-included.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert "oo.agenda.excluded" in html, "exclusions must be a per-machine, reversible store"
     for fn in ("function agExcluded", "function agToggleExclude", "function agExcludeBulk", "function agExcludeClear"):
         assert fn in html, f"reversible exclude requires {fn}()"
@@ -997,7 +1030,7 @@ def test_agenda_add_ics_calendar():
     events join the agenda (deduped) as a removable, user-owned calendar; the raw
     file is parsed and discarded (only title+date+uid stored).
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert 'id="ics-file"' in html and 'type="file"' in html, "an .ics file input is required"
     for fn in ("function importIcsFile", "function renderUserCalendars", "function removeUserCalendar"):
         assert fn in html, f"add-calendar requires {fn}()"
@@ -1016,7 +1049,7 @@ def test_agenda_add_ics_calendar():
 def test_fixity_ui_present():
     """The local fixity audit (B-2) has a Settings UI: a button + loud results panel
     wired to /api/integrity/fixity, with the divergence banner keyed ×12."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert 'id="fixity-btn"' in html and "function runFixity" in html, "fixity button + handler required"
     assert "/api/integrity/fixity" in html, "the UI must call the fixity endpoint"
     assert 'id="fixity-result"' in html, "a results panel is required"
@@ -1030,7 +1063,7 @@ def test_agenda_add_calendar_by_url():
     """Add a calendar by URL (Item E, the network half): the fetch goes through the
     guarded fetcher AND is gated by the ONE consent popup (ensureOnline) before any
     network — never a silent fetch."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert "function importIcsUrl" in html and 'id="ics-url"' in html, "URL add control required"
     assert "/api/events/feeds/import-url" in html, "URL import endpoint wired"
     # the consent gate MUST precede the network call (no silent fetch). Anchor on
@@ -1051,7 +1084,7 @@ def test_analysis_window_absorbs_exports():
     not the Search tab's. The Search-tab call sites stay back-compatible (optional
     args), so nothing is lost while capability migrates off the Search tab.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert "function anParams" in html and "function anQuery" in html, "analysis-scoped params required"
     assert "exportResults('csv', anParams())" in html and "exportResults('json', anParams())" in html
     assert "exportMethods(anQuery())" in html and "exportEvidence(anQuery())" in html
@@ -1069,7 +1102,7 @@ def test_analysis_window_absorbs_synthesize():
     """Item I: Synthesize is reachable from the analysis window too (its own query +
     a dedicated panel), so the last Search-tab capability is mirrored. The Search-tab
     call stays back-compatible (optional query/mount args)."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert "function synthesizeResults(btn, qArg, mountId)" in html, "synthesize must take optional query + mount"
     assert "synthesizeResults(this, anQuery(), 'an-synth')" in html, "analysis window wires its own query + panel"
     assert 'id="an-synth"' in html, "a synthesis result panel in the analysis window"
@@ -1080,7 +1113,7 @@ def test_omnibar_enter_opens_analysis_window():
     """Item I: the omnibar's default Enter action opens the corpus/analysis window
     seeded with the query (ruled: Enter -> a corpus-of-articles window, not the
     Search tab). The Boolean Search-tab item stays available (nothing lost)."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert "function openAnalysisFor" in html, "seeded analysis-window opener required"
     assert "run: () => openAnalysisFor(raw)" in html, "the default omnibar item opens analysis"
     # the Analysis item is unshifted LAST so it sits at index 0 (the Enter default),
@@ -1094,7 +1127,7 @@ def test_cjk_keyword_disclosure():
     """Audit-07 B1: keyword extraction does not segment CJK, so CJK keyword
     aggregates are unreliable — the analysis window discloses this VISIBLY (with a
     hover long-form) exactly when CJK terms are present, never hidden."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert "CJK not segmented" in html, "the CJK caveat marker must be present"
     assert "/[぀-ヿ㐀-䶿一-鿿가-힯]/.test(tm.term)" in html, "the caveat must trigger on detected CJK terms"
     import json
@@ -1110,7 +1143,7 @@ def test_search_retired_from_sidebar_but_reachable():
     retired. Nothing is lost — #tab-search, doSearch and the entry paths remain, so
     Boolean search is still reachable (the omnibar / palette), just not a sidebar tab.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert '<button class="nav-item" data-tab="search">' not in html, "no Search button in the sidebar rail"
     assert 'id="tab-search"' in html, "the search page is KEPT (nothing lost)"
     assert "function doSearch" in html, "Boolean search still exists"
@@ -1125,7 +1158,7 @@ def test_analysis_mindmap_subtab():
     regress the load-bearing Insights mind-map (renderGraph + #ins-mindmap own the _mm*
     force/zoom canvas) — the analysis renderer is a distinct static SVG with its own host.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # the new self-contained renderer + its sub-tab button + panel host
     assert "function renderAnMindmap" in html, "the analysis-window radial renderer must exist"
     assert 'id="an-mindmap"' in html, "the analysis Mindmap panel host must exist"
@@ -1146,7 +1179,7 @@ def test_analysis_mindmap_subtab():
 def test_text_only_modality_disclosed():
     """Audit-07 B1: the app analyses TEXT only — images/audio/video aren't analysed.
     Stated visibly in the analysis window (keyed ×12), not left implicit."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert "Text only — images, audio and video aren't analysed." in html
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
@@ -1156,7 +1189,7 @@ def test_text_only_modality_disclosed():
 def test_analysis_mindmap_controls():
     """Mind-map rules on the analysis Mindmap: a Cloud SECOND view, a text-size
     control and ⛶ enlarge — re-rendering deterministically from the same graph."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert "function anMMset" in html and "const _anMM" in html, "stateful in-map controls required"
     assert 'anMMset({cloud:true})' in html and 'anMMset({cloud:false})' in html, "Map/Cloud second view"
     assert "anMMset({big:!_anMM.big})" in html, "⛶ enlarge"
@@ -1170,7 +1203,7 @@ def test_analysis_mindmap_controls():
 def test_agenda_year_view():
     """Agenda Year view (Item C remaining): a 12-month overview of clickable month
     cards (per-month event counts), with year navigation, drilling into the Month grid."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     assert 'data-tab="year"' in html and 'id="agenda-year"' in html, "Year tab + pane required"
     assert "function renderAgendaYear" in html and "function agYearShift" in html, "year renderer + nav"
     assert "function agOpenMonth" in html, "clicking a month drills into Month view"
@@ -1190,7 +1223,7 @@ def test_agenda_views():
     decade cells drill into that Year view, and the period uses an honest empty
     state — never a hidden/downsampled event set.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
 
     # all four views registered in the ONE ooSubtabs switch (data-tab buttons)
     for view in ("week", "trimester", "semester", "year", "decade"):
@@ -1234,7 +1267,7 @@ def test_commodities_category_subtabs():
     /api/markets/series), with an 'All' default lens (like Home families) and an
     'Other' fallback for unmapped categories; indices are excluded (S&P 500 is an
     INDEX, not a commodity), so the board never misfiles one as a commodity."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # the category nav lives above the card grid
     assert 'id="commodities-cats"' in html, "the category sub-tab nav must exist"
     assert html.index('id="commodities-cats"') < html.index('id="mkt-dashboard"'), (
@@ -1274,7 +1307,7 @@ def test_commodity_card_opens_analysis():
     display name). stopPropagation keeps the card's own price-detail click
     intact. A VISIBLE caveat states the maintainer's binding rule: the corpus
     surfaces CO-OCCURRENCE, never causation."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # the universal analysis entry point must exist (we wire to it, not reinvent)
     assert "function openAnalysisFor" in html, "openAnalysisFor must exist to wire to"
     # the curated symbol -> query seed map
@@ -1303,7 +1336,7 @@ def test_ootimescope_range_control():
     all three coordinated surfaces (date inputs + a draggable bar + presets)
     and re-renders the board on change.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # the reusable component
     assert "function ooTimeScope" in html, "the reusable ooTimeScope control must exist"
     # the old 5-choice time-scale <select> is GONE, the control box replaced it
@@ -1344,7 +1377,7 @@ def test_ootimescope_reused():
     re-rendering through the EXISTING ooChart renderer (invariant #16: the
     full-resolution series within the window is kept, never thinned).
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # the shared windowing helpers + the one factory that mounts an ooTimeScope
     # over a trend series and re-renders on change.
     assert "function _buildTrendScope" in html, "the shared trend-scope factory must exist"
@@ -1382,7 +1415,7 @@ def test_tmap_mention_layer():
     and their count is surfaced; the endpoint's "Deduced from text, never
     confirmed." caveat is VISIBLE on the layer (legend) AND in the readout.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
 
     # The in-map overlay toggle (Google-Maps "controls inside the map" convention).
     assert 'id="tmap-mentions-toggle"' in html, "the mention-layer toggle button must exist"
@@ -1426,7 +1459,7 @@ def test_search_timescope():
     #search-timescope via the ONE ooTimeScope factory (not a fork); and the
     selected from/to feed the UNCHANGED backend params start_date / end_date.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # the reusable component (shared with Markets/Insights/corpus window)
     assert "function ooTimeScope" in html, "the reusable ooTimeScope control must exist"
     # the legacy Search begin/end date inputs are REMOVED (replaced by the control)
@@ -1459,7 +1492,7 @@ def test_oochart_enlarge_indices():
     truncated board spark). The tiny in-card multiples (dashChartSvg / idxSpark)
     stay static (intended), and ooChart itself is unchanged.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # the indices detail handler exists and feeds THE shared toolkit
     assert "function indexDetail(" in html, "the indices detail handler must exist"
     assert 'ooChart($("idx-chart-oo")' in html, (
@@ -1489,7 +1522,7 @@ def test_commodity_corpus_entry():
     is the curated COMMODITY_QUERY family seed (else the real series/index name),
     never a fabricated family. Distinct from the already-shipped title (⊞) entry,
     which is left untouched (test_commodity_card_opens_analysis covers it)."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # the universal opener we wire to (reused, never reinvented)
     assert "function openAnalysisFor" in html, "openAnalysisFor must exist to wire to"
     # the graph carries an explicit "Analyse" affordance opening the window;
@@ -1523,7 +1556,7 @@ def test_corpus_window_mindmap_subtab():
         calling renderMindmap() for THIS window's corpus term;
       * the renderer is reused, not forked (one renderMindmap / one renderGraph).
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # 1. the Mindmap button lives in the corpus window's subtab nav.
     nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
     assert 'data-tab="mindmap"' in nav, (
@@ -1572,7 +1605,7 @@ def test_corpus_window_sentiment_subtab():
         button's hover title states it AND the shared renderer emits the
         endpoint's caveat -- which is the English-lexicon VADER disclosure).
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # 1. the Sentiment button lives in the corpus window's subtab nav.
     nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
     assert 'data-tab="sentiment"' in nav, (
@@ -1623,7 +1656,7 @@ def test_corpus_window_keywords_subtab():
         table is honest -- the endpoint method/caveat travel onto the surface,
         and n is shown; no composite score is invented.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # 1. the Keywords button lives in the corpus window's subtab nav (DOM text).
     nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
     assert 'data-tab="keywords"' in nav, (
@@ -1686,7 +1719,7 @@ def test_corpus_window_sources_subtab():
       * the source name reuses the EXISTING source-profile view (loadProfile),
         not an invented destination.
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # 1. the Sources button lives in the corpus window's subtab nav (DOM text).
     nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
     assert 'data-tab="sources"' in nav, (
@@ -1759,7 +1792,7 @@ def test_corpus_window_competitive_subtab():
       * the "not a ranking / not credibility" + the VADER English-only
         disclosures are reachable (informed consent).
     """
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    html = _ui_source()
     # 1. the Competitive button lives in the corpus window's subtab nav (DOM text).
     nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
     assert 'data-tab="competitive"' in nav, (

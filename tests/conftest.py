@@ -34,8 +34,8 @@ os.environ.setdefault("OO_DB_PLAINTEXT", "1")
 # --- Optional-extra test isolation (findings TEST-06 + OO-D15-005) ----------- #
 # The analysis/nlp extras (numpy/scipy/pandas/scikit-learn/statsmodels/networkx/
 # nltk/vaderSentiment/spaCy) are optional. The app boots fine without them (the
-# analysis/commodity/keyword routers are simply not mounted -- see
-# src/api/main.py:_ANALYSIS_AVAILABLE), so a core-only install
+# analysis/commodity/keyword routers are simply not mounted -- see the optional
+# try/except in src/api/_wiring.py:wire()), so a core-only install
 # (`pip install -e '.[dev]'`) MUST yield a green suite. Two failure modes:
 #   (1) a test module imports an extra at COLLECTION time -> hard ImportError;
 #   (2) a test exercises an analysis router that isn't mounted -> 404 failures.

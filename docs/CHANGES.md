@@ -11,6 +11,17 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Two monoliths decomposed (audit PR H — no behaviour change).** The single-page UI
+  shed its giant inline blocks: the CSS and JavaScript now live in cached
+  `/static/app.css` and `/static/app.js` (a classic script loaded at the same point, so
+  the UI behaves identically), shrinking `index.html` from ~9,700 to ~1,680 lines. The
+  extraction is reversal-verified — re-inlining reproduces the original byte-for-byte.
+  On the backend, every API router registration moved out of `main.py` into a single
+  `src/api/_wiring.py:wire(app)` helper; the served API route set is **proven
+  byte-for-byte identical**. The externalised assets serve with explicit
+  `text/javascript`/`text/css` types on every platform. (Still to come, since they need
+  a headless browser or are deeply coupled: converting inline event handlers to
+  `addEventListener` + a stricter CSP, and extracting the metrics/CORS setup.)
 - **Accessibility + a calmer poll (audit PR G).** Charts now expose a **text
   alternative** for screen readers — every chart carries `role="img"` with a
   translated summary (series, point count, date range, value range) plus a

@@ -32,8 +32,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_HTML = (Path(__file__).resolve().parents[1] / "src" / "static" / "index.html").read_text(
-    encoding="utf-8"
+# index.html's JS/CSS were externalised into cached app.js/app.css (audit PR H), so
+# the UI source the assertions grep is the three files together (a MOVE, not a loss).
+_STATIC_DIR = Path(__file__).resolve().parents[1] / "src" / "static"
+_HTML = "\n".join(
+    (_STATIC_DIR / f).read_text(encoding="utf-8")
+    for f in ("index.html", "app.js", "app.css")
+    if (_STATIC_DIR / f).exists()
 )
 
 
