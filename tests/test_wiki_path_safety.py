@@ -59,8 +59,11 @@ def test_dump_url_and_paths_reject_traversal():
     with pytest.raises(ValueError):
         dump_url("../../evil")
     # dump_paths builds filesystem paths — every member must stay inside base_dir.
+    # Use Path.parts (OS-agnostic) so the check holds on Windows ('\\') too.
     paths = dump_paths("fr", base_dir=None)
-    assert all("/wiki_dumps/" in str(p) and ".." not in str(p) for p in paths.values())
+    for p in paths.values():
+        assert "wiki_dumps" in p.parts, f"dump path escaped wiki_dumps: {p}"
+        assert ".." not in p.parts, f"dump path contains traversal: {p}"
     with pytest.raises(ValueError):
         dump_paths("../../escape")
 
