@@ -318,18 +318,18 @@ class TestCacheDecorators:
             return x * x
 
         # First call
-        result1 = expensive_function(5)
+        expensive_function(5)
         assert call_count == 1
 
         # Second call should use cache
-        result2 = expensive_function(5)
+        expensive_function(5)
         assert call_count == 1
 
         # Advance past the cache TTL
         fake_clock.advance(1.1)
 
         # Third call should execute function again
-        result3 = expensive_function(5)
+        expensive_function(5)
         assert call_count == 2
 
     def test_lru_cached_decorator(self):
@@ -343,18 +343,18 @@ class TestCacheDecorators:
             return x * x
 
         # Call with different arguments
-        result1 = expensive_function(1)
-        result2 = expensive_function(2)
-        result3 = expensive_function(3)
+        expensive_function(1)
+        expensive_function(2)
+        expensive_function(3)
 
         assert call_count == 3
 
         # Call again with first argument - should evict the oldest (2) and call function
-        result1_again = expensive_function(1)
+        expensive_function(1)
         assert call_count == 4  # Should call function because 1 was evicted
 
         # Call with argument 2 again - should execute function (was evicted)
-        result2_again = expensive_function(2)
+        expensive_function(2)
         assert call_count == 5  # Should call function because 2 was evicted
 
 

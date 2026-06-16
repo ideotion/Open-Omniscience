@@ -37,7 +37,7 @@ import pandas as pd
 # Try to import required libraries
 try:
     import scipy.stats as stats
-    from scipy.stats import chi2, norm, sem
+    from scipy.stats import chi2, norm
     from scipy.stats import f as f_dist
     from scipy.stats import t as t_dist
 
@@ -46,9 +46,7 @@ except ImportError:
     HAS_SCIPY = False
 
 try:
-    import statsmodels.api as sm
     from statsmodels.stats.proportion import proportion_confint
-    from statsmodels.stats.weightstats import DescrStatsW
 
     HAS_STATSMODELS = True
 except ImportError:

@@ -215,6 +215,18 @@ ruling, a contingency, or a deliberate-omission note.
    Insights opens (the "N to index" count ticks to 0 on its own); the button +
    its palette action are removed. Insights sections were already subtabs (#127).
    Enforced in test_ui_invariants (#21).
+23. **BRIEFING CAVEATS ARE VISIBLE BY DEFAULT (audit PR A, 2026-06-15 — enforces
+   the permanent informed-consent non-negotiable; resolves a REGRESSION):** every
+   Home briefing card renders `c.caveat` inline in a visible `.card-caveat` line
+   under the summary — NEVER behind the "Show method" toggle. The toggle (`#brief-methods`,
+   was "Show method & caveat") now gates ONLY the verbose Method/math (`.mc`); the
+   caveat left the toggle-gated block entirely. Caveat text uses a theme-aware
+   `var(--caveat)` (dark `#eab44e` / light `#8a4d0a`) that clears WCAG AA 4.5:1 on
+   EVERY panel of all 17 themes (the old hardcoded `#c98a1b` failed 8/17, `#b45309`
+   failed 17/17 — verified by contrast math); the corpus-tier early caveat + the
+   custody OTS warning adopt the same variable. Label/title re-keyed ×12. Enforced
+   in test_ui_invariants (#23): the caveat must render in `.card-caveat` and must NOT
+   appear inside the `hidden` `.mc` block.
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First
@@ -543,8 +555,9 @@ ruling, a contingency, or a deliberate-omission note.
   2026-06-12, + political_bias=0.0; migration f4b5c6d7e8a9 NULLs the
   fabricated 5s; languages stay — catalog-asserted); ~~ETHICS.md tense~~
   (verified closed: the one "will" is the doc's own review cadence);
-  REMAINING: inline-onclick retirement (199×, needs a browser-verified
-  sweep); a11y batch.
+  REMAINING: inline-handler retirement (295 inline on*= as of 2026-06-15 —
+  229 onclick + 35 onchange + 15 onkeydown + 14 oninput + 2 onmouse*; the earlier
+  onclick-only audit figure is stale — needs a browser-verified sweep); a11y batch.
 - **De-US-centring — REMAINING (first batch shipped 2026-06-11: ISO-2
   canonical storage via src/catalog/countries.py, migration a3b4c5d6e7f8
   fixed the fabricated US default + the `[:2]` country-truncation corruption;
@@ -1378,6 +1391,109 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR G = FRONTEND A11Y + POLLING BACKOFF (draft
+  onto 0.09; browser-unverifiable here, so conservative + node-checked):** (1) CHART
+  a11y — `ooChart` (canvas) gains role="img" + a translated aria-label summary + a
+  visually-hidden per-series `.sr-only` data table; `dashChartSvg` (svg, already
+  role=img) gains the aria-label + sr-table. Shared `_chartAria`/`_chartSrTable`
+  helpers build the summary from t9() fragments (a dynamic attribute is never matched
+  by the i18n exact-key engine), +4 strings ×12. (2) POLLING — the two always-on
+  chrome polls (network + activity, both fixed 5 s) now route through one
+  `_adaptivePoll` helper: fast (5 s) while state changes, backing off to 20 s once
+  nothing changes for 45 s; pauses while the tab is hidden; resets to fast on
+  refocus or an observed change (network flip / scrape active). Self-reschedules in
+  EVERY path (can neither stall nor hot-spin); zero extra boot network (one initial
+  tick, as before); leans on the existing scheduler/airplane PUSH repaints so state
+  stays event-fresh. Cuts field-log finding B's idle storm. RE-VERIFIED already-done
+  (OO-D13-001, no change): #toast/#activity/#net-coach carry aria-live; #vitals-pop
+  + #palette have aria-modal + `_trapTab` focus trap + focus save/restore
+  (_vitalsPrevFocus/_palPrevFocus). Enforced in test_ui_invariants (#24 charts,
+  #25 adaptive poll). node --check clean; i18n 100% ×12; suite green.
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR F = TEST COVERAGE + FLAKY GUARD (draft onto
+  0.09):** three NEW unit-isolated test files for under-tested modules: (1)
+  test_merge_engine.py drives src/backup/merge.merge_corpus DIRECTLY on tiny plaintext
+  SQLite corpora (no subprocess torture harness) — proves FK remap (article source_id
+  rewritten to the LOCAL source matched by domain), bit-level dedup (same hash+content),
+  conflict (same hash, diff content → LOCAL kept + BOTH reported), and merged_rows
+  provenance; (2) test_producers_card_shapes.py runs EVERY _DEFAULT_PRODUCERS producer
+  over a small corpus and asserts each card's SHAPE (non-empty type/title/summary/bucket/
+  method/caveat, valid bucket, serialisable, no composite-score key in signal/evidence)
+  + the run_all failure-isolation contract — complements test_briefing.py's _trigger
+  check; (3) test_scheduler_runner.py drives BackgroundScheduler via injected
+  run_once_fn/settings_provider + threading.Events (NO sleep assertions): continuous
+  back-to-back, interval-mode runs-once-then-idles + prompt stop, failing-pass-recorded-
+  not-fatal, run_now non-overlap, + round_robin_interleave per-country/order-preserving.
+  Each verified to FAIL on a scratch source mutation (reverted). FLAKY ITEM re-checked:
+  test_rate_limit_timing + test_cache already use deterministic fake clocks (OO-D15-006);
+  test_feed_backoff's absolute-seconds bounds gained a skip-when-inconclusive guard
+  (_skip_if_clock_inconclusive) for a pathologically slow box — the backoff LOGIC stays
+  asserted unconditionally. Suite green; new tests stable across repeats.
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR E = reliability_score GUARD (draft onto 0.09;
+  DEFAULT APPLIED, maintainer may override):** the field is operator-set provenance
+  (migration f4b5c6d7e8a9 already NULLed the fabricated =5), but it shipped via
+  /api/sources named "...score" with no method/caveat and was guarded only for
+  credibility_score/political_bias. DEFAULT chosen (reversible): KEEP it as
+  operator-asserted metadata + (a) ETHICS.md documents it as the ONE intentional
+  exemption to no-composite-score (never computed/defaulted/derived); (b) new invariant
+  test_reliability_score_is_operator_set_never_computed asserts it stays in card.py's
+  forbidden-score set AND no analytics module assigns/derives it; (c) the only UI
+  surface (the CSV-import column doc) now labels it "operator-set, not computed" with
+  the long-form in the #oo-tip hover, +2 strings ×12. source_io serialization gains a
+  clarifying comment. PR body flags the default for maintainer override.
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR D = CI HYGIENE (draft onto 0.09, CI
+  subscribed):** `.github/workflows/ci.yml` gains (1) top-level `permissions:
+  contents: read` (least privilege — CI only reads + tests); (2) action SHA pins —
+  actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 (# v4.2.2) +
+  actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 (# v5.6.0), both
+  SHAs verified live, tag comments for Dependabot; (3) a BLOCKING correctness lane
+  `ruff check --select=F,B --extend-ignore=B008` (catches F821 etc.; the full style
+  sweep stays advisory `continue-on-error`) — NOTE CLI `--select` drops config
+  ignores so B008 (the FastAPI Depends pattern) is re-applied via --extend-ignore;
+  (4) `concurrency` with cancel-in-progress. To make the blocking lane GREEN, swept
+  the pre-existing 49 F/B violations: 14 B904 (proper `raise … from err`/`from
+  None`), F401 dead imports + try/except probe trims (scipy/statsmodels — probe
+  intact) + crypto/__init__ re-exports via redundant alias, F841 dead vars (incl.
+  removing an orphaned dead std-error calc in statistical_tests), B011/B007.
+  Verified: lane fails on an injected F821, passes clean; suite green; mypy 114≤127;
+  the existing pinned gates (mypy 2.1.0, bandit 1.9.4, pip-audit 2.10.1, i18n
+  --min 100, 3-OS sqlcipher smoke) untouched.
+- **AUTONOMOUS AUDIT 2026-06-15/16 — PR C = SAFETY & PRIVACY HARDENING (draft onto
+  0.09, CI subscribed):** (1) **scripts/import_eml.py DELETED** (the ledger-flagged
+  retirement — broken vs the live Article schema AND it captured To/Cc/Bcc = the
+  excluded recipient identity, violating anonymize-at-ingest; surfaced not silent;
+  scripts/README row removed). (2) **Wikipedia dump edition-code path-traversal
+  CLOSED:** new `validate_wiki_code()` (src/wiki/dumps.py) rejects anything but
+  `^[a-z0-9]+(-[a-z0-9]+)*$` (≤32) — wired into `dump_filename`/`dump_url`/`dump_paths`
+  (defense in depth) AND the 4 API endpoints (probe/start/page/corpus-ingest → clean
+  400). Chose a wider-than-suggested regex so real editions (simple, zh-min-nan,
+  bat-smg) still work. tests/test_wiki_path_safety.py. (3) **Ollama kill-switch gap
+  CLOSED:** OllamaClient now refuses every request while the kill switch (airplane
+  mode) is engaged AND refuses a non-loopback OO_OLLAMA_URL when it opens the socket
+  (privacy: LLM never talks to a remote host); tests in test_llm_ollama.py prove no
+  socket is attempted offline. (4) **CORS trimmed:** allow_headers → Content-Type+Accept
+  (Authorization was dead surface; Origin/User-Agent are browser-controlled),
+  preflight cache 24h→10m. (5) **DDG discovery defense-in-depth:** `_clean_url` now
+  runs results through `safe_href` (http(s)-only) — the fetch already re-guards.
+  Pre-existing duckduckgo.py lint (F841/B007) left for PR D's F/B sweep. Suite green;
+  mypy 114≤127.
+- **AUTONOMOUS AUDIT 2026-06-15/16 (draft PRs A–H onto 0.09, CI subscribed; each
+  hand-verified before shipping — the 06-audit false-positive lesson):** PR A
+  (caveats-visible, invariant #23 — above). PR B = DOC ACCURACY (docs-only):
+  (1) the stale inline-handler figure (an onclick-only count from the 2026-06-14
+  audit) is now the verified **295** (229 onclick + 35 onchange + 15 onkeydown + 14 oninput +
+  2 onmouse*) everywhere in CLAUDE.md + docs/audit; (2) ETHICS.md license-header /
+  copyright-notice checklist reworded honestly (196/213 src .py carry a
+  GPL-3.0-or-later notice — NOT "all"; GPL needs no per-file header, LICENSE is
+  authoritative) — note the audit's "0 exist" premise was a FALSE POSITIVE
+  (re-verified); (3) the dead `audit/scrape_log.csv` / `audit/errors.log` runtime
+  mandate in ETHICS.md replaced with the REAL on-click mechanism (data/*_preflight.jsonl
+  + field_test.jsonl + app_errors.jsonl → Settings debug bundle, never
+  auto-transmitted); (4) README "all 29 audit findings closed" CLARIFIED (it is
+  TRUE — findings.csv reads 29/29 FIXED; the audit's "contradicts 20-fixed-9-deferred"
+  premise was a FALSE POSITIVE conflating the 0.07 snapshot with the 0.0.8 close —
+  so the honesty non-negotiable forbade the literal "make it say 20/9"); (5) README
+  task-manager window + Wikipedia tracked-changes *timeline* tab moved to "In progress
+  / next" matching the RC gate 🔶 (the shipped halves stay accurately ✅).
 - **SOLO SESSION 2026-06-15 (autonomous; maintainer away) — audit + honesty
   bug-fix stack (draft PRs onto 0.09; full audit + every Class-B/C call in
   `docs/SOLO_SESSION_DECISIONS.md` + `docs/audit/*_2026-06-15_solo.md`):**
@@ -1505,8 +1621,8 @@ ruling, a contingency, or a deliberate-omission note.
   rebuild + search + corpus-window) with a documented 100k profile; OO-D5-001
   GOVERNANCE states custody-trail is opt-in (one-click enable) — **default-flip is a
   maintainer call**; OO-D2-003 SSRF TOCTOU residual documented in SECURITY. DEFERRED
-  (raised as PR questions): OO-D12-001+D2-002 the 199-inline-handler→CSP migration
-  (large + browser-unverifiable here), OO-D15-002/003 ruff-blocking + win/mac
+  (raised as PR questions): OO-D12-001+D2-002 the inline-handler→CSP migration
+  (295 inline on*= as of 2026-06-15; large + browser-unverifiable here), OO-D15-002/003 ruff-blocking + win/mac
   graduation. New locale strings are AI-drafted (flagged for native review).
 - **QUARANTINE REMOVED TO AN ARCHIVE BRANCH (2026-06-14, maintainer-chosen):** the
   ~79.5k-line `quarantine/` tree (legacy six-pillar trees + fabricated/dead modules,

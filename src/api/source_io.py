@@ -58,6 +58,10 @@ def _source_to_row(s: Source) -> dict:
         "priority": s.priority,
         "rate_limit_ms": s.rate_limit_ms,
         "enabled": s.enabled,
+        # Operator-asserted provenance metadata (1-10), NEVER computed/derived by the
+        # app (intentional exemption to the no-composite-score rule; see ETHICS.md and
+        # test_reliability_score_is_operator_set_never_computed). The UI labels it
+        # "operator-set, not computed" wherever it is shown.
         "reliability_score": s.reliability_score,
     }
 
