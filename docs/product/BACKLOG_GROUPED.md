@@ -389,9 +389,16 @@ makes the rest fall out cheaply:
   ADDITIVE + IDEMPOTENT (existing domains untouched, never clobbered); caller owns the
   txn (single-writer gate). `POST /api/stats/sources/ingest` runs it (LOCAL DB write, no
   network/consent). tests/test_stats_ingest.py (11: disabled/controversial/no-score,
-  idempotent, skip-existing-without-clobber, endpoint). REMAINING: SDMX/API fetch
-  before scraping, figure-level provenance + vintages + comparability guards,
-  side-by-side triangulation, IPCC forecast-tracking; a Settings button to trigger it.
+  idempotent, skip-existing-without-clobber, endpoint).
+  SETTINGS FRONTEND SHIPPED 2026-06-16 (conservative, browser-unverified): a Settings →
+  **Statistics** subtab (`data-tab="stats"` / `#set-stats`) — a DESCRIPTIVE directory over
+  `GET /api/stats/agencies` (name/acronym/scope/country/region + a per-row `controversial`
+  pill + the continents-covered coverage line; home URLs via `extLink` so they open the
+  LOCAL preview, invariant #6; no figures/score) + a one-click "Register as sources" button
+  over `POST /api/stats/sources/ingest` (idempotent local DB write, no consent gate, tally +
+  caveat shown); +19 i18n ×12; test_ui_invariants. REMAINING: SDMX/API fetch before
+  scraping, figure-level provenance + vintages + comparability guards, side-by-side
+  triangulation, IPCC forecast-tracking; a filterable view of the registered stats sources.
 
 ---
 

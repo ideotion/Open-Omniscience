@@ -961,6 +961,7 @@
       if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow
       if (cat === "models") loadLlmModels();          // the dedicated LLM-management subtab (Q6)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
+      if (cat === "stats") loadStatAgencies();        // official-statistics producer directory (Group N)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") loadAtRestState();       // honest at-rest attestation (doctor)
     }
@@ -6681,6 +6682,70 @@
       if (!confirm(t("Delete this download and its file?"))) return;
       try { await api("/api/geo/downloads?key="+encodeURIComponent(key), {method:"DELETE"}); loadOsmDownloads(); }
       catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    // -- Official statistics producers (Group N): the curated directory + the --- //
+    //    one-click "register as DISABLED controversial sources" action.          //
+    //    Descriptive only: NO figures, NO score; every producer is a STANCED      //
+    //    source by ruling (the "controversial" pill states it, never a verdict).  //
+    //    home URLs open the LOCAL link-preview first (extLink, invariant #6/#6e). //
+    async function loadStatAgencies() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("stat-agencies"); if (!box) return;
+      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const d = await api("/api/stats/agencies");
+        const ags = d.agencies || [];
+        const cov = $("stat-coverage");
+        if (cov) {
+          // Honest coverage line: how many continents have at least one national producer.
+          const n = (d.continents_covered || []).length;
+          cov.textContent = t("Continents covered: {n}").replace("{n}", n)
+            + " · " + (ags.length) + " " + t("producers");
+        }
+        if (!ags.length) { box.innerHTML = `<div class="muted">${esc(t("No producers listed."))}</div>`; return; }
+        // The API already orders international-first, then by region, then name —
+        // render in that order (no client re-sort needed). Scope is labelled, not raw.
+        const scope = (s) => s === "international" ? t("International")
+          : s === "national" ? t("National") : (s || "");
+        const rows = ags.map(a => `<tr>
+            <td><strong>${esc(a.name)}</strong>${a.acronym ? ` <span class="muted">(${esc(a.acronym)})</span>` : ""}</td>
+            <td>${esc(scope(a.scope))}</td>
+            <td>${a.country ? esc(String(a.country).toUpperCase()) : "<span class=\"muted\">—</span>"}</td>
+            <td>${esc(a.region || "")}</td>
+            <td>${a.home_url ? extLink(a.home_url, a.home_url) : ""}</td>
+            <td><span class="pill warn">${esc(t("controversial"))}</span></td>
+          </tr>`).join("");
+        box.innerHTML = `<table>
+          <tr><th>${esc(t("Name"))}</th><th>${esc(t("Scope"))}</th><th>${esc(t("Country"))}</th>`
+          + `<th>${esc(t("Region"))}</th><th>${esc(t("Official site"))}</th><th></th></tr>${rows}</table>`;
+        // The API caveat travels with the data, visible by default (informed consent).
+        if (d.caveat) box.innerHTML += `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>`;
+      } catch (e) {
+        box.innerHTML = `<div class="muted">${esc(t("Could not load the statistics directory."))}</div>`;
+      }
+    }
+    async function ingestStatSources() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const msg = $("stat-ingest-msg"), btn = $("stat-ingest-btn");
+      if (!confirm(t("Register all official-statistics producers as DISABLED sources? They are added controversial and NOT scraped."))) return;
+      if (btn) btn.disabled = true;
+      if (msg) msg.textContent = t("Registering…");
+      try {
+        // LOCAL DB write — the endpoint opens ZERO external sockets, so this works in
+        // airplane mode and never needs the network-consent gate (no ensureOnline).
+        const d = await api("/api/stats/sources/ingest", { method: "POST" });
+        const n = (x) => (x || 0).toLocaleString();
+        if (msg) {
+          msg.innerHTML = `<b>${n(d.created)}</b> ${esc(t("created"))} · ${n(d.skipped_existing)} ${esc(t("already present"))}`
+            + (d.skipped_no_domain ? ` · ${n(d.skipped_no_domain)} ${esc(t("skipped (no domain)"))}` : "")
+            + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(d.caveat)}</div>` : "");
+        }
+        toast(t("Statistics producers registered."), "ok");
+      } catch (e) {
+        if (msg) msg.innerHTML = `<span class="note err">${esc(t("Could not register the producers."))}: ${esc(e.message)}</span>`;
+        else toast(t("Could not register the producers."), "err");
+      } finally { if (btn) btn.disabled = false; }
     }
 
     // -- Read a page from a downloaded dump (T14: local, zero network) ------- //
