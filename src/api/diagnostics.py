@@ -19,6 +19,7 @@ Honesty constraints (FUTURE_DEVELOPMENTS design):
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -62,6 +63,29 @@ def _in_batches(ids: list[int], size: int = 800):
 _DIGEST_SAMPLE = 100
 
 
+def _export_deadline_seconds() -> float:
+    """Deadline for THIS on-demand, streamed, full-corpus diagnostic export.
+
+    The interactive ``OO_STATEMENT_TIMEOUT_S`` (60s) guard is the WRONG mechanism
+    here: the keyword log is a DELIBERATE full-corpus crunch the operator
+    explicitly requests and streams to disk, not a latency-sensitive page read.
+    At field scale (≈940k mentions / 336k keywords, encrypted, 2-core VM) the
+    full ``keyword_mentions`` scans legitimately run past 60s, so the interactive
+    deadline ABORTED the export with a 503 -- i.e. the cap was bounding the
+    data-crunching, which the maintainer's keyword policy forbids ("a cap may
+    bound a REPORT, never the crunching").
+
+    So the export gets its OWN budget: ``OO_KEYWORD_EXPORT_TIMEOUT_S``, default
+    0 = no deadline. The download still streams (progress is visible) and the
+    single-writer WAL keeps writers unblocked during the long read. Set a
+    positive number of seconds to re-impose a ceiling.
+    """
+    try:
+        return float(os.environ.get("OO_KEYWORD_EXPORT_TIMEOUT_S", "0"))
+    except ValueError:
+        return 0.0
+
+
 @router.get("/keywords")
 def keyword_log(
     db: Session = Depends(get_db),
@@ -93,7 +117,7 @@ def keyword_log(
     same cap semantics as before (contract-tested).
     """
     try:
-        with statement_deadline(db):
+        with statement_deadline(db, seconds=_export_deadline_seconds()):
             # Article -> language, ONCE, via the covering index (verified plan:
             # idx_article_country_language) — joining mentions to articles in
             # SQL would drag article rows through the SQLCipher codec for every
