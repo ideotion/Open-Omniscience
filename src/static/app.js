@@ -2682,6 +2682,11 @@
         const d = await api("/api/wiki/languages?scope=dumps");
         _wikiLangsFlat = d.languages || [];   // flat, UI-locales first (invariant #1)
         renderWikiLanguages();
+        // The inline size estimates are bundled + DATED (no network probe). Show
+        // the review date beside the picker so the estimate is honestly caveated.
+        const asof = d.size_estimate_as_of;
+        const note = $("dump-size-note"), asofEl = $("dump-size-asof");
+        if (note && asof) { if (asofEl) asofEl.textContent = asof; note.hidden = false; }
       } catch (e) { /* picker is optional; leave the default option */ }
     }
 
@@ -2700,8 +2705,12 @@
         || (l.name || "").toLowerCase().includes(q)
         || (l.autonym || "").toLowerCase().includes(q);
       const langs = _wikiLangsFlat.filter(match);
-      const opt = l =>
-        `<option value="${esc(l.code)}">${esc(l.autonym)} — ${esc(l.name)} (${esc(l.code)}, ${esc(_TIER_LABEL[l.tier]||l.tier)})</option>`;
+      const opt = l => {
+        // Inline, instant size estimate (bundled + dated; never a network probe).
+        // "~" + the dated caveat beside the picker keep it honestly an estimate.
+        const sz = l.size_estimate_bytes ? ` · ~${_fmtBytes(l.size_estimate_bytes)}` : "";
+        return `<option value="${esc(l.code)}">${esc(l.autonym)} — ${esc(l.name)} (${esc(l.code)}, ${esc(_TIER_LABEL[l.tier]||l.tier)})${sz}</option>`;
+      };
       sel.innerHTML = langs.length
         ? langs.map(opt).join("")
         : `<option value="" disabled>No edition matches “${esc(q)}”</option>`;

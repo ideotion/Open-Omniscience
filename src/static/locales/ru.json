@@ -970,5 +970,7 @@
   "September equinox": "Сентябрьское равноденствие",
   "December solstice": "Декабрьское солнцестояние",
   "(the selected article set)": "(выбранный набор статей)",
-  "Showing the exact article set behind this card.": "Показан точный набор статей за этой карточкой."
+  "Showing the exact article set behind this card.": "Показан точный набор статей за этой карточкой.",
+  "Inline sizes are estimates — the exact size is read on download.": "Указанные размеры — это оценки; точный размер считывается при загрузке.",
+  "reviewed": "проверено"
 }

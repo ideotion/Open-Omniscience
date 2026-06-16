@@ -255,10 +255,23 @@ def wiki_languages(scope: str = "all") -> dict:
     """
     from src.wiki.languages import app_languages_ui_first, languages_ui_first
 
-    flat = app_languages_ui_first() if scope == "dumps" else languages_ui_first()
+    if scope == "dumps":
+        # Enrich each edition with a bundled, dated size ESTIMATE so the picker
+        # shows sizes inline & instantly — no per-edition network probe (zero-
+        # network boot / airplane mode stay intact). Exact size is read on download.
+        from src.wiki.dump_sizes import DUMP_SIZES_AS_OF, estimate_bytes
+
+        return {
+            "scope": scope,
+            "languages": [
+                {**lang.to_dict(), "size_estimate_bytes": estimate_bytes(lang.code)}
+                for lang in app_languages_ui_first()
+            ],
+            "size_estimate_as_of": DUMP_SIZES_AS_OF,
+        }
     return {
         "scope": scope,
-        "languages": [lang.to_dict() for lang in flat],
+        "languages": [lang.to_dict() for lang in languages_ui_first()],
     }
 
 
