@@ -12,9 +12,11 @@ provenance (model + prompt version + timestamp) as ArticleAnalysis rows.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -126,6 +128,52 @@ def llm_generate(req: GenerateRequest, client: OllamaClient = Depends(get_llm_cl
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"model": result.model, "text": result.text}
+
+
+# Ollama model tags: registry/name:tag with the usual punctuation. Validated so a
+# user-supplied name can never inject into the Ollama request path.
+_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+
+
+class ModelRequest(BaseModel):
+    model: str
+
+
+@router.post("/pull")
+def llm_pull(req: ModelRequest, client: OllamaClient = Depends(get_llm_client)):
+    """Pull (download + install) a model via the LOCAL Ollama process — STREAMS
+    Ollama's real progress as NDJSON (invariant #20: never a fabricated bar).
+
+    TRANSPORT HONESTY (maintainer Q9): the bytes egress via the Ollama process over
+    CLEARNET, not the app's Tor proxy — the UI discloses this at consent. Airplane
+    mode (kill switch) refuses the pull at the client. Gated by the ONE consent (#14)."""
+    import json as _json
+
+    if not _MODEL_RE.match(req.model or ""):
+        raise HTTPException(status_code=400, detail="invalid model name")
+
+    def _stream():
+        try:
+            for prog in client.pull(req.model):
+                yield _json.dumps(prog, separators=(",", ":")) + "\n"
+        except (LLMUnavailable, LLMError) as exc:
+            yield _json.dumps({"error": str(exc)[:300]}, separators=(",", ":")) + "\n"
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+
+@router.post("/remove")
+def llm_remove(req: ModelRequest, client: OllamaClient = Depends(get_llm_client)) -> dict:
+    """Remove an installed model via the LOCAL Ollama process."""
+    if not _MODEL_RE.match(req.model or ""):
+        raise HTTPException(status_code=400, detail="invalid model name")
+    try:
+        client.remove(req.model)
+    except LLMUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)[:200]) from exc
+    except LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:200]) from exc
+    return {"removed": req.model, "ok": True}
 
 
 @router.post("/articles/{article_id}/summarize")

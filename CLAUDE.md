@@ -901,6 +901,19 @@ ruling, a contingency, or a deliberate-omission note.
   (embedding-only, vision-only); 'compatible' = text-generation that fits RAM, not
   a special protocol; (c) transport = Q9=YES (clearnet via the ollama process,
   disclosed at consent); (d) active model = Q10=YES (stored UI setting).**
+  **PULL/REMOVE ENDPOINTS SHIPPED 2026-06-16 (backend slice 1):** `OllamaClient.pull`
+  (a generator STREAMING ollama's own /api/pull progress objects — honest real
+  progress, invariant #20) + `OllamaClient.remove` (/api/delete); `POST /api/llm/pull`
+  relays the progress as NDJSON (StreamingResponse), `POST /api/llm/remove` deletes.
+  Both inherit the kill-switch refusal (airplane mode = no socket — the pull would
+  egress over CLEARNET via the ollama process, exactly what airplane forbids; Q9
+  transport honesty in the docstring) + loopback-only; a strict model-name regex
+  blocks path injection (tests assert no ollama call for a bad name). tests in
+  test_llm_ollama.py (stream parse, remove+404, kill-switch refuses pull/remove,
+  bad-name 400). REMAINING: the Settings LLM SUBTAB UI (pull/remove buttons + the
+  ONE consent #14 + clearnet disclosure + task-manager job); the binary-installer
+  (Q7=B download+verify+run official installer with a VISIBLE elevation step); live
+  ollama.com library browse (Q8); stored active-model setting (Q10).
   SELF-UPDATE via GUI: consented check vs GitHub releases → signed
   oo-backup-2 + install-tree snapshot BEFORE anything → verified release →
   migrations on a STAGED copy → atomic swap + relaunch → rollback on failure;

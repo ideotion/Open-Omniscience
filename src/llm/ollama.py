@@ -235,5 +235,49 @@ class OllamaClient:
             eval_count=data.get("eval_count"),
         )
 
+    def pull(self, model: str):
+        """Pull (download + install) a model via the local Ollama process, STREAMING
+        Ollama's own progress objects (yields dicts) — honest real progress, never a
+        fabricated bar (invariant #20). Respects the kill switch.
+
+        NOTE ON TRANSPORT (maintainer Q9, 2026-06-16): the pull egresses through the
+        Ollama PROCESS over CLEARNET, NOT the app's Tor proxy/guarded factory — so
+        airplane+Tor do not cover it. Airplane mode (the kill switch) still refuses it
+        here; the UI must DISCLOSE the clearnet egress at consent."""
+        self._check_kill_switch()
+        import json as _json
+
+        try:
+            with self._client.stream(
+                "POST", "/api/pull", json={"model": model, "stream": True}
+            ) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        yield _json.loads(line)
+                    except ValueError:
+                        continue
+        except httpx.HTTPStatusError as exc:
+            raise LLMError(f"Ollama error pulling {model!r}: {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {exc}") from exc
+
+    def remove(self, model: str) -> bool:
+        """Delete an installed model via the local Ollama process. Returns True on
+        success; LLMUnavailable if the model is absent. Respects the kill switch."""
+        self._check_kill_switch()
+        try:
+            resp = self._client.request("DELETE", "/api/delete", json={"model": model})
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise LLMUnavailable(f"Model {model!r} is not installed.") from exc
+            raise LLMError(f"Ollama error removing {model!r}: {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {exc}") from exc
+        return True
+
     def close(self) -> None:
         self._client.close()
