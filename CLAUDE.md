@@ -1174,6 +1174,53 @@ ruling, a contingency, or a deliberate-omission note.
   per-family HUE shown as a tab dot and a card left-accent (--fam); "All" stays
   the single prioritised feed (lens not a wall). test_ui_invariants #19/#19b
   pin it. Home empty-state fail-safe preserved (subtab bar only when >1 bucket).
+- **UI RETHINK — MAINTAINER PLANNING SESSION 2026-06-16 (DESIGN-ONLY, not built;
+  ONE coherent vision spanning nav + Home + Analysis; REVISES invariants
+  #2/#3/#4/#18/#19 + UI_SHELL_REDESIGN_PLAN §1/§5 + the TWO-windows debt — all
+  test_ui_invariants-enforced, so any change ripples into that test):**
+  - **(1) NAV MOVES TO THE TOP (revisits #2/#3/#4/#18):** the tabs move to a
+    FULL-WIDTH horizontal bar at the VERY TOP, beneath a THIN status bar that
+    holds only simple action toggles (search · status · airplane · language ·
+    help). Tabs FILL the width with a MAX reasonable width each; the active tab is
+    CLEARLY indicated while inactive tabs are discreet-but-clearly-visible. **OPEN
+    QUESTION (asked 2026-06-16, UNANSWERED — genuine ruling, do NOT build until
+    answered): which nav LEVEL goes to the top — the MAIN sections (replace the
+    left sidebar, overriding #2), the in-section FACET subtabs only (keep the
+    sidebar), or a UNIFIED single context-aware top strip (no sidebar)?**
+  - **(2) HOME → DASHBOARD / HELICOPTER VIEW (extends #19; everything REDUNDANT
+    per #8 — Home gives NO unique information):** Home becomes a landing the user
+    is HAPPY to reach + a launchpad to start digging into the specialized tabs;
+    nothing on it is unique (every element deep-links to its real tab). SECTIONS
+    (maintainer list, more invited): top GRAPHS (ooChart, sparse→bars per Item Y),
+    keyword TRENDS, top CARDS, DYNAMIC data-driven sections (e.g. a commodity's
+    price graph surfaces WHEN its keyword family is trending), a CAROUSEL of
+    rolling/simplified/SYNTHESIZED cards, "most recent" articles by TAG. Selection
+    is INDUCED by background analytics over the DB yet TWEAKABLE (build on the
+    recipes.py producer toggles). HONESTY GUARDRAILS (binding): "top"/ranking is an
+    HONEST ordering (evidence tier + recency + corpus spread + _trigger), NEVER a
+    hidden importance score (assert_no_score_fields); "synthesized" = LOCAL
+    ANALYTIC synthesis, NEVER LLM output (zero-network Home; LLM-less is the asset);
+    caveats VISIBLE by default (#23) even in compact tiles; the carousel is
+    user-controlled + a11y (pausable/keyboard) and NEVER hides a caveat behind a
+    timed rotation; Home never blank-and-silent (fail-safe empty state).
+  - **(3) NAME THE CARD SYSTEM (brainstorm WITH the maintainer — NO name chosen
+    yet):** today = "briefing cards" / "producers" / "buckets" (src/briefing). A
+    card = one measured signal + evidence + method + caveat = a SOURCED, CAVEATED
+    PROMPT TO INVESTIGATE ("assistance never a verdict"; "a microscope not a
+    detector"; "name the shape"). Seeded candidates: Leads · Cues · Soundings ·
+    Readouts · Vantages (NOTE: "Signals" collides with src/signals/). DECISION
+    PENDING — maintainer wants to choose together.
+  - **(4) ANALYSIS = NAMED, PARALLEL, SPAWNED TABS (ruled 2026-06-16; fixes the
+    "weird empty Analysis tab" + likely retires the TWO-windows debt):** today
+    clicking the sidebar "Analysis" tab opens the SINGLETON #an EMPTY (no corpus
+    until you search; #an-query shows "(all articles matching your filters)") and
+    openAnalysis/openAnalysisFor REUSE that one tab = confusing. RULING: a
+    search/term OPENS A NEW analysis tab (one instance per search), TITLED by the
+    query term (or "synthesis" for a composite), and SEVERAL parallel searches
+    coexist as DIFFERENT tabs (a multi-document workspace). The empty singleton
+    Analysis entry goes away (a launcher at most). DEPENDS ON (1) (where spawned
+    tabs live) + folds in the #an ↔ #corpus-win consolidation. Build sub-questions:
+    are tabs closeable / capped / session-persisted?
 - **UI SHELL REDESIGN (ruled 2026-06-13; full plan in
   `docs/product/UI_SHELL_REDESIGN_PLAN.md`):** (1) ONE universal nav grammar
   app-wide — LATERAL sidebar = main tabs, VERTICAL subtabs near the top =
