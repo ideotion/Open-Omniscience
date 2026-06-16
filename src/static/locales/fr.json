@@ -382,6 +382,7 @@
   "Start continuous background collection": "Démarrer la collecte continue en arrière-plan",
   "Allow network requests again": "Autoriser de nouveau les requêtes réseau",
   "Online": "En ligne",
+  "Collecting paused": "Collecte en pause",
   "Offline": "Hors ligne",
   "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "Mode avion — rempli signifie hors ligne : toute nouvelle requête réseau est refusée immédiatement ; une requête déjà en cours peut se terminer.",
   "Fetch market and index data from the official feeds": "Récupérer les données de marchés et d'indices depuis les flux officiels",

@@ -382,6 +382,7 @@
   "Start continuous background collection": "بدء الجمع المستمر في الخلفية",
   "Allow network requests again": "السماح بطلبات الشبكة مجددًا",
   "Online": "متصل",
+  "Collecting paused": "تم إيقاف الجمع مؤقتًا",
   "Offline": "غير متصل",
   "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "وضع الطيران — الرمز الممتلئ يعني عدم الاتصال: يُرفض كل طلب شبكة جديد فورًا؛ وقد يكتمل طلب جارٍ واحد.",
   "Fetch market and index data from the official feeds": "جلب بيانات الأسواق والمؤشرات من المصادر الرسمية",

@@ -382,6 +382,7 @@
   "Start continuous background collection": "Kontinuierliche Hintergrund-Sammlung starten",
   "Allow network requests again": "Netzwerkanfragen wieder erlauben",
   "Online": "Online",
+  "Collecting paused": "Sammlung pausiert",
   "Offline": "Offline",
   "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "Flugmodus — gefüllt heißt offline: Jede neue Netzwerkanfrage wird sofort verweigert; eine laufende Anfrage darf enden.",
   "Fetch market and index data from the official feeds": "Markt- und Indexdaten aus den offiziellen Feeds abrufen",

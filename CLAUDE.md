@@ -1371,6 +1371,17 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **SOLO SESSION 2026-06-15 (autonomous; maintainer away) — audit + honesty
+  bug-fix stack (draft PRs onto 0.09; full audit + every Class-B/C call in
+  `docs/SOLO_SESSION_DECISIONS.md` + `docs/audit/*_2026-06-15_solo.md`):**
+  - **Item V SHIPPED — airplane-mode PAUSED status (status-honesty bug):** the
+    activity chip painted green "Collecting…" while airplane mode had tripped the
+    kill switch (the pass really stops) = a FABRICATED status. Now `_paintNetwork`
+    persists `_netOnline` + repaints; `_paintActivity` shows a GROUNDED/muted
+    "Collecting paused" with the SPINNER STOPPED when a background pass is in flight
+    while offline — never the active green. Class-B choice (D-03): muted/grounded,
+    NOT the literal go-off accent (which is `--ok` green here = would conflate with
+    active-green) and NOT a new alarm-red. +1 string ("Collecting paused") ×12.
 - **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
   subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
   visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:

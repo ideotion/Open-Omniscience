@@ -382,6 +382,7 @@
   "Start continuous background collection": "নিরবচ্ছিন্ন ব্যাকগ্রাউন্ড সংগ্রহ শুরু করুন",
   "Allow network requests again": "নেটওয়ার্ক অনুরোধ আবার অনুমতি দিন",
   "Online": "অনলাইন",
+  "Collecting paused": "সংগ্রহ বিরতিতে",
   "Offline": "অফলাইন",
   "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "এয়ারপ্লেন মোড — ভরাট মানে অফলাইন: প্রতিটি নতুন নেটওয়ার্ক অনুরোধ সঙ্গে সঙ্গে প্রত্যাখ্যাত হয়; চলমান একটি অনুরোধ শেষ হতে পারে।",
   "Fetch market and index data from the official feeds": "অফিসিয়াল ফিড থেকে বাজার ও সূচকের তথ্য আনুন",

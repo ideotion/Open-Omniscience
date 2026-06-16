@@ -382,6 +382,7 @@
   "Start continuous background collection": "开始持续后台采集",
   "Allow network requests again": "重新允许网络请求",
   "Online": "在线",
+  "Collecting paused": "采集已暂停",
   "Offline": "离线",
   "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "飞行模式——实心表示离线：所有新的网络请求会被立即拒绝；进行中的请求可能会完成。",
   "Fetch market and index data from the official feeds": "从官方数据源获取行情与指数数据",

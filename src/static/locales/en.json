@@ -382,6 +382,7 @@
   "No non-loopback network interfaces were found.": "No non-loopback network interfaces were found.",
   "Offline": "Offline",
   "Online": "Online",
+  "Collecting paused": "Collecting paused",
   "Start a collection pass (RSS, crawl, markets, watched Wikipedia pages)": "Start a collection pass (RSS, crawl, markets, watched Wikipedia pages)",
   "Start continuous background collection": "Start continuous background collection",
   "Stay offline": "Stay offline",
