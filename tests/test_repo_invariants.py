@@ -604,6 +604,19 @@ def test_ui_invariants():
     assert "function loadTrendWindows(" in html and "/api/insights/trending-windows" in html, (
         "loadTrendWindows() must render the three preset windows from /trending-windows"
     )
+    # 21c. Insights Convergence: a read-only view over GET /api/insights/convergences
+    #      (space-time co-occurrence). Additive; independence is by distinct sources,
+    #      co-occurrence is never causation — the API method+caveat are shown VISIBLE
+    #      by default (informed consent), the cluster opens its exact article set.
+    assert 'data-tab="convergence"' in html and 'id="ins-convergence"' in html, (
+        "the Convergence subtab button + its panel must exist (Insights convergence view)"
+    )
+    assert "function loadConvergences(" in html and 'cat === "convergence"' in html, (
+        "loadConvergences() must exist and be lazy-loaded from showInsightCat()"
+    )
+    assert "/api/insights/convergences" in html and "openAnalysisForIds(" in html, (
+        "the convergence view must read /api/insights/convergences and open the exact article set"
+    )
     # 22. The analysis window (Group F, keystone #4): a full-screen #analyze tab
     #     driven by the universal subtab component, fed by the article-SET keyword
     #     endpoint, opened from the Search tab's Analyze button. Counts, no verdict.

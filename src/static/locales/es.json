@@ -978,5 +978,10 @@
   "Past week": "Última semana",
   "Past month": "Último mes",
   "No rising keywords in this window yet.": "Aún no hay palabras clave en aumento en esta ventana.",
-  "Airplane mode here controls only this app's network — it does not switch off your device's network or stop other apps. A userspace app can never equal a hardware switch.": "El modo avión aquí controla solo la red de esta aplicación — no apaga la red de tu dispositivo ni detiene otras aplicaciones. Una aplicación en espacio de usuario nunca puede igualar un interruptor de hardware."
+  "Airplane mode here controls only this app's network — it does not switch off your device's network or stop other apps. A userspace app can never equal a hardware switch.": "El modo avión aquí controla solo la red de esta aplicación — no apaga la red de tu dispositivo ni detiene otras aplicaciones. Una aplicación en espacio de usuario nunca puede igualar un interruptor de hardware.",
+  "sources": "fuentes",
+  "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "Aún no hay convergencias. Un grupo necesita al menos {a} artículos Y al menos {s} fuentes que compartan un lugar dentro de la ventana.",
+  "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n} enlaces de origen compartido — las fuentes pueden repetir una sola cita, no una confirmación independiente.",
+  "Showing {n} of {t} clusters.": "Mostrando {n} de {t} grupos.",
+  "Could not load": "No se pudo cargar"
 }

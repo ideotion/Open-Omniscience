@@ -4839,6 +4839,7 @@
         if (cat === "sources") loadCitedSources();
         if (cat === "families") loadFamilies();
         if (cat === "supergroups") loadSuperGroups();
+        if (cat === "convergence") loadConvergences();
       }
     }
 
@@ -5057,6 +5058,70 @@
             <span class="muted"> — ${esc(a.source || "")}${a.published_at?" · "+esc(a.published_at.slice(0,10)):""}</span>
             ${a.url?` · ${extLink(a.url, "source ↗", "muted")}`:""}</div>`).join("");
       } catch (e) { tgt.innerHTML = `<div class="muted" style="padding:6px 0">Could not load: ${esc(e.message)}</div>`; }
+    }
+
+    // Convergence (read-only, additive): clusters of articles converging on the
+    // same PLACE within a time window on the MENTIONED event date. Independence is
+    // measured by DISTINCT SOURCES, never article count; shared-origin links flag
+    // possible false-triangulation (sources echoing one citation). The method +
+    // caveat come FROM the API and are shown VISIBLE by default (informed consent —
+    // co-occurrence is never causation). No score: only the counts the API returns.
+    async function loadConvergences() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("cv-list"), meth = $("cv-method");
+      const wEl = $("cv-window");
+      const w = wEl ? (Math.max(1, parseInt(wEl.value, 10) || 7)) : 7;
+      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (meth) meth.textContent = "";
+      try {
+        const d = await api("/api/insights/convergences?window_days=" + w + "&limit=20");
+        const clusters = d.clusters || [];
+        if (!clusters.length) {
+          // Honest empty state: state the gate (≥min_articles AND ≥min_sources).
+          box.innerHTML = `<div class="muted">` + esc(
+            t("No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.")
+              .replace("{a}", String(d.min_articles)).replace("{s}", String(d.min_sources))) + `</div>`;
+          if (meth && d.caveat) meth.textContent = d.caveat;
+          return;
+        }
+        const rows = clusters.map(c => {
+          const place = esc(c.place || "—") + (c.place_country ? ` <span class="muted">(${esc(c.place_country)})</span>` : "");
+          const win = esc((c.window_start || "").slice(0, 10)) + " → " + esc((c.window_end || "").slice(0, 10));
+          const srcNames = (c.source_names || []).map(esc).join(", ");
+          const srcShown = srcNames.length > 160 ? srcNames.slice(0, 160) + "…" : srcNames;
+          // Title is clickable -> the exact converging article set (function exists).
+          const head = `<div class="cs-main"><span class="cs-label" style="cursor:pointer;text-decoration:underline"
+              onclick="openAnalysisForIds(${esc(JSON.stringify(c.article_ids || []))}, ${esc(JSON.stringify(c.place || ""))})">${place}</span>
+            <div class="cs-url muted">${win}</div></div>`;
+          const counts = `<span class="muted">${c.n_articles} ${esc(t("articles"))} · ${c.distinct_sources} ${esc(t("sources"))}</span>`;
+          const srcLine = srcShown ? `<div class="muted" style="font-size:11px;margin-top:2px">${srcShown}</div>` : "";
+          // VISIBLE shared-origin warning when sources may echo one citation.
+          const warn = (c.shared_origin_links > 0)
+            ? `<div class="hint" style="color:var(--caveat);margin-top:2px">${esc(
+                t("⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.")
+                  .replace("{n}", String(c.shared_origin_links)))}</div>`
+            : "";
+          return `<div class="cs-row" style="display:block;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">${head}${counts}</div>
+            ${srcLine}${warn}</div>`;
+        }).join("");
+        const total = d.clusters_total != null ? d.clusters_total : clusters.length;
+        const more = (total > clusters.length)
+          ? `<div class="muted" style="margin-top:8px">${esc(
+              t("Showing {n} of {t} clusters.").replace("{n}", String(clusters.length)).replace("{t}", String(total)))}</div>`
+          : "";
+        box.innerHTML = rows + more;
+        // Method + caveat VISIBLE by default (never behind a toggle).
+        if (meth) {
+          const parts = [];
+          if (d.method) parts.push(d.method);
+          if (d.caveat) parts.push(d.caveat);
+          meth.textContent = parts.join(" — ");
+        }
+      } catch (e) {
+        // Additive panel — degrade quietly, never throw.
+        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+      }
     }
 
     let _insStatusBuilt = false;
