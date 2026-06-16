@@ -1026,7 +1026,7 @@
       <h2>Wikipedia offline baselines</h2>
       <p class="muted" style="margin-top:0">Optional, heavy, and separate from live change-tracking. Pick a
         language edition below and download the official Wikimedia <em>current-text</em> dump (resumable, with
-        pause/resume). Editions are grouped by continent (largest-first within each); the real download size is read from the server when you
+        pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you
         click <em>Estimate size</em> — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller.
         Baselines are only for offline reading/search — the change-tracking above does not need them.</p>
       <div class="row">
@@ -1040,8 +1040,8 @@
         <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
         <div id="dump-estimate" class="hint" style="align-self:center"></div>
       </div>
-      <div class="hint">The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;
-        <strong>type in the box to filter</strong> by name, autonym or code. Sizes shown are coarse heaviness
+      <div class="hint">The list is limited to the app's languages — the editions this app can read and analyze.
+        <strong>Type in the box to filter</strong> by name, autonym or code. Sizes shown are coarse heaviness
         hints, while <em>Estimate size</em> reports the exact current dump size from the server. You can also
         type any edition code that isn't listed.</div>
       <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>

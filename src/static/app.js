@@ -2671,7 +2671,7 @@
 
     // -- Wikipedia offline baselines (lives in Settings) -------------------- //
     const _TIER_LABEL = {huge: "very large", large: "large", medium: "medium", small: "smaller"};
-    let _wikiLangGroups = [];   // [{region, languages:[...]}], cached after fetch
+    let _wikiLangsFlat = [];   // flat [{code,name,autonym,tier}], cached (invariant #1: no continent groups)
     // NOTE: named loadDumpLanguages — a second loadWikiLanguages (the Wikipedia
     // tab's edition picker) is declared later and would override this one (the
     // exact bug behind "the download page can't show the languages").
@@ -2680,40 +2680,33 @@
       if (!sel) return;
       try {
         const d = await api("/api/wiki/languages?scope=dumps");
-        // Normalise to a grouped form so rendering is uniform (older API → one group).
-        _wikiLangGroups = (d.groups && d.groups.length)
-          ? d.groups
-          : [{region: "", languages: d.languages || []}];
+        _wikiLangsFlat = d.languages || [];   // flat, UI-locales first (invariant #1)
         renderWikiLanguages();
       } catch (e) { /* picker is optional; leave the default option */ }
     }
 
-    // Render the editions <select> as continent <optgroup>s, filtered by the
-    // type-to-filter box (matches name, autonym or code). Keeps the selection if
-    // it survives the filter; otherwise selects the first visible edition.
+    // Render the editions <select> as ONE flat list (invariant #1, amended
+    // 2026-06-16: no continent optgroups — editions are language-based), filtered
+    // by the type-to-filter box (matches name, autonym or code). The label leads
+    // with the native name (autonym), the identifier per invariant #15. Keeps the
+    // selection if it survives the filter; otherwise selects the first visible edition.
     function renderWikiLanguages() {
       const sel = $("dump-lang");
-      if (!sel || !_wikiLangGroups.length) return;
+      if (!sel || !_wikiLangsFlat.length) return;
       const q = ($("dump-lang-filter")?.value || "").trim().toLowerCase();
       const cur = sel.value;
       const match = l => !q
         || l.code.toLowerCase().includes(q)
         || (l.name || "").toLowerCase().includes(q)
         || (l.autonym || "").toLowerCase().includes(q);
+      const langs = _wikiLangsFlat.filter(match);
       const opt = l =>
-        `<option value="${esc(l.code)}">${esc(l.name)} — ${esc(l.autonym)} (${esc(l.code)}, ${esc(_TIER_LABEL[l.tier]||l.tier)})</option>`;
-      let any = false;
-      const html = _wikiLangGroups.map(g => {
-        const langs = g.languages.filter(match);
-        if (!langs.length) return "";
-        any = true;
-        const inner = langs.map(opt).join("");
-        return g.region ? `<optgroup label="${esc(g.region)}">${inner}</optgroup>` : inner;
-      }).join("");
-      sel.innerHTML = any ? html : `<option value="" disabled>No edition matches “${esc(q)}”</option>`;
+        `<option value="${esc(l.code)}">${esc(l.autonym)} — ${esc(l.name)} (${esc(l.code)}, ${esc(_TIER_LABEL[l.tier]||l.tier)})</option>`;
+      sel.innerHTML = langs.length
+        ? langs.map(opt).join("")
+        : `<option value="" disabled>No edition matches “${esc(q)}”</option>`;
       // Restore prior selection if still visible; else fall back to the first option.
-      const stillThere = _wikiLangGroups.some(g => g.languages.some(l => l.code === cur && match(l)));
-      if (cur && stillThere) sel.value = cur;
+      if (cur && langs.some(l => l.code === cur)) sel.value = cur;
     }
 
     async function loadKeywordFilter() {
@@ -6337,18 +6330,12 @@
         const sel = $("wiki-lang"); if (!sel) return;
         const cur = sel.value || "en";
         sel.innerHTML = "";
-        (d.groups || []).forEach(g => {
-          const og = document.createElement("optgroup"); og.label = g.region || "";
-          (g.languages || []).forEach(l => {
-            const o = document.createElement("option");
-            o.value = l.code; o.textContent = `${l.name} (${l.code})`;
-            og.appendChild(o);
-          });
-          sel.appendChild(og);
-        });
-        if (!sel.children.length) (d.languages || []).forEach(l => {
+        // ONE flat list (invariant #1, amended 2026-06-16: no continent optgroups);
+        // the native name (autonym) leads as the identifier (invariant #15).
+        (d.languages || []).forEach(l => {
           const o = document.createElement("option");
-          o.value = l.code; o.textContent = `${l.name} (${l.code})`; sel.appendChild(o);
+          o.value = l.code; o.textContent = `${l.autonym} — ${l.name} (${l.code})`;
+          sel.appendChild(o);
         });
         sel.value = cur; if (!sel.value) sel.value = "en";
         _wikiLangsLoaded = true;

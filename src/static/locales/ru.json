@@ -520,7 +520,7 @@
   "Found via case-insensitive match.": "Найдено по совпадению без учёта регистра.",
   "dump revision of": "ревизия дампа от",
   "Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.": "Необработанный викитекст (без рендеринга), извлечённый локально из вашего дампа — без сетевых запросов.",
-  "The list is limited to the app's languages — the editions this app can read and analyze. Grouped by continent;": "Список ограничен языками приложения — изданиями, которые оно может читать и анализировать. Сгруппирован по континентам;",
+  "The list is limited to the app's languages — the editions this app can read and analyze.": "Список ограничен языками приложения — изданиями, которые оно может читать и анализировать.",
   "Before you leave — what this app knows": "Прежде чем уйти — что знает это приложение",
   "A stored local copy exists — read it without going online:": "Есть локальная копия — читайте её, не выходя в сеть:",
   "Known source in your catalog:": "Известный источник в вашем каталоге:",
