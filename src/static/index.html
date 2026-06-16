@@ -876,6 +876,7 @@
         <button data-tab="sources">Sources</button>
         <button data-tab="newsletters">Newsletters</button>
         <button data-tab="wikipedia">Wikipedia</button>
+        <button data-tab="stats">Statistics</button>
         <button data-tab="offlinemap">Offline map</button>
         <button data-tab="agenda">Agenda</button>
         <button data-tab="data">Data &amp; backup</button>
@@ -1100,6 +1101,27 @@
       <div class="hint">Reading happens entirely on this machine: the dump's index is scanned for the title, then one small
         block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.</div>
       <div id="dumpread-out" style="margin-top:8px"></div>
+    </section>
+    </div>
+
+    <div class="set-view" id="set-stats" style="display:none">
+    <section class="panel">
+      <h2>Official statistics producers</h2>
+      <p class="muted" style="margin-top:0">A curated directory of government and international statistical
+        agencies — deliberately global (BRICS, Africa and smaller economies alongside the usual Western producers
+        and IGOs). Every producer here is a <em>stanced</em> source: an official figure carries its producing
+        state's interests, so each is flagged <span class="pill warn">controversial</span> by ruling — this is a
+        descriptive note about WHO publishes, never a credibility verdict or a score. No figures are fetched and
+        nothing leaves your machine.</p>
+      <p class="hint" id="stat-coverage" style="margin-top:0"></p>
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="secondary" id="stat-ingest-btn" onclick="ingestStatSources()">Register as sources</button>
+        <div class="hint" style="align-self:center">Adds every producer to your catalogue as a <b>disabled</b>,
+          controversial source — registered, not scraped (idempotent; safe to repeat). This is a local database
+          change, not a network action.</div>
+      </div>
+      <div id="stat-ingest-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
+      <div style="overflow:auto;margin-top:10px" id="stat-agencies"><div class="muted">Loading…</div></div>
     </section>
     </div>
 

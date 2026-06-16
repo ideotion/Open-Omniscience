@@ -769,6 +769,28 @@ def test_ui_invariants():
     )
     # the pull path is gated by the ONE consent popup (clearnet egress via Ollama)
     assert "ensureOnline(" in html, "pulling a model must pass ensureOnline (invariant #14)"
+    # 29. Official-statistics producers (Group N) Settings subtab: a descriptive
+    #     directory over /api/stats/agencies + a one-click "register as DISABLED
+    #     controversial sources" action over /api/stats/sources/ingest, living in a
+    #     Settings subtab. The directory is DESCRIPTIVE only (no figures, no score);
+    #     producers are stanced sources (the "controversial" framing is a note, never
+    #     a credibility verdict). Outbound home URLs MUST go through extLink so they
+    #     open the LOCAL preview first (invariant #6/#6e — no bare external <a href>).
+    assert 'data-tab="stats"' in html and 'id="set-stats"' in html, (
+        "the Statistics Settings subtab button + panel must exist (Group N frontend)"
+    )
+    assert "function loadStatAgencies(" in html and 'cat === "stats"' in html, (
+        "loadStatAgencies() must exist and be lazy-loaded from showSetCat()"
+    )
+    assert "/api/stats/agencies" in html and "/api/stats/sources/ingest" in html, (
+        "the Statistics view must read the agency directory + the ingest endpoint"
+    )
+    # The agencies render must route home URLs through extLink (local preview, #6).
+    stats_fn = html.split("function loadStatAgencies(", 1)[1].split("function ingestStatSources(", 1)[0]
+    assert "extLink(" in stats_fn, (
+        "the agencies render must use extLink() for home_url (invariant #6/#6e — "
+        "outbound links open the local preview, never a bare external <a href>)"
+    )
 
 
 def test_corpus_tier_header():

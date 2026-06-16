@@ -336,9 +336,11 @@ ruling, a contingency, or a deliberate-omission note.
   per-continent coverage; deliberately BRICS/Africa/forgotten-region) [CATALOG SUBSTRATE
   + INGEST-AS-SOURCES SHIPPED 2026-06-16: src/stats/agencies.py + src/stats/ingest.py
   (ingest_agencies_as_sources → DISABLED controversial Sources, idempotent, no
-  fabricated score) + GET /api/stats/agencies + POST /api/stats/sources/ingest; see
-  BACKLOG Group N. REMAINING: SDMX/API fetch + figure-level provenance/vintages/
-  comparability/triangulation + the Settings trigger button]. THE FOUR FORKS
+  fabricated score) + GET /api/stats/agencies + POST /api/stats/sources/ingest + a Settings →
+  Statistics SUBTAB (descriptive directory + register-as-sources button, home URLs via
+  extLink #6, +19 i18n ×12, shipped 2026-06-16); see BACKLOG Group N. REMAINING: SDMX/API
+  fetch + figure-level provenance/vintages/comparability/triangulation + a filterable
+  registered-sources view]. THE FOUR FORKS
   (ruled 2026-06-16): (1) the offline READER stays STANDALONE (not folded into #an);
   (2) the convergence WATCH engine = the FULL 'Watches view + history' UX (saved local
   conditions → a Lead card on match + a dedicated Watches panel: history +
