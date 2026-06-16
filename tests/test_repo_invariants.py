@@ -617,6 +617,12 @@ def test_ui_invariants():
     assert "function loadTrendWindows(" in html and "/api/insights/trending-windows" in html, (
         "loadTrendWindows() must render the three preset windows from /trending-windows"
     )
+    # 21b+. Each window's top terms render a daily sparkline from the series_top
+    #       backend (additive), via the shared honest renderer (dashChartSvg: line
+    #       when dense, Item-Y bars when sparse — never an interpolated curve).
+    assert "series_top=5" in html and "dashChartSvg(" in html, (
+        "loadTrendWindows() must request series_top and render per-term sparklines"
+    )
     # 21c. Insights Convergence: a read-only view over GET /api/insights/convergences
     #      (space-time co-occurrence). Additive; independence is by distinct sources,
     #      co-occurrence is never causation — the API method+caveat are shown VISIBLE

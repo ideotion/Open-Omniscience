@@ -5883,13 +5883,30 @@
       const box = $("trd-windows"); if (!box) return;
       const LABELS = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
       try {
-        const d = await api("/api/insights/trending-windows?limit=8");
+        // series_top=5: the top rising terms of each window carry a daily series
+        // (from /trending-windows, reusing trend()'s day buckets) so each renders a
+        // small honest sparkline (dashChartSvg: line when dense, Item-Y bars when
+        // sparse — never an interpolated curve). The rest stay a plain list.
+        const d = await api("/api/insights/trending-windows?limit=8&series_top=5");
         box.innerHTML = (d.windows || []).map(w => {
           const head = `<h2 style="font-size:13px">${esc(LABELS[w.label] || w.label)} <span class="muted">· n=${w.count}</span></h2>`;
-          const list = (w.terms && w.terms.length)
-            ? termListHtml(w.terms, t => `↑${t.growth}× · ${t.recent} recent`)
-            : `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`;
-          return `<div style="flex:1;min-width:200px">${head}${list}</div>`;
+          const terms = w.terms || [];
+          if (!terms.length) {
+            return `<div style="flex:1;min-width:240px">${head}<div class="muted">${esc(t("No rising keywords in this window yet."))}</div></div>`;
+          }
+          const spark = terms.filter(x => Array.isArray(x.series)).map(x => {
+            // {date,count} -> dashChartSvg's {observed_on,price}; it handles the empty
+            // + sparse cases honestly (no fabricated points).
+            const pts = x.series.map(p => ({observed_on: p.date, price: p.count}));
+            return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;align-items:baseline;gap:6px">
+                <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${esc(x.term)}</a>
+                <span class="muted" style="font-size:12px">↑${esc(String(x.growth))}× · ${esc(String(x.recent))} recent</span>
+              </div>${dashChartSvg(pts, "")}</div>`;
+          }).join("");
+          const rest = terms.filter(x => !Array.isArray(x.series));
+          const restList = rest.length ? termListHtml(rest, t2 => `↑${t2.growth}× · ${t2.recent} recent`) : "";
+          return `<div style="flex:1;min-width:240px">${head}${spark}${restList}</div>`;
         }).join("") || `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`;
         const note = $("trd-windows-note"); if (note) note.textContent = d.caveat || "";
       } catch (e) { /* additive panel — leave the single-window view intact on error */ }
