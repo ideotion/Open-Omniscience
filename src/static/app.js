@@ -960,6 +960,7 @@
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
+      if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") loadAtRestState();       // honest at-rest attestation (doctor)
     }
     function buildDrawer() {
@@ -6498,6 +6499,69 @@
     async function deleteDump(key) {
       if (!confirm("Delete this download and its file?")) return;
       try { await api("/api/wiki/dumps?key="+encodeURIComponent(key), {method:"DELETE"}); loadWikiDumps(); }
+      catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    // -- Offline map: OSM region downloads (Group M) ------------------------- //
+    // Mirrors the Wikipedia dump UI: a zero-network catalogue picker (size = a
+    // DATED estimate, exact size read on download) + a resumable download-job
+    // table. Starting a download is a NETWORK action, so it passes the ONE consent
+    // popup (ensureOnline, invariant #14) and is refused while airplane mode is on
+    // (the backend's guarded factory enforces the kill switch too).
+    async function loadOsmMap() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const sel = $("osm-region"); if (!sel) return;
+      try {
+        const d = await api("/api/geo/regions");
+        sel.innerHTML = (d.regions || []).map(r =>
+          `<option value="${esc(r.code)}">${esc(r.name)} · ~${humanBytes(r.size_estimate_bytes)} · ${esc(r.continent)}</option>`
+        ).join("") || `<option value="">${esc(t("No regions."))}</option>`;
+        const note = $("osm-size-note"), asof = $("osm-size-asof");
+        if (note && asof && d.size_estimate_as_of) { asof.textContent = d.size_estimate_as_of; note.hidden = false; }
+      } catch (e) { sel.innerHTML = `<option value="">${esc(t("Could not load regions."))}</option>`; }
+      loadOsmDownloads();
+    }
+    async function loadOsmDownloads() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tbl = $("osm-dl-table"); if (!tbl) return;
+      try {
+        const d = await api("/api/geo/downloads");
+        if (!d.downloads.length) { tbl.innerHTML = `<tr><td class="muted">${esc(t("No offline downloads."))}</td></tr>`; return; }
+        tbl.innerHTML = `<tr><th>${esc(t("Region"))}</th><th>${esc(t("Progress"))}</th><th>${esc(t("Status"))}</th><th></th></tr>` +
+          d.downloads.map(e => `<tr>
+            <td><strong>${esc(e.name || e.code)}</strong></td>
+            <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:(e.size_estimate_bytes?` <span class="muted">~${humanBytes(e.size_estimate_bytes)}</span>`:"")}</td>
+            <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
+            <td style="white-space:nowrap">
+              ${e.status==='downloading'?`<button class="tiny secondary" onclick="pauseOsm(${esc(JSON.stringify(e.key))})">${esc(t("Pause"))}</button>`:
+                (e.status!=='done'?`<button class="tiny secondary" onclick="resumeOsm(${esc(JSON.stringify(e.code))})">${esc(t("Resume"))}</button>`:"")}
+              <button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(e.key))})">${esc(t("Delete"))}</button>
+            </td></tr>`).join("");
+      } catch (e) { /* downloads optional — degrade quietly */ }
+    }
+    async function startOsmDownload(code) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const c = code || $("osm-region").value;
+      if (!c) return;
+      // A user-initiated (not resume) start confirms the heavy download first.
+      if (!code && !confirm(t("Download this offline map region? These can be very large (several GB to tens of GB)."))) return;
+      // Every offline->online transition passes the ONE consent popup (invariant #14).
+      if (!await ensureOnline(t("Download an offline map region"))) return;
+      try {
+        await api("/api/geo/downloads/start", {method:"POST", body: JSON.stringify({code: c})});
+        toast(t("Download started.")); loadOsmDownloads();
+        let n=0; const poll=setInterval(()=>{ loadOsmDownloads(); if(++n>40) clearInterval(poll); }, 3000);
+      } catch (e) { toast("Start failed: " + e.message, "err"); }
+    }
+    function resumeOsm(code) { startOsmDownload(code); }
+    async function pauseOsm(key) {
+      try { await api("/api/geo/downloads/pause?key="+encodeURIComponent(key), {method:"POST"}); loadOsmDownloads(); }
+      catch (e) { toast("Pause failed: " + e.message, "err"); }
+    }
+    async function deleteOsm(key) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Delete this download and its file?"))) return;
+      try { await api("/api/geo/downloads?key="+encodeURIComponent(key), {method:"DELETE"}); loadOsmDownloads(); }
       catch (e) { toast("Delete failed: " + e.message, "err"); }
     }
 

@@ -983,5 +983,14 @@
   "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "Aucune convergence pour l’instant. Un groupe doit réunir au moins {a} articles ET au moins {s} sources partageant un lieu dans la fenêtre.",
   "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n} liens d’origine partagée — les sources peuvent répéter une seule citation, pas une confirmation indépendante.",
   "Showing {n} of {t} clusters.": "Affichage de {n} groupes sur {t}.",
-  "Could not load": "Échec du chargement"
+  "Could not load": "Échec du chargement",
+  "Progress": "Progression",
+  "Resume": "Reprendre",
+  "Delete": "Supprimer",
+  "No offline downloads.": "Aucun téléchargement hors ligne.",
+  "Delete this download and its file?": "Supprimer ce téléchargement et son fichier ?",
+  "No regions.": "Aucune région.",
+  "Could not load regions.": "Impossible de charger les régions.",
+  "Download an offline map region": "Télécharger une région de carte hors ligne",
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "Télécharger cette région de carte hors ligne ? Elles peuvent être très volumineuses (plusieurs Go à des dizaines de Go)."
 }

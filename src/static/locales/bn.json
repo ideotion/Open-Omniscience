@@ -983,5 +983,14 @@
   "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "এখনও কোনো অভিসৃতি নেই। একটি ক্লাস্টারের জন্য উইন্ডোর মধ্যে একই স্থান ভাগ করে নেওয়া অন্তত {a} নিবন্ধ এবং অন্তত {s} উৎস প্রয়োজন।",
   "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n}টি অভিন্ন-উৎস লিঙ্ক — উৎসগুলি একই উদ্ধৃতি প্রতিধ্বনিত করতে পারে, স্বাধীন নিশ্চিতকরণ নয়।",
   "Showing {n} of {t} clusters.": "{t}টির মধ্যে {n}টি ক্লাস্টার দেখানো হচ্ছে।",
-  "Could not load": "লোড করা যায়নি"
+  "Could not load": "লোড করা যায়নি",
+  "Progress": "অগ্রগতি",
+  "Resume": "পুনরায় শুরু",
+  "Delete": "মুছুন",
+  "No offline downloads.": "কোনো অফলাইন ডাউনলোড নেই।",
+  "Delete this download and its file?": "এই ডাউনলোড এবং এর ফাইল মুছবেন?",
+  "No regions.": "কোনো অঞ্চল নেই।",
+  "Could not load regions.": "অঞ্চল লোড করা যায়নি।",
+  "Download an offline map region": "একটি অফলাইন মানচিত্র অঞ্চল ডাউনলোড করুন",
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "এই অফলাইন মানচিত্র অঞ্চল ডাউনলোড করবেন? এগুলি খুব বড় হতে পারে (কয়েক GB থেকে কয়েক দশ GB)।"
 }

@@ -983,5 +983,14 @@
   "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.",
   "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.",
   "Showing {n} of {t} clusters.": "Showing {n} of {t} clusters.",
-  "Could not load": "Could not load"
+  "Could not load": "Could not load",
+  "Progress": "Progress",
+  "Resume": "Resume",
+  "Delete": "Delete",
+  "No offline downloads.": "No offline downloads.",
+  "Delete this download and its file?": "Delete this download and its file?",
+  "No regions.": "No regions.",
+  "Could not load regions.": "Could not load regions.",
+  "Download an offline map region": "Download an offline map region",
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "Download this offline map region? These can be very large (several GB to tens of GB)."
 }

@@ -983,5 +983,14 @@
   "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "暂无汇聚。一个聚类至少需要 {a} 篇文章并且至少 {s} 个来源在时间窗口内指向同一地点。",
   "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n} 个同源链接——这些来源可能在重复同一处引用，而非独立佐证。",
   "Showing {n} of {t} clusters.": "显示 {t} 个聚类中的 {n} 个。",
-  "Could not load": "无法加载"
+  "Could not load": "无法加载",
+  "Progress": "进度",
+  "Resume": "继续",
+  "Delete": "删除",
+  "No offline downloads.": "没有离线下载。",
+  "Delete this download and its file?": "删除此下载及其文件？",
+  "No regions.": "没有区域。",
+  "Could not load regions.": "无法加载区域。",
+  "Download an offline map region": "下载离线地图区域",
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "下载此离线地图区域？文件可能非常大（几 GB 到数十 GB）。"
 }

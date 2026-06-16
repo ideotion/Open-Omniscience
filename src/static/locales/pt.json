@@ -983,5 +983,14 @@
   "No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.": "Ainda sem convergências. Um agrupamento precisa de pelo menos {a} artigos E pelo menos {s} fontes que partilhem um local dentro da janela.",
   "⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.": "⚠ {n} ligações de origem partilhada — as fontes podem repetir uma só citação, não uma confirmação independente.",
   "Showing {n} of {t} clusters.": "A mostrar {n} de {t} agrupamentos.",
-  "Could not load": "Não foi possível carregar"
+  "Could not load": "Não foi possível carregar",
+  "Progress": "Progresso",
+  "Resume": "Retomar",
+  "Delete": "Excluir",
+  "No offline downloads.": "Nenhum download offline.",
+  "Delete this download and its file?": "Excluir este download e seu arquivo?",
+  "No regions.": "Nenhuma região.",
+  "Could not load regions.": "Não foi possível carregar as regiões.",
+  "Download an offline map region": "Baixar uma região de mapa offline",
+  "Download this offline map region? These can be very large (several GB to tens of GB).": "Baixar esta região de mapa offline? Elas podem ser muito grandes (de vários GB a dezenas de GB)."
 }
