@@ -3,6 +3,19 @@
 # targeted Python 3.12, and ran on branches this repo does not use.
 name: CI
 
+# Least privilege (audit PR D): this workflow only READS the repo and runs tests.
+# The default GITHUB_TOKEN scope is broader than needed once third-party actions and
+# `pip install` run on PRs. Grant read-only at the top; add a narrow job-level write
+# only if a future job ever needs one.
+permissions:
+  contents: read
+
+# Don't pile up superseded runs: a rapid push series on the same ref cancels the
+# in-flight run and starts fresh (saves runner minutes; the active cycle merges fast).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   # Run on every pushed branch so the active release branch (0.05, 0.06, 0.07,
   # ...) is always covered. Pinning to one old branch let direct pushes to the
@@ -25,9 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Weekly security audit (bandit + pip-audit)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
       - name: Install (core only)
@@ -47,10 +60,10 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
 
@@ -59,7 +72,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[analysis,dev]"
 
-      - name: Lint (ruff)
+      # BLOCKING correctness lint (audit PR D): F (pyflakes — undefined names,
+      # used-before-assignment, unused imports/vars) + B (bugbear — likely bugs).
+      # B008 stays ignored (the idiomatic FastAPI `Depends()`-in-defaults pattern,
+      # per pyproject `[tool.ruff.lint] ignore`; CLI --select drops config ignores,
+      # so we re-apply it). The full style sweep below stays advisory.
+      - name: Lint — correctness (ruff F + bugbear, BLOCKING)
+        run: ruff check --select=F,B --extend-ignore=B008 src/ tests/
+
+      - name: Lint — style (ruff, advisory)
         run: ruff check src/ tests/
         continue-on-error: true  # advisory until the legacy style debt is burned down
 
@@ -126,10 +147,10 @@ jobs:
     runs-on: ubuntu-latest
     name: Core-only install (no [analysis] extra)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
 
@@ -149,10 +170,10 @@ jobs:
     runs-on: ubuntu-latest
     name: PQC signing path (hybrid Ed25519 + ML-DSA)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
 
@@ -185,10 +206,10 @@ jobs:
     name: Portability observation (${{ matrix.os }})
     continue-on-error: true  # observation lane: graduates to required when green
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
 
@@ -216,7 +237,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: SQLCipher wheel smoke (${{ matrix.os }})
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
 

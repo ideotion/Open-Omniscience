@@ -20,6 +20,55 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   never quietly become a derived/computed score. *(Default applied; the maintainer
   can choose to retire it from the API instead.)*
 
+
+- **CI hygiene (audit PR D).** The CI workflow now declares least-privilege
+  `permissions: contents: read`, **pins** `actions/checkout`/`actions/setup-python`
+  to full commit SHAs (with version comments for Dependabot), adds a **blocking**
+  correctness-lint lane (`ruff --select=F,B`, undefined-names + likely-bugs; the full
+  style sweep stays advisory), and cancels superseded runs (`concurrency`). Enabling
+  the blocking lane meant clearing the pre-existing F/B backlog: proper exception
+  chaining (`raise … from …`), dead-import/dead-variable removal, and a couple of
+  trivial bugbear fixes — all behavior-preserving (full suite green).
+
+
+- **Safety & privacy hardening (audit PR C).** Closed a handful of edge gaps:
+  the Wikipedia dump **edition code is now validated** before it can reach a
+  filesystem path or fetch URL (a `../`/`/` in `wiki` is rejected with a clean 400 —
+  path-traversal guard, at both the helpers and the four dump API endpoints); the
+  **local LLM (Ollama)** now refuses to run while **airplane mode** is engaged and
+  refuses a non-loopback `OO_OLLAMA_URL` (the local model never talks to a remote
+  host); **CORS** was trimmed (dropped the dead `Authorization`/`Origin`/`User-Agent`
+  allow-headers, shortened the preflight cache); DuckDuckGo discovery now passes its
+  result URLs through the existing `http(s)` scheme allowlist; and the broken,
+  recipient-capturing **`scripts/import_eml.py`** was removed (it referenced columns
+  the live schema doesn't have and stored `To`/`Cc` addresses, against the
+  anonymize-at-ingest rule).
+
+
+- **Documentation accuracy pass (audit PR B, docs-only).** Brought the docs back in
+  line with the code: the stale inline-handler figure (an old `onclick`-only count) is
+  now the verified **295** (229 `onclick` + 35 `onchange` + 15 `onkeydown` + 14 `oninput` + 2 `onmouse*`)
+  across CLAUDE.md and the audit log; the **ETHICS.md GPLv3 checklist** no longer
+  overstates per-file headers (most modules carry an SPDX notice; the `LICENSE` file is
+  authoritative — GPL needs no per-file header); the dead **`audit/scrape_log.csv`**
+  runtime mandate was replaced with the real on-click diagnostics mechanism
+  (`data/*_preflight.jsonl` + `field_test.jsonl` → the Settings debug bundle, never
+  auto-transmitted); the README's "all 29 audit findings closed" now spells out that
+  the `0.07` audit fixed 20 and deferred 9, all closed in `0.0.8` (`findings.csv` reads
+  29/29 FIXED); and the **task-manager window** + **Wikipedia tracked-changes timeline
+  tab** moved to "In progress / next" to match the RC gate's honest 🔶 (their shipped
+  halves stay ✅).
+- **Briefing caveats are now visible by default (ethics regression fix).** Each Home
+  briefing card showed its **Caveat** only when you turned on a default-OFF "Show
+  method & caveat" toggle — a regression against the permanent informed-consent rule
+  that caveats are *visible by default, never hidden behind a calm-UI toggle*. The
+  caveat now renders inline under every card's summary; the toggle (renamed **Show
+  method**) gates only the verbose method/math. The caveat colour is now theme-aware
+  so it clears **WCAG AA 4.5:1 on all 17 themes** (the old hardcoded amber failed
+  contrast on the light themes); the corpus-tier and chain-of-custody warnings adopt
+  the same colour. A new UI invariant (`#23`) locks the visibility in so it cannot
+  regress again.
+
 - **Collect, Sources, and Wikipedia moved into Settings (content-first).** The three
   acquisition/configuration tabs left the sidebar; their controls now live under
   **Settings → Collect** (scheduler, manual ingest, batch picker), **Settings →

@@ -37,12 +37,10 @@ import pandas as pd
 try:
     import scipy.stats as stats
     from scipy.stats import (
-        chi2,
         chi2_contingency,
         f_oneway,
         kruskal,
         linregress,
-        norm,
         pearsonr,
         spearmanr,
         ttest_1samp,
@@ -478,11 +476,6 @@ class StatisticalTests:
         # Calculate confidence intervals for slope and intercept
         n = len(x_arr)
         if n > 2:
-            # Standard error of the estimate
-            y_pred = intercept + slope * x_arr
-            ss_res = np.sum((y_arr - y_pred) ** 2)
-            ss_tot = np.sum((y_arr - np.mean(y_arr)) ** 2)
-
             # Standard error of slope and intercept.
             # SE(intercept) = SE(slope) * sqrt(sum(x^2) / n)  (matches statsmodels);
             # the previous form divided by var(x) and produced wrong intervals.
