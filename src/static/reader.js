@@ -43,18 +43,25 @@
     }
   }
 
+  // Lazy panes: endpoint (article_ids-aware, the article = a "corpus of 1") + renderer.
+  var ENDPOINTS = {
+    keywords: "/api/insights/corpus-keywords?limit=40&article_ids=",
+    sentiment: "/api/insights/corpus-sentiment?article_ids=",
+    mindmap: "/api/insights/graph?article_ids=",
+  };
+
   function lazyLoad(key, pane) {
     if (!aid) {
       pane.innerHTML = '<p class="r-muted">No article id — cannot load this view.</p>';
       return;
     }
+    var base = ENDPOINTS[key];
+    if (!base) return;
     pane.innerHTML = '<p class="r-muted">Loading…</p>';
-    var url = key === "keywords"
-      ? "/api/insights/corpus-keywords?limit=40&article_ids=" + encodeURIComponent(aid)
-      : "/api/insights/corpus-sentiment?article_ids=" + encodeURIComponent(aid);
-    fetch(url, { headers: { Accept: "application/json" } })
+    var render = key === "keywords" ? renderKeywords : key === "sentiment" ? renderSentiment : renderMindmap;
+    fetch(base + encodeURIComponent(aid), { headers: { Accept: "application/json" } })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-      .then(function (d) { (key === "keywords" ? renderKeywords : renderSentiment)(pane, d); })
+      .then(function (d) { render(pane, d); })
       .catch(function (e) {
         pane.innerHTML = '<p class="r-muted">Could not load this view (' + esc(e.message) + ").</p>";
       });
@@ -100,6 +107,53 @@
       + english
       + '<p class="r-method">' + esc(d.method || "") + "</p>"
       + caveat;
+  }
+
+  // A deterministic RADIAL keyword map (centre → arms → always OUTWARD — the
+  // mind-map rule, no cross-tangle). Self-contained SVG; node area ∝ mention
+  // count; counts only, never a score. Data: /api/insights/graph?article_ids=.
+  function renderMindmap(pane, d) {
+    var nodes = (d && d.nodes) || [];
+    var method = '<p class="r-method">' + esc((d && d.method) || "") + "</p>";
+    var caveat = '<p class="r-caveat">' + esc((d && d.caveat) || "") + "</p>";
+    if (!nodes.length) {
+      pane.innerHTML = '<h2 class="r-h2">Mindmap</h2>'
+        + '<p class="r-muted">Not enough keywords indexed to draw a map yet.</p>' + method + caveat;
+      return;
+    }
+    var center = null, arms = [];
+    nodes.forEach(function (n) { if (n.center) center = n; else arms.push(n); });
+    if (!center) { center = nodes[0]; arms = nodes.slice(1); }
+    var MAX_ARMS = 14;
+    var more = arms.length > MAX_ARMS ? arms.length - MAX_ARMS : 0;
+    arms = arms.slice(0, MAX_ARMS);
+
+    var W = 720, H = 460, cx = W / 2, cy = H / 2, R = 150;
+    var maxSize = 1;
+    arms.concat([center]).forEach(function (n) { if ((n.size || 1) > maxSize) maxSize = n.size || 1; });
+    function radius(sz) { return Math.max(7, Math.min(22, 7 + Math.sqrt((sz || 1) / maxSize) * 15)); }
+
+    var edges = "", circles = "", labels = "";
+    var m = arms.length || 1;
+    arms.forEach(function (n, i) {
+      var ang = (-90 + i * (360 / m)) * Math.PI / 180;
+      var co = Math.cos(ang), si = Math.sin(ang);
+      var x = cx + R * co, y = cy + R * si, r = radius(n.size);
+      edges += '<line class="r-mm-edge" x1="' + cx + '" y1="' + cy + '" x2="' + x.toFixed(1) + '" y2="' + y.toFixed(1) + '"></line>';
+      circles += '<circle class="r-mm-node" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(1) + '"></circle>';
+      var anchor = co > 0.3 ? "start" : co < -0.3 ? "end" : "middle";
+      var lx = x + co * (r + 5), ly = y + si * (r + 5) + 4;
+      labels += '<text class="r-mm-label" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anchor + '">'
+        + esc(n.label) + ' <tspan class="r-mm-n">· ' + num(n.mentions || n.size || 0) + "</tspan></text>";
+    });
+    var cr = Math.max(radius(center.size), 14);
+    circles += '<circle class="r-mm-node center" cx="' + cx + '" cy="' + cy + '" r="' + cr.toFixed(1) + '"></circle>';
+    labels += '<text class="r-mm-label center" x="' + cx + '" y="' + (cy + cr + 15).toFixed(1) + '" text-anchor="middle">' + esc(center.label) + "</text>";
+
+    var svg = '<svg class="r-mm" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Keyword mindmap for this article">'
+      + edges + circles + labels + "</svg>";
+    var moreNote = more ? '<p class="r-muted">+ ' + num(more) + " more keyword" + (more === 1 ? "" : "s") + " not shown.</p>" : "";
+    pane.innerHTML = '<h2 class="r-h2">Mindmap</h2>' + svg + moreNote + method + caveat;
   }
 
   // Tab interaction: click + roving-tabindex keyboard nav (mirrors the SPA's
