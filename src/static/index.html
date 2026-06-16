@@ -1544,6 +1544,7 @@
         <button data-tab="general">General</button>
         <button data-tab="collect">Collect</button>
         <button data-tab="sources">Sources</button>
+        <button data-tab="newsletters">Newsletters</button>
         <button data-tab="wikipedia">Wikipedia</button>
         <button data-tab="agenda">Agenda</button>
         <button data-tab="data">Data &amp; backup</button>
@@ -2046,6 +2047,21 @@
       <input type="file" id="imp-file" accept=".csv,text/csv">
       <button onclick="importSources()">Import CSV</button>
       <div id="imp-result" class="hint"></div>
+    </section>
+    </div>
+
+    <!-- ===================== NEWSLETTERS (.eml import) ================ -->
+    <div class="set-view" id="set-newsletters" style="display:none">
+    <section class="panel">
+      <h2>Import newsletters (.eml)</h2>
+      <p class="hint">Import local .eml newsletter files into your corpus — searched, analysed and correlated like any article, and kept as a separate, filterable source so email and web never blur.</p>
+      <p class="hint" style="margin-top:5px">Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.</p>
+      <p class="hint" style="margin-top:5px">These articles join your no-recovery encrypted corpus. Keep your original .eml files as the re-import path.</p>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <input type="file" id="nl-files" accept=".eml" multiple aria-label="Choose .eml files to import">
+        <button class="secondary" id="nl-import-btn" onclick="importNewsletters(this)">Import .eml files</button>
+      </div>
+      <div id="nl-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
     </section>
     </div>
 
@@ -5103,6 +5119,39 @@
         }
       } catch (e) { $("fixity-summary").innerHTML = `<span class="note err">${esc(e.message)}</span>`; }
       finally { btn.disabled = false; }
+    }
+
+    // ---- Local .eml newsletter import (zero network; anonymised at ingest) ---- //
+    async function importNewsletters(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const input = $("nl-files");
+      if (!input || !input.files || !input.files.length) {
+        toast(t("Choose one or more .eml files first."), "warn"); return;
+      }
+      btn.disabled = true;
+      $("nl-result").textContent = t("Importing…");
+      const fd = new FormData();
+      for (const f of input.files) fd.append("files", f);
+      try {
+        // Loopback POST — the endpoint opens ZERO external sockets (local import),
+        // so this works in airplane mode and never needs the network-consent gate.
+        const r = await fetch("/api/newsletters/import", { method: "POST", body: fd });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const d = await r.json(), tl = d.tally || {};
+        const n = (x) => (x || 0).toLocaleString();
+        $("nl-result").innerHTML =
+          `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
+          `${n(tl.empty)} ${esc(t("empty"))}` +
+          (tl.skipped_non_eml ? ` · ${n(tl.skipped_non_eml)} ${esc(t("not .eml"))}` : "") +
+          `<div class="muted" style="margin-top:5px">${esc(t("Anonymisation"))}: ` +
+          `${n(tl.recipient_redactions)} ${esc(t("recipient echoes redacted"))}, ` +
+          `${n(tl.tracker_params_stripped)} ${esc(t("tracker tokens stripped"))}, ` +
+          `${n(tl.trackers_flagged)} ${esc(t("tracker wrappers flagged"))}.</div>`;
+        input.value = "";
+        toast(t("Newsletters imported."), "ok");
+      } catch (e) {
+        $("nl-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+      } finally { btn.disabled = false; }
     }
 
     // ---- Backup v2: one signed archive; restore = MERGE with a preview ---- //
