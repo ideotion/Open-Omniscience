@@ -955,5 +955,10 @@
   "tracker wrappers flagged": "enrobages de pistage signalés",
   "Import failed": "Échec de l'import",
   "Newsletters imported.": "Infolettres importées.",
-  "Open in analysis — the article selection behind this card": "Ouvrir dans l'analyse — la sélection d'articles derrière cette carte"
+  "Open in analysis — the article selection behind this card": "Ouvrir dans l'analyse — la sélection d'articles derrière cette carte",
+  "Open in analysis — explore this event in your corpus": "Ouvrir dans l'analyse — explorer cet événement dans votre corpus",
+  "March equinox": "Équinoxe de mars",
+  "June solstice": "Solstice de juin",
+  "September equinox": "Équinoxe de septembre",
+  "December solstice": "Solstice de décembre"
 }

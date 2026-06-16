@@ -955,5 +955,10 @@
   "tracker wrappers flagged": "أغلفة التتبّع مُعلَّمة",
   "Import failed": "فشل الاستيراد",
   "Newsletters imported.": "تم استيراد النشرات البريدية.",
-  "Open in analysis — the article selection behind this card": "افتح في التحليل — مجموعة المقالات وراء هذه البطاقة"
+  "Open in analysis — the article selection behind this card": "افتح في التحليل — مجموعة المقالات وراء هذه البطاقة",
+  "Open in analysis — explore this event in your corpus": "افتح في التحليل — استكشف هذا الحدث في مجموعتك",
+  "March equinox": "اعتدال مارس",
+  "June solstice": "انقلاب يونيو",
+  "September equinox": "اعتدال سبتمبر",
+  "December solstice": "انقلاب ديسمبر"
 }

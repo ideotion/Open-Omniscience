@@ -955,5 +955,10 @@
   "tracker wrappers flagged": "已标记追踪包装",
   "Import failed": "导入失败",
   "Newsletters imported.": "新闻邮件已导入。",
-  "Open in analysis — the article selection behind this card": "在分析中打开——此卡片背后的文章选集"
+  "Open in analysis — the article selection behind this card": "在分析中打开——此卡片背后的文章选集",
+  "Open in analysis — explore this event in your corpus": "在分析中打开——在您的语料库中探索此事件",
+  "March equinox": "三月春分",
+  "June solstice": "六月至点",
+  "September equinox": "九月秋分",
+  "December solstice": "十二月至点"
 }

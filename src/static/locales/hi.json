@@ -955,5 +955,10 @@
   "tracker wrappers flagged": "ट्रैकर रैपर चिह्नित",
   "Import failed": "आयात विफल",
   "Newsletters imported.": "न्यूज़लेटर आयात हो गए।",
-  "Open in analysis — the article selection behind this card": "विश्लेषण में खोलें — इस कार्ड के पीछे के लेखों का चयन"
+  "Open in analysis — the article selection behind this card": "विश्लेषण में खोलें — इस कार्ड के पीछे के लेखों का चयन",
+  "Open in analysis — explore this event in your corpus": "विश्लेषण में खोलें — इस घटना को अपने कॉर्पस में देखें",
+  "March equinox": "मार्च विषुव",
+  "June solstice": "जून संक्रांति",
+  "September equinox": "सितंबर विषुव",
+  "December solstice": "दिसंबर संक्रांति"
 }

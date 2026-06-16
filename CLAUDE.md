@@ -580,9 +580,20 @@ ruling, a contingency, or a deliberate-omission note.
   2026-06-12, VERIFICATION-PENDING flag travels per file until the clearnet
   check); IPCC-as-source + prediction-tracking + agenda↔wiki linking
   recorded in FUTURE_DEVELOPMENTS with questions.
-  REMAINING: moons/seasons as default agenda EVENTS with ×12 keyword links
-  (⊞ corpus entry); El Niño episodes rendered as month-span agenda banners;
-  recurring-event model unifying rules + per-year instances +
+  **AGENDA HIGHLY-VISIBLE + CLICKABLE — SHIPPED 2026-06-16 (maintainer greenlit
+  "the agenda content should be highly visible and clickable"):** (1) CLICKABLE —
+  every agenda event TITLE (`agRow`, used across the views' day-detail) now opens the
+  unified analysis window over that event in the corpus via `openAnalysisFor(e.title)`
+  (event.stopPropagation so the tag/source links still work); ties the agenda to the
+  corpus (the app's value). (2) VISIBLE CONTENT — SEASONS (equinoxes/solstices, Meeus
+  ch.27, already computed + served by /api/events/astronomy but never shown) now render
+  as month-grid glyphs (☀ solstice / ✦ equinox) beside the existing moon glyphs, with
+  method+accuracy + the astronomically-honest name in the #oo-tip hover (`_seasonByDate`
+  built in `_ensureAstro`, the same per-year cache as moons). +5 strings ×12 (the 4
+  season names + the click hover). REMAINING: moons/seasons as FIRST-CLASS agenda
+  events (in day-detail + all views, with ⊞ keyword links — currently month-grid
+  glyphs only, matching the moon treatment); El Niño episodes rendered as month-span
+  agenda banners; recurring-event model unifying rules + per-year instances +
   origin year ("since 1810" — the Mexico sighting was the ICS import path
   storing year-pinned instances); month-span banners ("Dry January"); the
   remaining views (week/trimester/semester/year/decade) — ALL SHIPPED now (week
