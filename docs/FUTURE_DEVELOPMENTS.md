@@ -490,14 +490,20 @@ RULED 2026-06-12: caveats by design — visible by default, "informed consent" a
 
 Groundwork shipped (language signatures in the diagnostics log; curated
 `configs/keyword_equivalents.yml`; first 10 real rings from field log #1).
-**Not yet built (verified): rings do NOT feed analytics.** The elevated design:
-équivalents merge inside grouped trends/trending/associations/graph levels
-(fr:élections + en:elections = ONE concept), with the cross-country case served
-by splitting a ring's trend per source country/language. Guards: only
-language-qualified members merge; a keyword joins a ring only when its language
-signature supports it (else flagged ambiguous + unmerged); per-language counts
-always visible; the user can split any ring. The local LLM may PROPOSE candidate
-rings; a human confirms.
+**WIRED INTO ANALYTICS 2026-06-16 (slice 1):** `src/analytics/equivalence.py` is
+the live consumer the file always lacked — équivalents merge inside the grouped
+`top_terms` (`/api/insights/top?group=true`), `trending`/`trending-windows`, and
+`associations`/`graph` (keyword + family levels), so `fr:élection + en:election +
+de:wahl` is ONE concept. Honesty held: a keyword joins a ring only when its
+EFFECTIVE language matches the member's (stored `Keyword.language`, else the
+dominant `language_signature` — the signature-supported join, so en-dominant
+"main" stays out of the fr `hand` ring); per-language counts stay visible
+(`language_breakdown` + `members`); a user `KeywordFamilyOverride` split keeps a
+member out; `OO_KEYWORD_EQUIV=0` disables. `tests/test_keyword_equivalence.py`.
+REMAINING: the cross-country case (split a ring's trend per source country); the
+map view; surfacing `language_breakdown` in the frontend; the local LLM PROPOSING
+candidate rings (a human confirms) — the analyzer (PR #279) already emits ring
+candidates from the diagnostics logs.
 
 ---
 

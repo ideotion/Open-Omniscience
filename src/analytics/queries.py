@@ -46,6 +46,48 @@ def load_overrides(session) -> dict[str, dict]:
     }
 
 
+def _ring_lang_of(session, stored: dict[str, str | None]):
+    """Build ``lang_of(normalized) -> effective language`` for cross-language rings.
+
+    Effective language = the stored ``Keyword.language`` when known, else the
+    dominant article-language of that keyword's mentions (a signature-supported
+    join — so an en-dominant "main" stays out of the fr ``hand`` ring). Only ring
+    members are resolved, and the signature query runs only for the unknown-
+    language ones, so the overhead is bounded to a handful of terms.
+    """
+    from src.analytics import equivalence
+
+    cand = {n for n in stored if equivalence.is_ring_term(n)}
+    eff: dict[str, str | None] = {n: stored.get(n) for n in cand}
+    need_sig = [n for n in cand if not eff.get(n)]
+    if need_sig:
+        rows = (
+            session.query(
+                Keyword.normalized_term,
+                Article.language,
+                func.count(func.distinct(KeywordMention.article_id)),
+            )
+            .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+            .join(Article, Article.id == KeywordMention.article_id)
+            .filter(Keyword.normalized_term.in_(need_sig))
+            .group_by(Keyword.normalized_term, Article.language)
+            .all()
+        )
+        sig: dict[str, dict[str, int]] = {}
+        for norm, lang, c in rows:
+            sig.setdefault(norm, {})[lang or "?"] = int(c)
+        for n in need_sig:
+            s = sig.get(n)
+            eff[n] = max(s, key=lambda k: s[k]) if s else None
+    return lambda norm: eff.get(norm)
+
+
+_RING_CAVEAT = (
+    "Cross-language equivalents merged into one concept; per-language counts shown "
+    "(language_breakdown); the user can split any ring."
+)
+
+
 def resolve_keyword(session, term: str) -> Keyword | None:
     """Map a user term to a stored keyword: exact normalized match, else best LIKE."""
     norm = _normalize(term)
@@ -171,9 +213,11 @@ def top_terms(
     is_hidden = _hidden_predicate()
     cap = limit * 4 if group else limit
     terms = []
+    stored_lang: dict[str, str | None] = {}
     for k, m, a in rows:
         if is_hidden(k.normalized_term):
             continue
+        stored_lang[k.normalized_term] = k.language
         terms.append(
             {
                 "term": k.term,
@@ -185,12 +229,21 @@ def top_terms(
         )
         if len(terms) >= cap:
             break
+    ringed = False
     if group:
+        from src.analytics import equivalence
         from src.analytics.families import build_families
 
-        terms = [f.to_dict() for f in build_families(terms, load_overrides(session))]
+        overrides = load_overrides(session)
+        terms = [f.to_dict() for f in build_families(terms, overrides)]
+        # Layer cross-language rings ON TOP of the (within-language) families.
+        merged = equivalence.merge_equivalents(
+            terms, lang_of=_ring_lang_of(session, stored_lang), overrides=overrides
+        )
+        ringed = any(t.get("ring_id") for t in merged)
+        terms = merged
     terms = terms[:limit]
-    return {
+    out = {
         "count": len(terms),
         "days": days,
         "country": country,
@@ -198,6 +251,10 @@ def top_terms(
         "grouped": group,
         "terms": terms,
     }
+    if ringed:
+        out["rings_merged"] = True
+        out["caveat"] = _RING_CAVEAT
+    return out
 
 
 def corpus_keywords(
@@ -488,12 +545,15 @@ def trending(
     scored.sort(key=lambda x: (-x[4], -x[1]))
 
     is_hidden = _hidden_predicate()
-    out = []
+    cap = limit * 4  # headroom so ring members below `limit` still merge
+    cand = []
+    stored_lang: dict[str, str | None] = {}
     for kid, rc, pc, expected, growth in scored:
         kw = session.get(Keyword, kid)
         if kw is None or (kind and kind_of(kw) != kind) or is_hidden(kw.normalized_term):
             continue
-        out.append(
+        stored_lang[kw.normalized_term] = kw.language
+        cand.append(
             {
                 "term": kw.term,
                 "normalized": kw.normalized_term,
@@ -504,9 +564,49 @@ def trending(
                 "growth": growth,
             }
         )
-        if len(out) >= limit:
+        if len(cand) >= cap:
             break
-    return {
+
+    # Layer cross-language rings: sum recent/prior across members, then recompute
+    # expected & growth from the totals (the same defined ratio, not a re-fit).
+    from src.analytics import equivalence
+
+    lang_of = _ring_lang_of(session, stored_lang)
+    out: list[dict] = []
+    ringed = False
+    for gk, payload in equivalence.group_rows(cand, lang_of=lang_of):
+        if gk == "solo":
+            out.append(payload)
+            continue
+        ring_id, members = payload
+        meta = equivalence.ring_meta(ring_id)
+        rc = sum(int(m["recent"]) for m in members)
+        pc = sum(int(m["prior"]) for m in members)
+        exp = (pc / baseline_days) * window_days
+        lead = max(members, key=lambda m: m["recent"])
+        row = {
+            "term": meta.label if meta else ring_id,
+            "normalized": f"ring:{ring_id}",
+            "kind": lead["kind"],
+            "recent": rc,
+            "prior": pc,
+            "expected": round(exp, 2),
+            "growth": round(rc / exp if exp >= 1 else float(rc), 2),
+            "ring_id": ring_id,
+            "language_breakdown": {(lang_of(m["normalized"]) or "?"): int(m["recent"]) for m in members},
+            "members": [
+                {"term": m["term"], "normalized": m["normalized"],
+                 "language": lang_of(m["normalized"]) or "?", "recent": int(m["recent"])}
+                for m in members
+            ],
+        }
+        if meta and meta.note:
+            row["ring_note"] = meta.note
+        out.append(row)
+        ringed = True
+    out.sort(key=lambda t: (-t["growth"], -t["recent"]))
+    out = out[:limit]
+    res = {
         "count": len(out),
         "window_days": window_days,
         "baseline_days": baseline_days,
@@ -520,6 +620,10 @@ def trending(
         "keywords_with_recent_mentions": len(recent),
         "method": "recent volume vs prior-period rate (ratio, not a significance test)",
     }
+    if ringed:
+        res["rings_merged"] = True
+        res["caveat"] = _RING_CAVEAT
+    return res
 
 
 # Preset windows for the Insights "Trends" view (maintainer-ruled 2026-06-16):
@@ -548,6 +652,15 @@ def _window_daily_series(
     hi = today.isoformat()
     # ISO date strings (YYYY-MM-DD) sort chronologically, so a string range is exact.
     return [p for p in day_keys if lo <= p["date"] <= hi]
+
+
+def _merge_daily_series(serieses) -> list[dict]:
+    """Sum several ``[{date, count}]`` series by date (for a cross-language ring)."""
+    agg: dict[str, int] = {}
+    for s in serieses:
+        for p in s:
+            agg[p["date"]] = agg.get(p["date"], 0) + int(p["count"])
+    return [{"date": d, "count": c} for d, c in sorted(agg.items())]
 
 
 def trending_windows(
@@ -588,9 +701,17 @@ def trending_windows(
         terms = res["terms"]
         if series_top > 0:
             for t in terms[:series_top]:
-                t["series"] = _window_daily_series(
-                    session, t["normalized"], days=wdays, country=country
-                )
+                if t.get("ring_id"):
+                    # A ring's series = the sum of its members' daily series (the
+                    # merged "ring:<id>" normalized doesn't resolve to a keyword).
+                    t["series"] = _merge_daily_series(
+                        _window_daily_series(session, m["normalized"], days=wdays, country=country)
+                        for m in t.get("members", [])
+                    )
+                else:
+                    t["series"] = _window_daily_series(
+                        session, t["normalized"], days=wdays, country=country
+                    )
         windows.append(
             {
                 "label": label,
@@ -614,12 +735,18 @@ def trending_windows(
     }
 
 
-def _group_pairs(pairs: list[dict], overrides: dict[str, dict] | None = None) -> list[dict]:
+def _group_pairs(
+    pairs: list[dict],
+    overrides: dict[str, dict] | None = None,
+    lang_of=None,
+) -> list[dict]:
     """Merge co-occurring surface variants into one family node (for the mind-map).
 
     Summed co-occurrence, the strongest member PMI, and the member forms listed —
     so ``Trump`` / ``Trump's`` / ``Donald Trump`` are one neighbour, not three.
-    User overrides (manual merge/split) are honoured.
+    User overrides (manual merge/split) are honoured. When ``lang_of`` is given,
+    cross-language rings are layered on top (``élection`` joins ``election``),
+    with per-language counts kept visible.
     """
     from src.analytics.families import build_families
 
@@ -650,8 +777,41 @@ def _group_pairs(pairs: list[dict], overrides: dict[str, dict] | None = None) ->
                 "members": [p["term"] for p in members],
             }
         )
+    if lang_of is not None:
+        out = _ring_merge_pairs(out, lang_of, overrides)
     out.sort(key=lambda p: (-p["pmi"], -p["cooccur"]))
     return out
+
+
+def _ring_merge_pairs(rows: list[dict], lang_of, overrides) -> list[dict]:
+    """Collapse association family-rows that belong to one cross-language ring."""
+    from src.analytics import equivalence
+
+    merged: list[dict] = []
+    for gk, payload in equivalence.group_rows(rows, lang_of=lang_of, overrides=overrides):
+        if gk == "solo":
+            merged.append(payload)
+            continue
+        ring_id, members = payload
+        meta = equivalence.ring_meta(ring_id)
+        lead = max(members, key=lambda r: r["cooccur"])
+        merged.append(
+            {
+                "term": meta.label if meta else ring_id,
+                "normalized": f"ring:{ring_id}",
+                "kind": lead["kind"],
+                "cooccur": sum(r["cooccur"] for r in members),
+                "n_b": max(r["n_b"] for r in members),
+                "pmi": max(r["pmi"] for r in members),
+                "variants": sum(r.get("variants", 1) for r in members),
+                "members": [m for r in members for m in r["members"]],
+                "ring_id": ring_id,
+                "language_breakdown": {
+                    (lang_of(r["normalized"]) or "?"): r["cooccur"] for r in members
+                },
+            }
+        )
+    return merged
 
 
 def _window_filter(q, start=None, end=None):
@@ -728,6 +888,7 @@ def associations(
     )
     is_hidden = _hidden_predicate()
     pairs = []
+    stored_lang: dict[str, str | None] = {}
     for kid, co in co_rows:
         co = int(co)
         n_b = (
@@ -744,6 +905,7 @@ def associations(
         k2 = session.get(Keyword, kid)
         if k2 is None or is_hidden(k2.normalized_term):
             continue
+        stored_lang[k2.normalized_term] = k2.language
         pairs.append(
             {
                 "term": k2.term,
@@ -755,8 +917,15 @@ def associations(
             }
         )
     pairs.sort(key=lambda p: (-p["pmi"], -p["cooccur"]))
+    ringed = False
     if group:
-        pairs = _group_pairs(pairs, load_overrides(session))
+        pairs = _group_pairs(
+            pairs, load_overrides(session), lang_of=_ring_lang_of(session, stored_lang)
+        )
+        ringed = any(p.get("ring_id") for p in pairs)
+    caveat = "Association is not causation; PMI on small samples is noisy."
+    if ringed:
+        caveat += " " + _RING_CAVEAT
     return {
         "term": term,
         "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
@@ -767,7 +936,7 @@ def associations(
         "window": {"days": days, "start": str(start) if start else None, "end": str(end) if end else None},
         "method": "pointwise mutual information over article co-occurrence"
         + (" within the selected window" if (start or end) else ""),
-        "caveat": "Association is not causation; PMI on small samples is noisy.",
+        "caveat": caveat,
     }
 
 
