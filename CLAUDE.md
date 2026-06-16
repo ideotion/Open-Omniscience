@@ -80,15 +80,18 @@ ruling, a contingency, or a deliberate-omission note.
 ## UI invariants (maintainer-ruled; do not regress)
 1. **Wikipedia edition picker is a `<select>` dropdown** (id `wiki-lang`), fed
    by `/api/wiki/languages`. Never a free-text input.
-   **AMENDED (ruled 2026-06-16, PENDING build): DROP the continent `<optgroup>`
+   **AMENDED (ruled 2026-06-16; SHIPPED 2026-06-16): DROP the continent `<optgroup>`
    grouping** — editions are LANGUAGE-based, not country/continent-based (a
    language spans many continents), so the continent split is a category error
-   and "not useful anymore." Render a FLAT list instead (default order: UI-locales
-   / largest-edition-first; native-name labels per invariant #15). Applies to BOTH
-   pickers fed by the endpoint (`wiki-lang` watched editions + `dump-lang` dumps);
-   `/api/wiki/languages` stops emitting/using the by-continent `groups`. The
-   `<select>`/never-free-text CORE stays (test #1 unchanged — it never asserted the
-   optgroups; do NOT add a grouping assertion).
+   and "not useful anymore." Renders a FLAT list (order: UI-locales-first then
+   largest-edition-first via `languages_ui_first()`; option labels lead with the
+   native name/autonym per invariant #15). Applies to BOTH pickers fed by the
+   endpoint (`wiki-lang` watched editions + `dump-lang` dumps); `/api/wiki/languages`
+   no longer emits `groups` (`languages_by_region`/`app_languages_by_region` removed;
+   `region` kept as descriptive metadata only). The `<select>`/never-free-text CORE
+   stays (test #1 unchanged — it never asserted the optgroups; no grouping assertion
+   added). Endpoint contract pinned in `tests/test_wiki_languages.py` (flat, UI-first,
+   `"groups" not in data`).
 2. **Left sidebar lists all tabs and stays visible** — it may collapse to an
    icon rail, but must never disappear off-canvas above 600 px width.
 3. **Top bar elements have constant footprints**: `.act-host` keeps its 160 px

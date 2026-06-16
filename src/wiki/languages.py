@@ -6,17 +6,17 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 A curated, neutral list of the larger Wikipedia language editions: the wiki code
 (used to build dump URLs, e.g. ``en`` -> ``enwiki``), the English name and the
-language's own name (autonym), a coarse *size tier* so the UI can sort
-"largest first" without hardcoding article counts that go stale, and the
-language's *continent of origin* so a long picker can be split into short,
-scannable sections. Real download sizes are always read from the dump server at
-probe time — these tiers are only for ordering and a rough "how heavy is this"
-hint, never presented as a fact about the current dump.
+language's own name (autonym), and a coarse *size tier* so the UI can sort
+"largest first" without hardcoding article counts that go stale. Real download
+sizes are always read from the dump server at probe time — these tiers are only
+for ordering and a rough "how heavy is this" hint, never presented as a fact
+about the current dump.
 
-The ``region`` is the language's geographic origin / heartland (a single,
-unambiguous bucket). Many languages are spoken across several continents; we pick
-one origin bucket purely so the picker groups sensibly — it is a navigation aid,
-not a claim about where the language is used today.
+The ``region`` (continent of origin) is retained as descriptive metadata only.
+The picker NO LONGER groups editions by continent (UI invariant #1, amended
+2026-06-16): editions are LANGUAGE-based, not country/continent-based — a language
+spans many continents, so a continent split is a category error. The picker now
+renders ONE FLAT list, ordered UI-locales-first then largest-edition-first.
 
 This is data, not behaviour: the dump downloader (src.wiki.dumps) accepts ANY
 edition code, so an operator can still type one not listed here.
@@ -30,12 +30,11 @@ from dataclasses import dataclass
 # articles, "large" ~ 1M+, "medium" ~ 100k+, "small" the rest. Ordering hint only.
 _TIER_RANK = {"huge": 0, "large": 1, "medium": 2, "small": 3}
 
-# Continent buckets, ordered so the regions carrying the largest editions come
-# first in the picker. "Constructed" holds international auxiliary languages
-# (Esperanto, Interlingua, …) that have no single continent of origin; it sorts
-# last. Empty regions are simply omitted when grouping.
-_REGION_ORDER = ("Europe", "Asia", "Africa", "Americas", "Oceania", "Constructed")
-_REGION_RANK = {r: i for i, r in enumerate(_REGION_ORDER)}
+# Known continent-of-origin buckets — kept ONLY to validate the descriptive
+# ``region`` metadata. The picker no longer groups by continent (invariant #1,
+# amended 2026-06-16); "Constructed" holds international auxiliary languages
+# (Esperanto, Interlingua, …) that have no single continent of origin.
+_KNOWN_REGIONS = frozenset({"Europe", "Asia", "Africa", "Americas", "Oceania", "Constructed"})
 
 
 @dataclass(frozen=True)
@@ -218,27 +217,30 @@ _LANGUAGES: tuple[WikiLanguage, ...] = (
 _BY_CODE = {lang.code: lang for lang in _LANGUAGES}
 
 
+# The 12 UI locales (the languages the app's chrome speaks). The flat edition
+# picker surfaces these editions FIRST — most users want their own language's
+# Wikipedia, and these are the editions the app already analyses end-to-end.
+UI_LOCALE_CODES = frozenset({
+    "en", "fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id",
+})
+
+
 def all_languages() -> list[WikiLanguage]:
     """Curated editions, largest tier first then alphabetical by English name."""
     return sorted(_LANGUAGES, key=lambda x: (_TIER_RANK.get(x.tier, 9), x.name))
 
 
-def languages_by_region() -> list[tuple[str, list[WikiLanguage]]]:
-    """Editions grouped by continent of origin.
+def _ui_first_key(x: WikiLanguage) -> tuple[int, int, str]:
+    """Sort key for the flat picker: UI-locale editions first, then largest tier
+    first, then English name. Replaces the by-continent grouping (invariant #1,
+    amended 2026-06-16)."""
+    return (0 if x.code in UI_LOCALE_CODES else 1, _TIER_RANK.get(x.tier, 9), x.name)
 
-    Regions are ordered largest-edition-first (see ``_REGION_ORDER``); within a
-    region the editions keep the usual "largest tier first, then English name"
-    ordering. Empty regions are omitted. This lets the UI render short, scannable
-    ``<optgroup>`` sections instead of one long flat scroll.
-    """
-    groups: dict[str, list[WikiLanguage]] = {}
-    for lang in _LANGUAGES:
-        groups.setdefault(lang.region, []).append(lang)
-    ordered: list[tuple[str, list[WikiLanguage]]] = []
-    for region in sorted(groups, key=lambda r: _REGION_RANK.get(r, 99)):
-        langs = sorted(groups[region], key=lambda x: (_TIER_RANK.get(x.tier, 9), x.name))
-        ordered.append((region, langs))
-    return ordered
+
+def languages_ui_first() -> list[WikiLanguage]:
+    """Curated editions as ONE flat list, ordered UI-locales-first then largest
+    tier first. This is what the edition pickers render (no continent optgroups)."""
+    return sorted(_LANGUAGES, key=_ui_first_key)
 
 
 def get_language(code: str) -> WikiLanguage | None:
@@ -267,11 +269,6 @@ def app_languages() -> list[WikiLanguage]:
     return [lang for lang in all_languages() if lang.code in APP_LANGUAGE_CODES]
 
 
-def app_languages_by_region() -> list[tuple[str, list[WikiLanguage]]]:
-    """:func:`languages_by_region`, filtered to the app's languages."""
-    out = []
-    for region, langs in languages_by_region():
-        kept = [lang for lang in langs if lang.code in APP_LANGUAGE_CODES]
-        if kept:
-            out.append((region, kept))
-    return out
+def app_languages_ui_first() -> list[WikiLanguage]:
+    """The dump-scope subset of :func:`languages_ui_first` (flat, UI-locales first)."""
+    return [lang for lang in languages_ui_first() if lang.code in APP_LANGUAGE_CODES]

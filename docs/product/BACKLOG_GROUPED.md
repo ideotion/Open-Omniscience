@@ -233,6 +233,12 @@ makes the rest fall out cheaply:
 
 ## H. Wikipedia (content-first + living source)
 
+- ✅ **Flat edition picker** (invariant #1, amended 2026-06-16) — both pickers
+  (`wiki-lang` watched + `dump-lang` dumps) drop the continent `<optgroup>`
+  grouping and render ONE flat list, UI-locales-first then largest-edition-first
+  (`languages_ui_first()`); labels lead with the native name (autonym, #15).
+  `/api/wiki/languages` no longer emits `groups`. `tests/test_wiki_languages.py`
+  pins the flat/UI-first/`no groups` contract.
 - ⬜ **Auto-watch all 12 UI-language editions by default.**
 - ⬜ **Wikipedia tab → Settings** (test-gated).
 - ⬜ **Dumps decided at first run; non-blocking; task-manager controls**

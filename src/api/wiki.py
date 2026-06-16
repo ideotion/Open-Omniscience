@@ -243,35 +243,22 @@ class StartDump(BaseModel):
 def wiki_languages(scope: str = "all") -> dict:
     """Curated Wikipedia editions for the offline-baseline picker.
 
-    Returns both a flat ``languages`` list (largest tier first; each entry now
-    carries its continent of origin in ``region``) and a ``groups`` list that
-    splits the editions by continent — regions ordered largest-edition-first —
-    so the UI can render short, scannable ``<optgroup>`` sections instead of one
-    long scroll.
+    Returns ONE flat ``languages`` list ordered UI-locales-first then
+    largest-edition-first. The by-continent ``groups`` were DROPPED (UI invariant
+    #1, amended 2026-06-16): editions are language-based, not continent-based, so
+    a continent split is a category error — the picker renders a flat list.
 
     ``scope="dumps"`` limits the list to THE APP'S LANGUAGES (maintainer-ruled
     2026-06-12): the UI locales + evidence-backed corpus languages. Only the
     heavy dump surface narrows — the watched-pages picker (invariant #1) keeps
     the full list via the default scope.
     """
-    from src.wiki.languages import (
-        all_languages,
-        app_languages,
-        app_languages_by_region,
-        languages_by_region,
-    )
+    from src.wiki.languages import app_languages_ui_first, languages_ui_first
 
-    if scope == "dumps":
-        flat, grouped = app_languages(), app_languages_by_region()
-    else:
-        flat, grouped = all_languages(), languages_by_region()
+    flat = app_languages_ui_first() if scope == "dumps" else languages_ui_first()
     return {
         "scope": scope,
         "languages": [lang.to_dict() for lang in flat],
-        "groups": [
-            {"region": region, "languages": [lang.to_dict() for lang in langs]}
-            for region, langs in grouped
-        ],
     }
 
 
