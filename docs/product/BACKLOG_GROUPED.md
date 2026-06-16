@@ -338,11 +338,18 @@ makes the rest fall out cheaply:
 
 ## N. Official-statistics ingestion (promoted active 2026-06-16)
 
-- ⬜ Gov + international agencies as CONTROVERSIAL sources; producing-state + agency +
+- 🔨 Gov + international agencies as CONTROVERSIAL sources; producing-state + agency +
   pub-date + methodology-ref per figure; VINTAGES; comparability guards (SA/NSA/base
   year); SDMX/API before scraping; triangulate side-by-side never averaged; forecasts
   join IPCC-tracking; per-continent coverage; deliberately BRICS/Africa/forgotten-region.
   (FUTURE_DEVELOPMENTS design)
+  DATA-LAYER SUBSTRATE SHIPPED 2026-06-16: `src/stats/agencies.py` (a curated, global
+  directory — IGOs + national producers across all 6 inhabited continents, BRICS +
+  Africa deliberately included; each flagged `controversial`, descriptive only, no
+  figures/scores/network) + `GET /api/stats/agencies` (+ `continents_covered` coverage
+  metric). tests/test_stat_agencies.py. REMAINING: ingest them as Sources (SDMX/API
+  before scraping), figure-level provenance + vintages + comparability guards,
+  side-by-side triangulation, IPCC forecast-tracking.
 
 ---
 
