@@ -426,7 +426,7 @@ class Compressor:
         try:
             compressed_data = compress_func(data_bytes, algo_config)
         except Exception as e:
-            raise CompressionError(f"Compression failed: {e}")
+            raise CompressionError(f"Compression failed: {e}") from e
 
         # Create header
         header = self._create_header(
@@ -489,7 +489,7 @@ class Compressor:
         try:
             decompressed_data = decompress_func(actual_compressed_data, algo_config)
         except Exception as e:
-            raise CompressionError(f"Decompression failed: {e}")
+            raise CompressionError(f"Decompression failed: {e}") from e
 
         # Validate size
         if len(decompressed_data) != original_size:

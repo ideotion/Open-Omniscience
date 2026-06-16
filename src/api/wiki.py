@@ -31,6 +31,20 @@ _client = WikiClient()
 _ores = OresClient()
 
 
+def _validated_wiki(wiki: str) -> str:
+    """Validate a Wikipedia edition code at the API boundary (path-traversal guard).
+
+    A dump ``wiki`` code flows into a filesystem path and a fetch URL, so reject
+    anything unsafe with a clean HTTP 400 instead of letting it reach disk.
+    """
+    from src.wiki.dumps import validate_wiki_code
+
+    try:
+        return validate_wiki_code(wiki)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 class AddPage(BaseModel):
     wiki: str
     title: str
@@ -272,22 +286,22 @@ def dumps_list() -> dict:
 def dumps_probe(wiki: str, kind: str = "pages-articles-multistream") -> dict:
     from src.wiki.dumps import dump_url, get_manager
 
+    wiki = _validated_wiki(wiki)
     size = get_manager().probe_size(wiki, kind)
-    return {"wiki": wiki.lower(), "kind": kind, "url": dump_url(wiki, kind), "size_bytes": size}
+    return {"wiki": wiki, "kind": kind, "url": dump_url(wiki, kind), "size_bytes": size}
 
 
 @router.post("/dumps/start")
 def dumps_start(payload: StartDump) -> dict:
     from src.wiki.dumps import get_manager
 
-    if not payload.wiki.strip():
-        raise HTTPException(status_code=400, detail="wiki is required.")
+    wiki = _validated_wiki(payload.wiki)
     try:
-        result = get_manager().start(payload.wiki, payload.kind)
+        result = get_manager().start(wiki, payload.kind)
         if payload.kind == "pages-articles-multistream":
             # The tiny companion index rides along automatically — it is what
             # makes the downloaded dump READABLE (seekable) offline.
-            get_manager().start(payload.wiki, "pages-articles-multistream-index")
+            get_manager().start(wiki, "pages-articles-multistream-index")
             result["index_queued"] = True
         return result
     except ValueError as exc:
@@ -337,9 +351,9 @@ def dumps_page(wiki: str, title: str) -> dict:
     """
     from src.wiki.dumpread import find_page
 
-    if not wiki.strip() or not title.strip():
+    if not title.strip():
         raise HTTPException(status_code=400, detail="wiki and title are required.")
-    return find_page(wiki.strip(), title.strip())
+    return find_page(_validated_wiki(wiki), title.strip())
 
 
 class IngestDumpPages(BaseModel):
@@ -360,9 +374,9 @@ def dumps_corpus_ingest(payload: IngestDumpPages, db: Session = Depends(get_db))
     """
     from src.wiki.corpus import ingest_dump_pages
 
-    wiki = (payload.wiki or "").strip()
+    wiki = _validated_wiki(payload.wiki)
     titles = [t.strip() for t in (payload.titles or []) if t and t.strip()]
-    if not wiki or not titles:
+    if not titles:
         raise HTTPException(
             status_code=400, detail="wiki and a non-empty titles list are required."
         )

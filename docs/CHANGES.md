@@ -11,6 +11,82 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Accessibility + a calmer poll (audit PR G).** Charts now expose a **text
+  alternative** for screen readers — every chart carries `role="img"` with a
+  translated summary (series, point count, date range, value range) plus a
+  visually-hidden data table of the actual points. The always-on background polls
+  (network state, collection activity) now use **adaptive idle backoff**: they refresh
+  quickly while something is changing and slow down when the app is idle (and pause
+  when the tab is hidden), cutting the idle polling load on the encrypted database
+  while live state stays fresh via the scheduler/airplane push updates. (Toasts and
+  the task-manager/command-palette dialogs already announced and trapped focus.)
+- **Deeper test coverage (audit PR F).** Three new unit-isolated test files pin
+  previously thinly-tested logic directly (not only via the heavy subprocess torture
+  harness): the **backup-merge engine** (FK remap, bit-level dedup, conflict-keeps-local
+  -and-reports-both, merge provenance), **every briefing producer's card shape** (valid
+  fields/bucket, serialisable, no composite-score key), and the **background
+  scheduler's** continuous/idle loop, run-now non-overlap and failure isolation (driven
+  by events, not timing). The feed-backoff timing tests gained a skip-when-inconclusive
+  guard so a pathologically slow CI box can't redden the absolute-seconds bound while
+  the backoff logic stays asserted.
+- **`reliability_score` honesty guard (audit PR E).** The per-source
+  `reliability_score` (1–10) is **operator-set provenance** — a value *you* assign,
+  never a quality verdict the app computes. It's now documented in
+  [ETHICS.md](ETHICS.md) as the one intentional exemption to the no-composite-score
+  rule, labelled **"operator-set, not computed"** in the UI (with the full
+  explanation in the hover, ×12 locales), and locked by a repo invariant so it can
+  never quietly become a derived/computed score. *(Default applied; the maintainer
+  can choose to retire it from the API instead.)*
+
+
+- **CI hygiene (audit PR D).** The CI workflow now declares least-privilege
+  `permissions: contents: read`, **pins** `actions/checkout`/`actions/setup-python`
+  to full commit SHAs (with version comments for Dependabot), adds a **blocking**
+  correctness-lint lane (`ruff --select=F,B`, undefined-names + likely-bugs; the full
+  style sweep stays advisory), and cancels superseded runs (`concurrency`). Enabling
+  the blocking lane meant clearing the pre-existing F/B backlog: proper exception
+  chaining (`raise … from …`), dead-import/dead-variable removal, and a couple of
+  trivial bugbear fixes — all behavior-preserving (full suite green).
+
+
+- **Safety & privacy hardening (audit PR C).** Closed a handful of edge gaps:
+  the Wikipedia dump **edition code is now validated** before it can reach a
+  filesystem path or fetch URL (a `../`/`/` in `wiki` is rejected with a clean 400 —
+  path-traversal guard, at both the helpers and the four dump API endpoints); the
+  **local LLM (Ollama)** now refuses to run while **airplane mode** is engaged and
+  refuses a non-loopback `OO_OLLAMA_URL` (the local model never talks to a remote
+  host); **CORS** was trimmed (dropped the dead `Authorization`/`Origin`/`User-Agent`
+  allow-headers, shortened the preflight cache); DuckDuckGo discovery now passes its
+  result URLs through the existing `http(s)` scheme allowlist; and the broken,
+  recipient-capturing **`scripts/import_eml.py`** was removed (it referenced columns
+  the live schema doesn't have and stored `To`/`Cc` addresses, against the
+  anonymize-at-ingest rule).
+
+
+- **Documentation accuracy pass (audit PR B, docs-only).** Brought the docs back in
+  line with the code: the stale inline-handler figure (an old `onclick`-only count) is
+  now the verified **295** (229 `onclick` + 35 `onchange` + 15 `onkeydown` + 14 `oninput` + 2 `onmouse*`)
+  across CLAUDE.md and the audit log; the **ETHICS.md GPLv3 checklist** no longer
+  overstates per-file headers (most modules carry an SPDX notice; the `LICENSE` file is
+  authoritative — GPL needs no per-file header); the dead **`audit/scrape_log.csv`**
+  runtime mandate was replaced with the real on-click diagnostics mechanism
+  (`data/*_preflight.jsonl` + `field_test.jsonl` → the Settings debug bundle, never
+  auto-transmitted); the README's "all 29 audit findings closed" now spells out that
+  the `0.07` audit fixed 20 and deferred 9, all closed in `0.0.8` (`findings.csv` reads
+  29/29 FIXED); and the **task-manager window** + **Wikipedia tracked-changes timeline
+  tab** moved to "In progress / next" to match the RC gate's honest 🔶 (their shipped
+  halves stay ✅).
+- **Briefing caveats are now visible by default (ethics regression fix).** Each Home
+  briefing card showed its **Caveat** only when you turned on a default-OFF "Show
+  method & caveat" toggle — a regression against the permanent informed-consent rule
+  that caveats are *visible by default, never hidden behind a calm-UI toggle*. The
+  caveat now renders inline under every card's summary; the toggle (renamed **Show
+  method**) gates only the verbose method/math. The caveat colour is now theme-aware
+  so it clears **WCAG AA 4.5:1 on all 17 themes** (the old hardcoded amber failed
+  contrast on the light themes); the corpus-tier and chain-of-custody warnings adopt
+  the same colour. A new UI invariant (`#23`) locks the visibility in so it cannot
+  regress again.
+
 - **Collect, Sources, and Wikipedia moved into Settings (content-first).** The three
   acquisition/configuration tabs left the sidebar; their controls now live under
   **Settings → Collect** (scheduler, manual ingest, batch picker), **Settings →
