@@ -352,11 +352,22 @@ def test_ui_invariants():
         # html already IS index.html's content (read at the top of this test).
         assert native in html, f"native name {native!r} must appear in the menu data"
     # 16. ONE chart toolkit, detailed-curves SYSTEMATIC (ruled 2026-06-12):
-    #     full series always (no thinning), sparse renders as honest points
-    #     with the early-corpus caveat; wheel zoom / drag pan / pinned readout.
+    #     full series always (no thinning), wheel zoom / drag pan / pinned readout.
+    #     AMENDED by Item Y (ruled 2026-06-15): sparse series (n<10) render as a BAR
+    #     graph (not dots), n>=10 as the full-resolution line; the "early corpus / no
+    #     curve interpolated" caveat is REMOVED app-wide, only n=x is kept. Both
+    #     renderers (ooChart + dashChartSvg) share the _SPARSE_BAR_MAX threshold.
     assert "function ooChart(" in html, "the one chart toolkit must exist (CLAUDE.md #16)"
-    assert "never downsampled" in html and "early corpus" in html, (
-        "the toolkit must state and implement the detailed-curves rules"
+    assert "never downsampled" in html, (
+        "the toolkit must state and implement the full-resolution rule (CLAUDE.md #16)"
+    )
+    # Item Y: the n<10->bar rule is shared by both renderers, and the old sparse
+    # caveat string is gone from the rendered UI (only the count n=x remains).
+    assert "_SPARSE_BAR_MAX" in html and html.count("barMode") >= 2, (
+        "n<10 must render as a BAR graph in both renderers via _SPARSE_BAR_MAX (Item Y)"
+    )
+    assert "dots shown, no curve interpolated through sparse points" not in html, (
+        "the early-corpus sparse caveat must be removed app-wide (Item Y amends #16)"
     )
     for surface in (
         'ooChart($("mkt-chart-oo")',
