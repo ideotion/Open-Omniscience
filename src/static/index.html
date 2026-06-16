@@ -1661,6 +1661,22 @@
     <div id="corpus-body" style="padding:12px 16px;max-height:64vh;overflow:auto"></div>
   </dialog>
 
+  <!-- Reusable interactive-chart enlarge dialog (Item 1, Group E). Opens an
+       ooChart (invariant #16: full-resolution, wheel-zoom / drag-pan /
+       hover-readout / legend; Item-Y bars when n<10) for a Trends sparkline or
+       any small chart. The caveat shows VISIBLE by default (informed consent).
+       Native showModal() traps focus implicitly (OO-D13-001). -->
+  <dialog id="chart-enlarge" style="width:min(940px,96vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
+      <b id="chart-enlarge-title" style="font-size:15px"></b>
+      <span style="margin-inline-start:auto"></span>
+      <button class="icon-btn" onclick="document.getElementById('chart-enlarge').close()" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div id="chart-enlarge-body" style="padding:14px 16px"></div>
+    <div id="chart-enlarge-note" class="card-caveat" style="padding:0 16px 14px"></div>
+  </dialog>
+
   <!-- Local link preview (invariant #6 extension, first target: Home-card
        evidence links): before any external link is followed, show what THIS
        database already knows about it; the outbound anchor's visible text IS

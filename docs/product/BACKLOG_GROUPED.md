@@ -210,6 +210,14 @@ makes the rest fall out cheaply:
   the "Index corpus" button + palette action are removed and replaced by a silent
   background top-up that runs on Insights open when behind (`autoIndexInsights`),
   on top of the existing index-at-ingest hook (#132). `test_ui_invariants` #21.
+- ✅ **Trends → click-to-enlarge interactive chart** (Item 1) — each Trends 3-window
+  sparkline carries a ⛶ → `enlargeTrend(wi,ti)` → the reusable
+  `chartEnlarge(title,seriesList,caveat)` modal `<dialog id="chart-enlarge">`, opening
+  the term's daily series as a full interactive `ooChart` (invariant #16: zoom/pan/
+  readout/legend; Item-Y bars when n<10). No extra fetch (series already in the
+  `_trending-windows` payload); zero new i18n; caveat visible. `test_ui_invariants`
+  #21b++. REMAINING: the wider Trends redesign (remove the Insights search bar once the
+  omnibar absorbs term-exploration).
 
 ## F. The analysis window (corpora system — the flagship)
 
