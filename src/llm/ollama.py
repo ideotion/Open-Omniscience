@@ -86,6 +86,25 @@ class LLMUnavailable(LLMError):
     """Ollama is unreachable, or the requested model is not installed."""
 
 
+def _require_loopback(url: str) -> None:
+    """Refuse a non-loopback Ollama URL (privacy: LLM egress must stay on the machine).
+
+    Inference is fully local by design; ``OO_OLLAMA_URL`` pointing at a remote host
+    would silently send corpus text off the machine. Allow only loopback hosts so a
+    misconfiguration fails loudly instead of leaking. (Skipped when a client is
+    injected — tests drive an in-memory MockTransport with no real egress.)
+    """
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).hostname or "").lower()
+    if host in {"localhost", "::1"} or host.startswith("127."):
+        return
+    raise LLMError(
+        f"OO_OLLAMA_URL must be loopback (127.0.0.1 / localhost / ::1); got {host!r}. "
+        "The local LLM never talks to a remote host."
+    )
+
+
 @dataclass
 class GenerationResult:
     model: str
@@ -108,7 +127,29 @@ class OllamaClient:
             "/"
         )
         self.timeout = timeout
+        # Enforce loopback only when WE open the socket. An injected client (tests)
+        # may use a MockTransport with a non-loopback nominal URL and never egress.
+        if client is None:
+            _require_loopback(self.base_url)
         self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout)
+
+    # -- network kill switch ----------------------------------------------- #
+
+    def _check_kill_switch(self) -> None:
+        """Refuse any Ollama call while the global kill switch (airplane mode) is engaged.
+
+        Ollama is loopback-only, but airplane mode means the operator wants NO
+        connections at all — honour it for the LLM path too (defense in depth; it
+        also blocks a misconfigured non-loopback URL slipping through an injected
+        client). Degrade LOUDLY — never a fabricated answer.
+        """
+        from src.ingest import kill_switch_active
+
+        if kill_switch_active():
+            raise LLMUnavailable(
+                "Network is OFF (airplane mode): refusing the Ollama request. "
+                "Turn airplane mode off to use the local LLM."
+            )
 
     # -- availability ------------------------------------------------------ #
 
@@ -121,6 +162,7 @@ class OllamaClient:
 
     def list_installed(self) -> list[str]:
         """Return installed model tags, or raise LLMUnavailable if Ollama is down."""
+        self._check_kill_switch()
         try:
             resp = self._client.get("/api/tags")
             resp.raise_for_status()
@@ -137,6 +179,7 @@ class OllamaClient:
         This is the source of truth for the in-app picker: what the operator
         ACTUALLY has, never a guessed catalog. Raises LLMUnavailable if down.
         """
+        self._check_kill_switch()
         try:
             resp = self._client.get("/api/tags")
             resp.raise_for_status()
@@ -167,6 +210,7 @@ class OllamaClient:
         options: dict | None = None,
     ) -> GenerationResult:
         """Single-shot completion. Raises LLMUnavailable if Ollama/model is absent."""
+        self._check_kill_switch()
         payload: dict = {"model": model, "prompt": prompt, "stream": False}
         if system:
             payload["system"] = system
