@@ -75,13 +75,20 @@ def test_reader_renders_tabs_and_references_assets(tmp_path):
             # reader.js needs the article id off the wrapper.
             assert 'data-article-id="1"' in body
 
-            # The full sub-tab bar is present (corpus-of-1 facets).
+            # The full sub-tab bar is present (corpus-of-1 facets): now incl. Mindmap + Source.
             assert 'class="rtabs"' in body and 'role="tablist"' in body
-            for key in ("read", "keywords", "sentiment", "related", "links"):
+            for key in ("read", "keywords", "mindmap", "sentiment", "related", "source", "links"):
                 assert f'data-rtab="{key}"' in body, f"missing the {key} tab"
                 assert f'id="rp-{key}"' in body, f"missing the {key} pane"
-            # The two new analysis panes lazy-load; they are marked for reader.js.
+            # The lazy analysis panes are marked for reader.js (incl. the mindmap).
             assert 'data-lazy="keywords"' in body and 'data-lazy="sentiment"' in body
+            assert 'data-lazy="mindmap"' in body
+            # The Source profile pane is SERVER-RENDERED (like Related/Links): no lazy fetch,
+            # descriptive provenance + corpus footprint, NO score/ranking/verdict.
+            assert "Source profile" in body
+            assert "article(s) collected from this source" in body  # the footprint
+            assert "no score, no" in body and "credibility verdict" in body  # honesty note
+            assert 'data-lazy="source"' not in body  # server-rendered, not a lazy fetch
 
             # Existing reader content is preserved (now inside the Read pane).
             assert "A Big Story" in body
@@ -131,5 +138,62 @@ def test_reader_lazy_endpoints_accept_single_article(tmp_path):
             assert sent.status_code == 200
             # The VADER English-only disclosure travels with the data (B1 honesty).
             assert "VADER" in sent.json().get("caveat", "")
+
+            # The Mindmap tab fetches the article_ids-aware graph endpoint.
+            g = client.get("/api/insights/graph?article_ids=1")
+            assert g.status_code == 200
+            gj = g.json()
+            assert gj["level"] == "article"
+            assert "nodes" in gj and "edges" in gj
+            assert gj.get("method") and gj.get("caveat")
+            # No composite score leaks into the graph payload.
+            assert "score" not in gj and "relevance_score" not in gj
     finally:
         app.dependency_overrides.clear()
+
+
+def test_article_graph_is_a_deterministic_outward_radial(tmp_path):
+    """article_graph centres on the most-mentioned keyword and radiates OUTWARD —
+    the mind-map rule (no cross-tangle): every edge is centre -> arm, sized by
+    mention count, counts only (no score)."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.analytics import queries as q
+    from src.database.models import Article, Base, Keyword, KeywordMention, Source
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'g.db'}", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    with Sess() as s:
+        s.add(Source(name="N", domain="n.test"))
+        s.add(
+            Article(
+                url="https://n.test/a", canonical_url="https://n.test/a", source_id=1,
+                title="t", content="c", hash="h", language="en",
+                created_at=datetime.now(UTC),
+            )
+        )
+        s.commit()
+        # Three non-stopword keywords with distinct mention counts.
+        terms = [("election", 9), ("ballot", 5), ("turnout", 2)]
+        for i, (term, n) in enumerate(terms, start=1):
+            s.add(Keyword(id=i, term=term, normalized_term=term, language="en"))
+            s.commit()
+            s.add(KeywordMention(keyword_id=i, article_id=1, count=n))
+        s.commit()
+
+        g = q.article_graph(s, article_ids=[1])
+
+    assert g["level"] == "article"
+    centers = [n for n in g["nodes"] if n.get("center")]
+    assert len(centers) == 1 and centers[0]["label"] == "election"  # most-mentioned leads
+    # Every edge originates at the centre (always outward; a star, no cross-tangle).
+    assert g["edges"] and all(e["a"] == "election" for e in g["edges"])
+    arm_labels = {e["b"] for e in g["edges"]}
+    assert arm_labels == {"ballot", "turnout"}
+    # Sizes carry the real mention count; no composite score anywhere.
+    assert centers[0]["mentions"] == 9
+    assert not any("score" in n for n in g["nodes"])

@@ -63,6 +63,17 @@
 }
 .r-score { font: 15px/1.6 system-ui, sans-serif; }
 
+/* Mindmap tab: a deterministic radial keyword map (centre → arms → outward).
+   Self-contained SVG, themed via the reader's vars; no library, no network at
+   render. Node area ∝ mention count; labels sit outside the nodes for contrast. */
+.r-mm { width: 100%; height: auto; display: block; max-width: 720px; margin: 4px auto 0; }
+.r-mm-edge { stroke: var(--line); stroke-width: 1.5; }
+.r-mm-node { fill: var(--card); stroke: var(--accent); stroke-width: 1.5; }
+.r-mm-node.center { fill: var(--accent); }
+.r-mm-label { fill: var(--fg); font: 12px system-ui, sans-serif; }
+.r-mm-label.center { font-weight: 600; }
+.r-mm-n { fill: var(--mut); font-size: 10px; }
+
 .r-method { color: var(--mut); font-size: 12px; margin: 12px 0 2px; }
 /* Caveats are VISIBLE BY DEFAULT (informed-consent non-negotiable): the VADER
    English-only disclosure + the counts-not-a-score note are always shown, never

@@ -902,6 +902,45 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
         else "<span class='muted'>No original (http/https) URL recorded.</span>"
     )
 
+    # Source profile (the reader's "Source" tab): DESCRIPTIVE provenance from your
+    # source catalogue + this source's footprint in YOUR corpus. Server-rendered
+    # like Related/Links (no extra fetch). No score, no ranking, no credibility
+    # verdict — reliability_score (operator-set, guarded) is deliberately NOT shown.
+    src = a.source
+    if src:
+        src_footprint = (
+            db.query(func.count(Article.id)).filter(Article.source_id == a.source_id).scalar() or 0
+        )
+        _place = " · ".join(
+            p for p in (
+                _html.escape(src.country) if src.country else None,
+                _html.escape(src.region) if src.region else None,
+            ) if p
+        ) or None
+        source_profile_rows = "".join(
+            [
+                _row("Name", _html.escape(src.name) if src.name else None),
+                _row("Domain", f"<code>{_html.escape(src.domain)}</code>" if src.domain else None),
+                _row("Place", _place),
+                _row("Type", _html.escape(src.source_type) if src.source_type else None),
+                _row("Language", _html.escape(src.language) if src.language else None),
+                _row("Tags", _html.escape(src.tags) if src.tags else None),
+                _row("In your corpus", f"{src_footprint:,} article(s) collected from this source"),
+            ]
+        )
+        source_block = (
+            "<section><h2>Source profile</h2>"
+            "<div class='meta'>" + (source_profile_rows or "<div class='mrow muted'>—</div>") + "</div>"
+            "<div class='mnote'>Descriptive provenance from your source catalogue — no score, no "
+            "ranking, no credibility verdict. “In your corpus” counts what you have collected, "
+            "not the source's total output.</div></section>"
+        )
+    else:
+        source_block = (
+            "<section><h2>Source profile</h2>"
+            "<p class='muted'>No source is recorded for this article.</p></section>"
+        )
+
     # Dates mentioned in the text — extracted, human-confirmable per-article tags.
     from src.timemap import datestore
 
@@ -1057,8 +1096,10 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
   <nav class="rtabs" role="tablist" aria-label="Article views">
     <button class="rtab active" data-rtab="read" role="tab" aria-selected="true" tabindex="0">Read</button>
     <button class="rtab" data-rtab="keywords" role="tab" aria-selected="false" tabindex="-1">Keywords</button>
+    <button class="rtab" data-rtab="mindmap" role="tab" aria-selected="false" tabindex="-1">Mindmap</button>
     <button class="rtab" data-rtab="sentiment" role="tab" aria-selected="false" tabindex="-1">Sentiment</button>
     <button class="rtab" data-rtab="related" role="tab" aria-selected="false" tabindex="-1">Related</button>
+    <button class="rtab" data-rtab="source" role="tab" aria-selected="false" tabindex="-1">Source</button>
     <button class="rtab" data-rtab="links" role="tab" aria-selected="false" tabindex="-1">Links</button>
   </nav>
   <section class="rpane" id="rp-read" role="tabpanel" aria-label="Read">
@@ -1067,8 +1108,10 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     {dates_section}
   </section>
   <section class="rpane" id="rp-keywords" role="tabpanel" aria-label="Keywords" data-lazy="keywords" hidden></section>
+  <section class="rpane" id="rp-mindmap" role="tabpanel" aria-label="Mindmap" data-lazy="mindmap" hidden></section>
   <section class="rpane" id="rp-sentiment" role="tabpanel" aria-label="Sentiment" data-lazy="sentiment" hidden></section>
   <section class="rpane" id="rp-related" role="tabpanel" aria-label="Related" hidden>{related_block}</section>
+  <section class="rpane" id="rp-source" role="tabpanel" aria-label="Source" hidden>{source_block}</section>
   <section class="rpane" id="rp-links" role="tabpanel" aria-label="Links" hidden>{links_block}</section>
   <footer>
     This is the copy captured at ingest — it does not change if the source is later edited or removed.

@@ -989,8 +989,24 @@ ruling, a contingency, or a deliberate-omission note.
   (no score), method + the VADER English-only caveat VISIBLE by default (B1). The
   reader page is English-only (no i18n engine there — consistent with the existing
   reader; the SPA chrome is the i18n target). tests/test_reader_tabs.py + node --check.
-  REMAINING (next stacked slice, PR1b): Mindmap (needs /api/insights/graph to accept
-  article_ids, today term=-centred) + a richer Source/WWW profile tab.
+  **MINDMAP TAB SHIPPED 2026-06-16 (PR1b):** `/api/insights/graph` now accepts
+  `article_ids` (overrides term/level) → a NEW `queries.article_graph` builds a
+  DETERMINISTIC RADIAL keyword map over the exact article set (centre = the
+  most-mentioned keyword, arms = the rest sized by mention count, every edge
+  centre→arm = always OUTWARD, the mind-map rule, no cross-tangle), reusing
+  `corpus_keywords` (same hidden-word policy + spread ordering, counts only — NO
+  score). The reader's new Mindmap tab (between Keywords + Sentiment) lazy-renders a
+  self-contained themed SVG in reader.js (labels OUTSIDE the nodes for contrast,
+  role=img + aria-label, "+N more" honesty, method + caveat visible); reader stays
+  STANDALONE + English-only. tests: `test_article_graph_is_a_deterministic_outward_radial`
+  + the endpoint contract + the tab structure. **SOURCE PROFILE TAB ALSO SHIPPED
+  2026-06-16 (same PR):** a SERVER-RENDERED "Source" pane (like Related/Links, no
+  extra fetch) showing the source's catalogue provenance (name · domain · place ·
+  type · language · tags) + its corpus FOOTPRINT ("N articles collected from this
+  source") — DESCRIPTIVE only, NO score/ranking/verdict (reliability_score
+  deliberately not shown, per the operator-set guard). Reader tabs are now
+  Read·Keywords·Mindmap·Sentiment·Related·Source·Links; When/Where/Who already live
+  in the Read pane, so the reader-tabs flagship (RC-BLOCKING) is essentially complete.
 - **SEARCH = ONE CENTRAL ANALYTICAL TOOL (field reports #3/#4 + 2026-06-12
   refinements; supersedes-and-extends the 2026-06-10 global-search design):**
   instant index-backed omnibar (never scan-on-type), federated over articles

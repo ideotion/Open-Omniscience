@@ -671,16 +671,31 @@ def remove_supergroup_member(sg_id: int, normalized: str, db: Session = Depends(
 def insights_graph(
     level: str = Query("keyword", description="keyword | family | supergroup"),
     term: str | None = Query(None, description="seed term (keyword level only)"),
+    article_ids: str | None = Query(
+        None, description="explicit article-id set → a radial keyword map over that "
+        "exact selection (the reader / analysis 'corpus of 1+'); overrides term/level"
+    ),
     hops: int = Query(2, ge=1, le=2),
     days: int | None = Query(None, ge=1, le=3650, description="window: last N days"),
     start: str | None = Query(None, description="window start (YYYY-MM-DD)"),
     end: str | None = Query(None, description="window end (YYYY-MM-DD)"),
+    cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
     """The layered keyword graph (maintainer-ruled 2026-06-10): a keyword with
     its relatives AND its relatives' relatives (two hops); zoom out to keyword
     FAMILIES; zoom out again to curated SUPER-GROUPS. Every edge is real
-    article co-occurrence with the method stated per level."""
+    article co-occurrence with the method stated per level.
+
+    With ``article_ids`` it instead returns a RADIAL keyword map over that exact
+    article set — the reader's Mindmap tab (article = corpus of 1) and the analysis
+    window's mindmap subtab. The explicit set takes precedence over term/level."""
+    if article_ids:
+        ids, _total = _resolve_corpus(
+            db, article_ids, query=None, source=None, start_date=None,
+            end_date=None, language=None, tags=None, cap=cap,
+        )
+        return q.article_graph(db, article_ids=ids)
     if level not in ("keyword", "family", "supergroup"):
         raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")
     if level == "keyword" and not (term or "").strip():

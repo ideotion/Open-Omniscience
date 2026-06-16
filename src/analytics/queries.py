@@ -255,6 +255,55 @@ def corpus_keywords(
     return {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
 
 
+def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> dict:
+    """A radial keyword mind-map over a GIVEN article set (the reader / analysis
+    "corpus of 1+").
+
+    Centre = the most-mentioned keyword; arms = the next keywords sized by mention
+    count; every edge goes centre -> arm (deterministic, always OUTWARD — the
+    mind-map rule, no cross-tangle). For a single article this is a concept map of
+    its keywords; for several it is the set's dominant terms around the lead term.
+    Reuses :func:`corpus_keywords` (same hidden-word policy + spread ordering),
+    counts only — NO score.
+    """
+    kw = corpus_keywords(session, article_ids=article_ids, limit=max(1, limit_nodes))
+    terms = kw.get("terms", [])
+    n_articles = kw.get("n_articles", 0)
+    method = (
+        "Keywords of the selected article(s), sized by mention count, radiating "
+        "from the most-mentioned term (deterministic, always outward)."
+    )
+    if not terms:
+        return {
+            "level": "article", "nodes": [], "edges": [], "n_articles": n_articles,
+            "method": method,
+            "caveat": "Too few keywords indexed for this selection to draw a map yet.",
+        }
+    center = terms[0]
+    nodes = [{
+        "id": center["term"], "label": center["term"], "kind": "keyword",
+        "center": True, "size": 13,
+        "mentions": center["mentions"], "articles": center["articles"],
+    }]
+    edges, seen = [], {center["term"]}
+    for tdat in terms[1:]:
+        if tdat["term"] in seen:
+            continue
+        seen.add(tdat["term"])
+        nodes.append({
+            "id": tdat["term"], "label": tdat["term"], "kind": "keyword",
+            "size": tdat["mentions"],
+            "mentions": tdat["mentions"], "articles": tdat["articles"],
+        })
+        edges.append({"a": center["term"], "b": tdat["term"], "weight": tdat["mentions"]})
+    return {
+        "level": "article", "term": center["term"],
+        "nodes": nodes, "edges": edges, "n_articles": n_articles,
+        "method": method,
+        "caveat": "A concept map of the keywords present, not a co-occurrence network; not causation.",
+    }
+
+
 def corpus_who(session, *, article_ids: list[int], limit: int = 40) -> dict:
     """WHO (people/orgs) deduced across a GIVEN article set — like who_aggregate
     but scoped to the analysis window's matched articles. Counts only, deduced
