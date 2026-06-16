@@ -38,3 +38,26 @@ def stat_agencies() -> dict:
             "side by side and never averaged."
         ),
     }
+
+
+@router.post("/sources/ingest")
+def ingest_stat_sources() -> dict:
+    """Register the curated statistical producers as DISABLED, controversial sources.
+
+    Each agency is added to the source catalog as a ``source_type="statistics"``
+    Source, carrying the ``official-statistics`` + ``controversial`` tags (an
+    official figure is a STANCED source — by ruling, every producer is
+    ``controversial``; there is no "controversial" column). Rows are created
+    DISABLED — registered, NOT scraped: official machine endpoints (SDMX / APIs)
+    are preferred over scraping, wired up in a later slice.
+
+    Additive and IDEMPOTENT — a domain already in the catalog is left untouched, so
+    this is safe to call repeatedly; an operator's curation is never clobbered. NO
+    ``reliability_score`` is written (no fabricated credibility score, ever). LOCAL
+    DB write only: no network — ``home_url`` is reduced to a registrable domain
+    locally, never fetched."""
+    from src.database.session import session_scope
+    from src.stats.ingest import ingest_agencies_as_sources
+
+    with session_scope() as db:
+        return ingest_agencies_as_sources(db)
