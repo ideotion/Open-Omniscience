@@ -5948,6 +5948,7 @@
     // Trends redesign (2026-06-16). Reads /api/insights/trending-windows (no
     // controls; fixed presets); each column reuses termListHtml. Honest n + the
     // early-corpus caveat travel from the API. Additive to the single-window view.
+    let _trendWindowsData = null;  // last /trending-windows payload (the enlarge dialog reads its series)
     async function loadTrendWindows() {
       const box = $("trd-windows"); if (!box) return;
       const LABELS = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
@@ -5957,13 +5958,18 @@
         // small honest sparkline (dashChartSvg: line when dense, Item-Y bars when
         // sparse — never an interpolated curve). The rest stay a plain list.
         const d = await api("/api/insights/trending-windows?limit=8&series_top=5");
-        box.innerHTML = (d.windows || []).map(w => {
+        _trendWindowsData = d;  // stash so enlargeTrend(wi,ti) needs no extra fetch
+        box.innerHTML = (d.windows || []).map((w, wi) => {
           const head = `<h2 style="font-size:13px">${esc(LABELS[w.label] || w.label)} <span class="muted">· n=${w.count}</span></h2>`;
           const terms = w.terms || [];
           if (!terms.length) {
             return `<div style="flex:1;min-width:240px">${head}<div class="muted">${esc(t("No rising keywords in this window yet."))}</div></div>`;
           }
-          const spark = terms.filter(x => Array.isArray(x.series)).map(x => {
+          // Map over ALL terms (index ti preserved so enlargeTrend can index back
+          // into _trendWindowsData), rendering a sparkline only for those carrying
+          // a series; the rest fall through to the plain list below.
+          const spark = terms.map((x, ti) => {
+            if (!Array.isArray(x.series)) return "";
             // {date,count} -> dashChartSvg's {observed_on,price}; it handles the empty
             // + sparse cases honestly (no fabricated points).
             const pts = x.series.map(p => ({observed_on: p.date, price: p.count}));
@@ -5971,6 +5977,7 @@
               <div style="display:flex;align-items:baseline;gap:6px">
                 <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${esc(x.term)}</a>
                 <span class="muted" style="font-size:12px">↑${esc(String(x.growth))}× · ${esc(String(x.recent))} recent</span>
+                <button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
               </div>${dashChartSvg(pts, "")}</div>`;
           }).join("");
           const rest = terms.filter(x => !Array.isArray(x.series));
@@ -5979,6 +5986,37 @@
         }).join("") || `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`;
         const note = $("trd-windows-note"); if (note) note.textContent = d.caveat || "";
       } catch (e) { /* additive panel — leave the single-window view intact on error */ }
+    }
+
+    // Click-to-enlarge a Trends sparkline into the interactive ooChart (invariant
+    // #16: full-resolution, wheel-zoom / drag-pan / hover-readout / legend; Item-Y
+    // bars when n<10). The daily series is already in the trending-windows payload
+    // (_trendWindowsData) — no extra fetch. Global: reached from an inline onclick.
+    function enlargeTrend(wi, ti) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const d = _trendWindowsData;
+      const w = d && d.windows && d.windows[wi];
+      const x = w && (w.terms || [])[ti];
+      if (!x || !Array.isArray(x.series)) return;   // defensive: nothing to enlarge
+      const LABELS = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
+      const title = x.term + " — " + (LABELS[w.label] || w.label);
+      const points = x.series.map(p => ({t: p.date, v: p.count}));
+      chartEnlarge(title, [{label: x.term, unit: t("mentions"), points}], d.caveat || "");
+    }
+
+    // Reusable interactive-chart enlarge dialog (Item 1, Group E). Renders the
+    // given ooChart series into the modal <dialog> (native showModal traps focus,
+    // OO-D13-001). The caveat shows VISIBLE by default (informed consent). ooChart
+    // is drawn AFTER showModal so the dialog has layout width for the canvas.
+    function chartEnlarge(title, seriesList, caveat) {
+      const dlg = $("chart-enlarge"); if (!dlg) return;
+      const ttl = $("chart-enlarge-title"); if (ttl) ttl.textContent = title || "";
+      const note = $("chart-enlarge-note");
+      if (note) { note.textContent = caveat || ""; note.style.display = caveat ? "" : "none"; }
+      const body = $("chart-enlarge-body"); if (!body) return;
+      body.innerHTML = "";
+      if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
+      ooChart(body, seriesList, {height: 360, maxWidth: 880});
     }
 
     // World map: equirectangular projection, viewBox-based zoom/pan (no deps).

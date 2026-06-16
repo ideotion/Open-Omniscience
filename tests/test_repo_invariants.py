@@ -623,6 +623,16 @@ def test_ui_invariants():
     assert "series_top=5" in html and "dashChartSvg(" in html, (
         "loadTrendWindows() must request series_top and render per-term sparklines"
     )
+    # 21b++. Each Trends sparkline can be ENLARGED into the interactive ooChart
+    #        (invariant #16: full-resolution zoom/pan/readout; Item-Y bars when
+    #        n<10) via a reusable modal dialog — no extra fetch (the daily series
+    #        is already in the trending-windows payload). Item 1, Group E.
+    assert 'id="chart-enlarge"' in html and "function chartEnlarge(" in html, (
+        "the reusable chart-enlarge <dialog> + chartEnlarge() must exist (Item 1)"
+    )
+    assert "function enlargeTrend(" in html and "enlargeTrend(" in html, (
+        "loadTrendWindows() sparklines must offer per-term enlarge via enlargeTrend()"
+    )
     # 21c. Insights Convergence: a read-only view over GET /api/insights/convergences
     #      (space-time co-occurrence). Additive; independence is by distinct sources,
     #      co-occurrence is never causation — the API method+caveat are shown VISIBLE

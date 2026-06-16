@@ -1519,9 +1519,16 @@ ruling, a contingency, or a deliberate-omission note.
     browser-unverified): `loadTrendWindows` requests `series_top=5` and renders each top
     term's daily series as a small honest sparkline via the shared `dashChartSvg` (line when
     dense, Item-Y bars when sparse — NEVER an interpolated curve); the rest stay the plain
-    list; ZERO new i18n keys (reuses existing strings); test_ui_invariants #21b+. REMAINING:
-    a click-to-enlarge interactive `ooChart` per term + the maintainer's wider Trends
-    redesign (remove the Insights search bar once the omnibar absorbs term-exploration).
+    list; ZERO new i18n keys (reuses existing strings); test_ui_invariants #21b+. CLICK-TO-
+    ENLARGE SHIPPED 2026-06-16 (conservative, browser-unverified): each sparkline carries a
+    ⛶ button → `enlargeTrend(wi,ti)` → the REUSABLE `chartEnlarge(title,seriesList,caveat)`
+    modal `<dialog id="chart-enlarge">` rendering the term's daily series as a full interactive
+    `ooChart` (invariant #16: wheel-zoom / drag-pan / hover-readout / legend; Item-Y bars when
+    n<10). NO extra fetch — the series is already in the `_trendWindowsData` payload. ZERO new
+    i18n keys (reuses "Enlarge the chart"/"Past 24h|week|month"/"mentions"/"Close"); caveat
+    VISIBLE by default; native showModal traps focus (OO-D13-001). test_ui_invariants #21b++.
+    REMAINING: the maintainer's wider Trends redesign (remove the Insights search bar once the
+    omnibar absorbs term-exploration).
   - **(6) UNIFIED 3D KEYWORD EXPLORER (ruled 2026-06-16; maintainer FLAGSHIP —
     "important to me", "incredible UI/UX"; evolves the mind-map rules + #mm-kit;
     lives in Insights per (5)):** THREE fixes + one big rework. FIXES: (a) the
