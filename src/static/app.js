@@ -4206,6 +4206,9 @@
           // series display name. The caveat is the maintainer's binding rule:
           // this surfaces co-occurrence in the corpus, NEVER causation.
           const q = COMMODITY_QUERY[s.symbol] || s.name || s.symbol;
+          // Carry the commodity identity so the analysis window's Price subtab can
+          // overlay this commodity's price curve with the term's corpus coverage.
+          const cOpts = esc(JSON.stringify({commodity: {symbol: s.symbol, name: s.name, unit: last ? `${last.currency}/${last.unit}` : ""}}));
           // The GRAPH is a first-class entry into the analysis WINDOW (ledger
           // MARKETS item 4): a clear "Analyse ↗" affordance UNDER the chart opens
           // the commodity's keyword-family corpus via openAnalysisFor (the same
@@ -4213,21 +4216,21 @@
           // body keeps its chartSymbol price detail + correlation (the Desk
           // lesson: never silently lose a tool); stopPropagation keeps the two
           // paths distinct. The term is the curated COMMODITY_QUERY family seed,
-          // else the real series name/symbol — never a fabricated family. NOTE:
-          // the price-curve × article-timeline OVERLAY is remaining; this slice
-          // opens the window on the term.
+          // else the real series name/symbol — never a fabricated family. The
+          // window's Price subtab OVERLAYS the price curve with the term's corpus
+          // coverage timeline (the commodity identity rides along in cOpts, below).
           return `<div class="stat" style="cursor:pointer" title="open detail + correlation"
               onclick="chartSymbol(${esc(JSON.stringify(s.symbol))}, ${esc(JSON.stringify(last?last.unit:''))})">
             <div style="display:flex;justify-content:space-between;align-items:baseline">
               <button type="button" title="${esc(s.name || s.symbol)}"
                 style="background:none;border:none;padding:0;margin:0;font:inherit;font-weight:700;color:var(--accent);cursor:pointer;text-decoration:none"
-                onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))})">${esc(s.symbol)} ⊞</button> ${change}</div>
+                onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(s.symbol)} ⊞</button> ${change}</div>
             <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv}</div>
             <div class="hint muted" style="font-size:10px;margin:-2px 0 4px">${esc(t("co-occurrence in your corpus, never causation"))}</div>
             ${dashChartSvg(pts, last ? `${last.currency}/${last.unit}` : "")}
             <div style="margin-top:4px"><button class="tiny secondary" type="button"
                 title="${esc(t("Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)"))}"
-                onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))})">${esc(t("Analyse"))} ↗</button></div></div>`;
+                onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(t("Analyse"))} ↗</button></div></div>`;
         }).join("") + `</div>`
       ).join("");
       // Category SUB-TABS (universal subtab grammar, invariant #18): build the
@@ -7009,6 +7012,8 @@
     // passes article_ids, and the backend's _resolve_corpus prefers them over a
     // search. null = the normal omnibar/Advanced search path.
     let _anIds = null;
+    let _anCommodity = null;   // {symbol,name,unit} when seeded by a commodity click (Price subtab)
+    let _anSubtabs = null;     // ooSubtabs handle for the analysis window (to fall back off Price)
     function anParams() {
       const p = new URLSearchParams();
       if (_anIds && _anIds.length) { p.set("article_ids", _anIds.join(",")); return p; }
@@ -7025,6 +7030,7 @@
     function openAnalysisForIds(ids, label) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anIds = Array.isArray(ids) ? ids.slice(0, 5000) : null;
+      _anCommodity = null;   // a fixed article set, not a commodity overlay
       $("an-adv-query").value = ""; $("an-adv-source").value = "";
       $("an-adv-lang").value = ""; $("an-adv-from").value = ""; $("an-adv-to").value = "";
       $("an-query").textContent = label ? `“${label}”` : t("(the selected article set)");
@@ -7038,8 +7044,11 @@
     // open their own analysis (the keyword corpus window). Counts, never a verdict.
     // Open the analysis window seeded with an explicit query (the omnibar Enter
     // path — ruled: Enter -> a corpus-of-articles window, not the Search tab).
-    function openAnalysisFor(query) {
+    function openAnalysisFor(query, opts) {
       _anIds = null;   // a fresh query, not a fixed article set
+      // A commodity click carries {commodity:{symbol,name,unit}} so the Price
+      // subtab can overlay the price curve with this term's corpus coverage.
+      _anCommodity = (opts && opts.commodity) || null;
       const q = (query || "").trim();
       $("an-adv-query").value = q;
       $("an-adv-source").value = ""; $("an-adv-lang").value = "";
@@ -7050,6 +7059,7 @@
       loadAnalysis(anParams());
     }
     function openAnalysis() {
+      _anCommodity = null;   // the search-driven path is not a commodity overlay
       const qtxt = $("q").value.trim();
       $("an-query").textContent = qtxt ? `“${qtxt}”` : "(all articles matching your filters)";
       // Prefill the Advanced tab from the current search, so it reflects what is
@@ -7071,6 +7081,7 @@
     // EVERY subtab from the params, so this is the whole wiring.
     function anRunAdvanced() {
       _anIds = null;   // refining via Advanced search replaces any fixed article set
+      _anCommodity = null;   // a refined search is no longer the commodity overlay
       const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const p = new URLSearchParams();
       const q = $("an-adv-query").value.trim(); if (q) p.set("query", q);
@@ -7086,6 +7097,98 @@
       document.querySelectorAll("#tab-analyze .an-panel").forEach(el =>
         el.style.display = (el.id === "an-" + key) ? "" : "none");
     }
+
+    // --- Commodity price × coverage overlay (Markets item, Group G) --------- //
+    // Shown ONLY when the analysis window was seeded by a commodity click (the
+    // card title ⊞ / Analyse ↗ pass {commodity:{symbol,name,unit}}). The Price
+    // subtab overlays the commodity PRICE curve with the corpus COVERAGE (article
+    // volume) timeline on a SHARED time axis — "what and when to deduce why and
+    // how". The maintainer's binding rule is shown VISIBLE: co-occurrence in your
+    // corpus, NEVER causation. Reuses existing endpoints (no new backend).
+    function _toggleAnPrice() {
+      const on = !!(_anCommodity && _anCommodity.symbol);
+      const btn = $("an-price-tab");
+      if (btn) btn.style.display = on ? "" : "none";
+      if (on) { renderAnPrice(); return; }
+      // Hidden now: if the Price tab was the active one, fall back to Keywords.
+      const panel = $("an-price");
+      if (panel) {
+        if (panel.style.display !== "none" && _anSubtabs) _anSubtabs.select("keywords");
+        panel.innerHTML = "";
+      }
+    }
+    async function renderAnPrice() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("an-price"); if (!el || !_anCommodity) return;
+      const c = _anCommodity;
+      el.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      const term = anQuery() || c.name || c.symbol;
+      try {
+        // Price (the commodity's own series) + corpus coverage (this term's article
+        // volume over time). Either may be absent — degrade loudly, never fake.
+        const [pd, td] = await Promise.all([
+          api(`/api/commodities/${encodeURIComponent(c.symbol)}/prices`).catch(() => null),
+          api(`/api/insights/trend?bucket=week&term=${encodeURIComponent(term)}`).catch(() => null),
+        ]);
+        const prices = (pd && pd.prices) || [];
+        const vol = (td && td.resolved) ? (td.points || []) : [];
+        const unit = c.unit || (prices[0] ? `${prices[0].currency}/${prices[0].unit}` : "");
+        const head = `<div class="hint"><b>${esc(t("Price × coverage"))}</b> — ${esc(c.name || c.symbol)}`
+          + ` <span class="muted">· ${esc(t("co-occurrence in your corpus, never causation"))}</span></div>`;
+        const note = vol.length
+          ? `<div class="hint muted" style="font-size:11px;margin-top:4px">${esc(t("Articles"))}: ${td.total} · ${vol.length}×</div>`
+          : `<div class="muted" style="font-size:12px;margin:6px 0">${esc(t("No corpus coverage to overlay yet."))}</div>`;
+        el.innerHTML = head + commodityOverlaySvg(prices, vol, unit) + note;
+      } catch (e) { el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    // A self-contained, deterministic dual-axis SVG (does NOT touch ooChart). The
+    // PRICE reads its OWN left axis (line + real sample dots so the true n is
+    // honest), the COVERAGE its OWN right axis (bars, 0-based) — each on its own
+    // LABELLED scale, so magnitudes are never conflated (no fabricated shared
+    // baseline). Shared time X so spikes line up. Empty/sparse degrade honestly.
+    function commodityOverlaySvg(prices, vol, priceUnit) {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const P = (prices || []).map(p => ({t: Date.parse(p.observed_on), v: +p.price}))
+        .filter(p => isFinite(p.t) && isFinite(p.v)).sort((a, b) => a.t - b.t);
+      const V = (vol || []).map(p => ({t: Date.parse(p.date), v: +p.count}))
+        .filter(p => isFinite(p.t) && isFinite(p.v)).sort((a, b) => a.t - b.t);
+      if (!P.length && !V.length) return `<div class="muted">${esc(t9("no data points yet"))}</div>`;
+      const W = 660, H = 230, padL = 54, padR = 50, padT = 16, padB = 28;
+      const allT = P.concat(V).map(p => p.t);
+      const tMin = Math.min(...allT), tMax = Math.max(...allT), tSpan = (tMax - tMin) || 1;
+      const X = ms => padL + (W - padL - padR) * (ms - tMin) / tSpan;
+      const pv = P.map(p => p.v);
+      const pMin = P.length ? Math.min(...pv) : 0, pMax = P.length ? Math.max(...pv) : 1;
+      const pSpan = (pMax - pMin) || 1;
+      const vMax = V.length ? Math.max(...V.map(p => p.v), 1) : 1;
+      const Yp = v => padT + (H - padT - padB) * (1 - (v - pMin) / pSpan);
+      const Yv = v => padT + (H - padT - padB) * (1 - v / vMax);
+      const baseY = H - padB;
+      const fmt = (typeof fmtNum === "function") ? fmtNum : (x => String(x));
+      // Coverage bars (RIGHT axis) drawn first so the price line sits on top.
+      const slot = (W - padL - padR) / Math.max(V.length, 1);
+      const bw = Math.max(2, Math.min(slot * 0.6, 16));
+      const bars = V.map(p => {
+        const cx = X(p.t), by = Yv(p.v), x0 = Math.max(padL, cx - bw / 2);
+        return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, baseY - by).toFixed(1)}" fill="var(--muted)" fill-opacity="0.30"></rect>`;
+      }).join("");
+      // Price line + real sample dots (LEFT axis): dots keep the true n honest.
+      const line = P.length >= 2
+        ? `<polyline fill="none" stroke="var(--accent)" stroke-width="1.6" points="${P.map(p => `${X(p.t).toFixed(1)},${Yp(p.v).toFixed(1)}`).join(" ")}"></polyline>` : "";
+      const dots = P.map(p => `<circle cx="${X(p.t).toFixed(1)}" cy="${Yp(p.v).toFixed(1)}" r="1.5" fill="var(--accent)"></circle>`).join("");
+      const leftAxis = P.length ? [pMin, pMin + pSpan / 2, pMax].map(v =>
+        `<text x="${(padL - 5).toFixed(1)}" y="${(Yp(v) + 3).toFixed(1)}" text-anchor="end" font-size="8.5" fill="var(--accent)">${fmt(v)}</text>`).join("") : "";
+      const rightAxis = V.length ? [0, vMax].map(v =>
+        `<text x="${(W - padR + 5).toFixed(1)}" y="${(Yv(v) + 3).toFixed(1)}" text-anchor="start" font-size="8.5" fill="var(--muted)">${fmt(v)}</text>`).join("") : "";
+      const dts = [tMin, (tMin + tMax) / 2, tMax].map((ms, i) =>
+        `<text x="${X(ms).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="${i === 0 ? "start" : i === 2 ? "end" : "middle"}" font-size="8.5" fill="var(--muted)">${new Date(ms).toISOString().slice(0, 7)}</text>`).join("");
+      const aria = `${t9("Price × coverage")}: ${P.length} price, ${V.length} coverage`;
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px" role="img" aria-label="${esc(aria)}">`
+        + (P.length ? `<text x="${padL}" y="11" font-size="8.5" fill="var(--accent)">${esc(t9("Price"))} ${esc(priceUnit || "")}</text>` : "")
+        + (V.length ? `<text x="${W - padR}" y="11" text-anchor="end" font-size="8.5" fill="var(--muted)">${esc(t9("Articles"))}</text>` : "")
+        + bars + line + dots + leftAxis + rightAxis + dts + `</svg>`;
+    }
+
     // Self-contained radial mind-map for the analysis window. Distinct from the
     // Insights renderGraph() (which owns _mm* state + a force/zoom canvas): this
     // draws ONE static, deterministic SVG into the container it is handed — no
@@ -7164,6 +7267,7 @@
       const kw = $("an-keywords"), arts = $("an-articles");
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
         const d = await api("/api/insights/corpus-keywords?" + p.toString());
         if (!d.terms || !d.terms.length) {
@@ -7704,4 +7808,4 @@
     // (so the Insights Explore mind-map is never left empty after a relocation).
     $("corpus-win").addEventListener("close", _mmKitHome);
     ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
-    ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window (Keywords / Articles)
+    _anSubtabs = ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window (Keywords / Articles)

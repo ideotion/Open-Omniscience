@@ -1171,18 +1171,24 @@ ruling, a contingency, or a deliberate-omission note.
   honestly — a connecting line ONLY when dense (lineMin=8), otherwise discrete
   DOTS with n + the early-corpus caveat (reused keyed string, ×12), 0 points =
   "not enough points in this window"; never a curve faked through a handful of
-  points. Enforced by test_ui_invariants #16. REMAINING in this commodities item:
-  (1) category subtabs, (2) the time-scope range control, (4) click-a-graph →
-  the analysis window. Precision limited ONLY by gathered data + renderer.
-  (4) CLICK A GRAPH → a DEDICATED WINDOW/TAB (like search results), NOT the
-  bottom-of-page #mkt-chart (index.html:1214, current onclick chartSymbol →
-  detail+correlation at the bottom). The window IS the corpora flagship with
-  the coherent sub-tabs: keywords · When/Where/Who · mindmap · corpus
-  analytics · source analytics · links · the price curve with the article
-  timeline OVERLAID (commodity-click → keyword-family corpus, already ruled in
-  the corpora entry; co-occurrence NEVER causation). S&P500 is an INDEX, not a
-  commodity — reclassify; expand feeds (rare
-  earths, oil, gas, LNG, sand, cereals, sugar…). **Tor/indices diagnosis
+  points. Enforced by test_ui_invariants #16. COMMODITIES ITEM STATUS: (1) category
+  subtabs SHIPPED (ooSubtabs `_mktCatTabs`/`selectCommodityCat`, data-driven from
+  `s.category`, "All" default lens), (2) the time-scope range control SHIPPED
+  (ooTimeScope, PR #197), (4) click-a-graph → the analysis window SHIPPED (title ⊞ +
+  "Analyse ↗" → openAnalysisFor). PRICE × COVERAGE OVERLAY SHIPPED 2026-06-16 (Item 3,
+  conservative/browser-unverified): the analysis window gained a commodity-GATED Price
+  subtab (`#an-price-tab`/`#an-price`, hidden unless `_anCommodity` is set) — the card
+  passes `{commodity:{symbol,name,unit}}` through openAnalysisFor's new opts arg, and
+  `commodityOverlaySvg` draws a TRUE time-aligned DUAL-AXIS SVG: the PRICE curve (left
+  axis, line + real sample dots) over the corpus COVERAGE (right axis, bars from
+  /api/insights/trend) on a SHARED time X — each series on its OWN labelled scale (no
+  magnitude conflation, no fabricated shared baseline), reusing existing endpoints (no
+  new backend). The co-occurrence-NEVER-causation caveat is VISIBLE; honest empty states
+  (no price / no coverage). +3 i18n ×12 (Price · Price × coverage · No corpus coverage to
+  overlay yet.); test_ui_invariants #22b. Precision limited ONLY by gathered data +
+  renderer. REMAINING: S&P500 is an INDEX, not a commodity — reclassify; expand feeds
+  (rare earths, oil, gas, LNG, sand, cereals, sugar…); the bottom-of-page #mkt-chart
+  price-detail (chartSymbol) stays as the in-place detail (the Desk lesson — not removed). **Tor/indices diagnosis
   (logs analyzed 2026-06-12) — SHIPPED in T4:** transport-aware verdict
   taxonomy (refused ≠ robots-disallowed ≠ dead-series ≠ unreachable ≠
   offline) + one bounded feed-level retry for transient verdicts only +

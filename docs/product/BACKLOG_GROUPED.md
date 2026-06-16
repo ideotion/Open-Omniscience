@@ -248,16 +248,24 @@ makes the rest fall out cheaply:
 
 ## G. Markets / commodities
 
-- ⬜ **Split graphs into category tabs** (universal subtabs).
-- ⬜ **Time-scope picker** replaces the 5-choice range (begin/end/timescale,
-  built once, shared with search).
+- ✅ **Split graphs into category tabs** (universal subtabs) — `renderDashboard`
+  groups by `s.category` into `ooSubtabs` (`_mktCatTabs` / `selectCommodityCat`),
+  data-driven (only present categories), "All" default lens, skip when one category.
+- ✅ **Time-scope picker** replaces the 5-choice range (begin/end/timescale,
+  built once as `ooTimeScope`, shared with search; PR #197).
 - ✅ **Sparse-series data-point bug** — the `<2`-points fallback that dumped full
   history (so "1 month" paradoxically showed the most points) is gone:
   `renderDashboard` respects the window and `dashChartSvg` renders honestly — a
   line only when dense (`lineMin=8`), else discrete dots with `n` + the
   early-corpus caveat. (invariant #16; `test_ui_invariants`)
-- ⬜ **Click a graph → the analysis window** (group F), not bottom-of-page;
-  price curve with the article timeline overlaid.
+- ✅ **Click a graph → the analysis window** (Item 3, Group F) — the card title ⊞ +
+  "Analyse ↗" open `openAnalysisFor` (the bottom-of-page `#mkt-chart` price detail stays,
+  the Desk lesson). The **price curve + article-timeline OVERLAY** ships as a
+  commodity-gated **Price** subtab (`#an-price`): `commodityOverlaySvg` draws a
+  time-aligned DUAL-AXIS SVG — price line (left axis, real sample dots) over corpus
+  coverage bars (right axis) on a shared time X, each on its OWN labelled scale (no
+  magnitude conflation). Seed map = `COMMODITY_QUERY`; co-occurrence never causation
+  (visible); reuses existing endpoints; `test_ui_invariants` #22b. Browser-unverified.
 - ✅ **S&P500 reclassify** — already an index: it lives in `index_feeds.yml`
   (category `index`) and `list_series` excludes index symbols from the commodities
   board; the dashboard filters `category !== "index"`. Test-guarded now. REMAINING
