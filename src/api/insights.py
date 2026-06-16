@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.analytics import queries as q
+from src.analytics.convergence import find_convergences
 from src.database.session import get_db
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])
@@ -356,6 +357,39 @@ def insights_where(
         country=country,
         limit=limit,
         min_articles=min_articles,
+    )
+
+
+@router.get("/convergences")
+def insights_convergences(
+    window_days: int = Query(7, ge=1, le=90, description="±days around an anchor event date"),
+    lookback_days: int | None = Query(
+        None, ge=1, le=36500, description="only mentioned-dates within N days of today (None = all history)"
+    ),
+    min_articles: int = Query(3, ge=2, le=100, description="surfacing gate: distinct articles"),
+    min_sources: int = Query(2, ge=2, le=100, description="surfacing gate: DISTINCT sources"),
+    limit: int = Query(12, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Read-only space-time convergences over the deduced When×Where×Who substrate
+    (the 0.0.9 flagship logic, surfaced as a view). Groups articles converging on
+    the same PLACE within a time window on the MENTIONED event date.
+
+    Honesty by construction (all baked into ``find_convergences``): independence is
+    measured by DISTINCT SOURCES (never article count), the surfacing gate is
+    ``>=min_articles`` AND ``>=min_sources`` (a chatty single source can't manufacture
+    one), shared-outbound-link counts flag false triangulation, the metric is
+    ``distinct_sources`` (NO score), and every cluster carries the verbatim
+    "never causation … a prompt to read, not proof anything happened" caveat. Totals
+    are always disclosed so ``limit`` never silently hides how much qualified.
+    """
+    return find_convergences(
+        db,
+        window_days=window_days,
+        lookback_days=lookback_days,
+        min_articles=min_articles,
+        min_sources=min_sources,
+        limit=limit,
     )
 
 

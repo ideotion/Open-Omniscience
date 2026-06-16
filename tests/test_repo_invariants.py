@@ -349,15 +349,25 @@ def test_ui_invariants():
     )
     assert "OOI18N.setLang(code)" in html, "the switcher must use THE i18n engine"
     for native in ("Français", "中文", "العربية", "Русский", "日本語"):
-        assert native in html or native in open(
-            _SRC / "static" / "index.html", encoding="utf-8"
-        ).read(), f"native name {native!r} must appear in the menu data"
+        # html already IS index.html's content (read at the top of this test).
+        assert native in html, f"native name {native!r} must appear in the menu data"
     # 16. ONE chart toolkit, detailed-curves SYSTEMATIC (ruled 2026-06-12):
-    #     full series always (no thinning), sparse renders as honest points
-    #     with the early-corpus caveat; wheel zoom / drag pan / pinned readout.
+    #     full series always (no thinning), wheel zoom / drag pan / pinned readout.
+    #     AMENDED by Item Y (ruled 2026-06-15): sparse series (n<10) render as a BAR
+    #     graph (not dots), n>=10 as the full-resolution line; the "early corpus / no
+    #     curve interpolated" caveat is REMOVED app-wide, only n=x is kept. Both
+    #     renderers (ooChart + dashChartSvg) share the _SPARSE_BAR_MAX threshold.
     assert "function ooChart(" in html, "the one chart toolkit must exist (CLAUDE.md #16)"
-    assert "never downsampled" in html and "early corpus" in html, (
-        "the toolkit must state and implement the detailed-curves rules"
+    assert "never downsampled" in html, (
+        "the toolkit must state and implement the full-resolution rule (CLAUDE.md #16)"
+    )
+    # Item Y: the n<10->bar rule is shared by both renderers, and the old sparse
+    # caveat string is gone from the rendered UI (only the count n=x remains).
+    assert "_SPARSE_BAR_MAX" in html and html.count("barMode") >= 2, (
+        "n<10 must render as a BAR graph in both renderers via _SPARSE_BAR_MAX (Item Y)"
+    )
+    assert "dots shown, no curve interpolated through sparse points" not in html, (
+        "the early-corpus sparse caveat must be removed app-wide (Item Y amends #16)"
     )
     for surface in (
         'ooChart($("mkt-chart-oo")',
@@ -530,6 +540,28 @@ def test_ui_invariants():
     assert 'id="an-advanced"' in html and "function anRunAdvanced(" in html, (
         "the analysis window must carry the Advanced-search tab that re-runs the "
         "analysis from refined filters (Group F, keystone #4)"
+    )
+    # 23. Caveats are VISIBLE BY DEFAULT (permanent informed-consent invariant —
+    #     CLAUDE.md Non-negotiables): a briefing card's CAVEAT renders in a visible
+    #     .card-caveat line, NEVER hidden behind the method toggle. Only the verbose
+    #     method/math stays in the toggle-gated .mc block. (This regressed once: the
+    #     .mc block held BOTH method AND caveat behind a default-OFF checkbox.)
+    assert 'class="card-caveat">${esc(c.caveat)}' in html, (
+        "every briefing card must render its caveat VISIBLE BY DEFAULT (CLAUDE.md "
+        "informed-consent: caveats are never hidden behind a calm-UI toggle)"
+    )
+    mc_block = html.split('<div class="mc" hidden>', 1)[1].split("</div>", 1)[0]
+    assert "c.caveat" not in mc_block, (
+        "the per-card caveat must NOT live inside the toggle-gated .mc block — it is "
+        "visible by default (CLAUDE.md informed-consent mandate)"
+    )
+    assert "c.method" in mc_block, (
+        "the verbose method/math stays behind the 'Show method' toggle (.mc)"
+    )
+    # The caveat colour must be theme-aware (var(--caveat)), not a hardcoded hex that
+    # fails WCAG AA on light themes — the most ethically important strings stay legible.
+    assert "--caveat:" in html and "color:var(--caveat)" in html, (
+        "caveat text must use the theme-aware var(--caveat) (WCAG AA across all 17 themes)"
     )
 
 
