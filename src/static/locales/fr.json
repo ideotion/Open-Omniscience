@@ -938,5 +938,21 @@
   "How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed.": "Comment chaque source ABORDE ce concept, côte à côte : volume (nombre exact d'articles), tonalité (moyenne VADER + étiquette), chronologie (première→dernière publication) et les termes accentués distinctifs du média. Un microscope sur la divergence, non un verdict — aucune source n'est classée au-dessus d'une autre, aucune qualité n'est jugée, aucun score composite n'est calculé.",
   "How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.": "Comment chaque source ABORDE ce concept, côte à côte — volume (nombre exact d'articles), tonalité (moyenne VADER + étiquette), chronologie (première→dernière publication) et les termes accentués distinctifs de ce média. Une comparaison DESCRIPTIVE de la façon dont les sources DIFFÈRENT, jamais un classement, un gagnant ni un jugement de crédibilité : aucun score composite. La tonalité est VADER (lexique anglais, peu fiable pour les contenus non anglophones). Avec une seule source, il n'y a rien à comparer.",
   "Analyse": "Analyser",
-  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "Ouvrir ceci dans la fenêtre d'analyse — sa couverture dans le corpus (co-occurrence dans votre corpus, jamais causalité)"
+  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "Ouvrir ceci dans la fenêtre d'analyse — sa couverture dans le corpus (co-occurrence dans votre corpus, jamais causalité)",
+  "Newsletters": "Infolettres",
+  "Import newsletters (.eml)": "Importer des infolettres (.eml)",
+  "Import local .eml newsletter files into your corpus — searched, analysed and correlated like any article, and kept as a separate, filterable source so email and web never blur.": "Importez des fichiers d'infolettres .eml locaux dans votre corpus — recherchés, analysés et corrélés comme n'importe quel article, et conservés comme une source distincte et filtrable pour que l'e-mail et le web ne se confondent jamais.",
+  "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "Anonymisé à l'import, zéro réseau : le destinataire n'est jamais stocké, les échos du destinataire sont expurgés, les jetons de pistage sont supprimés et les enrobages de pistage côté serveur sont signalés. Rien n'est jamais récupéré — un pixel ou un lien de pistage n'est jamais suivi, donc l'import ne peut jamais révéler que vous avez ouvert ou cliqué.",
+  "These articles join your no-recovery encrypted corpus. Keep your original .eml files as the re-import path.": "Ces articles rejoignent votre corpus chiffré sans récupération. Conservez vos fichiers .eml d'origine comme voie de réimport.",
+  "Import .eml files": "Importer des fichiers .eml",
+  "Choose one or more .eml files first.": "Choisissez d'abord un ou plusieurs fichiers .eml.",
+  "duplicates skipped": "doublons ignorés",
+  "empty": "vides",
+  "not .eml": "non .eml",
+  "Anonymisation": "Anonymisation",
+  "recipient echoes redacted": "échos du destinataire expurgés",
+  "tracker tokens stripped": "jetons de pistage supprimés",
+  "tracker wrappers flagged": "enrobages de pistage signalés",
+  "Import failed": "Échec de l'import",
+  "Newsletters imported.": "Infolettres importées."
 }

@@ -938,5 +938,21 @@
   "How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed.": "كيف يتناول كل مصدر هذا المفهوم، جنبًا إلى جنب: الحجم (عدد دقيق للمقالات)، النبرة (متوسط VADER + التسمية)، التوقيت (أول←آخر نشر)، والمصطلحات المميّزة التي تبرزها الوسيلة. مجهر على التباين، وليس حكمًا — لا مصدر يُرتَّب فوق آخر، ولا تُقيَّم جودة، ولا تُحسب درجة مركّبة.",
   "How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.": "كيف يتناول كل مصدر هذا المفهوم، جنبًا إلى جنب — الحجم (عدد دقيق للمقالات)، النبرة (متوسط VADER + التسمية)، التوقيت (أول←آخر نشر)، والمصطلحات المميّزة التي تبرزها تلك الوسيلة. مقارنة وصفية لكيفية اختلاف المصادر، وليست ترتيبًا ولا فائزًا ولا حكمًا على المصداقية: بلا درجة مركّبة. النبرة هي VADER (معجم إنجليزي، غير موثوق للتغطية غير الإنجليزية). مع مصدر واحد لا شيء للمقارنة.",
   "Analyse": "تحليل",
-  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "افتح هذا في نافذة التحليل — تغطيته في المجموعة (تزامن في مجموعتك، وليست سببية أبدًا)"
+  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "افتح هذا في نافذة التحليل — تغطيته في المجموعة (تزامن في مجموعتك، وليست سببية أبدًا)",
+  "Newsletters": "النشرات البريدية",
+  "Import newsletters (.eml)": "استيراد النشرات البريدية (.eml)",
+  "Import local .eml newsletter files into your corpus — searched, analysed and correlated like any article, and kept as a separate, filterable source so email and web never blur.": "استورد ملفات النشرات البريدية .eml المحلية إلى مجموعتك — تُبحث وتُحلَّل وتُربط مثل أي مقال، وتُحفظ كمصدر منفصل قابل للتصفية حتى لا يختلط البريد الإلكتروني بالويب أبدًا.",
+  "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "مجهول المصدر عند الاستيراد، بلا شبكة: لا يُخزَّن المستلِم أبدًا، وتُحجب أصداء المستلِم، وتُزال رموز التتبّع، وتُعلَّم أغلفة التتبّع من جهة الخادم. لا يُجلب أي شيء أبدًا — لا يُتَّبع بكسل أو رابط تتبّع أبدًا، لذا لا يمكن للاستيراد أن يكشف أبدًا أنك فتحت أو نقرت.",
+  "These articles join your no-recovery encrypted corpus. Keep your original .eml files as the re-import path.": "تنضمّ هذه المقالات إلى مجموعتك المشفّرة بلا استرداد. احتفظ بملفات .eml الأصلية كوسيلة لإعادة الاستيراد.",
+  "Import .eml files": "استيراد ملفات .eml",
+  "Choose one or more .eml files first.": "اختر أولًا ملفًا واحدًا أو أكثر من نوع .eml.",
+  "duplicates skipped": "نسخ مكررة متخطّاة",
+  "empty": "فارغة",
+  "not .eml": "ليست .eml",
+  "Anonymisation": "إخفاء الهوية",
+  "recipient echoes redacted": "أصداء المستلِم محجوبة",
+  "tracker tokens stripped": "رموز التتبّع مُزالة",
+  "tracker wrappers flagged": "أغلفة التتبّع مُعلَّمة",
+  "Import failed": "فشل الاستيراد",
+  "Newsletters imported.": "تم استيراد النشرات البريدية."
 }

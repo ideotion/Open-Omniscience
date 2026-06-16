@@ -938,5 +938,21 @@
   "How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed.": "हर स्रोत इस अवधारणा को कैसे देखता है, साथ-साथ: मात्रा (सटीक लेख संख्या), स्वर (VADER औसत + लेबल), समय (पहली→अंतिम प्रकाशन) और आउटलेट के विशिष्ट ज़ोर वाले शब्द। विचलन पर एक सूक्ष्मदर्शी, निर्णय नहीं — किसी स्रोत को दूसरे से ऊपर नहीं रखा जाता, गुणवत्ता नहीं आँकी जाती, कोई समग्र स्कोर नहीं गिना जाता।",
   "How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.": "हर स्रोत इस अवधारणा को कैसे देखता है, साथ-साथ — मात्रा (सटीक लेख संख्या), स्वर (VADER औसत + लेबल), समय (पहली→अंतिम प्रकाशन), और उस आउटलेट के विशिष्ट ज़ोर वाले शब्द। स्रोत कैसे भिन्न हैं इसकी एक वर्णनात्मक तुलना, कभी रैंकिंग, विजेता या विश्वसनीयता निर्णय नहीं: कोई समग्र स्कोर नहीं। स्वर VADER है (अंग्रेज़ी शब्दकोश, ग़ैर-अंग्रेज़ी कवरेज के लिए अविश्वसनीय)। एकमात्र स्रोत के साथ तुलना के लिए कुछ नहीं।",
   "Analyse": "विश्लेषण",
-  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "इसे विश्लेषण विंडो में खोलें — इसका कॉर्पस कवरेज (आपके कॉर्पस में सह-घटना, कभी कारण नहीं)"
+  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "इसे विश्लेषण विंडो में खोलें — इसका कॉर्पस कवरेज (आपके कॉर्पस में सह-घटना, कभी कारण नहीं)",
+  "Newsletters": "न्यूज़लेटर",
+  "Import newsletters (.eml)": "न्यूज़लेटर आयात करें (.eml)",
+  "Import local .eml newsletter files into your corpus — searched, analysed and correlated like any article, and kept as a separate, filterable source so email and web never blur.": "स्थानीय .eml न्यूज़लेटर फ़ाइलें अपने कॉर्पस में आयात करें — किसी भी लेख की तरह खोजी, विश्लेषित और सहसंबंधित, और एक अलग, फ़िल्टर-योग्य स्रोत के रूप में रखी जाती हैं ताकि ईमेल और वेब कभी न मिलें।",
+  "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "आयात पर अनाम, शून्य नेटवर्क: प्राप्तकर्ता कभी संग्रहीत नहीं होता, प्राप्तकर्ता की प्रतिध्वनियाँ संपादित की जाती हैं, ट्रैकर टोकन हटा दिए जाते हैं और सर्वर-साइड ट्रैकर रैपर चिह्नित किए जाते हैं। कुछ भी कभी प्राप्त नहीं किया जाता — ट्रैकिंग पिक्सेल या लिंक का कभी अनुसरण नहीं होता, इसलिए आयात कभी प्रकट नहीं कर सकता कि आपने खोला या क्लिक किया।",
+  "These articles join your no-recovery encrypted corpus. Keep your original .eml files as the re-import path.": "ये लेख आपके बिना-पुनर्प्राप्ति एन्क्रिप्टेड कॉर्पस में शामिल हो जाते हैं। पुनः आयात के मार्ग के रूप में अपनी मूल .eml फ़ाइलें रखें।",
+  "Import .eml files": ".eml फ़ाइलें आयात करें",
+  "Choose one or more .eml files first.": "पहले एक या अधिक .eml फ़ाइलें चुनें।",
+  "duplicates skipped": "डुप्लिकेट छोड़े गए",
+  "empty": "खाली",
+  "not .eml": ".eml नहीं",
+  "Anonymisation": "अनामीकरण",
+  "recipient echoes redacted": "प्राप्तकर्ता प्रतिध्वनियाँ संपादित",
+  "tracker tokens stripped": "ट्रैकर टोकन हटाए गए",
+  "tracker wrappers flagged": "ट्रैकर रैपर चिह्नित",
+  "Import failed": "आयात विफल",
+  "Newsletters imported.": "न्यूज़लेटर आयात हो गए।"
 }

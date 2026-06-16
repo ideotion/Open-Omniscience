@@ -1429,6 +1429,26 @@ ruling, a contingency, or a deliberate-omission note.
     distinct-sources independence gate flows through the API. The watch-rule alert
     engine stays DEFERRED (Class-C: its UX is a genuine maintainer ruling); the
     frontend convergence view is the remaining slice (now unblocked by this endpoint).
+  - **LOCAL .eml NEWSLETTER IMPORTER SHIPPED — Settings → Newsletters (maintainer
+    greenlit 2026-06-16, "put it in the settings"):** the S1 anonymize-at-ingest core
+    (`parse_email` + `link_sanitizer` + `ingest_eml_*`) already existed; this adds the
+    USER path: `POST /api/newsletters/import` (multipart .eml upload) → reuses
+    `ingest_emails` under ONE dedicated, DISABLED, FILTERABLE source "Imported
+    newsletters (.eml)" (domain newsletters.import.local; never scraped) → returns the
+    honest tally (stored/duplicate/empty + recipient_redactions/tracker_params_stripped/
+    trackers_flagged + skipped_non_eml). A new Settings "Newsletters" subtab carries the
+    file picker + the VISIBLE import-time DISCLOSURE ×12 (what/zero-network-anonymise/
+    no-recovery-keep-your-.eml) + the stripped-counts feedback. ZERO NETWORK enforced +
+    TESTED end-to-end (`test_newsletters_import_endpoint_zero_network`: N files ⇒ 0
+    sockets via socket-forbidden monkeypatch around the whole request; dedup proven;
+    source disabled). +16 strings ×12. AUTONOMOUS CALLS (maintainer "make all
+    decisions"): (a) ONE dedicated source v1 — NEVER fuzzy-merges (the conservative
+    choice; per-publisher eTLD+1 source resolution = the S2 follow-up); (b) loopback
+    POST is NOT network-gated (local import works in airplane mode); sender preserved as
+    `author` so filtering by publication works today. RETIRE-`scripts/import_eml.py`
+    flag still stands (broken vs live schema). REMAINING (S2): vendored dated PSL eTLD+1
+    resolver + silent auto-attach + send-domain/List-Id provenance columns + the
+    import-progress/UNDO window.
 - **TIME-SCOPE + MAP-MENTIONS BATCH (2026-06-15, draft PRs onto 0.09, CI
   subscribed; subagent-built, hand-reviewed):** the maintainer-ruled "dates + a
   visual range bar" UX shipped as ONE reusable component `ooTimeScope` (PR #197:

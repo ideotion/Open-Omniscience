@@ -12,7 +12,7 @@ across requests.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -155,6 +155,60 @@ def ingest_email_endpoint(
     )
     tally = ingest_emails(db, source, raws)
     return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}
+
+
+# A single dedicated, FILTERABLE provenance bucket for locally-imported .eml
+# newsletters (email-vs-web stays separable, like the DDG-discovered class). It is
+# DISABLED so the scheduler never touches it — these articles arrive ONLY by explicit
+# local file import, never the network. (Per-publisher eTLD+1 source resolution — the
+# S2 design — is a deliberate follow-up; v1 never fuzzy-merges, the conservative call.)
+_NEWSLETTER_DOMAIN = "newsletters.import.local"
+_NEWSLETTER_NAME = "Imported newsletters (.eml)"
+
+
+def _get_newsletter_source(db: Session) -> Source:
+    src = db.query(Source).filter_by(domain=_NEWSLETTER_DOMAIN).first()
+    if src is None:
+        src = Source(name=_NEWSLETTER_NAME, domain=_NEWSLETTER_DOMAIN, enabled=False)
+        db.add(src)
+        db.commit()
+        db.refresh(src)
+    return src
+
+
+@router.post("/newsletters/import")
+def import_newsletters(
+    files: list[UploadFile] = File(..., description="local .eml files to import"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Import local ``.eml`` newsletter files into the unified corpus, ANONYMISED at
+    ingest. **ZERO network**: each file is parsed, de-tracked and stored locally —
+    nothing is ever fetched (tracker pixels / wrapped links are NEVER followed, so an
+    import can never confirm an open or a click). The recipient is never stored; the
+    returned tally reports exactly what anonymisation stripped (recipient echoes
+    redacted, tracker query-params removed, server-side tracker wrappers flagged) so
+    the user sees it honestly. Local-only, single-user, loopback by design.
+    """
+    raws: list[bytes] = []
+    skipped_non_eml = 0
+    for f in files:
+        name = (f.filename or "").lower()
+        if not name.endswith(".eml"):
+            skipped_non_eml += 1
+            continue
+        try:
+            raws.append(f.file.read())
+        except Exception:
+            skipped_non_eml += 1
+    source = _get_newsletter_source(db)
+    tally = ingest_emails(db, source, raws)
+    tally["skipped_non_eml"] = skipped_non_eml
+    return {
+        "source": source.name,
+        "source_id": source.id,
+        "received": len(files),
+        "tally": tally,
+    }
 
 
 @router.post("/ingest")

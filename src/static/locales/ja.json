@@ -938,5 +938,21 @@
   "How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed.": "各ソースがこの概念にどう取り組むかを並べて表示：件数（正確な記事数）、トーン（VADER 平均＋ラベル）、タイミング（最初→最後の公開）、媒体の特徴的な強調語。差異を見る顕微鏡であり、判定ではありません——あるソースを別より上位に置かず、品質を判断せず、複合スコアも計算しません。",
   "How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.": "各ソースがこの概念にどう取り組むかを並べて表示——件数（正確な記事数）、トーン（VADER 平均＋ラベル）、タイミング（最初→最後の公開）、その媒体の特徴的な強調語。ソースがどう異なるかの記述的な比較であり、ランキング・勝者・信頼性の判断ではありません：複合スコアなし。トーンは VADER（英語辞書で、非英語報道には不確実）。ソースが1つだけなら比較対象はありません。",
   "Analyse": "分析",
-  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "分析ウィンドウで開く——コーパスでの扱い（コーパス内の共起であり、因果ではありません）"
+  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "分析ウィンドウで開く——コーパスでの扱い（コーパス内の共起であり、因果ではありません）",
+  "Newsletters": "ニュースレター",
+  "Import newsletters (.eml)": "ニュースレターをインポート (.eml)",
+  "Import local .eml newsletter files into your corpus — searched, analysed and correlated like any article, and kept as a separate, filterable source so email and web never blur.": "ローカルの .eml ニュースレターファイルをコーパスにインポートします。ほかの記事と同様に検索・分析・関連付けされ、メールとウェブが混ざらないよう、独立したフィルター可能なソースとして保持されます。",
+  "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "インポート時に匿名化、ネットワーク通信なし：受信者は一切保存されず、受信者の痕跡は伏せられ、トラッカートークンは除去され、サーバー側のトラッカーラッパーには印が付きます。何も取得されません——トラッキングピクセルやリンクをたどることはないため、インポートで開封やクリックが判明することは決してありません。",
+  "These articles join your no-recovery encrypted corpus. Keep your original .eml files as the re-import path.": "これらの記事は復元不可の暗号化コーパスに加わります。再インポートの手段として元の .eml ファイルを保管してください。",
+  "Import .eml files": ".eml ファイルをインポート",
+  "Choose one or more .eml files first.": "まず 1 つ以上の .eml ファイルを選択してください。",
+  "duplicates skipped": "重複をスキップ",
+  "empty": "空",
+  "not .eml": ".eml 以外",
+  "Anonymisation": "匿名化",
+  "recipient echoes redacted": "受信者の痕跡を伏字化",
+  "tracker tokens stripped": "トラッカートークンを除去",
+  "tracker wrappers flagged": "トラッカーラッパーに印",
+  "Import failed": "インポート失敗",
+  "Newsletters imported.": "ニュースレターをインポートしました。"
 }

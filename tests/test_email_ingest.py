@@ -197,3 +197,59 @@ def test_eml_import_makes_no_network_call(tmp_path, monkeypatch):
     tally = ingest_eml_directory(s, src, tmp_path)
     assert tally["stored"] == 2
     s.close()
+
+
+def test_newsletters_import_endpoint_zero_network(monkeypatch):
+    """The Settings .eml importer (POST /api/newsletters/import): uploaded files are
+    parsed + anonymised + stored under ONE dedicated, DISABLED newsletter source, with
+    an honest tally — and the WHOLE request path opens NO socket (the binding invariant:
+    N files => 0 sockets; a tracker pixel/link is never followed)."""
+    import socket
+
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.database.models import SessionLocal
+
+    real_socket = socket.socket
+
+    def _forbidden(*a, **k):  # any outbound socket during import is a bug
+        raise AssertionError("the .eml import path opened a network socket")
+
+    with TestClient(app) as c:
+        monkeypatch.setattr(socket, "socket", _forbidden)
+        try:
+            r = c.post(
+                "/api/newsletters/import",
+                files=[
+                    ("files", ("budget.eml", PLAIN, "message/rfc822")),
+                    ("files", ("markets.eml", HTML, "message/rfc822")),
+                    ("files", ("notes.txt", b"not an email", "text/plain")),
+                ],
+            )
+        finally:
+            monkeypatch.setattr(socket, "socket", real_socket)
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["source"] == "Imported newsletters (.eml)"
+    tally = body["tally"]
+    assert tally["stored"] == 2          # the two real .eml; the .txt is skipped
+    assert tally["skipped_non_eml"] == 1
+    assert body["received"] == 3
+
+    # The dedicated bucket exists and is DISABLED (the scheduler never scrapes it).
+    s = SessionLocal()
+    try:
+        src = s.query(Source).filter_by(domain="newsletters.import.local").first()
+        assert src is not None and src.enabled is False
+    finally:
+        s.close()
+
+    # Re-importing the SAME files dedups (content-hash) — no duplicate corpus rows.
+    with TestClient(app) as c:
+        r2 = c.post(
+            "/api/newsletters/import",
+            files=[("files", ("budget.eml", PLAIN, "message/rfc822"))],
+        )
+    assert r2.json()["tally"]["duplicate"] == 1 and r2.json()["tally"]["stored"] == 0

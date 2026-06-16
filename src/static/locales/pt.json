@@ -938,5 +938,21 @@
   "How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed.": "Como cada fonte ABORDA este conceito, lado a lado: volume (contagem exata de artigos), tom (média VADER + etiqueta), tempo (primeira→última publicação) e os termos distintivos enfatizados do meio. Um microscópio sobre a divergência, não um veredicto — nenhuma fonte é classificada acima de outra, nenhuma qualidade é julgada, nenhuma pontuação composta é calculada.",
   "How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.": "Como cada fonte ABORDA este conceito, lado a lado — volume (contagem exata de artigos), tom (média VADER + etiqueta), tempo (primeira→última publicação) e os termos distintivos enfatizados desse meio. Uma comparação DESCRITIVA de como as fontes DIFEREM, nunca uma classificação, um vencedor nem um juízo de credibilidade: sem pontuação composta. O tom é VADER (léxico inglês, pouco fiável para cobertura não inglesa). Com uma única fonte não há nada a comparar.",
   "Analyse": "Analisar",
-  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "Abrir isto na janela de análise — a sua cobertura no corpus (coocorrência no seu corpus, nunca causalidade)"
+  "Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)": "Abrir isto na janela de análise — a sua cobertura no corpus (coocorrência no seu corpus, nunca causalidade)",
+  "Newsletters": "Boletins",
+  "Import newsletters (.eml)": "Importar boletins (.eml)",
+  "Import local .eml newsletter files into your corpus — searched, analysed and correlated like any article, and kept as a separate, filterable source so email and web never blur.": "Importe arquivos de boletins .eml locais para o seu corpus — pesquisados, analisados e correlacionados como qualquer artigo, e mantidos como uma fonte separada e filtrável para que e-mail e web nunca se misturem.",
+  "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "Anonimizado na importação, zero rede: o destinatário nunca é armazenado, os ecos do destinatário são redigidos, os tokens de rastreamento são removidos e os invólucros de rastreamento do servidor são sinalizados. Nada é jamais buscado — um pixel ou link de rastreamento nunca é seguido, então importar nunca pode revelar que você abriu ou clicou.",
+  "These articles join your no-recovery encrypted corpus. Keep your original .eml files as the re-import path.": "Estes artigos juntam-se ao seu corpus criptografado sem recuperação. Guarde os seus arquivos .eml originais como caminho de reimportação.",
+  "Import .eml files": "Importar arquivos .eml",
+  "Choose one or more .eml files first.": "Escolha primeiro um ou mais arquivos .eml.",
+  "duplicates skipped": "duplicados ignorados",
+  "empty": "vazios",
+  "not .eml": "não .eml",
+  "Anonymisation": "Anonimização",
+  "recipient echoes redacted": "ecos do destinatário redigidos",
+  "tracker tokens stripped": "tokens de rastreamento removidos",
+  "tracker wrappers flagged": "invólucros de rastreamento sinalizados",
+  "Import failed": "Falha na importação",
+  "Newsletters imported.": "Boletins importados."
 }
