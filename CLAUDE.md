@@ -1255,7 +1255,32 @@ ruling, a contingency, or a deliberate-omission note.
   overlay yet.); test_ui_invariants #22b. Precision limited ONLY by gathered data +
   renderer. REMAINING: S&P500 is an INDEX, not a commodity — reclassify; expand feeds
   (rare earths, oil, gas, LNG, sand, cereals, sugar…); the bottom-of-page #mkt-chart
-  price-detail (chartSymbol) stays as the in-place detail (the Desk lesson — not removed). **Tor/indices diagnosis
+  price-detail (chartSymbol) stays as the in-place detail (the Desk lesson — not removed).
+  **COMBINED TIME-ALIGNED TREND OVERLAY (maintainer concept + ruling 2026-06-17; BUILT
+  on branch `claude/analysis-trend-overlay`, draft PR onto 0.09, BROWSER-UNVERIFIED):**
+  maintainer asked to AGGREGATE/overlay everything that shares the common TIME axis —
+  "when searching for a keyword, in the analysis, only one graph with all of the
+  keyword's related tags/keywords (middle east → petrol)". RULING (AskUserQuestion):
+  for CROSS-UNIT series do BOTH option 1 (indexed overlay) AND option 3 (dual-axis);
+  same-unit series overlay on one shared axis regardless. SHIPPED: a new **Trend
+  subtab** in the #an analysis window (`data-tab="trend"` / `#an-trend`) overlays the
+  searched keyword + its top related keywords/tags (all article COUNTS = ONE honest
+  shared axis) via the EXISTING multi-series `ooChart`; related terms from
+  /api/insights/associations, each series from /api/insights/trend (no new backend). A
+  **Counts ↔ Indexed** toggle: Indexed adds a STRICTLY-ADDITIVE `opts.indexed` to ooChart
+  that rebases each series to 100 at the visible-window start (`pv()` transform; identity
+  when off, so EVERY existing chart is byte-unchanged — test_ui_invariants stays green),
+  letting commodity PRICE series (different unit) co-move on one axis WITHOUT conflating
+  magnitudes; the hover still shows the REAL value, and a VISIBLE `.card-caveat` states
+  "indexed · relative not absolute · co-occurrence in your corpus, never causation". The
+  precise **dual-axis** (option 3) reuses the shipped `commodityOverlaySvg` (price left /
+  coverage right, each own real-unit scale) for the first picked commodity. "Middle East
+  → oil" auto-suggestion = `commoditiesForTerm` (reverse of the COMMODITY_QUERY seed,
+  deterministic whole-word match; never fabricated) + a full commodity picker. +12 i18n
+  ×12 (AI-drafted non-en, flagged); tests/test_an_trend_overlay.py + node --check; full
+  pytest needs py3.13 (CI). REMAINING: time-scope windowing of the combined trend; richer
+  keyword↔commodity associations; fold the parallel #corpus-win Trend into #an (the
+  two-windows debt). **Tor/indices diagnosis
   (logs analyzed 2026-06-12) — SHIPPED in T4:** transport-aware verdict
   taxonomy (refused ≠ robots-disallowed ≠ dead-series ≠ unreachable ≠
   offline) + one bounded feed-level retry for transient verdicts only +

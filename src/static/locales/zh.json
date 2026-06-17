@@ -1077,5 +1077,17 @@
   "Distraction-free reading and analysis.": "无干扰的阅读与分析。",
   "Maximum information density for analysts.": "为分析师打造的最大信息密度。",
   "A spatial, zoomable investigation board.": "可缩放的空间化调查看板。",
-  "Your briefing, typeset like a publication.": "你的简报，像出版物一样排版。"
+  "Your briefing, typeset like a publication.": "你的简报，像出版物一样排版。",
+  "Counts": "计数",
+  "Indexed": "指数化",
+  "Dual-axis": "双轴",
+  "price": "价格",
+  "more…": "更多…",
+  "Overlay a commodity": "叠加一种大宗商品",
+  "No coverage to chart for this term yet.": "该词条暂无可绘制的覆盖数据。",
+  "Open the analysis from a keyword or a search to see its combined trend.": "从关键词或搜索打开分析，查看其组合趋势。",
+  "Switch to Indexed to overlay commodity prices honestly (different units).": "切换到“指数化”以诚实地叠加大宗商品价格（单位不同）。",
+  "each on its own real-unit scale": "各自使用其真实单位的刻度",
+  "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "共享时间轴上的文章计数。这是你语料库中的共现，绝非因果。",
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "以窗口起点为 100 进行指数化——相对变动，而非绝对水平。悬停显示真实数值。这是你语料库中的共现，绝非因果。"
 }

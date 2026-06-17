@@ -1077,5 +1077,17 @@
   "Distraction-free reading and analysis.": "মনোযোগ বিঘ্ন ছাড়াই পড়া ও বিশ্লেষণ।",
   "Maximum information density for analysts.": "বিশ্লেষকদের জন্য সর্বোচ্চ তথ্য ঘনত্ব।",
   "A spatial, zoomable investigation board.": "একটি স্থানিক, জুমযোগ্য তদন্ত বোর্ড।",
-  "Your briefing, typeset like a publication.": "আপনার ব্রিফিং, একটি প্রকাশনার মতো বিন্যস্ত।"
+  "Your briefing, typeset like a publication.": "আপনার ব্রিফিং, একটি প্রকাশনার মতো বিন্যস্ত।",
+  "Counts": "গণনা",
+  "Indexed": "সূচকায়িত",
+  "Dual-axis": "দ্বৈত অক্ষ",
+  "price": "মূল্য",
+  "more…": "আরও…",
+  "Overlay a commodity": "একটি কমোডিটি ওভারলে করুন",
+  "No coverage to chart for this term yet.": "এই শব্দের জন্য এখনও চার্ট করার মতো কভারেজ নেই।",
+  "Open the analysis from a keyword or a search to see its combined trend.": "এর সম্মিলিত প্রবণতা দেখতে একটি কীওয়ার্ড বা অনুসন্ধান থেকে বিশ্লেষণ খুলুন।",
+  "Switch to Indexed to overlay commodity prices honestly (different units).": "ভিন্ন এককের পণ্যমূল্য সততার সঙ্গে ওভারলে করতে সূচকায়িততে যান।",
+  "each on its own real-unit scale": "প্রতিটি তার নিজস্ব প্রকৃত-একক স্কেলে",
+  "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "একটি শেয়ার করা সময়-অক্ষে নিবন্ধ গণনা। আপনার কর্পাসে সহ-ঘটনা, কখনও কার্যকারণ নয়।",
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "উইন্ডোর শুরুতে ১০০-এ সূচকায়িত — আপেক্ষিক গতি, পরম স্তর নয়। হোভার করলে প্রকৃত মান দেখায়। আপনার কর্পাসে সহ-ঘটনা, কখনও কার্যকারণ নয়।"
 }

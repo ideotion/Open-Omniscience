@@ -1077,5 +1077,17 @@
   "Distraction-free reading and analysis.": "気を散らさない読書と分析。",
   "Maximum information density for analysts.": "アナリストのための最大の情報密度。",
   "A spatial, zoomable investigation board.": "ズーム可能な空間的調査ボード。",
-  "Your briefing, typeset like a publication.": "ブリーフィングを、刊行物のように組版。"
+  "Your briefing, typeset like a publication.": "ブリーフィングを、刊行物のように組版。",
+  "Counts": "件数",
+  "Indexed": "指数化",
+  "Dual-axis": "二軸",
+  "price": "価格",
+  "more…": "その他…",
+  "Overlay a commodity": "商品を重ねる",
+  "No coverage to chart for this term yet.": "この語にはまだ図示できるカバレッジがありません。",
+  "Open the analysis from a keyword or a search to see its combined trend.": "キーワードまたは検索から分析を開くと、その複合トレンドが見られます。",
+  "Switch to Indexed to overlay commodity prices honestly (different units).": "単位が異なる商品価格を正直に重ねるには「指数化」に切り替えてください。",
+  "each on its own real-unit scale": "それぞれが実単位の独自スケール",
+  "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "共有の時間軸上の記事数。あなたのコーパスでの共起であり、因果ではありません。",
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "ウィンドウ開始時を100として指数化——絶対水準ではなく相対的な動きです。ホバーで実際の値を表示。あなたのコーパスでの共起であり、因果ではありません。"
 }

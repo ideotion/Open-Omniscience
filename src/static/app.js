@@ -4537,7 +4537,7 @@
       if (!all.length) { el.innerHTML = `<div class="muted">${esc(t9("no data points yet"))}</div>`; return; }
       const tMin = Math.min(...all.map(s => s.pts[0].t)), tMax = Math.max(...all.map(s => s.pts[s.pts.length - 1].t));
       const span0 = Math.max(tMax - tMin, 1);
-      let t0 = tMin, t1 = tMax, pinned = null;
+      let t0 = tMin, t1 = tMax, pinned = null, pinnedS = null;
       const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
       const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n) || "#888";
       const fmtV = (v) => (typeof fmtNum === "function") ? fmtNum(v) : String(v);
@@ -4556,14 +4556,28 @@
       wrap.appendChild(srWrap);
       const plotW = W - padL - padR, plotH = H - padT - padB;
       const Xof = (ms) => padL + plotW * ((ms - t0) / Math.max(t1 - t0, 1));
+      // Indexed mode (opts.indexed, maintainer-ruled 2026-06-17): each series is
+      // rebased to 100 at its first value in the VISIBLE window, so series of
+      // DIFFERENT units (e.g. article coverage + a commodity price) co-move on ONE
+      // shared axis WITHOUT conflating magnitudes — an honest RELATIVE view (the
+      // hover still shows the REAL value/unit). _base is set per draw on the
+      // persistent series so visible() copies and the hover inherit it. When
+      // opts.indexed is off, pv() is the identity, so every existing chart is
+      // byte-for-byte unchanged.
+      const pv = (s, p) => (opts.indexed && s._base) ? (p.v / s._base * 100) : p.v;
 
       function visible() {
         return all.filter(s => !s.hidden).map(s => ({...s, vis: s.pts.filter(p => p.t >= t0 && p.t <= t1)}));
       }
       function draw() {
         ctx.clearRect(0, 0, W, H);
+        if (opts.indexed) for (const s of all) {        // rebase each series to 100 at its first visible value
+          const vis = s.pts.filter(p => p.t >= t0 && p.t <= t1);
+          const fnz = vis.find(p => p.v !== 0);
+          s._base = fnz ? fnz.v : (vis.length ? (vis[0].v || 1) : 1);
+        }
         const vs = visible();
-        const ys = vs.flatMap(s => s.vis.map(p => p.v));
+        const ys = vs.flatMap(s => s.vis.map(p => pv(s, p)));
         if (!ys.length) { readout.textContent = t9("no points in this window — zoom out (double-click)"); return; }
         const yMin = opts.zeroBase ? Math.min(0, ...ys) : Math.min(...ys);
         const yMax = Math.max(...ys), ySpan = (yMax - yMin) || 1;
@@ -4594,21 +4608,21 @@
             const baseY = Yof(yMin);
             const bw = Math.max(3, Math.min(plotW / (n * 1.5), 26));
             for (const p of s.vis) {
-              const x = Xof(p.t), y = Yof(p.v);
+              const x = Xof(p.t), y = Yof(pv(s, p));
               ctx.globalAlpha = 0.72; ctx.fillRect(x - bw / 2, y, bw, Math.max(0, baseY - y));
               ctx.globalAlpha = 1;    ctx.fillRect(x - bw / 2, y - 1, bw, 2);
             }
           } else {
             ctx.beginPath();
-            s.vis.forEach((p, i) => { const x = Xof(p.t), y = Yof(p.v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+            s.vis.forEach((p, i) => { const x = Xof(p.t), y = Yof(pv(s, p)); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
             ctx.stroke();
             if (pxPer > 9) {                                 // honest dots on a roomy line
-              for (const p of s.vis) { ctx.beginPath(); ctx.arc(Xof(p.t), Yof(p.v), 2, 0, 7); ctx.fill(); }
+              for (const p of s.vis) { ctx.beginPath(); ctx.arc(Xof(p.t), Yof(pv(s, p)), 2, 0, 7); ctx.fill(); }
             }
           }
         }
         if (pinned) {
-          const x = Xof(pinned.t), y = Yof(pinned.v);
+          const x = Xof(pinned.t), y = Yof(opts.indexed && pinnedS ? pv(pinnedS, pinned) : pinned.v);
           ctx.strokeStyle = cssVar("--muted"); ctx.setLineDash([3, 3]);
           ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke(); ctx.setLineDash([]);
           ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.stroke();
@@ -4653,18 +4667,21 @@
           t1 = t0 + span; draw(); return;
         }
         const b = nearest(ev);
-        if (b) readout.textContent = `${b.s.label}: ${fmtV(b.p.v)}${b.s.unit ? " " + b.s.unit : ""} \u00b7 ${fmtT(b.p.t)}`;
+        if (b) {
+          const ix = opts.indexed && b.s._base ? ` \u00b7 idx ${Math.round(pv(b.s, b.p))}` : "";
+          readout.textContent = `${b.s.label}: ${fmtV(b.p.v)}${b.s.unit ? " " + b.s.unit : ""}${ix} \u00b7 ${fmtT(b.p.t)}`;
+        }
       });
       cv.addEventListener("pointerup", (ev) => {
         if (dragX != null && Math.abs(ev.clientX - dragX) < 4) {
           const b = nearest(ev);
-          pinned = b ? b.p : null;
+          pinned = b ? b.p : null; pinnedS = b ? b.s : null;
           if (b) readout.innerHTML = `<b>${esc(b.s.label)}: ${fmtV(b.p.v)}${b.s.unit ? " " + esc(b.s.unit) : ""} \u00b7 ${fmtT(b.p.t)}</b> <span class="muted">${esc(t9("(pinned — click empty space or re-click to move)"))}</span>`;
           draw();
         }
         dragX = null;
       });
-      cv.addEventListener("dblclick", () => { t0 = tMin; t1 = tMax; pinned = null; draw(); });
+      cv.addEventListener("dblclick", () => { t0 = tMin; t1 = tMax; pinned = null; pinnedS = null; draw(); });
       draw();
       return {redraw: draw};
     }
@@ -7104,6 +7121,7 @@
     // search. null = the normal omnibar/Advanced search path.
     let _anIds = null;
     let _anCommodity = null;   // {symbol,name,unit} when seeded by a commodity click (Price subtab)
+    let _anLastParams = null;  // last analysis params — for the lazily-rendered Trend subtab
     let _anSubtabs = null;     // ooSubtabs handle for the analysis window (to fall back off Price)
     function anParams() {
       const p = new URLSearchParams();
@@ -7187,6 +7205,7 @@
     function anSelectTab(key) {
       document.querySelectorAll("#tab-analyze .an-panel").forEach(el =>
         el.style.display = (el.id === "an-" + key) ? "" : "none");
+      if (key === "trend") renderAnTrend(_anLastParams);   // lazy: only fetch when the Trend tab is shown
     }
 
     // --- Commodity price × coverage overlay (Markets item, Group G) --------- //
@@ -7280,6 +7299,118 @@
         + bars + line + dots + leftAxis + rightAxis + dts + `</svg>`;
     }
 
+    // --- Combined time-aligned TREND overlay (Analysis window; maintainer-ruled
+    // 2026-06-17). ONE chart for a keyword + its related keywords/tags (all article
+    // COUNTS = a shared unit, so an honest shared axis), with an INDEXED mode (each
+    // series rebased to 100 at the window start) that ALSO overlays commodity PRICE
+    // series of a DIFFERENT unit WITHOUT conflating magnitudes — plus the precise
+    // dual-axis price×coverage panel. The shared axis is TIME. Counts only / no
+    // score; co-occurrence in your corpus, NEVER causation (stated + visible).
+    // Lazy: rendered on tab-show, cached per analyzed term.
+    const _anTrend = { key: null, term: null, counts: [], suggested: [], picked: {}, mode: "counts" };
+    function commoditiesForTerm(term, related) {
+      // Reverse of the COMMODITY_QUERY seed: suggest a commodity when its family
+      // word appears in the analyzed term or its related terms (e.g. a "Middle East"
+      // corpus whose associations include "oil" -> WTI/BRENT). Deterministic
+      // whole-word match; never fabricates a link.
+      const hay = (" " + (term || "") + " " + (related || []).join(" ") + " ").toLowerCase();
+      const out = [];
+      for (const sym of Object.keys(COMMODITY_QUERY)) {
+        const words = COMMODITY_QUERY[sym].toLowerCase().split(/\s+/).filter(w => w.length > 2);
+        if (words.some(w => hay.includes(" " + w) || hay.includes(w + " "))) out.push(sym);
+      }
+      return out.slice(0, 8);
+    }
+    async function renderAnTrend(p) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("an-trend"); if (!host) return;
+      const term = (p && p.get && p.get("query")) || anQuery() || "";
+      if (_anTrend.key === term && _anTrend.counts.length) { drawAnTrend(); return; }   // cached on this term
+      if (!term) { host.innerHTML = `<div class="muted">${esc(t("Open the analysis from a keyword or a search to see its combined trend."))}</div>`; return; }
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      _anTrend.key = term; _anTrend.term = term; _anTrend.counts = []; _anTrend.suggested = []; _anTrend.picked = {}; _anTrend.mode = "counts";
+      try {
+        const [main, assoc] = await Promise.all([
+          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term)).catch(() => null),
+          api("/api/insights/associations?term=" + encodeURIComponent(term) + "&limit=8").catch(() => null),
+        ]);
+        const series = [];
+        if (main && main.resolved && (main.points || []).length)
+          series.push({ label: term, unit: t("articles"), color: "var(--accent)", points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
+        // Related keywords are corpora too: overlay each one's own coverage series.
+        const rel = ((assoc && assoc.nodes) || []).map(n => n.label || n.id)
+          .filter(x => x && x.toLowerCase() !== term.toLowerCase()).slice(0, 4);
+        const palette = ["var(--ok)", "var(--warn)", "#6ea8fe", "#c084fc"];
+        const relTrends = await Promise.all(rel.map(rt =>
+          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(rt)).catch(() => null)));
+        relTrends.forEach((rd, i) => {
+          if (rd && rd.resolved && (rd.points || []).length)
+            series.push({ label: rel[i], unit: t("articles"), color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
+        });
+        _anTrend.counts = series;
+        _anTrend.suggested = commoditiesForTerm(term, rel);
+        if (_anCommodity && _anCommodity.symbol && _anTrend.suggested.indexOf(_anCommodity.symbol) < 0)
+          _anTrend.suggested.unshift(_anCommodity.symbol);
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      drawAnTrend();
+    }
+    function anTrendSetMode(m) { _anTrend.mode = m; drawAnTrend(); }
+    async function anTrendPick(sym) {
+      if (!sym) return;
+      if (_anTrend.picked[sym]) { delete _anTrend.picked[sym]; drawAnTrend(); return; }
+      try {
+        const pd = await api("/api/commodities/" + encodeURIComponent(sym) + "/prices").catch(() => null);
+        const prices = (pd && pd.prices) || [];
+        _anTrend.picked[sym] = { prices, unit: prices[0] ? (prices[0].currency + "/" + prices[0].unit) : "" };
+      } catch (e) { _anTrend.picked[sym] = { prices: [], unit: "" }; }
+      if (_anTrend.mode === "counts") _anTrend.mode = "indexed";   // a price cannot share the counts axis
+      drawAnTrend();
+    }
+    function drawAnTrend() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("an-trend"); if (!host) return;
+      const counts = _anTrend.counts || [];
+      if (!counts.length) { host.innerHTML = `<div class="muted">${esc(t("No coverage to chart for this term yet."))}</div>`; return; }
+      const picks = Object.keys(_anTrend.picked);
+      const indexed = _anTrend.mode === "indexed";
+      // Counts always; commodity PRICE series only in indexed mode (different unit).
+      const list = counts.slice();
+      if (indexed) for (const sym of picks) {
+        const c = _anTrend.picked[sym];
+        const pts = (c.prices || []).map(p => ({ t: p.observed_on, v: +p.price })).filter(p => isFinite(p.v));
+        if (pts.length) list.push({ label: sym, unit: c.unit || t("price"), color: "var(--err)", points: pts });
+      }
+      const seg = (m, lbl) => `<button class="ghost tiny${_anTrend.mode === m ? " on" : ""}" onclick="anTrendSetMode('${m}')">${esc(lbl)}</button>`;
+      const modeRow = `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
+        + `<span class="muted" style="font-size:11px">${esc(t("View"))}:</span>` + seg("counts", t("Counts")) + seg("indexed", t("Indexed")) + `</div>`;
+      const chip = (sym) => `<button class="chip${_anTrend.picked[sym] ? " on" : ""}" onclick="anTrendPick('${sym}')"`
+        + `${_anTrend.picked[sym] ? ' style="border-color:var(--accent)"' : ''}>${esc(sym)}</button>`;
+      const suggRow = `<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
+        + `<span class="muted" style="font-size:11px">${esc(t("Overlay a commodity"))}:</span>`
+        + _anTrend.suggested.map(chip).join(" ")
+        + ` <select onchange="anTrendPick(this.value);this.value=''" style="width:auto;font-size:12px">`
+        + `<option value="">${esc(t("more…"))}</option>`
+        + Object.keys(COMMODITY_QUERY).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("")
+        + `</select></div>`;
+      const caveat = indexed
+        ? t("Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.")
+        : t("Article counts on a shared time axis. Co-occurrence in your corpus, never causation.");
+      host.innerHTML = modeRow + suggRow + `<div id="an-trend-chart"></div>`
+        + `<p class="card-caveat" style="margin-top:6px">${esc(caveat)}</p>`
+        + (_anTrend.mode === "counts" && picks.length ? `<p class="hint muted" style="margin:4px 0 0">${esc(t("Switch to Indexed to overlay commodity prices honestly (different units)."))}</p>` : "")
+        + `<div id="an-trend-dual" style="margin-top:10px"></div>`;
+      ooChart($("an-trend-chart"), list, { height: 240, indexed: indexed, zeroBase: !indexed });
+      // Precise dual-axis (2 series): the first picked commodity's price × this
+      // term's coverage, each on its OWN real-unit scale (the shipped overlay).
+      const dual = $("an-trend-dual");
+      if (picks.length && counts.length) {
+        const c = _anTrend.picked[picks[0]];
+        const cov = (counts[0].points || []).map(p => ({ date: p.t, count: p.v }));
+        dual.innerHTML = `<div class="hint"><b>${esc(t("Dual-axis"))}</b> — ${esc(picks[0])} · ${esc(t("Price × coverage"))} `
+          + `<span class="muted">${esc(t("each on its own real-unit scale"))}</span></div>` + commodityOverlaySvg(c.prices, cov, c.unit);
+      } else dual.innerHTML = "";
+    }
+
     // Self-contained radial mind-map for the analysis window. Distinct from the
     // Insights renderGraph() (which owns _mm* state + a force/zoom canvas): this
     // draws ONE static, deterministic SVG into the container it is handed — no
@@ -7358,6 +7489,8 @@
       const kw = $("an-keywords"), arts = $("an-articles");
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      _anLastParams = p; _anTrend.key = null;   // a new analysis run -> the Trend subtab refetches on next show
+      if ($("an-trend") && $("an-trend").style.display !== "none") setTimeout(() => renderAnTrend(p), 0);
       _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
         const d = await api("/api/insights/corpus-keywords?" + p.toString());

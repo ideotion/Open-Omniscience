@@ -1077,5 +1077,17 @@
   "Distraction-free reading and analysis.": "Distraction-free reading and analysis.",
   "Maximum information density for analysts.": "Maximum information density for analysts.",
   "A spatial, zoomable investigation board.": "A spatial, zoomable investigation board.",
-  "Your briefing, typeset like a publication.": "Your briefing, typeset like a publication."
+  "Your briefing, typeset like a publication.": "Your briefing, typeset like a publication.",
+  "Counts": "Counts",
+  "Indexed": "Indexed",
+  "Dual-axis": "Dual-axis",
+  "price": "price",
+  "more…": "more…",
+  "Overlay a commodity": "Overlay a commodity",
+  "No coverage to chart for this term yet.": "No coverage to chart for this term yet.",
+  "Open the analysis from a keyword or a search to see its combined trend.": "Open the analysis from a keyword or a search to see its combined trend.",
+  "Switch to Indexed to overlay commodity prices honestly (different units).": "Switch to Indexed to overlay commodity prices honestly (different units).",
+  "each on its own real-unit scale": "each on its own real-unit scale",
+  "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.",
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation."
 }

@@ -1077,5 +1077,17 @@
   "Distraction-free reading and analysis.": "Ablenkungsfreies Lesen und Analysieren.",
   "Maximum information density for analysts.": "Maximale Informationsdichte für Analysten.",
   "A spatial, zoomable investigation board.": "Ein räumliches, zoombares Ermittlungs-Board.",
-  "Your briefing, typeset like a publication.": "Ihr Briefing, gesetzt wie eine Publikation."
+  "Your briefing, typeset like a publication.": "Ihr Briefing, gesetzt wie eine Publikation.",
+  "Counts": "Anzahl",
+  "Indexed": "Indexiert",
+  "Dual-axis": "Zwei Achsen",
+  "price": "Preis",
+  "more…": "mehr…",
+  "Overlay a commodity": "Rohstoff überlagern",
+  "No coverage to chart for this term yet.": "Noch keine Abdeckung für diesen Begriff darstellbar.",
+  "Open the analysis from a keyword or a search to see its combined trend.": "Öffnen Sie die Analyse über ein Stichwort oder eine Suche, um den kombinierten Trend zu sehen.",
+  "Switch to Indexed to overlay commodity prices honestly (different units).": "Wechseln Sie zu Indexiert, um Rohstoffpreise ehrlich zu überlagern (unterschiedliche Einheiten).",
+  "each on its own real-unit scale": "jeweils auf eigener Skala in echten Einheiten",
+  "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Artikelzahlen auf einer gemeinsamen Zeitachse. Kookkurrenz in Ihrem Korpus, niemals Kausalität.",
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Auf 100 zu Fensterbeginn indexiert — relative Bewegung, keine absoluten Werte. Beim Überfahren erscheint der echte Wert. Kookkurrenz in Ihrem Korpus, niemals Kausalität."
 }
