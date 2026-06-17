@@ -2444,3 +2444,24 @@ ruling, a contingency, or a deliberate-omission note.
   bundle, on-click only, never auto-transmitted. Maintainer protocol: click
   through the app, send the bundle. Temporal map ships PRECONFIGURED
   (bundled Natural Earth coastline, invariant-tested).
+  **DATE-EXTRACTION LOG ADDED 2026-06-16 (maintainer-asked: "gather extracted date
+  information so I send it to you to optimize the extractor"):** `GET
+  /api/diagnostics/dates` + a Settings → Diagnostics button "Download
+  date-extraction log (.json)" (×12). Pure core `src/timemap/datediag.py`
+  (`recall_probe` + `analyze_article`, fully unit-tested). Per article it pairs the
+  LIVE extractor (run exactly as ingest does — publication-date anchor + language)
+  with a PERMISSIVE recall probe (bare years, CJK 年月日, numeric d/m/y, month/
+  weekday/relative words) that deliberately over-matches, so the difference =
+  date-like text the extractor missed = the optimization material. Aggregates over
+  a bounded scan: coverage %, precision dist, dates-per-article histogram,
+  per-LANGUAGE coverage + `in_month_vocab` (the clearest vocabulary-gap signal — a
+  language with no month table shows ~0 coverage; reveals the zh/ja/ru/ar/hi/bn gap
+  the European-only `_MONTHS` table can't catch), probe-kind totals, and a sample
+  sorted WORST-actionable-miss first (bare years excluded from "actionable" — the
+  extractor skips them by design) carrying extracted + probe + `stored_tags` +
+  bounded content excerpt. Bounded + on-demand + local (Item-Z size discipline:
+  light first pass, heavy records only for the ~60-row sample); envelope-wrapped;
+  NO scores; probe hits labeled candidates (high recall, low precision). Honest
+  follow-on optimization targets it already exposes: CJK 年月日 handling + native
+  month vocab for the non-European UI locales; optional bare-year contextual
+  extraction. tests/test_date_diagnostics.py.
