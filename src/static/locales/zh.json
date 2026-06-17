@@ -1101,5 +1101,13 @@
   "Open these articles as a new analysis corpus": "将这些文章作为新的分析语料库打开",
   "{n} near-identical copies across {m} sources = effectively one voice": "{n} 份近乎相同的副本，来自 {m} 个来源 = 实际上是同一种声音",
   "{n} near-identical copies from one source = one voice": "来自单一来源的 {n} 份近乎相同的副本 = 一种声音",
-  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "在此语料库中未检测到近乎相同的聚类——这并不能证明不存在协同，只是在该阈值下未发现。"
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "在此语料库中未检测到近乎相同的聚类——这并不能证明不存在协同，只是在该阈值下未发现。",
+  "Shared origins": "共享来源",
+  "Shared origin": "共享来源",
+  "cited": "被引用",
+  "articles in this corpus citing the same outbound page": "本语料库中引用同一外部页面的文章",
+  "No outbound page is cited by 2+ articles in this corpus yet.": "此语料库中暂无被 2 篇及以上文章引用的外部页面。",
+  "Open every article citing this origin as a new corpus": "将引用此来源的所有文章作为新语料库打开",
+  "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "多篇文章引用同一页面并非独立佐证——同一来源，多重回声。",
+  "No articles cite this origin.": "没有文章引用此来源。"
 }

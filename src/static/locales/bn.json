@@ -1101,5 +1101,13 @@
   "Open these articles as a new analysis corpus": "এই নিবন্ধগুলো একটি নতুন বিশ্লেষণ কর্পাস হিসেবে খুলুন",
   "{n} near-identical copies across {m} sources = effectively one voice": "{m}টি উৎস জুড়ে {n}টি প্রায় অভিন্ন কপি = কার্যত একটিই কণ্ঠস্বর",
   "{n} near-identical copies from one source = one voice": "একটি উৎস থেকে {n}টি প্রায় অভিন্ন কপি = একটিই কণ্ঠস্বর",
-  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "এই কর্পাসে কোনও প্রায় অভিন্ন ক্লাস্টার শনাক্ত হয়নি — এটি সমন্বয়ের অনুপস্থিতির প্রমাণ নয়, কেবল এই থ্রেশহোল্ডে কিছু পাওয়া যায়নি।"
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "এই কর্পাসে কোনও প্রায় অভিন্ন ক্লাস্টার শনাক্ত হয়নি — এটি সমন্বয়ের অনুপস্থিতির প্রমাণ নয়, কেবল এই থ্রেশহোল্ডে কিছু পাওয়া যায়নি।",
+  "Shared origins": "অভিন্ন উৎস",
+  "Shared origin": "অভিন্ন উৎস",
+  "cited": "উদ্ধৃত",
+  "articles in this corpus citing the same outbound page": "এই কর্পাসের নিবন্ধ যা একই বহিঃপৃষ্ঠা উদ্ধৃত করে",
+  "No outbound page is cited by 2+ articles in this corpus yet.": "এই কর্পাসে এখনও কোনো বহিঃপৃষ্ঠা ২+ নিবন্ধ দ্বারা উদ্ধৃত হয়নি।",
+  "Open every article citing this origin as a new corpus": "এই উৎস উদ্ধৃতকারী সব নিবন্ধ নতুন কর্পাস হিসেবে খুলুন",
+  "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "একই পৃষ্ঠা উদ্ধৃতকারী একাধিক নিবন্ধ স্বাধীন নিশ্চিতকরণ নয় — একটিই উৎস, একাধিক প্রতিধ্বনি।",
+  "No articles cite this origin.": "কোনো নিবন্ধ এই উৎস উদ্ধৃত করে না।"
 }

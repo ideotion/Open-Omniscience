@@ -7444,6 +7444,7 @@
     // openAnalysisForIds (the exact-set spawn) = a fresh corpus = associated research.
     const _anRelated = { key: null };
     let _anRelatedClusters = [];
+    let _anRelatedLinks = [];
     async function renderAnRelated(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("an-related"); if (!host) return;
@@ -7451,32 +7452,57 @@
       if (_anRelated.key === key && host.dataset.done === "1") return;   // cached on this corpus
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       _anRelated.key = key; host.dataset.done = "";
+      const qs = p ? p.toString() : "";
       try {
-        const d = await api("/api/insights/corpus-coordination?" + (p ? p.toString() : ""));
-        _anRelatedClusters = d.clusters || [];
-        const head = `<div class="hint"><b>${_anRelatedClusters.length}</b> ${esc(t("Near-identical clusters"))}`
-          + ` <span class="muted">· ${esc(d.method || "")}</span></div>`;
+        // Two independence-honest "related" lenses over the corpus: near-identical
+        // copies (text) AND shared outbound origins (citation). Both reuse existing
+        // endpoints; each cluster/origin BRANCHES into a fresh corpus.
+        const [cd, ld] = await Promise.all([
+          api("/api/insights/corpus-coordination?" + qs).catch(() => null),
+          api("/api/links/corpus?" + qs).catch(() => null),
+        ]);
+        _anRelatedClusters = (cd && cd.clusters) || [];
+        _anRelatedLinks = (ld && ld.items) || [];
+        let html = `<div class="hint"><b>${_anRelatedClusters.length}</b> ${esc(t("Near-identical clusters"))}`
+          + ` <span class="muted">· ${esc((cd && cd.method) || "")}</span></div>`;
         if (!_anRelatedClusters.length) {
-          host.innerHTML = head + `<div class="muted" style="margin-top:8px">`
+          html += `<div class="muted" style="margin:6px 0 2px">`
             + `${esc(t("No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold."))}</div>`;
-          host.dataset.done = "1"; return;
+        } else {
+          html += _anRelatedClusters.map((c, i) => {
+            const voice = c.single_source
+              ? t("{n} near-identical copies from one source = one voice").replace("{n}", c.size)
+              : t("{n} near-identical copies across {m} sources = effectively one voice").replace("{n}", c.size).replace("{m}", c.distinct_sources);
+            const ex = (c.members || []).slice(0, 6).map((m) =>
+              `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
+              + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
+            const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
+            return `<div class="card" style="padding:10px;margin-top:8px">`
+              + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
+              + `<b>${esc(voice)}</b>`
+              + `<button class="secondary tiny" onclick="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
+              + `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">${esc(t("Show all"))}</summary>`
+              + `<ul style="margin:6px 0 0">${ex}${more}</ul></details></div>`;
+          }).join("") + `<p class="card-caveat" style="margin-top:8px">${esc((cd && cd.caveat) || "")}</p>`;
         }
-        const rows = _anRelatedClusters.map((c, i) => {
-          const voice = c.single_source
-            ? t("{n} near-identical copies from one source = one voice").replace("{n}", c.size)
-            : t("{n} near-identical copies across {m} sources = effectively one voice").replace("{n}", c.size).replace("{m}", c.distinct_sources);
-          const ex = (c.members || []).slice(0, 6).map((m) =>
-            `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
-            + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
-          const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
-          return `<div class="card" style="padding:10px;margin-top:8px">`
-            + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
-            + `<b>${esc(voice)}</b>`
-            + `<button class="secondary tiny" onclick="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
-            + `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">${esc(t("Show all"))}</summary>`
-            + `<ul style="margin:6px 0 0">${ex}${more}</ul></details></div>`;
-        }).join("");
-        host.innerHTML = head + rows + `<p class="card-caveat" style="margin-top:8px">${esc(d.caveat || "")}</p>`;
+        // --- Shared origins: articles citing the SAME outbound page (one origin,
+        // not independent confirmation — the anti-false-triangulation lens). ---
+        html += `<div class="hint" style="margin-top:16px"><b>${_anRelatedLinks.length}</b> ${esc(t("Shared origins"))}`
+          + ` <span class="muted">· ${esc(t("articles in this corpus citing the same outbound page"))}</span></div>`;
+        if (!_anRelatedLinks.length) {
+          html += `<div class="muted" style="margin:6px 0 2px">${esc(t("No outbound page is cited by 2+ articles in this corpus yet."))}</div>`;
+        } else {
+          html += _anRelatedLinks.map((it, i) => {
+            const label = it.domain || it.link_text || it.normalized_url;
+            return `<div class="card" style="padding:10px;margin-top:8px">`
+              + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
+              + `<span>${extLink(it.sample_url || it.normalized_url, esc(label), "", "")} `
+              + `<span class="muted">· ${it.citations}× ${esc(t("cited"))}</span></span>`
+              + `<button class="secondary tiny" onclick="branchFromOrigin(${i})" title="${esc(t("Open every article citing this origin as a new corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div></div>`;
+          }).join("")
+            + `<p class="card-caveat" style="margin-top:8px">${esc((ld && ld.caveat) || t("Several articles citing the same page are not independent confirmation — one origin, several echoes."))}</p>`;
+        }
+        host.innerHTML = html;
         host.dataset.done = "1";
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
@@ -7485,6 +7511,18 @@
       const c = _anRelatedClusters[i];
       if (!c || !c.article_ids || !c.article_ids.length) return;
       openAnalysisForIds(c.article_ids, t("Near-identical cluster") + " · " + c.size);
+    }
+    // Branch every article that cites one shared outbound origin into a fresh corpus
+    // (the "sources' sources" trail). Fetches the citing-article ids on click.
+    async function branchFromOrigin(i) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const it = _anRelatedLinks[i]; if (!it) return;
+      try {
+        const d = await api("/api/links/articles-by-link?url=" + encodeURIComponent(it.normalized_url || it.sample_url));
+        const ids = (d.articles || []).map((a) => a.id);
+        if (!ids.length) { if (typeof toast === "function") toast(t("No articles cite this origin.")); return; }
+        openAnalysisForIds(ids, (it.domain || t("Shared origin")) + " · " + ids.length);
+      } catch (e) { if (typeof toast === "function") toast(e.message); }
     }
 
     // Self-contained radial mind-map for the analysis window. Distinct from the

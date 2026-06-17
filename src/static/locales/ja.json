@@ -1101,5 +1101,13 @@
   "Open these articles as a new analysis corpus": "これらの記事を新しい分析コーパスとして開く",
   "{n} near-identical copies across {m} sources = effectively one voice": "{m} のソースにまたがる {n} 件のほぼ同一のコピー＝実質的に一つの声",
   "{n} near-identical copies from one source = one voice": "単一ソースからの {n} 件のほぼ同一のコピー＝一つの声",
-  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "このコーパスではほぼ同一のクラスターは検出されませんでした——協調がない証拠ではなく、この閾値では見つからなかったというだけです。"
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "このコーパスではほぼ同一のクラスターは検出されませんでした——協調がない証拠ではなく、この閾値では見つからなかったというだけです。",
+  "Shared origins": "共有された出典",
+  "Shared origin": "共有された出典",
+  "cited": "件引用",
+  "articles in this corpus citing the same outbound page": "このコーパスで同じ外部ページを引用している記事",
+  "No outbound page is cited by 2+ articles in this corpus yet.": "このコーパスで2件以上の記事に引用された外部ページはまだありません。",
+  "Open every article citing this origin as a new corpus": "この出典を引用するすべての記事を新しいコーパスとして開く",
+  "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "同じページを引用する複数の記事は独立した裏付けではありません——出典は一つ、反響は複数。",
+  "No articles cite this origin.": "この出典を引用する記事はありません。"
 }
