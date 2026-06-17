@@ -1294,9 +1294,25 @@ ruling, a contingency, or a deliberate-omission note.
   score column, the AI layer never `ATTACH DATABASE`s nor imports the main ORM, the trusted analytics + DB
   layer never import `src.ai_layer`, and the production path creates a separate file while the AI gate (not
   the main one) serialises the write. mypy +0 (115≤127), ruff clean, packaging auto-includes it (`src*`).
-  REMAINING: the FIRST writer (an LLM keyword/entity extraction batch job feeding this store) + the
-  read-only AI lens UI beside the trusted keywords; the deep-model tier (1) + whole-corpus cited synthesis
-  (3); the backup stance for ai_layer.db (own member vs excluded-as-rebuildable).
+  **FIRST WRITER SHIPPED 2026-06-17 (branch claude/ai-keyword-extraction, draft PR onto 0.09; backend
+  VERIFIED py3.13 — the 14 tests ran GREEN here):** the first real consumer of the AI store, proving the
+  separation end-to-end. `src/ai_layer/extract.py` — `extract_terms(client, title, content, *, model, …)` +
+  `parse_terms` (pure, stub-testable: asks the LOCAL model for salient keywords/entities, cleans list
+  markers, dedups case-insensitively, bounds; honest prompt = "output nothing" for an unusable page);
+  `EXTRACT_PROMPT_VERSION = "ai-keywords-v1"` recorded per row. `src/ai_layer/jobs.py` —
+  `extract_for_articles(work, client, …)` a generator that READS the snapshot + writes AiKeyword rows via
+  `ai_session_scope` (NEVER a main session), yielding honest NDJSON progress (invariant #20), idempotent
+  skip-existing, commit-per-article (short gate window, never held across the slow LLM call), aborts loudly
+  if Ollama goes away mid-run. `src/api/ai.py` (`/api/ai`, wired into the SPINE) — POST `/keywords/extract`
+  (streams; selection mirrors the analysis window: article_ids OR query/filters via `_query_articles`;
+  Ollama is loopback so NOT consent-gated, airplane refuses at the client), GET
+  `/articles/{id}/keywords` (the read-only lens; SIDE-EFFECT-FREE — returns empty WITHOUT creating the file
+  if no AI feature ran), POST `/keywords/confirm` (confirm-within-the-lens). tests/test_ai_keyword_extract.py
+  (8): parse/extract units, the batch writes the AI store + skip-existing + abort-on-unavailable, and the
+  HTTP test PROVES the feature-level separation — after extraction the article has AiKeyword rows but ZERO
+  main `KeywordMention` rows. mypy +0 (115≤127), ruff clean, wiring+llm regression green. REMAINING: the
+  read-only AI lens UI beside the trusted keywords (backend ready); the deep-model tier (1) + whole-corpus
+  cited synthesis (3); the backup stance for ai_layer.db (own member vs excluded-as-rebuildable).
   ALL LLM features keep the standing
   honesty invariants: grounded+cited, refuse-when-absent, no score/verdict/ranking, local
   loopback, provenance recorded, caveats visible, never auto-fed into the pipeline.
