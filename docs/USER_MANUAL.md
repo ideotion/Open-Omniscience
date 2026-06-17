@@ -720,10 +720,11 @@ bake in bias and silence small, foreign, new or dissident sources. Full guide:
 
 **What it's for:** preferences, the acquisition surfaces, and maintenance — organized
 into sections via a sub-nav: **Appearance · General · Collect · Sources · Wikipedia ·
-Agenda · Data & backup · Safety**. Open Settings from the **top-bar gear** (it is no
-longer a sidebar item); the command palette still jumps straight here. Everything is
-stored locally; no telemetry. **Collect**, **Sources** and **Wikipedia** are documented
-above ([3.2](#32-collect-in-settings--collect), [3.3](#33-sources-in-settings--sources),
+Agenda · Models · Statistics · Offline map · Newsletters · Keywords · GUIs · Data &
+backup · Safety**. Open Settings from the **top-bar gear** (it is no longer a sidebar
+item); the command palette still jumps straight here. Everything is stored locally; no
+telemetry. **Collect**, **Sources** and **Wikipedia** are documented above
+([3.2](#32-collect-in-settings--collect), [3.3](#33-sources-in-settings--sources),
 [3.7](#37-wikipedia-in-settings--wikipedia)); **Agenda** calendars are managed here too.
 
 - **Appearance:** themes, accent colour, density, **text size**, **typeface**, sidebar
@@ -738,15 +739,33 @@ above ([3.2](#32-collect-in-settings--collect), [3.3](#33-sources-in-settings--s
   keywords** list (one per line or comma-separated). Excluding hides a term
   everywhere but is reversible — stored mentions are kept. (You can also click ✕
   beside any keyword in Insights.)
-- **Wikipedia offline baselines:** pick a **language edition** — the picker lists
-  ~147 editions **grouped by continent** (Europe, Asia, Africa, Americas, Oceania,
-  …), largest first within each, with a **type-to-filter box** (match by name,
-  autonym or code); you can also type any edition code that isn't listed — then
-  **Estimate size**
-  (reads the *exact* current dump size from the server; nothing guessed) and
-  **Download** (resumable, with pause/resume and a progress table). These offline
-  dumps are heavy and optional, and are only for offline reading/search — live
-  change-tracking (the Wikipedia tab) doesn't need them.
+- **Wikipedia offline baselines:** pick a **language edition** from a **flat list**
+  (your UI languages first, then the largest editions), each option leading with the
+  **native name** (autonym) — editions are language-based, not country-based, so there
+  is no continent grouping. Each dump-eligible edition shows an **inline approximate
+  size** (`~X GB`, from a bundled dated table — zero extra network) so you can judge
+  before downloading; the exact size is read when the download starts. **Download** is
+  resumable (pause/resume + a progress table). These offline dumps are heavy and
+  optional, and are only for offline reading/search — live change-tracking (the
+  Wikipedia tab) doesn't need them.
+- **Models (local LLM):** detect a running Ollama, see installed models and a curated
+  dated catalog, **pull** a model (live byte progress; the bytes go over clearnet via
+  the Ollama process, **not** Tor — stated at the consent prompt), **remove** one, and
+  set the **active model** the summarise/translate/synthesise features use. (The
+  optional binary-installer is a later addition.)
+- **Statistics (official figures):** a descriptive directory of government + international
+  statistical producers (each a *stanced* source, flagged controversial — never a
+  credibility score); **register** them as disabled sources; and **fetch official figures**
+  from documented machine endpoints (World Bank API / Eurostat SDMX), stored with their
+  full provenance and a first-class **vintage** (a re-fetch is a new row, never an
+  overwrite). Producers are shown **side by side, never averaged**, and a **Triangulate**
+  view flags cells that mix incomparable units / seasonal adjustment / base years. The
+  fetch egresses over your configured transport and is refused under airplane mode.
+- **Offline map:** pick an OpenStreetMap region (with a dated `~GB` estimate) and download
+  it as a resumable, pausable task-manager job (gated by the one network-consent popup).
+- **Newsletters:** import a folder of `.eml` files as articles — anonymised at ingest
+  (recipient identity and tracking links are stripped; nothing is fetched), with a visible
+  count of what was removed.
 - **Backup & restore (Data & backup):** **Download backup (.db)** takes a consistent
   live snapshot via SQLite's online-backup API; a **signed `oo-backup-2` archive**
   carries the corpus plus custody and settings members under one manifest (per-member
