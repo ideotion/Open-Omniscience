@@ -1493,6 +1493,24 @@ ruling, a contingency, or a deliberate-omission note.
   tests/test_keyword_selftest.py (all-pass + who_vs_WHO + the runner detects a deliberate fail —
   so a green run is never vacuous). Closes the loop the maintainer asked for: run it in-app,
   send the log, I see exactly which keyword behaviour regressed.
+  **KEYWORD-ENGINE PRE-TRANSLATION/SYNONYM/SUPER-RING PROGRAM (maintainer ruled 2026-06-17 "proceed
+  with 1,2,3,4 in complete autonomy"; agreed to my plan incl. Wikidata-labels as the translation
+  source):** the 4-level hierarchy = keyword → family (morphology) → RING (cross-language concept +
+  synonyms) → SUPER-RING (theme of rings = a super-group whose members are rings). PLAN: (1) an
+  in-app efficacy+performance report [SHIPPED below]; (2) super-group members can be RINGS (the
+  super-ring model); (3) an OFFLINE Wikidata-labels ring generator + a dated few-hundred-ring
+  snapshot + freshness test (scales pre-translation reliably, sourced by QID, no LLM); (4) wire
+  ring/super-ring editing into the Item AC keyword subtab. Scopes to the 12 UI languages.
+  **STEP 1 — KEYWORD-ENGINE REPORT SHIPPED 2026-06-17 (draft PR onto 0.09):** `src/analytics/
+  engine_report.py:keyword_engine_report(session)` = a bounded, read-only diagnostic — composition,
+  ENTITY PRECISION (% of entities that are valid acronyms post the Title-case drop), cross-language
+  TRANSLATION COVERAGE (% of top-N keywords in a ring — the number that tracks the ring work, near
+  0 today), TAG COVERAGE, per-language FUNCTIONAL STATUS (functional / no_stoplist / unsegmented —
+  flags zh/ja honestly), the self-test summary, and indicative PERFORMANCE (extraction ms/article +
+  grouped-query latency). NO composite score; each block states its method. `GET /api/diagnostics/
+  keyword-engine` (+`?download=1`) + a Diagnostics-panel button. The hand-back loop: run it, send
+  the JSON, diff two over time to prove an optimization landed. tests/test_keyword_engine_report.py
+  (metrics shape, honest entity-precision + language-status, no score). NEXT: Step 2 super-rings.
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,

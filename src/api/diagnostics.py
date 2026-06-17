@@ -459,6 +459,25 @@ def keyword_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.get("/keyword-engine")
+def keyword_engine(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
+    """Keyword-engine efficacy + performance report.
+
+    Composition · entity precision · cross-language TRANSLATION coverage (tracks the
+    ring work) · tag coverage · per-language functional status · the self-test ·
+    indicative timings (extraction + grouped-query). Bounded, read-only, NO score —
+    diff two of these over time to see whether an optimization landed. With
+    ``download=1`` it returns as a dated attachment."""
+    from src.analytics.engine_report import keyword_engine_report
+
+    report = keyword_engine_report(db)
+    headers = {}
+    if download:
+        fname = f"oo-keyword-engine-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(report, headers=headers)
+
+
 @router.get("/dates")
 def date_extraction_log(
     db: Session = Depends(get_db),
