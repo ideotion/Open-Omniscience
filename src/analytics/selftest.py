@@ -1,0 +1,280 @@
+"""Keyword pre-selection self-test — the maintainer's challenge harness.
+
+A small, DECLARATIVE set of golden challenge cases that exercise the tricky
+keyword-extraction decisions this project tuned — above all that the organisation
+acronym ``WHO`` stays distinct from the pronoun ``who`` — plus the per-language
+tweaks: German capitalised nouns are terms (not entities), a sentence-initial
+capital is not an entity, the stopword/weekday batches filter junk, the
+singular/plural family merge, cross-language equivalence rings, and the curated
+baseline tags.
+
+It runs the REAL pipeline the app uses (``BaselineExtractor`` / ``build_families`` /
+``equivalence`` / ``baseline``) over each case and checks the outcome, so a
+regression shows up immediately. ``run_keyword_selftest()`` returns an exportable
+log (schema ``oo-selftest-1``); the in-app tool surfaces it at
+``GET /api/diagnostics/keyword-selftest`` so the maintainer can run it and send the
+results back for the next optimization round. It asserts known-good behaviour on
+curated inputs — no DB, no network, no score, and it never edits data.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+
+@dataclass(frozen=True)
+class Challenge:
+    """One golden extraction case. The expectation tuples carry NORMALISED forms
+    (an acronym stays UPPER-case, a term is lower-case)."""
+
+    id: str
+    guards: str  # the behaviour this case protects (human-readable)
+    text: str = ""
+    language: str = "en"
+    entity: tuple[str, ...] = ()  # MUST be present AND kind=entity
+    term: tuple[str, ...] = ()  # MUST be present AND kind=term
+    not_entity: tuple[str, ...] = ()  # if present, MUST NOT be an entity (a term is fine)
+    absent: tuple[str, ...] = ()  # MUST be filtered out entirely (stopwords / weekdays)
+
+
+# The challenge set. Each line states, in data, exactly what behaviour it guards.
+_CASES: tuple[Challenge, ...] = (
+    Challenge(
+        "who_vs_WHO",
+        "the organisation WHO stays distinct from the pronoun who (case-preserved acronym)",
+        "Experts at WHO met on a panel; afterwards they asked who really knew the risks.",
+        entity=("WHO",),
+        not_entity=("who",),
+    ),
+    Challenge(
+        "us_survives_stopword",
+        "the acronym US is kept, not lost to the stopword 'us'",
+        "The US said it would act. The deal still mattered to the US and its allies.",
+        entity=("US",),
+        absent=("us",),
+    ),
+    Challenge(
+        "german_nouns_are_terms",
+        "German capitalises every noun, so none of these is a proper-name entity",
+        "Die Behauptung war falsch. Die Medien berichteten ausführlich über Menschen und Belege.",
+        language="de",
+        not_entity=("behauptung", "medien", "menschen"),
+    ),
+    Challenge(
+        "sentence_initial_not_entity",
+        "a word capitalised only at a sentence start is not an entity",
+        "Markets fell today. Traders worried about inflation and slowing growth.",
+        not_entity=("markets",),
+    ),
+    Challenge(
+        "digit_acronym_kept",
+        "digit/hyphen acronyms (G7, COVID-19) are recognised as entities",
+        "The G7 leaders met while COVID-19 cases rose again across the wider region.",
+        entity=("G7", "COVID-19"),
+    ),
+    Challenge(
+        "headline_caps_not_acronyms",
+        "an all-caps headline run yields no acronym entities",
+        "BREAKING NEWS REPORT: markets fell sharply as traders weighed the latest data.",
+        not_entity=("BREAKING", "NEWS", "REPORT"),
+    ),
+    Challenge(
+        "english_stopword_filtered",
+        "a classic English function word ('that') is never collected",
+        "The report said that the economy that everyone watched had quietly slowed.",
+        absent=("that",),
+    ),
+    Challenge(
+        "weekday_filtered",
+        "weekday names are filtered (the 2026-06 batch covers every UI language)",
+        "The summit opened on Tuesday and the decisive vote was finally held on Saturday.",
+        absent=("tuesday", "saturday"),
+    ),
+    Challenge(
+        "german_function_words_filtered",
+        "German function words from the evidence batch are filtered (können, sondern)",
+        "Wir können daran nichts ändern, sondern nur ruhig abwarten und sorgfältig weiterarbeiten.",
+        language="de",
+        absent=("können", "sondern"),
+    ),
+    # --- multilingual stopword / weekday coverage --------------------------------- #
+    # The filters are a UNION applied to every language that has a stoplist, so the
+    # self-test must challenge more than English. Each word below is verified-present
+    # in global_stopwords(); a content noun in the sentence keeps the case non-vacuous.
+    Challenge(
+        "french_stopwords_and_weekdays",
+        "French weekdays + function words are filtered",
+        "Marchés en baisse mardi; chez le ministre, la réunion de samedi a été reportée.",
+        language="fr",
+        absent=("mardi", "samedi", "chez"),
+    ),
+    Challenge(
+        "spanish_stopwords_and_weekdays",
+        "Spanish weekdays + function words are filtered",
+        "La reunión del sábado se aplazó, pero desde el miércoles nada cambió, aunque insistieron.",
+        language="es",
+        absent=("sábado", "miércoles", "pero", "desde", "aunque"),
+    ),
+    Challenge(
+        "italian_stopwords_and_weekday",
+        "Italian weekday + function word are filtered",
+        "La riunione di sabato è stata rinviata perché mancavano ancora i dati ufficiali importanti.",
+        language="it",
+        absent=("sabato", "perché"),
+    ),
+    Challenge(
+        "portuguese_stopwords_and_weekday",
+        "Portuguese weekday + function words are filtered",
+        "A reunião foi adiada porque faltavam dados, embora todos soubessem, no sábado de manhã.",
+        language="pt",
+        absent=("sábado", "porque", "embora"),
+    ),
+    Challenge(
+        # NB: stoplists are by BASE form, so an inflected weekday ("среду") still
+        # leaks — a real limitation in inflecting languages. We assert only the
+        # function words actually present, to stay honest and non-vacuous.
+        "russian_function_words",
+        "Russian (Cyrillic) function words are filtered",
+        "Совещание перенесли, чтобы успеть подготовить отчёт, которые все долго ждали.",
+        language="ru",
+        absent=("чтобы", "которые"),
+    ),
+    Challenge(
+        "arabic_function_words",
+        "Arabic (RTL, space-segmented) function words are filtered",
+        "اجتمع القادة خلال الأسبوع. قبل القمة ناقشوا الاقتصاد. بعد النقاش الطويل اتفقوا.",
+        language="ar",
+        absent=("خلال", "قبل", "بعد"),
+    ),
+    Challenge(
+        # "szombaton" (inflected) leaks; we assert the uninflected forms present.
+        "hungarian_function_words_and_weekday",
+        "Hungarian function words + an uninflected weekday are filtered",
+        "A jelentés szerint a hétfő hivatalos ünnepnap, a fontos találkozó pedig végül elmarad.",
+        language="hu",
+        absent=("szerint", "pedig", "hétfő"),
+    ),
+    Challenge(
+        "indonesian_function_words_and_weekdays",
+        "Indonesian function words + weekdays are filtered",
+        "Pertemuan dalam pekan ini diadakan oleh menteri pada Sabtu dan Minggu pagi.",
+        language="id",
+        absent=("dalam", "oleh", "sabtu", "minggu"),
+    ),
+    Challenge(
+        "dutch_stopwords_and_weekdays",
+        "Dutch weekdays + function word are filtered",
+        "De vergadering van maandag werd uitgesteld omdat de cijfers op zaterdag nog ontbraken.",
+        language="nl",
+        absent=("maandag", "zaterdag", "omdat"),
+    ),
+    Challenge(
+        "spanish_sentence_initial_not_entity",
+        "a Romance sentence-initial capital is a term, not an entity (Title-case is not a signal)",
+        "Mercados cayeron ayer. Inversores temían una recesión y un crecimiento más lento.",
+        language="es",
+        not_entity=("mercados",),
+    ),
+)
+
+
+def _result(case_id: str, guards: str, fails: list[str], language: str = "—") -> dict:
+    return {
+        "id": case_id,
+        "guards": guards,
+        "language": language,
+        "status": "pass" if not fails else "fail",
+        "detail": fails,
+    }
+
+
+def _check_extraction(c: Challenge) -> list[str]:
+    """Run the real extractor over one case and collect any expectation failures."""
+    from src.analytics.extract import BaselineExtractor
+
+    kind: dict[str, str] = {}
+    for t in BaselineExtractor().extract(c.text, language=c.language):
+        kind[t.normalized] = t.kind
+
+    fails: list[str] = []
+    for e in c.entity:
+        got = kind.get(e)
+        if got is None or got == "term":
+            fails.append(f"{e!r} expected entity, got {got or 'absent'}")
+    for t in c.term:
+        if kind.get(t) != "term":
+            fails.append(f"{t!r} expected term, got {kind.get(t) or 'absent'}")
+    for ne in c.not_entity:
+        got = kind.get(ne)
+        if got is not None and got != "term":
+            fails.append(f"{ne!r} must not be an entity, got {got}")
+    for a in c.absent:
+        if a in kind:
+            fails.append(f"{a!r} expected to be filtered, present as {kind[a]}")
+    return fails
+
+
+def _check_structural() -> list[dict]:
+    """The cross-keyword behaviours that aren't a single-text extraction:
+    family merge, equivalence rings, and curated baseline tags."""
+    out: list[dict] = []
+
+    # 1) singular/plural family merge (state + states -> one family)
+    from src.analytics.families import build_families
+
+    fams = build_families(
+        [
+            {"normalized": "state", "term": "state", "kind": "term", "mentions": 80},
+            {"normalized": "states", "term": "states", "kind": "term", "mentions": 40},
+        ]
+    )
+    merged = any({"state", "states"} <= {m["normalized"] for m in f.members} for f in fams)
+    out.append(
+        _result(
+            "plural_family_merge",
+            "singular/plural collapse into one family (state + states)",
+            [] if merged else ["state and states did not merge into one family"],
+        )
+    )
+
+    # 2) cross-language equivalence ring (election / élection / wahl -> one ring)
+    from src.analytics.equivalence import ring_of
+
+    rings = {ring_of("en", "election"), ring_of("fr", "élection"), ring_of("de", "wahl")}
+    ring_ok = len(rings) == 1 and None not in rings
+    out.append(
+        _result(
+            "equivalence_ring",
+            "election / élection / wahl resolve to one cross-language ring",
+            [] if ring_ok else [f"expected one shared ring, got {sorted(str(r) for r in rings)}"],
+        )
+    )
+
+    # 3) curated baseline pre-tags a known keyword (election -> type:event, topic:politics)
+    from src.analytics.baseline import baseline_tags
+
+    tags = dict(baseline_tags("en", "election"))
+    want = {"type": "event", "topic": "politics"}
+    out.append(
+        _result(
+            "baseline_tag_applied",
+            "the curated baseline pre-tags a known keyword (election)",
+            [] if tags == want else [f"expected {want}, got {tags}"],
+        )
+    )
+    return out
+
+
+def run_keyword_selftest() -> dict:
+    """Run the whole challenge harness and return an exportable log (oo-selftest-1)."""
+    cases: list[dict] = [_result(c.id, c.guards, _check_extraction(c), c.language) for c in _CASES]
+    cases.extend(_check_structural())
+    passed = sum(1 for c in cases if c["status"] == "pass")
+    return {
+        "kind": "keyword-selftest",
+        "schema": "oo-selftest-1",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "summary": {"total": len(cases), "passed": passed, "failed": len(cases) - passed},
+        "cases": cases,
+    }
