@@ -1282,10 +1282,21 @@ ruling, a contingency, or a deliberate-omission note.
   equivalence" entry — DONE, wired 2026-06-16); fix sentence-initial-capital false entities
   (DONE — see ENTITY-DETECTION ruling below); singular/plural family merge (DONE 2026-06-16
   — see below); the Item AC pre-tagged per-language baseline + keyword-management Settings
-  subtab (endorsed; DESIGN DOC SHIPPED 2026-06-16, maintainer-asked — full architecture +
-  6 open questions + 4 build slices in `docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md`;
-  AWAITS maintainer answers on baseline sourcing [curated/Wikidata-P31/lexicon] + tag
-  taxonomy [type vs topic] before S1 builds).
+  subtab (DESIGN DOC `docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md`; maintainer ANSWERED
+  the 6 questions 2026-06-17 — Q1 curated-small+analyzer-grown, Q2 BOTH axes [type+topic],
+  Q3 stoplists→data files, Q4 explore+hide/tag together, Q5 forward-only, Q6 deferred).
+  **ITEM AC S1 — TAG SCHEMA + BASELINE LOADER SHIPPED 2026-06-17 (draft PR onto 0.09):**
+  the positive-baseline MECHANISM. `KeywordTag` model (keyword_id FK · axis type|topic ·
+  tag · source baseline|user · uq(keyword_id,axis,tag,source); migration e3f4a5b6c7d8 off
+  the real head d2e3f4a5b6c7 — verified single-head); `src/analytics/baseline.py` = a
+  network-free dated loader (`BASELINE_AS_OF` + freshness test) over bundled
+  `configs/keyword_baseline/<lang>.yml` (en+fr seeds, both axes; casefold match; missing
+  file/`OO_KEYWORD_TAGS=0` = no-op, never invents); applied FORWARD-ONLY at keyword creation
+  in `store._get_or_create_keyword` (each tag a labelled assertion carrying `source`), +
+  read helper `store.tags_for_keyword` (grouped by axis, no score). tests/test_keyword_tags.py
+  (loader both-axes/casefold/disabled/freshness, forward-only+idempotent application,
+  non-baseline→no tags). REMAINING: S1b stoplists→data files (Q3); S2 grow the baseline data;
+  S3 the Settings → Keywords subtab (explore+hide/tag, Q4); S4 in-app analyzer-proposal review.
   **SINGULAR/PLURAL FAMILY MERGE — SHIPPED 2026-06-16 (maintainer "start with the plural-merge
   risk analysis"; conservative + guarded; draft PR onto 0.09):** RISK ANALYSIS first corrected
   the size — only **932** real pairs (the earlier ~2753 was an exploratory bug that stripped N

@@ -1369,6 +1369,41 @@ class KeywordSuperGroupMember(Base):
         return f"<KeywordSuperGroupMember(sg={self.supergroup_id} {self.normalized_term})>"
 
 
+class KeywordTag(Base):
+    """A tag on a keyword along a named AXIS (Item AC, slice 1).
+
+    Two orthogonal, optional, multi-valued axes: a semantic ``type`` (event /
+    disease / technology / currency …) and a ``topic``/domain (politics / economy /
+    health …). A tag is a LABELLED ASSERTION, never ground truth and never a score:
+    ``source`` records who asserted it — a curated, dated BASELINE applied at index
+    time, or the USER (authoritative + reversible). Nothing in the keyword store is
+    rewritten; deleting a row removes the assertion. The baseline is bundled +
+    local-only (configs/keyword_baseline/<lang>.yml); see src/analytics/baseline.py.
+    """
+
+    __tablename__ = "keyword_tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    keyword_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("keywords.id", ondelete="CASCADE"), nullable=False
+    )
+    axis: Mapped[str] = mapped_column(String(16), nullable=False)  # "type" | "topic"
+    tag: Mapped[str] = mapped_column(String(64), nullable=False)  # "event" | "politics" | ...
+    source: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="baseline"
+    )  # "baseline" (curated, dated) | "user" (authoritative)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("ix_keyword_tags_keyword_id", "keyword_id"),
+        Index("ix_keyword_tags_axis_tag", "axis", "tag"),
+        UniqueConstraint("keyword_id", "axis", "tag", "source", name="uq_keyword_tag"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<KeywordTag(kw={self.keyword_id} {self.axis}={self.tag} [{self.source}])>"
+
+
 class ArticleMentionedPlace(Base):
     """A place DEDUCED from an article's text at ingest (T12, When×Where×Who).
 
