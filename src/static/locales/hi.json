@@ -1109,5 +1109,13 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "इस कॉर्पस में अभी तक कोई बाहरी पृष्ठ 2+ लेखों द्वारा उद्धृत नहीं है।",
   "Open every article citing this origin as a new corpus": "इस स्रोत का हवाला देने वाले सभी लेखों को नए कॉर्पस के रूप में खोलें",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "एक ही पृष्ठ का हवाला देने वाले कई लेख स्वतंत्र पुष्टि नहीं हैं — एक स्रोत, कई प्रतिध्वनियाँ।",
-  "No articles cite this origin.": "कोई लेख इस स्रोत का हवाला नहीं देता।"
+  "No articles cite this origin.": "कोई लेख इस स्रोत का हवाला नहीं देता।",
+  "Uninstall mode": "अनइंस्टॉल मोड",
+  "Minimal — keep the app folder and your data": "न्यूनतम — ऐप फ़ोल्डर और आपका डेटा रखें",
+  "Full — also delete the app folder (data kept)": "पूर्ण — ऐप फ़ोल्डर भी हटाएँ (डेटा सुरक्षित)",
+  "Secure — also wipe your data and keys": "सुरक्षित — आपका डेटा और कुंजियाँ भी मिटाएँ",
+  "Customize…": "अनुकूलित करें…",
+  "Also delete the app folder": "ऐप फ़ोल्डर भी हटाएँ",
+  "Also wipe my data and keys (irreversible)": "मेरा डेटा और कुंजियाँ भी मिटाएँ (अपरिवर्तनीय)",
+  "Download a backup first": "पहले एक बैकअप डाउनलोड करें"
 }

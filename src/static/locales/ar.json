@@ -1109,5 +1109,13 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "لا توجد بعد صفحة خارجية يستشهد بها مقالان أو أكثر في هذه المجموعة.",
   "Open every article citing this origin as a new corpus": "افتح كمجموعة جديدة كل مقال يستشهد بهذا المصدر",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "عدة مقالات تستشهد بالصفحة نفسها ليست تأكيدًا مستقلاً — مصدر واحد وأصداء متعددة.",
-  "No articles cite this origin.": "لا توجد مقالات تستشهد بهذا المصدر."
+  "No articles cite this origin.": "لا توجد مقالات تستشهد بهذا المصدر.",
+  "Uninstall mode": "وضع إلغاء التثبيت",
+  "Minimal — keep the app folder and your data": "الحد الأدنى — الاحتفاظ بمجلد التطبيق وبياناتك",
+  "Full — also delete the app folder (data kept)": "كامل — حذف مجلد التطبيق أيضًا (مع الاحتفاظ بالبيانات)",
+  "Secure — also wipe your data and keys": "آمن — محو بياناتك ومفاتيحك أيضًا",
+  "Customize…": "تخصيص…",
+  "Also delete the app folder": "حذف مجلد التطبيق أيضًا",
+  "Also wipe my data and keys (irreversible)": "محو بياناتي ومفاتيحي أيضًا (لا يمكن التراجع عنه)",
+  "Download a backup first": "نزّل نسخة احتياطية أولًا"
 }

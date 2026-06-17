@@ -45,6 +45,30 @@ class PanicBody(BaseModel):
     confirm: bool = False
 
 
+class UninstallBody(BaseModel):
+    confirm: bool = False
+    # minimal (venv+launchers) | full (+app folder) | secure (+wipe data&keys) | custom.
+    mode: str = "minimal"
+    # Only consulted when mode == "custom"; each off by default (data dies only on opt-in).
+    remove_folder: bool = False
+    wipe_data: bool = False
+
+
+def _uninstall_flags(body: UninstallBody) -> tuple[bool, bool]:
+    """Resolve (remove_folder, wipe_data) from the chosen mode. Data is destroyed ONLY
+    in 'secure' (or an explicit 'custom' opt-in) — never in minimal/full."""
+    mode = (body.mode or "minimal").lower()
+    if mode == "minimal":
+        return False, False
+    if mode == "full":
+        return True, False
+    if mode == "secure":
+        return True, True
+    if mode == "custom":
+        return bool(body.remove_folder), bool(body.wipe_data)
+    raise HTTPException(status_code=400, detail=f"unknown uninstall mode: {body.mode!r}")
+
+
 @router.get("/settings")
 def get_settings() -> dict:
     s = safety_settings.load_settings()
@@ -99,15 +123,31 @@ def panic(body: PanicBody) -> dict:
     return panic_wipe(confirm=True)
 
 
-@router.post("/uninstall")
-def uninstall(body: PanicBody) -> dict:
-    """Remove the virtualenv + desktop launchers, then stop the server. Requires confirm=true.
+@router.get("/uninstall/plan")
+def uninstall_plan(mode: str = "minimal", remove_folder: bool = False,
+                   wipe_data: bool = False) -> dict:
+    """Preview exactly what a given uninstall mode would remove — deletes NOTHING.
 
-    Keeps your data (use /panic to destroy that). Deletion happens in a detached watcher
-    after the server exits — so the response returns first and the app shuts down cleanly.
-    """
+    The UI calls this before confirming so the user sees the precise paths (informed
+    consent). Data is only ever in the plan for 'secure' or an explicit 'custom' opt-in."""
+    body = UninstallBody(mode=mode, remove_folder=remove_folder, wipe_data=wipe_data)
+    rf, wd = _uninstall_flags(body)
+    from src.safety.uninstall import plan_uninstall
+
+    return plan_uninstall(remove_folder=rf, wipe_data=wd)
+
+
+@router.post("/uninstall")
+def uninstall(body: UninstallBody) -> dict:
+    """Uninstall per the chosen mode, then stop the server. Requires confirm=true.
+
+    Modes (data dies only in 'secure'/'custom' opt-in): minimal = venv + launchers;
+    full = + the app folder; secure = + wipe data & keys (best-effort overwrite, honest
+    limit). Deletion happens in a detached watcher after the server exits — so the
+    response returns first and the app shuts down cleanly."""
     if not body.confirm:
         raise HTTPException(status_code=400, detail="set confirm=true to uninstall")
+    rf, wd = _uninstall_flags(body)
     from src.safety.uninstall import request_uninstall
 
-    return request_uninstall(confirm=True)
+    return request_uninstall(confirm=True, remove_folder=rf, wipe_data=wd)
