@@ -1522,7 +1522,24 @@ ruling, a contingency, or a deliberate-omission note.
   `add_supergroup_members` accepts `rings:[ids]` (validated via `ring_meta`, 400 on unknown). Plain
   family members unchanged. Backend only (the UI for adding rings lands in Step 4, the keyword
   subtab). tests/test_super_rings.py (cross-language aggregation, unknown-ring 400, family still
-  works). NEXT: Step 3 — the offline Wikidata-labels ring generator + a dated few-hundred-ring snapshot.
+  works).
+  **STEP 3 — WIKIDATA RING GENERATOR + CURATED EXPANSION SHIPPED 2026-06-17 (draft PR onto 0.09,
+  stacked on Step 2):** the scaling path for pre-translation, no LLM, sourced. `scripts/
+  generate_wikidata_rings.py` = the GENERATOR (stdlib-only, runs on a NETWORKED machine — Wikidata
+  is 403-blocked in this sandbox, the established maintainer-machine pattern): per seed it finds the
+  Wikidata QID (`wbsearchentities`) then pulls multilingual LABELS + ALIASES (`wbgetentities`, CC0)
+  for the 12 UI languages → one ring (translations + synonyms), keyed by QID for audit. Pure parse
+  fns (`parse_search`/`parse_entity`/`build_ring`) offline-tested with API fixtures; only fetch_json
+  touches the net (injectable getter); `--seeds FILE` or `--from-log LOG.json --top N`. Output →
+  `configs/keyword_rings_generated.yml`, which `equivalence.load_rings` now reads ALONGSIDE the
+  curated file (refactored: `_parse_rings`/`_read_yaml`; generated read first, CURATED WINS on an id
+  collision). IMMEDIATE value (since I can't run the generator here): a hand-curated high-confidence
+  EXPANSION of keyword_equivalents.yml — 10→22 rings (government/president/inflation/economy/climate/
+  health/energy/vaccine/pandemic/sanctions/market/refugee across en/fr/de/es/it/pt/nl[/ru]) so the
+  engine report's translation_coverage ticks up NOW. tests/test_wikidata_ring_gen.py (parse fixtures,
+  generate+emit roundtrip, curated-expansion loads, generated-merge with curated-wins). REMAINING:
+  the maintainer runs the generator on a networked box → hundreds of rings (review before trusting;
+  the signature gate still protects). NEXT: Step 4 — wire ring/super-ring editing into the keyword subtab.
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,
