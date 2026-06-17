@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from src.database.models import Source
 from src.database.session import get_db
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
-from src.ingest.email import fetch_imap, ingest_emails
+from src.ingest.email import fetch_imap, fetch_mailbox, ingest_emails
 from src.ingest.pipeline import ingest_source, ingest_url
 from src.ingest.seed_sources import seed_default_sources
 from src.safety.fetcher import make_fetcher
@@ -145,14 +145,17 @@ def ingest_email_endpoint(
     Article rows under the given source. Single-user, loopback-only by design.
     """
     source = _get_source(db, source_id)
-    raws = fetch_imap(
-        req.host,
-        req.user,
-        req.password,
-        folder=req.folder,
-        limit=req.limit,
-        use_ssl=req.use_ssl,
-    )
+    try:
+        raws = fetch_imap(
+            req.host,
+            req.user,
+            req.password,
+            folder=req.folder,
+            limit=req.limit,
+            use_ssl=req.use_ssl,
+        )
+    except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     tally = ingest_emails(db, source, raws)
     return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}
 
@@ -208,6 +211,82 @@ def import_newsletters(
         "source_id": source.id,
         "received": len(files),
         "tally": tally,
+    }
+
+
+# A dedicated, FILTERABLE provenance bucket for LIVE mailbox (IMAP/POP3) imports —
+# DISTINCT from the file-.eml bucket so live-vs-file provenance stays separable (the
+# ledger's email-vs-web separability principle). DISABLED: the scheduler never touches
+# it; mail arrives only by explicit, consented pull.
+_MAILBOX_DOMAIN = "mailbox.import.local"
+_MAILBOX_NAME = "Imported mailbox (IMAP/POP3)"
+
+
+def _get_mailbox_source(db: Session) -> Source:
+    src = db.query(Source).filter_by(domain=_MAILBOX_DOMAIN).first()
+    if src is None:
+        src = Source(name=_MAILBOX_NAME, domain=_MAILBOX_DOMAIN, enabled=False)
+        db.add(src)
+        db.commit()
+        db.refresh(src)
+    return src
+
+
+class MailboxFetchRequest(BaseModel):
+    protocol: str = "imap"  # "imap" | "pop3"
+    host: str
+    user: str
+    password: str
+    port: int = 0  # 0 = protocol default (993/995 SSL, 143/110 plain)
+    folder: str = "INBOX"  # IMAP only
+    limit: int = 50
+    use_ssl: bool = True
+
+
+@router.post("/newsletters/mailbox")
+def import_mailbox(req: MailboxFetchRequest, db: Session = Depends(get_db)) -> dict:
+    """Pull newsletters LIVE from a mailbox (IMAP/POP3), ANONYMISED at ingest (ruling #11).
+
+    The maintainer reversed the local-.eml-only stance: this fetches messages directly so
+    you do not have to export .eml files. Each message goes through the SAME anonymise-at-
+    ingest core as the file import — the recipient is NEVER stored, no raw message is
+    retained, and tracking links are de-toxed (pixels/wrapped links are NEVER followed, so
+    a pull can never confirm an open/click). Credentials are used for this one fetch and
+    NOT stored.
+
+    NETWORK + HONESTY: this is a consented network action — it is REFUSED under airplane
+    mode (409, no socket). The connection egresses to your mail provider directly over TLS
+    (like any email client), revealing your IP to that provider; it is NOT routed through
+    Tor (IMAP/POP3 is not the HTTP guarded path). The returned tally reports exactly what
+    anonymisation stripped, so you see it honestly.
+    """
+    kwargs: dict = {"limit": req.limit, "use_ssl": req.use_ssl}
+    if req.port:
+        kwargs["port"] = req.port
+    if (req.protocol or "").lower() == "imap":
+        kwargs["folder"] = req.folder
+    try:
+        raws = fetch_mailbox(req.protocol, req.host, req.user, req.password, **kwargs)
+    except RuntimeError as exc:  # airplane-mode refusal (kill switch)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:  # unknown protocol / missing host
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # transport / auth failure -> degrade loudly
+        raise HTTPException(status_code=502, detail=f"mailbox fetch failed: {exc}") from exc
+    source = _get_mailbox_source(db)
+    tally = ingest_emails(db, source, raws)
+    return {
+        "source": source.name,
+        "source_id": source.id,
+        "protocol": (req.protocol or "imap").lower(),
+        "fetched": len(raws),
+        "tally": tally,
+        "disclosure": (
+            "Pulled live from your mailbox over TLS and anonymised at ingest: the "
+            "recipient is never stored, no raw message is retained, tracking links are "
+            "de-toxed and never followed. Your IP is visible to the mail provider (not "
+            "via Tor). Stored under a disabled, filterable 'mailbox' source."
+        ),
     }
 
 

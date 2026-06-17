@@ -1181,6 +1181,7 @@ def test_dropdown_option_labels_are_translatable():
         "dumpread-wiki",   # dynamic placeholder ("—")
         "osm-region",      # dynamic placeholder, replaced by /api/geo/regions data
         "statfig-source",  # producer proper names (World Bank / Eurostat) — data, not chrome
+        "mbox-proto",      # protocol acronyms (IMAP / POP3) — data, not chrome
     }
 
     unkeyed: list[str] = []
@@ -1269,6 +1270,23 @@ def test_dates_render_in_app_language_not_browser_locale():
     offenders = re.findall(r"new Date\([^)]*\)\.toLocaleString", html)
     assert not offenders, (
         f"browser-locale date display reintroduced (use fmtDateTime instead): {offenders}"
+    )
+
+
+def test_live_mailbox_pull_ui():
+    """Live mailbox ingestion (ruling 2026-06-17 #11): Settings → Newsletters gains a
+    "Pull from a mailbox (IMAP/POP3)" form. It is a NETWORK action -> must pass
+    ensureOnline (invariant #14); it posts to /api/newsletters/mailbox; the anonymise +
+    kill-switch guarantees live in the (tested) backend. Browser-unverified static guard."""
+    html = _ui_source()
+    assert 'id="set-newsletters"' in html and "function pullMailbox(" in html, (
+        "the mailbox-pull form + handler must exist in the Newsletters subtab (#11)"
+    )
+    assert 'id="mbox-host"' in html and 'id="mbox-proto"' in html, "mailbox form fields must exist"
+    assert "/api/newsletters/mailbox" in html, "the pull must call the mailbox endpoint"
+    pull = html.split("function pullMailbox(", 1)[1].split("function ", 1)[0]
+    assert "ensureOnline(" in pull, (
+        "pulling a mailbox is a network action -> must pass ensureOnline (invariant #14)"
     )
 
 

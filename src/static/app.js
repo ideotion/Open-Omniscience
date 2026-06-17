@@ -3055,6 +3055,37 @@
         $("nl-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
       } finally { btn.disabled = false; }
     }
+    // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only; the anonymise +
+    // kill-switch guarantees live in the (tested) backend.
+    async function pullMailbox() {
+      const out = $("mbox-result"), btn = $("mbox-btn");
+      const host = ($("mbox-host").value || "").trim();
+      const user = ($("mbox-user").value || "").trim();
+      const password = $("mbox-pass").value || "";
+      if (!host || !user) { if (out) out.textContent = "Enter at least a host and user."; return; }
+      // A network action -> the ONE consent popup (invariant #14).
+      if (typeof ensureOnline === "function" && !await ensureOnline("Pull newsletters from your mailbox")) return;
+      const body = {
+        protocol: $("mbox-proto").value, host, user, password,
+        port: parseInt($("mbox-port").value || "0", 10) || 0,
+        folder: ($("mbox-folder").value || "INBOX").trim(),
+        limit: parseInt($("mbox-limit").value || "50", 10),
+      };
+      if (btn) btn.disabled = true;
+      if (out) out.textContent = "Pulling…";
+      try {
+        const d = await api("/api/newsletters/mailbox", { method: "POST", body: JSON.stringify(body) });
+        const tl = d.tally || {}, n = (x) => (x || 0).toLocaleString();
+        $("mbox-pass").value = "";  // never keep the password in the field
+        if (out) out.innerHTML = `<b>${n(tl.stored)}</b> imported · ${n(tl.duplicate)} duplicates skipped`
+          + `<div class="muted" style="margin-top:5px">Anonymisation: ${n(tl.recipient_redactions)} recipient echoes redacted, `
+          + `${n(tl.tracker_params_stripped)} tracker tokens stripped, ${n(tl.trackers_flagged)} tracker wrappers flagged.</div>`
+          + (d.disclosure ? `<div class="muted" style="margin-top:4px">${esc(d.disclosure)}</div>` : "");
+      } catch (e) {
+        // 409 = airplane refusal, 502 = transport/auth failure.
+        if (out) out.innerHTML = `<span class="note err">Pull failed: ${esc(e.message)}</span>`;
+      } finally { if (btn) btn.disabled = false; }
+    }
 
     // ---- Backup v2: one signed archive; restore = MERGE with a preview ---- //
     let _v2Token = null;
