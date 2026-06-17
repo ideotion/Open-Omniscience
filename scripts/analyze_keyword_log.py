@@ -34,10 +34,18 @@ HONESTY BY CONSTRUCTION (matches the maintainer's keyword-policy rulings):
   - Cognate ring candidates are flagged "verify by signature" (cognate != meaning;
     false friends exist) — language-qualified exactly like the rings file.
 
+It also has a DIFF mode (``--baseline OLD.json``) — the "did my optimization
+work?" tool: ship a change (a stopword batch, the entity-detection rework, a new
+equivalence ring), re-export a log next session, and the diff MEASURES the impact
+(keywords filtered/appeared, kind shifts like entity->term, per-language + corpus
+deltas, mention growth). This closes the maintainer's loop: send a log, see the
+delta.
+
 Usage:
     python scripts/analyze_keyword_log.py LOG.json
     python scripts/analyze_keyword_log.py LOG.json --top 30
     python scripts/analyze_keyword_log.py LOG.json --json proposals.json
+    python scripts/analyze_keyword_log.py NEW.json --baseline OLD.json   # measure impact
     python scripts/analyze_keyword_log.py LOG.json \
         --stoplist src/analytics/extract.py src/services/stopwords.py \
         --rings configs/keyword_equivalents.yml
@@ -294,27 +302,37 @@ def boilerplate_suspects(keywords: list[dict], log: dict) -> dict[str, Any]:
     }
 
 
+def _is_acronym(term: str) -> bool:
+    """An all-caps token with a letter (WHO, NATO, G7, COVID-19) — the only entity
+    shape the baseline produces since 2026-06-16 (Title-Case was dropped)."""
+    return len(term) >= 2 and term.isupper() and any(c.isalpha() for c in term)
+
+
 def mistagged_entities(keywords: list[dict], top: int) -> list[dict]:
-    """kind=entity whose surface is a single lower-case word or a weekday — the
-    classic sentence-initial-capital false entity (World/Set/Due/Sunday)."""
+    """Single-word kind=entity that is NOT an acronym — case-noise.
+
+    Since the 2026-06-16 entity-detection change the baseline only tags ALL-CAPS
+    ACRONYMS as entities, so a single-word NON-acronym entity is either a
+    pre-change Title-Case artifact (an old log) or a regression to watch (a new
+    log). This stays useful on both: on an old log it surfaces the case-noise to
+    be reclassified; on a new log it should be ~empty."""
     hits = []
     for k in keywords:
         if k.get("kind") != "entity":
             continue
         term = (k.get("term") or "")
-        if " " in term:
+        if " " in term or _is_acronym(term):
             continue
         norm = (k.get("normalized") or term).casefold()
-        if term.islower() or norm in _WEEKDAYS:
-            hits.append(
-                {
-                    "term": term,
-                    "normalized": norm,
-                    "language": _lang(k),
-                    "articles": int(k.get("articles", 0)),
-                    "weekday": norm in _WEEKDAYS,
-                }
-            )
+        hits.append(
+            {
+                "term": term,
+                "normalized": norm,
+                "language": _lang(k),
+                "articles": int(k.get("articles", 0)),
+                "weekday": norm in _WEEKDAYS,
+            }
+        )
     hits.sort(key=lambda x: -x["articles"])
     return hits[: top or len(hits)]
 
@@ -533,6 +551,120 @@ def print_report(p: dict, top: int) -> None:
     print()
 
 
+# --------------------------------------------------------------------------- #
+# Diff mode: measure the impact of an optimization between two logs
+# --------------------------------------------------------------------------- #
+
+def _kw_index(doc: dict) -> dict[str, dict]:
+    """Index a log's keywords by their EXACT normalized form (case-sensitive, so a
+    case-preserved acronym 'WHO' stays distinct from the word 'who')."""
+    kws = (doc.get("data", doc)).get("keywords", [])
+    return {(k.get("normalized") or k.get("term") or ""): k for k in kws}
+
+
+def _brief(k: dict) -> dict:
+    return {
+        "term": k.get("term"),
+        "kind": k.get("kind"),
+        "language": _lang(k),
+        "articles": int(k.get("articles", 0) or 0),
+    }
+
+
+def _kind_counts(doc: dict) -> dict[str, int]:
+    out: dict[str, int] = defaultdict(int)
+    for k in (doc.get("data", doc)).get("keywords", []):
+        out[k.get("kind", "?")] += 1
+    return dict(out)
+
+
+def _mismatch_count(doc: dict) -> int:
+    return sum(1 for k in (doc.get("data", doc)).get("keywords", []) if k.get("language_mismatch"))
+
+
+def diff_logs(old_doc: dict, new_doc: dict, top: int) -> dict:
+    """Compare two keyword-diagnostics logs (OLD -> NEW) and report what CHANGED.
+
+    The 'did my optimization work?' tool: ship a change (a stopword batch, the
+    entity-detection rework, an equivalence ring), re-export a log, and this
+    measures the delta — keywords that DISAPPEARED (filtered), ones that APPEARED,
+    kind SHIFTS (entity->term proves the Title-Case drop landed), per-language and
+    corpus deltas, and mention growth. It only reports deltas; no inference."""
+    old, new = _kw_index(old_doc), _kw_index(new_doc)
+    old_keys, new_keys = set(old), set(new)
+    gone = sorted((old[k] for k in old_keys - new_keys), key=lambda k: -int(k.get("articles", 0) or 0))
+    appeared = sorted((new[k] for k in new_keys - old_keys), key=lambda k: -int(k.get("articles", 0) or 0))
+
+    shift: dict[str, list[dict]] = {"entity->term": [], "term->entity": [], "other": []}
+    growth: list[dict] = []
+    for key in old_keys & new_keys:
+        ok, nk = old[key].get("kind"), new[key].get("kind")
+        if ok != nk:
+            rec = {"term": new[key].get("term"), "from": ok, "to": nk,
+                   "articles": int(new[key].get("articles", 0) or 0)}
+            shift.get(f"{ok}->{nk}", shift["other"]).append(rec)
+        d = int(new[key].get("mentions", 0) or 0) - int(old[key].get("mentions", 0) or 0)
+        if d:
+            growth.append({"term": new[key].get("term"), "delta": d,
+                           "now": int(new[key].get("mentions", 0) or 0)})
+    growth.sort(key=lambda x: -x["delta"])
+
+    def _per_lang(doc: dict) -> dict[str, int]:
+        c: dict[str, int] = defaultdict(int)
+        for k in (doc.get("data", doc)).get("keywords", []):
+            c[_lang(k)] += 1
+        return dict(c)
+
+    pl_old, pl_new = _per_lang(old_doc), _per_lang(new_doc)
+    per_lang = {
+        lg: {"before": pl_old.get(lg, 0), "after": pl_new.get(lg, 0),
+             "delta": pl_new.get(lg, 0) - pl_old.get(lg, 0)}
+        for lg in sorted(set(pl_old) | set(pl_new))
+    }
+    return {
+        "corpus": {"before": (old_doc.get("data", old_doc)).get("corpus", {}),
+                   "after": (new_doc.get("data", new_doc)).get("corpus", {})},
+        "kind_distribution": {"before": _kind_counts(old_doc), "after": _kind_counts(new_doc)},
+        "kind_shift": {k: {"count": len(v), "examples": v[:top]} for k, v in shift.items()},
+        "gone": {"count": len(gone), "top": [_brief(k) for k in gone[:top]]},
+        "appeared": {"count": len(appeared), "top": [_brief(k) for k in appeared[:top]]},
+        "mention_growth_top": growth[:top],
+        "language_mismatch": {"before": _mismatch_count(old_doc), "after": _mismatch_count(new_doc)},
+        "per_language": per_lang,
+    }
+
+
+def print_diff(diff: dict, top: int) -> None:
+    cb, ca = diff["corpus"]["before"], diff["corpus"]["after"]
+    print("=" * 78)
+    print("KEYWORD-LOG DIFF  (OLD -> NEW)")
+    print(f"  articles: {cb.get('articles')} -> {ca.get('articles')}    "
+          f"keywords_total: {cb.get('keywords_total')} -> {ca.get('keywords_total')}")
+    print(f"  kind distribution: {diff['kind_distribution']['before']} -> {diff['kind_distribution']['after']}")
+    print("=" * 78)
+
+    ks = diff["kind_shift"]
+    print(f"\n## KIND SHIFTS  entity->term {ks['entity->term']['count']}  |  "
+          f"term->entity {ks['term->entity']['count']}  |  other {ks['other']['count']}")
+    for r in ks["entity->term"]["examples"][:12]:
+        print(f"   entity->term  {r['term']!r} ({r['articles']} arts)")
+
+    g = diff["gone"]
+    print(f"\n## GONE keywords (filtered / no longer present): {g['count']}")
+    print("   " + "  ".join(f"{b['term']}({b['language']},{b['articles']})" for b in g["top"][:18]))
+    a = diff["appeared"]
+    print(f"\n## APPEARED keywords (new since OLD): {a['count']}")
+    print("   " + "  ".join(f"{b['term']}({b['language']},{b['articles']})" for b in a["top"][:18]))
+
+    print(f"\n## language_mismatch: {diff['language_mismatch']['before']} -> {diff['language_mismatch']['after']}")
+    print("\n## per-language keyword counts (before -> after | delta):")
+    for lg, d in sorted(diff["per_language"].items(), key=lambda kv: -abs(kv[1]["delta"]))[:16]:
+        print(f"   {lg:5} {d['before']:6} -> {d['after']:6}  ({d['delta']:+d})")
+    print("\n## top mention growth:")
+    print("   " + "  ".join(f"{r['term']}(+{r['delta']})" for r in diff["mention_growth_top"][:14]))
+    print()
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("log", type=Path, help="keyword-diagnostics export (oo-export-1) JSON")
@@ -551,9 +683,24 @@ def main(argv: list[str] | None = None) -> int:
         help="existing equivalence rings (so we never re-propose a member)",
     )
     ap.add_argument("--json", type=Path, default=None, help="write machine-readable proposals here")
+    ap.add_argument(
+        "--baseline",
+        type=Path,
+        default=None,
+        help="an OLDER keyword log; with it, DIFF baseline->log to measure an optimization's impact",
+    )
     args = ap.parse_args(argv)
 
     doc = load_log(args.log)
+
+    if args.baseline is not None:  # diff mode: measure change vs an older log
+        diff = diff_logs(load_log(args.baseline), doc, args.top)
+        print_diff(diff, args.top)
+        if args.json:
+            args.json.write_text(json.dumps(diff, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"[wrote machine-readable diff -> {args.json}]")
+        return 0
+
     existing = parse_stoplist(args.stoplist)
     members = parse_ring_members(args.rings)
     proposals = build_proposals(doc, existing, members, args.top)

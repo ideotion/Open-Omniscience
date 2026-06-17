@@ -1307,10 +1307,19 @@ ruling, a contingency, or a deliberate-omission note.
   (`_at_sentence_start`/`_SENT_END`/`_CONNECTORS`). tests/test_analytics_extract.py updated
   (multiword Title-Case→term; +WHO≠who, +US-survives, +German-nouns-are-terms,
   +headline-not-acronym). DELIBERATE acceptance (testing phase): residual emphasis-acronym
-  noise is iterated away via the diagnostics logs (the maintainer's loop). NEXT: a dedicated
-  ANALYTICS-TOOLS PR (green-lit 2026-06-16 "implement better analytics tools autonomously")
-  — a log-DIFF mode for scripts/analyze_keyword_log.py to MEASURE each optimization's impact
-  between sessions, + acronym-aware mistagged-entity detection.
+  noise is iterated away via the diagnostics logs (the maintainer's loop).
+  **ANALYTICS-TOOLS — LOG DIFF MODE SHIPPED 2026-06-16 (green-lit "implement better analytics
+  tools autonomously"; stacked draft PR onto 0.09):** `scripts/analyze_keyword_log.py --baseline
+  OLD.json NEW.json` is the "did my optimization work?" tool — it DIFFS two keyword-diagnostics
+  logs and reports the delta: kind SHIFTS (entity->term proves the Title-Case drop landed —
+  measured 9163→4466 entities / 4697 reclassified on the 2026-06-14 log), keywords GONE
+  (filtered by a stopword batch) vs APPEARED, per-language + corpus deltas, mention growth,
+  language_mismatch before/after. Case-sensitive keyed so a preserved acronym `WHO` stays
+  distinct from the word `who`. `mistagged_entities` is now ACRONYM-AWARE (flags single-word
+  NON-acronym entities — the case-noise the entity change removed — so it self-checks old vs new
+  logs). Reports deltas only, never infers. tests/test_keyword_log_analyzer.py (+4: kind-shift,
+  gone/appeared, acronym-distinct, acronym-aware mistag). Closes the maintainer's loop: send a
+  log next session, see the measured impact.
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,
