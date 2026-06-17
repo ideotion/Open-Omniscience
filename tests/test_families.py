@@ -59,6 +59,55 @@ def test_families_merge_variants_same_kind_only():
     assert fams[("climate policy", "term")].variant_count == 1
 
 
+def _members(fams, stem):
+    f = next(f for f in fams if stem in {m["normalized"] for m in f.members})
+    return {m["normalized"] for m in f.members}
+
+
+def test_plural_collapses_into_singular_term_family():
+    items = [
+        {"normalized": "state", "term": "state", "kind": "term", "mentions": 100},
+        {"normalized": "states", "term": "states", "kind": "term", "mentions": 56},
+        {"normalized": "country", "term": "country", "kind": "term", "mentions": 40},
+        {"normalized": "countries", "term": "countries", "kind": "term", "mentions": 13},
+        {"normalized": "climate", "term": "climate", "kind": "term", "mentions": 30},
+    ]
+    fams = build_families(items)
+    assert _members(fams, "state") == {"state", "states"}
+    assert _members(fams, "country") == {"country", "countries"}  # -ies -> -y
+    assert _members(fams, "climate") == {"climate"}  # no plural -> stands alone
+    state_fam = next(f for f in fams if f.normalized == "state")
+    assert state_fam.mentions == 156  # 100 + 56
+
+
+def test_plural_never_merges_entities_or_denylisted_bases():
+    items = [
+        {"normalized": "tiger", "term": "Tiger", "kind": "org", "mentions": 5},
+        {"normalized": "tigers", "term": "Tigers", "kind": "org", "mentions": 9},
+        {"normalized": "mean", "term": "mean", "kind": "term", "mentions": 10},
+        {"normalized": "means", "term": "means", "kind": "term", "mentions": 20},
+    ]
+    fams = build_families(items)
+    assert _members(fams, "tiger") == {"tiger"}  # entity NAME plural: never merged
+    assert _members(fams, "tigers") == {"tigers"}
+    assert _members(fams, "mean") == {"mean"}  # denylisted base (mean/means differ)
+    assert _members(fams, "means") == {"means"}
+
+
+def test_plural_merge_respects_override_and_env(monkeypatch):
+    items = [
+        {"normalized": "state", "term": "state", "kind": "term", "mentions": 100},
+        {"normalized": "states", "term": "states", "kind": "term", "mentions": 56},
+    ]
+    # a split override on "states" keeps it standalone (any override excludes a form
+    # from the auto plural pass)
+    fams = build_families(items, {"states": {"family_key": "states", "label": None, "kind": "term"}})
+    assert _members(fams, "states") == {"states"}
+    # the env kill-switch disables the whole pass
+    monkeypatch.setenv("OO_FAMILY_PLURALS", "0")
+    assert all(f.variant_count == 1 for f in build_families(items))
+
+
 def test_overrides_force_merge_and_split():
     items = [
         {"normalized": "world bank", "term": "World Bank", "kind": "org", "mentions": 30},

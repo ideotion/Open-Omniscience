@@ -30,6 +30,7 @@ that mentions two variants).
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -123,6 +124,38 @@ def _is_contiguous_sub(short_toks: list[str], long_toks: list[str]) -> bool:
     return any(long_toks[i : i + n] == short_toks for i in range(m - n + 1))
 
 
+# Bases where the plural is a DISTINCT concept, so a plural must NOT collapse into
+# it (mean/means, right/rights, force/forces). Evidence-based + log-tunable, like
+# the stoplists — start small, grow from the keyword-diagnostics logs. The scariest
+# pairs (new/news, use/uses) never even arise: their singular is a stopword, so it
+# is never a keyword (verified on the 2026-06-14 log).
+_PLURAL_DENYLIST: frozenset[str] = frozenset(
+    {
+        "mean", "good", "arm", "custom", "spirit", "content", "saving", "work",
+        "force", "right", "new", "use", "glass", "paper", "draft", "ground",
+        "letter", "minute", "second", "people",
+    }
+)
+
+
+def _plural_bases(norm: str) -> list[str]:
+    """Candidate singular stems of a REGULAR plural, most-likely first (or []).
+
+    Conservative + English/Romance-shaped: -ies→-y (cities→city), -es→strip
+    (boxes→box), -s→strip (states→state, never -ss). Length-guarded. The caller
+    only merges when a candidate ALSO exists as a same-kind term keyword, so a
+    non-applicable language (a German -s that isn't a plural) won't false-merge
+    unless its "singular" happens to be a real keyword too."""
+    out: list[str] = []
+    if norm.endswith("ies") and len(norm) >= 5:
+        out.append(norm[:-3] + "y")
+    if norm.endswith("es") and len(norm) >= 6:
+        out.append(norm[:-2])
+    if norm.endswith("s") and not norm.endswith("ss") and len(norm) >= 5:
+        out.append(norm[:-1])
+    return out
+
+
 @dataclass
 class Family:
     canonical: str  # display label (the most complete member)
@@ -207,6 +240,29 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
             union(by_ckey[key], i)
         else:
             by_ckey[key] = i
+
+    # 1.5) Singular/plural collapse for single-token TERMS (auto only): a regular
+    # -s/-es/-ies plural joins its singular family (state/states, country/countries)
+    # ONLY when BOTH are plain terms (never entity NAMES — a name plural is a
+    # different referent) and the base is not a known meaning-changer
+    # (_PLURAL_DENYLIST). The base must EXIST as a same-kind term, so a non-plural
+    # word that merely ends in -s won't merge unless its stem is also a real
+    # keyword. Reversible via a split override; OO_FAMILY_PLURALS=0 disables.
+    if os.getenv("OO_FAMILY_PLURALS", "1") != "0":
+        term_by_norm: dict[str, int] = {}
+        for i in auto:
+            if recs[i]["kind"] == "term" and " " not in recs[i]["norm"]:
+                term_by_norm.setdefault(recs[i]["norm"], i)
+        for i in auto:
+            if recs[i]["kind"] != "term" or " " in recs[i]["norm"]:
+                continue
+            for base in _plural_bases(recs[i]["norm"]):
+                if base in _PLURAL_DENYLIST:
+                    break
+                j = term_by_norm.get(base)
+                if j is not None and j != i:
+                    union(j, i)  # plural i -> singular j (the base)
+                    break
 
     # 2) Containment among entities of the same kind (plain terms excluded) — auto only.
     # Guards added from the 2026-06-11 field log (the maintainer's first keyword
