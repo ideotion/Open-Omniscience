@@ -1090,5 +1090,16 @@
   "each on its own real-unit scale": "cada uno en su propia escala de unidades reales",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Recuento de artículos en un eje temporal compartido. Coocurrencia en tu corpus, nunca causalidad.",
   "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexado a 100 al inicio de la ventana: movimiento relativo, no niveles absolutos. Al pasar el cursor se ve el valor real. Coocurrencia en tu corpus, nunca causalidad.",
-  "Download keyword log (.zip)": "Descargar el registro de palabras clave (.zip)"
+  "Download keyword log (.zip)": "Descargar el registro de palabras clave (.zip)",
+  "Related": "Relacionados",
+  "Near-identical clusters": "Grupos casi idénticos",
+  "Near-identical cluster": "Grupo casi idéntico",
+  "Show all": "Mostrar todo",
+  "more": "más",
+  "(untitled)": "(sin título)",
+  "Branch into a new corpus →": "Ramificar a un nuevo corpus →",
+  "Open these articles as a new analysis corpus": "Abrir estos artículos como un nuevo corpus de análisis",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{n} copias casi idénticas en {m} fuentes = en realidad una sola voz",
+  "{n} near-identical copies from one source = one voice": "{n} copias casi idénticas de una sola fuente = una voz",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "No se detectaron grupos casi idénticos en este corpus: no es prueba de que no haya coordinación, solo que no se halló ninguna en este umbral."
 }

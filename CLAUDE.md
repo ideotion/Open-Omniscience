@@ -2058,6 +2058,30 @@ ruling, a contingency, or a deliberate-omission note.
   OFF by default** (network egress reveals IP/timing). **PARKED behind the analysis-window build
   + the search UI** (maintainer-sequenced 2026-06-15). i18n folds into the rework (don't key
   strings we're about to move).
+  **AMBIENT-IN-ANALYSIS SLICE SHIPPED 2026-06-17 (maintainer re-raised "make the coordination
+  scan background, automatic, part of the card system; AND extend it in analysis windows to
+  find related articles, branch into new corpuses, do associated research"; BUILT on branch
+  `claude/analysis-related-coordination`, draft PR onto 0.09, BROWSER-UNVERIFIED):** HONEST
+  FINDING recorded — coordination is ALREADY a background, automatic Lead (the `echo_chamber`
+  producer runs `corpus_actors`, gated ≥3 sources, carries the exact `article_ids`, and
+  `run_all`→`refresh_briefing` is called automatically AFTER EVERY scrape pass at
+  src/scheduler/runner.py:681); the thing that FELT manual is the redundant "Source integrity"
+  tab (loadActors → /api/integrity/actors). So this slice makes coordination AMBIENT IN THE
+  ANALYSIS WINDOW (not a button) + adds the BRANCH workflow: (1) NEW `queries.corpus_coordination`
+  (article_ids set → `near_duplicate_clusters` MinHash+LSH high-precision; independence = DISTINCT
+  SOURCES, single-source repeat flagged `single_source` not co-publication; counts only, NO score;
+  non-collusion + absence-is-not-absence caveat travels) + GET `/api/insights/corpus-coordination`
+  (reuses `_resolve_corpus`, cap 400 since it reads full text); (2) a new lazy **Related** analysis
+  subtab (`data-tab="related"` / `#an-related`) rendering each cluster as the ruled "N near-identical
+  copies across M sources = effectively one voice · Show all" with a VISIBLE `.card-caveat`, and a
+  per-cluster **"Branch into a new corpus →"** that calls `openAnalysisForIds(cluster.article_ids)`
+  = the exact-set spawn = a fresh corpus = associated research. +11 i18n ×12 (non-en AI-drafted,
+  flagged); tests/test_corpus_coordination.py (clusters-across-sources, single-source-flagged,
+  empty-honest, + frontend wiring) + py_compile + node --check; full pytest needs py3.13 (CI).
+  REMAINING (PR 2): broaden "Related" beyond near-dup to SHARED-ORIGIN links
+  (/api/links/articles-by-link) + shared-keyword neighbours with multi-select branch; the inline
+  "1 voice" annotation in the reader + the Articles list; DISSOLVE the manual Source-integrity tab
+  once the card + inline fully absorb it (absorption-test-gated, the Desk lesson — not yet).
 - **Offline LLM kit** (RM-08 release artifact); DuckDuckGo discovery channel
   only after RM-03 gate UX proves out. **Translated docs:** infrastructure
   shipped (per-language docs served with honest machine-drafted banner; fr

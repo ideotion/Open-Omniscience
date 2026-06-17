@@ -246,6 +246,34 @@ def insights_corpus_sources(
     return res
 
 
+@router.get("/corpus-coordination")
+def insights_corpus_coordination(
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
+    article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    cap: int = Query(400, ge=1, le=2000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Near-duplicate / coordination clusters within the analysis corpus (an explicit
+    article-id set or the search) -- the ambient "N near-identical copies across M sources
+    = one voice" surface that lets the user BRANCH a cluster into a new corpus. Structural
+    near-duplication only (MinHash+LSH, high-precision); independence = distinct sources;
+    counts only, NO score. Bounded to ``cap`` (disclosed) because clustering reads full
+    article text."""
+    ids, total = _resolve_corpus(
+        db, article_ids, query=query, source=source, start_date=start_date,
+        end_date=end_date, language=language, tags=tags, cap=cap,
+    )
+    res = q.corpus_coordination(db, article_ids=ids)
+    res["total_matched"] = total
+    res["capped"] = total > len(ids)
+    return res
+
+
 @router.get("/top")
 def insights_top(
     days: int | None = Query(None, ge=1, le=3650),

@@ -7206,6 +7206,7 @@
       document.querySelectorAll("#tab-analyze .an-panel").forEach(el =>
         el.style.display = (el.id === "an-" + key) ? "" : "none");
       if (key === "trend") renderAnTrend(_anLastParams);   // lazy: only fetch when the Trend tab is shown
+      if (key === "related") renderAnRelated(_anLastParams);   // lazy: coordination/related computed on show
     }
 
     // --- Commodity price × coverage overlay (Markets item, Group G) --------- //
@@ -7411,6 +7412,59 @@
       } else dual.innerHTML = "";
     }
 
+    // --- Related & coordination (Analysis window; maintainer-ruled 2026-06-17):
+    // make the coordination "scan" AMBIENT in analysis (not a manual tab) AND let the
+    // user BRANCH related articles into a NEW corpus for associated research. Computed
+    // automatically when the Related subtab opens (lazy, cached per corpus). Surfaces
+    // near-identical clusters as "N near-identical copies across M sources = one voice"
+    // — independence by DISTINCT SOURCES, structural only, NO score; the non-collusion +
+    // absence-is-not-absence caveat is visible. Each cluster branches via
+    // openAnalysisForIds (the exact-set spawn) = a fresh corpus = associated research.
+    const _anRelated = { key: null };
+    let _anRelatedClusters = [];
+    async function renderAnRelated(p) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("an-related"); if (!host) return;
+      const key = (p && p.toString && p.toString()) || "";
+      if (_anRelated.key === key && host.dataset.done === "1") return;   // cached on this corpus
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      _anRelated.key = key; host.dataset.done = "";
+      try {
+        const d = await api("/api/insights/corpus-coordination?" + (p ? p.toString() : ""));
+        _anRelatedClusters = d.clusters || [];
+        const head = `<div class="hint"><b>${_anRelatedClusters.length}</b> ${esc(t("Near-identical clusters"))}`
+          + ` <span class="muted">· ${esc(d.method || "")}</span></div>`;
+        if (!_anRelatedClusters.length) {
+          host.innerHTML = head + `<div class="muted" style="margin-top:8px">`
+            + `${esc(t("No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold."))}</div>`;
+          host.dataset.done = "1"; return;
+        }
+        const rows = _anRelatedClusters.map((c, i) => {
+          const voice = c.single_source
+            ? t("{n} near-identical copies from one source = one voice").replace("{n}", c.size)
+            : t("{n} near-identical copies across {m} sources = effectively one voice").replace("{n}", c.size).replace("{m}", c.distinct_sources);
+          const ex = (c.members || []).slice(0, 6).map((m) =>
+            `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
+            + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
+          const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
+          return `<div class="card" style="padding:10px;margin-top:8px">`
+            + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
+            + `<b>${esc(voice)}</b>`
+            + `<button class="secondary tiny" onclick="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
+            + `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">${esc(t("Show all"))}</summary>`
+            + `<ul style="margin:6px 0 0">${ex}${more}</ul></details></div>`;
+        }).join("");
+        host.innerHTML = head + rows + `<p class="card-caveat" style="margin-top:8px">${esc(d.caveat || "")}</p>`;
+        host.dataset.done = "1";
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    function branchFromRelated(i) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const c = _anRelatedClusters[i];
+      if (!c || !c.article_ids || !c.article_ids.length) return;
+      openAnalysisForIds(c.article_ids, t("Near-identical cluster") + " · " + c.size);
+    }
+
     // Self-contained radial mind-map for the analysis window. Distinct from the
     // Insights renderGraph() (which owns _mm* state + a force/zoom canvas): this
     // draws ONE static, deterministic SVG into the container it is handed — no
@@ -7489,8 +7543,9 @@
       const kw = $("an-keywords"), arts = $("an-articles");
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      _anLastParams = p; _anTrend.key = null;   // a new analysis run -> the Trend subtab refetches on next show
+      _anLastParams = p; _anTrend.key = null; _anRelated.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
       if ($("an-trend") && $("an-trend").style.display !== "none") setTimeout(() => renderAnTrend(p), 0);
+      if ($("an-related") && $("an-related").style.display !== "none") setTimeout(() => renderAnRelated(p), 0);
       _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
         const d = await api("/api/insights/corpus-keywords?" + p.toString());

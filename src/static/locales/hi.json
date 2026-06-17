@@ -1090,5 +1090,16 @@
   "each on its own real-unit scale": "प्रत्येक अपनी वास्तविक-इकाई पैमाने पर",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "साझा समय-अक्ष पर लेख गणना। आपके कॉर्पस में सह-घटना, कभी कारण नहीं।",
   "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "विंडो आरंभ पर 100 पर सूचकांकित — सापेक्ष गति, निरपेक्ष स्तर नहीं। होवर करने पर वास्तविक मान दिखता है। आपके कॉर्पस में सह-घटना, कभी कारण नहीं।",
-  "Download keyword log (.zip)": "कीवर्ड लॉग डाउनलोड करें (.zip)"
+  "Download keyword log (.zip)": "कीवर्ड लॉग डाउनलोड करें (.zip)",
+  "Related": "संबंधित",
+  "Near-identical clusters": "लगभग समान समूह",
+  "Near-identical cluster": "लगभग समान समूह",
+  "Show all": "सभी दिखाएँ",
+  "more": "और",
+  "(untitled)": "(शीर्षकहीन)",
+  "Branch into a new corpus →": "नए कॉर्पस में शाखा बनाएँ →",
+  "Open these articles as a new analysis corpus": "इन लेखों को एक नए विश्लेषण कॉर्पस के रूप में खोलें",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{m} स्रोतों में {n} लगभग समान प्रतियाँ = वास्तव में एक ही आवाज़",
+  "{n} near-identical copies from one source = one voice": "एक ही स्रोत से {n} लगभग समान प्रतियाँ = एक आवाज़",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "इस कॉर्पस में कोई लगभग समान समूह नहीं मिला — यह समन्वय न होने का प्रमाण नहीं, केवल इतना कि इस सीमा पर कुछ नहीं मिला।"
 }
