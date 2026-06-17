@@ -11,7 +11,7 @@ API, mirroring how the source catalog is loaded.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -30,6 +30,8 @@ class Feed:
     currency: str = "USD"
     unit: str = "t"
     market: str | None = None
+    continent: str | None = None  # Africa / Asia / Europe / North America / South America / Oceania / Global
+    tags: list[str] = field(default_factory=list)  # free facets (e.g. "emerging", "volatility", "broad")
     date_column: str | None = None
     value_column: str | None = None
 
@@ -43,6 +45,8 @@ class Feed:
             "currency": self.currency,
             "unit": self.unit,
             "market": self.market,
+            "continent": self.continent,
+            "tags": list(self.tags),
             "date_column": self.date_column,
             "value_column": self.value_column,
         }
@@ -68,6 +72,8 @@ def load_feeds(path: Path | None = None) -> list[Feed]:
                 currency=str(f.get("currency", "USD")),
                 unit=str(f.get("unit", "t")),
                 market=f.get("market"),
+                continent=f.get("continent"),
+                tags=[str(t) for t in (f.get("tags") or [])],
                 date_column=f.get("date_column"),
                 value_column=f.get("value_column"),
             )
@@ -100,6 +106,8 @@ def load_index_feeds(path: Path | None = None) -> list[Feed]:
                 currency=str(f.get("currency", "USD")),
                 unit=str(f.get("unit", "pts")),
                 market=f.get("market"),
+                continent=f.get("continent"),
+                tags=[str(t) for t in (f.get("tags") or [])],
                 date_column=f.get("date_column"),
                 value_column=f.get("value_column"),
             )

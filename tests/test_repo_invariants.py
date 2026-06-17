@@ -733,10 +733,12 @@ def test_ui_invariants():
     assert "_anCommodity" in html and "opts && opts.commodity" in html and "{commodity:" in html, (
         "the commodity identity must thread from the card into the Price overlay (Item 3)"
     )
-    # The binding caveat must be VISIBLE in the overlay panel (informed consent).
-    assert (
-        'co-occurrence in your corpus, never causation' in html.split("function renderAnPrice(", 1)[1][:1500]
-    ), "the Price overlay must show the co-occurrence-never-causation caveat (Item 3)"
+    # The "co-occurrence … never causation" GRAPH caveat was REMOVED from charts
+    # (maintainer ruling 2026-06-17 — it cluttered every graph); the Price overlay
+    # must no longer show it. The non-causation PRINCIPLE still governs the design.
+    assert "co-occurrence in your corpus, never causation" not in html.split(
+        "function renderAnPrice(", 1
+    )[1][:1500], "the graph causation caveat was removed (maintainer 2026-06-17)"
     # 23. Caveats are VISIBLE BY DEFAULT (permanent informed-consent invariant —
     #     CLAUDE.md Non-negotiables): a briefing card's CAVEAT renders in a visible
     #     .card-caveat line, NEVER hidden behind the method toggle. Only the verbose
@@ -1560,9 +1562,12 @@ def test_commodity_card_opens_analysis():
     assert "event.stopPropagation(); openAnalysisFor(" in html, (
         "the title click must stopPropagation so the card's chartSymbol stays"
     )
-    # the co-occurrence-not-causation caveat, keyed for ×12 translation
-    assert 't("co-occurrence in your corpus, never causation")' in html, (
-        "the binding co-occurrence-not-causation caveat string must be present"
+    # the "co-occurrence … never causation" GRAPH caveat was REMOVED from charts
+    # everywhere (maintainer ruling 2026-06-17); the combined-trend caveat no longer
+    # carries it (the non-causation principle still governs the design, just not as
+    # repeated on-graph text).
+    assert 't("co-occurrence in your corpus, never causation")' not in html, (
+        "the graph causation caveat was removed everywhere (maintainer 2026-06-17)"
     )
 
 
