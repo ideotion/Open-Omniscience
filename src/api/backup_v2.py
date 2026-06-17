@@ -201,3 +201,88 @@ def merge_batches(limit: int = 20) -> dict:
         }
     finally:
         s.close()
+
+
+# --------------------------------------------------------------------------- #
+#  LLM models companion backup (maintainer-asked 2026-06-17): models live in
+#  Ollama's OWN store, OUTSIDE the corpus — so they are an OPT-IN, SEPARATE
+#  companion artifact, never in oo-backup-2. Lets a restoring user avoid
+#  re-downloading multi-GB models; restore is additive + bit-identical
+#  (content-addressed blobs, deduped). See src/backup/ollama_models.py.
+# --------------------------------------------------------------------------- #
+@router.get("/models")
+def models_status() -> dict:
+    """Is the local Ollama model store present, and what's in it (sizes)?"""
+    from src.backup.ollama_models import default_store, list_models
+
+    store = default_store()
+    models = list_models(store) if store.exists() else []
+    return {
+        "store": str(store),
+        "store_present": store.exists(),
+        "models": [m.to_dict() for m in models],
+        "total_bytes": sum(m.bytes for m in models),
+    }
+
+
+class ModelsExportBody(BaseModel):
+    refs: list[str] | None = None   # specific model refs, or None = all
+
+
+@router.post("/models/export")
+def models_export(body: ModelsExportBody) -> FileResponse:
+    """Build + download an OPT-IN companion archive of the local Ollama models."""
+    import os
+
+    from starlette.background import BackgroundTask
+
+    from src.backup.ollama_models import build_models_archive, default_store
+
+    store = default_store()
+    if not store.exists():
+        raise HTTPException(status_code=404, detail="no local Ollama model store found")
+    ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    fd, tmp = tempfile.mkstemp(prefix="oo-models-", suffix=".oomodels")
+    os.close(fd)
+    Path(tmp).unlink(missing_ok=True)
+    dest = Path(tmp)
+    try:
+        build_models_archive(dest, store, refs=body.refs)
+    except FileNotFoundError as exc:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        dest.unlink(missing_ok=True)
+        _LOG.exception("models export failed")
+        raise HTTPException(status_code=500, detail=f"models export failed: {exc}") from exc
+    return FileResponse(
+        dest, media_type="application/octet-stream",
+        filename=f"open-omniscience-models-{ts}.oomodels",
+        background=BackgroundTask(lambda: dest.unlink(missing_ok=True)),
+    )
+
+
+@router.post("/models/import")
+async def models_import(file: UploadFile = File(...)) -> dict:
+    """Restore a models companion archive into the local Ollama store (additive,
+    bit-identical — existing blobs are skipped, never overwritten)."""
+    import os
+
+    from src.backup.ollama_models import default_store, restore_models_archive
+
+    data = await file.read()
+    if len(data) > _MAX_RESTORE_BYTES:
+        raise HTTPException(status_code=413, detail="upload exceeds the 2 GiB cap")
+    fd, tmp = tempfile.mkstemp(prefix="oo-models-imp-", suffix=".oomodels")
+    os.close(fd)
+    dest = Path(tmp)
+    try:
+        dest.write_bytes(data)
+        store = default_store()
+        store.mkdir(parents=True, exist_ok=True)
+        return restore_models_archive(dest, store)
+    except Exception as exc:
+        _LOG.exception("models import failed")
+        raise HTTPException(status_code=400, detail=f"models import failed: {exc}") from exc
+    finally:
+        dest.unlink(missing_ok=True)
