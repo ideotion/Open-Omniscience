@@ -11,6 +11,14 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **The dates a story is *about* are now caught as you collect.** Date extraction already
+  ran automatically at ingest, but it was only catching fully-spelled-out dates and quietly
+  missing the way news actually writes time — "yesterday", "on Tuesday", "11 September" (no
+  year), and non-English numeric dates like `11/06/2026`. It now resolves those against the
+  article's own publication date and language at ingest, so the reader, the date filter and
+  the agenda's deduced-events all see the fuller set. Every extracted date stays a
+  **candidate you can confirm or reject**, shown with the exact snippet it came from — still
+  no bare years, still never invented.
 - **Set a download speed, not a worker count — the bandwidth-governed collector.**
   Settings → Collect now offers a **collection-speed slider** (a download-rate target in
   kbps) with a **“Maximum”** end-stop and a live **“Now: X kbps”** readout. Behind it, a
