@@ -1674,6 +1674,39 @@ def test_markets_family_stacked_graphs():
     )
 
 
+def test_markets_twin_board_parity():
+    """The Indices and Commodities boards are near-identical twin boards
+    (maintainer 2026-06-17 markets revamp Slice 6: "very similar … nearly
+    identical, only the data they show is different"). Slice 6 brings the
+    Families view + the time-range control to the Indices board, REUSING the
+    same helpers (renderFamilyGraphs / ooTimeScope / windowPricesRange) so the
+    two boards share their grammar. Cards view stays unchanged (no regression)."""
+    html = _ui_source()
+    # BOTH boards carry the Cards/Families view toggle
+    assert 'id="mkt-viewtoggle"' in html and 'id="idx-viewtoggle"' in html, (
+        "both boards must have the Cards/Families view toggle (twin parity)"
+    )
+    assert 'let _idxView = "cards"' in html, "the indices view must DEFAULT to Cards (no regression)"
+    assert "function setIdxView" in html, "the indices view-toggle callback must exist"
+    # the indices Families view reuses the SAME family-graph renderer
+    assert "function idxFamilies" in html and "function renderIdxFamilies" in html, (
+        "the indices families builder + renderer must exist"
+    )
+    assert "renderFamilyGraphs(el, idxFamilies()" in html, (
+        "the indices families view must reuse the ONE renderFamilyGraphs helper"
+    )
+    # the indices board gains a time-range control reusing ooTimeScope (twin of #mkt-timescope)
+    assert 'id="idx-timescope"' in html, "the indices time-range control must exist"
+    assert "function buildIdxTimeScope" in html and "_idxTimeScope = ooTimeScope" in html, (
+        "the indices time-scope must reuse the ONE ooTimeScope component"
+    )
+    # families window the REAL full series (lazy-loaded) via the shared windowPricesRange
+    assert "function loadIdxFullSeries" in html, "the indices full-series lazy loader must exist"
+    assert "windowPricesRange(MKT_PRICES[c.symbol]" in html, (
+        "indices families must window the real stored series (shared helper)"
+    )
+
+
 def test_commodity_card_opens_analysis():
     """Each commodity card's TITLE opens the universal analysis window seeded
     with that commodity's keyword query (maintainer-ruled COMMODITIES TAB REWORK
