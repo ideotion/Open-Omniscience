@@ -11,6 +11,29 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Official statistics, with honest provenance and revisions.** Settings → *Statistics*
+  now fetches published figures from documented machine endpoints (the World Bank API and
+  Eurostat SDMX) and stores each one with its full provenance and a first-class **vintage** —
+  a re-fetch later is a *new* row, never an overwrite, so revisions are preserved as evidence.
+  Producers are shown **side by side and never averaged**, and a *Triangulate* view flags any
+  cell that mixes incomparable units, seasonal adjustment or base years. Every figure you
+  fetch is **tracked for auto-refresh** (a periodic re-fetch that captures new vintages while
+  you are online; disable or remove any you don't want). No score is ever computed; the fetch
+  is refused under airplane mode.
+- **Watches — save a condition, get a Lead when it matches.** Insights → *Watches* lets you
+  save a search the app keeps an eye on: when your corpus gains enough *new* articles matching
+  it (your own threshold, within a recent window), it fires a **watch** Lead card on Home and
+  records it in the watch's history (open the exact article set in one click). Entirely
+  local — no notifications, no network, no escalation: a watch is a prompt to read, never a
+  verdict or a score. On by default; you can enable/disable/edit/delete each one.
+- **Pull newsletters live from a mailbox (IMAP/POP3).** Settings → *Newsletters* can now pull
+  newsletters directly from a mailbox instead of exporting `.eml` files one at a time. Every
+  message goes through the same **anonymise-at-ingest** path as the file import — the recipient
+  is never stored, no raw message is retained, and tracking links are de-toxed and **never
+  followed** (so a pull can never reveal that you opened or clicked). It's a consented network
+  action: refused under airplane mode, connecting over TLS to your provider (your IP is visible
+  to them, like any email client — not via Tor), with credentials used for the one fetch and
+  never stored.
 - **Uninstall now has modes — and offers a backup first.** Settings → Safety → *Uninstall*
   lets you choose **Minimal** (remove the program, keep the app folder and your data),
   **Full** (also delete the app folder, data still kept), **Secure** (also wipe your data
