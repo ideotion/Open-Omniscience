@@ -148,11 +148,20 @@ def _plural_bases(norm: str) -> list[str]:
     unless its "singular" happens to be a real keyword too."""
     out: list[str] = []
     if norm.endswith("ies") and len(norm) >= 5:
-        out.append(norm[:-3] + "y")
+        out.append(norm[:-3] + "y")  # cities -> city
     if norm.endswith("es") and len(norm) >= 6:
-        out.append(norm[:-2])
+        base = norm[:-2]
+        # -es is the plural suffix ONLY when the base ends in a sibilant
+        # (boxes->box, buses->bus, quizzes->quiz, churches->church, dishes->dish)
+        # or -o (heroes->hero, potatoes->potato). For "states" the -es base would
+        # be "stat" (ends 't') — NOT a real -es plural, so don't offer it; the -s
+        # rule below correctly gives "state". Field log 2026-06-17: "states"
+        # wrongly merged into a stray "stat" keyword instead of "state" because the
+        # bogus -es candidate was tried first and that junk stem happened to exist.
+        if base[-1:] in ("s", "x", "z", "o") or base[-2:] in ("ch", "sh"):
+            out.append(base)
     if norm.endswith("s") and not norm.endswith("ss") and len(norm) >= 5:
-        out.append(norm[:-1])
+        out.append(norm[:-1])  # states -> state, horses -> horse
     return out
 
 

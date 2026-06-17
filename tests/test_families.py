@@ -80,6 +80,29 @@ def test_plural_collapses_into_singular_term_family():
     assert state_fam.mentions == 156  # 100 + 56
 
 
+def test_plural_prefers_real_singular_over_bogus_es_stem():
+    """Regression (keyword log 2026-06-17): 'states' merged into a stray 'stat'
+    keyword instead of 'state', because the -es candidate ('stat') was tried
+    before the -s candidate ('state') and that junk stem existed. -es is only a
+    real plural for sibilant/-o bases (boxes->box, heroes->hero), so 'stat' is
+    never offered and 'states' correctly joins 'state'."""
+    items = [
+        {"normalized": "state", "term": "state", "kind": "term", "mentions": 225},
+        {"normalized": "states", "term": "states", "kind": "term", "mentions": 144},
+        {"normalized": "stat", "term": "stat", "kind": "term", "mentions": 3},
+        # genuine -es plurals (>=6 chars) must still collapse onto their sibilant/-o singular
+        {"normalized": "dish", "term": "dish", "kind": "term", "mentions": 8},
+        {"normalized": "dishes", "term": "dishes", "kind": "term", "mentions": 4},
+        {"normalized": "hero", "term": "hero", "kind": "term", "mentions": 6},
+        {"normalized": "heroes", "term": "heroes", "kind": "term", "mentions": 5},
+    ]
+    fams = build_families(items)
+    assert _members(fams, "state") == {"state", "states"}  # not 'stat'
+    assert _members(fams, "stat") == {"stat"}  # the junk stem stays standalone
+    assert _members(fams, "dish") == {"dish", "dishes"}  # sibilant -es still merges
+    assert _members(fams, "hero") == {"hero", "heroes"}  # -o -es still merges
+
+
 def test_plural_never_merges_entities_or_denylisted_bases():
     items = [
         {"normalized": "tiger", "term": "Tiger", "kind": "org", "mentions": 5},
