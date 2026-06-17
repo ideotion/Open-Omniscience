@@ -162,6 +162,59 @@ def run_rules(
     }
 
 
+def import_due_feeds(session: Session, *, fetcher: EthicalFetcher, now=None) -> dict:
+    """Import the curated CSV feeds (commodities + world indices) whose latest stored
+    point is STALE for their cadence — the background auto-load that replaces the
+    manual Load/Refresh button (maintainer 2026-06-17).
+
+    Freshness-gated so a markets pass never re-fetches an unchanged series every
+    cycle: a daily series (named index / commodity) is due >1 day after its last
+    point; a monthly OECD share-price index (``unit='idx'``) is due >25 days after.
+    A feed with no data yet is always due (first fetch). The kill switch + robots +
+    transport come from the EthicalFetcher; one feed's failure never aborts the
+    batch. Counts only — no score."""
+    from datetime import date as _date
+
+    from sqlalchemy import func
+
+    from src.database.models import CommodityPrice
+    from src.markets.csv_feeds import import_feed
+    from src.markets.feed_catalog import load_feeds, load_index_feeds
+
+    today = now or _date.today()
+    tally = {"checked": 0, "imported": 0, "fresh": 0, "failed": 0}
+    for feed in (*load_feeds(), *load_index_feeds()):
+        tally["checked"] += 1
+        threshold = 25 if feed.unit == "idx" else 1  # OECD monthly vs daily named/commodity
+        latest = (
+            session.query(func.max(CommodityPrice.observed_on))
+            .filter(CommodityPrice.symbol == feed.symbol)
+            .scalar()
+        )
+        if latest is not None and (today - latest).days < threshold:
+            tally["fresh"] += 1
+            continue
+        try:
+            result = import_feed(
+                session,
+                url=feed.url,
+                symbol=feed.symbol,
+                fetcher=fetcher,
+                date_column=feed.date_column,
+                value_column=feed.value_column,
+                currency=feed.currency,
+                unit=feed.unit,
+                market=feed.market,
+                source=f"feed:{feed.key}",
+            )
+            tally["imported" if getattr(result, "status", "") == "imported" else "failed"] += 1
+        except Exception:  # noqa: BLE001 - one feed must not abort the markets pass
+            _LOG.warning("market feed %s import failed", feed.key, exc_info=True)
+            session.rollback()
+            tally["failed"] += 1
+    return tally
+
+
 def _count_raw(outcomes: list[dict]) -> dict:
     counts: dict[str, int] = {}
     for o in outcomes:

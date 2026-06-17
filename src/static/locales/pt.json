@@ -1118,6 +1118,8 @@
   "Also delete the app folder": "Apagar também a pasta do app",
   "Also wipe my data and keys (irreversible)": "Apagar também os meus dados e chaves (irreversível)",
   "Download a backup first": "Transferir primeiro uma cópia de segurança",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "Uma de {n} cópias quase idênticas = na prática uma só voz. Abra Relacionados para inspecionar o grupo.",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} destes são cópias quase idênticas — menos vozes independentes do que a contagem sugere (ver Relacionados).",
   "Read": "Ler",
   "Show the copies": "Mostrar as cópias",
   "Related in your corpus": "Relacionados no seu corpus",

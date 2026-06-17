@@ -1118,6 +1118,8 @@
   "Also delete the app folder": "同时删除应用文件夹",
   "Also wipe my data and keys (irreversible)": "同时擦除我的数据和密钥（不可逆）",
   "Download a backup first": "先下载一个备份",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "{n} 份近乎相同副本之一 = 实际上是同一种声音。打开“相关”查看该聚类。",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "其中 {n} 篇是近乎相同的副本——独立声音比数量显示的更少（见“相关”）。",
   "Read": "阅读",
   "Show the copies": "显示这些副本",
   "Related in your corpus": "你语料库中的相关内容",

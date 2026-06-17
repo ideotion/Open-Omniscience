@@ -1118,6 +1118,8 @@
   "Also delete the app folder": "ऐप फ़ोल्डर भी हटाएँ",
   "Also wipe my data and keys (irreversible)": "मेरा डेटा और कुंजियाँ भी मिटाएँ (अपरिवर्तनीय)",
   "Download a backup first": "पहले एक बैकअप डाउनलोड करें",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "{n} लगभग समान प्रतियों में से एक = वास्तव में एक ही आवाज़। समूह देखने के लिए संबंधित खोलें।",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "इनमें से {n} लगभग समान प्रतियाँ हैं — गिनती से कम स्वतंत्र आवाज़ें (संबंधित देखें)।",
   "Read": "पढ़ें",
   "Show the copies": "प्रतियाँ दिखाएँ",
   "Related in your corpus": "आपके कॉर्पस में संबंधित",

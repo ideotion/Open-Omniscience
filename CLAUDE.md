@@ -1308,10 +1308,23 @@ ruling, a contingency, or a deliberate-omission note.
   OECD FRED IDs were NOT live-verified here (no network — 403) → flagged "verify on a
   networked box; fails LOUDLY if wrong" per the file's standing note. `Feed` gained
   `continent` + `tags` (both loaders + to_dict) = the board's category facets;
-  tests/test_index_catalog.py (all-6-continents, named-vs-OECD unit). REMAINING (the UI
-  revamp b–g): the category subtabs, multi-series aggregation + family-stacking, scale
-  controls, coherent axis + clear legends, and auto-load — a browser-unverifiable multi-slice
-  effort (fork-3) to build next; Commodities gets the same treatment (twin boards).
+  tests/test_index_catalog.py (all-6-continents, named-vs-OECD unit).
+  **SLICE 1 — AUTO-LOAD (background feed-import, remove Load/Refresh) SHIPPED 2026-06-17 (draft PR
+  onto 0.09; backend testable, frontend browser-unverified):** the scheduler `markets` pass now also
+  imports the curated CSV feeds (commodities + indices) via `pipeline.import_due_feeds`, FRESHNESS-
+  GATED — a feed is due only when its latest stored `CommodityPrice` point is stale for its cadence
+  (daily named/commodity >1 day; monthly OECD `unit='idx'` >25 days; no data = always due), so a pass
+  never re-fetches an unchanged series. Kill-switch/robots/transport via the EthicalFetcher; one
+  feed's failure never aborts the pass (rollback + tally). Wired at runner.py:356 after run_rules
+  (returns `feeds_imported`). The manual "Load / refresh indices" + "Load / refresh market data"
+  buttons (index.html 531/549) are REMOVED, replaced by an "Updates automatically in the background."
+  note; the board still renders on tab-show and the one-time onboarding import seeds first-load (the
+  loadIndicesData/loadMarketData handlers are left orphaned-harmless). tests/test_market_autoload.py
+  (freshness gate: only stale + never-seen feeds fetched; skips here — markets pipeline imports
+  feedparser, absent in the sandbox — runs in CI). i18n 100%; node --check clean. REMAINING (the UI
+  revamp, slices 2–6): the category subtabs, multi-series aggregation + family-stacking, scale
+  controls, coherent axis + clear legends — a browser-unverifiable effort (fork-3); Commodities +
+  Indices as twin boards.
   **GRAPH "co-occurrence … never causation" CAVEAT REMOVED (maintainer ruled 2026-06-17 —
   REVERSES the earlier "binding visible caveat" on charts; it cluttered every graph):** all 6
   on-graph mentions of `t("co-occurrence in your corpus, never causation")` removed from
@@ -2291,10 +2304,20 @@ ruling, a contingency, or a deliberate-omission note.
   sections (Promise.all; no early-return on empty clusters), near-dup section + its #299 strings
   PRESERVED (test_corpus_coordination stays green). +8 i18n ×12 (non-en AI-drafted, flagged);
   tests/test_related_shared_origins.py + node --check green; full pytest needs py3.13 (CI).
-  STILL REMAINING (PR 3): the inline "N near-identical = 1 voice" BADGE on article rows in the
-  Articles list / search results / reader (a distinct surface — the lists/reader render
-  separately from the analysis Related subtab); shared-KEYWORD neighbours; multi-select branch;
-  DISSOLVE the manual Source-integrity tab (absorption-test-gated).
+  **PR 3 — INLINE "1 VOICE" BADGE SHIPPED 2026-06-17 (branch `claude/inline-dup-badges`, draft
+  PR onto 0.09, BROWSER-UNVERIFIED, frontend-only):** the analysis Articles subtab now badges
+  near-identical rows — a reusable `annotateArticleDups(params, host)` helper (NON-BLOCKING: the
+  list renders first, badges appear when coordination returns; best-effort try/catch; idempotent
+  via `a.dataset.dupBadged`) marks each clustered row with a `≈N` pill (titled, so it inherits the
+  #oo-tip hover, invariant #17) + a `.card-caveat` summary "{n} of these are near-identical copies
+  — fewer independent voices than the count suggests (see Related)". REUSES the corpus-coordination
+  data — and the Related subtab's `_anRelatedClusters` cache when present, so the common path adds
+  NO extra fetch. No score (the count is the cluster size only). +2 i18n ×12; node --check +
+  tests/test_inline_dup_badges.py green. The helper is reusable across any host whose article links
+  are /api/articles/{id}/view. STILL REMAINING (PR 4): apply the same helper to the SEARCH-results
+  list + the standalone READER (different render paths — search is the SPA results table, the reader
+  is a server-rendered English-only page); shared-KEYWORD neighbours; multi-select branch; DISSOLVE
+  the manual Source-integrity tab (absorption-test-gated).
 - **Offline LLM kit** (RM-08 release artifact); DuckDuckGo discovery channel
   only after RM-03 gate UX proves out. **Translated docs:** infrastructure
   shipped (per-language docs served with honest machine-drafted banner; fr
