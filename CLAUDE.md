@@ -1221,16 +1221,27 @@ ruling, a contingency, or a deliberate-omission note.
   candidates · place-centric corpus brief), Source integrity (cross-language/PARAPHRASE
   coordination = the strongest LLM-additive where lexical MinHash fails · headline-body
   mismatch · loaded-language spotter — STRUCTURE never intent/credibility, "name the shape").
-  (3) LLM SCOPE = BOTH read-only lens AND confirmable candidates. NO SEPARATE DATABASE
-  (maintainer asked) — REJECTED (it breaks the single-writer gate, backup/merge, FTS, the
-  encryption envelope). Protection = a PROVENANCE PARTITION in the one store: LLM outputs
-  stay in their own tables (article_analyses today; a new llm_suggestions table for proposed
-  entities/claims/dedup), carry a "model-suggested · unconfirmed" class, are INERT until the
-  user confirms (mirrors the shipped deduced-dates confirm/reject + the source-asserted-vs-
-  deduced two-class model); the keyword indexer already reads ONLY articles.content; analytics
-  EXCLUDE unconfirmed LLM rows; a confirmation is an EXPLICIT copy into the trusted table with
-  provenance (never an in-place blur); enforce with an invariant test (analytics/index never
-  read unconfirmed LLM rows, sibling to assert_no_score). ALL LLM features keep the standing
+  (3) LLM SCOPE — STRICT PHYSICAL SEPARATION (maintainer RULED 2026-06-17, OVERRIDES the
+  earlier same-day "provenance-partition / no separate DB" recommendation — do NOT revert to
+  it): the AI must NEVER write to the MAIN database EXCEPT to summarize/translate (those stay
+  in article_analyses — the one accepted AI surface in the main store, the maintainer's
+  explicit carve-out). ALL OTHER AI-derived analytics (LLM-extracted keywords/entities/claims/
+  cross-language dedup) live in a SEPARATE, PARALLEL database — a second encrypted SQLCipher
+  file under the SAME passphrase (the one connect() factory), NEVER ATTACHed/joined to the
+  main store (article_id is a soft int reference resolved in app code), surfaced ONLY as its
+  own clearly-labeled lens, rebuildable + disposable. Maintainer rationale: physical
+  separation is a STRONGER guarantee than a provenance column — separate engines can't be
+  joined by a forgotten WHERE clause. The trusted RULE-BASED keyword index stays canonical in
+  the main DB; the AI keyword layer is the parallel second DB ("a second keyword database to
+  manage this parallelism"). Both the read-only lens AND confirmable-candidate curation happen
+  WITHIN the AI layer; a confirmed AI item does NOT migrate into the main trusted tables (that
+  would "touch main", forbidden by the ruling) — it becomes "confirmed within the AI lens".
+  DESIGN TO SETTLE when built: the second file's encryption (same passphrase, no second key
+  surface) + its own single-writer gate (own engine; AI writes are batch jobs, no cross-DB
+  txn) + backup stance (its own oo-backup member vs excluded-as-rebuildable) + whether a
+  user-confirmed AI keyword may EVER cross into the trusted index (default NO). Enforce with an
+  invariant test: the main analytics/keyword index NEVER read the AI DB; the AI never writes
+  the main store beyond article_analyses summary/translation rows. ALL LLM features keep the standing
   honesty invariants: grounded+cited, refuse-when-absent, no score/verdict/ranking, local
   loopback, provenance recorded, caveats visible, never auto-fed into the pipeline.
   SELF-UPDATE via GUI: consented check vs GitHub releases → signed
