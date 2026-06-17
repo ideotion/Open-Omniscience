@@ -2384,6 +2384,43 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **UNINSTALL MODES + BACKUP-FIRST + CLEAN SHUTDOWN + AUDIT LOG (maintainer-asked
+  2026-06-17 after a field uninstall log showed sqlcipher teardown noise + confusion
+  that "it didn't uninstall"; draft PR onto 0.09, browser-unverified UI):** REASSURANCE
+  FIRST — the design was already system-safe: every Python dep installs into an ISOLATED
+  `.venv` (install.sh), so uninstall = delete that one dir + launchers; it touches NO
+  system/global packages (the only system packages are the explicit Qubes `--template`
+  step, deliberately left alone). The folder remaining + the sqlcipher ERROR lines were
+  by-design / benign teardown noise, not a failed uninstall. FOUR fixes shipped:
+  (1) CLEAN SHUTDOWN — `request_uninstall` now disposes the DB engine
+  (`_close_db_quietly`) BEFORE the SIGTERM-to-self, so the encrypted store doesn't emit
+  codec-teardown noise during a normal uninstall; (2) AUDIT LOG — the detached watcher
+  records what it removed + failures to `~/.open-omniscience-uninstall.log` (HOME, so it
+  survives a full/secure removal); (3) MODES (maintainer-ruled "data dies only in
+  Secure", AskUserQuestion): `minimal` (venv+launchers, keep folder+data — the historical
+  default) · `full` (+ app folder, data KEPT) · `secure` (+ wipe data&keys, best-effort
+  overwrite + HONEST limit reusing panic.py's SSD/CoW caveat — never a fabricated
+  guarantee) · `custom` (checkboxes: app folder / data, each OFF by default). venv +
+  launchers always removed; the watcher computes NO paths (plan_uninstall passes explicit
+  absolute paths + flags in-process — the detached process can only remove what was
+  decided); watcher chdir's to ~ before any rmtree. (4) BACKUP-FIRST (maintainer-asked) —
+  a "Download a backup first" button (reuses POST /api/safety/backup/encrypted) + the
+  data-wiping modes ASK "back up first?" and, if yes, download the .ooenc then abort so
+  the user saves it and re-clicks (never run the uninstall while a backup is still
+  streaming from the server we're about to kill). Backend: `UninstallBody`
+  {confirm,mode,remove_folder,wipe_data} + `_uninstall_flags` (data only in
+  secure/custom-opt-in) + GET `/api/safety/uninstall/plan` (no-op preview for informed
+  consent — the UI shows the EXACT paths before confirming). Frontend: Settings → Safety
+  mode `<select>` + Customize checkboxes + live preview + double type-confirm (WIPE for
+  data modes, UNINSTALL otherwise); +8 label keys ×12 (AI-drafted, flagged; dynamic
+  preview/confirm stay English, consistent with the existing English-in-JS panic/uninstall
+  dialogs). tests/test_uninstall.py extended: mode flags, the REAL-filesystem watcher
+  (removes exactly the planned venv/launchers/data/folder + writes the audit log, on a
+  sandbox tree with a dead PID), the plan-preview endpoint + unknown-mode 400, and
+  `_close_db_quietly` disposes the engine. Full suite green; mypy 116≤127; i18n 100%×12;
+  node --check clean. REMAINING (honest): a future opt-in "leave no uninstall log" for the
+  Secure threat model (today the log path is DISCLOSED in the UI so the user can delete
+  it); the dynamic preview/confirm strings are English-only.
 - **BANDWIDTH-GOVERNED COLLECTOR (maintainer ruling 2026-06-16, SHIPPED on
   claude/vibrant-hypatia-1g6e96):** the user-facing collection control is now a
   DOWNLOAD-RATE target (kbps = kilobits/s, the consumer unit), NOT a raw task count —

@@ -1109,5 +1109,13 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "Пока ни одна внешняя страница не цитируется 2+ статьями этого корпуса.",
   "Open every article citing this origin as a new corpus": "Открыть новым корпусом все статьи, ссылающиеся на этот первоисточник",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Несколько статей, ссылающихся на одну и ту же страницу, — не независимое подтверждение: один первоисточник, несколько отголосков.",
-  "No articles cite this origin.": "Ни одна статья не ссылается на этот первоисточник."
+  "No articles cite this origin.": "Ни одна статья не ссылается на этот первоисточник.",
+  "Uninstall mode": "Режим удаления",
+  "Minimal — keep the app folder and your data": "Минимум — сохранить папку приложения и ваши данные",
+  "Full — also delete the app folder (data kept)": "Полностью — также удалить папку приложения (данные сохраняются)",
+  "Secure — also wipe your data and keys": "Безопасно — также стереть ваши данные и ключи",
+  "Customize…": "Настроить…",
+  "Also delete the app folder": "Также удалить папку приложения",
+  "Also wipe my data and keys (irreversible)": "Также стереть мои данные и ключи (необратимо)",
+  "Download a backup first": "Сначала скачать резервную копию"
 }

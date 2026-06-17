@@ -1109,5 +1109,13 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "Aucune page externe n'est citée par 2 articles ou plus dans ce corpus pour l'instant.",
   "Open every article citing this origin as a new corpus": "Ouvrir comme nouveau corpus tous les articles citant cette origine",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Plusieurs articles citant la même page ne sont pas une confirmation indépendante — une origine, plusieurs échos.",
-  "No articles cite this origin.": "Aucun article ne cite cette origine."
+  "No articles cite this origin.": "Aucun article ne cite cette origine.",
+  "Uninstall mode": "Mode de désinstallation",
+  "Minimal — keep the app folder and your data": "Minimal — conserver le dossier de l'application et vos données",
+  "Full — also delete the app folder (data kept)": "Complet — supprimer aussi le dossier de l'application (données conservées)",
+  "Secure — also wipe your data and keys": "Sécurisé — effacer aussi vos données et clés",
+  "Customize…": "Personnaliser…",
+  "Also delete the app folder": "Supprimer aussi le dossier de l'application",
+  "Also wipe my data and keys (irreversible)": "Effacer aussi mes données et clés (irréversible)",
+  "Download a backup first": "Télécharger d'abord une sauvegarde"
 }

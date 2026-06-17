@@ -1109,5 +1109,13 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "此语料库中暂无被 2 篇及以上文章引用的外部页面。",
   "Open every article citing this origin as a new corpus": "将引用此来源的所有文章作为新语料库打开",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "多篇文章引用同一页面并非独立佐证——同一来源，多重回声。",
-  "No articles cite this origin.": "没有文章引用此来源。"
+  "No articles cite this origin.": "没有文章引用此来源。",
+  "Uninstall mode": "卸载模式",
+  "Minimal — keep the app folder and your data": "最小 — 保留应用文件夹和你的数据",
+  "Full — also delete the app folder (data kept)": "完整 — 同时删除应用文件夹（保留数据）",
+  "Secure — also wipe your data and keys": "安全 — 同时擦除你的数据和密钥",
+  "Customize…": "自定义…",
+  "Also delete the app folder": "同时删除应用文件夹",
+  "Also wipe my data and keys (irreversible)": "同时擦除我的数据和密钥（不可逆）",
+  "Download a backup first": "先下载一个备份"
 }

@@ -1109,5 +1109,13 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "このコーパスで2件以上の記事に引用された外部ページはまだありません。",
   "Open every article citing this origin as a new corpus": "この出典を引用するすべての記事を新しいコーパスとして開く",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "同じページを引用する複数の記事は独立した裏付けではありません——出典は一つ、反響は複数。",
-  "No articles cite this origin.": "この出典を引用する記事はありません。"
+  "No articles cite this origin.": "この出典を引用する記事はありません。",
+  "Uninstall mode": "アンインストールモード",
+  "Minimal — keep the app folder and your data": "最小 — アプリのフォルダーとデータを残す",
+  "Full — also delete the app folder (data kept)": "完全 — アプリのフォルダーも削除（データは保持）",
+  "Secure — also wipe your data and keys": "セキュア — データと鍵も消去",
+  "Customize…": "カスタマイズ…",
+  "Also delete the app folder": "アプリのフォルダーも削除",
+  "Also wipe my data and keys (irreversible)": "自分のデータと鍵も消去（取り消し不可）",
+  "Download a backup first": "先にバックアップをダウンロード"
 }

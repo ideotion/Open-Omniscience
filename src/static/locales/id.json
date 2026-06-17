@@ -1109,5 +1109,13 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "Belum ada halaman luar yang dikutip oleh 2+ artikel dalam korpus ini.",
   "Open every article citing this origin as a new corpus": "Buka semua artikel yang mengutip asal ini sebagai korpus baru",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Beberapa artikel yang mengutip halaman yang sama bukan konfirmasi independen — satu asal, banyak gema.",
-  "No articles cite this origin.": "Tidak ada artikel yang mengutip asal ini."
+  "No articles cite this origin.": "Tidak ada artikel yang mengutip asal ini.",
+  "Uninstall mode": "Mode pencopotan",
+  "Minimal — keep the app folder and your data": "Minimal — simpan folder aplikasi dan data Anda",
+  "Full — also delete the app folder (data kept)": "Penuh — hapus juga folder aplikasi (data tetap disimpan)",
+  "Secure — also wipe your data and keys": "Aman — hapus juga data dan kunci Anda",
+  "Customize…": "Sesuaikan…",
+  "Also delete the app folder": "Hapus juga folder aplikasi",
+  "Also wipe my data and keys (irreversible)": "Hapus juga data dan kunci saya (tidak dapat dibatalkan)",
+  "Download a backup first": "Unduh cadangan terlebih dahulu"
 }
