@@ -1090,5 +1090,16 @@
   "each on its own real-unit scale": "كلٌّ على مقياسه بوحداته الحقيقية",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "أعداد المقالات على محور زمني مشترك. تزامن في مجموعتك، وليس سببية.",
   "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "مفهرس إلى 100 عند بداية النافذة — حركة نسبية لا مستويات مطلقة. يُظهر التمرير القيمة الحقيقية. تزامن في مجموعتك، وليس سببية.",
-  "Download keyword log (.zip)": "تنزيل سجل الكلمات المفتاحية (.zip)"
+  "Download keyword log (.zip)": "تنزيل سجل الكلمات المفتاحية (.zip)",
+  "Related": "ذات صلة",
+  "Near-identical clusters": "مجموعات شبه متطابقة",
+  "Near-identical cluster": "مجموعة شبه متطابقة",
+  "Show all": "عرض الكل",
+  "more": "المزيد",
+  "(untitled)": "(بدون عنوان)",
+  "Branch into a new corpus →": "تفرّع إلى مجموعة جديدة →",
+  "Open these articles as a new analysis corpus": "افتح هذه المقالات كمجموعة تحليل جديدة",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{n} نسخة شبه متطابقة عبر {m} مصدرًا = صوت واحد فعليًا",
+  "{n} near-identical copies from one source = one voice": "{n} نسخة شبه متطابقة من مصدر واحد = صوت واحد",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "لم يُكتشف أي تجمّع شبه متطابق في هذه المجموعة — وهذا ليس دليلاً على غياب التنسيق، بل فقط أنه لم يُعثر على شيء عند هذا الحد."
 }

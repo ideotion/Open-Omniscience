@@ -1090,5 +1090,16 @@
   "each on its own real-unit scale": "それぞれが実単位の独自スケール",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "共有の時間軸上の記事数。あなたのコーパスでの共起であり、因果ではありません。",
   "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "ウィンドウ開始時を100として指数化——絶対水準ではなく相対的な動きです。ホバーで実際の値を表示。あなたのコーパスでの共起であり、因果ではありません。",
-  "Download keyword log (.zip)": "キーワードログをダウンロード (.zip)"
+  "Download keyword log (.zip)": "キーワードログをダウンロード (.zip)",
+  "Related": "関連",
+  "Near-identical clusters": "ほぼ同一のクラスター",
+  "Near-identical cluster": "ほぼ同一のクラスター",
+  "Show all": "すべて表示",
+  "more": "他",
+  "(untitled)": "（無題）",
+  "Branch into a new corpus →": "新しいコーパスに分岐 →",
+  "Open these articles as a new analysis corpus": "これらの記事を新しい分析コーパスとして開く",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{m} のソースにまたがる {n} 件のほぼ同一のコピー＝実質的に一つの声",
+  "{n} near-identical copies from one source = one voice": "単一ソースからの {n} 件のほぼ同一のコピー＝一つの声",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "このコーパスではほぼ同一のクラスターは検出されませんでした——協調がない証拠ではなく、この閾値では見つからなかったというだけです。"
 }
