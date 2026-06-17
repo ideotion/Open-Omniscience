@@ -8542,7 +8542,7 @@
       btn.disabled = true; btn.textContent = "Synthesizing…";
       try {
         const r = await api("/api/llm/synthesize",
-          {method: "POST", body: JSON.stringify({query: q})});
+          {method: "POST", body: JSON.stringify({query: q, output_language: _uiLangName()})});
         let box = $(mountId || "synth-result");
         if (!box) {
           box = document.createElement("div");
@@ -8566,6 +8566,15 @@
     // progress (invariant #20). Ollama is loopback (no egress), but airplane mode
     // still refuses it — surfaced loudly. These rows are NEVER keyword-indexed.
     let _bulkAbort = null;
+    // The current UI language as an ENGLISH name the model reliably understands
+    // ("French", not "Français") — the v2 language pin: summaries/synthesis come back
+    // in the user's language. Translate carries its own explicit target instead.
+    const _LANG_EN = {en:"English",fr:"French",de:"German",es:"Spanish",pt:"Portuguese",
+      ru:"Russian",ar:"Arabic",zh:"Chinese",ja:"Japanese",hi:"Hindi",bn:"Bengali",id:"Indonesian"};
+    function _uiLangName() {
+      const code = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      return _LANG_EN[code] || "English";
+    }
     function _bulkParams(ctx) { return ctx === "an" ? anParams() : searchParams(); }
     function bulkLlm(op, ctx) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -8615,6 +8624,7 @@
         if (p.get("end_date")) body.end_date = p.get("end_date");
       }
       if (op === "translate") { const e = $("bulk-tgt-" + ctx); body.target_language = (e && e.value.trim()) || "English"; }
+      else { body.output_language = _uiLangName(); }   // summaries come back in the UI language (v2 pin)
       if (startBtn) startBtn.disabled = true;
       if (prog) prog.textContent = t("Starting…");
       _bulkAbort = ("AbortController" in window) ? new AbortController() : null;
@@ -8742,7 +8752,8 @@
       const cell = btn.parentElement.querySelector(".summary");
       cell.textContent = "Summarizing locally…";
       try {
-        const r = await api(`/api/llm/articles/${id}/summarize`, {method: "POST", body: "{}"});
+        const r = await api(`/api/llm/articles/${id}/summarize`,
+          {method: "POST", body: JSON.stringify({output_language: _uiLangName()})});
         // LLM output is a model artifact — fluent, and capable of being wrong. Carry a
         // constant verify-against-the-source note (B1 disclosure; auto-translated x12 by
         // the i18n observer). Data is esc()'d (innerHTML).

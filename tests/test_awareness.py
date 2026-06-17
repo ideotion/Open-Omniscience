@@ -146,7 +146,7 @@ def test_translate_persists_with_provenance(client):
     assert body["kind"] == "translation"
     assert body["source_language"] == "fr"
     assert body["target_language"] == "English"
-    assert body["prompt_version"].startswith("translate-v1")
+    assert body["prompt_version"].startswith("translate-v2")
     assert "corruption" in body["result"].lower()
     with Sess() as s:
         assert s.query(ArticleAnalysis).filter_by(kind="translation").count() == 1

@@ -128,7 +128,7 @@ def test_full_investigative_workflow(client):
     # 3. Summarize it with the (faked) local LLM; result persisted with provenance.
     r = client.post(f"/api/llm/articles/{article_id}/summarize", json={})
     assert r.status_code == 200
-    assert r.json()["prompt_version"] == "summary-v1"
+    assert r.json()["prompt_version"] == "summary-v2"
 
     # 4. Import commodity prices and correlate with the news (real scipy stats).
     pts = [{"observed_on": f"2026-01-0{d}", "price": 100 + d} for d in range(1, 6)]

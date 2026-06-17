@@ -1177,6 +1177,73 @@ ruling, a contingency, or a deliberate-omission note.
   node --check · alembic single-head · self-heal idempotent. REMAINING: human
   click-through (fork-3); a per-article Summarize/Translate on the analysis Articles list;
   bulk as a first-class task-manager job (currently a streaming request).
+  **PROMPTS v2 + LANGUAGE PIN SHIPPED 2026-06-17 (maintainer asked "critically assess +
+  optimize the prompts" → chose "apply as defaults"; branch claude/confident-hopper-ef600p,
+  draft PR onto 0.09, BROWSER-UNVERIFIED):** the three default system prompts were rewritten
+  honesty-first and bumped v1→v2 (provenance versions summary-v2 / translate-v2 / synthesis-v2;
+  the EXACT text is still recorded per result in prompt_text, so the change is fully auditable).
+  Changes: SUMMARY gains a language pin + investigative-essentials (who/what/when/where/figures)
+  + an ATTRIBUTION GUARD ("never turn a claim into a fact") + "if not a coherent article, say
+  so" + no-preamble; TRANSLATE pins title+body, paragraph structure, "already in {target} →
+  unchanged", no-preamble; SYNTHESIS now REQUIRES a per-claim citation [n] and FLAGS any claim
+  carried by only ONE source (its own anti-false-triangulation doctrine, in the prompt). NEW
+  `{language}` pin (`_build_prompting(output_language=)`): the SPA passes the current UI
+  language as an ENGLISH name (`_LANG_EN` map → "French" not "Français") for summary/synthesis;
+  unset → summary "the same language as the article" (faithful — what the standalone reader
+  uses), synthesis "English". `output_language` added to Summarize/Synthesize/Bulk requests
+  (translate already had target_language). No schema change, no migration, no new i18n keys
+  (prompts are backend; Settings textareas show the new defaults via /api/llm/prompts). Tests
+  updated v1→v2 across test_llm_api/test_llm_ollama/test_awareness/test_workflow_integration +
+  new language-pin + v2-content assertions. Verified py3.13: LLM/reader/invariants/wiring/smoke
+  green (the lone failures here were the [analysis]-extra-gated framing + scipy-correlation
+  routes returning 404 in this core-only venv — env gap, not the change), ruff F/B clean,
+  node --check, i18n 100%.
+  **LLM EXPANSION — DESIGN RULINGS 2026-06-17 (maintainer brainstorm; NOT BUILT — record
+  for the next session):** scoped to a hypothetical stronger rig (40 GB RAM / 8 GB VRAM, a
+  ~30B-class 256K-context instruct model). HONEST FRAME carried into the design: a 30B on
+  8 GB VRAM is CPU-bound (~minutes per long pass) so deep LLM work = BACKGROUND VISIBLE
+  TASK-MANAGER JOBS (no fabricated ETA — fits the existing job model); a bigger/more-fluent
+  model makes mistakes more convincing, so cited + verify-against-source matter MORE, not
+  less; model tags stay dated + freshness-tested (never assert a tag we can't verify).
+  RULINGS: (1) COMPUTE = TWO TIERS — a fast small model for interactive bits (status pill,
+  single summarize) + a heavyweight long-context model for background "deep" jobs, with a
+  per-job-class model setting. (2) LONG-CONTEXT UNLOCKS to build (all four, shared plumbing):
+  whole-corpus CITED synthesis (50–150 FULL articles in one pass, single-source flagged,
+  vs today's 20 excerpts) · corpus Q&A WITHOUT RAG (quoted+cited, refuses when absent) ·
+  long SINGLE documents whole (reports/filings/Wikipedia article+revisions/.eml threads,
+  consistent terminology) · CROSS-LANGUAGE synthesis (read FR+DE+AR+ZH together). PLUS
+  extend the LLM lens to named surfaces: Commodities/Markets/Indices (descriptive cited
+  "what the coverage says moved" over the price×coverage overlay — co-occurrence-NEVER-
+  causation, NO price prediction/signal; quantitative-claim extraction as candidates),
+  Agenda (LLM future-date extraction as confirmable candidates + event briefs), World Law
+  (grounded plain-language explainer · version-DIFF narration · cross-jurisdiction
+  comparison — long-context shines), WorldMap (place disambiguation/geocode as confirmable
+  candidates · place-centric corpus brief), Source integrity (cross-language/PARAPHRASE
+  coordination = the strongest LLM-additive where lexical MinHash fails · headline-body
+  mismatch · loaded-language spotter — STRUCTURE never intent/credibility, "name the shape").
+  (3) LLM SCOPE — STRICT PHYSICAL SEPARATION (maintainer RULED 2026-06-17, OVERRIDES the
+  earlier same-day "provenance-partition / no separate DB" recommendation — do NOT revert to
+  it): the AI must NEVER write to the MAIN database EXCEPT to summarize/translate (those stay
+  in article_analyses — the one accepted AI surface in the main store, the maintainer's
+  explicit carve-out). ALL OTHER AI-derived analytics (LLM-extracted keywords/entities/claims/
+  cross-language dedup) live in a SEPARATE, PARALLEL database — a second encrypted SQLCipher
+  file under the SAME passphrase (the one connect() factory), NEVER ATTACHed/joined to the
+  main store (article_id is a soft int reference resolved in app code), surfaced ONLY as its
+  own clearly-labeled lens, rebuildable + disposable. Maintainer rationale: physical
+  separation is a STRONGER guarantee than a provenance column — separate engines can't be
+  joined by a forgotten WHERE clause. The trusted RULE-BASED keyword index stays canonical in
+  the main DB; the AI keyword layer is the parallel second DB ("a second keyword database to
+  manage this parallelism"). Both the read-only lens AND confirmable-candidate curation happen
+  WITHIN the AI layer; a confirmed AI item does NOT migrate into the main trusted tables (that
+  would "touch main", forbidden by the ruling) — it becomes "confirmed within the AI lens".
+  DESIGN TO SETTLE when built: the second file's encryption (same passphrase, no second key
+  surface) + its own single-writer gate (own engine; AI writes are batch jobs, no cross-DB
+  txn) + backup stance (its own oo-backup member vs excluded-as-rebuildable) + whether a
+  user-confirmed AI keyword may EVER cross into the trusted index (default NO). Enforce with an
+  invariant test: the main analytics/keyword index NEVER read the AI DB; the AI never writes
+  the main store beyond article_analyses summary/translation rows. ALL LLM features keep the standing
+  honesty invariants: grounded+cited, refuse-when-absent, no score/verdict/ranking, local
+  loopback, provenance recorded, caveats visible, never auto-fed into the pipeline.
   SELF-UPDATE via GUI: consented check vs GitHub releases → signed
   oo-backup-2 + install-tree snapshot BEFORE anything → verified release →
   migrations on a STAGED copy → atomic swap + relaunch → rollback on failure;

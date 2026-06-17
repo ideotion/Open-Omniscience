@@ -149,7 +149,7 @@ def test_synthesize_carries_member_provenance_and_stores_per_member():
         body = r.json()
         assert body["member_ids"] == sorted(ids)
         assert body["member_count"] == 3
-        assert body["prompt_version"] == "synthesis-v1"
+        assert body["prompt_version"] == "synthesis-v2"
         assert "never a verdict" in body["caveat"] or "asserts nothing" in body["caveat"]
         # exactly ONE generation call (bounded fan-out by construction)
         assert len(fake.calls) == 1
@@ -242,7 +242,7 @@ def test_summarize_records_exact_prompt_and_keep_alive(tmp_path, monkeypatch):
     # to the stored "30m" so the model stays warm (the maintainer's "no unload" ask).
     rows = _stored(art_id, "summary")
     assert rows and rows[0]["prompt_text"] and "summariz" in rows[0]["prompt_text"].lower()
-    assert rows[0]["prompt_version"] == "summary-v1"
+    assert rows[0]["prompt_version"] == "summary-v2"
     assert fake.keep_alives[-1] == "30m"
 
 
@@ -385,3 +385,35 @@ def test_bulk_aborts_loudly_when_ollama_down():
         assert r.status_code == 200
         done = _ndjson(r.text)[-1]
         assert done["event"] == "done" and done["aborted"] is True and done["reason"]
+
+
+# --- v2 prompt optimization + language pin (maintainer 2026-06-17) ------------- #
+
+
+def test_output_language_pins_the_summary_prompt(tmp_path, monkeypatch):
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    fake = _FakeOllama()
+    _override(fake)
+    art_id = _seed_article()
+    with TestClient(app) as client:
+        # an explicit output language reaches the model's system prompt
+        client.post(f"/api/llm/articles/{art_id}/summarize", json={"output_language": "French"})
+        assert "French" in (fake.calls[-1][2] or "")
+        # default (unset) → the faithful "same language as the article" instruction
+        client.post(f"/api/llm/articles/{art_id}/summarize", json={})
+        assert "same language as the article" in (fake.calls[-1][2] or "")
+
+
+def test_v2_defaults_are_honesty_first():
+    _override(_FakeOllama())
+    with TestClient(app) as client:
+        p = client.get("/api/llm/prompts").json()["prompts"]
+        # summary v2: language pin + attribution guard
+        assert "{language}" in p["summary"]["default"]
+        assert "never turn a claim into a fact" in p["summary"]["default"]
+        assert p["summary"]["version"] == "summary-v2"
+        # synthesis v2: per-claim citations + the single-source flag
+        assert "[2][5]" in p["synthesis"]["default"]
+        assert "only one source" in p["synthesis"]["default"]
