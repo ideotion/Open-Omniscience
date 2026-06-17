@@ -1117,5 +1117,9 @@
   "Customize…": "自定义…",
   "Also delete the app folder": "同时删除应用文件夹",
   "Also wipe my data and keys (irreversible)": "同时擦除我的数据和密钥（不可逆）",
-  "Download a backup first": "先下载一个备份"
+  "Download a backup first": "先下载一个备份",
+  "Read": "阅读",
+  "Show the copies": "显示这些副本",
+  "Related in your corpus": "你语料库中的相关内容",
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "你语料库中近乎相同的副本——实际上是同一种声音，并非独立佐证。见“相关”。"
 }

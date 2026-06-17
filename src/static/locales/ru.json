@@ -1117,5 +1117,9 @@
   "Customize…": "Настроить…",
   "Also delete the app folder": "Также удалить папку приложения",
   "Also wipe my data and keys (irreversible)": "Также стереть мои данные и ключи (необратимо)",
-  "Download a backup first": "Сначала скачать резервную копию"
+  "Download a backup first": "Сначала скачать резервную копию",
+  "Read": "Чтение",
+  "Show the copies": "Показать копии",
+  "Related in your corpus": "Связанные в вашем корпусе",
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "Почти идентичные копии в вашем корпусе — фактически один голос, а не независимое подтверждение. См. «Связанные»."
 }

@@ -1117,5 +1117,9 @@
   "Customize…": "কাস্টমাইজ…",
   "Also delete the app folder": "অ্যাপ ফোল্ডারও মুছুন",
   "Also wipe my data and keys (irreversible)": "আমার ডেটা ও কী-ও মুছুন (অপরিবর্তনীয়)",
-  "Download a backup first": "প্রথমে একটি ব্যাকআপ ডাউনলোড করুন"
+  "Download a backup first": "প্রথমে একটি ব্যাকআপ ডাউনলোড করুন",
+  "Read": "পড়ুন",
+  "Show the copies": "কপিগুলো দেখান",
+  "Related in your corpus": "আপনার কর্পাসে সম্পর্কিত",
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "আপনার কর্পাসে প্রায় অভিন্ন কপি — কার্যত একটিই কণ্ঠস্বর, স্বাধীন নিশ্চিতকরণ নয়। সম্পর্কিত দেখুন।"
 }

@@ -1117,5 +1117,9 @@
   "Customize…": "अनुकूलित करें…",
   "Also delete the app folder": "ऐप फ़ोल्डर भी हटाएँ",
   "Also wipe my data and keys (irreversible)": "मेरा डेटा और कुंजियाँ भी मिटाएँ (अपरिवर्तनीय)",
-  "Download a backup first": "पहले एक बैकअप डाउनलोड करें"
+  "Download a backup first": "पहले एक बैकअप डाउनलोड करें",
+  "Read": "पढ़ें",
+  "Show the copies": "प्रतियाँ दिखाएँ",
+  "Related in your corpus": "आपके कॉर्पस में संबंधित",
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "आपके कॉर्पस में लगभग समान प्रतियाँ — वास्तव में एक ही आवाज़, स्वतंत्र पुष्टि नहीं। संबंधित देखें।"
 }

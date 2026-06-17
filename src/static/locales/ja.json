@@ -1117,5 +1117,9 @@
   "Customize…": "カスタマイズ…",
   "Also delete the app folder": "アプリのフォルダーも削除",
   "Also wipe my data and keys (irreversible)": "自分のデータと鍵も消去（取り消し不可）",
-  "Download a backup first": "先にバックアップをダウンロード"
+  "Download a backup first": "先にバックアップをダウンロード",
+  "Read": "本文",
+  "Show the copies": "コピーを表示",
+  "Related in your corpus": "あなたのコーパスの関連記事",
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "あなたのコーパスにあるほぼ同一のコピー——実質的に一つの声であり、独立した裏付けではありません。「関連」を参照。"
 }

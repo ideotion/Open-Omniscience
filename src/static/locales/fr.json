@@ -1117,5 +1117,9 @@
   "Customize…": "Personnaliser…",
   "Also delete the app folder": "Supprimer aussi le dossier de l'application",
   "Also wipe my data and keys (irreversible)": "Effacer aussi mes données et clés (irréversible)",
-  "Download a backup first": "Télécharger d'abord une sauvegarde"
+  "Download a backup first": "Télécharger d'abord une sauvegarde",
+  "Read": "Lire",
+  "Show the copies": "Afficher les copies",
+  "Related in your corpus": "Liés dans votre corpus",
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "Copies quasi identiques dans votre corpus — en fait une seule voix, pas une confirmation indépendante. Voir Liés."
 }

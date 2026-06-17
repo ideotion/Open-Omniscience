@@ -1117,5 +1117,9 @@
   "Customize…": "تخصيص…",
   "Also delete the app folder": "حذف مجلد التطبيق أيضًا",
   "Also wipe my data and keys (irreversible)": "محو بياناتي ومفاتيحي أيضًا (لا يمكن التراجع عنه)",
-  "Download a backup first": "نزّل نسخة احتياطية أولًا"
+  "Download a backup first": "نزّل نسخة احتياطية أولًا",
+  "Read": "قراءة",
+  "Show the copies": "إظهار النسخ",
+  "Related in your corpus": "ذات صلة في مجموعتك",
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "نسخ شبه متطابقة في مجموعتك — صوت واحد فعليًا، وليست تأكيدًا مستقلاً. انظر «ذات صلة»."
 }
