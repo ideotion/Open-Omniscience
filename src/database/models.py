@@ -1850,6 +1850,67 @@ class StatFigure(Base):
         )
 
 
+class Watch(Base):
+    """A saved local CONDITION the convergence watch engine re-evaluates (ruling
+    2026-06-17 #3: "if-this-then-WATCH", ON by default).
+
+    A watch is a saved search/condition over the corpus. The engine evaluates every
+    ENABLED watch after each scrape pass (local-only, NO notifications/network/
+    telemetry, NO escalation tiers): when the corpus gains enough NEW matching
+    articles in the recent window, the watch FIRES — recording a ``WatchMatch`` (the
+    history) and surfacing a "watch" Lead card. ``enabled`` defaults TRUE (the engine
+    is on by default); the user can enable/edit/delete each watch.
+
+    Honesty: a watch fires on a real COUNT crossing a user-set threshold (no score, no
+    fabricated urgency). ``last_seen_ids`` (JSON list) lets the engine fire only on
+    genuinely NEW evidence, never re-alarming on the same articles every pass.
+    """
+
+    __tablename__ = "watches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    query: Mapped[str] = mapped_column(Text, nullable=False)  # the FTS condition
+    threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=3)  # min matching articles to fire
+    window_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)  # recent window
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # ON by default (#3)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_matched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_seen_ids: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list of last firing ids
+
+    matches = relationship("WatchMatch", back_populates="watch", cascade="all, delete-orphan")
+
+    __table_args__ = (Index("ix_watches_enabled", "enabled"),)
+
+    def __repr__(self) -> str:
+        return f"<Watch({self.id} {self.name!r} q={self.query!r} {'on' if self.enabled else 'off'})>"
+
+
+class WatchMatch(Base):
+    """One firing of a watch — the history a user browses (ruling #3 "Watches view +
+    history"). Counts only, never a score; ``article_ids`` is the exact set that fired,
+    so the UI can open it in the analysis window."""
+
+    __tablename__ = "watch_matches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    watch_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("watches.id", ondelete="CASCADE"), nullable=False
+    )
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    n_articles: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # total in window at fire
+    new_articles: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # new since last fire
+    article_ids: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list of the firing set
+
+    watch = relationship("Watch", back_populates="matches")
+
+    __table_args__ = (Index("ix_watch_matches_watch", "watch_id", "matched_at"),)
+
+    def __repr__(self) -> str:
+        return f"<WatchMatch(watch={self.watch_id} n={self.n_articles} +{self.new_articles})>"
+
+
 # Example usage
 if __name__ == "__main__":
     # Test database connection and table creation

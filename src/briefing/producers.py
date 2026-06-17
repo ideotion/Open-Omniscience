@@ -1651,6 +1651,71 @@ def space_time_convergence(session) -> list[Card]:
     return cards
 
 
+def watch_matches(session) -> list[Card]:
+    """Surface watches that recently FIRED as "watch" Lead cards (ruling #3, ON by default).
+
+    A watch is a saved local condition (an FTS query + threshold + window) the user
+    asked the engine to keep an eye on. When the corpus gained enough NEW matching
+    articles, the engine fired and recorded it; this turns each recent firing into ONE
+    Lead card whose exact article set the user can open. Counts only — the card states
+    the real count + the user's own threshold, never a fabricated urgency or score.
+    There are NO escalation tiers beyond this card (the ruling).
+    """
+    try:
+        from src.analytics.watches import recent_fired_watches
+
+        fired = recent_fired_watches(session)
+    except Exception:  # noqa: BLE001 - a watch problem must never blank the feed
+        _LOG.warning("watch-engine card pass failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for f in fired:
+        n, new = f["n_articles"], f["new_articles"]
+        cards.append(
+            Card(
+                type="watch_match",
+                title=f"Watch “{f['name']}” matched",
+                summary=(
+                    f"Your watch for “{f['query']}” now matches {n} article(s) in its "
+                    f"window ({new} new since it last fired). You asked to keep an eye "
+                    "on this — open the set to read it."
+                ),
+                bucket="watch",
+                signal={
+                    "metric": "matching_articles",
+                    "value": n,
+                    "new_articles": new,
+                    "query": f["query"],
+                    "watch_id": f["id"],
+                },
+                method=(
+                    "A saved local watch fired: the count of articles matching your "
+                    "query in its recent window crossed the threshold you set, with new "
+                    "evidence since it last fired. No score, no network."
+                ),
+                caveat=(
+                    "A watch is a saved search reaching your own threshold — a prompt to "
+                    "read, never a verdict that something happened or is important."
+                ),
+                # The EXACT firing set, so the card opens the analysis window over it.
+                article_ids=list(f.get("article_ids", [])),
+                n=n,
+                key=str(f["id"]),
+                trigger=_trigger(
+                    "You saved a watch for this. The engine fires it when enough new "
+                    "articles match the condition you set — it is your reminder to look, "
+                    "nothing more.",
+                    [
+                        ("Articles matching the watch in its window", str(n)),
+                        ("New since the watch last fired", str(new)),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -1672,6 +1737,7 @@ _DEFAULT_PRODUCERS = (
     # the operator the established feed.
     ("weather_corroboration", weather_corroboration),
     ("space_time_convergence", space_time_convergence),
+    ("watch_matches", watch_matches),
 )
 
 
