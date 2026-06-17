@@ -2016,7 +2016,7 @@ sources:
   - general
   priority: 2
 - name: National People's Congress (NPC)
-  domain: en.npc.gov.cn.cdurl.cn
+  domain: en.npc.gov.cn
   rss_url: ''
   language: en
   region: asia
