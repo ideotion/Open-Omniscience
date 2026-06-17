@@ -19,26 +19,28 @@ def _by_norm(terms: list[ExtractedTerm]) -> dict[str, ExtractedTerm]:
     return {t.normalized: t for t in terms}
 
 
-def test_multiword_entity_is_one_unit_with_offset():
+def test_multiword_titlecase_is_a_term_not_an_entity():
+    # Title-Case is no longer an entity signal (anglocentric; breaks for German).
+    # A multi-word name is captured as ONE topical TERM, offset intact; it becomes
+    # a real entity only via the gazetteer / spaCy (see the gazetteer test below).
     text = (
         "Emmanuel Macron met advisers in the capital. "
         "Emmanuel Macron then addressed reporters about the economy."
     )
     ex = BaselineExtractor()
-    terms = ex.extract(text)
-    by = _by_norm(terms)
+    by = _by_norm(ex.extract(text))
     assert "emmanuel macron" in by
     ent = by["emmanuel macron"]
-    assert ent.kind == "entity"  # no gazetteer -> honest generic kind
+    assert ent.kind == "term"  # Title-Case alone never makes an entity now
     assert ent.count == 2
-    # The offset points exactly at the entity in the source text.
     assert text[ent.first_offset : ent.first_offset + len("Emmanuel Macron")] == "Emmanuel Macron"
 
 
-def test_gazetteer_assigns_entity_kind():
+def test_gazetteer_promotes_a_term_to_its_entity_kind():
+    # Named entities come from the gazetteer now, not capitalisation: "rio tinto"
+    # is a term that the gazetteer promotes to kind="org".
     text = "Rio Tinto reported output. Rio Tinto shares moved on the news today."
-    gaz = {"rio tinto": "org"}
-    ex = BaselineExtractor(gazetteer=gaz)
+    ex = BaselineExtractor(gazetteer={"rio tinto": "org"})
     by = _by_norm(ex.extract(text))
     assert by["rio tinto"].kind == "org"
 
@@ -49,6 +51,37 @@ def test_sentence_initial_capital_not_an_entity():
     ex = BaselineExtractor()
     by = _by_norm(ex.extract(text))
     assert "markets" not in {k for k, v in by.items() if v.kind != "term"}
+
+
+def test_acronym_is_an_entity_distinct_from_its_lowercase_homograph():
+    # The WHO/Who problem: "WHO" (org) is an entity kept case-distinct from the
+    # pronoun "who" — casefolding would merge them, so we don't.
+    text = "Experts at WHO met on Friday. They asked who knew the risks beforehand."
+    by = _by_norm(BaselineExtractor().extract(text))
+    assert "WHO" in by and by["WHO"].kind == "entity"
+    assert "who" not in {k for k, v in by.items() if v.kind != "term"}
+
+
+def test_stopword_homograph_acronym_survives():
+    # "US" must not vanish into the stopword "us": its case is preserved.
+    text = "The US said it would act. The deal still mattered to the US and allies."
+    by = _by_norm(BaselineExtractor().extract(text))
+    assert "US" in by and by["US"].kind == "entity"
+
+
+def test_german_capitalised_nouns_are_not_entities():
+    # German capitalises every noun; none here is a proper name -> all terms.
+    text = "Die Behauptung war falsch. Die Medien berichteten ausführlich über Menschen und Belege."
+    by = _by_norm(BaselineExtractor().extract(text, language="de"))
+    assert not [k for k, v in by.items() if v.kind != "term"]
+
+
+def test_all_caps_headline_words_are_not_acronyms():
+    # In an ALL-CAPS headline every word is caps -> none stands out as an acronym.
+    text = "BREAKING NEWS REPORT: markets fell sharply as traders worried about the economy."
+    by = _by_norm(BaselineExtractor().extract(text))
+    ents = {k for k, v in by.items() if v.kind != "term"}
+    assert not ({"BREAKING", "NEWS", "REPORT"} & ents)
 
 
 def test_terms_have_counts_and_offsets():

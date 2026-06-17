@@ -9,10 +9,13 @@ the char offset of their first occurrence (so the surrounding sentence can be
 shown later, sliced from the stored article text). Two honest backends:
 
   * **BaselineExtractor** (core, no deps): topical n-gram *terms* (stopword-filtered,
-    lowercased) PLUS *entities* detected as multi-word Title-Case sequences, with a
-    person/org/location ``kind`` only when a supplied gazetteer says so — otherwise
-    the honest generic kind ``entity``. Best for space-delimited scripts; it does
-    not pretend to segment CJK/Arabic.
+    lowercased) PLUS *entities* detected as stand-alone ALL-CAPS **acronyms** only
+    (WHO, NATO, USA). Title-Case was dropped as an entity signal — it is anglocentric
+    and wrong for a multilingual corpus (German capitalises every noun; Romance
+    languages capitalise sentence starts; Arabic/CJK have no case). A person/org/
+    location ``kind`` comes only from a supplied gazetteer / spaCy; an unvouched
+    acronym gets the honest generic kind ``entity``. Best for space-delimited scripts;
+    it does not pretend to segment CJK/Arabic.
   * **SpacyExtractor** (opt-in ``[nlp]`` extra): real PERSON/ORG/GPE/LOC entities
     from a local spaCy model, reusing the baseline for topical terms. Constructed
     only if spaCy + a model are installed; callers fall back to baseline otherwise.
@@ -33,36 +36,30 @@ from src.services.stopwords import stopwords_manager
 # A word token: starts with a (unicode) letter, may contain letters, marks,
 # apostrophes and hyphens. Digits-only / punctuation tokens are ignored.
 _WORD_RE = re.compile(r"[^\W\d_][\w'’\-]*", re.UNICODE)
-_SENT_END = re.compile(r"[.!?]['\"”’)]?\s+$")
-
-# Lowercase connector words allowed *inside* a multi-word entity (e.g. "Bank of
-# England", "Rio Tinto plc", "Université de Paris").
-_CONNECTORS = {
-    "of",
-    "the",
-    "and",
-    "for",
-    "de",
-    "la",
-    "le",
-    "du",
-    "des",
-    "van",
-    "von",
-    "der",
-    "den",
-    "di",
-    "da",
-    "do",
-    "al",
-    "bin",
-    "el",
-    "&",
-}
 
 _DEFAULT_MAX_TERMS = 80
 _DEFAULT_MAX_ENTITIES = 80
 _MIN_TERM_LEN = 3
+
+# All-caps tokens that are NOT entities (emphasis / chrome / titles), so the
+# acronym detector doesn't mistake them for organisations. Kept deliberately small
+# and evidence-driven — the keyword-diagnostics logs surface new ones to add.
+_ACRONYM_STOP: frozenset[str] = frozenset(
+    {
+        "ok", "vs", "am", "pm", "aka", "faq", "ceo", "cfo", "cto", "vip", "rip",
+        "diy", "asap", "fyi", "no", "so", "yes", "etc", "via", "na",
+    }
+)
+
+
+def _is_caps_run_word(w: str) -> bool:
+    """True for an all-caps token of length >= 2 with at least one letter.
+
+    Covers plain acronyms (WHO) and digit/hyphen-bearing ones (G7, COVID-19); used
+    both to spot an acronym candidate and to detect an all-caps headline/shout run.
+    """
+    return len(w) >= 2 and w.isupper() and any(c.isalpha() for c in w)
+
 
 # Curated extra stoplist: very common function words / fillers that the per-language
 # sets miss, plus number-words, across the major Latin-script languages. Combined
@@ -358,87 +355,57 @@ class BaselineExtractor:
     # -- entities ---------------------------------------------------------- #
 
     def _entities(self, text: str) -> list[ExtractedTerm]:
-        tokens = list(_WORD_RE.finditer(text))
-        # Mark which tokens begin a sentence (their capitalisation is uninformative).
-        runs: list[tuple[str, int]] = []  # (surface, start_offset)
-        i = 0
-        n = len(tokens)
-        while i < n:
-            tok = tokens[i]
-            surface = tok.group(0)
-            is_titlecase = surface[:1].isupper() and (
-                len(surface) == 1 or any(c.islower() for c in surface)
-            )
-            is_acronym = surface.isupper() and len(surface) >= 2
-            if not (is_titlecase or is_acronym):
-                i += 1
-                continue
-            start = tok.start()
-            parts = [surface]
-            j = i + 1
-            while j < n:
-                nxt = tokens[j].group(0)
-                gap = text[tokens[j - 1].end() : tokens[j].start()]
-                if "\n" in gap or len(gap) > 3:  # broken by a line/large gap -> stop the run
-                    break
-                if nxt[:1].isupper() or nxt in _CONNECTORS or (nxt.isupper() and len(nxt) >= 2):
-                    parts.append(nxt)
-                    j += 1
-                else:
-                    break
-            # Trim trailing connectors.
-            while parts and parts[-1] in _CONNECTORS:
-                parts.pop()
-            if parts:
-                end_tok = tokens[i + len(parts) - 1]
-                surface_run = text[start : end_tok.end()]
-                runs.append((surface_run, start))
-            i = max(j, i + 1)
+        """Detect entities as stand-alone ALL-CAPS acronyms only.
 
-        # Aggregate runs by normalised form, tracking whether a form is ever
-        # multi-word and whether it ever occurs *mid-sentence* (a strong proper-noun
-        # signal). A single-word, only-ever-sentence-initial form is capitalisation
-        # noise (e.g. "Climate" starting a sentence) and is dropped unless the
-        # gazetteer vouches for it.
+        Title-Case ("World", German "Behauptung") was DROPPED as an entity signal:
+        it is anglocentric and wrong for a multilingual corpus — German capitalises
+        every noun, Romance languages capitalise sentence starts / months /
+        nationalities, and Arabic/CJK have no case at all (2026-06-16 keyword-log
+        finding: ~60–75% of case "entities" per language were common words, and the
+        flag carried no person/org/location semantics anyway). The ONE reliable,
+        language-independent case signal is an all-caps ACRONYM standing out in
+        mixed-case text (WHO, NATO, USA).
+
+        The normalized form is kept UPPERCASE so an acronym stays distinct from a
+        lowercase homograph (WHO != who, US != us) and survives the stopword filter —
+        the answer to the WHO/Who problem. Real person/org/place entities come from
+        the gazetteer / spaCy (language-aware), applied here and in extract().
+        """
+        tokens = list(_WORD_RE.finditer(text))
+        n = len(tokens)
         agg: dict[str, dict] = {}
-        for surface, offset in runs:
-            norm = _normalize(surface)
+        for i, tok in enumerate(tokens):
+            surface = tok.group(0)
+            if not _is_caps_run_word(surface):
+                continue
+            if surface.casefold() in _ACRONYM_STOP:
+                continue
+            # A real acronym stands out against mixed-case neighbours; an all-caps
+            # token ADJACENT to another all-caps word is part of a HEADLINE/shout run
+            # (catches the first & last word of the run, not just the middle).
+            prev = tokens[i - 1].group(0) if i > 0 else ""
+            nxt = tokens[i + 1].group(0) if i + 1 < n else ""
+            if _is_caps_run_word(prev) or _is_caps_run_word(nxt):
+                continue
+            norm = surface  # PRESERVE case: WHO != who, US != us
             a = agg.get(norm)
             if a is None:
-                a = {"count": 0, "first": offset, "multi": False, "mid": False, "surface": surface}
+                a = {"count": 0, "first": tok.start(), "surface": surface}
                 agg[norm] = a
             a["count"] += 1
-            if len(surface.split()) > 1:
-                a["multi"] = True
-            if not self._at_sentence_start(text, offset):
-                a["mid"] = True
 
-        gstop = global_stopwords()
-        entities: list[ExtractedTerm] = []
-        for norm, a in agg.items():
-            if not (a["multi"] or a["mid"] or norm in self.gazetteer):
-                continue
-            # Never treat a function word or single character as an entity (e.g.
-            # "I", "A", "The") — unless the gazetteer vouches for it.
-            if norm not in self.gazetteer and (len(norm) < 2 or norm in gstop):
-                continue
-            entities.append(
-                ExtractedTerm(
-                    term=a["surface"],
-                    normalized=norm,
-                    kind=self.gazetteer.get(norm, "entity"),
-                    count=a["count"],
-                    first_offset=a["first"],
-                )
+        entities = [
+            ExtractedTerm(
+                term=a["surface"],
+                normalized=norm,
+                kind=self.gazetteer.get(norm.casefold(), "entity"),
+                count=a["count"],
+                first_offset=a["first"],
             )
+            for norm, a in agg.items()
+        ]
         entities.sort(key=lambda e: (-e.count, e.first_offset or 0))
         return entities[: self.max_entities]
-
-    @staticmethod
-    def _at_sentence_start(text: str, offset: int) -> bool:
-        if offset == 0:
-            return True
-        return bool(_SENT_END.search(text[max(0, offset - 40) : offset]))
 
     # -- topical terms ----------------------------------------------------- #
 
@@ -482,9 +449,27 @@ class BaselineExtractor:
             return []
         entities = self._entities(text)
         ent_norms = {e.normalized for e in entities}
-        # Drop topical terms that duplicate a detected entity (e.g. the bigram
-        # "emmanuel macron") so the entity is the single unit, as intended.
-        terms = [t for t in self._terms(text, language) if t.normalized not in ent_norms]
+        # Topical terms. A term whose normalized form is in the gazetteer is promoted
+        # to its real person/org/location kind — with Title-Case dropped, NAMED
+        # entities now come from the gazetteer / spaCy (language-aware), not from
+        # capitalisation. Terms duplicating a detected acronym are skipped.
+        terms: list[ExtractedTerm] = []
+        for t in self._terms(text, language):
+            if t.normalized in ent_norms:
+                continue
+            kind = self.gazetteer.get(t.normalized)
+            if kind:
+                terms.append(
+                    ExtractedTerm(
+                        term=t.term,
+                        normalized=t.normalized,
+                        kind=kind,
+                        count=t.count,
+                        first_offset=t.first_offset,
+                    )
+                )
+            else:
+                terms.append(t)
         return entities + terms
 
 
