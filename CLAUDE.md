@@ -1280,9 +1280,24 @@ ruling, a contingency, or a deliberate-omission note.
   guard that the batch words ARE filtered and the collisions are NOT. REMAINING (queued,
   bigger): wire keyword_equivalents.yml into LIVE analytics (the "Trans-language
   equivalence" entry — DONE, wired 2026-06-16); fix sentence-initial-capital false entities
-  (DONE — see ENTITY-DETECTION ruling below); singular/plural family merge (~2753 pairs,
-  display-layer, risk of over-merge — guarded); the Item AC pre-tagged per-language
-  baseline + keyword-management Settings subtab (endorsed, unbuilt).
+  (DONE — see ENTITY-DETECTION ruling below); singular/plural family merge (DONE 2026-06-16
+  — see below); the Item AC pre-tagged per-language baseline + keyword-management Settings
+  subtab (endorsed; DESIGN KICKED OFF 2026-06-16, maintainer-asked, doc unbuilt yet).
+  **SINGULAR/PLURAL FAMILY MERGE — SHIPPED 2026-06-16 (maintainer "start with the plural-merge
+  risk analysis"; conservative + guarded; draft PR onto 0.09):** RISK ANALYSIS first corrected
+  the size — only **932** real pairs (the earlier ~2753 was an exploratory bug that stripped N
+  chars WITHOUT verifying the word ends in s/es), and the scariest over-merges DON'T ARISE
+  (new/news, use/uses: the singular is a stopword so never a keyword) and the name-plural risk
+  largely dissolved with the entity change (most "entities" are terms now). `build_families`
+  gains pass 1.5: a single-token regular plural (-s/-es/-ies, `_plural_bases`) joins its
+  singular family ONLY when BOTH are plain TERMS of the same kind (never entity NAMES), the
+  base EXISTS as a same-kind term (so a non-plural word ending in -s won't merge unless its
+  stem is real), and the base isn't a known meaning-changer (`_PLURAL_DENYLIST` =
+  mean/right/force/good/arm/… — evidence-based + log-tunable like the stoplists). Reversible
+  via a split override (any override excludes a form from the auto pass); `OO_FAMILY_PLURALS=0`
+  disables. tests/test_families.py (+3: collapse state/states+country/countries, never
+  entities/denylisted, override+env kill-switch). Mentions summed, articles = max member
+  (the existing honest family convention).
   **ENTITY DETECTION — TITLE-CASE DROPPED, ACRONYMS KEPT (maintainer RULED 2026-06-16
   "proceed with your recommendation" after a data review; SHIPPED draft PR onto 0.09):**
   the baseline `kind=entity` flag was PURE capitalization — and the keyword-diagnostics
