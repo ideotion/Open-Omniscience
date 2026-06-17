@@ -4467,6 +4467,36 @@
             ${esc(unit || "")}</span><span>${range}</span></div>${caveat}`;
     }
 
+    // -- Family-stacked graphs (Slice 5) ------------------------------------ //
+    // "In the 'all' subtab … stacking all curves into family graphs … as much
+    // data but with fewer graphs" (maintainer 2026-06-17). One multi-series
+    // ooChart per group (category / continent) replaces N small cards. INDEXED by
+    // default so different-magnitude members of a family (gold vs copper, a 5000-pt
+    // index vs a 130 OECD index) co-move honestly on one axis — the hover always
+    // shows the REAL value, and a VISIBLE caveat states "relative, not absolute".
+    // Each group is wrapped with data-cat so the SAME continent/category subtabs
+    // filter the family graphs too. Reuses the ONE ooChart toolkit (invariant #16).
+    // groups: [{key, label, series:[{label, unit, points:[{t,v}]}]}]; shared [t0,t1].
+    function renderFamilyGraphs(host, groups, opts) {
+      opts = opts || {};
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const live = groups.filter(g => g.series.some(s => (s.points || []).length));
+      if (!live.length) { host.innerHTML = `<div class="muted">${esc(t("No data in this window yet."))}</div>`; return; }
+      const cav = `<div class="card-caveat">${esc(t("Indexed to 100 at the window start — relative moves, not absolute levels; the hover shows the real value."))}</div>`;
+      host.innerHTML = live.map(g =>
+        `<div class="fam-block mkt-cat" data-cat="${esc(g.key)}">
+           <div class="vsect" style="grid-column:1/-1">${esc(t(g.label))} <span class="muted">· ${g.series.filter(s => (s.points || []).length).length} ${esc(t("series"))}</span></div>
+           <div class="fam-chart" style="grid-column:1/-1"></div>
+         </div>`).join("") + cav;
+      // ooChart renders imperatively into a live element, so instantiate after the
+      // containers exist (in group order — the hosts match `live` 1:1).
+      host.querySelectorAll(".fam-chart").forEach((el, i) => {
+        const g = live[i]; if (!g) return;
+        ooChart(el, g.series.filter(s => (s.points || []).length),
+          {height: 200, indexed: opts.indexed !== false, logY: !!opts.logY});
+      });
+    }
+
     // Category display order + labels for the grouped Commodities board.
     const MKT_CATS = [
       ["energy", "Energy"], ["strategic", "Strategic & nuclear"], ["metals", "Base metals"],
@@ -4490,13 +4520,34 @@
       EURUSD: "euro dollar exchange rate",
     };
     let _mktCatTabs = null;        // the commodities category ooSubtabs handle
+    let _mktView = "cards";         // "cards" | "families" (Slice 5; default = no regression)
     function selectCommodityCat(key) {
       // Button/ARIA state is owned by the ooSubtabs component (universal
       // grammar, invariant #18); this callback only filters which category
-      // section is visible. "__all" (the default lens) shows everything.
+      // section is visible. "__all" (the default lens) shows everything. The
+      // family blocks carry the same .mkt-cat/data-cat, so this filters BOTH
+      // the cards view and the families view.
       document.querySelectorAll("#mkt-dashboard .mkt-cat").forEach(el => {
         el.style.display = (key === "__all" || el.dataset.cat === key) ? "" : "none";
       });
+    }
+    function setMktView(v) { _mktView = v; renderDashboard(); }
+    // Build one family per present category: its member series windowed to the
+    // shared range, ready for renderFamilyGraphs (Slice 5).
+    function commodityFamilies(present, seriesFor, from, to) {
+      return present.map(([k, label]) => ({
+        key: k === "__other" ? "__other" : k,
+        label,
+        series: seriesFor(k).map(s => {
+          const pts = windowPricesRange(MKT_PRICES[s.symbol] || [], from, to);
+          const last = pts.length ? pts[pts.length - 1] : null;
+          return {
+            label: s.name || s.symbol,
+            unit: last ? `${last.currency}/${last.unit}` : "",
+            points: pts.map(p => ({t: p.observed_on, v: p.price})),
+          };
+        }),
+      }));
     }
     function renderDashboard() {
       if (!MKT_SERIES.length) return;
@@ -4527,6 +4578,15 @@
       const sectionKey = ([k]) => k === "__other" ? "__other" : k;
       const seriesFor = k => k === "__other"
         ? otherCats.reduce((acc, c) => acc.concat(byCat[c]), []) : byCat[k];
+      // FAMILIES view (Slice 5): one multi-series graph per category instead of N
+      // cards — "as much data but with fewer graphs". Default stays Cards (the
+      // existing per-card grid below), so there is no regression.
+      if (_mktView === "families") {
+        renderFamilyGraphs($("mkt-dashboard"), commodityFamilies(present, seriesFor, from, to), {});
+        _renderMktViewToggle(t);
+        _renderCommodityCatTabs(present, sectionKey, t);
+        return;
+      }
       $("mkt-dashboard").innerHTML = present.map(([k, label]) =>
         `<div class="mkt-cat" data-cat="${esc(sectionKey([k]))}" style="display:contents">` +
         `<div class="vsect" style="grid-column:1/-1">${esc(t(label))}</div>` +
@@ -4580,25 +4640,38 @@
                 onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(t("Analyse"))} ↗</button></div></div>`;
         }).join("") + `</div>`
       ).join("");
-      // Category SUB-TABS (universal subtab grammar, invariant #18): build the
-      // nav from the categories actually present, with an "All" default lens
-      // (like Home families). Skip the nav entirely when only one category is
-      // present (a lone tab adds nothing — Home does the same).
+      _renderMktViewToggle(t);
+      _renderCommodityCatTabs(present, sectionKey, t);
+    }
+    // The Cards/Families view toggle (Slice 5) — only meaningful with >1 category;
+    // default Cards (no regression). Reuses the chip grammar.
+    function _renderMktViewToggle(t) {
+      const tog = $("mkt-viewtoggle");
+      if (!tog) return;
+      tog.innerHTML = `<span class="muted" style="font-size:12px;margin-right:2px">${esc(t("View"))}:</span>`
+        + [["cards", "Cards"], ["families", "Families"]].map(([k, lbl]) =>
+            `<button type="button" class="chip${_mktView === k ? " on" : ""}" data-view="${k}"
+               onclick="setMktView(${esc(JSON.stringify(k))})">${esc(t(lbl))}</button>`).join("");
+    }
+    // Category SUB-TABS (universal subtab grammar, invariant #18): the nav from the
+    // categories actually present, with an "All" default lens (like Home families).
+    // Skip the nav entirely when only one category is present. Shared by BOTH the
+    // cards view and the families view (the .mkt-cat data-cat filter works in both).
+    function _renderCommodityCatTabs(present, sectionKey, t) {
       const catNav = $("commodities-cats");
-      if (catNav) {
-        if (present.length > 1) {
-          catNav.style.display = "";
-          catNav.innerHTML =
-            `<button class="active" data-tab="__all">${esc(t("All"))}</button>`
-            + present.map(([k, label]) =>
-                `<button data-tab="${esc(sectionKey([k]))}">${esc(t(label))}</button>`).join("");
-          _mktCatTabs = ooSubtabs(catNav, selectCommodityCat, {initial: "__all"});
-        } else {
-          catNav.style.display = "none";
-          catNav.innerHTML = "";
-          _mktCatTabs = null;
-          selectCommodityCat("__all");
-        }
+      if (!catNav) return;
+      if (present.length > 1) {
+        catNav.style.display = "";
+        catNav.innerHTML =
+          `<button class="active" data-tab="__all">${esc(t("All"))}</button>`
+          + present.map(([k, label]) =>
+              `<button data-tab="${esc(sectionKey([k]))}">${esc(t(label))}</button>`).join("");
+        _mktCatTabs = ooSubtabs(catNav, selectCommodityCat, {initial: "__all"});
+      } else {
+        catNav.style.display = "none";
+        catNav.innerHTML = "";
+        _mktCatTabs = null;
+        selectCommodityCat("__all");
       }
     }
 
