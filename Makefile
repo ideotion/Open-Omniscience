@@ -3,7 +3,7 @@
 .DEFAULT_GOAL := help
 PY ?= python
 
-.PHONY: help install install-dev test lint format typecheck migrate seed run check clean
+.PHONY: help install install-dev test lint format typecheck migrate seed run check clean dist release-dryrun
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -38,6 +38,13 @@ run: ## Run the app on 127.0.0.1:8000 (loopback only)
 	open-omniscience
 
 check: lint test ## Lint + test (what CI runs)
+
+dist: ## Build the sdist + wheel into dist/
+	$(PY) -m build --outdir dist
+
+release-dryrun: dist ## Build artifacts + SHA256SUMS locally (what the release tag does, minus publish)
+	cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS && cat SHA256SUMS
+	@echo "Artifacts + SHA256SUMS in dist/. The release workflow (.github/workflows/release.yml) does this on a 'v*' tag and publishes a GitHub Release with the checksums in the notes."
 
 clean: ## Remove caches and build artifacts
 	rm -rf .pytest_cache .ruff_cache build dist *.egg-info

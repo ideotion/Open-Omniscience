@@ -176,6 +176,22 @@ def test_readme_version_matches_package():
     )
 
 
+def test_version_single_sourced_from_pyproject():
+    """RC gate (release-eng): the version is single-sourced from pyproject. ``src.__version__``
+    must RESOLVE to the installed package metadata, and ``src/__init__.py`` must NOT hardcode a
+    version literal that could silently drift (the old ``__version__ = "0.0.9"`` hazard)."""
+    import src
+    from importlib.metadata import version as _pkg_version
+
+    assert src.__version__ == _pkg_version("open-omniscience"), (
+        "src.__version__ must single-source from importlib.metadata (pyproject), not a literal"
+    )
+    init_src = (_ROOT / "src" / "__init__.py").read_text(encoding="utf-8")
+    assert re.search(r'__version__\s*=\s*"[0-9]', init_src) is None, (
+        "src/__init__.py must not hardcode a __version__ literal — read it from package metadata"
+    )
+
+
 def test_red_lines_not_crossed():
     """GOVERNANCE.md dual-use red lines, enforced as a tripwire: forbidden capabilities
     (biometric recognition, private-individual tracking, central telemetry) must not appear

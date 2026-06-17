@@ -24,7 +24,24 @@ For inquiries, contact: open-omniscience@ideotion.com
 # chain of custody tracking, and compliance checking for legal admissibility.
 # All components work offline without cloud dependencies.
 
-__version__ = "0.0.9"  # keep in sync with pyproject.toml [project].version
+# Version is SINGLE-SOURCED from the installed package metadata (pyproject
+# [project].version) -- never hardcode a duplicate here (RC gate: "version
+# single-sourced from pyproject"). The package is always pip-installed (incl.
+# editable `pip install -e .`), so this reflects the one authoritative version;
+# the fallback only applies to an uninstalled source checkout.
+def _read_version() -> str:
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            return version("open-omniscience")
+        except PackageNotFoundError:
+            return "0+unknown"
+    except Exception:
+        return "0+unknown"
+
+
+__version__ = _read_version()
 __author__ = "Open-Omniscience Team"
 __license__ = "GPLv3"
 
