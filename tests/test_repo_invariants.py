@@ -1612,6 +1612,38 @@ def test_indices_multiseries_compare():
     )
 
 
+def test_markets_coherent_time_axis_and_legends():
+    """The board graph timescales are COHERENT across sources + the legends are
+    clear (maintainer 2026-06-17 markets revamp Slice 4: "graph timescales should
+    be coherent between all sources … indices timescale legends should be clear").
+    dashChartSvg gains an ADDITIVE shared [t0,t1] time axis (date-based placement),
+    so every commodity card aligns on ONE calendar axis; without it the index-based
+    mapping is byte-identical (Home sparklines / trends unchanged). The Indices
+    cards gain a clear start→as-of date legend."""
+    html = _ui_source()
+    # dashChartSvg accepts the optional shared-window opts (back-compatible 3rd arg)
+    assert "function dashChartSvg(points, unit, opts)" in html, (
+        "dashChartSvg must accept the optional shared-axis opts"
+    )
+    # date-based placement only engages with a valid [t0,t1] window; else the
+    # index-based X(i) is the fallback (the byte-identical additive contract)
+    assert "const shared = isFinite(sa) && isFinite(sb) && sb > sa" in html, (
+        "the shared time axis must require a valid [t0,t1] window"
+    )
+    assert "if (!shared) return X(i)" in html, (
+        "without a shared window dashChartSvg must fall back to index-based X (no regression)"
+    )
+    # the commodities board feeds every card the SAME window so timescales cohere
+    assert "{t0: axT0, t1: axT1}" in html, (
+        "renderDashboard must pass one shared [t0,t1] window to every card"
+    )
+    assert "const axT0 = from || _span.min, axT1 = to || _span.max" in html, (
+        "the shared window must come from the active scope (or the full data span)"
+    )
+    # the Indices cards carry a clear timescale legend (start → as-of)
+    assert 'class="idx-range' in html, "each index spark must show a clear date-range legend"
+
+
 def test_commodity_card_opens_analysis():
     """Each commodity card's TITLE opens the universal analysis window seeded
     with that commodity's keyword query (maintainer-ruled COMMODITIES TAB REWORK

@@ -371,6 +371,8 @@
     .mkt-scalerow .chip.on { color:var(--fg); font-weight:600;
       border-color:var(--accent); background:color-mix(in srgb, var(--accent) 18%, transparent); }
     .idx-card.comparing { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+    /* Slice 4 — a clear timescale legend under each index spark (start → as-of). */
+    .idx-range { display:flex; justify-content:space-between; font-size:9.5px; margin-top:1px; }
     .cs-row.excluded { opacity:.55; }   /* a feed folder excluded from MY agenda (reversible) */
     .ag-views { gap:0; }                              /* Month · Week · List segmented switch */
     /* Week view: 7 taller day columns, weekday+date header, room for more events. */
