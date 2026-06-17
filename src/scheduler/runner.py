@@ -354,7 +354,7 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
 
     # Markets mode iterates configured extraction rules, not sources.
     if settings.mode == "markets":
-        from src.markets.pipeline import run_rules
+        from src.markets.pipeline import import_due_feeds, run_rules
 
         rules = capped(
             session.query(MarketExtractionRule)
@@ -364,12 +364,18 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         ).all()
         result = run_rules(session, rules, fetcher=fetcher)
         _add(result["tally"])
+        # Background AUTO-LOAD of the curated CSV feeds (commodities + indices),
+        # freshness-gated, so the board fills itself and the manual Load/Refresh
+        # button is no longer needed (maintainer 2026-06-17). Best-effort.
+        feeds = import_due_feeds(session, fetcher=fetcher)
+        _add({"feed_points": feeds.get("imported", 0)})
         finished = datetime.now(UTC)
         return {
             "mode": "markets",
             "sources_processed": len(rules),
             "articles_stored": agg.get("stored", 0),
             "prices_stored": result["prices_stored"],
+            "feeds_imported": feeds.get("imported", 0),
             "pages_fetched": 0,
             "tally": agg,
             "started_at": started.isoformat(),
