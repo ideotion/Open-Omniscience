@@ -1380,6 +1380,25 @@ ruling, a contingency, or a deliberate-omission note.
   logs). Reports deltas only, never infers. tests/test_keyword_log_analyzer.py (+4: kind-shift,
   gone/appeared, acronym-distinct, acronym-aware mistag). Closes the maintainer's loop: send a
   log next session, see the measured impact.
+  **KEYWORD PRE-SELECTION SELF-TEST + IN-APP TOOL SHIPPED 2026-06-17 (maintainer-asked "an
+  elegant test to challenge the preselection … verify it differentiates Who from WHO … and
+  other language tweaks … an in-app tool to automate the test and log results to send to
+  you"):** `src/analytics/selftest.py` = a DECLARATIVE golden-case harness (`Challenge`
+  dataclass — each line states in DATA exactly what it guards) run over the REAL pipeline
+  (BaselineExtractor / build_families / equivalence / baseline; no DB, no network, no score).
+  12 cases: who_vs_WHO (the org acronym stays distinct from the pronoun), US-survives-stopword,
+  German-nouns-are-terms, sentence-initial-not-entity, digit-acronym-kept (G7/COVID-19),
+  headline-caps-not-acronyms, English-stopword-filtered (that), weekday-filtered, German-
+  function-words-filtered (können/sondern), plural-family-merge, equivalence-ring
+  (election/élection/wahl), baseline-tag-applied. `run_keyword_selftest()` returns an exportable
+  log (schema `oo-selftest-1`, summary + per-case pass/fail+detail). THE IN-APP TOOL:
+  `GET /api/diagnostics/keyword-selftest` (+`?download=1` → dated attachment) added to the
+  Diagnostics-log panel (a 'Download keyword self-test (.json)' button + hint, matching the
+  existing un-keyed diagnostics buttons). All 12 PASS on the current pipeline (so a regression
+  reddens BOTH the in-app log the maintainer exports AND the unit test in CI).
+  tests/test_keyword_selftest.py (all-pass + who_vs_WHO + the runner detects a deliberate fail —
+  so a green run is never vacuous). Closes the loop the maintainer asked for: run it in-app,
+  send the log, I see exactly which keyword behaviour regressed.
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,
