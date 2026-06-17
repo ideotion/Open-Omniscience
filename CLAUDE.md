@@ -1679,6 +1679,23 @@ ruling, a contingency, or a deliberate-omission note.
 - **Collector: cumulative runs + progress (2026-06-10):** one Collect pass
   cumulatively does RSS + crawl + markets + wiki watched pages; a progress
   bar visible throughout the UI (top-bar activity chip hosts it).
+- **SENTIMENT AT INGEST (maintainer-flagged 2026-06-17 "isn't this done at the scraping level? I
+  see no sentiment analysis" — INVESTIGATED + FIXED, draft PR onto 0.09):** the finding was that
+  `Article.sentiment_score`/`sentiment_label` columns EXISTED but were NEVER written (dead columns) —
+  sentiment was computed ONLY on-demand (VADER) in one Sentiment subtab via /api/framing, so most of
+  the app showed nothing, and VADER's English-only lexicon made a multilingual corpus look empty.
+  FIX: `src/analytics/sentiment.py:score_article(text, language)` runs through the ONE per-article
+  `index_article` hook (so ingest [pipeline.py:202], re-index AND backfill all populate it now),
+  storing the result on the article. LANGUAGE-AWARE + HONEST: VADER (rule-based, no LLM, no network)
+  scores ONLY `language=="en"`; every other/unknown language + empty text returns (None,None) — NEVER
+  a fabricated neutral (the same honest gap as the keyword zh/ja limit). GRACEFUL: VADER is the
+  optional [analysis] extra, so `_analyzer()` returns None when it's absent → score_article returns
+  (None,None) → a CORE install never crashes at ingest (the language/empty gates also return before
+  VADER is touched). tests/test_sentiment_at_ingest.py (non-English→None runs everywhere incl. no-lib;
+  the en-scoring + index_article-populates tests skip without the extra, run in CI). REMAINING: SURFACE
+  the stored sentiment in the reader/cards/lists (the columns are now populated on re-index; the UI
+  still reads on-demand framing in the Sentiment subtab); a multilingual path (per-language lexicons /
+  a local model) beyond the English VADER baseline.
 - **When×Where×Who at ingest (CONFIRMED GO; PERSISTENCE SHIPPED T12
   2026-06-12):** dates/places/entities now persist AT INGEST through the one
   index_article hook (live ingest + re-index + backfill all inherit it) —

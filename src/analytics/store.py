@@ -160,6 +160,15 @@ def index_article(
 ) -> dict:
     """Extract + store mentions for one article (idempotent). Returns a small tally."""
     content = article.get_content() if hasattr(article, "get_content") else (article.content or "")
+
+    # Sentiment at ingest (language-aware, honest): VADER scores ENGLISH articles
+    # and stores the result on the article; every other language stays NULL — never
+    # a fabricated neutral. Runs on the one per-article hook, so ingest / re-index /
+    # backfill all populate the (previously dead) sentiment columns.
+    from src.analytics.sentiment import score_article
+
+    article.sentiment_score, article.sentiment_label = score_article(content, article.language)
+
     terms = extractor.extract(
         content or "",
         title=article.title or "",
