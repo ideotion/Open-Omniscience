@@ -1242,6 +1242,15 @@
       </div>
       <div style="overflow:auto;margin-top:10px" id="statfig-table"></div>
       <div style="overflow:auto;margin-top:10px" id="statfig-tri"></div>
+      <div style="margin-top:14px">
+        <div class="row" style="align-items:center;justify-content:space-between">
+          <h3 style="margin:0;font-size:12px">Tracked for auto-refresh</h3>
+          <button class="secondary" onclick="refreshStatSubs()" title="Replay due fetches now (also runs in the background while you are online)">Refresh due now</button>
+        </div>
+        <p class="hint" style="margin-top:2px">Every figure you fetch is tracked and re-fetched on its interval while you are online,
+          storing a new <em>vintage</em> each time (revisions are preserved, never overwritten). Disable or remove any you do not want.</p>
+        <div id="statfig-subs"></div>
+      </div>
     </section>
     </div>
 

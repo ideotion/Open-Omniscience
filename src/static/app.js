@@ -998,7 +998,7 @@
       if (cat === "models") { loadLlmModels(); loadLlmPrompts(); loadLlmHealth(); }  // LLM-management subtab (Q6) — also re-check the pill
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
-      if (cat === "stats") { loadStatAgencies(); loadStatFigures(); }  // official-statistics directory + figures (Group N)
+      if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
       if (cat === "data") modelsBackupStatus();        // the opt-in LLM-models companion backup (PR 6)
@@ -7718,6 +7718,48 @@
         box.innerHTML = `<table><tr><th>Area</th><th>Period</th><th>#</th><th>Producers (side by side)</th><th>Comparability</th></tr>${cellHtml}</table>`
           + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
       } catch (e) { box.innerHTML = `<div class="muted">Could not triangulate: ${esc(e.message)}</div>`; }
+    }
+    // -- Tracked figures (ruling #12): scheduled vintage auto-refresh. English-only.
+    async function loadStatSubs() {
+      const box = $("statfig-subs"); if (!box) return;
+      try {
+        const d = await api("/api/stats/subscriptions");
+        const subs = d.subscriptions || [];
+        if (!subs.length) { box.innerHTML = `<div class="muted">Nothing tracked yet — fetch a figure above to start tracking it.</div>`; return; }
+        const rows = subs.map(s => {
+          const what = s.indicator ? esc(s.indicator) + (s.country ? " · " + esc(String(s.country).toUpperCase()) : "")
+                                   : esc(s.dataset || "");
+          const last = s.last_fetched_at ? fmtDateTime(s.last_fetched_at) : "never";
+          return `<tr>
+            <td>${esc(s.source)}</td><td>${what}</td>
+            <td>every ${s.interval_days}d</td>
+            <td><span class="pill ${s.enabled ? 'ok' : ''}">${s.enabled ? 'on' : 'off'}</span></td>
+            <td>${esc(last)}${s.last_status ? ` <span class="muted">(${esc(s.last_status)})</span>` : ""}</td>
+            <td><button class="secondary" onclick="toggleStatSub(${s.id}, ${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button>
+                <button class="secondary" onclick="deleteStatSub(${s.id})">Remove</button></td>
+          </tr>`;
+        }).join("");
+        box.innerHTML = `<table><tr><th>Source</th><th>Series</th><th>Interval</th><th>State</th><th>Last refresh</th><th></th></tr>${rows}</table>`
+          + (d.caveat ? `<div class="hint" style="margin-top:6px">${esc(d.caveat)}</div>` : "");
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load tracked figures: ${esc(e.message)}</div>`; }
+    }
+    async function toggleStatSub(id, enabled) {
+      try { await api("/api/stats/subscriptions/" + id, { method: "PATCH", body: JSON.stringify({ enabled }) }); loadStatSubs(); }
+      catch (e) { toast("Could not update: " + e.message, "err"); }
+    }
+    async function deleteStatSub(id) {
+      if (!confirm("Stop tracking this figure for auto-refresh? (Stored vintages are kept.)")) return;
+      try { await api("/api/stats/subscriptions/" + id, { method: "DELETE" }); loadStatSubs(); }
+      catch (e) { toast("Could not remove: " + e.message, "err"); }
+    }
+    async function refreshStatSubs() {
+      try {
+        const d = await api("/api/stats/subscriptions/refresh", { method: "POST" });
+        toast(d.skipped_offline ? "Offline — nothing refreshed (go online first)."
+                                : `Refreshed ${d.refreshed || 0}, stored ${d.stored || 0} new vintage(s).`,
+              d.errors ? "err" : "ok");
+        loadStatSubs(); loadStatFigures();
+      } catch (e) { toast("Refresh failed: " + e.message, "err"); }
     }
 
     // -- Read a page from a downloaded dump (T14: local, zero network) ------- //
