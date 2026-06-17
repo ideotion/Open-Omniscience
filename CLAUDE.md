@@ -448,8 +448,16 @@ ruling, a contingency, or a deliberate-omission note.
   never downgraded, single-writer gate, degrades loudly; GET /figures, /figures/vintages,
   /triangulate, /sources). tests/test_stats_store.py (6) + tests/test_stats_figures_api.py (5:
   kill-switch refusal proven with NO socket). REMAINING: a visible task-manager job over a LONG
-  fetch (the synchronous endpoint suffices for bounded indicator pulls); the Statistics-figures
-  FRONTEND; periodic re-fetch vintage scheduling]. THE FOUR FORKS
+  fetch (the synchronous endpoint suffices for bounded indicator pulls). FIGURES FRONTEND
+  SHIPPED 2026-06-17 (Settings → Statistics: consented fetch + vintaged table + triangulation,
+  browser-unverified). SCHEDULED VINTAGE AUTO-REFRESH SHIPPED 2026-06-17 (ruling #12): a
+  StatSubscription model + migration c9d0e1f2a3b4 records every user fetch; src/stats/
+  subscriptions.py replays DUE subscriptions (freshness-gated interval_days default 30,
+  AIRPLANE-gated → no socket offline, best-effort per sub) storing a NEW vintage each time;
+  wired into the scheduler markets pass + the fetch endpoint records subscriptions; API
+  /api/stats/subscriptions (list/PATCH/DELETE/refresh) + a Settings "Tracked for auto-refresh"
+  panel. tests/test_stat_subscriptions.py (5) + the fetch-records-a-subscription API test].
+  THE FOUR FORKS
   (ruled 2026-06-16): (1) the offline READER stays STANDALONE (not folded into #an);
   (2) the convergence WATCH engine = the FULL 'Watches view + history' UX (saved local
   conditions → a Lead card on match + a dedicated Watches panel: history +
