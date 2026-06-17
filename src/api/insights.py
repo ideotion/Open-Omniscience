@@ -738,3 +738,157 @@ def insights_graph(
     return q.layered_graph(
         db, level=level, term=term, hops=hops, days=days, start=_parse(start), end=_parse(end)
     )
+
+
+# --- Keyword tags (Item AC): explore + user curation of type/topic tags -------- #
+#
+# Tags are LABELLED ASSERTIONS along two axes (a semantic ``type`` and a ``topic``),
+# never ground truth and never a score. A curated baseline applies them at index
+# time (source="baseline"); these endpoints let the user explore them and add/remove
+# their OWN (source="user"), fully reversible. Nothing in the keyword store is
+# rewritten. See src/analytics/baseline.py + docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md.
+
+_TAG_AXES = ("type", "topic")
+
+
+class TagBody(BaseModel):
+    normalized: str
+    axis: str
+    tag: str
+
+
+def _norm_tag(axis: str | None, tag: str | None) -> tuple[str, str]:
+    """Validate + normalise a (axis, tag) pair (lowercased, bounded). Raises 400."""
+    ax = (axis or "").strip().lower()
+    tg = " ".join((tag or "").split()).lower()
+    if ax not in _TAG_AXES:
+        raise HTTPException(status_code=400, detail=f"axis must be one of {list(_TAG_AXES)}")
+    if not tg:
+        raise HTTPException(status_code=400, detail="tag is required")
+    if len(tg) > 64:
+        raise HTTPException(status_code=400, detail="tag too long (max 64)")
+    return ax, tg
+
+
+@router.get("/keyword-tags")
+def keyword_tags(normalized: str = Query(...), db: Session = Depends(get_db)) -> dict:
+    """One keyword's tags, grouped by axis, with per-tag source provenance.
+
+    Read-only; labels only, never a score. The ``sources`` map keys are
+    ``"axis:tag"`` → ``"baseline"`` | ``"user"`` so the UI can show provenance."""
+    from src.analytics.store import tags_for_keyword
+    from src.database.models import Keyword, KeywordTag
+
+    norm = _n(normalized)
+    kw = db.query(Keyword).filter_by(normalized_term=norm).first()
+    sources: dict[str, str] = {}
+    if kw is not None:
+        for r in db.query(KeywordTag).filter_by(keyword_id=kw.id):
+            sources[f"{r.axis}:{r.tag}"] = r.source
+    return {"normalized": norm, "tags": tags_for_keyword(db, norm), "sources": sources}
+
+
+@router.post("/keyword-tags")
+def add_keyword_tag(body: TagBody, db: Session = Depends(get_db)) -> dict:
+    """Add a USER tag on a keyword (a labelled assertion; idempotent; reversible)."""
+    from src.analytics.store import tags_for_keyword
+    from src.database.models import Keyword, KeywordTag
+
+    norm = _n(body.normalized)
+    axis, tag = _norm_tag(body.axis, body.tag)
+    kw = db.query(Keyword).filter_by(normalized_term=norm).first()
+    if kw is None:
+        raise HTTPException(status_code=404, detail="unknown keyword")
+    exists = (
+        db.query(KeywordTag).filter_by(keyword_id=kw.id, axis=axis, tag=tag, source="user").first()
+    )
+    if exists is None:
+        db.add(KeywordTag(keyword_id=kw.id, axis=axis, tag=tag, source="user"))
+        db.commit()
+    return {"normalized": norm, "tags": tags_for_keyword(db, norm)}
+
+
+@router.post("/keyword-tags/remove")
+def remove_keyword_tag(body: TagBody, db: Session = Depends(get_db)) -> dict:
+    """Remove a tag from a keyword (local curation — any source). Reversible by
+    re-adding; a removed baseline tag is NOT re-applied (tagging is forward-only)."""
+    from src.analytics.store import tags_for_keyword
+    from src.database.models import Keyword, KeywordTag
+
+    norm = _n(body.normalized)
+    axis, tag = _norm_tag(body.axis, body.tag)
+    kw = db.query(Keyword).filter_by(normalized_term=norm).first()
+    if kw is not None:
+        db.query(KeywordTag).filter_by(keyword_id=kw.id, axis=axis, tag=tag).delete()
+        db.commit()
+    return {"normalized": norm, "tags": tags_for_keyword(db, norm)}
+
+
+@router.get("/keyword-tags/facets")
+def keyword_tag_facets(db: Session = Depends(get_db)) -> dict:
+    """Distinct tags per axis with DISTINCT-keyword counts — the explore filter.
+
+    Counts only, no score. Empty axes are still listed so the UI is stable."""
+    from sqlalchemy import func
+
+    from src.database.models import KeywordTag
+
+    rows = (
+        db.query(
+            KeywordTag.axis, KeywordTag.tag, func.count(func.distinct(KeywordTag.keyword_id))
+        )
+        .group_by(KeywordTag.axis, KeywordTag.tag)
+        .all()
+    )
+    facets: dict[str, list[dict]] = {a: [] for a in _TAG_AXES}
+    for axis, tag, n in rows:
+        facets.setdefault(axis, []).append({"tag": tag, "keywords": int(n or 0)})
+    for a in facets:
+        facets[a].sort(key=lambda x: (-x["keywords"], x["tag"]))
+    return {"axes": list(_TAG_AXES), "facets": facets}
+
+
+@router.get("/keyword-tags/keywords")
+def keywords_by_tag(
+    axis: str = Query(...),
+    tag: str = Query(...),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Keywords carrying a given (axis, tag), with mention/article counts + source.
+
+    The explore view's main query. Ordered by article spread then mentions; counts
+    only, never a score."""
+    from sqlalchemy import func
+
+    from src.database.models import Keyword, KeywordMention, KeywordTag
+
+    ax, tg = _norm_tag(axis, tag)
+    rows = (
+        db.query(
+            Keyword.normalized_term,
+            Keyword.term,
+            Keyword.language,
+            KeywordTag.source,
+            func.coalesce(func.sum(KeywordMention.count), 0),
+            func.count(func.distinct(KeywordMention.article_id)),
+        )
+        .join(KeywordTag, KeywordTag.keyword_id == Keyword.id)
+        .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        .filter(KeywordTag.axis == ax, KeywordTag.tag == tg)
+        .group_by(Keyword.id, KeywordTag.source)
+        .all()
+    )
+    items = [
+        {
+            "normalized": norm,
+            "term": term,
+            "language": lang,
+            "source": source,
+            "mentions": int(m or 0),
+            "articles": int(a or 0),
+        }
+        for norm, term, lang, source, m, a in rows
+    ]
+    items.sort(key=lambda x: (-x["articles"], -x["mentions"], x["normalized"]))
+    return {"axis": ax, "tag": tg, "total": len(items), "keywords": items[:limit]}
