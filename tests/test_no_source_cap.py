@@ -64,3 +64,30 @@ def test_plan_preview_honours_an_explicit_soft_cap():
     s = _db_with_sources(7)
     plan = plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=3), last_result=None)
     assert plan["planned_total"] == 3
+
+
+def test_plan_preview_bounds_the_materialised_sample(monkeypatch):
+    """Field perf 2026-06-17: /api/scheduler/activity was the #1 endpoint by
+    server time because this preview loaded the WHOLE enabled-source set on every
+    poll. It must report the TRUE total (a cheap COUNT) but only materialise a
+    BOUNDED sample for its 8 preview domains + the representative delay."""
+    import src.scheduler.runner as runner
+
+    s = _db_with_sources(300)  # well over the sample bound
+    seen: dict[str, int] = {}
+    original = runner.stratified_interleave
+
+    def _spy(rows, **kw):
+        seen["n"] = len(rows)
+        return original(rows, **kw)
+
+    monkeypatch.setattr(runner, "stratified_interleave", _spy)
+    plan = plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=0), last_result=None)
+
+    assert plan["planned_total"] == 300  # the honest total (no cap), via COUNT
+    assert seen["n"] <= runner._PLAN_PREVIEW_SAMPLE  # only a bounded sample built
+    assert seen["n"] < 300  # NOT the whole set
+    assert len(plan["next_targets"]) == 8  # still a full 8-domain preview
+    # estimate still uses the TRUE total: 300 sources × 2.0s default politeness
+    # delay (Source.rate_limit_ms defaults to 2000ms) × 1 fetch each = 600s.
+    assert plan["estimated_seconds"] == 600
