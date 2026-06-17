@@ -11,6 +11,13 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **A date-extraction diagnostics log, to help make extraction better.** Settings →
+  Diagnostics has a new **Download date-extraction log (.json)** button. For a bounded sample
+  of your articles it shows, side by side, the dates the extractor *found* and the date-like
+  text it *skipped* — plus coverage broken down by language (so a language the extractor has
+  no month names for stands out immediately). Like the other diagnostics it's generated only
+  when you click, stays on your machine, and is never transmitted; share it if you'd like to
+  help improve the extractor. Counts and bounded samples only, no scores.
 - **The dates a story is *about* are now caught as you collect.** Date extraction already
   ran automatically at ingest, but it was only catching fully-spelled-out dates and quietly
   missing the way news actually writes time — "yesterday", "on Tuesday", "11 September" (no
