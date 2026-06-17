@@ -1348,7 +1348,14 @@ class KeywordSuperGroup(Base):
 
 
 class KeywordSuperGroupMember(Base):
-    """One family (by its canonical normalized term) assigned to a super-group."""
+    """One member of a super-group — a FAMILY or a RING (the super-ring model).
+
+    Default: a family by its canonical ``normalized_term`` (``ring_id`` NULL). When
+    ``ring_id`` is set the member is a cross-language RING (concept), so the
+    super-group spans languages — "rings of rings": keyword → family → ring →
+    super-group. A ring member stores the ring id in BOTH ``ring_id`` (the marker +
+    link) and ``normalized_term`` (so the unique (supergroup_id, normalized_term)
+    key and the existing remove-by-key path keep working unchanged)."""
 
     __tablename__ = "keyword_supergroup_members"
 
@@ -1357,6 +1364,7 @@ class KeywordSuperGroupMember(Base):
         Integer, ForeignKey("keyword_supergroups.id", ondelete="CASCADE"), nullable=False
     )
     normalized_term: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    ring_id: Mapped[str | None] = mapped_column(String(64))  # set => this member is a RING (concept)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     supergroup = relationship("KeywordSuperGroup", back_populates="members")
@@ -1366,7 +1374,8 @@ class KeywordSuperGroupMember(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<KeywordSuperGroupMember(sg={self.supergroup_id} {self.normalized_term})>"
+        kind = f"ring:{self.ring_id}" if self.ring_id else self.normalized_term
+        return f"<KeywordSuperGroupMember(sg={self.supergroup_id} {kind})>"
 
 
 class KeywordTag(Base):
