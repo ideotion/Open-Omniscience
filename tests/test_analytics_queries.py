@@ -222,8 +222,14 @@ def test_corpus_sentiment_distribution_and_english_disclosure(db):
     assert r["english_scored"] == 2  # a3 is fr -> outside the reliable (English) share
     assert r["mean_score"] == round((0.8 - 0.7 + 0.1) / 3, 3)
     assert "VADER" in r["caveat"]
-    # an article with no stored score is excluded from n_scored
+    # an article with no stored score is excluded from n_scored. (Sentiment is now
+    # computed AT INGEST for English text via index_article, so every English article
+    # gets a stored score by default; we explicitly clear a4's score to represent an
+    # article the scorer left unscored — e.g. a non-English article, or a CORE install
+    # without the optional VADER extra — and assert it is excluded.)
     a4 = _mk(db, "se4", "No score.", "2026-03-04")
+    a4.sentiment_score, a4.sentiment_label = None, None
+    db.commit()
     assert q.corpus_sentiment(db, article_ids=[a1.id, a4.id])["n_scored"] == 1
     assert q.corpus_sentiment(db, article_ids=[])["n_scored"] == 0
 
