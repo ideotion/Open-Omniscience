@@ -85,6 +85,37 @@ def test_multilingual_months_extract():
     assert ("2026-10-07", "day") in got
 
 
+def test_additional_language_months_extract():
+    """date-diagnostics 2026-06-17: these UI/corpus languages had no month
+    vocabulary (coverage near-zero despite real article volume). Each writes a
+    representative native date; the day/year context makes extraction safe."""
+    cases = [
+        ("Raportul a fost depus pe 31 august 2026.", "2026-08-31"),          # Romanian
+        ("Toplantı 5 Mayıs 2024 tarihinde yapıldı.", "2024-05-05"),          # Turkish
+        ("Mødet var den 5. maj 2024 i byen.", "2024-05-05"),                  # Danish
+        ("Spotkanie odbyło się 5 maja 2024 roku.", "2024-05-05"),            # Polish (genitive)
+        ("Stretnutie bolo 5. mája 2024 v meste.", "2024-05-05"),             # Slovak (genitive)
+        ("Kokous pidettiin 5. toukokuuta 2024.", "2024-05-05"),              # Finnish (partitive)
+        ("Sastanak je bio 5. septembar 2024.", "2024-09-05"),                # Serbian (Latin)
+        ("Састанак је био 5. мај 2024.", "2024-05-05"),                       # Serbian (Cyrillic)
+        ("Срещата беше на 5 май 2024 г.", "2024-05-05"),                      # Bulgarian (Cyrillic)
+        ("A találkozó 2024. október 23. napján volt.", "2024-10-23"),        # Hungarian (year-first)
+    ]
+    for text, expected in cases:
+        got = _dates(text)
+        assert (expected, "day") in got, f"{text!r} -> {got!r}"
+
+
+def test_added_months_do_not_invent_dates_without_a_number():
+    """Precision guard for the new vocabulary: a month-word in running prose with
+    NO adjacent day/year must NOT yield a date (the 'better to miss than invent'
+    ethos). Romanian 'mai' = 'more', Turkish 'ocak' = 'hearth', and Spanish/
+    Italian 'marca' = 'brand' (deliberately omitted from the table)."""
+    assert _dates("Suntem printre cele mai tolerante națiuni.") == []      # ro 'mai' = more
+    assert _dates("Evde eski bir ocak vardı, çok güzeldi.") == []          # tr 'ocak' = hearth
+    assert _dates("Presentaron la marca 2024 de coches nuevos.") == []     # es 'marca' = brand
+
+
 def test_numeric_dates_language_disambiguated():
     from src.timemap.dateextract import extract_dates
 

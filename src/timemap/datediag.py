@@ -31,7 +31,13 @@ from src.timemap.dateextract import _MONTHS, _REL_WORDS, _WEEKDAYS, extract_date
 # OTHER language (ru/ar/zh/ja/hi/bn/id/…) can only be caught via ISO or numeric
 # forms, so a low extracted-date rate for those languages is the clearest signal
 # of a vocabulary gap — surfaced per-language rather than guessed at.
-MONTH_VOCAB_LANGS: frozenset[str] = frozenset({"en", "fr", "de", "es", "it", "pt"})
+# Extended 2026-06-17 from the date-diagnostics log (ro/hu/tr/da/sk/pl/fi/sr/bg
+# had real article volume but no vocabulary → near-zero coverage); sv/nb share
+# the Nordic table now too.
+MONTH_VOCAB_LANGS: frozenset[str] = frozenset(
+    {"en", "fr", "de", "es", "it", "pt",
+     "ro", "hu", "tr", "da", "sv", "nb", "fi", "pl", "sk", "sr", "bg"}
+)
 
 # Probe kinds the extractor is *expected* to resolve (so a miss is actionable);
 # ``bare_year`` is excluded — the extractor skips bare years BY DESIGN (too easily

@@ -74,6 +74,58 @@ _MONTHS.update({
     "janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3, "maio": 5, "junho": 6,
     "julho": 7, "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12,
 })
+# Additional UI/corpus languages (date-diagnostics 2026-06-17: these had NO month
+# vocabulary, so date coverage cratered despite real article volume — sr 6.8 %,
+# hu 3.7 %, tr 8.9 %, ro 15.6 %, da 25.8 %, sk/pl/fi/bg ~0 %). SAFE to add: a month
+# name only ever yields a date when a day number or a year sits ADJACENT (every
+# regex below requires it), so vocabulary raises recall without inventing dates
+# from running prose. Inflected forms idiomatic in dates are included (Slavic
+# GENITIVE "5 maja", Finnish PARTITIVE "5. toukokuuta"). Every token maps to ONE
+# month. Tokens that are common words in a HIGHER-volume language are deliberately
+# omitted to preserve precision (e.g. Polish/Slovak genitive "marca" = March, but
+# also Spanish/Italian "marca" = brand → omitted; "5 marca" still resolves via the
+# nominative marzec/marec or numeric forms).
+_MONTHS.update({
+    # Romanian
+    "ianuarie": 1, "februarie": 2, "martie": 3, "aprilie": 4, "iunie": 6,
+    "iulie": 7, "septembrie": 9, "octombrie": 10, "noiembrie": 11, "decembrie": 12,
+    # Hungarian ("2024. május 5.")
+    "január": 1, "február": 2, "március": 3, "április": 4, "május": 5,
+    "június": 6, "július": 7, "augusztus": 8, "szeptember": 9, "október": 10,
+    # Turkish ("5 Mayıs 2024")
+    "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4, "mayıs": 5, "haziran": 6,
+    "temmuz": 7, "ağustos": 8, "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
+    # Nordic (Danish / Swedish / Norwegian Bokmål)
+    "marts": 3, "maj": 5, "desember": 12, "januari": 1, "februari": 2,
+    "augusti": 8,
+    # Finnish — nominative + partitive ("5. toukokuuta 2024")
+    "tammikuu": 1, "helmikuu": 2, "maaliskuu": 3, "huhtikuu": 4, "toukokuu": 5,
+    "kesäkuu": 6, "heinäkuu": 7, "elokuu": 8, "syyskuu": 9, "lokakuu": 10,
+    "marraskuu": 11, "joulukuu": 12,
+    "tammikuuta": 1, "helmikuuta": 2, "maaliskuuta": 3, "huhtikuuta": 4,
+    "toukokuuta": 5, "kesäkuuta": 6, "heinäkuuta": 7, "elokuuta": 8,
+    "syyskuuta": 9, "lokakuuta": 10, "marraskuuta": 11, "joulukuuta": 12,
+    # Polish — nominative + genitive ("5 maja 2024"); "marca" omitted (see above)
+    "styczeń": 1, "luty": 2, "marzec": 3, "kwiecień": 4, "czerwiec": 6,
+    "lipiec": 7, "sierpień": 8, "wrzesień": 9, "październik": 10, "listopad": 11,
+    "grudzień": 12,
+    "stycznia": 1, "lutego": 2, "kwietnia": 4, "maja": 5, "czerwca": 6,
+    "lipca": 7, "sierpnia": 8, "września": 9, "października": 10, "listopada": 11,
+    "grudnia": 12,
+    # Slovak — nominative + genitive ("5. mája 2024"); "marca" omitted (see above)
+    "marec": 3, "apríl": 4, "máj": 5, "jún": 6, "júl": 7,
+    "januára": 1, "februára": 2, "apríla": 4, "mája": 5, "júna": 6, "júla": 7,
+    "augusta": 8, "septembra": 9, "októbra": 10, "novembra": 11, "decembra": 12,
+    # Serbian (Latin)
+    "avgust": 8, "septembar": 9, "oktobar": 10, "novembar": 11, "decembar": 12,
+    # Serbian (Cyrillic)
+    "јануар": 1, "фебруар": 2, "март": 3, "април": 4, "мај": 5, "јун": 6,
+    "јул": 7, "август": 8, "септембар": 9, "октобар": 10, "новембар": 11,
+    "децембар": 12,
+    # Bulgarian (Cyrillic)
+    "януари": 1, "февруари": 2, "май": 5, "юни": 6, "юли": 7,
+    "септември": 9, "октомври": 10, "ноември": 11, "декември": 12,
+})
 _MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))  # longest first so 'sept' beats 'sep'
 
 # Numeric dates (dd/mm/yyyy · dd.mm.yyyy · dd-mm-yyyy · yyyy/mm/dd). When both
@@ -111,6 +163,10 @@ _WD_RE = re.compile(
 _ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _DMY_RE = re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th|er|\.)?\s+(?:de\s+)?({_MONTH_ALT})\.?\s+(?:de\s+)?(\d{{4}})\b", re.I)
 _MDY_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b", re.I)
+# Year-first with a NAMED month ("2024. május 5." Hungarian / "2024 m. gegužės"
+# patterns): unambiguous (full year + month name + day all present), so it is a
+# day match like ISO. Covers locales that write Y M D in prose with words.
+_YMD_NAME_RE = re.compile(rf"\b(\d{{4}})\.?\s+({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b", re.I)
 _MY_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{4}})\b", re.I)
 
 # Plausible window for a *mentioned* date: deep history up to a little ahead of "now".
@@ -184,6 +240,10 @@ def extract_dates(
             add(d, "day", m)
     for m in _MDY_RE.finditer(text):
         d = _valid(int(m.group(3)), _MONTHS[m.group(1).lower()], int(m.group(2)), today)
+        if d and claim(*m.span()):
+            add(d, "day", m)
+    for m in _YMD_NAME_RE.finditer(text):  # "2024. május 5." (year-first, named month)
+        d = _valid(int(m.group(1)), _MONTHS[m.group(2).lower()], int(m.group(3)), today)
         if d and claim(*m.span()):
             add(d, "day", m)
     # Numeric dates — language picks the order when ambiguous; never guessed.
