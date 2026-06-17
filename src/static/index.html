@@ -139,16 +139,12 @@
       </div>
 
       <main id="main" tabindex="-1">
-    <div id="onboard" class="panel" style="display:none;border-color:var(--accent)">
-      <h2 style="color:var(--fg)">Welcome — your corpus is empty</h2>
-      <p class="muted" style="margin-top:0">Get started by registering the curated source catalog and running a
-        first ingestion. Everything is ethical (robots.txt fail-closed, rate-limited) and local.</p>
-      <div class="row">
-        <button onclick="firstRun(this)">Seed sources &amp; run a first ingestion</button>
-        <button class="secondary" onclick="$('onboard').style.display='none'">Dismiss</button>
-      </div>
-      <div id="onboard-status" class="hint" style="margin-top:6px"></div>
-    </div>
+    <!-- The "welcome — your corpus is empty" bubble was retired (maintainer-ruled
+         2026-06-17): sources auto-seed on boot and the background collector runs
+         continuously once online (only airplane mode stops it), so there is no
+         manual "seed & first ingestion" step to prompt. First-run guidance lives in
+         the one-time guided wizard; the empty Home falls back to the briefing's
+         honest empty state. -->
 
     <!-- ============================= HOME ============================= -->
     <div class="tab-page active" id="tab-home">

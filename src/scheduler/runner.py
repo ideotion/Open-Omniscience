@@ -64,6 +64,64 @@ def round_robin_interleave(sources: list, *, rng: random.Random | None = None) -
     return out
 
 
+def stratified_interleave(sources: list, *, rng: random.Random | None = None) -> list:
+    """Order sources with TRUE per-pass randomness, fairly STRATIFIED by LANGUAGE
+    then by SOURCE TAG (maintainer-ruled 2026-06-17 — supersedes the per-country
+    round-robin for the default collection pass).
+
+    Each language gets equal round-robin turns (language order shuffled EVERY call);
+    within a language each distinct tag gets equal turns (tag order shuffled); within
+    a (language, tag) group the sources are shuffled truly randomly. So no language
+    and no topic-tag is over-represented merely by having more sources, and the order
+    differs every pass (true randomness, not a fixed rotation). A source's stratum tag
+    is its FIRST tag (a multi-tag source picks one representative); sources with no
+    language / no tag share an "·unknown" / "·untagged" bucket so they are never
+    dropped. Per-host politeness is unaffected (it lives in the fetcher's host lock);
+    this only decides ORDER. ``rng`` is injectable so tests are deterministic.
+    """
+    if not sources:
+        return []
+    chooser = rng or random
+
+    def _lang(s) -> str:
+        return (getattr(s, "language", None) or "").strip().lower() or "·unknown"
+
+    def _tag(s) -> str:
+        raw = getattr(s, "tags", None) or ""
+        first = raw.split(",")[0].strip().lower() if raw else ""
+        return first or "·untagged"
+
+    by_lang: dict[str, dict[str, list]] = {}
+    for s in sources:
+        by_lang.setdefault(_lang(s), {}).setdefault(_tag(s), []).append(s)
+
+    # Flatten each language into a tag-round-robin (tag order + within-tag shuffled).
+    lang_queues: list[list] = []
+    langs = list(by_lang.keys())
+    chooser.shuffle(langs)
+    for lang in langs:
+        tag_map = by_lang[lang]
+        tags = list(tag_map.keys())
+        chooser.shuffle(tags)
+        tag_queues = []
+        for t in tags:
+            grp = list(tag_map[t])
+            chooser.shuffle(grp)            # true randomness within a (lang, tag) group
+            tag_queues.append(grp)
+        flat: list = []
+        while tag_queues:
+            flat.extend(q.pop(0) for q in tag_queues)
+            tag_queues = [q for q in tag_queues if q]
+        lang_queues.append(flat)
+
+    # Round-robin across languages: one source per language per round.
+    out: list = []
+    while lang_queues:
+        out.extend(q.pop(0) for q in lang_queues)
+        lang_queues = [q for q in lang_queues if q]
+    return out
+
+
 def _filter_due_feeds(session, sources: list) -> tuple[list, int]:
     """Split RSS sources into (due, backed_off_count) by their feed backoff state.
 
@@ -176,9 +234,9 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     if settings.mode in ("rss", "crawl"):
         rows = capped(select_sources(session, settings), settings.max_sources_per_run).all()
         total = len(rows)
-        # Preview the same per-country round-robin order the pass will use, so
-        # "next targets" honestly reflects what runs first (not priority order).
-        rows = round_robin_interleave(rows)
+        # Preview the same stratified (language + tag, true-random) order the pass
+        # will use, so "next targets" honestly reflects what runs first (not priority).
+        rows = stratified_interleave(rows)
         targets = [r.domain for r in rows[:8]]
         delays = [max((r.rate_limit_ms or 1000) / 1000.0, 1.0) for r in rows] or [1.0]
         median_delay = sorted(delays)[len(delays) // 2]
@@ -320,10 +378,11 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         }
 
     sources = capped(select_sources(session, settings), settings.max_sources_per_run).all()
-    # Fair ordering: per-country round-robin so no source-rich country dominates
-    # a pass (maintainer 2026-06-11). With continuous passes this realises the
-    # ruled "one source per country, then repeat".
-    sources = round_robin_interleave(sources)
+    # Fair ordering: TRUE-RANDOM stratified by LANGUAGE + SOURCE TAG so no
+    # source-rich language or topic dominates a pass, and the order differs every
+    # pass (maintainer-ruled 2026-06-17, supersedes the per-country round-robin).
+    # Per-host politeness is untouched (the fetcher's host lock); this only orders.
+    sources = stratified_interleave(sources)
 
     # Per-feed de-churn backoff (field log finding F): skip RSS feeds that are
     # within a CAPPED, self-resetting backoff window (a recent 200 served only
