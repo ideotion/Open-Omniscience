@@ -21,8 +21,9 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
-from src.database.models import Article, Keyword, KeywordMention
+from src.database.models import Article, Keyword, KeywordMention, KeywordTag
 
 _LOG = logging.getLogger(__name__)
 
@@ -81,12 +82,37 @@ def _get_or_create_keyword(
         )
         session.add(kw)
         session.flush()  # assign id for the mention FK
+        # Item AC: a curated baseline pre-tags a known keyword at creation time
+        # (forward-only — existing keywords are not retroactively tagged here).
+        # Each tag is a labelled assertion carrying its source provenance.
+        for axis, tag in baseline_tags(language, t.normalized):
+            session.add(KeywordTag(keyword_id=kw.id, axis=axis, tag=tag, source="baseline"))
     elif is_entity and not kw.is_entity:
         # A term first seen lowercase, later recognised as an entity -> upgrade.
         kw.is_entity = True
         kw.entity_type = t.kind
         kw.extractor = extractor
     return kw
+
+
+def tags_for_keyword(session: Session, normalized: str) -> dict[str, list[str]]:
+    """All tags on a keyword, grouped by axis: ``{"type": [...], "topic": [...]}``.
+
+    Read-only; labels only, never a score. Empty when the keyword is absent or
+    untagged. (Item AC; the source provenance per tag is on the KeywordTag rows.)
+    """
+    kw = session.query(Keyword).filter_by(normalized_term=normalized).first()
+    if kw is None:
+        return {}
+    out: dict[str, list[str]] = {}
+    rows = (
+        session.query(KeywordTag)
+        .filter_by(keyword_id=kw.id)
+        .order_by(KeywordTag.axis, KeywordTag.tag)
+    )
+    for row in rows:
+        out.setdefault(row.axis, []).append(row.tag)
+    return out
 
 
 def index_article(

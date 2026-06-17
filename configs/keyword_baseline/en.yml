@@ -1,0 +1,32 @@
+# Curated keyword BASELINE — English.
+# See src/analytics/baseline.py (BASELINE_AS_OF) + docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md.
+#
+# Each entry pre-classifies a KNOWN keyword along up to two axes:
+#   type  — a semantic class (event / disease / technology / currency / treaty …)
+#   topic — a domain (politics / economy / health / climate / energy / science / sport …)
+# A tag is a LABELLED ASSERTION, never ground truth and never a score. Curated-small +
+# analyzer-grown: the keyword-diagnostics logs surface additions over time. Keys are
+# matched casefolded against the extractor's normalized term.
+baseline_keywords:
+  election:      {type: event, topic: politics}
+  referendum:    {type: event, topic: politics}
+  ceasefire:     {type: event, topic: politics}
+  sanctions:     {topic: politics}
+  treaty:        {type: treaty, topic: politics}
+  inflation:     {topic: economy}
+  recession:     {topic: economy}
+  unemployment:  {topic: economy}
+  tariff:        {topic: economy}
+  pandemic:      {type: event, topic: health}
+  outbreak:      {type: event, topic: health}
+  vaccine:       {type: technology, topic: health}
+  drought:       {type: event, topic: climate}
+  wildfire:      {type: event, topic: climate}
+  flood:         {type: event, topic: climate}
+  earthquake:    {type: event, topic: climate}
+  emissions:     {topic: climate}
+  semiconductor: {type: technology, topic: technology}
+  blockchain:    {type: technology, topic: technology}
+  satellite:     {type: technology, topic: science}
+  pipeline:      {type: technology, topic: energy}
+  championship:  {type: event, topic: sport}

@@ -1,0 +1,20 @@
+# Curated keyword BASELINE — French (Français).
+# Voir src/analytics/baseline.py (BASELINE_AS_OF) + docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md.
+# Un tag est une ASSERTION ÉTIQUETÉE, jamais une vérité établie ni un score.
+baseline_keywords:
+  élection:      {type: event, topic: politics}
+  référendum:    {type: event, topic: politics}
+  "cessez-le-feu": {type: event, topic: politics}
+  sanctions:     {topic: politics}
+  traité:        {type: treaty, topic: politics}
+  inflation:     {topic: economy}
+  récession:     {topic: economy}
+  chômage:       {topic: economy}
+  pandémie:      {type: event, topic: health}
+  vaccin:        {type: technology, topic: health}
+  sécheresse:    {type: event, topic: climate}
+  inondation:    {type: event, topic: climate}
+  séisme:        {type: event, topic: climate}
+  émissions:     {topic: climate}
+  satellite:     {type: technology, topic: science}
+  championnat:   {type: event, topic: sport}
