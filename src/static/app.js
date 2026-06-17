@@ -3988,6 +3988,7 @@
     let _idxCat = "__all";           // current continent facet ("__all" or a continent)
     let _idxTags = new Set();         // active tag facets (AND-filter, none = no tag filter)
     let _idxCatTabs = null;           // the continent ooSubtabs handle
+    const _idxCompare = new Map();    // symbol -> {name, currency, unit} selected for the overlay (Slice 3)
     // Continent display order (data-driven: only those actually present render).
     const IDX_CONTINENTS = ["Africa", "Asia", "Europe", "North America", "South America", "Oceania", "Global"];
 
@@ -4054,6 +4055,7 @@
           : "";
       }
       applyIndexFilters();
+      renderIdxCompareBar();
     }
 
     function selectIndexCat(key) {
@@ -4065,6 +4067,55 @@
       document.querySelectorAll("#indices-tags .chip").forEach(b =>
         b.classList.toggle("on", _idxTags.has(b.dataset.tag)));
       applyIndexFilters();
+    }
+
+    // -- Multi-series compare overlay (Slice 3) ----------------------------- //
+    // The user accumulates several indices, then opens ONE ooChart overlay of
+    // their real price series with Absolute/Indexed/Log scale controls — "the
+    // possibility to aggregate several curves onto the same graph" (maintainer
+    // 2026-06-17). No fabricated data: each curve is the symbol's stored series
+    // fetched from /api/commodities/{symbol}/prices.
+    function toggleIdxCompare(symbol, name, currency, unit) {
+      if (_idxCompare.has(symbol)) _idxCompare.delete(symbol);
+      else _idxCompare.set(symbol, {name: name || symbol, currency: currency || "", unit: unit || ""});
+      renderIndicesBoard();   // reflect the comparing state on the cards + the bar
+    }
+    function clearIdxCompare() { _idxCompare.clear(); renderIndicesBoard(); }
+    function renderIdxCompareBar() {
+      const bar = $("idx-compare-bar"); if (!bar) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const n = _idxCompare.size;
+      if (n < 1) { bar.style.display = "none"; bar.innerHTML = ""; return; }
+      bar.style.display = "";
+      const names = [..._idxCompare.values()].map(v => esc(v.name)).join(" · ");
+      // Need at least 2 series for a meaningful overlay; with 1 selected, invite a second.
+      const ready = n >= 2;
+      bar.innerHTML =
+        `<span class="muted" style="font-size:12px">${esc(t("Comparing"))}: <b>${names}</b></span>`
+        + `<button type="button" class="tiny${ready ? "" : " secondary"}"${ready ? "" : " disabled"}
+             title="${esc(t("Overlay the selected series on one graph"))}"
+             onclick="openIdxComparison()">${esc(t("Compare"))} (${n}) ↗</button>`
+        + `<button type="button" class="tiny secondary" onclick="clearIdxCompare()">${esc(t("Clear"))}</button>`
+        + (ready ? "" : ` <span class="hint muted" style="font-size:11px">${esc(t("Pick at least two."))}</span>`);
+    }
+    async function openIdxComparison() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_idxCompare.size < 2) return;
+      const entries = [..._idxCompare.entries()];
+      // Fetch every selected symbol's FULL stored series (cached by fetchPrices).
+      const seriesList = [];
+      for (const [symbol, meta] of entries) {
+        const pts = await fetchPrices(symbol);
+        if (!pts || !pts.length) continue;
+        seriesList.push({
+          label: meta.name || symbol,
+          unit: meta.unit ? `${meta.currency || ""}/${meta.unit}`.replace(/^\//, "") : (meta.currency || ""),
+          points: pts.map(p => ({t: p.observed_on, v: p.price})),
+        });
+      }
+      if (seriesList.length < 2) { toast(t("Not enough stored data to compare these yet."), "err"); return; }
+      chartEnlarge(t("Index comparison"), seriesList,
+        t("End-of-day values from official sources on a shared time axis."), {scales: true});
     }
     // Apply BOTH facets: the continent subtab hides whole sections; the tag
     // chips hide individual cards (AND across active tags); a section whose
@@ -4120,7 +4171,16 @@
       // Carry the facet values so the continent subtab + tag chips can filter
       // without a re-fetch (data-tags is '|'-joined for a simple includes test).
       const facets = ` data-continent="${esc(c.continent || "Other")}" data-tags="${esc((c.tags || []).join("|"))}"`;
-      return `<div class="idx-card"${facets}${open}>
+      // Slice 3: a compare toggle adds this index to the multi-series overlay
+      // (only meaningful with a stored series — gated on `has`). The card body's
+      // indexDetail click is preserved (stopPropagation keeps the two distinct).
+      const cmp = _idxCompare.has(c.symbol);
+      const cmpBtn = has
+        ? ` · <button class="tiny${cmp ? "" : " secondary"}" type="button"
+              title="${esc(t2(cmp ? "Remove from the comparison overlay" : "Add to the comparison overlay"))}"
+              onclick="event.stopPropagation(); toggleIdxCompare(${esc(JSON.stringify(c.symbol))}, ${esc(JSON.stringify(c.name || c.symbol))}, ${esc(JSON.stringify(c.currency || ""))}, ${esc(JSON.stringify(c.unit || ""))})">${cmp ? "✓ " + esc(t2("Comparing")) : "＋ " + esc(t2("Compare"))}</button>`
+        : "";
+      return `<div class="idx-card${cmp ? " comparing" : ""}" data-symbol="${esc(c.symbol)}"${facets}${open}>
         <div class="idx-top">
           <div class="idx-id"><div class="idx-name">${esc(c.name)}</div>
             <div class="idx-mkt muted">${esc(c.market || "")}</div></div>
@@ -4132,7 +4192,7 @@
           · ${esc(c.currency || "")} · ${extLink(c.url, "source")}
           · <button class="tiny secondary" type="button"
               title="${esc(t2("Open this in the analysis window — its corpus coverage"))}"
-              onclick="openAnalysisFor(${esc(JSON.stringify(idxQ))})">${esc(t2("Analyse"))} ↗</button></div>
+              onclick="openAnalysisFor(${esc(JSON.stringify(idxQ))})">${esc(t2("Analyse"))} ↗</button>${cmpBtn}</div>
       </div>`;
     }
 
@@ -4725,6 +4785,15 @@
       // opts.indexed is off, pv() is the identity, so every existing chart is
       // byte-for-byte unchanged.
       const pv = (s, p) => (opts.indexed && s._base) ? (p.v / s._base * 100) : p.v;
+      // Log-Y mode (opts.logY, maintainer-ruled 2026-06-17 markets revamp): the
+      // y-axis maps log10(value) so series spanning orders of magnitude (a 5000-pt
+      // index next to a 130 OECD index) read together; labels + hover still show
+      // the REAL value (vtInv back-transforms the gridline value). Identity when
+      // off, so every existing chart is byte-for-byte unchanged (the same additive
+      // contract as opts.indexed). zeroBase is ignored under logY (log(0) is -∞).
+      const LOGEPS = 1e-9;
+      const vt = (v) => opts.logY ? Math.log10(Math.max(v, LOGEPS)) : v;   // value -> axis space
+      const vtInv = (d) => opts.logY ? Math.pow(10, d) : d;                // axis space -> value (labels)
 
       function visible() {
         return all.filter(s => !s.hidden).map(s => ({...s, vis: s.pts.filter(p => p.t >= t0 && p.t <= t1)}));
@@ -4737,16 +4806,16 @@
           s._base = fnz ? fnz.v : (vis.length ? (vis[0].v || 1) : 1);
         }
         const vs = visible();
-        const ys = vs.flatMap(s => s.vis.map(p => pv(s, p)));
+        const ys = vs.flatMap(s => s.vis.map(p => vt(pv(s, p))));
         if (!ys.length) { readout.textContent = t9("no points in this window — zoom out (double-click)"); return; }
-        const yMin = opts.zeroBase ? Math.min(0, ...ys) : Math.min(...ys);
+        const yMin = (opts.zeroBase && !opts.logY) ? Math.min(0, ...ys) : Math.min(...ys);
         const yMax = Math.max(...ys), ySpan = (yMax - yMin) || 1;
         const Yof = (v) => padT + plotH * (1 - (v - yMin) / ySpan);
         ctx.font = "10px sans-serif"; ctx.fillStyle = cssVar("--muted"); ctx.strokeStyle = cssVar("--border");
         for (let g = 0; g <= 3; g++) {                     // discrete gridlines, labelled
           const v = yMin + ySpan * g / 3, y = Yof(v);
           ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
-          ctx.setLineDash([]); ctx.textAlign = "right"; ctx.fillText(fmtV(v), padL - 4, y + 3);
+          ctx.setLineDash([]); ctx.textAlign = "right"; ctx.fillText(fmtV(vtInv(v)), padL - 4, y + 3);
         }
         const nTicks = Math.max(2, Math.min(6, Math.floor(plotW / 110)));
         ctx.textAlign = "center";
@@ -4768,21 +4837,21 @@
             const baseY = Yof(yMin);
             const bw = Math.max(3, Math.min(plotW / (n * 1.5), 26));
             for (const p of s.vis) {
-              const x = Xof(p.t), y = Yof(pv(s, p));
+              const x = Xof(p.t), y = Yof(vt(pv(s, p)));
               ctx.globalAlpha = 0.72; ctx.fillRect(x - bw / 2, y, bw, Math.max(0, baseY - y));
               ctx.globalAlpha = 1;    ctx.fillRect(x - bw / 2, y - 1, bw, 2);
             }
           } else {
             ctx.beginPath();
-            s.vis.forEach((p, i) => { const x = Xof(p.t), y = Yof(pv(s, p)); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+            s.vis.forEach((p, i) => { const x = Xof(p.t), y = Yof(vt(pv(s, p))); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
             ctx.stroke();
             if (pxPer > 9) {                                 // honest dots on a roomy line
-              for (const p of s.vis) { ctx.beginPath(); ctx.arc(Xof(p.t), Yof(pv(s, p)), 2, 0, 7); ctx.fill(); }
+              for (const p of s.vis) { ctx.beginPath(); ctx.arc(Xof(p.t), Yof(vt(pv(s, p))), 2, 0, 7); ctx.fill(); }
             }
           }
         }
         if (pinned) {
-          const x = Xof(pinned.t), y = Yof(opts.indexed && pinnedS ? pv(pinnedS, pinned) : pinned.v);
+          const x = Xof(pinned.t), y = Yof(vt(opts.indexed && pinnedS ? pv(pinnedS, pinned) : pinned.v));
           ctx.strokeStyle = cssVar("--muted"); ctx.setLineDash([3, 3]);
           ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke(); ctx.setLineDash([]);
           ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.stroke();
@@ -6378,7 +6447,8 @@
     // given ooChart series into the modal <dialog> (native showModal traps focus,
     // OO-D13-001). The caveat shows VISIBLE by default (informed consent). ooChart
     // is drawn AFTER showModal so the dialog has layout width for the canvas.
-    function chartEnlarge(title, seriesList, caveat) {
+    function chartEnlarge(title, seriesList, caveat, opts) {
+      opts = opts || {};
       const dlg = $("chart-enlarge"); if (!dlg) return;
       const ttl = $("chart-enlarge-title"); if (ttl) ttl.textContent = title || "";
       const note = $("chart-enlarge-note");
@@ -6386,6 +6456,43 @@
       const body = $("chart-enlarge-body"); if (!body) return;
       body.innerHTML = "";
       if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
+      if (opts.scales) {
+        // Scale controls (maintainer markets revamp Slice 3: "change the graph
+        // scales"): Absolute (raw values) ↔ Indexed (rebase each series to 100 at
+        // the window start, so different-magnitude series co-move WITHOUT
+        // conflating magnitudes) ↔ Log (log10 y-axis). Re-renders the SAME ooChart
+        // with the proven opts.indexed / opts.logY (the hover always shows the REAL
+        // value). One shared #chart-enlarge dialog — no new modal DOM.
+        const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+        const SCALES = [["absolute", "Absolute"], ["indexed", "Indexed (=100)"], ["log", "Log"]];
+        let mode = "absolute";
+        const ctl = document.createElement("div");
+        ctl.className = "mkt-scalerow";
+        ctl.innerHTML = `<span class="muted" style="font-size:12px;margin-right:2px">${esc(t9("Scale"))}:</span>`
+          + SCALES.map(([k, lbl]) =>
+              `<button type="button" class="chip${k === mode ? " on" : ""}" data-scale="${k}">${esc(t9(lbl))}</button>`).join("");
+        const hint = document.createElement("div");
+        hint.className = "hint muted"; hint.style.cssText = "font-size:11.5px;margin:2px 0 4px";
+        const host = document.createElement("div");
+        body.appendChild(ctl); body.appendChild(hint); body.appendChild(host);
+        const HINTS = {
+          absolute: t9("Raw values on a shared time axis — series of very different magnitudes may flatten."),
+          indexed: t9("Each series rebased to 100 at the window start — relative moves, not absolute levels."),
+          log: t9("Log scale (base 10) — equal ratios are equal distances; the hover shows the real value."),
+        };
+        const render = () => {
+          hint.textContent = HINTS[mode] || "";
+          ooChart(host, seriesList, {height: 360, maxWidth: 880, indexed: mode === "indexed", logY: mode === "log"});
+        };
+        ctl.addEventListener("click", (e) => {
+          const b = e.target.closest("[data-scale]"); if (!b) return;
+          mode = b.dataset.scale;
+          ctl.querySelectorAll("[data-scale]").forEach(x => x.classList.toggle("on", x.dataset.scale === mode));
+          render();
+        });
+        render();
+        return;
+      }
       ooChart(body, seriesList, {height: 360, maxWidth: 880});
     }
 
