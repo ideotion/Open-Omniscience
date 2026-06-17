@@ -993,7 +993,7 @@
       if (cat === "models") loadLlmModels();          // the dedicated LLM-management subtab (Q6)
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
-      if (cat === "stats") loadStatAgencies();        // official-statistics producer directory (Group N)
+      if (cat === "stats") { loadStatAgencies(); loadStatFigures(); }  // official-statistics directory + figures (Group N)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
     }
@@ -7154,6 +7154,79 @@
         if (msg) msg.innerHTML = `<span class="note err">${esc(t("Could not register the producers."))}: ${esc(e.message)}</span>`;
         else toast(t("Could not register the producers."), "err");
       } finally { if (btn) btn.disabled = false; }
+    }
+
+    // -- Official figures (Group N): consented fetch · vintaged store · triangulation.
+    // English-only strings here (matching the keyword-explorer / diagnostics Settings
+    // sub-features) so i18n stays 100% with zero new keys; the BACKEND enforces the
+    // honesty contract (no score, gaps as null, side-by-side never averaged).
+    function _statfigFmt(v) { return v === null || v === undefined ? "—" : Number(v).toLocaleString(); }
+    async function fetchStatFigure() {
+      const src = $("statfig-source").value;
+      const series = ($("statfig-series").value || "").trim();
+      const country = ($("statfig-country").value || "").trim() || "all";
+      const msg = $("statfig-msg"), btn = $("statfig-fetch");
+      if (!series) { if (msg) msg.textContent = "Enter an indicator or dataset id first."; return; }
+      // The fetch egresses over the configured transport -> the ONE consent popup.
+      if (typeof ensureOnline === "function" && !await ensureOnline("Fetch official statistics figures")) return;
+      const body = src === "worldbank"
+        ? { source: "worldbank", indicator: series, country }
+        : { source: "eurostat", dataset: series };
+      if (btn) btn.disabled = true;
+      if (msg) msg.textContent = "Fetching…";
+      try {
+        const d = await api("/api/stats/figures/fetch", { method: "POST", body: JSON.stringify(body) });
+        if (msg) msg.innerHTML = `<b>${(d.fetched || 0).toLocaleString()}</b> fetched · `
+          + `${(d.stored || 0).toLocaleString()} stored · ${(d.duplicate || 0).toLocaleString()} already had this vintage · `
+          + `${(d.gaps || 0).toLocaleString()} published gaps`
+          + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(d.caveat)}</div>` : "");
+        $("statfig-view-series").value = series;
+        loadStatFigures();
+      } catch (e) {
+        // Honest verdicts: 409 = airplane mode refusal, 502 = transport/endpoint failure.
+        if (msg) msg.innerHTML = `<span class="note err">Fetch failed: ${esc(e.message)}</span>`;
+      } finally { if (btn) btn.disabled = false; }
+    }
+    async function loadStatFigures() {
+      const box = $("statfig-table"); if (!box) return;
+      const series = ($("statfig-view-series").value || "").trim();
+      box.innerHTML = `<div class="muted">Loading…</div>`;
+      try {
+        const qs = series ? "?series_id=" + encodeURIComponent(series) : "";
+        const d = await api("/api/stats/figures" + qs);
+        const figs = d.figures || [];
+        if (!figs.length) { box.innerHTML = `<div class="muted">No stored figures yet — fetch some above.</div>`; return; }
+        const rows = figs.map(f => `<tr>
+            <td>${esc(f.agency)}</td><td>${esc(f.series_id)}</td><td>${esc(f.ref_area)}</td>
+            <td>${esc(f.time_period)}</td><td style="text-align:right">${_statfigFmt(f.value)}</td>
+            <td>${esc(f.unit || "")}</td><td>${esc(f.adjustment || "")}</td><td>${esc(f.base_year || "")}</td>
+          </tr>`).join("");
+        box.innerHTML = `<div class="hint">${(d.shown||figs.length)} of ${(d.count||figs.length).toLocaleString()} shown · latest vintage</div>
+          <table><tr><th>Agency</th><th>Series</th><th>Area</th><th>Period</th><th style="text-align:right">Value</th>`
+          + `<th>Unit</th><th>SA/NSA</th><th>Base yr</th></tr>${rows}</table>`
+          + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load figures: ${esc(e.message)}</div>`; }
+    }
+    async function triangulateStatSeries() {
+      const box = $("statfig-tri"); if (!box) return;
+      const series = ($("statfig-view-series").value || "").trim();
+      if (!series) { box.innerHTML = `<div class="muted">Enter a series id above to triangulate.</div>`; return; }
+      box.innerHTML = `<div class="muted">Loading…</div>`;
+      try {
+        const d = await api("/api/stats/triangulate?series_id=" + encodeURIComponent(series));
+        const cells = d.cells || [];
+        if (!cells.length) { box.innerHTML = `<div class="muted">No producers stored for "${esc(series)}" yet.</div>`; return; }
+        const cellHtml = cells.map(c => {
+          const cols = c.producers.map(p => `${esc(p.agency)}: <b>${_statfigFmt(p.value)}</b>${p.unit ? " " + esc(p.unit) : ""}`).join(" &nbsp;·&nbsp; ");
+          const cmp = c.comparability || {};
+          const flag = cmp.comparable
+            ? `<span class="pill ok">comparable</span>`
+            : `<span class="pill warn">not comparable — differs on ${esc((cmp.differs_on||[]).join(", "))}</span>`;
+          return `<tr><td>${esc(c.ref_area)}</td><td>${esc(c.time_period)}</td><td>${c.n_producers}</td><td>${cols}</td><td>${flag}</td></tr>`;
+        }).join("");
+        box.innerHTML = `<table><tr><th>Area</th><th>Period</th><th>#</th><th>Producers (side by side)</th><th>Comparability</th></tr>${cellHtml}</table>`
+          + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
+      } catch (e) { box.innerHTML = `<div class="muted">Could not triangulate: ${esc(e.message)}</div>`; }
     }
 
     // -- Read a page from a downloaded dump (T14: local, zero network) ------- //
