@@ -1644,6 +1644,36 @@ def test_markets_coherent_time_axis_and_legends():
     assert 'class="idx-range' in html, "each index spark must show a clear date-range legend"
 
 
+def test_markets_family_stacked_graphs():
+    """The commodities board offers a FAMILIES view (maintainer 2026-06-17 markets
+    revamp Slice 5: "in the 'all' subtab … stacking all curves into family graphs
+    … as much data but with fewer graphs"): one multi-series ooChart per category
+    replaces N small cards, reusing the ONE ooChart toolkit (invariant #16). A
+    Cards/Families toggle defaults to Cards (no regression)."""
+    html = _ui_source()
+    # a reusable family-graph renderer (one multi-series ooChart per group)
+    assert "function renderFamilyGraphs(host, groups, opts)" in html, (
+        "the reusable family-graph renderer must exist"
+    )
+    # default INDEXED so different-magnitude members co-move honestly + a visible caveat
+    assert "indexed: opts.indexed !== false" in html, (
+        "family graphs must default to the indexed (cross-magnitude) scale"
+    )
+    assert 'class="card-caveat"' in html, "the families view must carry a VISIBLE caveat"
+    # the Cards/Families toggle, defaulting to Cards (no regression)
+    assert 'id="mkt-viewtoggle"' in html, "the Cards/Families view toggle must exist"
+    assert 'let _mktView = "cards"' in html, "the view must DEFAULT to Cards (no regression)"
+    assert "function setMktView" in html, "the view-toggle callback must exist"
+    # the families branch builds one family per category + the same subtabs filter both
+    assert "function commodityFamilies" in html, "the per-category family builder must exist"
+    assert 'if (_mktView === "families")' in html, (
+        "renderDashboard must branch to the families view"
+    )
+    assert 'class="fam-block mkt-cat"' in html, (
+        "family blocks must carry .mkt-cat/data-cat so the category subtabs filter them too"
+    )
+
+
 def test_commodity_card_opens_analysis():
     """Each commodity card's TITLE opens the universal analysis window seeded
     with that commodity's keyword query (maintainer-ruled COMMODITIES TAB REWORK
