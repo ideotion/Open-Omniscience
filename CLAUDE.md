@@ -2090,9 +2090,20 @@ ruling, a contingency, or a deliberate-omission note.
   EXACT converging article set via `openAnalysisForIds`; the API method + caveat
   (non-causation) are VISIBLE by default, the shared-origin-links flag shows a visible
   `var(--caveat)` warning, honest empty state names the gate, NO score; +5 i18n ×12;
-  test #21c. REMAINING: the user-defined "if-this-then-WATCH" alert engine (explainable,
-  off by default, local-only) — its UX is a GENUINE RULING to bring to the maintainer
-  before building (the Watches view + history, fork-2).
+  test #21c. **WATCH ENGINE SHIPPED 2026-06-17 (ruling #3 — ON BY DEFAULT, the maintainer
+  overrode the earlier off-by-default lean):** the user-defined "if-this-then-WATCH" engine.
+  Models Watch + WatchMatch + migration b8c9d0e1f2a3; `src/analytics/watches.py` (CRUD +
+  `evaluate_watches` — fires a "watch" Lead card when the corpus gains enough NEW articles
+  matching a saved FTS condition over the USER's threshold+window; `last_seen_ids` prevents
+  re-alarming on the same articles; matcher reuses FTS `search_ids`; bad query never breaks
+  the pass); `watch_matches` producer (bucket="watch", no score, passes the Card schema)
+  wired into `refresh_briefing` so it runs after every scrape pass (ON by default); API
+  `src/api/watches.py` (CRUD + history + evaluate, LOCAL no consent gate); a Watches Insights
+  subtab (create/enable-disable/edit/delete + history → openAnalysisForIds, browser-unverified
+  + flagged, English-only zero-new-keys). LOCAL-ONLY, NO notifications/network/telemetry, NO
+  escalation tiers beyond the Lead card (the ruling). tests/test_watch_engine.py (7) +
+  tests/test_watches_api.py + test #21d. REMAINING: i18n-key the Watches panel strings (the
+  long-tail pass); richer condition types (place/convergence-based) beyond the FTS query.
 - **Temporal map remainder:** logarithmic time scale (agreed: linear/log
   toggle, labelled ticks, no hidden warp); feed mention-layer with extracted
   event-places.
