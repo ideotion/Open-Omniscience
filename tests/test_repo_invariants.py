@@ -2103,3 +2103,15 @@ def test_keyword_explorer_subtab():
     assert "/api/insights/keyword-tags/facets" in src, "explore must read the tag facets"
     assert "/api/insights/keyword-tags/backfill" in src, "the apply-baseline-tags action must exist"
     assert "/api/insights/exclude" in src, "the hide action must reuse the exclude endpoint"
+
+
+def test_super_ring_ui():
+    """Step 4 of the pre-translation program: the Groups (super-groups) UI can add a
+    cross-language RING as a member (the super-ring model), not just a family. It
+    extends the existing super-group UI; a ring picker datalist is fed by
+    /api/insights/rings and the add-ring handler POSTs a ring member."""
+    src = _ui_source()
+    assert 'id="sg-ring-options"' in src, "the ring-picker datalist must exist"
+    assert "/api/insights/rings" in src, "loadSuperGroups must fetch the rings list"
+    assert "function sgAddRing" in src, "the add-ring handler must exist"
+    assert "rings: [ring]" in src, "add-ring must POST a ring member (not a family normalized)"

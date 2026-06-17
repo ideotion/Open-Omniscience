@@ -5194,33 +5194,46 @@
       const box = $("sg-list");
       box.innerHTML = '<div class="muted">Loading…</div>';
       try {
-        const [sgs, top] = await Promise.all([
+        const [sgs, top, rings] = await Promise.all([
           api("/api/insights/supergroups"),
           api("/api/insights/top?group=true&limit=200"),
+          api("/api/insights/rings"),
         ]);
         $("sg-family-options").innerHTML = (top.terms || []).map(f =>
           `<option value="${esc(f.normalized)}">${esc(f.term)} (${f.mentions})</option>`).join("");
+        $("sg-ring-options").innerHTML = (rings.rings || []).map(r =>
+          `<option value="${esc(r.id)}">${esc(r.id)} — ${esc((r.languages || []).join("/"))}</option>`).join("");
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
-          : '<div class="muted">No super-groups yet. Create one above, then add families to it.</div>';
+          : '<div class="muted">No super-groups yet. Create one above, then add families or rings to it.</div>';
       } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
     }
 
     function sgCard(g) {
-      const chips = g.members.length ? g.members.map(m =>
-        `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
-           title="remove from this group">${esc(m.normalized)} <span class="muted">${m.mentions}</span> ✕</button>`).join("")
-        : '<span class="muted">No families yet — add one below.</span>';
+      const chips = g.members.length ? g.members.map(m => {
+        const isRing = !!m.ring_id;
+        const inner = isRing
+          ? `⊕ ${esc(m.ring_id)} <span class="muted">ring·${(m.ring_members || []).length}</span>`
+          : esc(m.normalized);
+        const tip = isRing ? esc((m.ring_members || []).join(" · ")) : "remove from this group";
+        return `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
+           title="${tip}">${inner} <span class="muted">${m.mentions}</span> ✕</button>`;
+      }).join("")
+        : '<span class="muted">No members yet — add a family or a ring below.</span>';
       return `<div class="sg-card">
         <div class="sg-head"><b>${esc(g.name)}</b>
-          <span class="muted">· ${g.count} famil${g.count === 1 ? "y" : "ies"} · ${g.mentions} mentions</span>
+          <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"} · ${g.mentions} mentions</span>
           <button class="ghost tiny" style="margin-left:auto" data-sg="${g.id}" data-name="${esc(g.name)}"
             onclick="deleteSuperGroup(this)">delete</button></div>
         <div class="fam-chips" style="margin-top:6px">${chips}</div>
         <div class="row" style="margin-top:8px">
-          <div style="flex:2"><input list="sg-family-options" placeholder="add a family (type or pick)…"
+          <div style="flex:2"><input class="sg-fam-in" list="sg-family-options" placeholder="add a family…"
             data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddMember(this)"></div>
           <div style="flex:0 0 auto;align-self:end"><button class="secondary"
-            onclick="sgAddMember(this.closest('.row').querySelector('input'))">Add</button></div>
+            onclick="sgAddMember(this.closest('.row').querySelector('.sg-fam-in'))">Add family</button></div>
+          <div style="flex:2"><input class="sg-ring-in" list="sg-ring-options" placeholder="add a ring (one concept, many languages)…"
+            data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddRing(this)"></div>
+          <div style="flex:0 0 auto;align-self:end"><button class="secondary"
+            onclick="sgAddRing(this.closest('.row').querySelector('.sg-ring-in'))">Add ring</button></div>
         </div></div>`;
     }
 
@@ -5240,6 +5253,15 @@
         await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({normalized: [norm]})});
         toast("Added."); loadSuperGroups();
       } catch (e) { toast("Add failed: " + e.message, "err"); }
+    }
+
+    async function sgAddRing(input) {
+      const sg = input.dataset.sg, ring = input.value.trim();
+      if (!ring) return;
+      try {
+        await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({rings: [ring]})});
+        toast("Ring added."); loadSuperGroups();
+      } catch (e) { toast("Add ring failed: " + e.message, "err"); }
     }
 
     async function sgRemoveMember(btn) {
@@ -7256,6 +7278,7 @@
       document.querySelectorAll("#tab-analyze .an-panel").forEach(el =>
         el.style.display = (el.id === "an-" + key) ? "" : "none");
       if (key === "trend") renderAnTrend(_anLastParams);   // lazy: only fetch when the Trend tab is shown
+      if (key === "related") renderAnRelated(_anLastParams);   // lazy: coordination/related computed on show
     }
 
     // --- Commodity price × coverage overlay (Markets item, Group G) --------- //
@@ -7461,6 +7484,59 @@
       } else dual.innerHTML = "";
     }
 
+    // --- Related & coordination (Analysis window; maintainer-ruled 2026-06-17):
+    // make the coordination "scan" AMBIENT in analysis (not a manual tab) AND let the
+    // user BRANCH related articles into a NEW corpus for associated research. Computed
+    // automatically when the Related subtab opens (lazy, cached per corpus). Surfaces
+    // near-identical clusters as "N near-identical copies across M sources = one voice"
+    // — independence by DISTINCT SOURCES, structural only, NO score; the non-collusion +
+    // absence-is-not-absence caveat is visible. Each cluster branches via
+    // openAnalysisForIds (the exact-set spawn) = a fresh corpus = associated research.
+    const _anRelated = { key: null };
+    let _anRelatedClusters = [];
+    async function renderAnRelated(p) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("an-related"); if (!host) return;
+      const key = (p && p.toString && p.toString()) || "";
+      if (_anRelated.key === key && host.dataset.done === "1") return;   // cached on this corpus
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      _anRelated.key = key; host.dataset.done = "";
+      try {
+        const d = await api("/api/insights/corpus-coordination?" + (p ? p.toString() : ""));
+        _anRelatedClusters = d.clusters || [];
+        const head = `<div class="hint"><b>${_anRelatedClusters.length}</b> ${esc(t("Near-identical clusters"))}`
+          + ` <span class="muted">· ${esc(d.method || "")}</span></div>`;
+        if (!_anRelatedClusters.length) {
+          host.innerHTML = head + `<div class="muted" style="margin-top:8px">`
+            + `${esc(t("No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold."))}</div>`;
+          host.dataset.done = "1"; return;
+        }
+        const rows = _anRelatedClusters.map((c, i) => {
+          const voice = c.single_source
+            ? t("{n} near-identical copies from one source = one voice").replace("{n}", c.size)
+            : t("{n} near-identical copies across {m} sources = effectively one voice").replace("{n}", c.size).replace("{m}", c.distinct_sources);
+          const ex = (c.members || []).slice(0, 6).map((m) =>
+            `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
+            + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
+          const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
+          return `<div class="card" style="padding:10px;margin-top:8px">`
+            + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
+            + `<b>${esc(voice)}</b>`
+            + `<button class="secondary tiny" onclick="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
+            + `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">${esc(t("Show all"))}</summary>`
+            + `<ul style="margin:6px 0 0">${ex}${more}</ul></details></div>`;
+        }).join("");
+        host.innerHTML = head + rows + `<p class="card-caveat" style="margin-top:8px">${esc(d.caveat || "")}</p>`;
+        host.dataset.done = "1";
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    function branchFromRelated(i) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const c = _anRelatedClusters[i];
+      if (!c || !c.article_ids || !c.article_ids.length) return;
+      openAnalysisForIds(c.article_ids, t("Near-identical cluster") + " · " + c.size);
+    }
+
     // Self-contained radial mind-map for the analysis window. Distinct from the
     // Insights renderGraph() (which owns _mm* state + a force/zoom canvas): this
     // draws ONE static, deterministic SVG into the container it is handed — no
@@ -7539,8 +7615,9 @@
       const kw = $("an-keywords"), arts = $("an-articles");
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      _anLastParams = p; _anTrend.key = null;   // a new analysis run -> the Trend subtab refetches on next show
+      _anLastParams = p; _anTrend.key = null; _anRelated.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
       if ($("an-trend") && $("an-trend").style.display !== "none") setTimeout(() => renderAnTrend(p), 0);
+      if ($("an-related") && $("an-related").style.display !== "none") setTimeout(() => renderAnRelated(p), 0);
       _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
         const d = await api("/api/insights/corpus-keywords?" + p.toString());

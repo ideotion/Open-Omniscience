@@ -1089,5 +1089,17 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "Switch to Indexed to overlay commodity prices honestly (different units).",
   "each on its own real-unit scale": "each on its own real-unit scale",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation."
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.",
+  "Download keyword log (.zip)": "Download keyword log (.zip)",
+  "Related": "Related",
+  "Near-identical clusters": "Near-identical clusters",
+  "Near-identical cluster": "Near-identical cluster",
+  "Show all": "Show all",
+  "more": "more",
+  "(untitled)": "(untitled)",
+  "Branch into a new corpus →": "Branch into a new corpus →",
+  "Open these articles as a new analysis corpus": "Open these articles as a new analysis corpus",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{n} near-identical copies across {m} sources = effectively one voice",
+  "{n} near-identical copies from one source = one voice": "{n} near-identical copies from one source = one voice",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold."
 }

@@ -1089,5 +1089,17 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "Wechseln Sie zu Indexiert, um Rohstoffpreise ehrlich zu überlagern (unterschiedliche Einheiten).",
   "each on its own real-unit scale": "jeweils auf eigener Skala in echten Einheiten",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Artikelzahlen auf einer gemeinsamen Zeitachse. Kookkurrenz in Ihrem Korpus, niemals Kausalität.",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Auf 100 zu Fensterbeginn indexiert — relative Bewegung, keine absoluten Werte. Beim Überfahren erscheint der echte Wert. Kookkurrenz in Ihrem Korpus, niemals Kausalität."
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Auf 100 zu Fensterbeginn indexiert — relative Bewegung, keine absoluten Werte. Beim Überfahren erscheint der echte Wert. Kookkurrenz in Ihrem Korpus, niemals Kausalität.",
+  "Download keyword log (.zip)": "Schlüsselwort-Protokoll herunterladen (.zip)",
+  "Related": "Verwandt",
+  "Near-identical clusters": "Nahezu identische Cluster",
+  "Near-identical cluster": "Nahezu identischer Cluster",
+  "Show all": "Alle anzeigen",
+  "more": "weitere",
+  "(untitled)": "(ohne Titel)",
+  "Branch into a new corpus →": "In ein neues Korpus abzweigen →",
+  "Open these articles as a new analysis corpus": "Diese Artikel als neues Analysekorpus öffnen",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{n} nahezu identische Kopien über {m} Quellen = faktisch eine Stimme",
+  "{n} near-identical copies from one source = one voice": "{n} nahezu identische Kopien aus einer Quelle = eine Stimme",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "Keine nahezu identischen Cluster in diesem Korpus gefunden — kein Beweis für fehlende Koordination, nur dass bei dieser Schwelle keine gefunden wurde."
 }

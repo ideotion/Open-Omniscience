@@ -11,6 +11,13 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **The keyword log is now a small per-language archive.** On a large corpus the keyword
+  diagnostics log had grown to ~20 MB — awkward to share. **Download keyword log** now
+  produces a **`.zip` split per language** (a `summary.json` of the corpus-wide structures
+  plus one `keywords/<lang>.json` per language), which compresses to a few MB and is **kept
+  under 20 MB** — if it ever would exceed that, the lowest-mention keywords are trimmed *per
+  language* (so no language is squeezed out) and the manifest says exactly what was dropped.
+  Every keyword's data is unchanged; nothing is scored.
 - **A date-extraction diagnostics log, to help make extraction better.** Settings →
   Diagnostics has a new **Download date-extraction log (.json)** button. For a bounded sample
   of your articles it shows, side by side, the dates the extractor *found* and the date-like

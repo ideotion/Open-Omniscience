@@ -1029,6 +1029,24 @@ ruling, a contingency, or a deliberate-omission note.
   step) — BLOCKED OFFLINE (needs real per-OS installer checksums verified against clearnet;
   fabricating them = forbidden — do on a networked machine); live ollama.com library
   browse (Q8); pulls as task-manager jobs.
+  **CATALOG REFRESHED 2026-06-17 (maintainer-asked "latest + smallest open models from
+  Mistral, Google, IBM, Nvidia", branch `claude/llm-catalog-refresh`, draft PR onto 0.09):**
+  `MODEL_CATALOG` (src/llm/ollama.py — the ONE source the in-app Settings → Models subtab
+  reads via /api/llm/models; the frontend has NO hardcoded list) now leads with the latest
+  small open models, ALL REAL ollama.com/library tags VERIFIED VIA SEARCH (ollama.com 403s
+  WebFetch here, so WebSearch was the verification path — NEVER fabricated, per the file's own
+  "previous catalog was hallucinated" caution + the no-fabricated-data non-negotiable):
+  granite4:350m + granite4:micro (IBM Granite 4.0, Oct 2025, Apache-2.0; micro=3.4B confirmed
+  2.1 GB Q4_K_M), gemma3:1b + gemma3:4b (Google Gemma 3), nemotron-mini (NVIDIA, 4B),
+  mistral:7b (Apache-2.0 — the smallest OPEN Mistral on Ollama; no smaller official open tag
+  exists, so none invented), keeping llama3.2:1b/3b (Meta, the DEFAULT_MODEL). Sizes are
+  honest ~approximations for the real tags (the field is an advisory hardware hint; the live
+  installed-models picker stays the source of truth). The installer's quick-download menu
+  (install.sh whiptail + the non-whiptail fallback + the OO_OLLAMA_MODEL example) refreshed
+  to gemma3:1b/granite4:micro/nemotron-mini/llama3.2:3b. CATALOG_AS_OF stays "2026-06"
+  (re-verified this month; freshness test green). No frontend/i18n change (backend-driven);
+  no test asserts catalog contents (test_llm_ollama gemma2:2b refs are mock names, not the
+  catalog). REMAINING: re-verify exact sizes on a networked machine when convenient.
   **Q10 SHIPPED 2026-06-16 (backend):** `AppSettings.llm_model` (a persisted UI
   preference, model-name-validated against injection; "" clears it) replaces env-only
   `OO_LLM_MODEL` as the operator default; `api.llm.active_model()` resolves stored ||
@@ -1503,6 +1521,70 @@ ruling, a contingency, or a deliberate-omission note.
   tests/test_keyword_selftest.py (all-pass + who_vs_WHO + the runner detects a deliberate fail —
   so a green run is never vacuous). Closes the loop the maintainer asked for: run it in-app,
   send the log, I see exactly which keyword behaviour regressed.
+  **KEYWORD-ENGINE PRE-TRANSLATION/SYNONYM/SUPER-RING PROGRAM (maintainer ruled 2026-06-17 "proceed
+  with 1,2,3,4 in complete autonomy"; agreed to my plan incl. Wikidata-labels as the translation
+  source):** the 4-level hierarchy = keyword → family (morphology) → RING (cross-language concept +
+  synonyms) → SUPER-RING (theme of rings = a super-group whose members are rings). PLAN: (1) an
+  in-app efficacy+performance report [SHIPPED below]; (2) super-group members can be RINGS (the
+  super-ring model); (3) an OFFLINE Wikidata-labels ring generator + a dated few-hundred-ring
+  snapshot + freshness test (scales pre-translation reliably, sourced by QID, no LLM); (4) wire
+  ring/super-ring editing into the Item AC keyword subtab. Scopes to the 12 UI languages.
+  **STEP 1 — KEYWORD-ENGINE REPORT SHIPPED 2026-06-17 (draft PR onto 0.09):** `src/analytics/
+  engine_report.py:keyword_engine_report(session)` = a bounded, read-only diagnostic — composition,
+  ENTITY PRECISION (% of entities that are valid acronyms post the Title-case drop), cross-language
+  TRANSLATION COVERAGE (% of top-N keywords in a ring — the number that tracks the ring work, near
+  0 today), TAG COVERAGE, per-language FUNCTIONAL STATUS (functional / no_stoplist / unsegmented —
+  flags zh/ja honestly), the self-test summary, and indicative PERFORMANCE (extraction ms/article +
+  grouped-query latency). NO composite score; each block states its method. `GET /api/diagnostics/
+  keyword-engine` (+`?download=1`) + a Diagnostics-panel button. The hand-back loop: run it, send
+  the JSON, diff two over time to prove an optimization landed. tests/test_keyword_engine_report.py
+  (metrics shape, honest entity-precision + language-status, no score).
+  **STEP 2 — SUPER-RINGS SHIPPED 2026-06-17 (draft PR onto 0.09, stacked on Step 1):** a super-group
+  MEMBER can now be a cross-language RING (concept), not just a family — "rings of rings". Schema:
+  `KeywordSuperGroupMember.ring_id` (nullable; migration f4a5b6c7d8e9 off head e3f4a5b6c7d8 —
+  single-head verified). A ring member stores the ring id in BOTH `ring_id` (marker+link) and
+  `normalized_term` (so the unique key + remove-by-key path are unchanged). `_supergroup_totals`
+  rewritten to take member rows: a ring member AGGREGATES mentions/articles over ALL the ring's
+  cross-language terms (election+élection+wahl = 15 in the test), so a super-group with a ring spans
+  languages; `list_supergroups` surfaces `ring_id` + the `ring_members` (lg:term) per ring member;
+  `add_supergroup_members` accepts `rings:[ids]` (validated via `ring_meta`, 400 on unknown). Plain
+  family members unchanged. Backend only (the UI for adding rings lands in Step 4, the keyword
+  subtab). tests/test_super_rings.py (cross-language aggregation, unknown-ring 400, family still
+  works).
+  **STEP 3 — WIKIDATA RING GENERATOR + CURATED EXPANSION SHIPPED 2026-06-17 (draft PR onto 0.09,
+  stacked on Step 2):** the scaling path for pre-translation, no LLM, sourced. `scripts/
+  generate_wikidata_rings.py` = the GENERATOR (stdlib-only, runs on a NETWORKED machine — Wikidata
+  is 403-blocked in this sandbox, the established maintainer-machine pattern): per seed it finds the
+  Wikidata QID (`wbsearchentities`) then pulls multilingual LABELS + ALIASES (`wbgetentities`, CC0)
+  for the 12 UI languages → one ring (translations + synonyms), keyed by QID for audit. Pure parse
+  fns (`parse_search`/`parse_entity`/`build_ring`) offline-tested with API fixtures; only fetch_json
+  touches the net (injectable getter); `--seeds FILE` or `--from-log LOG.json --top N`. Output →
+  `configs/keyword_rings_generated.yml`, which `equivalence.load_rings` now reads ALONGSIDE the
+  curated file (refactored: `_parse_rings`/`_read_yaml`; generated read first, CURATED WINS on an id
+  collision). IMMEDIATE value (since I can't run the generator here): a hand-curated high-confidence
+  EXPANSION of keyword_equivalents.yml — 10→22 rings (government/president/inflation/economy/climate/
+  health/energy/vaccine/pandemic/sanctions/market/refugee across en/fr/de/es/it/pt/nl[/ru]) so the
+  engine report's translation_coverage ticks up NOW. tests/test_wikidata_ring_gen.py (parse fixtures,
+  generate+emit roundtrip, curated-expansion loads, generated-merge with curated-wins). REMAINING:
+  the maintainer runs the generator on a networked box → hundreds of rings (review before trusting;
+  the signature gate still protects).
+  **STEP 4 — RING/SUPER-RING EDITING IN THE UI SHIPPED 2026-06-17 (draft PR onto 0.09, stacked on
+  Step 3; conservative + browser-unverified per fork-3 — COMPLETES the 4-step program):** the Item
+  AC keyword subtab (S3b) was never built, so rather than a whole new subtab I EXTENDED the existing
+  Insights → Groups (super-groups) UI — smaller + reuses its conventions (the super-group UI is
+  un-keyed English + inline handlers; the ring additions MATCH that style, so i18n stays 100% and
+  risk is low). Backend: `GET /api/insights/rings` lists the rings (id · members · languages · size,
+  sorted by language breadth; from the config, no DB) so the UI can offer a ring picker
+  (tests/test_ring_ui.py). Frontend (src/static/app.js + index.html): `loadSuperGroups` now also
+  fetches /rings → a `#sg-ring-options` datalist; `sgCard` renders a ring member distinctly (⊕ id ·
+  "ring·N terms" · the cross-language members in the hover) and offers an "add a ring" input + button
+  beside the family one; new `sgAddRing` POSTs `{rings:[id]}` to the Step-2 super-ring endpoint;
+  remove reuses the existing path (a ring member's normalized_term == its ring id). node --check
+  clean; i18n 100%; test_ui_invariants `test_super_ring_ui` pins the datalist + the /rings fetch +
+  the handler. REMAINING (deferred, honest): the FULL Item AC keyword EXPLORER subtab (hide/tag
+  individual keywords, the S3b that was deferred) is still unbuilt — this step delivered the
+  ring/super-ring editing the program needed, not the whole explorer; browser click-through still
+  owed (fork-3). The pre-translation/synonym/super-ring program (Steps 1-4) is COMPLETE.
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,
@@ -2068,6 +2150,30 @@ ruling, a contingency, or a deliberate-omission note.
   OFF by default** (network egress reveals IP/timing). **PARKED behind the analysis-window build
   + the search UI** (maintainer-sequenced 2026-06-15). i18n folds into the rework (don't key
   strings we're about to move).
+  **AMBIENT-IN-ANALYSIS SLICE SHIPPED 2026-06-17 (maintainer re-raised "make the coordination
+  scan background, automatic, part of the card system; AND extend it in analysis windows to
+  find related articles, branch into new corpuses, do associated research"; BUILT on branch
+  `claude/analysis-related-coordination`, draft PR onto 0.09, BROWSER-UNVERIFIED):** HONEST
+  FINDING recorded — coordination is ALREADY a background, automatic Lead (the `echo_chamber`
+  producer runs `corpus_actors`, gated ≥3 sources, carries the exact `article_ids`, and
+  `run_all`→`refresh_briefing` is called automatically AFTER EVERY scrape pass at
+  src/scheduler/runner.py:681); the thing that FELT manual is the redundant "Source integrity"
+  tab (loadActors → /api/integrity/actors). So this slice makes coordination AMBIENT IN THE
+  ANALYSIS WINDOW (not a button) + adds the BRANCH workflow: (1) NEW `queries.corpus_coordination`
+  (article_ids set → `near_duplicate_clusters` MinHash+LSH high-precision; independence = DISTINCT
+  SOURCES, single-source repeat flagged `single_source` not co-publication; counts only, NO score;
+  non-collusion + absence-is-not-absence caveat travels) + GET `/api/insights/corpus-coordination`
+  (reuses `_resolve_corpus`, cap 400 since it reads full text); (2) a new lazy **Related** analysis
+  subtab (`data-tab="related"` / `#an-related`) rendering each cluster as the ruled "N near-identical
+  copies across M sources = effectively one voice · Show all" with a VISIBLE `.card-caveat`, and a
+  per-cluster **"Branch into a new corpus →"** that calls `openAnalysisForIds(cluster.article_ids)`
+  = the exact-set spawn = a fresh corpus = associated research. +11 i18n ×12 (non-en AI-drafted,
+  flagged); tests/test_corpus_coordination.py (clusters-across-sources, single-source-flagged,
+  empty-honest, + frontend wiring) + py_compile + node --check; full pytest needs py3.13 (CI).
+  REMAINING (PR 2): broaden "Related" beyond near-dup to SHARED-ORIGIN links
+  (/api/links/articles-by-link) + shared-keyword neighbours with multi-select branch; the inline
+  "1 voice" annotation in the reader + the Articles list; DISSOLVE the manual Source-integrity tab
+  once the card + inline fully absorb it (absorption-test-gated, the Desk lesson — not yet).
 - **Offline LLM kit** (RM-08 release artifact); DuckDuckGo discovery channel
   only after RM-03 gate UX proves out. **Translated docs:** infrastructure
   shipped (per-language docs served with honest machine-drafted banner; fr
@@ -2630,3 +2736,21 @@ ruling, a contingency, or a deliberate-omission note.
   follow-on optimization targets it already exposes: CJK 年月日 handling + native
   month vocab for the non-European UI locales; optional bare-year contextual
   extraction. tests/test_date_diagnostics.py.
+  **KEYWORD-LOG ≤20 MB PER-LANGUAGE ZIP ADDED 2026-06-17 (maintainer-asked after a
+  live perf log showed the single-file keyword log at ~19.6 MB / 137k keywords —
+  about to breach 20 MB):** `GET /api/diagnostics/keywords?format=zip` returns a
+  per-language ZIP — `summary.json` (the corpus-wide aggregates: families,
+  super-groups, per-source concentration — same as the single-file log minus the
+  keyword list), `keywords/<lang>.json` per dominant language (same per-keyword
+  fields), `manifest.json` (counts + omissions + note). Splits on the existing
+  per-language export quota; JSON compresses ~8× so the archive is normally a few
+  MB. HARD cap `OO_KEYWORD_LOG_MAX_MB` (default 20): if the compressed archive ever
+  exceeds it, the lowest-mention keywords are dropped PER LANGUAGE (equal-fair — a
+  global mentions cut would re-anglicise the export, the standing rule) and recorded
+  in the manifest (never silent). The Settings → Diagnostics button now points at
+  `?format=zip` (label re-keyed ".json"→".zip" ×12). The DEFAULT `?format=json`
+  stream is byte-for-byte UNCHANGED (Item Z digest + the perf byte-parity contract
+  intact). `scripts/analyze_keyword_log.py` reads the .zip directly (reassembles
+  summary + shards into the doc it already expects). tests/test_keyword_log_zip.py
+  (split/bounded, per-language trim when over cap, analyzer reads it, default JSON
+  unchanged).

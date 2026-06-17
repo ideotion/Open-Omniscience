@@ -1089,5 +1089,17 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "Переключитесь на «Индексировано», чтобы честно наложить цены сырья (разные единицы).",
   "each on its own real-unit scale": "каждый в своём масштабе реальных единиц",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Количество статей на общей оси времени. Совстречаемость в вашем корпусе, не причинность.",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Индексировано к 100 на начало окна — относительное движение, не абсолютные уровни. При наведении виден реальный показатель. Совстречаемость в вашем корпусе, не причинность."
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Индексировано к 100 на начало окна — относительное движение, не абсолютные уровни. При наведении виден реальный показатель. Совстречаемость в вашем корпусе, не причинность.",
+  "Download keyword log (.zip)": "Скачать журнал ключевых слов (.zip)",
+  "Related": "Связанные",
+  "Near-identical clusters": "Почти идентичные кластеры",
+  "Near-identical cluster": "Почти идентичный кластер",
+  "Show all": "Показать все",
+  "more": "ещё",
+  "(untitled)": "(без названия)",
+  "Branch into a new corpus →": "Ответвить в новый корпус →",
+  "Open these articles as a new analysis corpus": "Открыть эти статьи как новый корпус для анализа",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{n} почти идентичных копий из {m} источников = фактически один голос",
+  "{n} near-identical copies from one source = one voice": "{n} почти идентичных копий из одного источника = один голос",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "В этом корпусе почти идентичных кластеров не обнаружено — это не доказательство отсутствия координации, лишь то, что при этом пороге ничего не найдено."
 }

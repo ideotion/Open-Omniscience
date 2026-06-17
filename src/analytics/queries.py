@@ -502,6 +502,70 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
     }
 
 
+_COORD_METHOD = (
+    "Near-duplicate clustering (MinHash + LSH, high-precision, Jaccard >= 0.7) within the "
+    "matched set; independence is measured by DISTINCT SOURCES, never article count."
+)
+_COORD_CAVEAT = (
+    "Structural near-duplication: articles sharing near-identical text count as ONE voice, "
+    "not independent confirmation. This is NOT proof of collusion, and the absence of a "
+    "flag is not the absence of coordination. Counts only, no score."
+)
+
+
+def corpus_coordination(
+    session, *, article_ids: list[int], threshold: float = 0.7, min_members: int = 2
+) -> dict:
+    """Near-duplicate clusters WITHIN the matched set -- "N near-identical copies across M
+    sources = effectively one voice" (the anti-false-triangulation surface, ruled ambient
+    in the analysis window). Reuses the high-precision MinHash+LSH clusterer; independence
+    is the count of DISTINCT SOURCES in a cluster (a single source repeating itself is one
+    voice, flagged as such, not co-publication). Counts only, NO score; the honesty caveat
+    travels with the data."""
+    if not article_ids:
+        return {"clusters": [], "n_articles": 0, "n_clusters": 0,
+                "method": _COORD_METHOD, "caveat": _COORD_CAVEAT}
+    rows = (
+        session.query(Article, Source.name, Source.domain)
+        .join(Source, Source.id == Article.source_id)
+        .filter(Article.id.in_(article_ids))
+        .all()
+    )
+    docs: dict[str, str] = {}
+    meta: dict[str, dict] = {}
+    for a, sname, sdom in rows:
+        docs[str(a.id)] = ((a.title or "") + "\n" + (a.get_content() or "")).strip()
+        meta[str(a.id)] = {
+            "id": a.id, "title": a.title, "source": sname or sdom or "?",
+            "domain": sdom, "url": a.url,
+            "published_at": a.published_at.isoformat() if a.published_at else None,
+        }
+    from src.signals.near_dup import near_duplicate_clusters
+
+    res = near_duplicate_clusters(docs, threshold=threshold)
+    clusters: list[dict] = []
+    for c in res.clusters:
+        members = [meta[m] for m in c.members if m in meta]
+        if len(members) < min_members:
+            continue
+        srcs = sorted({m["source"] for m in members})
+        clusters.append({
+            "representative": int(c.representative),
+            "size": len(members),
+            "article_ids": [m["id"] for m in members],
+            "members": members,
+            "distinct_sources": len(srcs),
+            "sources": srcs,
+            "avg_similarity": round(c.avg_similarity, 3),
+            "single_source": len(srcs) <= 1,
+        })
+    clusters.sort(key=lambda x: (-x["size"], -x["distinct_sources"]))
+    return {
+        "clusters": clusters, "n_articles": len(docs), "n_clusters": len(clusters),
+        "method": _COORD_METHOD, "caveat": _COORD_CAVEAT,
+    }
+
+
 def trending(
     session,
     *,

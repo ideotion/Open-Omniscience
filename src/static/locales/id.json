@@ -1089,5 +1089,17 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "Beralih ke Terindeks untuk menindih harga komoditas secara jujur (satuan berbeda).",
   "each on its own real-unit scale": "masing-masing pada skala satuan aslinya",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Jumlah artikel pada sumbu waktu bersama. Ini co-occurrence dalam korpus Anda, bukan kausalitas.",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Diindeks ke 100 di awal jendela — pergerakan relatif, bukan level absolut. Arahkan kursor untuk nilai aslinya. Co-occurrence dalam korpus Anda, bukan kausalitas."
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Diindeks ke 100 di awal jendela — pergerakan relatif, bukan level absolut. Arahkan kursor untuk nilai aslinya. Co-occurrence dalam korpus Anda, bukan kausalitas.",
+  "Download keyword log (.zip)": "Unduh log kata kunci (.zip)",
+  "Related": "Terkait",
+  "Near-identical clusters": "Kluster nyaris identik",
+  "Near-identical cluster": "Kluster nyaris identik",
+  "Show all": "Tampilkan semua",
+  "more": "lagi",
+  "(untitled)": "(tanpa judul)",
+  "Branch into a new corpus →": "Cabangkan ke korpus baru →",
+  "Open these articles as a new analysis corpus": "Buka artikel-artikel ini sebagai korpus analisis baru",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{n} salinan nyaris identik di {m} sumber = sebenarnya satu suara",
+  "{n} near-identical copies from one source = one voice": "{n} salinan nyaris identik dari satu sumber = satu suara",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "Tidak ada kluster nyaris identik terdeteksi dalam korpus ini — bukan bukti tidak ada koordinasi, hanya tidak ada yang ditemukan pada ambang ini."
 }

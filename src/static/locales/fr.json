@@ -1089,5 +1089,17 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "Passez en Indexé pour superposer honnêtement les prix des matières premières (unités différentes).",
   "each on its own real-unit scale": "chacun sur sa propre échelle en unités réelles",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Nombre d'articles sur un axe temporel partagé. Co-occurrence dans votre corpus, jamais causalité.",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexé à 100 au début de la fenêtre — mouvement relatif, pas niveaux absolus. Le survol montre la valeur réelle. Co-occurrence dans votre corpus, jamais causalité."
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexé à 100 au début de la fenêtre — mouvement relatif, pas niveaux absolus. Le survol montre la valeur réelle. Co-occurrence dans votre corpus, jamais causalité.",
+  "Download keyword log (.zip)": "Télécharger le journal de mots-clés (.zip)",
+  "Related": "Liés",
+  "Near-identical clusters": "Grappes quasi identiques",
+  "Near-identical cluster": "Grappe quasi identique",
+  "Show all": "Tout afficher",
+  "more": "de plus",
+  "(untitled)": "(sans titre)",
+  "Branch into a new corpus →": "Dériver vers un nouveau corpus →",
+  "Open these articles as a new analysis corpus": "Ouvrir ces articles comme un nouveau corpus d'analyse",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{n} copies quasi identiques sur {m} sources = en fait une seule voix",
+  "{n} near-identical copies from one source = one voice": "{n} copies quasi identiques d'une seule source = une voix",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "Aucune grappe quasi identique détectée dans ce corpus — ce n'est pas la preuve d'une absence de coordination, seulement qu'aucune n'a été trouvée à ce seuil."
 }

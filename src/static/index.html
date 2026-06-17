@@ -256,6 +256,7 @@
         <button data-tab="articles">Articles</button>
         <button data-tab="www">When/Where/Who</button>
         <button data-tab="links">Links</button>
+        <button data-tab="related">Related</button>
         <button data-tab="sentiment">Sentiment</button>
         <button data-tab="sources">Sources</button>
         <button data-tab="price" id="an-price-tab" style="display:none">Price</button>
@@ -269,6 +270,7 @@
       <div class="an-panel" id="an-articles" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-www" style="display:none;margin-top:10px"></div>
       <div class="an-panel" id="an-links" style="display:none;margin-top:10px;overflow:auto"></div>
+      <div class="an-panel" id="an-related" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-sentiment" style="display:none;margin-top:10px"></div>
       <div class="an-panel" id="an-sources" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-price" style="display:none;margin-top:10px;overflow:auto"></div>
@@ -746,10 +748,11 @@
     </section>
 
     <section class="panel ins-view" id="ins-supergroups" style="display:none">
-      <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families</span></h2>
-      <p class="hint" style="margin-top:0">Gather several families under one theme (e.g. <b>Russia–Ukraine war</b>
-        over Russia, Ukraine, Putin, sanctions…) for sorting and discovery. Pure curation — nothing in the
-        keyword store changes.</p>
+      <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families and rings</span></h2>
+      <p class="hint" style="margin-top:0">Gather several families — or cross-language <b>rings</b> (one concept across
+        languages, e.g. election / élection / wahl) — under one theme (e.g. <b>Russia–Ukraine war</b>
+        over Russia, Ukraine, Putin, sanctions…) for sorting and discovery. A ring member makes the super-group
+        span languages (the super-ring model). Pure curation — nothing in the keyword store changes.</p>
       <div class="row" style="align-items:center">
         <div style="flex:2"><label for="sg-name">New super-group</label>
           <input id="sg-name" placeholder="e.g. Russia–Ukraine war" onkeydown="if(event.key==='Enter')createSuperGroup()"></div>
@@ -758,6 +761,7 @@
         <span id="sg-status" class="hint"></span>
       </div>
       <datalist id="sg-family-options"></datalist>
+      <datalist id="sg-ring-options"></datalist>
       <div id="sg-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
     </section>
 
@@ -1289,8 +1293,9 @@
       <h2>Diagnostics log</h2>
       <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
       <div class="row" style="margin-top:6px">
-        <button class="secondary" onclick="window.open('/api/diagnostics/keywords','_blank')">Download keyword log (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip','_blank')">Download keyword log (.zip)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/keyword-selftest?download=1','_blank')">Download keyword self-test (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keyword-engine?download=1','_blank')">Download keyword-engine report (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/dates','_blank')">Download date-extraction log (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/network','_blank')">Download network log (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/performance','_blank')">Download performance report (.json)</button>
@@ -1300,6 +1305,7 @@
       <div class="hint">The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.</div>
       <div class="hint">All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.</div>
       <div class="hint">The keyword self-test challenges the keyword pre-selection on curated cases — most importantly that the organisation "WHO" stays distinct from the pronoun "who", plus the per-language tweaks (German nouns stay terms, sentence-initial capitals aren't entities, the stopword/weekday batches, the singular/plural family merge, cross-language equivalence rings, and the curated baseline tags). It runs the real pipeline and reports pass/fail per case — share it so a regression is caught early. No corpus content, no network, no scores.</div>
+      <div class="hint">The keyword-engine report measures how the engine is doing over your real corpus: composition, entity precision, cross-language translation coverage (how many top keywords have a ring), tag coverage, which languages are fully functional vs degraded (zh/ja aren't segmented), the self-test result, and indicative extraction/query timings. Counts and measured timings only — never a quality score. Send two over time and the difference shows whether an optimization landed.</div>
       <div class="hint">The date-extraction log shows, per article, the dates the extractor found versus the date-like text it skipped — the evidence for catching more dates. Counts and bounded samples only; local, never transmitted.</div>
       <div class="hint">The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.</div>
     </section>

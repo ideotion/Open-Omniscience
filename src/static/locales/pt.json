@@ -1089,5 +1089,17 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "Mude para Indexado para sobrepor honestamente os preços das matérias-primas (unidades diferentes).",
   "each on its own real-unit scale": "cada um na sua própria escala de unidades reais",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Contagem de artigos num eixo temporal partilhado. Coocorrência no seu corpus, nunca causalidade.",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexado a 100 no início da janela — movimento relativo, não níveis absolutos. Passar o cursor mostra o valor real. Coocorrência no seu corpus, nunca causalidade."
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexado a 100 no início da janela — movimento relativo, não níveis absolutos. Passar o cursor mostra o valor real. Coocorrência no seu corpus, nunca causalidade.",
+  "Download keyword log (.zip)": "Baixar o registo de palavras-chave (.zip)",
+  "Related": "Relacionados",
+  "Near-identical clusters": "Grupos quase idênticos",
+  "Near-identical cluster": "Grupo quase idêntico",
+  "Show all": "Mostrar tudo",
+  "more": "mais",
+  "(untitled)": "(sem título)",
+  "Branch into a new corpus →": "Ramificar para um novo corpus →",
+  "Open these articles as a new analysis corpus": "Abrir estes artigos como um novo corpus de análise",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{n} cópias quase idênticas em {m} fontes = na prática uma só voz",
+  "{n} near-identical copies from one source = one voice": "{n} cópias quase idênticas de uma só fonte = uma voz",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "Nenhum grupo quase idêntico detetado neste corpus — não é prova de que não há coordenação, apenas que nenhuma foi encontrada neste limiar."
 }

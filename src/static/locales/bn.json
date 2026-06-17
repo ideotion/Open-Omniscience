@@ -1089,5 +1089,17 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "ভিন্ন এককের পণ্যমূল্য সততার সঙ্গে ওভারলে করতে সূচকায়িততে যান।",
   "each on its own real-unit scale": "প্রতিটি তার নিজস্ব প্রকৃত-একক স্কেলে",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "একটি শেয়ার করা সময়-অক্ষে নিবন্ধ গণনা। আপনার কর্পাসে সহ-ঘটনা, কখনও কার্যকারণ নয়।",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "উইন্ডোর শুরুতে ১০০-এ সূচকায়িত — আপেক্ষিক গতি, পরম স্তর নয়। হোভার করলে প্রকৃত মান দেখায়। আপনার কর্পাসে সহ-ঘটনা, কখনও কার্যকারণ নয়।"
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "উইন্ডোর শুরুতে ১০০-এ সূচকায়িত — আপেক্ষিক গতি, পরম স্তর নয়। হোভার করলে প্রকৃত মান দেখায়। আপনার কর্পাসে সহ-ঘটনা, কখনও কার্যকারণ নয়।",
+  "Download keyword log (.zip)": "কীওয়ার্ড লগ ডাউনলোড করুন (.zip)",
+  "Related": "সম্পর্কিত",
+  "Near-identical clusters": "প্রায় অভিন্ন ক্লাস্টার",
+  "Near-identical cluster": "প্রায় অভিন্ন ক্লাস্টার",
+  "Show all": "সব দেখান",
+  "more": "আরও",
+  "(untitled)": "(শিরোনামহীন)",
+  "Branch into a new corpus →": "নতুন কর্পাসে শাখা করুন →",
+  "Open these articles as a new analysis corpus": "এই নিবন্ধগুলো একটি নতুন বিশ্লেষণ কর্পাস হিসেবে খুলুন",
+  "{n} near-identical copies across {m} sources = effectively one voice": "{m}টি উৎস জুড়ে {n}টি প্রায় অভিন্ন কপি = কার্যত একটিই কণ্ঠস্বর",
+  "{n} near-identical copies from one source = one voice": "একটি উৎস থেকে {n}টি প্রায় অভিন্ন কপি = একটিই কণ্ঠস্বর",
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "এই কর্পাসে কোনও প্রায় অভিন্ন ক্লাস্টার শনাক্ত হয়নি — এটি সমন্বয়ের অনুপস্থিতির প্রমাণ নয়, কেবল এই থ্রেশহোল্ডে কিছু পাওয়া যায়নি।"
 }
