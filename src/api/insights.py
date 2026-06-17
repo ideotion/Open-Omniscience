@@ -478,6 +478,25 @@ def insights_convergences(
     )
 
 
+@router.get("/ring-countries")
+def insights_ring_countries(
+    ring_id: str = Query(..., description="an equivalence-ring id, e.g. 'inflation'"),
+    days: int | None = Query(None, ge=1, le=36500, description="restrict to articles published within N days"),
+    limit: int = Query(40, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Split a cross-language equivalence ring's coverage by SOURCE country.
+
+    The multi-perspective / de-US-centring lens: the trans-language layer already merges
+    a concept across languages (élection+election+wahl); this shows WHO covers it, by the
+    producing source's country. Counts only, no score, no ranking — coverage is not
+    credibility. Reuses the language-qualified ring resolver (no fabricated merge); a
+    keyword with no stored language is excluded; unlocated sources bucket as null."""
+    from src.analytics.queries import ring_country_split
+
+    return ring_country_split(db, ring_id=ring_id, days=days, limit=limit)
+
+
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None

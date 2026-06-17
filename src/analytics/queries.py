@@ -414,6 +414,83 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
     return graph
 
 
+def ring_country_split(session, *, ring_id: str, days: int | None = None, limit: int = 40) -> dict:
+    """Split a cross-language equivalence RING's coverage by the SOURCE country.
+
+    The trans-language layer already merges (fr:élection + en:election + de:wahl) into
+    ONE concept; this asks the multi-perspective question the de-US-centring ethic cares
+    about: WHO covers that concept, by the producing source's country? It aggregates the
+    ring's keyword mentions across ALL its languages and groups them by Source.country —
+    so a user sees, e.g., "the 'inflation' concept: 120 mentions / 30 articles from US
+    sources, 45 / 12 from FR, 8 / 3 from BR…".
+
+    Honest by construction: counts ONLY (mentions + distinct-article spread), NO score,
+    NO ranking verdict — presence is coverage, not credibility. Membership reuses the
+    established language-qualified resolver (``equivalence.ring_of``), so a keyword joins
+    only when its stored language matches a ring member (never a fabricated merge); a
+    keyword with no stored language is left out (stated in the method). Sources with no
+    country are bucketed honestly as ``null`` (unlocated), never dropped or guessed.
+    """
+    from src.analytics import equivalence
+
+    ring = equivalence.ring_meta(ring_id)
+    if ring is None:
+        return {"ring_id": ring_id, "found": False, "countries": [],
+                "caveat": "No such equivalence ring."}
+    member_terms = {term for _lang, term in ring.members}
+    # Pre-filter in SQL to this ring's member terms, then confirm the language-qualified
+    # ring membership in Python (so a term shared across rings/languages is attributed
+    # correctly, never fabricated).
+    cand = (
+        session.query(Keyword.id, Keyword.language, Keyword.normalized_term)
+        .filter(Keyword.normalized_term.in_(member_terms))
+        .all()
+    )
+    kw_ids = [kid for kid, lang, norm in cand if equivalence.ring_of(lang, norm) == ring_id]
+    languages = sorted({lang for _kid, lang, norm in cand
+                        if equivalence.ring_of(lang, norm) == ring_id and lang})
+    if not kw_ids:
+        return {"ring_id": ring_id, "found": True, "countries": [], "n_keywords": 0,
+                "languages": languages,
+                "caveat": "No indexed keywords in this ring yet for your corpus."}
+    q = (
+        session.query(
+            Source.country,
+            func.sum(KeywordMention.count).label("m"),
+            func.count(func.distinct(KeywordMention.article_id)).label("arts"),
+        )
+        .join(Article, Article.id == KeywordMention.article_id)
+        .join(Source, Source.id == Article.source_id)
+        .filter(KeywordMention.keyword_id.in_(kw_ids))
+    )
+    if days and days > 0:
+        cutoff = date.today() - timedelta(days=days)
+        q = q.filter(Article.published_at >= cutoff)
+    rows = q.group_by(Source.country).order_by(func.count(func.distinct(KeywordMention.article_id)).desc()).all()
+    countries = [
+        {"country": (c or None), "mentions": int(m or 0), "articles": int(a or 0)}
+        for c, m, a in rows[:limit]
+    ]
+    return {
+        "ring_id": ring_id,
+        "found": True,
+        "label": ring.label,
+        "n_keywords": len(kw_ids),
+        "languages": languages,
+        "countries": countries,
+        "method": (
+            "Mentions of every language member of the ring, grouped by the source's "
+            "country. Keywords with no stored language are excluded (conservative). "
+            "Counts only."
+        ),
+        "caveat": (
+            "Coverage by producing-source country, never a credibility ranking or score. "
+            "Unlocated sources are bucketed as null, not dropped. Co-occurrence in your "
+            "corpus, never a claim about the country."
+        ),
+    }
+
+
 def corpus_who(session, *, article_ids: list[int], limit: int = 40) -> dict:
     """WHO (people/orgs) deduced across a GIVEN article set — like who_aggregate
     but scoped to the analysis window's matched articles. Counts only, deduced
