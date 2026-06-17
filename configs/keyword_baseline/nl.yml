@@ -1,0 +1,17 @@
+# Curated keyword BASELINE — Dutch (Nederlands).
+# Zie src/analytics/baseline.py (BASELINE_AS_OF) + docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md.
+# Een tag is een GELABELDE BEWERING, nooit een feit en nooit een score.
+baseline_keywords:
+  verkiezing:    {type: event, topic: politics}
+  referendum:    {type: event, topic: politics}
+  sancties:      {topic: politics}
+  inflatie:      {topic: economy}
+  recessie:      {topic: economy}
+  werkloosheid:  {topic: economy}
+  pandemie:      {type: event, topic: health}
+  vaccin:        {type: technology, topic: health}
+  droogte:       {type: event, topic: climate}
+  overstroming:  {type: event, topic: climate}
+  aardbeving:    {type: event, topic: climate}
+  uitstoot:      {topic: climate}
+  satelliet:     {type: technology, topic: science}

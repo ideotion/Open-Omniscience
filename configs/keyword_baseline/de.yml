@@ -1,0 +1,20 @@
+# Curated keyword BASELINE — German (Deutsch).
+# Siehe src/analytics/baseline.py (BASELINE_AS_OF) + docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md.
+# Ein Tag ist eine ETIKETTIERTE AUSSAGE, niemals Tatsache und niemals ein Score.
+# Nur Einzelwörter (mehrwortige Begriffe mit Stoppwörtern werden nie zu Schlagwörtern).
+baseline_keywords:
+  wahl:             {type: event, topic: politics}
+  referendum:       {type: event, topic: politics}
+  waffenstillstand: {type: event, topic: politics}
+  sanktionen:       {topic: politics}
+  inflation:        {topic: economy}
+  rezession:        {topic: economy}
+  arbeitslosigkeit: {topic: economy}
+  pandemie:         {type: event, topic: health}
+  impfstoff:        {type: technology, topic: health}
+  dürre:            {type: event, topic: climate}
+  überschwemmung:   {type: event, topic: climate}
+  erdbeben:         {type: event, topic: climate}
+  emissionen:       {topic: climate}
+  halbleiter:       {type: technology, topic: technology}
+  satellit:         {type: technology, topic: science}
