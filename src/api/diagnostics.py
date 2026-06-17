@@ -619,6 +619,24 @@ def keyword_log(
     )
 
 
+@router.get("/keyword-selftest")
+def keyword_selftest(download: bool = Query(False)) -> JSONResponse:
+    """Run the keyword pre-selection challenge harness (Who vs WHO + language tweaks).
+
+    A curated golden-case self-test over the REAL extractor / families / equivalence /
+    baseline — no DB, no network, no score. Returns an exportable log (oo-selftest-1)
+    the maintainer can run and send back for the next optimization round. With
+    ``download=1`` it comes back as a dated attachment."""
+    from src.analytics.selftest import run_keyword_selftest
+
+    log = run_keyword_selftest()
+    headers = {}
+    if download:
+        fname = f"oo-keyword-selftest-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
 @router.get("/dates")
 def date_extraction_log(
     db: Session = Depends(get_db),
