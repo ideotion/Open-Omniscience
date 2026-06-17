@@ -128,6 +128,20 @@ def test_rtl_and_indic_month_names():
     assert d("هو يمارس الرياضة كل يوم.") == []  # no adjacent number at all
 
 
+def test_russian_and_indonesian_month_names():
+    """The last two UI locales: Russian (Cyrillic — genitive '5 мая 2024' for
+    day-dates, prepositional 'в марте 2024' for month-year) and Indonesian."""
+    from src.timemap.dateextract import extract_dates
+
+    def d(text):
+        return [(c["date"], c["precision"]) for c in extract_dates(text, today=TODAY)]
+
+    assert ("2024-05-05", "day") in d("Встреча состоялась 5 мая 2024 года.")  # ru genitive
+    assert ("2003-03-01", "month") in d("В марте 2003 года началось.")  # ru prepositional
+    assert ("1945-08-17", "day") in d("Proklamasi 17 Agustus 1945.")  # id
+    assert ("2024-05-05", "day") in d("Rapat pada 5 Mei 2024.")  # id
+
+
 def test_cjk_dates_year_month_day_markers():
     """Chinese/Japanese dates use the 年/月/日 ideographs as unambiguous markers
     (date-diag 2026-06-17 probes for 'cjk_date'). Half-width AND full-width digits

@@ -139,6 +139,17 @@ _MONTHS.update({
     # Bengali — Gregorian month names; Bengali digits parse via \d.
     "জানুয়ারি": 1, "ফেব্রুয়ারি": 2, "মার্চ": 3, "এপ্রিল": 4, "মে": 5, "জুন": 6,
     "জুলাই": 7, "আগস্ট": 8, "সেপ্টেম্বর": 9, "অক্টোবর": 10, "নভেম্বর": 11, "ডিসেম্বর": 12,
+    # Russian (Cyrillic) — nominative + genitive ("5 мая 2024") + prepositional
+    # ("в марте 2024"), the three forms a date uses. (март/май/август are already
+    # in the table from Serbian Cyrillic, same months.)
+    "январь": 1, "января": 1, "январе": 1, "февраль": 2, "февраля": 2,
+    "феврале": 2, "марта": 3, "марте": 3, "апрель": 4, "апреля": 4, "апреле": 4,
+    "мая": 5, "мае": 5, "июнь": 6, "июня": 6, "июне": 6, "июль": 7, "июля": 7,
+    "июле": 7, "августа": 8, "августе": 8, "сентябрь": 9, "сентября": 9,
+    "сентябре": 9, "октябрь": 10, "октября": 10, "октябре": 10, "ноябрь": 11,
+    "ноября": 11, "ноябре": 11, "декабрь": 12, "декабря": 12, "декабре": 12,
+    # Indonesian (the months not already covered by other tables)
+    "maret": 3, "mei": 5, "agustus": 8,
 })
 _MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))  # longest first so 'sept' beats 'sep'
 

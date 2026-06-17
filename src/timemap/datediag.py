@@ -39,7 +39,9 @@ MONTH_VOCAB_LANGS: frozenset[str] = frozenset(
      "ro", "hu", "tr", "da", "sv", "nb", "fi", "pl", "sk", "sr", "bg",
      # RTL / Indic UI locales (Gregorian month names; zh/ja use 年月日 markers,
      # handled by the extractor's CJK path rather than a month-name table).
-     "ar", "hi", "bn"}
+     "ar", "hi", "bn",
+     # Remaining UI locales: Russian (Cyrillic, nom/gen/prep) + Indonesian.
+     "ru", "id"}
 )
 
 # Probe kinds the extractor is *expected* to resolve (so a miss is actionable);
