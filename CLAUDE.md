@@ -1278,7 +1278,26 @@ ruling, a contingency, or a deliberate-omission note.
   txn) + backup stance (its own oo-backup member vs excluded-as-rebuildable) + whether a
   user-confirmed AI keyword may EVER cross into the trusted index (default NO). Enforce with an
   invariant test: the main analytics/keyword index NEVER read the AI DB; the AI never writes
-  the main store beyond article_analyses summary/translation rows. ALL LLM features keep the standing
+  the main store beyond article_analyses summary/translation rows.
+  **SCAFFOLD SHIPPED 2026-06-17 (branch claude/llm-two-tier-model, draft PR onto 0.09; backend VERIFIED
+  py3.13 — the 7 tests ran GREEN here):** `src/ai_layer/` = the second store. models.py — `AiBase`
+  (DeclarativeBase, metadata DISJOINT from the main `Base`) + `AiKeyword` (the "second keyword database":
+  soft int `article_id` with NO ForeignKey, term/kind/language, model+prompt_version provenance, a
+  `confirmed` flag for confirm-within-the-lens, NO score column). db.py — a SEPARATE lazy engine on
+  `data_dir()/ai_layer.db` opened through the ONE `connect()` factory (SQLCipher under the SAME passphrase,
+  no second key surface; `OO_AI_DB_PATH` override for tests), its OWN `WriterGate` instance (NOT the main
+  process-wide singleton — different file, different write lock), created LAZILY on first use
+  (`init_ai_db`) so no empty encrypted file appears for users who never run an AI feature + zero boot-path
+  change; `ai_session_scope`/`get_ai_db` release the AI gate. store.py — `record_keywords` (idempotent per
+  article+kind+term) / `keywords_for_article` / `set_confirmed`. tests/test_ai_layer.py (7): round-trip +
+  confirm-within-lens + the SEPARATION invariants — `AiBase ∩ MainBase = ∅`, article_id has no FK + no
+  score column, the AI layer never `ATTACH DATABASE`s nor imports the main ORM, the trusted analytics + DB
+  layer never import `src.ai_layer`, and the production path creates a separate file while the AI gate (not
+  the main one) serialises the write. mypy +0 (115≤127), ruff clean, packaging auto-includes it (`src*`).
+  REMAINING: the FIRST writer (an LLM keyword/entity extraction batch job feeding this store) + the
+  read-only AI lens UI beside the trusted keywords; the deep-model tier (1) + whole-corpus cited synthesis
+  (3); the backup stance for ai_layer.db (own member vs excluded-as-rebuildable).
+  ALL LLM features keep the standing
   honesty invariants: grounded+cited, refuse-when-absent, no score/verdict/ranking, local
   loopback, provenance recorded, caveats visible, never auto-fed into the pipeline.
   SELF-UPDATE via GUI: consented check vs GitHub releases → signed
