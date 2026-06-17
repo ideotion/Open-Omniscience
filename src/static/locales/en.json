@@ -1089,5 +1089,6 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "Switch to Indexed to overlay commodity prices honestly (different units).",
   "each on its own real-unit scale": "each on its own real-unit scale",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation."
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.",
+  "Download keyword log (.zip)": "Download keyword log (.zip)"
 }

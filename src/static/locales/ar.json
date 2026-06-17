@@ -1089,5 +1089,6 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "بدّل إلى «مفهرس» لتراكب أسعار السلع بنزاهة (وحدات مختلفة).",
   "each on its own real-unit scale": "كلٌّ على مقياسه بوحداته الحقيقية",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "أعداد المقالات على محور زمني مشترك. تزامن في مجموعتك، وليس سببية.",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "مفهرس إلى 100 عند بداية النافذة — حركة نسبية لا مستويات مطلقة. يُظهر التمرير القيمة الحقيقية. تزامن في مجموعتك، وليس سببية."
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "مفهرس إلى 100 عند بداية النافذة — حركة نسبية لا مستويات مطلقة. يُظهر التمرير القيمة الحقيقية. تزامن في مجموعتك، وليس سببية.",
+  "Download keyword log (.zip)": "تنزيل سجل الكلمات المفتاحية (.zip)"
 }

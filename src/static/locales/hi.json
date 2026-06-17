@@ -1089,5 +1089,6 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "कमोडिटी कीमतों को ईमानदारी से ओवरले करने के लिए सूचकांकित पर जाएँ (अलग इकाइयाँ)।",
   "each on its own real-unit scale": "प्रत्येक अपनी वास्तविक-इकाई पैमाने पर",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "साझा समय-अक्ष पर लेख गणना। आपके कॉर्पस में सह-घटना, कभी कारण नहीं।",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "विंडो आरंभ पर 100 पर सूचकांकित — सापेक्ष गति, निरपेक्ष स्तर नहीं। होवर करने पर वास्तविक मान दिखता है। आपके कॉर्पस में सह-घटना, कभी कारण नहीं।"
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "विंडो आरंभ पर 100 पर सूचकांकित — सापेक्ष गति, निरपेक्ष स्तर नहीं। होवर करने पर वास्तविक मान दिखता है। आपके कॉर्पस में सह-घटना, कभी कारण नहीं।",
+  "Download keyword log (.zip)": "कीवर्ड लॉग डाउनलोड करें (.zip)"
 }

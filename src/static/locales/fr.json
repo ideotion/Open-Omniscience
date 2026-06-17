@@ -1089,5 +1089,6 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "Passez en Indexé pour superposer honnêtement les prix des matières premières (unités différentes).",
   "each on its own real-unit scale": "chacun sur sa propre échelle en unités réelles",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Nombre d'articles sur un axe temporel partagé. Co-occurrence dans votre corpus, jamais causalité.",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexé à 100 au début de la fenêtre — mouvement relatif, pas niveaux absolus. Le survol montre la valeur réelle. Co-occurrence dans votre corpus, jamais causalité."
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Indexé à 100 au début de la fenêtre — mouvement relatif, pas niveaux absolus. Le survol montre la valeur réelle. Co-occurrence dans votre corpus, jamais causalité.",
+  "Download keyword log (.zip)": "Télécharger le journal de mots-clés (.zip)"
 }

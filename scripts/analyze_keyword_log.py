@@ -66,6 +66,7 @@ import argparse
 import json
 import re
 import sys
+import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -122,7 +123,32 @@ _LANG_ORDER = [
 # Loading
 # --------------------------------------------------------------------------- #
 
+def _load_zip_log(path: Path) -> dict[str, Any]:
+    """Read the per-language ZIP archive (?format=zip): reassemble summary.json's
+    aggregates + every keywords/<lang>.json shard into the one in-memory doc the
+    rest of the analyzer already expects (data['keywords'] + the aggregates)."""
+    with zipfile.ZipFile(path) as z:
+        names = set(z.namelist())
+        doc: dict[str, Any] = (
+            json.loads(z.read("summary.json")) if "summary.json" in names else {}
+        )
+        data = doc.get("data")
+        if not isinstance(data, dict):
+            data = {}
+        keywords: list[dict] = []
+        for name in sorted(names):
+            if name.startswith("keywords/") and name.endswith(".json"):
+                shard = json.loads(z.read(name))
+                keywords.extend(shard.get("keywords", []))
+        data["keywords"] = keywords
+        doc["data"] = data
+        doc.setdefault("kind", "keyword-diagnostics")
+    return doc
+
+
 def load_log(path: Path) -> dict[str, Any]:
+    if path.suffix == ".zip" or zipfile.is_zipfile(path):
+        return _load_zip_log(path)
     doc = json.loads(path.read_text(encoding="utf-8"))
     if doc.get("kind") != "keyword-diagnostics":
         print(

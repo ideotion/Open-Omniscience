@@ -1089,5 +1089,6 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "Переключитесь на «Индексировано», чтобы честно наложить цены сырья (разные единицы).",
   "each on its own real-unit scale": "каждый в своём масштабе реальных единиц",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "Количество статей на общей оси времени. Совстречаемость в вашем корпусе, не причинность.",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Индексировано к 100 на начало окна — относительное движение, не абсолютные уровни. При наведении виден реальный показатель. Совстречаемость в вашем корпусе, не причинность."
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "Индексировано к 100 на начало окна — относительное движение, не абсолютные уровни. При наведении виден реальный показатель. Совстречаемость в вашем корпусе, не причинность.",
+  "Download keyword log (.zip)": "Скачать журнал ключевых слов (.zip)"
 }

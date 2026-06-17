@@ -1089,5 +1089,6 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "ভিন্ন এককের পণ্যমূল্য সততার সঙ্গে ওভারলে করতে সূচকায়িততে যান।",
   "each on its own real-unit scale": "প্রতিটি তার নিজস্ব প্রকৃত-একক স্কেলে",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "একটি শেয়ার করা সময়-অক্ষে নিবন্ধ গণনা। আপনার কর্পাসে সহ-ঘটনা, কখনও কার্যকারণ নয়।",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "উইন্ডোর শুরুতে ১০০-এ সূচকায়িত — আপেক্ষিক গতি, পরম স্তর নয়। হোভার করলে প্রকৃত মান দেখায়। আপনার কর্পাসে সহ-ঘটনা, কখনও কার্যকারণ নয়।"
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "উইন্ডোর শুরুতে ১০০-এ সূচকায়িত — আপেক্ষিক গতি, পরম স্তর নয়। হোভার করলে প্রকৃত মান দেখায়। আপনার কর্পাসে সহ-ঘটনা, কখনও কার্যকারণ নয়।",
+  "Download keyword log (.zip)": "কীওয়ার্ড লগ ডাউনলোড করুন (.zip)"
 }

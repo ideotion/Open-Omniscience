@@ -1089,5 +1089,6 @@
   "Switch to Indexed to overlay commodity prices honestly (different units).": "切换到“指数化”以诚实地叠加大宗商品价格（单位不同）。",
   "each on its own real-unit scale": "各自使用其真实单位的刻度",
   "Article counts on a shared time axis. Co-occurrence in your corpus, never causation.": "共享时间轴上的文章计数。这是你语料库中的共现，绝非因果。",
-  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "以窗口起点为 100 进行指数化——相对变动，而非绝对水平。悬停显示真实数值。这是你语料库中的共现，绝非因果。"
+  "Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.": "以窗口起点为 100 进行指数化——相对变动，而非绝对水平。悬停显示真实数值。这是你语料库中的共现，绝非因果。",
+  "Download keyword log (.zip)": "下载关键词日志 (.zip)"
 }

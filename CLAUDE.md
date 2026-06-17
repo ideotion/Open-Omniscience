@@ -2620,3 +2620,21 @@ ruling, a contingency, or a deliberate-omission note.
   follow-on optimization targets it already exposes: CJK 年月日 handling + native
   month vocab for the non-European UI locales; optional bare-year contextual
   extraction. tests/test_date_diagnostics.py.
+  **KEYWORD-LOG ≤20 MB PER-LANGUAGE ZIP ADDED 2026-06-17 (maintainer-asked after a
+  live perf log showed the single-file keyword log at ~19.6 MB / 137k keywords —
+  about to breach 20 MB):** `GET /api/diagnostics/keywords?format=zip` returns a
+  per-language ZIP — `summary.json` (the corpus-wide aggregates: families,
+  super-groups, per-source concentration — same as the single-file log minus the
+  keyword list), `keywords/<lang>.json` per dominant language (same per-keyword
+  fields), `manifest.json` (counts + omissions + note). Splits on the existing
+  per-language export quota; JSON compresses ~8× so the archive is normally a few
+  MB. HARD cap `OO_KEYWORD_LOG_MAX_MB` (default 20): if the compressed archive ever
+  exceeds it, the lowest-mention keywords are dropped PER LANGUAGE (equal-fair — a
+  global mentions cut would re-anglicise the export, the standing rule) and recorded
+  in the manifest (never silent). The Settings → Diagnostics button now points at
+  `?format=zip` (label re-keyed ".json"→".zip" ×12). The DEFAULT `?format=json`
+  stream is byte-for-byte UNCHANGED (Item Z digest + the perf byte-parity contract
+  intact). `scripts/analyze_keyword_log.py` reads the .zip directly (reassembles
+  summary + shards into the doc it already expects). tests/test_keyword_log_zip.py
+  (split/bounded, per-language trim when over cap, analyzer reads it, default JSON
+  unchanged).
