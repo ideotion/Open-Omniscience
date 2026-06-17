@@ -527,7 +527,28 @@ ruling, a contingency, or a deliberate-omission note.
   these are DELIBERATELY EXCLUDED from oo-backup-2 (D3, "re-downloadable", listed
   in `_excluded_inventory()` at src/backup/artifact.py) — that exclusion is now
   overruled: include them. MARKED FOR FUTURE DEVELOPMENTS (not implemented this
-  session, per the maintainer's "implement now or mark it"). Design points to
+  session, per the maintainer's "implement now or mark it").
+  **SIBLING REQUEST — BACKUPS SHOULD OPTIONALLY INCLUDE LLM MODELS (maintainer asked
+  2026-06-17 "whether the backup integrates LLM models; there should be an option to
+  integrate it to avoid re-downloading models"):** ANSWERED — TODAY IT DOES NOT.
+  oo-backup-2 snapshots only `data_dir()` contents (corpus.db, custody, state/log
+  files, annotations, encrypted keys); Ollama models live in OLLAMA's OWN store
+  (~/.ollama/models or $OLLAMA_MODELS) OUTSIDE data_dir, so the backup never sees them,
+  and `_collect_members` has no model path. RULING RECORDED (same family as the wiki-
+  dump inclusion above, also marked-not-built): add an OPT-IN option to include the
+  Ollama model blobs so a restore avoids re-pulling multi-GB models (Tor-painful /
+  clearnet-only). DESIGN POINTS when built: (a) OPT-IN + likely a SEPARATE COMPANION
+  artifact (models are huge — small/quick backups must still opt out honestly), like
+  the wiki-dump design; (b) DEDUP by checksum across backups (never re-store an
+  unchanged blob); (c) read the EXTERNAL store path (OLLAMA_MODELS / OS default),
+  manifest-list which models are carried; (d) restore = place blobs into the target
+  Ollama store (or re-`ollama create`), bit-identical, never overwrite a differing
+  local blob — this shares the SAME unbuilt file-member-in-backup MERGE machinery the
+  wiki-dump inclusion needs (ledger: "the additive-restore MERGE must place FILE
+  members"), so build the two together; (e) the encrypted-artifact key rule still
+  holds. NOT a non-negotiable (no bundling of models IN THE REPO still stands — this is
+  a user's LOCAL backup of models they already pulled, never shipped in the project).
+  Design points to
   settle when built: (a) dumps are huge ⇒ DEDUP by checksum across backups (never
   re-store an unchanged dump) and consider whether dumps ride the main artifact
   vs a SEPARATE companion artifact so small/quick backups can still opt out
@@ -803,6 +824,37 @@ ruling, a contingency, or a deliberate-omission note.
   untouched), PLUS a startup onboarding picker for country/language emphasis
   — BOTH. The schedule stays explainable in the UI (which country is next
   and why).
+  **AMENDED + SHIPPED 2026-06-17 (maintainer: "put the scraping engine in the
+  background; it should start automatically; the only reason to stop it is airplane
+  mode; maximize rapid+ethical; scrape with TRUE RANDOMNESS by language AND source
+  tags"; branch `claude/scraping-background-random`, draft PR onto 0.09,
+  BROWSER-UNVERIFIED):** (a) ORDERING — the per-country round-robin is SUPERSEDED for
+  the default pass by `stratified_interleave` (src/scheduler/runner.py): TRUE per-pass
+  randomness, fairly stratified by LANGUAGE then by SOURCE TAG (each language equal
+  round-robin turns, language order shuffled every call; within a language each distinct
+  tag equal turns; within a (lang,tag) group a true-random shuffle), so no source-rich
+  language/topic dominates and the order differs every pass. A source's stratum tag =
+  its FIRST tag; no-lang/no-tag share a "·unknown"/"·untagged" bucket (never dropped).
+  Per-host POLITENESS is untouched (it lives in the fetcher's host lock; this only
+  orders). `round_robin_interleave` (country) is RETAINED as a utility + its tests
+  (test_continuous_collection/test_scheduler_runner stay green); new
+  tests/test_stratified_interleave.py. (b) BACKGROUND/AUTO already true (scheduler
+  `continuous` default, "scraping never stops"; offline stops the thread) — reaffirmed:
+  boot is AIRPLANE (zero-network), going online passes the ONE consent (ensureOnline,
+  invariant #14), then the collector runs continuously and ONLY airplane stops it.
+  (c) The "Welcome — your corpus is empty / Seed sources & run a first ingestion / No
+  articles yet" BUBBLE (#onboard) is REMOVED — redundant now: sources AUTO-SEED on boot
+  (main.py OO_AUTOSEED) and going online auto-collects. checkEmptyCorpus keeps the
+  one-time guided wizard (openGuide/guideDone) as the first-run entry; the empty Home
+  falls back to the briefing's honest empty state; the wizard's "Go online" now routes
+  straight through toggleNetwork()→ensureOnline. firstRun() is RETAINED (test #396
+  pins it: a consent-respecting programmatic seed+collect helper) but null-safe + unwired
+  from the UI; the 4 #onboard i18n keys are now orphaned (harmless, left to avoid churn).
+  Rapid+ethical (bandwidth governor ≥500 kbps default + parallel collect + per-host
+  politeness) already shipped — nothing to change there. DEFERRED special cases (ruled
+  "keep for later, needs a specific UI"): per-source RELIABILITY weighting + NEAR-LIVE
+  cadence for chosen sources (e.g. Olympics). node --check + py_compile + the at-risk
+  invariant string-checks green; full pytest needs py3.13 (CI).
   (4) TASK MANAGER — SLICE 1 SHIPPED (T9, 2026-06-12): /api/jobs aggregates
   LIVE from the owning systems (no shadow state — the view cannot disagree
   with reality): collect pass, every wiki dump with its REAL queue position,

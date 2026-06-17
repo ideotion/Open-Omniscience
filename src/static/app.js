@@ -223,11 +223,11 @@
         const note = $("gw-finish-note");
         if (note) note.textContent = _gwT("You'll confirm before anything connects.");
         closeGuide(true);
-        const card = $("onboard");
-        if (card) card.style.display = "";   // show the first-run progress surface
-        const seedBtn = card ? card.querySelector("button") : null;
-        if (typeof firstRun === "function" && seedBtn) firstRun(seedBtn);   // -> ensureOnline
-        else if (typeof toggleNetwork === "function") toggleNetwork();       // fallback: still consents
+        // The "corpus is empty" bubble is retired (2026-06-17): going online routes
+        // through toggleNetwork() -> ensureOnline (the ONE consent popup, invariant
+        // #14); once online the background collector runs continuously on its own
+        // (only airplane mode stops it). No manual seed/ingest step or progress card.
+        if (typeof toggleNetwork === "function") toggleNetwork();
       };
       const dlg = $("guide-wizard");
       if (dlg) dlg.addEventListener("cancel", () => closeGuide(true));   // Esc completes it too
@@ -3232,26 +3232,27 @@
     }
 
     // -- First-run onboarding (empty corpus) -------------------------------- //
-    // The guided wizard REPLACES the #onboard welcome card as the first-run entry
-    // (maintainer-ruled 2026-06-13): on a fresh, empty corpus we open the one-time
-    // guide instead of the card. If the user already finished/skipped the guide,
-    // the card remains as the lightweight fallback (nothing lost — firstRun lives
-    // on it). Re-running the guide is a user-visible Settings toggle.
+    // The guided wizard is the first-run entry (maintainer-ruled 2026-06-13). The
+    // old "corpus is empty" bubble was RETIRED (2026-06-17): sources auto-seed on
+    // boot and the background collector runs continuously once online (only airplane
+    // stops it), so an empty corpus needs no manual seed/ingest prompt — just the
+    // one-time guide. A returning empty user (guide done) sees the briefing's honest
+    // empty state, never a banner.
     async function checkEmptyCorpus() {
       try {
         const s = await api("/api/database/stats");
-        if (s.counts && s.counts.articles === 0) {
-          if (!guideDone()) openGuide();            // first-run entry = the guided wizard
-          else $("onboard").style.display = "";     // returning empty user = the card fallback
-        }
+        if (s.counts && s.counts.articles === 0 && !guideDone()) openGuide();
       } catch (e) { /* stats unavailable -> no banner */ }
     }
 
     async function firstRun(btn) {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!await ensureOnline(t9("Start a collection pass (RSS, crawl, markets, watched Wikipedia pages)"))) return;
-      btn.disabled = true;
-      const st = $("onboard-status");
+      if (btn) btn.disabled = true;
+      // The visible #onboard bubble was retired (2026-06-17); firstRun() stays as a
+      // programmatic seed+collect helper that still consents first (ensureOnline,
+      // above). Its status writes no-op safely when the card element is absent.
+      const st = $("onboard-status") || {};
       try {
         const stats = await api("/api/database/stats");
         if (!stats.counts || stats.counts.sources === 0) {
@@ -3270,7 +3271,7 @@
           if (arts > 0 || ++n > 40) {
             clearInterval(poll);
             if (arts > 0) { st.innerHTML = `<span class="pill ok">done</span> ${arts} article(s) ingested.`;
-              setTimeout(() => { $("onboard").style.display = "none"; }, 2500); doSearch(); loadDbStats && loadDbStats(); }
+              setTimeout(() => { const ob = $("onboard"); if (ob) ob.style.display = "none"; }, 2500); doSearch(); loadDbStats && loadDbStats(); }
             else st.textContent = "No articles yet — check the Sources tab and the scheduler's last run.";
             btn.disabled = false;
           }
