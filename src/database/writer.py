@@ -37,6 +37,17 @@ How it is wired (zero call-site churn for ORM writes):
   of *raw*-SQL writes on the live engine (VACUUM, an explicit FTS rebuild) take
   the gate explicitly via :func:`write_lock`.
 
+  CRUCIAL: ``before_flush`` only fires for the ORM unit-of-work (``add`` +
+  flush). **Bulk DML** — ``Query.delete()`` / ``Query.update()`` and
+  ``session.execute(insert()/update()/delete())`` — executes immediately and
+  does NOT fire ``before_flush``, so it would grab the SQLite write lock OUTSIDE
+  the gate (field log 2026-06-17: the idempotent ``KeywordMention``/
+  ``ArticleMentionedPlace``/``ArticleEntity`` ``.delete()`` in ``index_article``
+  collided with a long-held writer under the parallel collector → 149+
+  ``database is locked`` failures, dropping keyword/link/who indexing). The
+  ``do_orm_execute`` listener closes that hole: it acquires the gate for any
+  ORM-issued DML write too, so EVERY write — flush or bulk — serialises.
+
 Scope & guards:
   * SQLite only — a server PostgreSQL backend has MVCC + row locks and must not
     be throttled through one mutex (registration is skipped for non-SQLite).
@@ -217,6 +228,11 @@ def register_write_gate(session_factory) -> None:
     from sqlalchemy import event
 
     event.listen(session_factory, "before_flush", _on_before_flush)
+    # Bulk DML (Query.delete()/update(), session.execute(insert/update/delete))
+    # does NOT fire before_flush — it executes immediately. Acquire the gate for
+    # those writes too, or they grab the SQLite write lock outside the gate and
+    # collide with a gated writer (the 2026-06-17 "database is locked" storm).
+    event.listen(session_factory, "do_orm_execute", _on_orm_execute)
     # Release on transaction END (commit, rollback, OR close) rather than on
     # commit/rollback alone: a session that flushes then is CLOSED without
     # committing (a common test/abandon pattern) does NOT reliably emit
@@ -229,6 +245,24 @@ def register_write_gate(session_factory) -> None:
 def _on_before_flush(session, _flush_context, _instances) -> None:
     # First write of this session's transaction is about to hit the file —
     # take the write window. Idempotent within the transaction via the flag.
+    if not session.info.get(_SESSION_FLAG):
+        write_gate.acquire()
+        session.info[_SESSION_FLAG] = True
+
+
+def _on_orm_execute(orm_execute_state) -> None:
+    # Fires for EVERY ORM-issued statement (reads included). Take the write
+    # window only for DML writes — a read must never gate (WAL lets readers pass
+    # a writer). Idempotent within the transaction via the per-session flag, so a
+    # flush that already acquired (before_flush) is not re-counted, and a bulk
+    # delete followed by an INSERT flush holds ONE continuous window.
+    if not (
+        orm_execute_state.is_insert
+        or orm_execute_state.is_update
+        or orm_execute_state.is_delete
+    ):
+        return
+    session = orm_execute_state.session
     if not session.info.get(_SESSION_FLAG):
         write_gate.acquire()
         session.info[_SESSION_FLAG] = True

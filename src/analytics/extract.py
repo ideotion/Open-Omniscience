@@ -286,6 +286,18 @@ _EXTRA_STOPWORD_TEXT = (
     # Indonesian function words
     "dalam oleh bisa bagi menjadi sebagai satu dapat hari secara agar tidak "
     "maupun melalui merupakan "
+    # Field log (2026-06-17 keyword-diagnostics export, 2,324-article corpus). The
+    # per-source concentration suspects surfaced LOGIN/SUBSCRIBE widget chrome that
+    # appears in ~every article of a source (share_of_source ≈ 1.0) — pure UI, not
+    # content. ONLY unambiguous chrome + pure function words are added; dual-use
+    # platform NAMES (facebook/twitter/telegram…) and content-capable words
+    # (comments/follow/correo/electrónico) are deliberately left OUT (a story may be
+    # ABOUT them), staying visible in the diagnostics for a maintainer ruling.
+    # French account-wall chrome (Le Nouvelliste: connectez-vous/inscrivez-vous in
+    # 27/27 of its articles) + leaked function words (selon/lors/avez):
+    "connectez-vous inscrivez-vous gratuitement selon lors avez "
+    # English subscribe button:
+    "subscribe "
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any

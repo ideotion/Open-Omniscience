@@ -196,7 +196,12 @@ def index_article(
     written = 0
     self_suppressed = 0
     for t in terms:
-        if t.normalized in self_forms:
+        # Case-insensitive: _self_name_forms is casefolded, but the entity
+        # detector keeps acronyms UPPERCASE (2026-06-16 ruling), so a source
+        # whose name shows up all-caps in its own chrome ("Correctiv" ->
+        # CORRECTIV) would otherwise dodge suppression and leak (keyword log
+        # 2026-06-17). Full-form match only, so single shared words are untouched.
+        if t.normalized.casefold() in self_forms:
             self_suppressed += 1
             continue
         kw = _get_or_create_keyword(

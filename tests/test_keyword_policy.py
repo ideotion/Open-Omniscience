@@ -128,6 +128,57 @@ def test_index_article_suppresses_own_source_name_only(client):
         s.query(Source).filter(Source.id.in_([own.id, other.id])).delete()
 
 
+def test_index_article_suppresses_uppercase_acronym_self_name(client):
+    """Regression (keyword log 2026-06-17): the entity detector keeps acronyms
+    UPPERCASE (2026-06-16 ruling), but _self_name_forms is casefolded — so a
+    source whose name appears all-caps in its OWN chrome ('Correctiv' -> the
+    acronym CORRECTIV) dodged suppression and leaked. Suppression is now
+    case-insensitive; the full-form match still leaves shared words alone."""
+    from src.analytics.extract import BaselineExtractor
+    from src.analytics.store import index_article
+    from src.database.models import Article, Keyword, KeywordMention, Source
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        own = Source(name="Correctiv", domain="kwpol-corr.example")
+        s.add(own)
+        s.flush()
+        # 'CORRECTIV' standalone all-caps (masthead/byline chrome) -> the extractor
+        # keeps it as an UPPERCASE acronym entity (verified); the lowercase term
+        # 'correctiv' also appears. Both must be suppressed as the source's name.
+        body = (
+            "Investigators published findings. CORRECTIV reported the leak and the "
+            "documents detail the scheme in full this week across the country today."
+        )
+        a = Article(
+            url="https://kwpol-corr.example/1",
+            canonical_url="https://kwpol-corr.example/1",
+            source_id=own.id,
+            title="Own outlet",
+            content=body,
+            language="en",
+            hash="kwcorr" + "3" * 58,
+            published_at=None,
+        )
+        s.add(a)
+        s.flush()
+        r = index_article(s, a, extractor=BaselineExtractor())
+        assert r["self_name_suppressed"] >= 1, "all-caps self-name must be suppressed"
+        got = {
+            row[0]
+            for row in s.query(Keyword.normalized_term)
+            .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+            .filter(KeywordMention.article_id == a.id)
+            .all()
+        }
+        assert "CORRECTIV" not in got, "uppercase acronym self-name leaked"
+        assert "correctiv" not in got, "lowercase self-name leaked"
+        assert "documents" in got  # a shared content word is untouched
+        s.query(KeywordMention).filter_by(article_id=a.id).delete()
+        s.query(Article).filter_by(id=a.id).delete()
+        s.query(Source).filter_by(id=own.id).delete()
+
+
 @pytest.fixture()
 def concentrated_corpus(client):
     """One source with 12 articles, a keyword in 11 of them (boilerplate
