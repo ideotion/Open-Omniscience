@@ -1409,6 +1409,25 @@ ruling, a contingency, or a deliberate-omission note.
   (multiword Title-Case→term; +WHO≠who, +US-survives, +German-nouns-are-terms,
   +headline-not-acronym). DELIBERATE acceptance (testing phase): residual emphasis-acronym
   noise is iterated away via the diagnostics logs (the maintainer's loop).
+  **STALE-TEST FOLLOW-UP FIXED 2026-06-17 (the base went red — #283 updated
+  test_analytics_extract.py but MISSED two ingest tests that still asserted the old
+  Title-Case behaviour; maintainer steer "look at recent PRs, hint: Keywords" = align
+  them with the new model, not revert it):** (1)
+  test_analytics_store.py::test_index_article_writes_mentions_with_facets used
+  "Emmanuel Macron" (Title-Case) as the entity → now uses the ALL-CAPS acronym "WHO"
+  (entity normalized UPPERCASE, WHO≠who); the facets assertions are unchanged. (2)
+  test_keyword_policy.py::test_index_article_suppresses_own_source_name_only used
+  "The Moscow Times" — but "times"/"the" are stopwords so since #283 dropped the
+  multiword-Title-Case ENTITY path that full name no longer survives as one keyword
+  (only the bare, deliberately-unsuppressed word "moscow"); renamed the outlet to
+  "The Moscow Herald" (content-word tokens) so the self-name suppression is still
+  genuinely demonstrated on the multiword term "moscow herald" the extractor now
+  produces, with "moscow" asserted to STAY content in both articles (the
+  single-shared-word guarantee). Tests-only; verified empirically against the live
+  extractor before editing. NOTE for the record: #283 DID narrow self-name
+  suppression for outlet names whose tokens are stopwords (e.g. literally "The Moscow
+  Times") — accepted as a consequence of the anglocentric-Title-Case removal, not
+  re-litigated here.
   **ANALYTICS-TOOLS — LOG DIFF MODE SHIPPED 2026-06-16 (green-lit "implement better analytics
   tools autonomously"; stacked draft PR onto 0.09):** `scripts/analyze_keyword_log.py --baseline
   OLD.json NEW.json` is the "did my optimization work?" tool — it DIFFS two keyword-diagnostics
