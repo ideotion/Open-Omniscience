@@ -892,3 +892,16 @@ def keywords_by_tag(
     ]
     items.sort(key=lambda x: (-x["articles"], -x["mentions"], x["normalized"]))
     return {"axis": ax, "tag": tg, "total": len(items), "keywords": items[:limit]}
+
+
+@router.post("/keyword-tags/backfill")
+def backfill_keyword_tags(
+    limit: int = Query(0, ge=0, le=500000), db: Session = Depends(get_db)
+) -> dict:
+    """Apply curated baseline tags to EXISTING keywords (the retroactive pass).
+
+    Tagging at ingest is forward-only, so a pre-existing corpus has no baseline tags
+    until this runs. Idempotent; counts only, never invents a tag. ``limit=0`` = all."""
+    from src.analytics.store import backfill_baseline_tags
+
+    return backfill_baseline_tags(db, limit=limit or None)

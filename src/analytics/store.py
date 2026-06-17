@@ -115,6 +115,41 @@ def tags_for_keyword(session: Session, normalized: str) -> dict[str, list[str]]:
     return out
 
 
+def backfill_baseline_tags(session: Session, *, limit: int | None = None) -> dict:
+    """Apply curated baseline tags to EXISTING keywords (the retroactive pass).
+
+    Forward-only tagging (at creation) only covers keywords created since the baseline
+    shipped; this one-pass backfill tags the keywords already in the store, so the
+    feature is not empty on a pre-existing corpus. Idempotent: a baseline tag already
+    present (same keyword/axis/tag) is skipped. The existing-rows query runs ONLY for
+    keywords that actually match the baseline (most do not), so it is cheap. Reads the
+    same bundled baseline — never invents a tag; counts only, no score."""
+    q = session.query(Keyword)
+    if limit:
+        q = q.limit(limit)
+    scanned = tagged_keywords = tags_added = 0
+    for kw in q:
+        scanned += 1
+        pairs = baseline_tags(kw.language, kw.normalized_term)
+        if not pairs:
+            continue
+        existing = {
+            (r.axis, r.tag)
+            for r in session.query(KeywordTag).filter_by(keyword_id=kw.id, source="baseline")
+        }
+        added = 0
+        for axis, tag in pairs:
+            if (axis, tag) not in existing:
+                session.add(KeywordTag(keyword_id=kw.id, axis=axis, tag=tag, source="baseline"))
+                added += 1
+        if added:
+            tagged_keywords += 1
+            tags_added += added
+    if tags_added:
+        session.commit()
+    return {"scanned": scanned, "tagged_keywords": tagged_keywords, "tags_added": tags_added}
+
+
 def index_article(
     session: Session,
     article: Article,
