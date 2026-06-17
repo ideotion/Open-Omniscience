@@ -36,7 +36,12 @@ from src.timemap.dateextract import _MONTHS, _REL_WORDS, _WEEKDAYS, extract_date
 # the Nordic table now too.
 MONTH_VOCAB_LANGS: frozenset[str] = frozenset(
     {"en", "fr", "de", "es", "it", "pt",
-     "ro", "hu", "tr", "da", "sv", "nb", "fi", "pl", "sk", "sr", "bg"}
+     "ro", "hu", "tr", "da", "sv", "nb", "fi", "pl", "sk", "sr", "bg",
+     # RTL / Indic UI locales (Gregorian month names; zh/ja use 年月日 markers,
+     # handled by the extractor's CJK path rather than a month-name table).
+     "ar", "hi", "bn",
+     # Remaining UI locales: Russian (Cyrillic, nom/gen/prep) + Indonesian.
+     "ru", "id"}
 )
 
 # Probe kinds the extractor is *expected* to resolve (so a miss is actionable);
