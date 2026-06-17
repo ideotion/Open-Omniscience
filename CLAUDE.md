@@ -548,6 +548,21 @@ ruling, a contingency, or a deliberate-omission note.
   members"), so build the two together; (e) the encrypted-artifact key rule still
   holds. NOT a non-negotiable (no bundling of models IN THE REPO still stands — this is
   a user's LOCAL backup of models they already pulled, never shipped in the project).
+  **SHIPPED 2026-06-17 (PR 6, branch claude/backup-ollama-models; BACKEND VERIFIED — the
+  stdlib tests ran GREEN here):** the OPT-IN companion artifact — `src/backup/ollama_models.py`:
+  `default_store()` (OLLAMA_MODELS or ~/.ollama/models), `list_models` (walk manifests/, resolve
+  blobs+sizes), `build_models_archive` (a SEPARATE `.oomodels` zip = manifest.json inventory +
+  each model's manifest + its referenced blobs, DEDUPED by sha256 filename), `restore_models_archive`
+  (additive, bit-identical — existing blobs SKIPPED never overwritten; zip-slip-safe member
+  validation). SEPARATE from oo-backup-2 (models live outside data_dir, content-addressed ⇒
+  checksum-dedup + never-overwrite-differing are INHERENT). API in backup_v2.py: GET
+  /api/backup/models (store + list + sizes), POST /api/backup/models/export (build→download), POST
+  /api/backup/models/import (upload→restore). Settings → Data & backup gained a "Local LLM models
+  (separate backup)" panel (export/restore buttons + store status). tests/test_ollama_models_backup.py
+  (dedup round-trip, re-restore-skips, zip-slip rejection, env override) — executed locally, all
+  green. REMAINING: the WIKI-DUMP inclusion now has a PROVEN pattern to reuse (this module); the
+  models-backup Settings UI strings are not yet i18n-keyed (English fallback — follow-up); an
+  optional size/consent confirm before a multi-GB export (local disk I/O, no network).
   Design points to
   settle when built: (a) dumps are huge ⇒ DEDUP by checksum across backups (never
   re-store an unchanged dump) and consider whether dumps ride the main artifact

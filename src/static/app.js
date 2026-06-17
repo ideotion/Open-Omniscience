@@ -996,6 +996,7 @@
       if (cat === "stats") loadStatAgencies();        // official-statistics producer directory (Group N)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
+      if (cat === "data") modelsBackupStatus();        // the opt-in LLM-models companion backup (PR 6)
     }
     function buildDrawer() {
       const ui = getUi();
@@ -3023,6 +3024,48 @@
         document.body.appendChild(a); a.click(); a.remove();
         out.textContent = t("Backup downloaded.") + " " + _fmtBytes(blob.size);
       } catch (e) { out.textContent = t("Backup failed:") + " " + e.message; }
+    }
+    // Local LLM models — an OPT-IN companion backup (models live outside the corpus,
+    // so they are a SEPARATE artifact; restore is additive + bit-identical). PR 6.
+    async function modelsBackupStatus() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("models-bk-status"); if (!el) return;
+      try {
+        const d = await api("/api/backup/models");
+        el.textContent = d.store_present
+          ? `${d.models.length} ${t("model(s)")} · ${_fmtBytes(d.total_bytes)} · ${d.store}`
+          : t("No local Ollama model store found.");
+      } catch (e) { el.textContent = e.message; }
+    }
+    async function modelsBackupExport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn) btn.disabled = true;
+      try {
+        const r = await fetch("/api/backup/models/export", {method: "POST",
+          headers: {"Content-Type": "application/json"}, body: "{}"});
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || r.statusText); }
+        const blob = await r.blob();
+        const cd = r.headers.get("Content-Disposition") || ""; const m = cd.match(/filename="?([^";]+)"?/);
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+        a.download = m ? m[1] : "open-omniscience-models.oomodels";
+        document.body.appendChild(a); a.click(); a.remove();
+        toast(t("Models backup downloaded.") + " " + _fmtBytes(blob.size));
+      } catch (e) { toast(t("Models backup failed:") + " " + e.message, "err"); }
+      finally { if (btn) btn.disabled = false; }
+    }
+    async function modelsBackupImport(input) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const f = input.files && input.files[0]; if (!f) return;
+      const fd = new FormData(); fd.append("file", f);
+      toast(t("Restoring models…"));
+      try {
+        const r = await fetch("/api/backup/models/import", {method: "POST", body: fd});
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.detail || r.statusText);
+        toast(t("Models restored:") + ` +${d.blobs_added} · ${d.blobs_skipped} ${t("already present")}`);
+        modelsBackupStatus();
+      } catch (e) { toast(t("Models restore failed:") + " " + e.message, "err"); }
+      finally { input.value = ""; }
     }
     function _v2PlanTable(plan) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

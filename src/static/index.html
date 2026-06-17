@@ -1225,6 +1225,15 @@
     </div>
 
     <div class="set-view" id="set-data" style="display:none">
+    <section class="panel">
+      <div class="phead"><h2>Local LLM models (separate backup)</h2></div>
+      <p class="muted" style="margin-top:0">Ollama models live outside your corpus, so they are NOT in the full backup. Back them up separately to avoid re-downloading (multi-GB; slow over Tor). Restore is additive and bit-identical — existing blobs are skipped, never overwritten.</p>
+      <div id="models-bk-status" class="hint">Checking the local model store…</div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="modelsBackupExport(this)">Download models backup</button>
+        <label class="switch" style="margin-top:0"><input type="file" id="models-bk-file" accept=".oomodels" onchange="modelsBackupImport(this)" style="display:none"><button class="secondary" onclick="document.getElementById('models-bk-file').click()">Restore models…</button></label>
+      </div>
+    </section>
     <section class="panel" id="backup-panel">
       <h2>Backup &amp; restore</h2>
       <div id="backup-status" class="hint">Checking backend…</div>
