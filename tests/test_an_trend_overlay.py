@@ -47,8 +47,11 @@ def test_oochart_indexed_mode_is_additive_and_honest():
     assert "opts.indexed && s._base" in _JS, "indexed mode must be guarded (identity when off)"
     assert "p.v / s._base * 100" in _JS, "indexed mode must rebase each series to 100"
     assert "const pv = (s, p) =>" in _JS, "the per-series plotting transform pv() must exist"
-    # The drawing path uses pv() (so indexed plots correctly) — the line renderer.
-    assert "Yof(pv(s, p))" in _JS, "the chart must plot via the pv() transform"
+    # The drawing path plots via pv() (so indexed plots correctly), wrapped in the
+    # value transform vt() that the markets revamp added for the log/linear scale
+    # toggle (maintainer 2026-06-17) — the indexed honesty is unchanged, pv() is just
+    # composed under vt(): the line renderer uses Yof(vt(pv(s, p))).
+    assert "Yof(vt(pv(s, p)))" in _JS, "the chart must plot via the pv() transform (under vt())"
 
 
 def test_indexed_mode_overlays_commodity_prices_and_reuses_dual_axis():
