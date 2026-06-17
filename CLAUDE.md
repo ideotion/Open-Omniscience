@@ -1295,8 +1295,21 @@ ruling, a contingency, or a deliberate-omission note.
   in `store._get_or_create_keyword` (each tag a labelled assertion carrying `source`), +
   read helper `store.tags_for_keyword` (grouped by axis, no score). tests/test_keyword_tags.py
   (loader both-axes/casefold/disabled/freshness, forward-only+idempotent application,
-  non-baseline→no tags). REMAINING: S1b stoplists→data files (Q3); S2 grow the baseline data;
-  S3 the Settings → Keywords subtab (explore+hide/tag, Q4); S4 in-app analyzer-proposal review.
+  non-baseline→no tags).
+  **ITEM AC S3a — KEYWORD-TAG API SHIPPED 2026-06-17 (draft PR onto 0.09):** the backend the
+  Settings subtab needs (built before the UI; concrete + testable). Five endpoints on the
+  insights router: `GET /api/insights/keyword-tags?normalized=` (one keyword's tags grouped by
+  axis + per-tag `sources` provenance baseline|user), `POST /keyword-tags` (add a USER tag —
+  validated axis∈{type,topic}, lowercased/bounded, idempotent, 404 on unknown keyword),
+  `POST /keyword-tags/remove` (delete a tag — any source, local curation; reversible; a removed
+  baseline tag is NOT re-applied since tagging is forward-only), `GET /keyword-tags/facets`
+  (distinct tags per axis with DISTINCT-keyword counts — the explore filter; empty axes still
+  listed), `GET /keyword-tags/keywords?axis=&tag=` (keywords carrying a tag with mention/article
+  counts + source, ordered by article spread). Counts only, NO score; tags are labelled
+  assertions, never rewritten. tests/test_keyword_tags_api.py (4, called directly over an
+  in-memory corpus — no TestClient/crypto import). REMAINING: S1b stoplists→data files (Q3);
+  S2 grow the baseline data; S3b the Settings → Keywords subtab FRONTEND (explore+hide/tag, Q4,
+  on these endpoints); S4 in-app analyzer-proposal review.
   **SINGULAR/PLURAL FAMILY MERGE — SHIPPED 2026-06-16 (maintainer "start with the plural-merge
   risk analysis"; conservative + guarded; draft PR onto 0.09):** RISK ANALYSIS first corrected
   the size — only **932** real pairs (the earlier ~2753 was an exploratory bug that stripped N
