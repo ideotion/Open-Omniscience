@@ -1119,5 +1119,9 @@
   "Also wipe my data and keys (irreversible)": "Borrar también mis datos y claves (irreversible)",
   "Download a backup first": "Descargar primero una copia de seguridad",
   "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "Una de {n} copias casi idénticas = en realidad una sola voz. Abre Relacionados para inspeccionar el grupo.",
-  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} de estos son copias casi idénticas: menos voces independientes de las que sugiere el recuento (ver Relacionados)."
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} de estos son copias casi idénticas: menos voces independientes de las que sugiere el recuento (ver Relacionados).",
+  "Read": "Leer",
+  "Show the copies": "Mostrar las copias",
+  "Related in your corpus": "Relacionados en tu corpus",
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "Copias casi idénticas en tu corpus: en realidad una sola voz, no una confirmación independiente. Ver Relacionados."
 }

@@ -1119,5 +1119,9 @@
   "Also wipe my data and keys (irreversible)": "محو بياناتي ومفاتيحي أيضًا (لا يمكن التراجع عنه)",
   "Download a backup first": "نزّل نسخة احتياطية أولًا",
   "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "واحدة من {n} نسخة شبه متطابقة = صوت واحد فعليًا. افتح «ذات صلة» لفحص المجموعة.",
-  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} منها نسخ شبه متطابقة — أصوات مستقلة أقل مما يوحي به العدد (انظر «ذات صلة»)."
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} منها نسخ شبه متطابقة — أصوات مستقلة أقل مما يوحي به العدد (انظر «ذات صلة»).",
+  "Read": "قراءة",
+  "Show the copies": "إظهار النسخ",
+  "Related in your corpus": "ذات صلة في مجموعتك",
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "نسخ شبه متطابقة في مجموعتك — صوت واحد فعليًا، وليست تأكيدًا مستقلاً. انظر «ذات صلة»."
 }

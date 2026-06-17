@@ -1045,6 +1045,60 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
         "<p class='muted'>No external links are recorded in your stored copy.</p>"
     )
 
+    # Inline "1 voice" near-dup badge (maintainer-ruled): flag when THIS article is
+    # one of several NEAR-IDENTICAL copies in the corpus (= effectively one voice, not
+    # independent confirmation). Bounded + honest: a high-precision MinHash check over
+    # this article's most keyword-related neighbours (near-dups share many keywords),
+    # never a corpus-wide scan here. The ≈N pill is a number (language-neutral); the
+    # caption is a keyed string so i18n.js translates it to the UI language.
+    dup_badge = ""
+    try:
+        from src.database.models import article_keyword_association as _aka
+        from src.signals.near_dup import near_duplicate_clusters
+
+        _mk = [r[0] for r in db.query(_aka.c.keyword_id).filter(_aka.c.article_id == a.id)]
+        _cand = (
+            [
+                r[0]
+                for r in db.query(Article.id)
+                .join(_aka, _aka.c.article_id == Article.id)
+                .filter(_aka.c.keyword_id.in_(_mk), Article.id != a.id)
+                .group_by(Article.id)
+                .order_by(func.count(_aka.c.keyword_id).desc())
+                .limit(40)
+                .all()
+            ]
+            if _mk
+            else []
+        )
+        if _cand:
+            docs = {str(a.id): ((a.title or "") + "\n" + (a.get_content() or ""))}
+            titles: dict[str, str] = {}
+            for c in db.query(Article).filter(Article.id.in_(_cand)).all():
+                docs[str(c.id)] = (c.title or "") + "\n" + (c.get_content() or "")
+                titles[str(c.id)] = c.title or "(untitled)"
+            res = near_duplicate_clusters(docs, threshold=0.7)
+            mine = next(
+                (cl for cl in res.clusters if str(a.id) in cl.members and len(cl.members) >= 2),
+                None,
+            )
+            if mine:
+                others = [m for m in mine.members if m != str(a.id)][:8]
+                lis = "".join(
+                    f'<li><a href="/api/articles/{m}/view">{_html.escape(titles.get(m, "(untitled)"))}</a></li>'
+                    for m in others
+                )
+                dup_badge = (
+                    '<div class="dup-badge" role="note">'
+                    f'<span class="dup-pill">≈{len(mine.members)}</span> '
+                    '<span class="dup-cap">Near-identical copies in your corpus — effectively one '
+                    "voice, not independent confirmation. See Related.</span>"
+                    f'<details><summary class="muted">Show the copies</summary><ul>{lis}</ul></details>'
+                    "</div>"
+                )
+    except Exception:  # noqa: BLE001 - the badge is optional, never breaks the reader
+        logger.warning("near-dup reader badge failed", exc_info=True)
+
     doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{(title[:40] + "…") if len(title) > 40 else title} · FOOS</title><style>
@@ -1087,8 +1141,16 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     font: 13px/1.6 system-ui,sans-serif; color: var(--mut); }}
   .src-link {{ font-weight:500; word-break:break-all; }}
   .ext-note {{ font-size:12px; }}
+  .dup-badge {{ margin: 0 0 18px; padding:10px 14px; border:1px solid var(--warn);
+    border-radius:10px; background:var(--card); font: 13px/1.5 system-ui,sans-serif; }}
+  .dup-pill {{ display:inline-block; font-weight:700; color:var(--warn); margin-inline-end:6px; }}
+  .dup-cap {{ color:var(--fg); }}
+  .dup-badge details {{ margin-top:6px; }} .dup-badge ul {{ margin:6px 0 0; padding-inline-start:18px; }}
 </style>
 <link rel="stylesheet" href="/static/reader.css">
+<!-- i18n engine: makes the reader follow the UI language (same localStorage as the
+     SPA); auto-translates every keyed string + the dynamic reader.js panes. -->
+<script src="/static/i18n.js" defer></script>
 <script src="/static/reader.js" defer></script>
 </head><body>
 <div class="wrap" data-article-id="{a.id}">
@@ -1105,6 +1167,7 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
   </nav>
   <section class="rpane" id="rp-read" role="tabpanel" aria-label="Read">
     <div class="meta">{meta_rows}</div>
+    {dup_badge}
     <article>{paras}</article>
     {dates_section}
   </section>

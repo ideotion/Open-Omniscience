@@ -1119,5 +1119,9 @@
   "Also wipe my data and keys (irreversible)": "Hapus juga data dan kunci saya (tidak dapat dibatalkan)",
   "Download a backup first": "Unduh cadangan terlebih dahulu",
   "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "Salah satu dari {n} salinan nyaris identik = sebenarnya satu suara. Buka Terkait untuk memeriksa kluster.",
-  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} di antaranya adalah salinan nyaris identik — suara independen lebih sedikit daripada yang ditunjukkan jumlahnya (lihat Terkait)."
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} di antaranya adalah salinan nyaris identik — suara independen lebih sedikit daripada yang ditunjukkan jumlahnya (lihat Terkait).",
+  "Read": "Baca",
+  "Show the copies": "Tampilkan salinannya",
+  "Related in your corpus": "Terkait dalam korpus Anda",
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "Salinan nyaris identik dalam korpus Anda — sebenarnya satu suara, bukan konfirmasi independen. Lihat Terkait."
 }
