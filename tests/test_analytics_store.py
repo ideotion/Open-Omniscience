@@ -51,13 +51,16 @@ def test_index_article_writes_mentions_with_facets(db):
     art = _article(
         db,
         "h1",
-        "Emmanuel Macron discussed climate policy. Climate policy and trade dominated talks.",
+        "The WHO warned about climate policy. Climate policy and trade dominated talks.",
     )
     res = index_article(db, art, extractor=BaselineExtractor(), country="fr", city="Paris")
     assert res["mentions"] > 0 and res["entities"] >= 1
 
+    # Entities are now ALL-CAPS acronyms only, kept UPPERCASE so they stay distinct
+    # from a lowercase homograph (WHO != who) — Title-Case ("Climate Policy") is a
+    # topical term, not an entity (PR #283 dropped Title-Case as an entity signal).
     # The entity is one keyword, flagged as entity, with denormalised facets.
-    kw = db.query(Keyword).filter_by(normalized_term="emmanuel macron").one()
+    kw = db.query(Keyword).filter_by(normalized_term="WHO").one()
     assert kw.is_entity is True
     m = db.query(KeywordMention).filter_by(keyword_id=kw.id, article_id=art.id).one()
     assert m.country == "fr" and m.city == "Paris"

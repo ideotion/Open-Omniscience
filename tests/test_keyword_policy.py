@@ -67,12 +67,18 @@ def test_index_article_suppresses_own_source_name_only(client):
     from src.database.session import session_scope
 
     with session_scope() as s:
-        own = Source(name="The Moscow Times", domain="kwpol-own.example")
+        # An outlet name of CONTENT words (not "The Moscow Times" — "times"/"the"
+        # are stopwords, so since PR #283 dropped Title-Case entity detection that
+        # name no longer survives extraction as one keyword). Self-name suppression
+        # now fires on the outlet name as the extractor actually produces it: the
+        # multi-word term of content words ("moscow herald"). A shared single word
+        # ("moscow") is still NEVER suppressed — it stays content (see below).
+        own = Source(name="The Moscow Herald", domain="kwpol-own.example")
         other = Source(name="Unrelated Gazette", domain="kwpol-other.example")
         s.add_all([own, other])
         s.flush()
         text_body = (
-            "The Moscow Times reported on the harvest. The Moscow Times said the "
+            "The Moscow Herald reported on the harvest. The Moscow Herald said the "
             "drought continues across the region and the harvest is weak."
         )
         a1 = Article(
@@ -111,9 +117,10 @@ def test_index_article_suppresses_own_source_name_only(client):
             )
             return {r[0] for r in rows}
 
-        assert "moscow times" not in terms_of(a1.id)
-        assert "the moscow times" not in terms_of(a1.id)
-        assert "moscow times" in terms_of(a2.id) or "the moscow times" in terms_of(a2.id)
+        assert "moscow herald" not in terms_of(a1.id)  # own outlet name suppressed
+        assert "moscow herald" in terms_of(a2.id)  # another outlet naming it is CONTENT
+        # the shared single word "moscow" is content, never suppressed, in BOTH
+        assert "moscow" in terms_of(a1.id) and "moscow" in terms_of(a2.id)
         # cleanup
         for aid in (a1.id, a2.id):
             s.query(KeywordMention).filter_by(article_id=aid).delete()
