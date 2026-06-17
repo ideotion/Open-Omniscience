@@ -156,3 +156,51 @@ def test_cross_language_collisions_deliberately_not_filtered():
 
     for w in ("sea", "tom", "fin", "laut"):
         assert w not in _EXTRA_STOPWORDS
+
+
+# --- diff mode: measure an optimization's impact between two logs ------------- #
+
+
+def _doc(keywords, **corpus):
+    return {"kind": "keyword-diagnostics", "data": {"corpus": corpus, "keywords": keywords}}
+
+
+def test_diff_measures_entity_to_term_kind_shift():
+    old = _doc([_kw("welt", kind="entity", language="de")])
+    new = _doc([_kw("welt", kind="term", language="de")])
+    diff = A.diff_logs(old, new, top=10)
+    assert diff["kind_shift"]["entity->term"]["count"] == 1
+    assert diff["kind_shift"]["term->entity"]["count"] == 0
+    assert diff["kind_distribution"]["before"] == {"entity": 1}
+    assert diff["kind_distribution"]["after"] == {"term": 1}
+
+
+def test_diff_detects_gone_and_appeared_keywords():
+    old = _doc([_kw("dat", language="nl"), _kw("climate", language="en")])
+    new = _doc([_kw("climate", language="en"), _kw("election", language="en")])
+    diff = A.diff_logs(old, new, top=10)
+    assert {b["term"] for b in diff["gone"]["top"]} == {"dat"}
+    assert {b["term"] for b in diff["appeared"]["top"]} == {"election"}
+
+
+def test_diff_keeps_acronym_distinct_from_word_homograph():
+    # The index is case-sensitive on normalized, so "WHO" (acronym) and "who"
+    # (word) are different keys — WHO is correctly seen as APPEARED, who unchanged.
+    who_org = {"term": "WHO", "normalized": "WHO", "kind": "entity", "language": "en",
+               "mentions": 3, "articles": 2, "language_signature": {"en": 2}, "language_mismatch": False}
+    old = _doc([_kw("who", kind="term", language="en")])
+    new = _doc([who_org, _kw("who", kind="term", language="en")])
+    diff = A.diff_logs(old, new, top=10)
+    assert "WHO" in {b["term"] for b in diff["appeared"]["top"]}
+    assert diff["gone"]["count"] == 0
+
+
+def test_mistagged_entities_is_acronym_aware():
+    # The acronym WHO is the EXPECTED entity shape -> not flagged; a single-word
+    # non-acronym entity ("world") is case-noise -> flagged.
+    kws = [
+        {"term": "WHO", "normalized": "WHO", "kind": "entity", "language": "en", "articles": 5},
+        {"term": "world", "normalized": "world", "kind": "entity", "language": "en", "articles": 100},
+    ]
+    flagged = {h["term"] for h in A.mistagged_entities(kws, top=10)}
+    assert "world" in flagged and "WHO" not in flagged
