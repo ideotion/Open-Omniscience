@@ -106,6 +106,26 @@ def test_additional_language_months_extract():
         assert (expected, "day") in got, f"{text!r} -> {got!r}"
 
 
+def test_cjk_dates_year_month_day_markers():
+    """Chinese/Japanese dates use the 年/月/日 ideographs as unambiguous markers
+    (date-diag 2026-06-17 probes for 'cjk_date'). Half-width AND full-width digits
+    resolve; a year-less 月日 needs the anchor; month-only 年月 is month precision."""
+    from datetime import date
+
+    from src.timemap.dateextract import extract_dates
+
+    def d(text, anchor=None):
+        return [(c["date"], c["precision"]) for c in extract_dates(text, today=TODAY, anchor=anchor)]
+
+    assert d("会议于2024年5月11日举行。") == [("2024-05-11", "day")]  # zh
+    assert d("2001年9月11日に発生した。") == [("2001-09-11", "day")]  # ja
+    assert d("２０２４年５月１１日") == [("2024-05-11", "day")]  # full-width digits
+    assert ("2003-03-01", "month") in d("2003年3月、戦争が始まった。")  # year+month only
+    assert ("2024-05-11", "day") in d("5月11日に会談", anchor=date(2024, 6, 1))  # anchored
+    assert d("活動は5月11日に") == []  # no year + no anchor -> never guessed
+    assert d("2024年5月11日") == [("2024-05-11", "day")]  # day match suppresses the month
+
+
 def test_added_months_do_not_invent_dates_without_a_number():
     """Precision guard for the new vocabulary: a month-word in running prose with
     NO adjacent day/year must NOT yield a date (the 'better to miss than invent'

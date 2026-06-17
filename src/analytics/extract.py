@@ -298,6 +298,23 @@ _EXTRA_STOPWORD_TEXT = (
     "connectez-vous inscrivez-vous gratuitement selon lors avez "
     # English subscribe button:
     "subscribe "
+    # Round-2 of the same 2026-06-17 export: PURE function words still leaking in
+    # the higher-volume non-English corpora (analyzer "high-confidence" bucket,
+    # hand-filtered). Deliberately CONSERVATIVE because global_stopwords() is
+    # unioned across ALL languages: every word here is either accented (so it
+    # can't be a content token in another corpus language) or unambiguous grammar
+    # that is not an English/name homograph. Cross-language homographs were
+    # EXCLUDED on purpose — mint/nun/sei/seine (de), ska/nye/nyt/ole (Nordic/fi
+    # collide with ska-genre / Bill Nye / NYT / the name Ole), dana/nagy/srbije
+    # (names/places), kroner/ritzau (currency / the Ritzau agency name).
+    "doch vom seit wieder immer dabei viele viel dann habe gibt heute "  # German
+    "úgy arról hanem azért bár előtt óta "  # Hungarian
+    "može zbog prema tokom "  # Serbian
+    "två här inte nya "  # Swedish
+    "være prosent sier "  # Norwegian
+    "været blevet fået siger skal andet lyder blandt "  # Danish
+    "sitä olisi mukaan sanoo ovat kuin teki "  # Finnish
+    "görə "  # Azerbaijani postposition (Meydan TV per-source concentration)
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any
