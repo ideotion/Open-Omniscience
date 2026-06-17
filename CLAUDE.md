@@ -1557,7 +1557,24 @@ ruling, a contingency, or a deliberate-omission note.
   engine report's translation_coverage ticks up NOW. tests/test_wikidata_ring_gen.py (parse fixtures,
   generate+emit roundtrip, curated-expansion loads, generated-merge with curated-wins). REMAINING:
   the maintainer runs the generator on a networked box → hundreds of rings (review before trusting;
-  the signature gate still protects). NEXT: Step 4 — wire ring/super-ring editing into the keyword subtab.
+  the signature gate still protects).
+  **STEP 4 — RING/SUPER-RING EDITING IN THE UI SHIPPED 2026-06-17 (draft PR onto 0.09, stacked on
+  Step 3; conservative + browser-unverified per fork-3 — COMPLETES the 4-step program):** the Item
+  AC keyword subtab (S3b) was never built, so rather than a whole new subtab I EXTENDED the existing
+  Insights → Groups (super-groups) UI — smaller + reuses its conventions (the super-group UI is
+  un-keyed English + inline handlers; the ring additions MATCH that style, so i18n stays 100% and
+  risk is low). Backend: `GET /api/insights/rings` lists the rings (id · members · languages · size,
+  sorted by language breadth; from the config, no DB) so the UI can offer a ring picker
+  (tests/test_ring_ui.py). Frontend (src/static/app.js + index.html): `loadSuperGroups` now also
+  fetches /rings → a `#sg-ring-options` datalist; `sgCard` renders a ring member distinctly (⊕ id ·
+  "ring·N terms" · the cross-language members in the hover) and offers an "add a ring" input + button
+  beside the family one; new `sgAddRing` POSTs `{rings:[id]}` to the Step-2 super-ring endpoint;
+  remove reuses the existing path (a ring member's normalized_term == its ring id). node --check
+  clean; i18n 100%; test_ui_invariants `test_super_ring_ui` pins the datalist + the /rings fetch +
+  the handler. REMAINING (deferred, honest): the FULL Item AC keyword EXPLORER subtab (hide/tag
+  individual keywords, the S3b that was deferred) is still unbuilt — this step delivered the
+  ring/super-ring editing the program needed, not the whole explorer; browser click-through still
+  owed (fork-3). The pre-translation/synonym/super-ring program (Steps 1-4) is COMPLETE.
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,

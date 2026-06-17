@@ -2089,3 +2089,15 @@ def test_corpus_window_competitive_subtab():
     assert "composite score" not in cfn or "no composite score" in cfn.lower() or (
         "never a" in cfn.lower()
     ), "the Competitive tab must not compute a composite score"
+
+
+def test_super_ring_ui():
+    """Step 4 of the pre-translation program: the Groups (super-groups) UI can add a
+    cross-language RING as a member (the super-ring model), not just a family. It
+    extends the existing super-group UI; a ring picker datalist is fed by
+    /api/insights/rings and the add-ring handler POSTs a ring member."""
+    src = _ui_source()
+    assert 'id="sg-ring-options"' in src, "the ring-picker datalist must exist"
+    assert "/api/insights/rings" in src, "loadSuperGroups must fetch the rings list"
+    assert "function sgAddRing" in src, "the add-ring handler must exist"
+    assert "rings: [ring]" in src, "add-ring must POST a ring member (not a family normalized)"
