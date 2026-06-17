@@ -586,18 +586,39 @@ class SuperGroupCreate(BaseModel):
 
 
 class SuperGroupMembers(BaseModel):
-    normalized: list[str]
+    normalized: list[str] = []
+    rings: list[str] = []  # ring ids — a ring MEMBER is a cross-language concept (super-ring)
 
 
-def _supergroup_totals(db: Session, members: set[str]) -> dict[str, dict]:
-    """Aggregate mentions/articles for each member family (by canonical normalized key)."""
+def _supergroup_totals(db: Session, member_rows: set[tuple[str, str | None]]) -> dict[str, dict]:
+    """Aggregate mentions/articles per member.
+
+    A FAMILY member (``ring_id`` None) matches its own normalized term (+ canonical
+    key), as before. A RING member aggregates over ALL the ring's cross-language
+    terms, so a super-group with a ring spans languages — the super-ring model.
+    Keyed by the member's ``normalized_term`` (the ring id for a ring); a display
+    total, best-effort like the original (one term feeds one member key)."""
     from sqlalchemy import func
 
+    from src.analytics.equivalence import ring_meta
     from src.analytics.families import canonical_key
     from src.database.models import Keyword, KeywordMention
 
-    totals = {m: {"mentions": 0, "articles": 0} for m in members}
-    if not members:
+    term_to_key: dict[str, str] = {}
+    canon_to_key: dict[str, str] = {}
+    keys: list[str] = []
+    for norm_key, ring_id in member_rows:
+        keys.append(norm_key)
+        if ring_id:
+            meta = ring_meta(ring_id)
+            for _lang, term in meta.members if meta else ():
+                term_to_key[_n(term)] = norm_key  # every ring term -> this ring member
+        else:
+            term_to_key[norm_key] = norm_key
+            canon_to_key[canonical_key(norm_key)] = norm_key
+
+    totals = {k: {"mentions": 0, "articles": 0} for k in keys}
+    if not keys:
         return totals
     rows = (
         db.query(
@@ -610,11 +631,7 @@ def _supergroup_totals(db: Session, members: set[str]) -> dict[str, dict]:
         .all()
     )
     for norm, m, a in rows:
-        key = (
-            norm
-            if norm in members
-            else (canonical_key(norm) if canonical_key(norm) in members else None)
-        )
+        key = term_to_key.get(norm) or canon_to_key.get(canonical_key(norm))
         if key is not None:
             totals[key]["mentions"] += int(m or 0)
             totals[key]["articles"] = max(totals[key]["articles"], int(a or 0))
@@ -632,22 +649,28 @@ def _get_supergroup(db: Session, sg_id: int):
 
 @router.get("/supergroups")
 def list_supergroups(db: Session = Depends(get_db)) -> dict:
-    """List super-groups with their member families + aggregate mentions/articles."""
+    """List super-groups with their members (families AND rings) + aggregate totals."""
+    from src.analytics.equivalence import ring_meta
     from src.database.models import KeywordSuperGroup
 
     sgs = db.query(KeywordSuperGroup).order_by(KeywordSuperGroup.name).all()
-    all_members = {m.normalized_term for sg in sgs for m in sg.members}
-    totals = _supergroup_totals(db, all_members)
+    member_rows = {(m.normalized_term, m.ring_id) for sg in sgs for m in sg.members}
+    totals = _supergroup_totals(db, member_rows)
     out = []
     for sg in sgs:
-        members = [
-            {
+        members = []
+        for m in sg.members:
+            t = totals.get(m.normalized_term, {})
+            entry = {
                 "normalized": m.normalized_term,
-                "mentions": totals.get(m.normalized_term, {}).get("mentions", 0),
-                "articles": totals.get(m.normalized_term, {}).get("articles", 0),
+                "mentions": t.get("mentions", 0),
+                "articles": t.get("articles", 0),
             }
-            for m in sg.members
-        ]
+            if m.ring_id:  # a ring member is a cross-language concept (super-ring)
+                meta = ring_meta(m.ring_id)
+                entry["ring_id"] = m.ring_id
+                entry["ring_members"] = [f"{lg}:{term}" for lg, term in (meta.members if meta else ())]
+            members.append(entry)
         members.sort(key=lambda x: -x["mentions"])
         out.append(
             {
@@ -692,7 +715,11 @@ def delete_supergroup(sg_id: int, db: Session = Depends(get_db)) -> dict:
 def add_supergroup_members(
     sg_id: int, body: SuperGroupMembers, db: Session = Depends(get_db)
 ) -> dict:
-    """Assign one or more families (by normalized term) to a super-group (idempotent)."""
+    """Assign families (by normalized term) and/or RINGS (by ring id) to a super-group.
+
+    Idempotent. A ring member makes the super-group cross-language (the super-ring
+    model); unknown ring ids are rejected (400)."""
+    from src.analytics.equivalence import ring_meta
     from src.database.models import KeywordSuperGroupMember
 
     sg = _get_supergroup(db, sg_id)
@@ -704,6 +731,15 @@ def add_supergroup_members(
             db.add(KeywordSuperGroupMember(supergroup_id=sg.id, normalized_term=n))
             existing.add(n)
             added.append(n)
+    for raw in body.rings:
+        rid = (raw or "").strip()
+        if not rid or rid in existing:
+            continue
+        if ring_meta(rid) is None:
+            raise HTTPException(status_code=400, detail=f"unknown ring {rid!r}")
+        db.add(KeywordSuperGroupMember(supergroup_id=sg.id, normalized_term=rid, ring_id=rid))
+        existing.add(rid)
+        added.append(rid)
     db.commit()
     return {"supergroup": sg.id, "added": added, "members": sorted(existing)}
 

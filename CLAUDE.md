@@ -1528,7 +1528,19 @@ ruling, a contingency, or a deliberate-omission note.
   grouped-query latency). NO composite score; each block states its method. `GET /api/diagnostics/
   keyword-engine` (+`?download=1`) + a Diagnostics-panel button. The hand-back loop: run it, send
   the JSON, diff two over time to prove an optimization landed. tests/test_keyword_engine_report.py
-  (metrics shape, honest entity-precision + language-status, no score). NEXT: Step 2 super-rings.
+  (metrics shape, honest entity-precision + language-status, no score).
+  **STEP 2 — SUPER-RINGS SHIPPED 2026-06-17 (draft PR onto 0.09, stacked on Step 1):** a super-group
+  MEMBER can now be a cross-language RING (concept), not just a family — "rings of rings". Schema:
+  `KeywordSuperGroupMember.ring_id` (nullable; migration f4a5b6c7d8e9 off head e3f4a5b6c7d8 —
+  single-head verified). A ring member stores the ring id in BOTH `ring_id` (marker+link) and
+  `normalized_term` (so the unique key + remove-by-key path are unchanged). `_supergroup_totals`
+  rewritten to take member rows: a ring member AGGREGATES mentions/articles over ALL the ring's
+  cross-language terms (election+élection+wahl = 15 in the test), so a super-group with a ring spans
+  languages; `list_supergroups` surfaces `ring_id` + the `ring_members` (lg:term) per ring member;
+  `add_supergroup_members` accepts `rings:[ids]` (validated via `ring_meta`, 400 on unknown). Plain
+  family members unchanged. Backend only (the UI for adding rings lands in Step 4, the keyword
+  subtab). tests/test_super_rings.py (cross-language aggregation, unknown-ring 400, family still
+  works). NEXT: Step 3 — the offline Wikidata-labels ring generator + a dated few-hundred-ring snapshot.
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,
