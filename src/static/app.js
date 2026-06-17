@@ -5193,33 +5193,46 @@
       const box = $("sg-list");
       box.innerHTML = '<div class="muted">Loading…</div>';
       try {
-        const [sgs, top] = await Promise.all([
+        const [sgs, top, rings] = await Promise.all([
           api("/api/insights/supergroups"),
           api("/api/insights/top?group=true&limit=200"),
+          api("/api/insights/rings"),
         ]);
         $("sg-family-options").innerHTML = (top.terms || []).map(f =>
           `<option value="${esc(f.normalized)}">${esc(f.term)} (${f.mentions})</option>`).join("");
+        $("sg-ring-options").innerHTML = (rings.rings || []).map(r =>
+          `<option value="${esc(r.id)}">${esc(r.id)} — ${esc((r.languages || []).join("/"))}</option>`).join("");
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
-          : '<div class="muted">No super-groups yet. Create one above, then add families to it.</div>';
+          : '<div class="muted">No super-groups yet. Create one above, then add families or rings to it.</div>';
       } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
     }
 
     function sgCard(g) {
-      const chips = g.members.length ? g.members.map(m =>
-        `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
-           title="remove from this group">${esc(m.normalized)} <span class="muted">${m.mentions}</span> ✕</button>`).join("")
-        : '<span class="muted">No families yet — add one below.</span>';
+      const chips = g.members.length ? g.members.map(m => {
+        const isRing = !!m.ring_id;
+        const inner = isRing
+          ? `⊕ ${esc(m.ring_id)} <span class="muted">ring·${(m.ring_members || []).length}</span>`
+          : esc(m.normalized);
+        const tip = isRing ? esc((m.ring_members || []).join(" · ")) : "remove from this group";
+        return `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
+           title="${tip}">${inner} <span class="muted">${m.mentions}</span> ✕</button>`;
+      }).join("")
+        : '<span class="muted">No members yet — add a family or a ring below.</span>';
       return `<div class="sg-card">
         <div class="sg-head"><b>${esc(g.name)}</b>
-          <span class="muted">· ${g.count} famil${g.count === 1 ? "y" : "ies"} · ${g.mentions} mentions</span>
+          <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"} · ${g.mentions} mentions</span>
           <button class="ghost tiny" style="margin-left:auto" data-sg="${g.id}" data-name="${esc(g.name)}"
             onclick="deleteSuperGroup(this)">delete</button></div>
         <div class="fam-chips" style="margin-top:6px">${chips}</div>
         <div class="row" style="margin-top:8px">
-          <div style="flex:2"><input list="sg-family-options" placeholder="add a family (type or pick)…"
+          <div style="flex:2"><input class="sg-fam-in" list="sg-family-options" placeholder="add a family…"
             data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddMember(this)"></div>
           <div style="flex:0 0 auto;align-self:end"><button class="secondary"
-            onclick="sgAddMember(this.closest('.row').querySelector('input'))">Add</button></div>
+            onclick="sgAddMember(this.closest('.row').querySelector('.sg-fam-in'))">Add family</button></div>
+          <div style="flex:2"><input class="sg-ring-in" list="sg-ring-options" placeholder="add a ring (one concept, many languages)…"
+            data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddRing(this)"></div>
+          <div style="flex:0 0 auto;align-self:end"><button class="secondary"
+            onclick="sgAddRing(this.closest('.row').querySelector('.sg-ring-in'))">Add ring</button></div>
         </div></div>`;
     }
 
@@ -5239,6 +5252,15 @@
         await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({normalized: [norm]})});
         toast("Added."); loadSuperGroups();
       } catch (e) { toast("Add failed: " + e.message, "err"); }
+    }
+
+    async function sgAddRing(input) {
+      const sg = input.dataset.sg, ring = input.value.trim();
+      if (!ring) return;
+      try {
+        await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({rings: [ring]})});
+        toast("Ring added."); loadSuperGroups();
+      } catch (e) { toast("Add ring failed: " + e.message, "err"); }
     }
 
     async function sgRemoveMember(btn) {

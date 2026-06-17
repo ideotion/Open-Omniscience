@@ -658,6 +658,26 @@ def list_supergroups(db: Session = Depends(get_db)) -> dict:
     return {"count": len(out), "supergroups": out}
 
 
+@router.get("/rings")
+def list_rings() -> dict:
+    """The cross-language equivalence rings (curated + Wikidata-generated), so the UI
+    can show them and pick one to add to a super-group (the super-ring model). Read-only;
+    rings come from the config files, not the corpus — no DB."""
+    from src.analytics.equivalence import load_rings
+
+    rings = [
+        {
+            "id": r.id,
+            "members": [f"{lg}:{t}" for lg, t in r.members],
+            "languages": sorted({lg for lg, _ in r.members}),
+            "size": len(r.members),
+        }
+        for r in load_rings()
+    ]
+    rings.sort(key=lambda x: (-len(x["languages"]), x["id"]))
+    return {"count": len(rings), "rings": rings}
+
+
 @router.post("/supergroups")
 def create_supergroup(body: SuperGroupCreate, db: Session = Depends(get_db)) -> dict:
     """Create a named super-group (the umbrella; members are added separately)."""

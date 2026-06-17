@@ -746,10 +746,11 @@
     </section>
 
     <section class="panel ins-view" id="ins-supergroups" style="display:none">
-      <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families</span></h2>
-      <p class="hint" style="margin-top:0">Gather several families under one theme (e.g. <b>Russia–Ukraine war</b>
-        over Russia, Ukraine, Putin, sanctions…) for sorting and discovery. Pure curation — nothing in the
-        keyword store changes.</p>
+      <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families and rings</span></h2>
+      <p class="hint" style="margin-top:0">Gather several families — or cross-language <b>rings</b> (one concept across
+        languages, e.g. election / élection / wahl) — under one theme (e.g. <b>Russia–Ukraine war</b>
+        over Russia, Ukraine, Putin, sanctions…) for sorting and discovery. A ring member makes the super-group
+        span languages (the super-ring model). Pure curation — nothing in the keyword store changes.</p>
       <div class="row" style="align-items:center">
         <div style="flex:2"><label for="sg-name">New super-group</label>
           <input id="sg-name" placeholder="e.g. Russia–Ukraine war" onkeydown="if(event.key==='Enter')createSuperGroup()"></div>
@@ -758,6 +759,7 @@
         <span id="sg-status" class="hint"></span>
       </div>
       <datalist id="sg-family-options"></datalist>
+      <datalist id="sg-ring-options"></datalist>
       <div id="sg-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
     </section>
 
