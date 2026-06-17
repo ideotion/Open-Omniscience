@@ -1716,6 +1716,72 @@ def watch_matches(session) -> list[Card]:
     return cards
 
 
+_MAX_LAUNDERING = 4
+
+
+def source_laundering(session) -> list[Card]:
+    """Surface origins cited by many DISTINCT sources — apparent corroboration that
+    isn't (manipulation-pattern card #6, ruling #13).
+
+    Names a STRUCTURE, never intent: several sources citing one external origin are not
+    independent confirmation (the anti-false-triangulation rule, surfaced proactively).
+    Independence is measured by DISTINCT SOURCES (a chatty single source can't trip it);
+    social/storefront origins are excluded; the innocent explanation (a widely-cited
+    primary source looks identical) is stated beside the pattern. No score.
+    """
+    try:
+        from src.analytics.laundering import LAUNDERING_CAVEAT, find_source_laundering
+
+        found = find_source_laundering(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("source-laundering scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for c in found.get("clusters", [])[:_MAX_LAUNDERING]:
+        dom = c["origin_domain"] or c["origin"]
+        names = ", ".join(c["source_names"][:4]) + ("…" if len(c["source_names"]) > 4 else "")
+        cards.append(
+            Card(
+                type="source_laundering",
+                title=f"{c['distinct_sources']} sources, one origin: {dom}",
+                summary=(
+                    f"{c['n_articles']} articles from {c['distinct_sources']} distinct "
+                    f"sources ({names}) all cite the same origin — apparent corroboration "
+                    "that traces to ONE source. It may be a legitimate primary source, or a "
+                    "single-origin claim dressed as consensus. Read the origin yourself."
+                ),
+                bucket="overtold",
+                signal={
+                    "metric": "distinct_sources",
+                    "value": c["distinct_sources"],
+                    "n_articles": c["n_articles"],
+                    "origin": c["origin"],
+                    "origin_domain": c["origin_domain"],
+                    "source_names": c["source_names"],
+                },
+                method=found.get("method", ""),
+                caveat=LAUNDERING_CAVEAT,
+                # The exact citing-article set, so the card opens the analysis window over it.
+                article_ids=list(c.get("article_ids", [])),
+                n=c["n_articles"],
+                key=c["origin"],
+                trigger=_trigger(
+                    "Several of your sources cite the very same origin for this. Lots of "
+                    "coverage that all leans on one source is not independent confirmation — "
+                    "it could be a perfectly good primary source, or one claim wearing many "
+                    "hats. Read the origin and judge.",
+                    [
+                        ("Articles citing this origin", str(c["n_articles"])),
+                        ("Distinct sources (the independence measure)", str(c["distinct_sources"])),
+                        ("Minimum distinct sources for this Lead", f"≥ {found['min_sources']} ✓"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -1738,6 +1804,7 @@ _DEFAULT_PRODUCERS = (
     ("weather_corroboration", weather_corroboration),
     ("space_time_convergence", space_time_convergence),
     ("watch_matches", watch_matches),
+    ("source_laundering", source_laundering),
 )
 
 
