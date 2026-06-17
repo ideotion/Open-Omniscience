@@ -1347,9 +1347,19 @@ ruling, a contingency, or a deliberate-omission note.
   language-independent; the words are confident common forms (AI-translatable, flagged for
   native review). `tests/test_baseline_data.py` (3) GUARDS every baseline file in CI: parses,
   axes ∈ {type,topic}, non-empty tags, the loader round-trips each language, and the 7 core
-  UI languages are present. REMAINING: S1b stoplists→data files (Q3); S3b the Settings →
-  Keywords subtab FRONTEND (explore+hide/tag, Q4, on the S3a endpoints); S4 in-app
-  analyzer-proposal review; grow the per-language sets further (analyzer-fed from real logs).
+  UI languages are present.
+  **ITEM AC — ANALYZER 'TAG GAPS' MODE SHIPPED 2026-06-17 (draft PR onto 0.09):** operationalises
+  the 'analyzer-grown baseline' (Q1). `scripts/analyze_keyword_log.py LOG.json --tag-gaps` lists,
+  per language, the top-frequency TERM keywords that have NO entry in
+  configs/keyword_baseline/<lang>.yml yet — the worklist of what to tag next. It cross-references
+  the baseline files via a stdlib line parser (`load_baseline_keys`, no yaml dep — the analyzer
+  stays runnable without the app), excludes entities, and gates on `--gap-min-articles` (default
+  3). The analyzer PROPOSES candidates only; a human picks the type/topic (no semantic source, no
+  invention). Verified live on the 2026-06-14 log (en baseline=22 → surfaces team/public/national…
+  as next candidates; also exposes residual stopword junk as a bonus). tests/test_keyword_log_analyzer.py
+  (+2: stdlib key parse incl. quoted key/comment; untagged-terms-only gate). REMAINING: S1b
+  stoplists→data files (Q3); S3b the Settings → Keywords subtab FRONTEND (explore+hide/tag, Q4, on
+  the S3a endpoints); S4 in-app analyzer-proposal review.
   **SINGULAR/PLURAL FAMILY MERGE — SHIPPED 2026-06-16 (maintainer "start with the plural-merge
   risk analysis"; conservative + guarded; draft PR onto 0.09):** RISK ANALYSIS first corrected
   the size — only **932** real pairs (the earlier ~2753 was an exploratory bug that stripped N

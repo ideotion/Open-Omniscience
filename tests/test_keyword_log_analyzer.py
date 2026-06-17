@@ -195,6 +195,32 @@ def test_diff_keeps_acronym_distinct_from_word_homograph():
     assert diff["gone"]["count"] == 0
 
 
+def test_load_baseline_keys_parses_yaml_keys_without_yaml(tmp_path):
+    d = tmp_path / "kb"
+    d.mkdir()
+    (d / "en.yml").write_text(
+        "baseline_keywords:\n  election: {type: event, topic: politics}\n  inflation: {topic: economy}\n",
+        encoding="utf-8",
+    )
+    (d / "fr.yml").write_text(
+        '# comment\nbaseline_keywords:\n  "cessez-le-feu": {type: event}\n', encoding="utf-8"
+    )
+    keys = A.load_baseline_keys(d)
+    assert keys["en"] == {"election", "inflation"}
+    assert keys["fr"] == {"cessez-le-feu"}  # quoted key, comment skipped
+
+
+def test_baseline_gaps_proposes_untagged_terms_only():
+    kws = [
+        _kw("inflation", language="en", kind="term", articles=20),  # already in baseline -> skip
+        _kw("protest", language="en", kind="term", articles=15),  # untagged term -> candidate
+        _kw("trump", language="en", kind="entity", articles=30),  # entity -> excluded
+        _kw("rare", language="en", kind="term", articles=1),  # below min_articles -> skip
+    ]
+    gaps = A.baseline_gaps(kws, {"en": {"inflation"}}, top=10, min_articles=3)
+    assert {x["normalized"] for x in gaps.get("en", [])} == {"protest"}
+
+
 def test_mistagged_entities_is_acronym_aware():
     # The acronym WHO is the EXPECTED entity shape -> not flagged; a single-word
     # non-acronym entity ("world") is case-noise -> flagged.
