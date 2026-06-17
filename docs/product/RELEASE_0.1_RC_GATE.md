@@ -32,6 +32,16 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 > offline map; official-statistics ingestion). The convergence WATCH engine is greenlit as
 > "Watches view + history".
 
+> **Reconciled 2026-06-17 (release-eng pivot, the 13 batch rulings).** Rows advanced this
+> pass against shipped code: **release.yml** (tag→sdist/wheel/SHA256SUMS/verify-version, 🔶 —
+> needs a real tag); **version single-source** (`importlib.metadata`, guarded by
+> `test_version_single_sourced_from_pyproject`, 🔶 — the 0.0.9→0.1 flip HELD per ruling #2);
+> **watch engine** ✅ ON BY DEFAULT (ruling #3); **live mailbox pull** ✅ (ruling #11, closed a
+> kill-switch gap); **scheduled stat-vintage auto-refresh** ✅ (ruling #12); two
+> **manipulation-pattern Leads** shipped (source-laundering + recycled-claim, ruling #13 — both
+> citation-graph/near-dup, no score, innocent-explanation-beside-pattern). De-scoped per
+> ruling #5: win/mac CI-graduation + install path → POST (Debian is the V0.1 target).
+
 ## 1. The trust core (data integrity + crypto + safety)
 
 | Item | Status | Gate | Acceptance check |
@@ -48,19 +58,19 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 | Network kill switch: airplane-mode semantics + online-consent popup (local IPs) + immediate repaint | ✅ | RC-BLOCKING (ethics-facing) | SHIPPED (T2, invariant #14 + tests/test_network_consent.py): every online transition consented; state never lies (scrape-start repaint) |
 | oo-netcut opt-in OS layer (interface-agnostic; netsh/networksetup parity) | ⬜ | POST (document app-level scope honestly in RC) | manual + sudoers doc; per-OS smoke |
 | Single guarded socket factory + build-failing test (no module opens its own) | 🔶 2026-06-13 | SHOULD | `guarded_session` routes dumps/wiki/ores/DDG through the kill switch + proxy + honest UA; the socket-importer RATCHET test pins the allowlist (6→3). REMAINING: refactor the remaining allowed importers onto the ONE factory |
-| Newsletter scraper | ⬜ | POST (by standing ruling: only after the above is solid; no-recovery premise must be revisited first) | — |
+| Newsletter ingestion (local `.eml` import + live mailbox pull) | ✅ 2026-06-17 (ruling #11) | POST | local `.eml` import shipped (Settings → Newsletters, anonymise-at-ingest, zero-network). **LIVE MAILBOX PULL shipped 2026-06-17 (ruling #11 reverses the IMAP block — maintainer wants to test):** closed a pre-existing `fetch_imap` SECURITY GAP (no kill-switch gate) → `src/ingest/email.py` `fetch_imap`/`fetch_pop3`/`fetch_mailbox` are airplane-gated (refuse up front → NO socket offline) + logout in `finally`; `POST /api/newsletters/mailbox` stores under a dedicated disabled `mailbox.import.local` source (409 offline / 502 transport, anonymise tally + TLS/IP/not-Tor/creds-not-stored disclosure); reuses `ingest_emails` (recipient never stored, no raw retention, tracking-link detox). `imaplib`/`poplib` stdlib → socket-importer ratchet intact. `tests/test_mailbox_ingest.py` (6, incl. airplane-opens-no-socket). REMAINING: a visible task-manager job over a long pull; stored creds for repeat pulls |
 
 ## 2. Release engineering & portability
 
 | Item | Status | Gate | Acceptance check |
 |---|---|---|---|
-| 3-OS CI matrix (the *definition* of supported) | 🔶 added 2026-06-11 | **RC-BLOCKING** | win/mac lanes graduate from observation (`continue-on-error`) to required-and-green |
+| 3-OS CI matrix (the *definition* of supported) | 🔶 added 2026-06-11 | POST (de-scoped 2026-06-17, ruling #5) | **ruling #5: win/mac install is NOT blocking — Debian is the V0.1 target.** The matrix stays for observation; win/mac lanes graduate to required-and-green POST-V0.1 |
 | SQLCipher wheel smoke on 3 OSes (blocking job) | ✅ added | RC-BLOCKING | green on all three runners |
-| Windows/macOS INSTALL path (installer logic into the package; sh/ps1 bootstraps) | ⬜ | RC-BLOCKING | a fresh win/mac machine reaches the Console via documented steps; CI installs prove the package half |
-| Release artifacts from one tag + checksums documented | ⬜ | RC-BLOCKING | release action emits all artifacts; SHA256SUMS in release notes |
+| Windows/macOS INSTALL path (installer logic into the package; sh/ps1 bootstraps) | 🔶 de-scoped 2026-06-17 | POST (ruling #5) | **ruling #5: focus DEBIAN for V0.1** — a fresh Debian machine reaches the Console via documented steps; win/mac install graduates later |
+| Release artifacts from one tag + checksums documented | 🔶 2026-06-17 | RC-BLOCKING | **`.github/workflows/release.yml` SHIPPED**: a `v*` tag builds sdist+wheel, **verifies the tag matches the pyproject version**, emits `SHA256SUMS`, and creates the GitHub release (one job; only SHA-pinned checkout/setup-python). REMAINING: prove end-to-end on a real tag (held until the version flip, ruling #2) |
 | Signing/notarization decision | ⬜ | POST (deferred by ruling; checksums regardless) | decision recorded |
-| Version/branding sweep (0.0.9→0.1; FOOS suffix stays until the rename ruling) | ⬜ | RC-BLOCKING | pyproject single-source; grep gate |
-| CHANGES.md 0.0.9→0.1 section + release notes | ⬜ | RC-BLOCKING | docs build; claims match code (see §5) |
+| Version/branding sweep (0.0.9→0.1; FOOS suffix stays until the rename ruling) | 🔶 2026-06-17 | RC-BLOCKING | **single-source SHIPPED**: `src/__init__.py` `__version__` reads `importlib.metadata.version("open-omniscience")` (pyproject is the one source); `tests/test_repo_invariants.py::test_version_single_sourced_from_pyproject` guards it. The 0.0.9→0.1 FLIP is **HELD** until every RC-BLOCKING row is ✅ (ruling #2); FOOS suffix stays |
+| CHANGES.md 0.0.9→0.1 section + release notes | 🔶 2026-06-17 | RC-BLOCKING | 0.09 user-facing entries kept current (statistics+vintages, Watches, mailbox live-pull, manipulation Leads); the 0.1 rename section lands with the version flip (ruling #2) |
 
 ## 3. The ruled feature queue (maintainer field reports, 0.09 cycle)
 
@@ -76,9 +86,9 @@ Gate column: **RC-BLOCKING** (V0.1 does not ship without it) / SHOULD
 | Commodity → keyword-family pivot (price curve + article-timeline overlay; symbol→family seed table) | ✅ 2026-06-16 (Item 3) | SHOULD | category subtabs (`ooSubtabs`) + title/Analyse → `openAnalysisFor` + a commodity-gated **Price** subtab: `commodityOverlaySvg` draws a time-aligned DUAL-AXIS overlay (price line + corpus-coverage bars, each its OWN labelled axis — no magnitude conflation), seed map = `COMMODITY_QUERY`; co-occurrence framing never causation (visible); reuses existing endpoints; invariant #22b. Browser-unverified |
 | Continuous collection (per-country round-robin + first-run approval + onboarding country/language picker; explainable schedule) | 🔶 2026-06-13 (slice 1: boot-in-airplane-mode + continuous loop + per-country round-robin ordering, tested) | SHOULD | consent design shared with network popup; REMAINING: onboarding picker, explainable cycle detail, demote arbitration modal, parallel fetch |
 | When×Where×Who extraction at ingest + backfill (confirmed GO) | 🔶 advanced 2026-06-15 | SHOULD (substrate for convergence) | reader now reads STORED rows (PR #202, `datestore.for_article`); WHO+WHERE corpus aggregates shipped (`/api/insights/who` + `/where`); temporal-map mention layer (PR #200). REMAINING: map gains EVENT-places too |
-| Convergence detection + watch rules (the 0.0.9 flagship, layers 3+4) | 🔶 slice 1 2026-06-15 (PR #212) | POST | READ-ONLY space-time co-occurrence shipped (`src/analytics/convergence.py` + briefing producer; distinct-sources metric, no score). **Read-only FRONTEND view shipped 2026-06-16:** Insights → Convergence subtab over `GET /api/insights/convergences` (clusters → exact article set via `openAnalysisForIds`; non-causation caveat + shared-origin flag VISIBLE; no score; `test_ui_invariants` #21c). REMAINING: the watch-rule engine (a genuine maintainer ruling — its UX; the Watches view + history) |
+| Convergence detection + watch rules (the 0.0.9 flagship, layers 3+4) | ✅ 2026-06-17 (watch engine, ruling #3) | POST | READ-ONLY space-time co-occurrence shipped (`src/analytics/convergence.py` + briefing producer; distinct-sources metric, no score). Read-only Convergence subtab over `GET /api/insights/convergences` (PR 2026-06-16; `test_ui_invariants` #21c). **WATCH ENGINE SHIPPED 2026-06-17, ON BY DEFAULT (ruling #3):** `Watch`+`WatchMatch` models (migration b8c9d0e1f2a3) + `src/analytics/watches.py` (CRUD + `evaluate_watches` fires a `watch` Lead when the corpus gains enough NEW articles matching a saved FTS condition over the user's threshold+window; `last_seen_ids` prevents re-alarming) + `watch_matches` producer wired into `refresh_briefing` (runs after every pass) + `src/api/watches.py` CRUD/history/evaluate + a Watches Insights subtab. LOCAL-only, no notifications/network/telemetry, no escalation tiers (the ruling). `tests/test_watch_engine.py` (7) + `tests/test_watches_api.py` + `test_ui_invariants` #21d. REMAINING: i18n-key the Watches panel; richer condition types (place/convergence) |
 | Permanent top-bar language switcher (flag + native name) | ✅ 2026-06-12 (T7) | RC-BLOCKING (reputation ×12 languages) | shipped: 12-language menu (flag = cue, native name = identifier), one click through OOI18N.setLang (DOM re-walk + t() for dynamic strings), Settings sync, invariant #15 |
-| i18n long tail → ~0 (audit-chrome per tab) + Home-card title translation design | ⬜ | RC-BLOCKING | `i18n_report.py --audit-chrome` ≈ 0 per tab |
+| i18n long tail → ~0 (audit-chrome per tab) + Home-card title translation design | 🔶 ruling #8 (PROCEED) | RC-BLOCKING | keyed strings stay **100% ×12** (`--min 100` green); `--audit-chrome` measures **431 untranslatable chrome strings as of 2026-06-17** (recently-shipped Settings panels — Models/Offline-map/Newsletters/mailbox/Statistics/Watches — are the largest cohort). Mechanism confirmed: a chrome string becomes translatable by adding its `English → translation` entry to the 12 `src/static/locales/*.json` (the engine keys on the English string + auto-walks DOM text/attrs). Burn down in native-reviewable slices (AI-drafted non-en, flagged) |
 | French easter eggs (transnational, translatable) | ⬜ | SHOULD | personality.yml |
 | Tor transport-awareness in per-host verdicts + "running over Tor" manual chapter (logs pending from maintainer) | ⬜ | SHOULD | verdicts distinguish robots/Tor-refused/down |
 | Global search rework (omnibar absorbs Search tab — only after parity) | ⬜ | POST | the Desk lesson: never lose a tool |
