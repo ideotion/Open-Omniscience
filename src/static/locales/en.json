@@ -1109,5 +1109,7 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "No outbound page is cited by 2+ articles in this corpus yet.",
   "Open every article citing this origin as a new corpus": "Open every article citing this origin as a new corpus",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Several articles citing the same page are not independent confirmation — one origin, several echoes.",
-  "No articles cite this origin.": "No articles cite this origin."
+  "No articles cite this origin.": "No articles cite this origin.",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related)."
 }

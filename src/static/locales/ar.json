@@ -1109,5 +1109,7 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "لا توجد بعد صفحة خارجية يستشهد بها مقالان أو أكثر في هذه المجموعة.",
   "Open every article citing this origin as a new corpus": "افتح كمجموعة جديدة كل مقال يستشهد بهذا المصدر",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "عدة مقالات تستشهد بالصفحة نفسها ليست تأكيدًا مستقلاً — مصدر واحد وأصداء متعددة.",
-  "No articles cite this origin.": "لا توجد مقالات تستشهد بهذا المصدر."
+  "No articles cite this origin.": "لا توجد مقالات تستشهد بهذا المصدر.",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "واحدة من {n} نسخة شبه متطابقة = صوت واحد فعليًا. افتح «ذات صلة» لفحص المجموعة.",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} منها نسخ شبه متطابقة — أصوات مستقلة أقل مما يوحي به العدد (انظر «ذات صلة»)."
 }

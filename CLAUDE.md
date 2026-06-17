@@ -2291,10 +2291,20 @@ ruling, a contingency, or a deliberate-omission note.
   sections (Promise.all; no early-return on empty clusters), near-dup section + its #299 strings
   PRESERVED (test_corpus_coordination stays green). +8 i18n ×12 (non-en AI-drafted, flagged);
   tests/test_related_shared_origins.py + node --check green; full pytest needs py3.13 (CI).
-  STILL REMAINING (PR 3): the inline "N near-identical = 1 voice" BADGE on article rows in the
-  Articles list / search results / reader (a distinct surface — the lists/reader render
-  separately from the analysis Related subtab); shared-KEYWORD neighbours; multi-select branch;
-  DISSOLVE the manual Source-integrity tab (absorption-test-gated).
+  **PR 3 — INLINE "1 VOICE" BADGE SHIPPED 2026-06-17 (branch `claude/inline-dup-badges`, draft
+  PR onto 0.09, BROWSER-UNVERIFIED, frontend-only):** the analysis Articles subtab now badges
+  near-identical rows — a reusable `annotateArticleDups(params, host)` helper (NON-BLOCKING: the
+  list renders first, badges appear when coordination returns; best-effort try/catch; idempotent
+  via `a.dataset.dupBadged`) marks each clustered row with a `≈N` pill (titled, so it inherits the
+  #oo-tip hover, invariant #17) + a `.card-caveat` summary "{n} of these are near-identical copies
+  — fewer independent voices than the count suggests (see Related)". REUSES the corpus-coordination
+  data — and the Related subtab's `_anRelatedClusters` cache when present, so the common path adds
+  NO extra fetch. No score (the count is the cluster size only). +2 i18n ×12; node --check +
+  tests/test_inline_dup_badges.py green. The helper is reusable across any host whose article links
+  are /api/articles/{id}/view. STILL REMAINING (PR 4): apply the same helper to the SEARCH-results
+  list + the standalone READER (different render paths — search is the SPA results table, the reader
+  is a server-rendered English-only page); shared-KEYWORD neighbours; multi-select branch; DISSOLVE
+  the manual Source-integrity tab (absorption-test-gated).
 - **Offline LLM kit** (RM-08 release artifact); DuckDuckGo discovery channel
   only after RM-03 gate UX proves out. **Translated docs:** infrastructure
   shipped (per-language docs served with honest machine-drafted banner; fr

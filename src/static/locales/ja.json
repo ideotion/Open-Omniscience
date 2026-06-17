@@ -1109,5 +1109,7 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "このコーパスで2件以上の記事に引用された外部ページはまだありません。",
   "Open every article citing this origin as a new corpus": "この出典を引用するすべての記事を新しいコーパスとして開く",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "同じページを引用する複数の記事は独立した裏付けではありません——出典は一つ、反響は複数。",
-  "No articles cite this origin.": "この出典を引用する記事はありません。"
+  "No articles cite this origin.": "この出典を引用する記事はありません。",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "{n} 件のほぼ同一コピーの一つ＝実質的に一つの声。「関連」を開いてクラスターを確認してください。",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "このうち {n} 件はほぼ同一のコピーです——件数が示すより独立した声は少ないです（「関連」を参照）。"
 }

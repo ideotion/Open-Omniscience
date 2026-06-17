@@ -1109,5 +1109,7 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "Nenhuma página externa é citada por 2 ou mais artigos deste corpus ainda.",
   "Open every article citing this origin as a new corpus": "Abrir como novo corpus todos os artigos que citam esta origem",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Vários artigos que citam a mesma página não são uma confirmação independente — uma origem, vários ecos.",
-  "No articles cite this origin.": "Nenhum artigo cita esta origem."
+  "No articles cite this origin.": "Nenhum artigo cita esta origem.",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "Uma de {n} cópias quase idênticas = na prática uma só voz. Abra Relacionados para inspecionar o grupo.",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} destes são cópias quase idênticas — menos vozes independentes do que a contagem sugere (ver Relacionados)."
 }

@@ -1109,5 +1109,7 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "此语料库中暂无被 2 篇及以上文章引用的外部页面。",
   "Open every article citing this origin as a new corpus": "将引用此来源的所有文章作为新语料库打开",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "多篇文章引用同一页面并非独立佐证——同一来源，多重回声。",
-  "No articles cite this origin.": "没有文章引用此来源。"
+  "No articles cite this origin.": "没有文章引用此来源。",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "{n} 份近乎相同副本之一 = 实际上是同一种声音。打开“相关”查看该聚类。",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "其中 {n} 篇是近乎相同的副本——独立声音比数量显示的更少（见“相关”）。"
 }

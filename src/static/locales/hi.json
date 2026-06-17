@@ -1109,5 +1109,7 @@
   "No outbound page is cited by 2+ articles in this corpus yet.": "इस कॉर्पस में अभी तक कोई बाहरी पृष्ठ 2+ लेखों द्वारा उद्धृत नहीं है।",
   "Open every article citing this origin as a new corpus": "इस स्रोत का हवाला देने वाले सभी लेखों को नए कॉर्पस के रूप में खोलें",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "एक ही पृष्ठ का हवाला देने वाले कई लेख स्वतंत्र पुष्टि नहीं हैं — एक स्रोत, कई प्रतिध्वनियाँ।",
-  "No articles cite this origin.": "कोई लेख इस स्रोत का हवाला नहीं देता।"
+  "No articles cite this origin.": "कोई लेख इस स्रोत का हवाला नहीं देता।",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "{n} लगभग समान प्रतियों में से एक = वास्तव में एक ही आवाज़। समूह देखने के लिए संबंधित खोलें।",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "इनमें से {n} लगभग समान प्रतियाँ हैं — गिनती से कम स्वतंत्र आवाज़ें (संबंधित देखें)।"
 }
