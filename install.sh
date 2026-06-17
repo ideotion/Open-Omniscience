@@ -22,7 +22,7 @@
 # Unattended env vars (also used by CI):
 #   OO_COMPONENTS="analysis,llm"   extras to add on top of core (comma-separated)
 #   OO_WITH_OLLAMA=1               install Ollama if missing (asks consent unless unattended)
-#   OO_OLLAMA_MODEL="llama3.2:1b"  model to pull (empty = none)
+#   OO_OLLAMA_MODEL="gemma3:1b"  model to pull (empty = none)
 #   OO_MAKE_LAUNCHER=1             create the desktop launcher
 #   OO_PYTHON=python3.13           interpreter to use
 #   OO_SKIP_PIP=1 / OO_SKIP_DB=1   skip the pip install / db init (testing only)
@@ -280,14 +280,15 @@ maybe_setup_ollama() {
     if [ -z "$model" ] && [ "$UNATTENDED" != "1" ]; then
         if [ "$HAVE_WHIPTAIL" = "1" ]; then
             model=$(whiptail --title "Download a local model" --menu \
-                "Pick a small model to download now (you can pull others later):" 15 72 4 \
-                "llama3.2:1b"  "~1.3 GB  fast, low-RAM (good default)" \
-                "llama3.2:3b"  "~2.0 GB  better quality" \
-                "qwen2.5:0.5b" "~0.4 GB  tiny, fastest" \
-                "none"         "Skip — pick from newer models in-app later" 3>&1 1>&2 2>&3) || model="none"
+                "Pick a small model to download now (you can pull others later):" 17 76 5 \
+                "gemma3:1b"      "~0.8 GB  Google Gemma 3, small & fast (good default)" \
+                "granite4:micro" "~2.1 GB  IBM Granite 4.0, latest small (3.4B)" \
+                "nemotron-mini"  "~2.7 GB  NVIDIA Nemotron Mini (4B)" \
+                "llama3.2:3b"    "~2.0 GB  Meta Llama 3.2, balanced" \
+                "none"           "Skip — pick from more models in-app later" 3>&1 1>&2 2>&3) || model="none"
         else
-            if ask_yn "Download a small default model now (llama3.2:1b, ~1.3 GB)?" y; then
-                model="llama3.2:1b"; else model="none"; fi
+            if ask_yn "Download a small default model now (gemma3:1b, ~0.8 GB)?" y; then
+                model="gemma3:1b"; else model="none"; fi
         fi
     fi
     if [ -n "$model" ] && [ "$model" != "none" ]; then

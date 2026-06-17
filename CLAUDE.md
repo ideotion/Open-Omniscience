@@ -1029,6 +1029,24 @@ ruling, a contingency, or a deliberate-omission note.
   step) — BLOCKED OFFLINE (needs real per-OS installer checksums verified against clearnet;
   fabricating them = forbidden — do on a networked machine); live ollama.com library
   browse (Q8); pulls as task-manager jobs.
+  **CATALOG REFRESHED 2026-06-17 (maintainer-asked "latest + smallest open models from
+  Mistral, Google, IBM, Nvidia", branch `claude/llm-catalog-refresh`, draft PR onto 0.09):**
+  `MODEL_CATALOG` (src/llm/ollama.py — the ONE source the in-app Settings → Models subtab
+  reads via /api/llm/models; the frontend has NO hardcoded list) now leads with the latest
+  small open models, ALL REAL ollama.com/library tags VERIFIED VIA SEARCH (ollama.com 403s
+  WebFetch here, so WebSearch was the verification path — NEVER fabricated, per the file's own
+  "previous catalog was hallucinated" caution + the no-fabricated-data non-negotiable):
+  granite4:350m + granite4:micro (IBM Granite 4.0, Oct 2025, Apache-2.0; micro=3.4B confirmed
+  2.1 GB Q4_K_M), gemma3:1b + gemma3:4b (Google Gemma 3), nemotron-mini (NVIDIA, 4B),
+  mistral:7b (Apache-2.0 — the smallest OPEN Mistral on Ollama; no smaller official open tag
+  exists, so none invented), keeping llama3.2:1b/3b (Meta, the DEFAULT_MODEL). Sizes are
+  honest ~approximations for the real tags (the field is an advisory hardware hint; the live
+  installed-models picker stays the source of truth). The installer's quick-download menu
+  (install.sh whiptail + the non-whiptail fallback + the OO_OLLAMA_MODEL example) refreshed
+  to gemma3:1b/granite4:micro/nemotron-mini/llama3.2:3b. CATALOG_AS_OF stays "2026-06"
+  (re-verified this month; freshness test green). No frontend/i18n change (backend-driven);
+  no test asserts catalog contents (test_llm_ollama gemma2:2b refs are mock names, not the
+  catalog). REMAINING: re-verify exact sizes on a networked machine when convenient.
   **Q10 SHIPPED 2026-06-16 (backend):** `AppSettings.llm_model` (a persisted UI
   preference, model-name-validated against injection; "" clears it) replaces env-only
   `OO_LLM_MODEL` as the operator default; `api.llm.active_model()` resolves stored ||
