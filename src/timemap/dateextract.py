@@ -182,6 +182,15 @@ def _valid(year: int, month: int, day: int, today: date) -> date | None:
         return None
 
 
+def _month_of(token: str) -> int | None:
+    """Month number for a matched month name, tolerant of case-fold quirks. A
+    regex hit case-insensitively matches the table, but ``str.lower()`` does not
+    always round-trip to the stored key (Turkish DOTLESS ı: ``"MAYIS".lower()``
+    is ``"mayis"`` ≠ the table's ``"mayıs"``). Returns None on a miss so the hit
+    is skipped, never a ``KeyError`` that would abort extraction for the article."""
+    return _MONTHS.get(token.lower())
+
+
 def _snippet(text: str, start: int, end: int, pad: int = 24) -> str:
     s = text[max(0, start - pad) : min(len(text), end + pad)].strip()
     return re.sub(r"\s+", " ", s)
@@ -235,15 +244,18 @@ def extract_dates(
         if d and claim(*m.span()):
             add(d, "day", m)
     for m in _DMY_RE.finditer(text):
-        d = _valid(int(m.group(3)), _MONTHS[m.group(2).lower()], int(m.group(1)), today)
+        mon = _month_of(m.group(2))
+        d = _valid(int(m.group(3)), mon, int(m.group(1)), today) if mon else None
         if d and claim(*m.span()):
             add(d, "day", m)
     for m in _MDY_RE.finditer(text):
-        d = _valid(int(m.group(3)), _MONTHS[m.group(1).lower()], int(m.group(2)), today)
+        mon = _month_of(m.group(1))
+        d = _valid(int(m.group(3)), mon, int(m.group(2)), today) if mon else None
         if d and claim(*m.span()):
             add(d, "day", m)
     for m in _YMD_NAME_RE.finditer(text):  # "2024. május 5." (year-first, named month)
-        d = _valid(int(m.group(1)), _MONTHS[m.group(2).lower()], int(m.group(3)), today)
+        mon = _month_of(m.group(2))
+        d = _valid(int(m.group(1)), mon, int(m.group(3)), today) if mon else None
         if d and claim(*m.span()):
             add(d, "day", m)
     # Numeric dates — language picks the order when ambiguous; never guessed.
@@ -266,7 +278,8 @@ def extract_dates(
             add(d, "day", m)
 
     for m in _MY_RE.finditer(text):  # month precision — only where no day match claimed it
-        d = _valid(int(m.group(2)), _MONTHS[m.group(1).lower()], 1, today)
+        mon = _month_of(m.group(1))
+        d = _valid(int(m.group(2)), mon, 1, today) if mon else None
         if d and claim(*m.span()):
             add(d, "month", m)
 

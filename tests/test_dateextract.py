@@ -116,6 +116,16 @@ def test_added_months_do_not_invent_dates_without_a_number():
     assert _dates("Presentaron la marca 2024 de coches nuevos.") == []     # es 'marca' = brand
 
 
+def test_month_lookup_never_raises_on_casefold_mismatch():
+    """A regex hit whose str.lower() does not round-trip to the table key (the
+    Turkish DOTLESS ı: 'MAYIS'.lower() == 'mayis' but the table stores 'mayıs')
+    must be skipped gracefully, never KeyError-abort the whole extraction."""
+    # All-caps ASCII-I Turkish: simply must not raise (recall loss on this rare
+    # casing is acceptable; the normal 'Mayıs' form below still resolves).
+    assert _dates("Toplantı 5 MAYIS 2024 tarihinde yapıldı.") == []
+    assert ("2024-05-05", "day") in _dates("Toplantı 5 Mayıs 2024.")
+
+
 def test_numeric_dates_language_disambiguated():
     from src.timemap.dateextract import extract_dates
 
