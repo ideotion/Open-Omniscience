@@ -991,6 +991,7 @@
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow
       if (cat === "models") loadLlmModels();          // the dedicated LLM-management subtab (Q6)
+      if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") loadStatAgencies();        // official-statistics producer directory (Group N)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
@@ -5276,6 +5277,55 @@
         await api(`/api/insights/supergroups/${btn.dataset.sg}`, {method: "DELETE"});
         toast("Deleted."); loadSuperGroups();
       } catch (e) { toast("Delete failed: " + e.message, "err"); }
+    }
+
+    // -- Keyword explorer (Item AC: explore by tag, hide, apply baseline tags) ---- //
+    async function loadKeywordExplorer() {
+      const box = $("kx-facets");
+      if (!box) return;
+      box.innerHTML = '<div class="muted">Loading…</div>';
+      $("kx-keywords").innerHTML = "";
+      try {
+        const f = await api("/api/insights/keyword-tags/facets");
+        box.innerHTML = (f.axes || ["type", "topic"]).map(ax => {
+          const tags = (f.facets && f.facets[ax]) || [];
+          const chips = tags.length ? tags.map(t =>
+            `<button class="fam-chip" data-ax="${esc(ax)}" data-tag="${esc(t.tag)}" onclick="kxShowTag(this)">${esc(t.tag)} <span class="muted">${t.keywords}</span></button>`).join("")
+            : '<span class="muted">none yet — click “Apply baseline tags” above</span>';
+          return `<div style="margin-bottom:8px"><b>${esc(ax)}</b><div class="fam-chips" style="margin-top:4px">${chips}</div></div>`;
+        }).join("");
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+    }
+
+    async function kxShowTag(btn) {
+      const ax = btn.dataset.ax, tag = btn.dataset.tag;
+      const box = $("kx-keywords");
+      box.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const r = await api(`/api/insights/keyword-tags/keywords?axis=${encodeURIComponent(ax)}&tag=${encodeURIComponent(tag)}&limit=200`);
+        box.innerHTML = `<div class="muted" style="margin:6px 0">${r.total} keyword(s) tagged ${esc(ax)}=${esc(tag)}</div>` +
+          (r.keywords || []).map(k =>
+            `<div style="display:flex;gap:8px;align-items:center;padding:3px 0;border-bottom:1px solid var(--line)">
+               <span style="flex:1">${esc(k.term)} <span class="muted">${esc(k.language || "?")} · ${k.articles}a/${k.mentions}m · ${esc(k.source)}</span></span>
+               <button class="ghost tiny" data-norm="${esc(k.normalized)}" onclick="kxHide(this)">Hide</button>
+             </div>`).join("");
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+    }
+
+    async function kxHide(btn) {
+      try {
+        await api("/api/insights/exclude", {method: "POST", body: JSON.stringify({term: btn.dataset.norm})});
+        btn.textContent = "hidden"; btn.disabled = true;
+      } catch (e) { toast("Hide failed: " + e.message, "err"); }
+    }
+
+    async function kxBackfill() {
+      try {
+        toast("Applying baseline tags…");
+        const r = await api("/api/insights/keyword-tags/backfill?limit=0", {method: "POST"});
+        toast(`Tagged ${r.tagged_keywords} keyword(s) (${r.tags_added} tags).`);
+        loadKeywordExplorer();
+      } catch (e) { toast("Backfill failed: " + e.message, "err"); }
     }
 
     // -- Most-cited sources (corpus-wide co-citation) ----------------------- //
