@@ -28,6 +28,7 @@ class _FakeOllama:
         self._available = available
         self.base_url = "http://127.0.0.1:11434"
         self.calls: list[tuple] = []
+        self.keep_alives: list = []  # keep_alive passed per generate() call
 
     def is_available(self) -> bool:
         return self._available
@@ -42,10 +43,11 @@ class _FakeOllama:
             raise LLMUnavailable("Ollama not reachable (fake)")
         return [{"tag": "llama3.2:3b", "size_gb": 2.0, "modified": "2026-06-01T00:00:00Z"}]
 
-    def generate(self, prompt, *, model="llama3.2:3b", system=None, options=None):
+    def generate(self, prompt, *, model="llama3.2:3b", system=None, options=None, keep_alive=None):
         if not self._available:
             raise LLMUnavailable("Ollama not reachable (fake)")
         self.calls.append((prompt, model, system))
+        self.keep_alives.append(keep_alive)
         return GenerationResult(model=model, text=f"FAKE[{prompt[:24]}]")
 
 
@@ -202,3 +204,184 @@ def test_models_endpoint_carries_as_of_and_hardware_fit():
         # every catalog entry is annotated with a hardware-fit hint
         assert all("fit" in m for m in body["catalog"])
         assert {m["fit"] for m in body["catalog"]} <= {"fits", "tight", "too_large", "unknown"}
+
+
+# --- provenance: prompt_text + keep_alive (maintainer 2026-06-17) -------------- #
+
+
+def _stored(article_id, kind):
+    """Stored analyses as plain dicts (read inside the session so attributes are
+    materialised — never returns detached ORM instances)."""
+    from src.database.models import ArticleAnalysis
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        rows = (
+            s.query(ArticleAnalysis)
+            .filter(ArticleAnalysis.article_id == article_id, ArticleAnalysis.kind == kind)
+            .order_by(ArticleAnalysis.created_at.desc(), ArticleAnalysis.id.desc())
+            .all()
+        )
+        return [
+            {"id": r.id, "prompt_text": r.prompt_text, "prompt_version": r.prompt_version}
+            for r in rows
+        ]
+
+
+def test_summarize_records_exact_prompt_and_keep_alive(tmp_path, monkeypatch):
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    fake = _FakeOllama()
+    _override(fake)
+    art_id = _seed_article()
+    with TestClient(app) as client:
+        r = client.post(f"/api/llm/articles/{art_id}/summarize", json={})
+        assert r.status_code == 200
+    # The EXACT system prompt used is recorded (provenance), and keep_alive defaults
+    # to the stored "30m" so the model stays warm (the maintainer's "no unload" ask).
+    rows = _stored(art_id, "summary")
+    assert rows and rows[0]["prompt_text"] and "summariz" in rows[0]["prompt_text"].lower()
+    assert rows[0]["prompt_version"] == "summary-v1"
+    assert fake.keep_alives[-1] == "30m"
+
+
+def test_custom_prompt_is_used_and_recorded(tmp_path, monkeypatch):
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    aps.save_settings({"llm_prompt_summary": "CUSTOM: be terse."})
+    fake = _FakeOllama()
+    _override(fake)
+    art_id = _seed_article()
+    with TestClient(app) as client:
+        r = client.post(f"/api/llm/articles/{art_id}/summarize", json={})
+        assert r.status_code == 200
+    # the fake received the custom system prompt verbatim
+    assert any("CUSTOM: be terse." == s for _p, _m, s in fake.calls)
+    rows = _stored(art_id, "summary")
+    assert rows[0]["prompt_text"] == "CUSTOM: be terse."
+    assert rows[0]["prompt_version"] == "summary-custom"  # version flags customisation
+
+
+def test_list_article_analyses_newest_first_with_provenance():
+    fake = _FakeOllama()
+    _override(fake)
+    art_id = _seed_article()
+    with TestClient(app) as client:
+        client.post(f"/api/llm/articles/{art_id}/summarize", json={})
+        client.post(f"/api/llm/articles/{art_id}/summarize", json={})  # a 2nd, kept (never replaced)
+        client.post(f"/api/llm/articles/{art_id}/translate", json={"target_language": "French"})
+
+        all_r = client.get(f"/api/llm/articles/{art_id}/analyses").json()
+        assert all_r["count"] == 3  # nothing replaced — every result kept
+        # rows carry full provenance incl. the exact prompt text
+        assert all(a.get("prompt_text") for a in all_r["analyses"])
+
+        s_r = client.get(f"/api/llm/articles/{art_id}/analyses?kind=summary").json()
+        assert s_r["count"] == 2  # both summaries kept
+        # newest first (ids descending when timestamps tie)
+        assert s_r["analyses"][0]["id"] > s_r["analyses"][1]["id"]
+
+        t_r = client.get(f"/api/llm/articles/{art_id}/analyses?kind=translation").json()
+        assert t_r["count"] == 1
+        assert t_r["analyses"][0]["target_language"] == "French"
+
+
+def test_prompts_endpoint_exposes_defaults_and_keep_alive(tmp_path, monkeypatch):
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    _override(_FakeOllama())
+    with TestClient(app) as client:
+        d = client.get("/api/llm/prompts").json()
+        assert set(d["prompts"]) == {"summary", "translate", "synthesis"}
+        assert d["prompts"]["summary"]["default"]  # built-in default text present
+        assert d["prompts"]["summary"]["current"] == ""  # no override yet
+        assert d["keep_alive"] and d["keep_alive_default"]
+
+
+# --- bulk summarize / translate (maintainer 2026-06-17) ----------------------- #
+
+
+def _ndjson(text):
+    import json as _json
+
+    return [_json.loads(ln) for ln in text.splitlines() if ln.strip()]
+
+
+def test_bulk_summarize_streams_and_stores_each(tmp_path, monkeypatch):
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    fake = _FakeOllama()
+    _override(fake)
+    ids = [_seed_article() for _ in range(3)]
+    with TestClient(app) as client:
+        r = client.post("/api/llm/bulk", json={"op": "summarize", "article_ids": ids})
+        assert r.status_code == 200
+        events = _ndjson(r.text)
+        assert events[0]["event"] == "start" and events[0]["total"] == 3
+        items = [e for e in events if e["event"] == "item"]
+        assert len(items) == 3 and all(i["status"] == "stored" for i in items)
+        done = events[-1]
+        assert done["event"] == "done" and done["stored"] == 3 and not done["aborted"]
+    # each article got its own stored summary, with the exact prompt recorded
+    for aid in ids:
+        rows = _stored(aid, "summary")
+        assert len(rows) == 1 and rows[0]["prompt_text"]
+
+
+def test_bulk_skip_existing_tops_up_only_missing(tmp_path, monkeypatch):
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    _override(_FakeOllama())
+    ids = [_seed_article() for _ in range(2)]
+    with TestClient(app) as client:
+        client.post("/api/llm/bulk", json={"op": "summarize", "article_ids": ids})
+        # second run with skip_existing should skip both (already summarised)
+        r = client.post("/api/llm/bulk", json={"op": "summarize", "article_ids": ids, "skip_existing": True})
+        done = _ndjson(r.text)[-1]
+        assert done["skipped"] == 2 and done["stored"] == 0
+    # never replaced: still exactly one summary per article
+    for aid in ids:
+        assert len(_stored(aid, "summary")) == 1
+
+
+def test_bulk_translate_records_target_language(tmp_path, monkeypatch):
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    fake = _FakeOllama()
+    _override(fake)
+    ids = [_seed_article()]
+    with TestClient(app) as client:
+        r = client.post("/api/llm/bulk", json={"op": "translate", "article_ids": ids, "target_language": "German"})
+        assert _ndjson(r.text)[-1]["stored"] == 1
+        a = client.get(f"/api/llm/articles/{ids[0]}/analyses?kind=translation").json()
+        assert a["analyses"][0]["target_language"] == "German"
+    assert any("German" in (s or "") for _p, _m, s in fake.calls)  # target reached the model
+
+
+def test_bulk_requires_a_selection_and_validates_op():
+    _override(_FakeOllama())
+    with TestClient(app) as client:
+        # no selection at all → 400; an unknown op → 400
+        assert client.post("/api/llm/bulk", json={"op": "summarize"}).status_code == 400
+        assert client.post("/api/llm/bulk", json={"op": "bogus", "article_ids": [1]}).status_code == 400
+        # a valid selection that resolves to nothing with content → 404
+        assert client.post(
+            "/api/llm/bulk", json={"op": "summarize", "article_ids": [99999999]}
+        ).status_code == 404
+
+
+def test_bulk_aborts_loudly_when_ollama_down():
+    _override(_FakeOllama(available=False))
+    ids = [_seed_article()]
+    with TestClient(app) as client:
+        r = client.post("/api/llm/bulk", json={"op": "summarize", "article_ids": ids})
+        # resolution succeeds (200 stream); the model failure aborts mid-stream, loudly.
+        assert r.status_code == 200
+        done = _ndjson(r.text)[-1]
+        assert done["event"] == "done" and done["aborted"] is True and done["reason"]

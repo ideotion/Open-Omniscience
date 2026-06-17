@@ -1209,6 +1209,11 @@ class ArticleAnalysis(Base):
     # provenance
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     prompt_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # The EXACT system prompt actually used to produce this result. Prompts are
+    # operator-editable (Settings → Models), so the version alone is not enough for
+    # honest provenance once a prompt is customised — we store the verbatim text used
+    # at generation time. NULL only for rows written before this column existed.
+    prompt_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     article = relationship("Article", backref="analyses")

@@ -1106,6 +1106,52 @@ ruling, a contingency, or a deliberate-omission note.
   (`/api/llm/models` gains `active`) honor it; settable via the existing PUT
   /api/settings. tests/test_llm_active_model.py. REMAINING: the Settings LLM subtab UI
   to choose it from the live installed-models list.
+  **BULK SUMMARIZE/TRANSLATE + READER SUMMARY/TRANSLATION TABS + EDITABLE PROMPTS
+  (maintainer field test 2026-06-17, branch `claude/confident-hopper-ef600p`, draft PR
+  onto 0.09, BROWSER-UNVERIFIED per fork-3) — answers the maintainer's "bulk article
+  summary/translation don't work · can't see the translated article · summaries/
+  translations recorded but NOT analysed/keyword-ingested · keep metadata · never
+  replace, show latest + fold the rest · LLM-offline pill not synced · model unload
+  unnecessary · prompts: detail/incorporate-into-metadata/tweakable":**
+  (1) NO bulk feature existed (single per-row Summarize/Translate in Search only). NEW
+  streaming `POST /api/llm/bulk` (op=summarize|translate) runs the local model over EACH
+  article in a matched set (article_ids OR query/filters, same selection as the analysis
+  window), stores ONE ArticleAnalysis per article (NEVER replacing a prior one),
+  NDJSON honest per-article progress (invariant #20), `skip_existing` tops up only the
+  missing, bounded `_BULK_MAX_ARTICLES=500`, aborts loudly if Ollama goes away mid-run.
+  Frontend: "Summarize all"/"Translate all" in BOTH the Search toolbar and the analysis
+  window action row → `bulkLlm`/`bulkLlmRun` (AbortController cancel, live tally). Ollama
+  is loopback (no egress, no consent popup — like the single path) but airplane mode
+  refuses it, surfaced. (2) READER (standalone, English-only) gained **Summary** +
+  **Translation** tabs (after Read): `GET /api/llm/articles/{id}/analyses?kind=` returns
+  newest-first with full provenance; the tab shows the LATEST + a folded `<details>` of
+  all earlier ones + a generate-now control (target-language `<select>` for translate).
+  NEVER keyword-indexed BY CONSTRUCTION (rows live in article_analyses, the indexer reads
+  only articles.content). (3) **EDITABLE PROMPTS (the user asked — there are THREE system
+  prompts: summary[1-or-many] · translate[1-or-many] · synthesis[several]; bulk reuses the
+  single prompt per article, so "4" → 3).** Settings → Models gained a "Behaviour &
+  prompts" section: keep-alive + 3 prompt textareas (empty = built-in default shown as
+  placeholder; `{target}` substituted in translate) saved via PUT /api/settings;
+  `GET /api/llm/prompts` exposes defaults+current. The EXACT system prompt used is now
+  recorded per result (`ArticleAnalysis.prompt_text`, migration a1b2c3d4e5f6 off head
+  f4a5b6c7d8e9 + `ensure_article_analysis_columns` self-heal since the live DB isn't
+  auto-alembic'd; shown folded in the reader) so provenance stays honest after a prompt
+  edit; version flags default-vs-custom (summary-v1 / summary-custom, translate-v1:X /
+  translate-custom:X). (4) **MODEL KEEP-ALIVE**: `OllamaClient.generate(keep_alive=)`
+  threaded through every call; stored `AppSettings.llm_keep_alive` default **"30m"** (the
+  maintainer's "unloading isn't necessary" — "-1" never unload, "0" unload now). (5)
+  **LLM-OFFLINE PILL SYNC BUG fixed**: `loadLlmHealth()` ran ONCE at boot and the app boots
+  in airplane mode → stuck "offline" even after going online + Ollama up. Now re-checks on:
+  going-online (`_paintNetwork` transition), opening Settings → Models, after every LLM
+  action, tab regaining focus (visibilitychange), and on CLICK (the pill is now clickable).
+  Settings JSON-file (no migration for keep-alive/prompts). +29 i18n keys ×12
+  (AI-drafted, flagged for native review; audit-chrome clean, gate 100%). Tests:
+  test_llm_api.py (bulk stream/skip/abort/target, analyses provenance, prompts endpoint,
+  custom-prompt recorded, keep_alive passed) + test_reader_tabs.py (new tabs). VERIFIED
+  here on py3.13 venv: 103 targeted tests pass · ruff F/B clean · mypy adds 0 new errors ·
+  node --check · alembic single-head · self-heal idempotent. REMAINING: human
+  click-through (fork-3); a per-article Summarize/Translate on the analysis Articles list;
+  bulk as a first-class task-manager job (currently a streaming request).
   SELF-UPDATE via GUI: consented check vs GitHub releases → signed
   oo-backup-2 + install-tree snapshot BEFORE anything → verified release →
   migrations on a STAGED copy → atomic swap + relaunch → rollback on failure;

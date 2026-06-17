@@ -74,6 +74,68 @@ def active_model() -> str:
         return DEFAULT_MODEL
 
 
+def _llm_settings():
+    """The stored app settings, or None if unreadable (never fatal)."""
+    try:
+        from src.config.app_settings import load_settings
+
+        return load_settings()
+    except Exception:  # noqa: BLE001 - settings must never break inference
+        return None
+
+
+def _effective_keep_alive() -> str | None:
+    """How long Ollama keeps the model loaded after a call (stored UI setting)."""
+    s = _llm_settings()
+    return s.llm_keep_alive if s else None
+
+
+def _apply_target(template: str, target: str) -> str:
+    """Insert the target language into a translate prompt. The built-in default uses a
+    ``{target}`` placeholder; a custom prompt without one gets an explicit instruction
+    appended (so the target is always conveyed, whatever the operator wrote)."""
+    if "{target}" in template:
+        return template.replace("{target}", target)
+    return f"{template}\n\nTranslate into {target}."
+
+
+def _build_prompting(op: str, *, target: str | None = None) -> tuple[str, str, str]:
+    """Resolve ``(system_prompt, prompt_version, prompt_text)`` for an op.
+
+    Prompts are operator-editable (Settings → Models). A non-empty stored override is
+    used verbatim, else the built-in default; the version flags default-vs-custom, and
+    ``prompt_text`` is the EXACT system text used (recorded per result so provenance
+    stays honest even after the operator edits a prompt). Evaluated at call time, so
+    the synthesis constants defined later in this module are available.
+    """
+    s = _llm_settings()
+    overrides = {
+        "summary": (s.llm_prompt_summary if s else ""),
+        "translate": (s.llm_prompt_translate if s else ""),
+        "synthesis": (s.llm_prompt_synthesis if s else ""),
+    }
+    defaults = {
+        "summary": _SUMMARY_SYSTEM,
+        "translate": _TRANSLATE_SYSTEM,
+        "synthesis": _SYNTHESIS_SYSTEM,
+    }
+    override = (overrides.get(op) or "").strip()
+    is_custom = bool(override)
+    template = override or defaults[op]
+    if op == "translate":
+        tgt = (target or "English")
+        system = _apply_target(template, tgt)
+        base = "translate-custom" if is_custom else TRANSLATE_PROMPT_VERSION
+        version = f"{base}:{tgt}"
+    elif op == "synthesis":
+        system = template
+        version = "synthesis-custom" if is_custom else SYNTHESIS_PROMPT_VERSION
+    else:  # summary
+        system = template
+        version = "summary-custom" if is_custom else SUMMARY_PROMPT_VERSION
+    return system, version, system
+
+
 class GenerateRequest(BaseModel):
     prompt: str
     model: str | None = None
@@ -127,6 +189,48 @@ def llm_models(client: OllamaClient = Depends(get_llm_client)) -> dict:
         "catalog_as_of": CATALOG_AS_OF,
         "catalog": annotate_catalog(),
         "installed": installed,
+    }
+
+
+@router.get("/prompts")
+def llm_prompts() -> dict:
+    """The local-LLM behaviour the operator can tune (maintainer 2026-06-17): the
+    keep-alive duration and the three editable SYSTEM PROMPTS, each with its built-in
+    default and the current override ("" = using the default). Read by Settings → Models.
+
+    There are three system prompts in total — ``summary`` (used for one OR many
+    articles), ``translate`` (one OR many; ``{target}`` is the target language), and
+    ``synthesis`` (one combined output across several). Bulk reuses the single-article
+    summary/translate prompt per article — there is no separate "several" prompt.
+    """
+    from src.config.app_settings import AppSettings
+
+    s = _llm_settings()
+    return {
+        "keep_alive": (s.llm_keep_alive if s else AppSettings().llm_keep_alive),
+        "keep_alive_default": AppSettings().llm_keep_alive,
+        "prompts": {
+            "summary": {
+                "default": _SUMMARY_SYSTEM,
+                "current": (s.llm_prompt_summary if s else "") or "",
+                "version": SUMMARY_PROMPT_VERSION,
+            },
+            "translate": {
+                "default": _TRANSLATE_SYSTEM,
+                "current": (s.llm_prompt_translate if s else "") or "",
+                "version": TRANSLATE_PROMPT_VERSION,
+            },
+            "synthesis": {
+                "default": _SYNTHESIS_SYSTEM,
+                "current": (s.llm_prompt_synthesis if s else "") or "",
+                "version": SYNTHESIS_PROMPT_VERSION,
+            },
+        },
+        "note": (
+            "Empty = use the built-in default. The exact prompt used is recorded with "
+            "each result (provenance). The translate prompt may contain {target} for the "
+            "target language. Save changes via Settings (PUT /api/settings)."
+        ),
     }
 
 
@@ -204,9 +308,12 @@ def summarize_article(
         raise HTTPException(status_code=400, detail="Article has no content to summarize.")
 
     model = req.model or active_model()
+    system, prompt_version, prompt_text = _build_prompting("summary")
     prompt = f"Article title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
     try:
-        result = client.generate(prompt, model=model, system=_SUMMARY_SYSTEM)
+        result = client.generate(
+            prompt, model=model, system=system, keep_alive=_effective_keep_alive()
+        )
     except LLMUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMError as exc:
@@ -217,7 +324,8 @@ def summarize_article(
         kind="summary",
         result=result.text,
         model=result.model,
-        prompt_version=SUMMARY_PROMPT_VERSION,
+        prompt_version=prompt_version,
+        prompt_text=prompt_text,
         created_at=datetime.now(UTC),
     )
     db.add(analysis)
@@ -227,7 +335,7 @@ def summarize_article(
         "article_id": article.id,
         "kind": "summary",
         "model": result.model,
-        "prompt_version": SUMMARY_PROMPT_VERSION,
+        "prompt_version": prompt_version,
         "result": result.text,
         "created_at": analysis.created_at.isoformat(),
     }
@@ -253,10 +361,12 @@ def translate_article(
         raise HTTPException(status_code=400, detail="Article has no content to translate.")
 
     model = req.model or active_model()
-    system = _TRANSLATE_SYSTEM.format(target=req.target_language)
+    system, prompt_version, prompt_text = _build_prompting("translate", target=req.target_language)
     prompt = f"Title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
     try:
-        result = client.generate(prompt, model=model, system=system)
+        result = client.generate(
+            prompt, model=model, system=system, keep_alive=_effective_keep_alive()
+        )
     except LLMUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMError as exc:
@@ -267,7 +377,8 @@ def translate_article(
         kind="translation",
         result=result.text,
         model=result.model,
-        prompt_version=f"{TRANSLATE_PROMPT_VERSION}:{req.target_language}",
+        prompt_version=prompt_version,
+        prompt_text=prompt_text,
         created_at=datetime.now(UTC),
     )
     db.add(analysis)
@@ -282,6 +393,60 @@ def translate_article(
         "prompt_version": analysis.prompt_version,
         "result": result.text,
         "created_at": analysis.created_at.isoformat(),
+    }
+
+
+def _parse_target_language(prompt_version: str | None) -> str | None:
+    """The translation target language is stored INSIDE the prompt version as
+    ``translate-v1:French`` (or ``translate-custom:French``) — provenance with no extra
+    column. Recover it for display, covering both the default and custom prompt cases."""
+    if prompt_version and prompt_version.startswith("translate-") and ":" in prompt_version:
+        return prompt_version.split(":", 1)[1] or None
+    return None
+
+
+@router.get("/articles/{article_id}/analyses")
+def list_article_analyses(
+    article_id: int,
+    kind: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """List the stored LLM analyses (summaries / translations / …) for an article.
+
+    Newest first. EVERY past result is kept — a new summary/translation never
+    replaces an old one (maintainer-ruled), so the reader shows the latest and folds
+    the rest. Each row carries its full provenance (model, prompt version, date) so
+    no generated text is ever shown without its origin.
+
+    Read-only by construction: these rows live in ``article_analyses``, NOT in
+    ``articles``, and the keyword indexer only ever reads ``articles.content`` — so a
+    summary or translation is NEVER keyword-indexed or fed into the analytics (the
+    maintainer-agreed contract). This endpoint only reads them back.
+    """
+    article = db.query(Article).filter_by(id=article_id).first()
+    if article is None:
+        raise HTTPException(status_code=404, detail=f"Article {article_id} not found.")
+    qy = db.query(ArticleAnalysis).filter(ArticleAnalysis.article_id == article_id)
+    if kind:
+        qy = qy.filter(ArticleAnalysis.kind == kind)
+    rows = qy.order_by(ArticleAnalysis.created_at.desc(), ArticleAnalysis.id.desc()).all()
+    return {
+        "article_id": article_id,
+        "source_language": article.language,
+        "count": len(rows),
+        "analyses": [
+            {
+                "id": r.id,
+                "kind": r.kind,
+                "result": r.result,
+                "model": r.model,
+                "prompt_version": r.prompt_version,
+                "prompt_text": r.prompt_text,
+                "target_language": _parse_target_language(r.prompt_version),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
     }
 
 
@@ -359,9 +524,12 @@ def synthesize_articles(
         )
     prompt = "\n\n---\n\n".join(parts)
     model = req.model or active_model()
+    system, prompt_version, prompt_text = _build_prompting("synthesis")
 
     try:
-        result = client.generate(prompt, model=model, system=_SYNTHESIS_SYSTEM)
+        result = client.generate(
+            prompt, model=model, system=system, keep_alive=_effective_keep_alive()
+        )
     except LLMUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMError as exc:
@@ -375,7 +543,8 @@ def synthesize_articles(
                 kind="synthesis",
                 result=result.text,
                 model=result.model,
-                prompt_version=SYNTHESIS_PROMPT_VERSION,
+                prompt_version=prompt_version,
+                prompt_text=prompt_text,
                 created_at=datetime.now(UTC),
             )
         )
@@ -384,7 +553,7 @@ def synthesize_articles(
     return {
         "kind": "synthesis",
         "model": result.model,
-        "prompt_version": SYNTHESIS_PROMPT_VERSION,
+        "prompt_version": prompt_version,
         "member_ids": member_ids,
         "member_count": len(member_ids),
         "truncated": truncated,
@@ -395,3 +564,171 @@ def synthesize_articles(
             "stored copies before publication."
         ),
     }
+
+
+# --------------------------------------------------------------------------- #
+#  Bulk summarize / translate over a matched article set (streaming progress)
+# --------------------------------------------------------------------------- #
+#
+# Unlike /synthesize (ONE combined output), bulk runs the local model over EACH
+# article independently and stores a per-article result. A local CPU model over many
+# articles is slow by nature, so we:
+#   * cap the set (no unbounded fan-out),
+#   * stream HONEST per-article progress as NDJSON (invariant #20 — never a fabricated
+#     bar/ETA; only what actually completed),
+#   * rely on the client's per-call kill-switch check (airplane mode aborts loudly),
+#   * store each result as its OWN ArticleAnalysis row — kept forever, NEVER replacing
+#     a prior one (the latest is shown first; older ones fold away in the reader).
+# These rows are NOT keyword-indexed (they live in article_analyses, never in
+# articles.content), so bulk output never pollutes the keyword analytics.
+_BULK_MAX_ARTICLES = 500
+
+
+class BulkLLMRequest(BaseModel):
+    op: str  # "summarize" | "translate"
+    article_ids: list[int] | None = None
+    query: str | None = None
+    source: str | None = None
+    language: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    target_language: str = "English"
+    model: str | None = None
+    skip_existing: bool = True
+    limit: int = 200
+
+
+@router.post("/bulk")
+def bulk_llm(
+    req: BulkLLMRequest,
+    db: Session = Depends(get_db),
+    client: OllamaClient = Depends(get_llm_client),
+):
+    """Summarize OR translate every article in a matched set with the local model.
+
+    Selection mirrors the analysis window: an explicit ``article_ids`` set wins,
+    otherwise the search filters (query/source/language/dates) resolve the set. The
+    response streams NDJSON: one ``start`` object, one ``item`` per article
+    (status = stored | skipped | failed), and a final ``done`` (or an aborted ``done``
+    if the local model becomes unavailable mid-run — it won't recover, so we stop).
+    """
+    op = (req.op or "").strip().lower()
+    if op not in {"summarize", "translate"}:
+        raise HTTPException(status_code=400, detail="op must be 'summarize' or 'translate'.")
+    cap = max(1, min(req.limit or 200, _BULK_MAX_ARTICLES))
+
+    # Resolve the article set (the analysis window's own selection logic).
+    if req.article_ids:
+        seen: set[int] = set()
+        ordered: list[int] = []
+        for v in req.article_ids:
+            if isinstance(v, int) and v not in seen:
+                seen.add(v)
+                ordered.append(v)
+        requested = len(ordered)
+        ids = ordered[:cap]
+        by_id = {a.id: a for a in db.query(Article).filter(Article.id.in_(ids)).all()}
+        articles = [by_id[i] for i in ids if i in by_id]
+    elif any([req.query, req.source, req.language, req.start_date, req.end_date]):
+        from src.api.main import _query_articles
+
+        arts, total = _query_articles(
+            db, query=req.query, source=req.source, start_date=req.start_date,
+            end_date=req.end_date, language=req.language, tags=None, limit=cap, offset=0,
+        )
+        articles = list(arts)
+        requested = total
+    else:
+        raise HTTPException(status_code=400, detail="Provide article_ids or a query/filter.")
+
+    # Snapshot the plain fields the stream needs, so it never depends on the request's
+    # ORM session staying open while the (slow) model runs.
+    work = [
+        (a.id, a.title or "(untitled)", a.content or "")
+        for a in articles
+        if a.content
+    ]
+    if not work:
+        raise HTTPException(status_code=404, detail="No matching articles with content.")
+
+    model = req.model or active_model()
+    target = (req.target_language or "English").strip() or "English"
+    keep_alive = _effective_keep_alive()
+    if op == "summarize":
+        kind = "summary"
+        system, prompt_version, prompt_text = _build_prompting("summary")
+    else:
+        kind = "translation"
+        system, prompt_version, prompt_text = _build_prompting("translate", target=target)
+
+    # skip_existing tops up only what's missing: which of these already have THIS exact
+    # result (same kind, and for a translation the same target language)? We never
+    # delete or replace — we just avoid recomputing what is already stored.
+    already: set[int] = set()
+    if req.skip_existing:
+        ex = db.query(ArticleAnalysis.article_id).filter(
+            ArticleAnalysis.article_id.in_([w[0] for w in work]),
+            ArticleAnalysis.kind == kind,
+        )
+        if op == "translate":
+            ex = ex.filter(ArticleAnalysis.prompt_version == prompt_version)
+        already = {r[0] for r in ex.all()}
+
+    total = len(work)
+    capped = requested > total
+
+    def _stream():
+        import json as _json
+
+        def emit(obj: dict) -> str:
+            return _json.dumps(obj, separators=(",", ":")) + "\n"
+
+        yield emit({
+            "event": "start", "op": op, "total": total, "requested": requested,
+            "capped": capped, "model": model,
+            "target_language": target if op == "translate" else None,
+        })
+        stored = skipped = failed = 0
+        from src.database.session import SessionLocal
+
+        with SessionLocal() as s:
+            for i, (aid, title, content) in enumerate(work, 1):
+                if req.skip_existing and aid in already:
+                    skipped += 1
+                    yield emit({"event": "item", "i": i, "total": total,
+                                "article_id": aid, "title": title, "status": "skipped"})
+                    continue
+                if op == "summarize":
+                    prompt = f"Article title: {title}\n\n{content[:_MAX_CHARS]}"
+                else:
+                    prompt = f"Title: {title}\n\n{content[:_MAX_CHARS]}"
+                try:
+                    result = client.generate(
+                        prompt, model=model, system=system, keep_alive=keep_alive
+                    )
+                except LLMUnavailable as exc:
+                    # Ollama down / model missing / airplane mode — won't recover mid-run.
+                    yield emit({"event": "done", "total": total, "stored": stored,
+                                "skipped": skipped, "failed": failed,
+                                "aborted": True, "reason": str(exc)[:200]})
+                    return
+                except LLMError as exc:
+                    failed += 1
+                    yield emit({"event": "item", "i": i, "total": total,
+                                "article_id": aid, "title": title, "status": "failed",
+                                "error": str(exc)[:200]})
+                    continue
+                s.add(ArticleAnalysis(
+                    article_id=aid, kind=kind, result=result.text, model=result.model,
+                    prompt_version=prompt_version, prompt_text=prompt_text,
+                    created_at=datetime.now(UTC),
+                ))
+                s.commit()
+                stored += 1
+                yield emit({"event": "item", "i": i, "total": total,
+                            "article_id": aid, "title": title, "status": "stored",
+                            "chars": len(result.text)})
+        yield emit({"event": "done", "total": total, "stored": stored,
+                    "skipped": skipped, "failed": failed, "aborted": False})
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")

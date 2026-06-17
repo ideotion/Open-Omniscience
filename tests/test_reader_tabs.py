@@ -75,14 +75,17 @@ def test_reader_renders_tabs_and_references_assets(tmp_path):
             # reader.js needs the article id off the wrapper.
             assert 'data-article-id="1"' in body
 
-            # The full sub-tab bar is present (corpus-of-1 facets): now incl. Mindmap + Source.
+            # The full sub-tab bar is present (corpus-of-1 facets): now incl. Mindmap +
+            # Source + the LLM Summary/Translation views.
             assert 'class="rtabs"' in body and 'role="tablist"' in body
-            for key in ("read", "keywords", "mindmap", "sentiment", "related", "source", "links"):
+            for key in ("read", "summary", "translation", "keywords", "mindmap",
+                        "sentiment", "related", "source", "links"):
                 assert f'data-rtab="{key}"' in body, f"missing the {key} tab"
                 assert f'id="rp-{key}"' in body, f"missing the {key} pane"
-            # The lazy analysis panes are marked for reader.js (incl. the mindmap).
+            # The lazy analysis panes are marked for reader.js (incl. the mindmap + LLM tabs).
             assert 'data-lazy="keywords"' in body and 'data-lazy="sentiment"' in body
             assert 'data-lazy="mindmap"' in body
+            assert 'data-lazy="summary"' in body and 'data-lazy="translation"' in body
             # The Source profile pane is SERVER-RENDERED (like Related/Links): no lazy fetch,
             # descriptive provenance + corpus footprint, NO score/ranking/verdict.
             assert "Source profile" in body

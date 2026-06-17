@@ -74,6 +74,36 @@
 .r-mm-label.center { font-weight: 600; }
 .r-mm-n { fill: var(--mut); font-size: 10px; }
 
+/* Summary / Translation tabs: a generate-now control + the latest result, with
+   older results kept and folded (we never replace). Themed via the reader vars. */
+.r-gen { margin: 0 0 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.r-genbtn {
+  appearance: none; cursor: pointer; font: 600 13px system-ui, sans-serif;
+  color: var(--paper); background: var(--accent); border: 0; border-radius: 7px; padding: 7px 13px;
+}
+.r-genbtn[disabled] { opacity: .6; cursor: default; }
+.r-sel {
+  font: 13px system-ui, sans-serif; padding: 6px 8px; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--card); color: var(--fg);
+}
+.r-gen-status { font: 13px system-ui, sans-serif; }
+.r-an { padding: 12px 0; border-top: 1px solid var(--line); }
+.r-an.latest { border-top: 0; }
+.r-an-meta {
+  font: 600 12px system-ui, sans-serif; color: var(--mut);
+  text-transform: uppercase; letter-spacing: .03em; margin: 0 0 6px;
+}
+.r-an-body { white-space: pre-wrap; font: 15px/1.62 system-ui, sans-serif; }
+.r-an-prev { margin-top: 12px; }
+.r-an-prev > summary { cursor: pointer; color: var(--mut); font: 13px system-ui, sans-serif; padding: 6px 0; }
+.r-an-prompt { margin-top: 8px; }
+.r-an-prompt > summary { cursor: pointer; color: var(--mut); font: 12px system-ui, sans-serif; }
+.r-an-promptbody {
+  white-space: pre-wrap; margin-top: 6px; padding: 8px 10px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 7px;
+  font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--mut);
+}
+
 .r-method { color: var(--mut); font-size: 12px; margin: 12px 0 2px; }
 /* Caveats are VISIBLE BY DEFAULT (informed-consent non-negotiable): the VADER
    English-only disclosure + the counts-not-a-score note are always shown, never
