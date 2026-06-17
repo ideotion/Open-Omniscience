@@ -1386,10 +1386,19 @@ ruling, a contingency, or a deliberate-omission note.
   you"):** `src/analytics/selftest.py` = a DECLARATIVE golden-case harness (`Challenge`
   dataclass — each line states in DATA exactly what it guards) run over the REAL pipeline
   (BaselineExtractor / build_families / equivalence / baseline; no DB, no network, no score).
-  12 cases: who_vs_WHO (the org acronym stays distinct from the pronoun), US-survives-stopword,
-  German-nouns-are-terms, sentence-initial-not-entity, digit-acronym-kept (G7/COVID-19),
-  headline-caps-not-acronyms, English-stopword-filtered (that), weekday-filtered, German-
-  function-words-filtered (können/sondern), plural-family-merge, equivalence-ring
+  22 cases across 11 LANGUAGES (maintainer-flagged 2026-06-17: the stopword filters cover every
+  source language with a stoplist — a UNION applied to all extraction — so the harness must too,
+  not just English). English: who_vs_WHO (the org acronym stays distinct from the pronoun),
+  US-survives-stopword, sentence-initial-not-entity, digit-acronym-kept (G7/COVID-19),
+  headline-caps-not-acronyms, English-stopword-filtered (that), weekday-filtered. Multilingual
+  stopword/weekday filtering verified-present in global_stopwords(): de (können/sondern), fr
+  (mardi/samedi/chez), es (sábado/miércoles/pero…), it (sabato/perché), pt (sábado/porque/embora),
+  nl (maandag/zaterdag/omdat), ru CYRILLIC (чтобы/которые), ar RTL (خلال/قبل/بعد), hu
+  (szerint/pedig/hétfő), id (dalam/oleh/sabtu/minggu); + German-nouns-are-terms + a Romance
+  sentence-initial-not-entity (es mercados). HONEST LIMITATION SURFACED: stoplists are by BASE
+  form, so an INFLECTED weekday ("среду"/"szombaton") still leaks in inflecting languages — the
+  ru/hu cases assert only the function words actually present (non-vacuous), and the gap is noted.
+  zh/ja excluded (no segmentation). Structural: plural-family-merge, equivalence-ring
   (election/élection/wahl), baseline-tag-applied. `run_keyword_selftest()` returns an exportable
   log (schema `oo-selftest-1`, summary + per-case pass/fail+detail). THE IN-APP TOOL:
   `GET /api/diagnostics/keyword-selftest` (+`?download=1` → dated attachment) added to the

@@ -98,6 +98,84 @@ _CASES: tuple[Challenge, ...] = (
         language="de",
         absent=("können", "sondern"),
     ),
+    # --- multilingual stopword / weekday coverage --------------------------------- #
+    # The filters are a UNION applied to every language that has a stoplist, so the
+    # self-test must challenge more than English. Each word below is verified-present
+    # in global_stopwords(); a content noun in the sentence keeps the case non-vacuous.
+    Challenge(
+        "french_stopwords_and_weekdays",
+        "French weekdays + function words are filtered",
+        "Marchés en baisse mardi; chez le ministre, la réunion de samedi a été reportée.",
+        language="fr",
+        absent=("mardi", "samedi", "chez"),
+    ),
+    Challenge(
+        "spanish_stopwords_and_weekdays",
+        "Spanish weekdays + function words are filtered",
+        "La reunión del sábado se aplazó, pero desde el miércoles nada cambió, aunque insistieron.",
+        language="es",
+        absent=("sábado", "miércoles", "pero", "desde", "aunque"),
+    ),
+    Challenge(
+        "italian_stopwords_and_weekday",
+        "Italian weekday + function word are filtered",
+        "La riunione di sabato è stata rinviata perché mancavano ancora i dati ufficiali importanti.",
+        language="it",
+        absent=("sabato", "perché"),
+    ),
+    Challenge(
+        "portuguese_stopwords_and_weekday",
+        "Portuguese weekday + function words are filtered",
+        "A reunião foi adiada porque faltavam dados, embora todos soubessem, no sábado de manhã.",
+        language="pt",
+        absent=("sábado", "porque", "embora"),
+    ),
+    Challenge(
+        # NB: stoplists are by BASE form, so an inflected weekday ("среду") still
+        # leaks — a real limitation in inflecting languages. We assert only the
+        # function words actually present, to stay honest and non-vacuous.
+        "russian_function_words",
+        "Russian (Cyrillic) function words are filtered",
+        "Совещание перенесли, чтобы успеть подготовить отчёт, которые все долго ждали.",
+        language="ru",
+        absent=("чтобы", "которые"),
+    ),
+    Challenge(
+        "arabic_function_words",
+        "Arabic (RTL, space-segmented) function words are filtered",
+        "اجتمع القادة خلال الأسبوع. قبل القمة ناقشوا الاقتصاد. بعد النقاش الطويل اتفقوا.",
+        language="ar",
+        absent=("خلال", "قبل", "بعد"),
+    ),
+    Challenge(
+        # "szombaton" (inflected) leaks; we assert the uninflected forms present.
+        "hungarian_function_words_and_weekday",
+        "Hungarian function words + an uninflected weekday are filtered",
+        "A jelentés szerint a hétfő hivatalos ünnepnap, a fontos találkozó pedig végül elmarad.",
+        language="hu",
+        absent=("szerint", "pedig", "hétfő"),
+    ),
+    Challenge(
+        "indonesian_function_words_and_weekdays",
+        "Indonesian function words + weekdays are filtered",
+        "Pertemuan dalam pekan ini diadakan oleh menteri pada Sabtu dan Minggu pagi.",
+        language="id",
+        absent=("dalam", "oleh", "sabtu", "minggu"),
+    ),
+    Challenge(
+        "dutch_stopwords_and_weekdays",
+        "Dutch weekdays + function word are filtered",
+        "De vergadering van maandag werd uitgesteld omdat de cijfers op zaterdag nog ontbraken.",
+        language="nl",
+        absent=("maandag", "zaterdag", "omdat"),
+    ),
+    Challenge(
+        "spanish_sentence_initial_not_entity",
+        "a Romance sentence-initial capital is a term, not an entity (Title-case is not a signal)",
+        "Mercados cayeron ayer. Inversores temían una recesión y un crecimiento más lento.",
+        language="es",
+        not_entity=("mercados",),
+    ),
 )
 
 

@@ -18,7 +18,14 @@ def test_selftest_all_cases_pass_on_current_pipeline():
     assert log["kind"] == "keyword-selftest" and log["schema"] == "oo-selftest-1"
     failed = [(c["id"], c["detail"]) for c in log["cases"] if c["status"] == "fail"]
     assert not failed, f"keyword self-test regressions: {failed}"
-    assert log["summary"]["failed"] == 0 and log["summary"]["total"] >= 12
+    assert log["summary"]["failed"] == 0 and log["summary"]["total"] >= 20
+
+
+def test_selftest_challenges_many_languages_not_just_english():
+    # the stopword filters cover every source language with a stoplist, so the
+    # harness must challenge more than English (incl. Cyrillic + RTL Arabic).
+    langs = {c["language"] for c in run_keyword_selftest()["cases"]}
+    assert {"en", "fr", "es", "de", "it", "pt", "nl", "ru", "ar", "hu", "id"} <= langs
 
 
 def test_who_vs_who_is_guarded_and_passes():
