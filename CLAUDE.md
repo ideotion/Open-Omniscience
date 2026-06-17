@@ -346,6 +346,43 @@ ruling, a contingency, or a deliberate-omission note.
   missing route can't fail them).
 
 ## Open queue (when maintainer says proceed)
+- **MAINTAINER BATCH RULINGS 2026-06-17 (answered the next-session question list; binding —
+  these set priorities + override several earlier defaults):**
+  (1) **PIVOT TO RELEASE-ENGINEERING** — the next push leads with the RC-BLOCKING release-eng
+  set toward a taggable V0.1, not more breadth-features.
+  (2) **HOLD the version flip** (0.0.9→0.1) until every RC-BLOCKING row is ✅; do the
+  grep-able single-source plumbing now.
+  (3) **CONVERGENCE WATCH ENGINE = build it, ON BY DEFAULT** (overrides the earlier
+  off-by-default lean): saved local conditions → a Lead card on match + a Watches panel
+  (history, per-watch enable/edit/delete); local-only, NO notifications/network/telemetry,
+  NO escalation tiers beyond the Lead card; the engine is enabled by default.
+  (4) **APP SELF-UPDATE = MANUAL, user-driven, GIT-PULL based; NO signing key yet** (mark
+  "use signing keys" for FUTURE_DEVELOPMENTS). Build snapshot→verify→staged-migrate→
+  atomic-swap→rollback mechanics, user-initiated (manual "check/update"), no auto-check.
+  (5) **WIN/MAC INSTALL IS NOT BLOCKING — focus DEBIAN for now** (de-scopes the win/mac
+  install-path + CI-required-lane rows from RC-BLOCKING; Debian is the V0.1 target).
+  (6) **TWO-WINDOWS CONSOLIDATION = PROCEED** (route openCorpus → the #an flagship, retire
+  the #corpus-win modal; conservative + flagged, browser-unverified).
+  (7) **UI RETHINK = BUILD IT, INCLUDING THE 3D KEYWORD EXPLORER** (do NOT defer the 3D;
+  maintainer is eager to test) — nav-to-top facet strip + Home→dashboard + the hand-rolled
+  canvas-2.5D/CSS-3D explorer (no Three.js), conservative + flagged.
+  (8) **i18n LONG-TAIL = PROCEED** — key + AI-draft-translate ×12 the remaining ~400
+  untranslatable chrome strings (flagged for native review) toward --audit-chrome→0.
+  (9) **RELIGIOUS CALENDARS / ECLIPSE CANON = maintainer will PROVIDE the dates to preload;
+  NOT blocking — mark a later TODO** (never fabricate dates meanwhile).
+  (10) **OLLAMA BINARY INSTALLER = undecided — mark a later TODO** (the shipped pull/remove/
+  active-model UI stays; the binary-install half waits).
+  (11) **LIVE EMAIL INGESTION (POP3/IMAP) = BUILD IT — do NOT defer; maintainer wants to TEST
+  it and finds manual .eml ingestion too slow.** REVERSES the "local-.eml-only / IMAP-blocked"
+  stance: build live mailbox ingestion REUSING the anonymize-at-ingest core (recipient-free,
+  no raw-.eml retention, tracking-link detox, the ONE consent + a visible job, kill-switch).
+  The no-recovery-of-personal-data contingency is consciously RE-OPENED and accepted by the
+  maintainer for testing; keep the anonymize-at-ingest guarantees that resolved it for .eml.
+  (12) **STATS FIGURES = keep user-initiated AND add SCHEDULED AUTO-REFRESH of vintages** (a
+  periodic re-fetch of tracked figures, new vintage each time; consented/airplane-gated).
+  (13) **DESIGN-ONLY VERTICALS = PROCEED with them** (elections/civic + the 9 manipulation-
+  pattern cards): start building, no longer deferred.
+  SEQUENCING: (1) is the lead. Record-only here; build across stacked PRs onto 0.09.
 - **AUTONOMOUS 'EVERYTHING' BATCH (ruled 2026-06-16) — the V0.1-alpha push, run
   UNSUPERVISED.** SCOPE = the V0.1 RC mandate IN FULL ('absolutely everything' from
   this ledger + FUTURE_DEVELOPMENTS): every RC-BLOCKING + SHOULD + POST row in

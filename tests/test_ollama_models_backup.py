@@ -15,6 +15,8 @@ import json
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from src.backup.ollama_models import (
     build_models_archive,
     default_store,
@@ -32,15 +34,15 @@ def _fake_store(root: Path) -> Path:
     # m1: config 1111 + layer 2222 ; m2: config 3333 + layer 2222 (SHARED 2222)
     (man / "m1" / "3b").write_text(json.dumps(
         {"schemaVersion": 2, "config": {"digest": "sha256:1111", "size": 1},
-         "layers": [{"digest": "sha256:2222", "size": 6}]}))
+         "layers": [{"digest": "sha256:2222", "size": 6}]}), encoding="utf-8")
     (man / "m2" / "1b").write_text(json.dumps(
         {"schemaVersion": 2, "config": {"digest": "sha256:3333", "size": 1},
-         "layers": [{"digest": "sha256:2222", "size": 6}]}))
+         "layers": [{"digest": "sha256:2222", "size": 6}]}), encoding="utf-8")
     blobs = store / "blobs"
     blobs.mkdir(parents=True)
-    (blobs / "sha256-1111").write_text("a")
-    (blobs / "sha256-2222").write_text("shared")
-    (blobs / "sha256-3333").write_text("c")
+    (blobs / "sha256-1111").write_text("a", encoding="utf-8")
+    (blobs / "sha256-2222").write_text("shared", encoding="utf-8")
+    (blobs / "sha256-3333").write_text("c", encoding="utf-8")
     return store
 
 
@@ -68,7 +70,7 @@ def test_archive_dedups_shared_blobs_and_round_trips(tmp_path):
     dest = tmp_path / "restored"
     r1 = restore_models_archive(arc, dest)
     assert r1["models"] == 2 and r1["blobs_added"] == 3 and r1["blobs_skipped"] == 0
-    assert (dest / "blobs" / "sha256-2222").read_text() == "shared"
+    assert (dest / "blobs" / "sha256-2222").read_text(encoding="utf-8") == "shared"
     assert (dest / "manifests" / "registry.ollama.ai" / "library" / "m1" / "3b").is_file()
     # Re-restore is additive + bit-safe: existing blobs are SKIPPED, never overwritten.
     r2 = restore_models_archive(arc, dest)
@@ -102,8 +104,5 @@ def test_default_store_honours_env(tmp_path, monkeypatch):
 
 def test_build_raises_when_no_models(tmp_path):
     (tmp_path / "models" / "manifests").mkdir(parents=True)
-    try:
+    with pytest.raises(FileNotFoundError):
         build_models_archive(tmp_path / "x.zip", tmp_path / "models")
-        assert False, "expected FileNotFoundError"
-    except FileNotFoundError:
-        pass
