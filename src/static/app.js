@@ -3989,6 +3989,10 @@
     let _idxTags = new Set();         // active tag facets (AND-filter, none = no tag filter)
     let _idxCatTabs = null;           // the continent ooSubtabs handle
     const _idxCompare = new Map();    // symbol -> {name, currency, unit} selected for the overlay (Slice 3)
+    let _idxView = "cards";           // "cards" | "families" (Slice 6 — twin parity; default = no regression)
+    let _idxScope = {from: null, to: null};  // families-view time window
+    let _idxTimeScope = null;          // the ooTimeScope handle (families view)
+    let _idxSeriesLoaded = false;      // full per-symbol series fetched (lazy, for families)
     // Continent display order (data-driven: only those actually present render).
     const IDX_CONTINENTS = ["Africa", "Asia", "Europe", "North America", "South America", "Oceania", "Global"];
 
@@ -4020,13 +4024,24 @@
       const ordered = IDX_CONTINENTS.filter(k => byCont[k]);
       const extra = Object.keys(byCont).filter(k => k !== "Other" && !IDX_CONTINENTS.includes(k)).sort();
       const present = [...ordered, ...extra, ...(byCont["Other"] ? ["Other"] : [])];
-      if (_idxCards.length) {
+      // Board CONTENT depends on the view (Slice 6 — twin parity): FAMILIES = one
+      // multi-series graph per continent (windowed by the time-scope), CARDS = the
+      // per-index spark cards (default; unchanged — no regression).
+      if (_idxView === "families") {
+        if (!_idxTimeScope) buildIdxTimeScope();   // build once, after the series load
+        renderIdxFamilies();
+      } else if (_idxCards.length) {
         el.innerHTML = present.map(cont =>
           `<div class="idx-cat" data-cat="${esc(cont)}" style="display:contents">` +
           `<div class="vsect" style="grid-column:1/-1">${esc(t(cont))}</div>` +
           byCont[cont].map(idxCard).join("") + `</div>`
         ).join("");
+      } else {
+        el.innerHTML = '<div class="muted">No index catalog found.</div>';
       }
+      const tsRow = $("idx-timescope-row");
+      if (tsRow) tsRow.style.display = (_idxView === "families") ? "" : "none";
+      _renderIdxViewToggle(t);
       // Continent SUB-TABS (universal subtab grammar, invariant #18): "All"
       // default lens + one tab per present continent. Skip the nav when only
       // one continent is present (a lone tab adds nothing — Home does the same).
@@ -4054,19 +4069,35 @@
                    onclick="toggleIndexTag(${esc(JSON.stringify(tag))})">${esc(tag)}</button>`).join("")
           : "";
       }
-      applyIndexFilters();
+      if (_idxView !== "families") applyIndexFilters();   // cards-view filtering only
       renderIdxCompareBar();
+    }
+    // The Cards/Families view toggle (Slice 6) — mirrors the commodities toggle so
+    // the two boards stay near-identical; default Cards (no regression).
+    function _renderIdxViewToggle(t) {
+      const tog = $("idx-viewtoggle"); if (!tog) return;
+      tog.innerHTML = `<span class="muted" style="font-size:12px;margin-right:2px">${esc(t("View"))}:</span>`
+        + [["cards", "Cards"], ["families", "Families"]].map(([k, lbl]) =>
+            `<button type="button" class="chip${_idxView === k ? " on" : ""}" data-view="${k}"
+               onclick="setIdxView(${esc(JSON.stringify(k))})">${esc(t(lbl))}</button>`).join("");
     }
 
     function selectIndexCat(key) {
       _idxCat = key;
-      applyIndexFilters();
+      // In FAMILIES view the continent subtab re-renders the family graphs (the
+      // card-level applyIndexFilters is meaningless there); otherwise it filters
+      // the cards. Re-rendering (not hiding) keeps the ooChart widths correct.
+      if (_idxView === "families") renderIdxFamilies();
+      else applyIndexFilters();
     }
     function toggleIndexTag(tag) {
       if (_idxTags.has(tag)) _idxTags.delete(tag); else _idxTags.add(tag);
       document.querySelectorAll("#indices-tags .chip").forEach(b =>
         b.classList.toggle("on", _idxTags.has(b.dataset.tag)));
-      applyIndexFilters();
+      // Families view filters the family MEMBERS by tag (re-render); cards view
+      // hides individual cards.
+      if (_idxView === "families") renderIdxFamilies();
+      else applyIndexFilters();
     }
 
     // -- Multi-series compare overlay (Slice 3) ----------------------------- //
@@ -4117,6 +4148,75 @@
       chartEnlarge(t("Index comparison"), seriesList,
         t("End-of-day values from official sources on a shared time axis."), {scales: true});
     }
+
+    // -- Indices FAMILIES view (Slice 6 — twin-board parity) ---------------- //
+    // Bring the commodities board's family-stacked graphs + time-range control to
+    // the Indices board so the two boards are near-identical (maintainer: "very
+    // similar … nearly identical, only the data they show is different"). One
+    // multi-series ooChart per CONTINENT, windowed by an ooTimeScope, reusing the
+    // SAME renderFamilyGraphs + windowPricesRange + dashChartSvg helpers. Cards
+    // view is untouched (sparks) — no regression.
+    function setIdxView(v) {
+      _idxView = v;
+      const row = $("idx-timescope-row"); if (row) row.style.display = (v === "families") ? "" : "none";
+      if (v === "families" && !_idxSeriesLoaded) { loadIdxFullSeries().then(renderIndicesBoard); return; }
+      renderIndicesBoard();
+    }
+    async function loadIdxFullSeries() {
+      // Lazily fetch every index's FULL stored series (cached by fetchPrices), so
+      // the families view + time-scope window real data — not the truncated spark.
+      await Promise.all((_idxCards || []).map(c => fetchPrices(c.symbol)));
+      _idxSeriesLoaded = true;
+    }
+    function idxDataSpan() {
+      let min = null, max = null;
+      for (const c of (_idxCards || [])) {
+        for (const p of (MKT_PRICES[c.symbol] || [])) {
+          const d = p.observed_on; if (!d) continue;
+          if (min === null || d < min) min = d;
+          if (max === null || d > max) max = d;
+        }
+      }
+      return {min, max};
+    }
+    function buildIdxTimeScope() {
+      const box = $("idx-timescope"); if (!box) return;
+      const span = idxDataSpan();
+      if (!span.min || !span.max) { _idxTimeScope = ooTimeScope(box, {}); return; }
+      const def = mktDefaultWindow(span);   // reuse: last year of data, anchored to max
+      _idxScope = {from: def.from, to: def.to};
+      _idxTimeScope = ooTimeScope(box, {
+        min: span.min, max: span.max, from: def.from, to: def.to,
+        onChange: ({from, to}) => { _idxScope = {from, to}; renderIdxFamilies(); },
+      });
+    }
+    // Build one family per VISIBLE continent (respecting the continent subtab +
+    // tag chips), each member windowed to the active range.
+    function idxFamilies() {
+      const tags = [..._idxTags];
+      const byCont = {};
+      for (const c of (_idxCards || [])) {
+        if (_idxCat !== "__all" && (c.continent || "Other") !== _idxCat) continue;
+        if (tags.length && !tags.every(x => (c.tags || []).includes(x))) continue;
+        const cont = c.continent || "Other";
+        (byCont[cont] || (byCont[cont] = [])).push(c);
+      }
+      const order = [...IDX_CONTINENTS, "Other"];
+      const present = Object.keys(byCont).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      return present.map(cont => ({
+        key: cont, label: cont,
+        series: byCont[cont].map(c => {
+          const pts = windowPricesRange(MKT_PRICES[c.symbol] || [], _idxScope.from, _idxScope.to);
+          return {label: c.name || c.symbol, unit: c.currency || "",
+                  points: pts.map(p => ({t: p.observed_on, v: p.price}))};
+        }),
+      }));
+    }
+    function renderIdxFamilies() {
+      const el = $("idx-board"); if (!el) return;
+      renderFamilyGraphs(el, idxFamilies(), {});
+    }
+
     // Apply BOTH facets: the continent subtab hides whole sections; the tag
     // chips hide individual cards (AND across active tags); a section whose
     // cards are all tag-hidden is itself hidden so no empty header shows.
