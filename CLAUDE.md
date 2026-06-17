@@ -400,9 +400,19 @@ ruling, a contingency, or a deliberate-omission note.
   downgraded; per-URL circuit isolation), REFUSE up front while airplane mode is engaged, and
   DELEGATE all parsing to sdmx.py (no robots here — documented API endpoints follow their own
   etiquette). Injectable getter → network-free tests incl. a kill-switch test proving NO socket
-  is attempted offline (tests/test_stats_fetch.py, 11). see BACKLOG Group N. REMAINING: a
-  CONSENTED API endpoint + a visible task-manager job over fetch.py; figure-level provenance/
-  vintages DB schema; comparability/triangulation; a filterable registered-sources view]. THE FOUR FORKS
+  is attempted offline (tests/test_stats_fetch.py, 11). see BACKLOG Group N. FIGURE LAYER
+  SHIPPED 2026-06-17 (backend, fully tested py3.13): StatFigure DB model + migration
+  f5a6b7c8d9e0 (VINTAGED — a re-fetch at a later extracted_at is a NEW row never an overwrite;
+  gaps stored NULL; NO score column) + src/stats/store.py (store_figures idempotent-per-vintage
+  + gap tally, list_figures filterable latest-or-history, vintages_for the revision trail,
+  triangulate producers SIDE BY SIDE never averaged + flags incomparable unit/SA-NSA/base-year;
+  cross-agency series equivalence NOT inferred) + API (POST /api/stats/figures/fetch = the ONE
+  networked stats action: refuses up front under airplane mode 409, guarded factory, transport
+  never downgraded, single-writer gate, degrades loudly; GET /figures, /figures/vintages,
+  /triangulate, /sources). tests/test_stats_store.py (6) + tests/test_stats_figures_api.py (5:
+  kill-switch refusal proven with NO socket). REMAINING: a visible task-manager job over a LONG
+  fetch (the synchronous endpoint suffices for bounded indicator pulls); the Statistics-figures
+  FRONTEND; periodic re-fetch vintage scheduling]. THE FOUR FORKS
   (ruled 2026-06-16): (1) the offline READER stays STANDALONE (not folded into #an);
   (2) the convergence WATCH engine = the FULL 'Watches view + history' UX (saved local
   conditions → a Lead card on match + a dedicated Watches panel: history +
