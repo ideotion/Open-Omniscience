@@ -385,6 +385,15 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         # button is no longer needed (maintainer 2026-06-17). Best-effort.
         feeds = import_due_feeds(session, fetcher=fetcher)
         _add({"feed_points": feeds.get("imported", 0)})
+        # Scheduled auto-refresh of tracked official-statistics vintages (ruling #12),
+        # freshness- + airplane-gated, best-effort (a stats problem never breaks the pass).
+        try:
+            from src.stats.subscriptions import refresh_due
+
+            stats_ref = refresh_due(session)
+            _add({"stat_vintages": stats_ref.get("stored", 0)})
+        except Exception:  # noqa: BLE001 - additive; never fatal to the markets pass
+            _LOG.warning("stat-subscription refresh failed; pass continues", exc_info=True)
         finished = datetime.now(UTC)
         return {
             "mode": "markets",

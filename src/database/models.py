@@ -1911,6 +1911,45 @@ class WatchMatch(Base):
         return f"<WatchMatch(watch={self.watch_id} n={self.n_articles} +{self.new_articles})>"
 
 
+class StatSubscription(Base):
+    """A TRACKED official-statistics fetch, re-run periodically to capture new VINTAGES
+    (ruling 2026-06-17 #12: keep figures user-initiated AND add scheduled auto-refresh).
+
+    Recorded when the user fetches figures, so the SAME fetch can be replayed on a
+    cadence — each replay storing a new vintage (the figure store is vintage-additive,
+    never an overwrite). The scheduler refreshes DUE subscriptions during its markets
+    pass, freshness-gated (``interval_days``) and airplane-gated (the guarded fetch
+    refuses under the kill switch). No score; this only records WHAT to re-fetch.
+    """
+
+    __tablename__ = "stat_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)  # "worldbank" | "eurostat"
+    # World Bank: indicator (+ country). Eurostat/SDMX: dataset (+ params_json + agency).
+    indicator: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    dataset: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    params_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agency: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    interval_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(200), nullable=True)  # "stored N" | error text
+
+    __table_args__ = (
+        # One subscription per distinct fetch (dedupe re-records of the same fetch).
+        UniqueConstraint("source", "indicator", "country", "dataset", "params_json", "agency",
+                         name="uq_stat_subscription"),
+        Index("ix_stat_subscriptions_enabled", "enabled"),
+    )
+
+    def __repr__(self) -> str:
+        key = self.indicator or self.dataset or "?"
+        return f"<StatSubscription({self.source}:{key} every {self.interval_days}d)>"
+
+
 # Example usage
 if __name__ == "__main__":
     # Test database connection and table creation

@@ -94,6 +94,42 @@ def test_fetch_stores_figures_with_injected_getter(client, monkeypatch):
     assert r2.status_code == 200
 
 
+def test_fetch_records_a_subscription_for_scheduled_refresh(client, monkeypatch):
+    """Ruling #12: a user fetch is recorded as a tracked subscription the scheduler
+    replays for new vintages. Idempotent; toggle + delete work; refresh is airplane-gated."""
+    clear_kill_switch()
+    import src.stats.fetch as statfetch
+    monkeypatch.setattr(statfetch, "_default_getter", lambda url: _FakeResp(_WB_PAYLOAD))
+
+    client.post("/api/stats/figures/fetch",
+                json={"source": "worldbank", "indicator": "NY.GDP.MKTP.CD", "country": "FR"})
+    subs = client.get("/api/stats/subscriptions").json()
+    assert subs["count"] >= 1
+    mine = [s for s in subs["subscriptions"] if s["indicator"] == "NY.GDP.MKTP.CD"]
+    assert mine and mine[0]["enabled"] is True and mine[0]["source"] == "worldbank"
+    sid = mine[0]["id"]
+    # The SAME fetch again does not create a second subscription (idempotent).
+    client.post("/api/stats/figures/fetch",
+                json={"source": "worldbank", "indicator": "NY.GDP.MKTP.CD", "country": "FR"})
+    again = [s for s in client.get("/api/stats/subscriptions").json()["subscriptions"]
+             if s["indicator"] == "NY.GDP.MKTP.CD"]
+    assert len(again) == 1
+
+    # Toggle interval + disable; delete.
+    assert client.patch(f"/api/stats/subscriptions/{sid}", json={"interval_days": 90}).json()["interval_days"] == 90
+    assert client.patch(f"/api/stats/subscriptions/{sid}", json={"enabled": False}).json()["enabled"] is False
+    assert client.delete(f"/api/stats/subscriptions/{sid}").status_code == 200
+    assert client.patch("/api/stats/subscriptions/99999", json={"enabled": True}).status_code == 404
+
+    # Refresh under airplane mode opens no socket (the figures already prove the online path).
+    activate_kill_switch()
+    try:
+        ref = client.post("/api/stats/subscriptions/refresh").json()
+        assert ref["refreshed"] == 0 and ref["stored"] == 0  # offline -> nothing fetched
+    finally:
+        clear_kill_switch()
+
+
 def test_fetch_validates_source_and_required_fields(client):
     clear_kill_switch()
     assert client.post("/api/stats/figures/fetch", json={"source": "nope"}).status_code == 422

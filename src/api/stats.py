@@ -133,6 +133,18 @@ def fetch_figures(body: FigureFetchBody) -> dict:
 
     with session_scope() as db:
         tally = store_figures(db, figures)
+        # Record this fetch as a TRACKED subscription so the scheduler can replay it
+        # for new vintages (ruling #12). Idempotent; best-effort (never fail the fetch).
+        try:
+            from src.stats.subscriptions import record_subscription
+
+            record_subscription(
+                db, source=src, indicator=body.indicator, country=body.country,
+                dataset=body.dataset, params=body.params,
+                agency=(body.agency or "eurostat") if src in ("eurostat", "sdmx") else None,
+            )
+        except Exception:  # noqa: BLE001 - tracking is additive, never blocks the fetch
+            pass
     return {
         "source": src,
         "fetched": len(figures),
@@ -144,6 +156,65 @@ def fetch_figures(body: FigureFetchBody) -> dict:
             "compared side by side, never averaged."
         ),
     }
+
+
+@router.get("/subscriptions")
+def list_stat_subscriptions() -> dict:
+    """Tracked fetches the scheduler replays for new vintages (ruling #12)."""
+    from src.database.session import session_scope
+    from src.stats.subscriptions import list_subscriptions
+
+    with session_scope() as db:
+        subs = list_subscriptions(db)
+    return {
+        "count": len(subs),
+        "subscriptions": subs,
+        "caveat": (
+            "Each tracked fetch is replayed every interval_days while you are online, "
+            "storing a new VINTAGE — revisions are preserved, never overwritten. No score."
+        ),
+    }
+
+
+class StatSubPatch(BaseModel):
+    enabled: bool | None = None
+    interval_days: int | None = Field(None, ge=1, le=3650)
+
+
+@router.patch("/subscriptions/{sub_id}")
+def patch_stat_subscription(sub_id: int, body: StatSubPatch) -> dict:
+    from src.database.session import session_scope
+    from src.stats.subscriptions import set_subscription
+
+    with session_scope() as db:
+        s = set_subscription(db, sub_id, **body.model_dump(exclude_none=True))
+        if s is None:
+            raise HTTPException(status_code=404, detail="no such subscription")
+        return {"id": s.id, "enabled": bool(s.enabled), "interval_days": s.interval_days}
+
+
+@router.delete("/subscriptions/{sub_id}")
+def delete_stat_subscription(sub_id: int) -> dict:
+    from src.database.session import session_scope
+    from src.stats.subscriptions import delete_subscription
+
+    with session_scope() as db:
+        if not delete_subscription(db, sub_id):
+            raise HTTPException(status_code=404, detail="no such subscription")
+        return {"deleted": sub_id}
+
+
+@router.post("/subscriptions/refresh")
+def refresh_stat_subscriptions() -> dict:
+    """Replay DUE subscriptions now (also runs automatically in the scheduler markets pass).
+
+    Airplane-gated: opens NO socket while the kill switch is engaged (returns the count
+    as skipped_offline). Best-effort per subscription."""
+    from src.database.session import session_scope
+    from src.stats.subscriptions import refresh_due
+
+    with session_scope() as db:
+        return refresh_due(db)
 
 
 @router.get("/figures")

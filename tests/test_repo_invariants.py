@@ -916,6 +916,14 @@ def test_ui_invariants():
     assert "ensureOnline(" in fetchfig, (
         "fetching official figures is a network action -> must pass ensureOnline (invariant #14)"
     )
+    # 29c. Scheduled stat-vintage auto-refresh (ruling #12): the Statistics subtab lists
+    #      TRACKED subscriptions (each fetch is replayed on its interval for new vintages)
+    #      with enable/disable/remove + a "refresh due now". Surfaced + manageable, no score.
+    for fn in ("function loadStatSubs(", "function toggleStatSub(", "function refreshStatSubs("):
+        assert fn in html, f"the tracked-figures UI needs {fn}"
+    assert 'id="statfig-subs"' in html and "/api/stats/subscriptions" in html, (
+        "the tracked-figures panel + its subscriptions endpoint must be wired (ruling #12)"
+    )
 
     # --- 30. Alternative-interfaces gallery (Settings -> GUIs, maintainer-ruled
     #     2026-06-17): a SANDBOX gallery of eight opt-in interfaces, each a
