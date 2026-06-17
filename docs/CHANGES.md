@@ -26,6 +26,16 @@ and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.
   records it in the watch's history (open the exact article set in one click). Entirely
   local — no notifications, no network, no escalation: a watch is a prompt to read, never a
   verdict or a score. On by default; you can enable/disable/edit/delete each one.
+- **Two new manipulation-pattern Leads — naming a shape, never a verdict.** Home can now
+  surface two structural patterns in your own corpus. **Source laundering**: when many
+  *distinct* sources all cite the same single origin, the apparent corroboration traces to one
+  source wearing many hats (independence is measured by distinct sources, not article count;
+  social/storefront links are excluded). **Recycled claim**: when a recent article is
+  near-identical to a much *older* one, the same text has resurfaced after lying dormant (the
+  trigger is a measured time gap, and a single source recycling its own evergreen is flagged as
+  such). Both reuse the proven citation-graph and near-duplicate tools — no AI, no score — and
+  state the innocent explanation beside the pattern (a widely-cited primary source, or an
+  anniversary/evergreen re-run, looks identical). Each opens the exact article set in one click.
 - **Pull newsletters live from a mailbox (IMAP/POP3).** Settings → *Newsletters* can now pull
   newsletters directly from a mailbox instead of exporting `.eml` files one at a time. Every
   message goes through the same **anonymise-at-ingest** path as the file import — the recipient
