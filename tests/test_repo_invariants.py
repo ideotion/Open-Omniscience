@@ -1538,6 +1538,47 @@ def test_commodities_category_subtabs():
     assert "All" in en, "the 'All' lens label must be keyed for translation"
 
 
+def test_indices_category_subtabs():
+    """The Indices board groups cards into CONTINENT sub-tabs + a secondary TAG
+    facet (maintainer 2026-06-17 markets revamp Slice 2: "show them in categories
+    (continents, tags)") via the ONE universal subtab component (invariant #18),
+    mirroring the commodities board so the twin boards stay near-identical. The
+    continent is DATA-DRIVEN (card.continent from /api/markets/board), with an
+    'All' default lens and an 'Other' fallback for un-located entries."""
+    html = _ui_source()
+    # the continent nav + the tag-chip row live above the card grid
+    assert 'id="indices-cats"' in html, "the continent sub-tab nav must exist"
+    assert 'id="indices-tags"' in html, "the tag-facet chip row must exist"
+    assert html.index('id="indices-cats"') < html.index('id="idx-board"'), (
+        "the continent nav must precede the index card grid"
+    )
+    # driven by the ONE reusable ooSubtabs component, NOT a bespoke tab impl
+    assert 'ooSubtabs(catNav, selectIndexCat' in html, (
+        "the continent tabs must reuse ooSubtabs (universal subtab grammar)"
+    )
+    assert "function selectIndexCat" in html, "continent filter callback required"
+    assert "function renderIndicesBoard" in html, "the grouped board renderer must exist"
+    # continent grouping is data-driven from the card facet (no empty tab)
+    assert "_idxContinent" in html and "const IDX_CONTINENTS" in html, (
+        "continent grouping must be data-driven from card.continent"
+    )
+    # the secondary TAG facet: toggle chips that AND-filter the visible cards
+    assert "function toggleIndexTag" in html and "function applyIndexFilters" in html, (
+        "the tag-chip AND-filter must exist"
+    )
+    assert "_idxTags" in html, "active-tag state must drive the tag filter"
+    # the board cards carry their facet values so filtering needs no re-fetch
+    assert "data-continent=" in html and "data-tags=" in html, (
+        "each index card must carry its continent + tags for client-side faceting"
+    )
+    # '/board' must serve the facet fields the UI groups on (read the source
+    # file directly — importing the module runs make_fetcher() at load time)
+    board_src = (_SRC / "api" / "markets.py").read_text(encoding="utf-8")
+    assert '"continent": f.continent' in board_src and '"tags": list(f.tags)' in board_src, (
+        "the /board endpoint must expose continent + tags per card"
+    )
+
+
 def test_commodity_card_opens_analysis():
     """Each commodity card's TITLE opens the universal analysis window seeded
     with that commodity's keyword query (maintainer-ruled COMMODITIES TAB REWORK

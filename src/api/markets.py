@@ -449,6 +449,8 @@ def market_board(
                 "unit": f.unit,
                 "url": f.url,
                 "category": f.category,
+                "continent": f.continent,
+                "tags": list(f.tags),
                 "points": len(pts),
                 "latest": latest,
                 "prev": prev,

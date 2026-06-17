@@ -3984,15 +3984,102 @@
     // -- Indices board (world stock-exchange indices) ----------------------- //
     async function loadIndices() { loadIndicesBoard(); }
 
+    let _idxCards = [];              // last-loaded index board cards
+    let _idxCat = "__all";           // current continent facet ("__all" or a continent)
+    let _idxTags = new Set();         // active tag facets (AND-filter, none = no tag filter)
+    let _idxCatTabs = null;           // the continent ooSubtabs handle
+    // Continent display order (data-driven: only those actually present render).
+    const IDX_CONTINENTS = ["Africa", "Asia", "Europe", "North America", "South America", "Oceania", "Global"];
+
     async function loadIndicesBoard() {
       const el = $("idx-board");
       el.innerHTML = '<div class="muted">Loading…</div>';
       try {
         const b = await api("/api/markets/board?category=index");
         $("idx-note").textContent = b.note || "";
-        el.innerHTML = b.cards.length ? b.cards.map(idxCard).join("")
-          : '<div class="muted">No index catalog found.</div>';
+        _idxCards = b.cards || [];
+        renderIndicesBoard();
       } catch (e) { el.innerHTML = `<div class="muted">Could not load indices: ${esc(e.message)}</div>`; }
+    }
+
+    function _idxContinent(c) { return c.continent || "Other"; }
+
+    // Group the index cards by CONTINENT into vsect sections (the primary
+    // category axis — the direct analog of the commodities board's category
+    // grouping, so the two boards stay near-identical, invariant #18 + the
+    // twin-board ruling), build the continent subtabs + the secondary tag-chip
+    // facet, then apply the active filters.
+    function renderIndicesBoard() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("idx-board");
+      if (!_idxCards.length) { el.innerHTML = '<div class="muted">No index catalog found.</div>'; }
+      const byCont = {};
+      for (const c of _idxCards) (byCont[_idxContinent(c)] || (byCont[_idxContinent(c)] = [])).push(c);
+      // Present continents in the declared order, then any unexpected ones, then "Other".
+      const ordered = IDX_CONTINENTS.filter(k => byCont[k]);
+      const extra = Object.keys(byCont).filter(k => k !== "Other" && !IDX_CONTINENTS.includes(k)).sort();
+      const present = [...ordered, ...extra, ...(byCont["Other"] ? ["Other"] : [])];
+      if (_idxCards.length) {
+        el.innerHTML = present.map(cont =>
+          `<div class="idx-cat" data-cat="${esc(cont)}" style="display:contents">` +
+          `<div class="vsect" style="grid-column:1/-1">${esc(t(cont))}</div>` +
+          byCont[cont].map(idxCard).join("") + `</div>`
+        ).join("");
+      }
+      // Continent SUB-TABS (universal subtab grammar, invariant #18): "All"
+      // default lens + one tab per present continent. Skip the nav when only
+      // one continent is present (a lone tab adds nothing — Home does the same).
+      const catNav = $("indices-cats");
+      if (catNav) {
+        if (present.length > 1) {
+          catNav.style.display = "";
+          catNav.innerHTML = `<button class="active" data-tab="__all">${esc(t("All"))}</button>`
+            + present.map(cont => `<button data-tab="${esc(cont)}">${esc(t(cont))}</button>`).join("");
+          _idxCatTabs = ooSubtabs(catNav, selectIndexCat, {initial: _idxCat && present.includes(_idxCat) ? _idxCat : "__all"});
+        } else { catNav.style.display = "none"; catNav.innerHTML = ""; _idxCatTabs = null; _idxCat = "__all"; }
+      }
+      // Secondary TAG facet: distinct tags as toggle chips (AND-filter). Off by
+      // default; clicking narrows within the chosen continent. Honest empty
+      // states are handled by applyIndexFilters (hides emptied sections).
+      const tagRow = $("indices-tags");
+      if (tagRow) {
+        const tags = [...new Set(_idxCards.flatMap(c => c.tags || []))].sort();
+        // Drop any stale active tag no longer present in the data.
+        _idxTags = new Set([..._idxTags].filter(x => tags.includes(x)));
+        tagRow.innerHTML = tags.length > 1
+          ? `<span class="muted" style="font-size:12px;margin-right:4px">${esc(t("Tags"))}:</span>`
+            + tags.map(tag =>
+                `<button type="button" class="chip${_idxTags.has(tag) ? " on" : ""}" data-tag="${esc(tag)}"
+                   onclick="toggleIndexTag(${esc(JSON.stringify(tag))})">${esc(tag)}</button>`).join("")
+          : "";
+      }
+      applyIndexFilters();
+    }
+
+    function selectIndexCat(key) {
+      _idxCat = key;
+      applyIndexFilters();
+    }
+    function toggleIndexTag(tag) {
+      if (_idxTags.has(tag)) _idxTags.delete(tag); else _idxTags.add(tag);
+      document.querySelectorAll("#indices-tags .chip").forEach(b =>
+        b.classList.toggle("on", _idxTags.has(b.dataset.tag)));
+      applyIndexFilters();
+    }
+    // Apply BOTH facets: the continent subtab hides whole sections; the tag
+    // chips hide individual cards (AND across active tags); a section whose
+    // cards are all tag-hidden is itself hidden so no empty header shows.
+    function applyIndexFilters() {
+      const tags = [..._idxTags];
+      document.querySelectorAll("#idx-board .idx-card").forEach(card => {
+        const ct = (card.dataset.tags || "").split("|").filter(Boolean);
+        card.style.display = tags.every(x => ct.includes(x)) ? "" : "none";
+      });
+      document.querySelectorAll("#idx-board .idx-cat").forEach(sec => {
+        const visMatch = _idxCat === "__all" || sec.dataset.cat === _idxCat;
+        const anyCard = [...sec.querySelectorAll(".idx-card")].some(c => c.style.display !== "none");
+        sec.style.display = (visMatch && anyCard) ? "contents" : "none";
+      });
     }
 
     function _num(n) { return n == null ? "—" : Number(n).toLocaleString(undefined, {maximumFractionDigits: 2}); }
@@ -4030,7 +4117,10 @@
       // index's REAL name — never a fabricated family. The price × article
       // timeline OVERLAY is remaining; this slice opens the window on the name.
       const idxQ = c.name || c.symbol;
-      return `<div class="idx-card"${open}>
+      // Carry the facet values so the continent subtab + tag chips can filter
+      // without a re-fetch (data-tags is '|'-joined for a simple includes test).
+      const facets = ` data-continent="${esc(c.continent || "Other")}" data-tags="${esc((c.tags || []).join("|"))}"`;
+      return `<div class="idx-card"${facets}${open}>
         <div class="idx-top">
           <div class="idx-id"><div class="idx-name">${esc(c.name)}</div>
             <div class="idx-mkt muted">${esc(c.market || "")}</div></div>
