@@ -1287,6 +1287,43 @@ ruling, a contingency, or a deliberate-omission note.
   card strings must enter the UI translations).** #onboard CARD DONE
   2026-06-14 (h2/p/button keyed ×12; the engine auto-translates the static
   card once keyed); REMAINING here = the server-built home-card TITLES.
+- **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; catalog +
+  caveat slice SHIPPED, UI revamp SEQUENCED):** the maintainer wants Commodities + Indices
+  to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent
+  index coverage; (b) CATEGORY subtabs (Indices: continents + tags; Commodities: its
+  categories) via the ooSubtabs grammar; (c) AGGREGATE several curves onto ONE graph
+  (multi-series overlay; reuse ooChart + the indexed/`opts.indexed` mode I built for the
+  combined-trend overlay) handled ELEGANTLY; (d) CHANGE graph SCALES (indexed/log for
+  different magnitudes); (e) CLEAR timescale legends + COHERENT shared time axis across all
+  sources (commodities' per-source ranges must align); (f) in the "All" subtab, consider
+  STACKING curves into FAMILY graphs (group by category/continent → fewer, denser graphs);
+  (g) REMOVE the Load/Refresh button — market data loads AUTOMATICALLY in the background
+  (like the auto-index #21 / auto-collect patterns). SHIPPED THIS SLICE: (1) INDEX CATALOG →
+  ALL CONTINENTS — `configs/index_feeds.yml` went 6→25 indices: the 6 named US/Japan (FRED)
+  KEPT, plus 19 FRED·OECD MEI share-price indices (`SPASTT01<ISO3>M661N`, monthly, base
+  2015=100) across Europe/Asia/N.America/S.America/Africa/Oceania. HONESTY: the NAMED world
+  indices (DAX/FTSE/Hang Seng…) are NOT on a free robots-PERMITTING daily feed (Stooq
+  robots-disallows — the removed-feeds reason), so the OECD share-price index is the
+  ethically-fetchable per-country proxy, labelled `unit: idx` (vs named `unit: pts`); the
+  OECD FRED IDs were NOT live-verified here (no network — 403) → flagged "verify on a
+  networked box; fails LOUDLY if wrong" per the file's standing note. `Feed` gained
+  `continent` + `tags` (both loaders + to_dict) = the board's category facets;
+  tests/test_index_catalog.py (all-6-continents, named-vs-OECD unit). REMAINING (the UI
+  revamp b–g): the category subtabs, multi-series aggregation + family-stacking, scale
+  controls, coherent axis + clear legends, and auto-load — a browser-unverifiable multi-slice
+  effort (fork-3) to build next; Commodities gets the same treatment (twin boards).
+  **GRAPH "co-occurrence … never causation" CAVEAT REMOVED (maintainer ruled 2026-06-17 —
+  REVERSES the earlier "binding visible caveat" on charts; it cluttered every graph):** all 6
+  on-graph mentions of `t("co-occurrence in your corpus, never causation")` removed from
+  src/static/app.js — the commodity-card caveat div, the Price×coverage head span, the two
+  combined-trend caveats (the method note KEPT: "Article counts on a shared time axis." /
+  "Indexed to 100 … real value."), and the two "Analyse" title parentheticals. The
+  non-causation PRINCIPLE still governs the design (comments updated, not deleted). The PMI
+  table's distinct "association strength, not causation" note is LEFT (a real stat caveat on
+  that column, not a graph). The two test_ui_invariants assertions that REQUIRED the caveat
+  were INVERTED to assert its ABSENCE (regression guard against re-adding). i18n stays 100%
+  (old keys orphan harmlessly; the trimmed method strings show English until re-keyed — minor,
+  flagged). node --check clean.
 - **MARKETS/INDICES/COMMODITIES (consolidated; TOOLKIT SHIPPED T8 slice 1 —
   invariant #16; INDICES DETAIL SHIPPED PR #205 — the Indices board gained a
   click→detail chart via ooChart on the full series (commodity-card "enlarge" was

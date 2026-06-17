@@ -3972,7 +3972,7 @@
         <div class="idx-foot muted" onclick="event.stopPropagation()">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
           · ${esc(c.currency || "")} · ${extLink(c.url, "source")}
           · <button class="tiny secondary" type="button"
-              title="${esc(t2("Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)"))}"
+              title="${esc(t2("Open this in the analysis window — its corpus coverage"))}"
               onclick="openAnalysisFor(${esc(JSON.stringify(idxQ))})">${esc(t2("Analyse"))} ↗</button></div>
       </div>`;
     }
@@ -4319,10 +4319,9 @@
                 style="background:none;border:none;padding:0;margin:0;font:inherit;font-weight:700;color:var(--accent);cursor:pointer;text-decoration:none"
                 onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(s.symbol)} ⊞</button> ${change}</div>
             <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv}</div>
-            <div class="hint muted" style="font-size:10px;margin:-2px 0 4px">${esc(t("co-occurrence in your corpus, never causation"))}</div>
             ${dashChartSvg(pts, last ? `${last.currency}/${last.unit}` : "")}
             <div style="margin-top:4px"><button class="tiny secondary" type="button"
-                title="${esc(t("Open this in the analysis window — its corpus coverage (co-occurrence in your corpus, never causation)"))}"
+                title="${esc(t("Open this in the analysis window — its corpus coverage"))}"
                 onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(t("Analyse"))} ↗</button></div></div>`;
         }).join("") + `</div>`
       ).join("");
@@ -7287,8 +7286,9 @@
     // card title ⊞ / Analyse ↗ pass {commodity:{symbol,name,unit}}). The Price
     // subtab overlays the commodity PRICE curve with the corpus COVERAGE (article
     // volume) timeline on a SHARED time axis — "what and when to deduce why and
-    // how". The maintainer's binding rule is shown VISIBLE: co-occurrence in your
-    // corpus, NEVER causation. Reuses existing endpoints (no new backend).
+    // how". The non-causation principle still governs the design; the repeated
+    // on-graph "never causation" caveat was removed (maintainer 2026-06-17).
+    // Reuses existing endpoints (no new backend).
     function _toggleAnPrice() {
       const on = !!(_anCommodity && _anCommodity.symbol);
       const btn = $("an-price-tab");
@@ -7317,8 +7317,7 @@
         const prices = (pd && pd.prices) || [];
         const vol = (td && td.resolved) ? (td.points || []) : [];
         const unit = c.unit || (prices[0] ? `${prices[0].currency}/${prices[0].unit}` : "");
-        const head = `<div class="hint"><b>${esc(t("Price × coverage"))}</b> — ${esc(c.name || c.symbol)}`
-          + ` <span class="muted">· ${esc(t("co-occurrence in your corpus, never causation"))}</span></div>`;
+        const head = `<div class="hint"><b>${esc(t("Price × coverage"))}</b> — ${esc(c.name || c.symbol)}</div>`;
         const note = vol.length
           ? `<div class="hint muted" style="font-size:11px;margin-top:4px">${esc(t("Articles"))}: ${td.total} · ${vol.length}×</div>`
           : `<div class="muted" style="font-size:12px;margin:6px 0">${esc(t("No corpus coverage to overlay yet."))}</div>`;
@@ -7379,8 +7378,8 @@
     // series rebased to 100 at the window start) that ALSO overlays commodity PRICE
     // series of a DIFFERENT unit WITHOUT conflating magnitudes — plus the precise
     // dual-axis price×coverage panel. The shared axis is TIME. Counts only / no
-    // score; co-occurrence in your corpus, NEVER causation (stated + visible).
-    // Lazy: rendered on tab-show, cached per analyzed term.
+    // score; the design respects co-occurrence ≠ causation, but the on-graph caveat
+    // text was removed (maintainer 2026-06-17). Lazy: rendered on tab-show, cached.
     const _anTrend = { key: null, term: null, counts: [], suggested: [], picked: {}, mode: "counts" };
     function commoditiesForTerm(term, related) {
       // Reverse of the COMMODITY_QUERY seed: suggest a commodity when its family
@@ -7467,8 +7466,8 @@
         + Object.keys(COMMODITY_QUERY).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("")
         + `</select></div>`;
       const caveat = indexed
-        ? t("Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value. Co-occurrence in your corpus, never causation.")
-        : t("Article counts on a shared time axis. Co-occurrence in your corpus, never causation.");
+        ? t("Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value.")
+        : t("Article counts on a shared time axis.");
       host.innerHTML = modeRow + suggRow + `<div id="an-trend-chart"></div>`
         + `<p class="card-caveat" style="margin-top:6px">${esc(caveat)}</p>`
         + (_anTrend.mode === "counts" && picks.length ? `<p class="hint muted" style="margin:4px 0 0">${esc(t("Switch to Indexed to overlay commodity prices honestly (different units)."))}</p>` : "")
