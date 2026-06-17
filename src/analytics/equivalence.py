@@ -41,6 +41,9 @@ from typing import Any, Callable, Iterable
 import yaml
 
 _PATH = Path(__file__).resolve().parents[2] / "configs" / "keyword_equivalents.yml"
+# Rings generated offline from Wikidata labels (scripts/generate_wikidata_rings.py).
+# Read ALONGSIDE the curated file; a curated ring WINS on an id collision.
+_GENERATED_PATH = Path(__file__).resolve().parents[2] / "configs" / "keyword_rings_generated.yml"
 
 
 @dataclass(frozen=True)
@@ -63,17 +66,19 @@ def _norm(term: str) -> str:
     return " ".join((term or "").split()).casefold()
 
 
-@lru_cache(maxsize=1)
-def load_rings() -> tuple[Ring, ...]:
-    """Parse the curated rings file (cached). Missing/empty file -> no rings."""
-    if not _enabled() or not _PATH.exists():
-        return ()
+def _read_yaml(path: Path) -> dict:
+    if not path.exists():
+        return {}
     try:
-        data = yaml.safe_load(_PATH.read_text("utf-8")) or {}
-    except yaml.YAMLError:
-        return ()
+        return yaml.safe_load(path.read_text("utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+
+
+def _parse_rings(data: dict) -> list[Ring]:
+    """Pure: a ``{"rings": [...]}`` mapping -> the valid Rings (>=2 members)."""
     rings: list[Ring] = []
-    for r in data.get("rings", []) or []:
+    for r in (data or {}).get("rings", []) or []:
         rid = str(r.get("id", "")).strip()
         members: list[tuple[str, str]] = []
         for m in r.get("members", []) or []:
@@ -85,9 +90,23 @@ def load_rings() -> tuple[Ring, ...]:
             if lang and term:
                 members.append((lang, term))
         if rid and len(members) >= 2:  # a 1-member ring would merge nothing
-            note = r.get("note")
-            rings.append(Ring(id=rid, members=tuple(dict.fromkeys(members)), note=note))
-    return tuple(rings)
+            rings.append(Ring(id=rid, members=tuple(dict.fromkeys(members)), note=r.get("note")))
+    return rings
+
+
+@lru_cache(maxsize=1)
+def load_rings() -> tuple[Ring, ...]:
+    """Parse the curated + the Wikidata-generated ring files (cached).
+
+    Missing/empty files -> no rings. The generated file is read FIRST and the
+    curated file SECOND, so a hand-curated ring of the same id OVERRIDES the
+    generated one (curation always wins)."""
+    if not _enabled():
+        return ()
+    by_id: dict[str, Ring] = {}
+    for ring in _parse_rings(_read_yaml(_GENERATED_PATH)) + _parse_rings(_read_yaml(_PATH)):
+        by_id[ring.id] = ring
+    return tuple(by_id.values())
 
 
 @lru_cache(maxsize=1)

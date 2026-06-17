@@ -38,3 +38,31 @@ rings:
     note: "de:wahl is also 'choice'; signature evidence should dominate before merging."
   - id: war
     members: ["en:war", "fr:guerre", "de:krieg", "es:guerra", "pt:guerra", "ru:война"]
+  # --- Hand-curated expansion 2026-06-17 (high-confidence common nouns; the
+  #     Wikidata generator scripts/generate_wikidata_rings.py scales this to
+  #     hundreds, sourced by QID, for the full 12 UI languages) ---------------- #
+  - id: government
+    members: ["en:government", "fr:gouvernement", "de:regierung", "es:gobierno", "it:governo", "pt:governo", "nl:regering", "ru:правительство"]
+  - id: president
+    members: ["en:president", "fr:président", "de:präsident", "es:presidente", "it:presidente", "pt:presidente", "nl:president", "ru:президент"]
+  - id: inflation
+    members: ["en:inflation", "fr:inflation", "de:inflation", "es:inflación", "it:inflazione", "pt:inflação", "nl:inflatie", "ru:инфляция"]
+  - id: economy
+    members: ["en:economy", "fr:économie", "de:wirtschaft", "es:economía", "it:economia", "pt:economia", "nl:economie"]
+  - id: climate
+    members: ["en:climate", "fr:climat", "de:klima", "es:clima", "it:clima", "pt:clima", "nl:klimaat"]
+  - id: health
+    members: ["en:health", "fr:santé", "de:gesundheit", "es:salud", "it:salute", "pt:saúde", "nl:gezondheid"]
+  - id: energy
+    members: ["en:energy", "fr:énergie", "de:energie", "es:energía", "it:energia", "pt:energia", "nl:energie"]
+  - id: vaccine
+    members: ["en:vaccine", "fr:vaccin", "de:impfstoff", "es:vacuna", "it:vaccino", "pt:vacina", "nl:vaccin"]
+  - id: pandemic
+    members: ["en:pandemic", "fr:pandémie", "de:pandemie", "es:pandemia", "it:pandemia", "pt:pandemia", "nl:pandemie"]
+  - id: sanctions
+    members: ["en:sanctions", "fr:sanctions", "de:sanktionen", "es:sanciones", "it:sanzioni", "pt:sanções", "nl:sancties"]
+  - id: market
+    members: ["en:market", "fr:marché", "de:markt", "es:mercado", "it:mercato", "pt:mercado", "nl:markt"]
+    note: "marketplace and financial market share the surface form across these languages."
+  - id: refugee
+    members: ["en:refugee", "fr:réfugié", "de:flüchtling", "es:refugiado", "it:rifugiato", "pt:refugiado", "nl:vluchteling"]
