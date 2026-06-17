@@ -33,20 +33,28 @@ from src.llm.ollama import (
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 
-# Prompt versions are part of provenance: bump when a prompt changes.
-SUMMARY_PROMPT_VERSION = "summary-v1"
+# Prompt versions are part of provenance: bump when a default prompt changes.
+# v2 (2026-06-17): tighter, honesty-first prompts — language pin, attribution guard,
+# per-claim citations + single-source flag for synthesis (see _build_prompting).
+SUMMARY_PROMPT_VERSION = "summary-v2"
 _SUMMARY_SYSTEM = (
-    "You are a careful research assistant for an investigative journalist. "
-    "Summarize the article factually and neutrally in 3-5 sentences. Do not add "
-    "information that is not in the text. If the text is not a coherent article, say so."
+    "You are a careful research assistant for an investigative journalist. Summarize the "
+    "article below in 3-5 sentences, using only its text. Keep the essentials: who, what, "
+    "when, where, and any figures, dates, or attributed/quoted claims. Preserve attribution "
+    '("X said", "allegedly") -- never turn a claim into a fact. Stay neutral: add no '
+    "background, do not interpret, judge credibility, or conclude. If it is not a coherent "
+    "article (paywall, navigation, error page), say exactly that. Write in {language}. "
+    "Output only the summary, with no preamble."
 )
 
-TRANSLATE_PROMPT_VERSION = "translate-v1"
+TRANSLATE_PROMPT_VERSION = "translate-v2"
 _TRANSLATE_SYSTEM = (
-    "You are a faithful translator for an investigative journalist. Translate the "
-    "article into {target} as accurately and literally as the language allows. "
-    "Preserve names, numbers, quotes and meaning exactly; do NOT summarize, "
-    "interpret, soften, or add anything. Output only the translation."
+    "You are a faithful translator for an investigative journalist. Translate the title and "
+    "body below into {target}, as literally as the target language allows. Preserve meaning, "
+    "names, numbers, dates, quotations and paragraph breaks exactly. Do NOT summarize, "
+    "interpret, soften, censor, or add; keep proper nouns in their original form. If a passage "
+    "is already in {target}, leave it unchanged. Output only the translation, with no preamble "
+    "or notes."
 )
 # Keep prompts within a small CPU model's context.
 _MAX_CHARS = 6000
@@ -99,7 +107,9 @@ def _apply_target(template: str, target: str) -> str:
     return f"{template}\n\nTranslate into {target}."
 
 
-def _build_prompting(op: str, *, target: str | None = None) -> tuple[str, str, str]:
+def _build_prompting(
+    op: str, *, target: str | None = None, output_language: str | None = None
+) -> tuple[str, str, str]:
     """Resolve ``(system_prompt, prompt_version, prompt_text)`` for an op.
 
     Prompts are operator-editable (Settings → Models). A non-empty stored override is
@@ -107,6 +117,13 @@ def _build_prompting(op: str, *, target: str | None = None) -> tuple[str, str, s
     ``prompt_text`` is the EXACT system text used (recorded per result so provenance
     stays honest even after the operator edits a prompt). Evaluated at call time, so
     the synthesis constants defined later in this module are available.
+
+    ``output_language`` (the v2 language pin, maintainer 2026-06-17) fills the
+    ``{language}`` placeholder of the summary/synthesis prompts. When unset, summary
+    defaults to "the same language as the article" (faithful) and synthesis to
+    "English" (a neutral default for multilingual inputs). ``target`` is the translate
+    output language. A custom prompt may include ``{language}`` too — we substitute it
+    either way, so operator prompts can pin the language as well.
     """
     s = _llm_settings()
     overrides = {
@@ -128,10 +145,12 @@ def _build_prompting(op: str, *, target: str | None = None) -> tuple[str, str, s
         base = "translate-custom" if is_custom else TRANSLATE_PROMPT_VERSION
         version = f"{base}:{tgt}"
     elif op == "synthesis":
-        system = template
+        lang = (output_language or "").strip() or "English"
+        system = template.replace("{language}", lang)
         version = "synthesis-custom" if is_custom else SYNTHESIS_PROMPT_VERSION
     else:  # summary
-        system = template
+        lang = (output_language or "").strip() or "the same language as the article"
+        system = template.replace("{language}", lang)
         version = "summary-custom" if is_custom else SUMMARY_PROMPT_VERSION
     return system, version, system
 
@@ -144,6 +163,9 @@ class GenerateRequest(BaseModel):
 
 class SummarizeRequest(BaseModel):
     model: str | None = None
+    # The language to WRITE the summary in (v2 language pin). The SPA passes the
+    # current UI language; unset = "the same language as the article" (faithful).
+    output_language: str | None = None
 
 
 class TranslateRequest(BaseModel):
@@ -308,7 +330,9 @@ def summarize_article(
         raise HTTPException(status_code=400, detail="Article has no content to summarize.")
 
     model = req.model or active_model()
-    system, prompt_version, prompt_text = _build_prompting("summary")
+    system, prompt_version, prompt_text = _build_prompting(
+        "summary", output_language=req.output_language
+    )
     prompt = f"Article title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
     try:
         result = client.generate(
@@ -398,8 +422,9 @@ def translate_article(
 
 def _parse_target_language(prompt_version: str | None) -> str | None:
     """The translation target language is stored INSIDE the prompt version as
-    ``translate-v1:French`` (or ``translate-custom:French``) — provenance with no extra
-    column. Recover it for display, covering both the default and custom prompt cases."""
+    ``translate-v2:French`` (or ``translate-custom:French``, and ``translate-v1:…`` on
+    older rows) — provenance with no extra column. Recover it for display, covering the
+    default, custom, and legacy prompt cases (any ``translate-*:lang``)."""
     if prompt_version and prompt_version.startswith("translate-") and ":" in prompt_version:
         return prompt_version.split(":", 1)[1] or None
     return None
@@ -454,14 +479,15 @@ def list_article_analyses(
 #  Corpus-wide synthesis (0.0.8 part 2, WP4 / RM-12)
 # --------------------------------------------------------------------------- #
 
-SYNTHESIS_PROMPT_VERSION = "synthesis-v1"
+SYNTHESIS_PROMPT_VERSION = "synthesis-v2"
 _SYNTHESIS_SYSTEM = (
-    "You are a careful research assistant for an investigative journalist. You will "
-    "receive excerpts from SEVERAL stored articles, each numbered. Write a factual, "
-    "neutral synthesis of what they collectively report: shared facts, points of "
-    "disagreement between articles, and open questions. Refer to articles by their "
-    "number, e.g. [3]. Do NOT add information that is not in the excerpts, do NOT "
-    "resolve disagreements yourself, and do NOT speculate."
+    "You are a careful research assistant for an investigative journalist. Below are numbered "
+    "excerpts from several stored articles; they may be in different languages. In {language}, "
+    "write a neutral synthesis in three labeled parts: (1) what the sources agree on, (2) where "
+    "they disagree, (3) open questions they leave unanswered. After every statement, cite the "
+    "source number(s) in brackets, e.g. [2][5]. Flag any claim that appears in only one source. "
+    "Use only the excerpts: add no outside information, do not decide who is right, do not "
+    "assess credibility, and do not speculate. Output only the synthesis."
 )
 _SYNTHESIS_MAX_ARTICLES = 20
 # Total prompt budget across all excerpts (keeps a small CPU model's context safe).
@@ -472,6 +498,7 @@ class SynthesizeRequest(BaseModel):
     article_ids: list[int] | None = None
     query: str | None = None
     model: str | None = None
+    output_language: str | None = None  # v2 language pin (default English for synthesis)
 
 
 @router.post("/synthesize")
@@ -524,7 +551,9 @@ def synthesize_articles(
         )
     prompt = "\n\n---\n\n".join(parts)
     model = req.model or active_model()
-    system, prompt_version, prompt_text = _build_prompting("synthesis")
+    system, prompt_version, prompt_text = _build_prompting(
+        "synthesis", output_language=req.output_language
+    )
 
     try:
         result = client.generate(
@@ -593,6 +622,7 @@ class BulkLLMRequest(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     target_language: str = "English"
+    output_language: str | None = None  # v2 language pin for the summarize op
     model: str | None = None
     skip_existing: bool = True
     limit: int = 200
@@ -656,7 +686,9 @@ def bulk_llm(
     keep_alive = _effective_keep_alive()
     if op == "summarize":
         kind = "summary"
-        system, prompt_version, prompt_text = _build_prompting("summary")
+        system, prompt_version, prompt_text = _build_prompting(
+            "summary", output_language=req.output_language
+        )
     else:
         kind = "translation"
         system, prompt_version, prompt_text = _build_prompting("translate", target=target)

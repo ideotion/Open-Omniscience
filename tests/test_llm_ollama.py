@@ -283,7 +283,7 @@ def test_summarize_persists_with_provenance(client):
     body = r.json()
     assert body["kind"] == "summary"
     assert body["model"]  # provenance: which model
-    assert body["prompt_version"] == "summary-v1"  # provenance: prompt version
+    assert body["prompt_version"] == "summary-v2"  # provenance: prompt version
     assert body["created_at"]  # provenance: when
     assert "budget" in body["result"].lower()
 
