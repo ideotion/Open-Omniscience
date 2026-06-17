@@ -52,8 +52,10 @@ def test_analyze_article_pairs_extractor_with_probe():
 
 
 def test_analyze_article_surfaces_a_real_miss():
-    # CJK 年月日 is entirely outside the extractor's vocab -> a real actionable miss.
-    a = datediag.analyze_article("会议将于 2026年9月15日 举行。", language="zh", today=TODAY)
+    # Valid CJK 年月日 dates now extract; an INVALID one (month 13) is still date-like
+    # text the extractor (correctly) does not extract -> a real probe/extractor gap the
+    # diagnostics surface.
+    a = datediag.analyze_article("会议将于 2025年13月 举行。", language="zh", today=TODAY)
     assert a["n_extracted"] == 0
     assert a["probe_by_kind"].get("cjk_date", 0) == 1
     assert a["actionable_gap"] == 1
@@ -85,10 +87,10 @@ def _client(tmp_path):
                     content="The attacks of 11 September 2001 still echo.",
                     published_at=datetime(2024, 6, 1, tzinfo=UTC), created_at=datetime.now(UTC),
                 ),
-                Article(  # CJK date -> a real actionable miss, out-of-vocab language
+                Article(  # an INVALID CJK date (month 13): date-like but not extracted -> a real miss
                     url="https://wire.test/2", canonical_url="https://wire.test/2", source_id=1,
                     title="CJK", hash="h2", language="zh",
-                    content="会议将于 2026年9月15日 在北京举行。",
+                    content="会议将于 2025年13月 在北京举行。",
                     published_at=datetime(2024, 6, 2, tzinfo=UTC), created_at=datetime.now(UTC),
                 ),
                 Article(  # only bare years -> date-like but nothing extracted
