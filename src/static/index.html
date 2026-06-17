@@ -229,9 +229,14 @@
           title="A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.">Methods appendix</button>
         <button class="secondary" onclick="synthesizeResults(this)"
           title="One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.">Synthesize results</button>
+        <button class="secondary" onclick="bulkLlm('summarize','search')"
+          title="Summarize every matched article with your local model — stored with its model and date, never analysed for keywords.">Summarize all</button>
+        <button class="secondary" onclick="bulkLlm('translate','search')"
+          title="Translate every matched article with your local model — stored with its model and date, never analysed for keywords.">Translate all</button>
         <button class="secondary" onclick="exportEvidence()" title="Signed, tamper-evident bundle">Export signed evidence</button>
       </div>
       <div id="search-meta" class="hint"></div>
+      <div id="bulk-llm-search" class="bulk-llm" style="display:none;margin-top:10px"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="results"></table></div>
     </section>
     </div>
@@ -294,8 +299,11 @@
         <button class="ghost tiny" onclick="exportMethods(anQuery())" title="Signed, reproducible record of the query + method behind this analysis">Methods appendix</button>
         <button class="ghost tiny" onclick="exportEvidence(anQuery())" title="Signed, tamper-evident bundle of the analysed articles">Export signed evidence</button>
         <button class="ghost tiny" onclick="synthesizeResults(this, anQuery(), 'an-synth')" title="One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.">Synthesize results</button>
+        <button class="ghost tiny" onclick="bulkLlm('summarize','an')" title="Summarize every matched article with your local model — stored with its model and date, never analysed for keywords.">Summarize all</button>
+        <button class="ghost tiny" onclick="bulkLlm('translate','an')" title="Translate every matched article with your local model — stored with its model and date, never analysed for keywords.">Translate all</button>
       </div>
       <div id="an-synth" style="display:none;margin-top:8px"></div>
+      <div id="bulk-llm-an" class="bulk-llm" style="display:none;margin-top:8px"></div>
     </section>
     </div>
 
@@ -1050,6 +1058,29 @@
         <div style="flex:0 0 auto"><button onclick="pullModelFromBox()">Pull</button></div>
       </div>
       <div id="llm-pull-progress" class="hint" style="margin-top:8px"></div>
+    </section>
+    <section class="panel">
+      <h2>Behaviour &amp; prompts</h2>
+      <p class="muted" style="margin-top:0">There are three system prompts — Summary (used for one or many articles), Translation (one or many), and Synthesis (one combined output across several). They instruct the local model, and the exact prompt used is recorded with every result.</p>
+      <div class="row" style="align-items:end;margin-bottom:6px">
+        <div style="flex:0 0 auto"><label for="llm-keep-alive">Keep the model loaded for</label>
+          <input id="llm-keep-alive" style="max-width:140px" placeholder="30m"></div>
+        <div class="hint" style="flex:1;align-self:center">How long Ollama keeps the model in memory after a request, so the next one does not reload it. Examples: 30m, 1h, -1 (never unload), 0 (unload now).</div>
+      </div>
+      <div class="hint" style="margin:10px 0 6px">Leave a prompt empty to use the built-in default (shown as the placeholder). In the translation prompt, the placeholder {target} is replaced by the target language.</div>
+      <div style="margin-bottom:8px"><label for="llm-prompt-summary">Summary prompt</label>
+        <textarea id="llm-prompt-summary" rows="3" style="width:100%;font:13px ui-monospace,monospace"></textarea>
+        <button class="ghost tiny" onclick="resetLlmPrompt('summary')">Reset to default</button></div>
+      <div style="margin-bottom:8px"><label for="llm-prompt-translate">Translation prompt</label>
+        <textarea id="llm-prompt-translate" rows="3" style="width:100%;font:13px ui-monospace,monospace"></textarea>
+        <button class="ghost tiny" onclick="resetLlmPrompt('translate')">Reset to default</button></div>
+      <div style="margin-bottom:8px"><label for="llm-prompt-synthesis">Synthesis prompt</label>
+        <textarea id="llm-prompt-synthesis" rows="4" style="width:100%;font:13px ui-monospace,monospace"></textarea>
+        <button class="ghost tiny" onclick="resetLlmPrompt('synthesis')">Reset to default</button></div>
+      <div class="row" style="align-items:center;gap:10px">
+        <button onclick="saveLlmBehaviour(this)">Save prompts &amp; behaviour</button>
+        <span id="llm-behaviour-status" class="hint"></span>
+      </div>
     </section>
     </div>
 

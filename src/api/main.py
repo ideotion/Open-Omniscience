@@ -1158,6 +1158,8 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
   <h1>{title}</h1>
   <nav class="rtabs" role="tablist" aria-label="Article views">
     <button class="rtab active" data-rtab="read" role="tab" aria-selected="true" tabindex="0">Read</button>
+    <button class="rtab" data-rtab="summary" role="tab" aria-selected="false" tabindex="-1">Summary</button>
+    <button class="rtab" data-rtab="translation" role="tab" aria-selected="false" tabindex="-1">Translation</button>
     <button class="rtab" data-rtab="keywords" role="tab" aria-selected="false" tabindex="-1">Keywords</button>
     <button class="rtab" data-rtab="mindmap" role="tab" aria-selected="false" tabindex="-1">Mindmap</button>
     <button class="rtab" data-rtab="sentiment" role="tab" aria-selected="false" tabindex="-1">Sentiment</button>
@@ -1171,6 +1173,8 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     <article>{paras}</article>
     {dates_section}
   </section>
+  <section class="rpane" id="rp-summary" role="tabpanel" aria-label="Summary" data-lazy="summary" hidden></section>
+  <section class="rpane" id="rp-translation" role="tabpanel" aria-label="Translation" data-lazy="translation" hidden></section>
   <section class="rpane" id="rp-keywords" role="tabpanel" aria-label="Keywords" data-lazy="keywords" hidden></section>
   <section class="rpane" id="rp-mindmap" role="tabpanel" aria-label="Mindmap" data-lazy="mindmap" hidden></section>
   <section class="rpane" id="rp-sentiment" role="tabpanel" aria-label="Sentiment" data-lazy="sentiment" hidden></section>

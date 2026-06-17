@@ -105,6 +105,40 @@ def ensure_feed_backoff_columns(engine: Engine) -> list[str]:
     return added
 
 
+_ARTICLE_ANALYSIS_COLUMNS: dict[str, str] = {
+    "prompt_text": "ALTER TABLE article_analyses ADD COLUMN prompt_text TEXT",
+}
+
+
+def ensure_article_analysis_columns(engine: Engine) -> list[str]:
+    """Add the missing article_analyses columns (idempotent).
+
+    The live DB is never auto-upgraded by alembic (only staged copies are), so a new
+    column the model expects must be self-healed at boot for existing stores, exactly
+    like the feed-backoff columns. No-op on a fresh DB (create_all built them) or a
+    non-sqlite backend or if the table doesn't exist yet.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='article_analyses'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {
+            r[1] for r in conn.execute(text("PRAGMA table_info(article_analyses)")).fetchall()
+        }
+        for name, ddl in _ARTICLE_ANALYSIS_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added article_analyses column(s): {', '.join(added)}")
+    return added
+
+
 def optimize_at_boot(engine: Engine) -> dict:
     """Refresh the query planner's statistics, bounded (PRAGMA analysis_limit).
 

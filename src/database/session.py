@@ -159,7 +159,11 @@ def init_db() -> None:
 
     # Hot-path indexes for databases created before they existed (create_all
     # never adds indexes to existing tables; not every install runs alembic).
-    from src.database.maintenance import ensure_feed_backoff_columns, ensure_hot_indexes
+    from src.database.maintenance import (
+        ensure_article_analysis_columns,
+        ensure_feed_backoff_columns,
+        ensure_hot_indexes,
+    )
 
     ensure_hot_indexes(engine)
 
@@ -167,6 +171,10 @@ def init_db() -> None:
     # already had feed_fetch_state before these columns existed (create_all never
     # ALTERs an existing table; not every install runs alembic).
     ensure_feed_backoff_columns(engine)
+
+    # article_analyses.prompt_text (exact prompt provenance) for stores created
+    # before that column existed — same self-heal reason as the feed columns.
+    ensure_article_analysis_columns(engine)
 
 
 def get_session() -> SASession:

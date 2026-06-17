@@ -29,6 +29,11 @@ _MIN_LIMIT, _MAX_LIMIT = 1, 1000
 # Ollama model tag grammar (registry/name:tag) — validated so a stored model name
 # can never inject into the LLM request path (mirrors src.api.llm._MODEL_RE).
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+# Ollama keep_alive grammar: a Go duration ("30m", "1h", "300ms", "10s"), a plain
+# number of seconds, "0" (unload immediately) or "-1" (keep loaded indefinitely).
+_KEEP_ALIVE_RE = re.compile(r"^(-1|\d+(\.\d+)?(ms|s|m|h)?)$")
+_DEFAULT_KEEP_ALIVE = "30m"
+_MAX_PROMPT_CHARS = 4000
 
 
 class AppSettingsError(ValueError):
@@ -49,6 +54,17 @@ class AppSettings:
     # that replaces the env-only OO_LLM_MODEL as the operator's default. None =
     # fall back to DEFAULT_MODEL (env/built-in).
     llm_model: str | None = None
+    # How long Ollama keeps a model loaded after a request (maintainer 2026-06-17:
+    # "the unloading isn't necessary"). "30m" keeps it warm across a work session;
+    # "-1" never unloads; "0" unloads immediately. Passed verbatim to /api/generate.
+    llm_keep_alive: str = _DEFAULT_KEEP_ALIVE
+    # Operator-editable SYSTEM PROMPTS (maintainer 2026-06-17). Empty = use the
+    # built-in default (defined in src.api.llm). The effective text used is recorded
+    # per result (article_analyses.prompt_text) so provenance stays exact. The
+    # translate prompt may contain a {target} placeholder for the target language.
+    llm_prompt_summary: str = ""
+    llm_prompt_translate: str = ""
+    llm_prompt_synthesis: str = ""
 
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:
@@ -93,11 +109,24 @@ def load_settings() -> AppSettings:
     if llm_model is not None and not _MODEL_RE.match(str(llm_model)):
         _LOG.warning("ignoring invalid stored llm_model %r", llm_model)
         llm_model = None
+    keep_alive = str(raw.get("llm_keep_alive", defaults.llm_keep_alive))
+    if not _KEEP_ALIVE_RE.match(keep_alive):
+        _LOG.warning("ignoring invalid stored llm_keep_alive %r", keep_alive)
+        keep_alive = defaults.llm_keep_alive
+
+    def _prompt(key: str) -> str:
+        v = raw.get(key, "")
+        return str(v)[:_MAX_PROMPT_CHARS] if isinstance(v, str) else ""
+
     return AppSettings(
         theme=theme,
         default_result_limit=limit,
         recipes_disabled=recipes_disabled,
         llm_model=str(llm_model) if llm_model else None,
+        llm_keep_alive=keep_alive,
+        llm_prompt_summary=_prompt("llm_prompt_summary"),
+        llm_prompt_translate=_prompt("llm_prompt_translate"),
+        llm_prompt_synthesis=_prompt("llm_prompt_synthesis"),
     )
 
 
@@ -136,6 +165,22 @@ def save_settings(updates: dict) -> AppSettings:
             current.llm_model = val
         else:
             raise AppSettingsError(f"invalid llm_model {val!r} (must be an Ollama model tag)")
+    if "llm_keep_alive" in updates and updates["llm_keep_alive"] is not None:
+        ka = str(updates["llm_keep_alive"]).strip()
+        if not _KEEP_ALIVE_RE.match(ka):
+            raise AppSettingsError(
+                "llm_keep_alive must be a duration like '30m', '1h', '300ms', a number of "
+                "seconds, '0' (unload now) or '-1' (never unload)"
+            )
+        current.llm_keep_alive = ka
+    for _field in ("llm_prompt_summary", "llm_prompt_translate", "llm_prompt_synthesis"):
+        if _field in updates and updates[_field] is not None:
+            val = updates[_field]
+            if not isinstance(val, str):
+                raise AppSettingsError(f"{_field} must be a string")
+            if len(val) > _MAX_PROMPT_CHARS:
+                raise AppSettingsError(f"{_field} is too long (max {_MAX_PROMPT_CHARS} characters)")
+            setattr(current, _field, val.strip())
 
     path = _settings_path()
     tmp = path.with_suffix(".json.tmp")

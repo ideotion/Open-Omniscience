@@ -211,14 +211,21 @@ class OllamaClient:
         model: str = DEFAULT_MODEL,
         system: str | None = None,
         options: dict | None = None,
+        keep_alive: str | None = None,
     ) -> GenerationResult:
-        """Single-shot completion. Raises LLMUnavailable if Ollama/model is absent."""
+        """Single-shot completion. Raises LLMUnavailable if Ollama/model is absent.
+
+        ``keep_alive`` is passed through to Ollama verbatim (e.g. "30m", "-1" to keep
+        the model loaded, "0" to unload at once). None leaves Ollama's own default.
+        """
         self._check_kill_switch()
         payload: dict = {"model": model, "prompt": prompt, "stream": False}
         if system:
             payload["system"] = system
         if options:
             payload["options"] = options
+        if keep_alive is not None:
+            payload["keep_alive"] = keep_alive
         try:
             resp = self._client.post("/api/generate", json=payload)
             resp.raise_for_status()

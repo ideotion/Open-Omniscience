@@ -31,6 +31,12 @@ class SettingsUpdate(BaseModel):
     recipes_disabled: list[str] | None = None
     # Active local LLM model tag (maintainer Q10): "" / null clears the override.
     llm_model: str | None = None
+    # Local-LLM behaviour (maintainer 2026-06-17): how long Ollama keeps the model
+    # loaded, and operator-editable system prompts ("" = built-in default).
+    llm_keep_alive: str | None = None
+    llm_prompt_summary: str | None = None
+    llm_prompt_translate: str | None = None
+    llm_prompt_synthesis: str | None = None
 
 
 def _payload() -> dict:

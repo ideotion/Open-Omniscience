@@ -259,7 +259,12 @@
     function _paintNetwork(online) {
       // Remember the state so the activity chip can show "Collecting paused" when a
       // background pass is in flight but the kill switch is engaged (Item V).
+      const _was = _netOnline;
       _netOnline = online;
+      // The local LLM (Ollama) is refused under airplane mode, so its pill goes
+      // stale offline at boot (we boot offline). Re-check it the moment we go online
+      // so it reflects a now-reachable Ollama without the user opening Settings.
+      if (online && _was !== true && typeof loadLlmHealth === "function") loadLlmHealth();
       _paintActivity();
       const btn = $("net-toggle"); if (!btn) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -990,7 +995,7 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow
-      if (cat === "models") loadLlmModels();          // the dedicated LLM-management subtab (Q6)
+      if (cat === "models") { loadLlmModels(); loadLlmPrompts(); loadLlmHealth(); }  // LLM-management subtab (Q6) — also re-check the pill
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") loadStatAgencies();        // official-statistics producer directory (Group N)
@@ -2800,6 +2805,54 @@
         const el = $("llm-pull-tag"); if (el) el.value = "";
         loadLlmModels();
       } catch (e) { if (prog) prog.textContent = t("Pull failed:") + " " + e.message; }
+    }
+
+    // --- LLM behaviour & prompts (Settings → Models) --------------------------- //
+    // The three editable system prompts + keep-alive. An empty box = the built-in
+    // default (shown as the placeholder). The exact prompt used is recorded with every
+    // result, so customising never breaks provenance. Saved via PUT /api/settings.
+    let _llmPromptDefaults = {summary: "", translate: "", synthesis: ""};
+    async function loadLlmPrompts() {
+      if (!$("llm-keep-alive")) return;
+      let d;
+      try { d = await api("/api/llm/prompts"); }
+      catch (e) { return; }   // optional surface; the models box already reports Ollama state
+      $("llm-keep-alive").value = d.keep_alive || "";
+      $("llm-keep-alive").placeholder = d.keep_alive_default || "30m";
+      const P = d.prompts || {};
+      _llmPromptDefaults = {
+        summary: (P.summary && P.summary.default) || "",
+        translate: (P.translate && P.translate.default) || "",
+        synthesis: (P.synthesis && P.synthesis.default) || "",
+      };
+      for (const k of ["summary", "translate", "synthesis"]) {
+        const ta = $("llm-prompt-" + k); if (!ta) continue;
+        ta.value = (P[k] && P[k].current) || "";         // "" = using the default
+        ta.placeholder = _llmPromptDefaults[k];          // show what the default is
+      }
+    }
+    function resetLlmPrompt(k) {
+      // Reset = clear the override so the built-in default is used (the default shows
+      // as the placeholder). We never silently bake the default text in as a "custom".
+      const ta = $("llm-prompt-" + k); if (ta) ta.value = "";
+    }
+    async function saveLlmBehaviour(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const status = $("llm-behaviour-status");
+      const body = {
+        llm_keep_alive: ($("llm-keep-alive").value || "").trim() || "30m",
+        llm_prompt_summary: $("llm-prompt-summary").value,
+        llm_prompt_translate: $("llm-prompt-translate").value,
+        llm_prompt_synthesis: $("llm-prompt-synthesis").value,
+      };
+      if (btn) btn.disabled = true;
+      try {
+        await api("/api/settings", {method: "PUT", body: JSON.stringify(body)});
+        if (status) status.textContent = t("Saved.");
+        loadLlmPrompts();
+      } catch (e) {
+        if (status) status.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+      } finally { if (btn) btn.disabled = false; }
     }
 
     async function loadSettings() {
@@ -8390,6 +8443,115 @@
       finally { btn.disabled = false; btn.textContent = "Synthesize results"; }
     }
 
+    // --- Bulk summarize / translate over the matched set (local model) --------- //
+    // Unlike Synthesize (ONE combined output), this runs the local model over EACH
+    // matched article and stores a per-article result — kept forever, never replacing
+    // a prior one (the reader shows the latest + folds the rest). Honest streaming
+    // progress (invariant #20). Ollama is loopback (no egress), but airplane mode
+    // still refuses it — surfaced loudly. These rows are NEVER keyword-indexed.
+    let _bulkAbort = null;
+    function _bulkParams(ctx) { return ctx === "an" ? anParams() : searchParams(); }
+    function bulkLlm(op, ctx) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
+      if (!mount) return;
+      const p = _bulkParams(ctx);
+      const hasSel = p.get("article_ids") || p.get("query") || p.get("source")
+        || p.get("language") || p.get("start_date") || p.get("end_date");
+      if (!hasSel) { toast(t("Run a search first."), "err"); return; }
+      const isTr = op === "translate";
+      const heading = isTr ? t("Translate all matched articles") : t("Summarize all matched articles");
+      const tgt = isTr
+        ? `<label class="muted" style="margin-inline-end:4px" for="bulk-tgt-${ctx}">${esc(t("Into"))}</label>`
+          + `<input id="bulk-tgt-${ctx}" value="English" style="max-width:150px">`
+        : "";
+      mount.style.display = "";
+      mount.innerHTML = `<div class="card">
+        <div style="font-weight:600;margin-bottom:4px">${esc(heading)}</div>
+        <div class="hint" style="margin-bottom:8px">${esc(t("Runs a local model over each article — this can take a while. Each result is stored with its model and date; nothing leaves your machine, and keyword analysis is never affected."))}</div>
+        <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
+          ${tgt}
+          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="bulk-skip-${ctx}" checked> ${esc(t("Skip articles already done"))}</label>
+          <button class="primary" id="bulk-start-${ctx}" onclick="bulkLlmRun('${op}','${ctx}')">${esc(t("Start"))}</button>
+          <button class="ghost tiny" onclick="bulkLlmStop('${ctx}')">${esc(t("Cancel"))}</button>
+        </div>
+        <div id="bulk-prog-${ctx}" class="hint" style="margin-top:8px"></div>
+      </div>`;
+    }
+    function bulkLlmStop(ctx) {
+      if (_bulkAbort) { try { _bulkAbort.abort(); } catch (e) { /* already done */ } _bulkAbort = null; }
+      const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
+      if (mount) mount.style.display = "none";
+    }
+    async function bulkLlmRun(op, ctx) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const prog = $("bulk-prog-" + ctx), startBtn = $("bulk-start-" + ctx);
+      const p = _bulkParams(ctx);
+      const skipEl = $("bulk-skip-" + ctx);
+      const body = { op, skip_existing: !!(skipEl && skipEl.checked) };
+      const ids = p.get("article_ids");
+      if (ids) { body.article_ids = ids.split(",").map(Number).filter((n) => n); }
+      else {
+        if (p.get("query")) body.query = p.get("query");
+        if (p.get("source")) body.source = p.get("source");
+        if (p.get("language")) body.language = p.get("language");
+        if (p.get("start_date")) body.start_date = p.get("start_date");
+        if (p.get("end_date")) body.end_date = p.get("end_date");
+      }
+      if (op === "translate") { const e = $("bulk-tgt-" + ctx); body.target_language = (e && e.value.trim()) || "English"; }
+      if (startBtn) startBtn.disabled = true;
+      if (prog) prog.textContent = t("Starting…");
+      _bulkAbort = ("AbortController" in window) ? new AbortController() : null;
+      let done = 0, storedN = 0, skippedN = 0, failedN = 0, total = 0;
+      const tally = () => `(${storedN} ${t("stored")} · ${skippedN} ${t("skipped")} · ${failedN} ${t("failed")})`;
+      try {
+        const resp = await fetch("/api/llm/bulk", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body), signal: _bulkAbort ? _bulkAbort.signal : undefined,
+        });
+        if (!resp.ok || !resp.body) {
+          let detail = "HTTP " + resp.status;
+          try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (e) { /* keep status */ }
+          if (prog) prog.innerHTML = `<span class="note err">${esc(detail)}</span>`;
+          if (startBtn) startBtn.disabled = false; return;
+        }
+        const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
+        for (;;) {
+          const { done: fin, value } = await reader.read();
+          if (fin) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split("\n"); buf = lines.pop();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            let o; try { o = JSON.parse(line); } catch (e) { continue; }
+            if (o.event === "start") {
+              total = o.total;
+              if (prog) prog.textContent = t("Processing") + " 0/" + total + (o.capped ? " " + t("(capped)") : "") + "…";
+            } else if (o.event === "item") {
+              done++;
+              if (o.status === "stored") storedN++;
+              else if (o.status === "skipped") skippedN++;
+              else if (o.status === "failed") failedN++;
+              if (prog) prog.textContent = t("Processing") + " " + done + "/" + total + "… " + tally();
+            } else if (o.event === "done") {
+              if (o.aborted) {
+                if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${esc(o.reason || "")}</span> ${tally()}`;
+              } else {
+                if (prog) prog.innerHTML = `<b>${esc(t("Done."))}</b> ${tally()} `
+                  + `<span class="muted">${esc(t("Open an article to read its summary or translation."))}</span>`;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        if (e && e.name === "AbortError") { if (prog) prog.textContent = t("Cancelled."); }
+        else if (prog) prog.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+      } finally {
+        if (startBtn) startBtn.disabled = false; _bulkAbort = null;
+        loadLlmHealth();   // an LLM run is a fresh signal of whether Ollama is up
+      }
+    }
+
     async function loadCandidates() {
       try {
         const r = await api("/api/sources/candidates?status=candidate&limit=50");
@@ -8436,13 +8598,28 @@
       } catch (e) { toast("Methods export failed: " + e.message, "err"); }
     }
 
+    // The LLM pill. The local model is refused under airplane mode (we boot offline),
+    // so a once-at-boot check goes stale "offline". This re-checks on: boot, going
+    // online (_paintNetwork), opening Settings → Models, after any LLM action, when the
+    // tab regains focus, and on click — so it tracks a model that started/stopped later.
     async function loadLlmHealth() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("llm");
+      if (!el) return;
+      el.style.cursor = "pointer";
+      el.onclick = loadLlmHealth;   // assignment (not addEventListener) so it never stacks
       try {
         const h = await api("/api/llm/health");
-        const el = $("llm");
-        if (h.available) { el.className = "pill ok"; el.textContent = `LLM ✓ (${h.installed_models.length} models)`; }
-        else { el.className = "pill warn"; el.textContent = "LLM offline"; el.title = h.detail || ""; }
-      } catch (e) { $("llm").textContent = "LLM —"; }
+        if (h.available) {
+          el.className = "pill ok";
+          el.textContent = `LLM ✓ (${h.installed_models.length} models)`;
+          el.title = t("Local model — click to re-check");
+        } else {
+          el.className = "pill warn";
+          el.textContent = t("LLM offline");
+          el.title = (h.detail ? h.detail + " — " : "") + t("Local model — click to re-check");
+        }
+      } catch (e) { el.textContent = "LLM —"; el.title = t("Local model — click to re-check"); }
     }
 
     async function summarize(id, btn) {
@@ -8456,6 +8633,7 @@
         cell.innerHTML = `“${esc(r.result)}” <span class="muted">— ${esc(r.model)}</span>`
           + `<div class="hint muted">Generated by a local model — verify against the stored article.</div>`;
       } catch (e) { cell.textContent = ""; toast("Summarize: " + e.message, "err"); }
+      loadLlmHealth();   // success or failure both tell us if Ollama is reachable now
     }
 
     async function translateArticle(id, btn) {
@@ -8468,6 +8646,7 @@
           + `${esc(r.result)} <span class="muted">— ${esc(r.model)}</span>`
           + `<div class="hint muted">Generated by a local model — verify against the stored article.</div>`;
       } catch (e) { cell.textContent = ""; toast("Translate: " + e.message, "err"); }
+      loadLlmHealth();
     }
 
     // Framing comparison — moved into Insights, scoped to the explored term.
@@ -8625,6 +8804,12 @@
 
     // Apply the saved look immediately (before any network) so there is no flash.
     applyUi(getUi()); buildDrawer();
+
+    // Re-check the local LLM when the tab regains focus — covers starting/stopping
+    // Ollama in another window without a constant poll (event-driven, cheap loopback).
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && _netOnline !== false) loadLlmHealth();
+    });
 
     // Global shortcuts: Ctrl/⌘-K opens the command palette; Escape closes overlays.
     document.addEventListener("keydown", e => {
