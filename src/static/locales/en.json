@@ -146,7 +146,6 @@
   "This leaves the app and contacts an outside server.": "This leaves the app and contacts an outside server.",
   "Diagnostics log": "Diagnostics log",
   "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.",
-  "Download keyword log (.json)": "Download keyword log (.json)",
   "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.",
   "Why am I seeing this?": "Why am I seeing this?",
   "The exact math": "The exact math",
@@ -1077,5 +1076,6 @@
   "Distraction-free reading and analysis.": "Distraction-free reading and analysis.",
   "Maximum information density for analysts.": "Maximum information density for analysts.",
   "A spatial, zoomable investigation board.": "A spatial, zoomable investigation board.",
-  "Your briefing, typeset like a publication.": "Your briefing, typeset like a publication."
+  "Your briefing, typeset like a publication.": "Your briefing, typeset like a publication.",
+  "Download keyword log (.zip)": "Download keyword log (.zip)"
 }

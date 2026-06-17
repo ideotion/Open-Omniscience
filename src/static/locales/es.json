@@ -146,7 +146,6 @@
   "This leaves the app and contacts an outside server.": "Esto sale de la aplicación y contacta con un servidor externo.",
   "Diagnostics log": "Registro de diagnóstico",
   "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "Una síntesis compartible de cómo la aplicación ve su corpus — para mejorar la próxima versión. Se genera solo cuando usted hace clic, y solo usted decide quién recibe el archivo.",
-  "Download keyword log (.json)": "Descargar registro de palabras clave (.json)",
   "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "Todas las palabras clave recopiladas con recuentos reales, las familias calculadas, sus correcciones de fusión/división y los supergrupos — exactamente lo que necesitan ver las mejoras de agrupación. Solo recuentos y estructuras, nunca puntuaciones.",
   "Why am I seeing this?": "¿Por qué veo esto?",
   "The exact math": "El cálculo exacto",
@@ -1077,5 +1076,6 @@
   "Distraction-free reading and analysis.": "Lectura y análisis sin distracciones.",
   "Maximum information density for analysts.": "Máxima densidad de información para analistas.",
   "A spatial, zoomable investigation board.": "Un tablero de investigación espacial y ampliable.",
-  "Your briefing, typeset like a publication.": "Tu resumen, maquetado como una publicación."
+  "Your briefing, typeset like a publication.": "Tu resumen, maquetado como una publicación.",
+  "Download keyword log (.zip)": "Descargar el registro de palabras clave (.zip)"
 }

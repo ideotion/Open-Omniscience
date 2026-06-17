@@ -146,7 +146,6 @@
   "This leaves the app and contacts an outside server.": "এতে আপনি অ্যাপ ছেড়ে একটি বাইরের সার্ভারের সাথে সংযুক্ত হবেন।",
   "Diagnostics log": "নির্ণয় লগ",
   "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "অ্যাপ আপনার কর্পাসকে কীভাবে দেখে তার একটি ভাগ করার যোগ্য সারসংক্ষেপ — পরবর্তী সংস্করণ উন্নত করতে। শুধুমাত্র আপনি ক্লিক করলেই তৈরি হয়, এবং ফাইলটি কে পাবে তা কেবল আপনিই ঠিক করেন।",
-  "Download keyword log (.json)": "কীওয়ার্ড লগ ডাউনলোড করুন (.json)",
   "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "প্রকৃত গণনাসহ সমস্ত সংগৃহীত কীওয়ার্ড, গণনাকৃত কীওয়ার্ড পরিবার, আপনার একীকরণ/বিভাজন সংশোধন এবং সুপার-গ্রুপ — কীওয়ার্ড গোষ্ঠীকরণ উন্নতির জন্য ঠিক যা দেখা দরকার। শুধু গণনা ও কাঠামো, কখনো স্কোর নয়।",
   "Why am I seeing this?": "আমি এটি কেন দেখছি?",
   "The exact math": "সঠিক গণনা",
@@ -1077,5 +1076,6 @@
   "Distraction-free reading and analysis.": "মনোযোগ বিঘ্ন ছাড়াই পড়া ও বিশ্লেষণ।",
   "Maximum information density for analysts.": "বিশ্লেষকদের জন্য সর্বোচ্চ তথ্য ঘনত্ব।",
   "A spatial, zoomable investigation board.": "একটি স্থানিক, জুমযোগ্য তদন্ত বোর্ড।",
-  "Your briefing, typeset like a publication.": "আপনার ব্রিফিং, একটি প্রকাশনার মতো বিন্যস্ত।"
+  "Your briefing, typeset like a publication.": "আপনার ব্রিফিং, একটি প্রকাশনার মতো বিন্যস্ত।",
+  "Download keyword log (.zip)": "কীওয়ার্ড লগ ডাউনলোড করুন (.zip)"
 }

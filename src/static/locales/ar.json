@@ -146,7 +146,6 @@
   "This leaves the app and contacts an outside server.": "هذا يغادر التطبيق ويتصل بخادم خارجي.",
   "Diagnostics log": "سجل التشخيص",
   "A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.": "خلاصة قابلة للمشاركة لكيفية رؤية التطبيق لمجموعتك — لتحسين الإصدار القادم. تُنشأ فقط عند النقر، وأنت وحدك تقرر من يحصل على الملف.",
-  "Download keyword log (.json)": "تنزيل سجل الكلمات المفتاحية (.json)",
   "All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.": "جميع الكلمات المفتاحية المجمعة بأعدادها الحقيقية، وعائلات الكلمات المحسوبة، وتصحيحات الدمج/الفصل الخاصة بك، والمجموعات العليا — بالضبط ما تحتاج تحسينات التجميع إلى رؤيته. أعداد وبُنى فقط، لا درجات أبدًا.",
   "Why am I seeing this?": "لماذا أرى هذا؟",
   "The exact math": "الحساب الدقيق",
@@ -1077,5 +1076,6 @@
   "Distraction-free reading and analysis.": "قراءة وتحليل دون تشتيت.",
   "Maximum information density for analysts.": "أقصى كثافة معلومات للمحلّلين.",
   "A spatial, zoomable investigation board.": "لوحة تحقيق مكانية قابلة للتكبير.",
-  "Your briefing, typeset like a publication.": "موجزك، مُنسَّق كأنه منشور صحفي."
+  "Your briefing, typeset like a publication.": "موجزك، مُنسَّق كأنه منشور صحفي.",
+  "Download keyword log (.zip)": "تنزيل سجل الكلمات المفتاحية (.zip)"
 }

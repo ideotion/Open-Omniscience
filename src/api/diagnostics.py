@@ -23,7 +23,7 @@ import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
@@ -62,6 +62,159 @@ def _in_batches(ids: list[int], size: int = 800):
 # channel it exists for). The aggregates ARE the analysis; the long tail is not.
 _DIGEST_SAMPLE = 100
 
+# Hard ceiling for the per-language ZIP export (?format=zip). The single-file log
+# grew to ~20 MB live (137k keywords), so the shareable archive is capped: it
+# splits per language and zips (JSON compresses ~8x, so the archive is normally a
+# few MB), and as a guarantee, if the compressed archive ever exceeds this it
+# drops the lowest-mention keywords PER LANGUAGE (equal-fair — a global mentions
+# cut would re-anglicise the export) and records the omission. Env-tunable.
+def _keyword_zip_max_bytes() -> int:
+    try:
+        mb = float(os.environ.get("OO_KEYWORD_LOG_MAX_MB", "20"))
+    except ValueError:
+        mb = 20.0
+    # Floor at 256 B (not 1 MB) only to forbid a zero/negative cap; realistic
+    # callers set MB-scale values. The small floor keeps the trim path testable.
+    return max(256, int(mb * 1024 * 1024))
+
+
+def _safe_lang_filename(lang: str) -> str:
+    """A filesystem/zip-safe stem for a language code ('?' -> 'unknown')."""
+    safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in (lang or ""))
+    return safe or "unknown"
+
+
+def _group_entries_by_language(survivors, entry_fn, dom_lang, stored_lang) -> dict:
+    """Group built per-keyword entries by dominant language, preserving the
+    mentions-desc order of ``survivors`` (so a later byte-cap trims the tail)."""
+    by_lang: dict[str, list[dict]] = {}
+    for s in survivors:
+        kid = s[0]
+        dom = dom_lang.get(kid) or stored_lang.get(kid) or "?"
+        by_lang.setdefault(dom, []).append(entry_fn(s))
+    return by_lang
+
+
+def _keyword_zip(
+    *,
+    corpus: dict,
+    method: str,
+    families: list,
+    overrides: dict,
+    supergroups: list,
+    per_source_concentration: list,
+    suspects_total: int,
+    suspects_capped: bool,
+    entries_by_lang: dict,
+) -> Response:
+    """Build the per-language keyword-log ZIP, guaranteed under the byte cap.
+
+    Members: ``summary.json`` (the corpus-wide aggregates — families, super-groups,
+    per-source concentration — the SAME data the single-file log carries minus the
+    keyword list), ``keywords/<lang>.json`` (each language's keywords, same
+    per-keyword fields), and ``manifest.json`` (what's inside + any omissions). The
+    split mirrors the per-language export quota; JSON compresses ~8x so the archive
+    is normally a few MB. If the compressed archive still exceeds the cap (only on a
+    very large corpus) the lowest-mention keywords are dropped PER LANGUAGE
+    (equal-fair) and recorded — never a silent or anglicising cut."""
+    import io
+    import zipfile
+
+    summary_payload = {
+        "corpus": corpus,
+        "method": method,
+        "families": families,
+        "overrides": [
+            {"normalized_term": term, **data} for term, data in sorted(overrides.items())
+        ],
+        "supergroups": supergroups,
+        "per_source_concentration": {
+            "suspects": per_source_concentration,
+            "suspects_total": suspects_total,
+            "list_capped_at_200": suspects_capped,
+            "thresholds": {
+                "min_articles_with_keyword": 10,
+                "min_source_articles": 10,
+                "min_share_of_keyword": 0.9,
+                "min_share_of_source": 0.25,
+            },
+        },
+    }
+    max_bytes = _keyword_zip_max_bytes()
+
+    def _build(by_lang: dict, omitted: dict) -> bytes:
+        total_kw = sum(len(v) for v in by_lang.values())
+        summary_doc = envelope(
+            kind="keyword-diagnostics",
+            query={"format": "zip"},
+            count=total_kw,
+            payload=summary_payload,
+        )
+        langs_meta = [
+            {"code": lang, "keywords": len(by_lang[lang]), "omitted_to_fit": omitted.get(lang, 0)}
+            for lang in sorted(by_lang)
+        ]
+        manifest = {
+            "export_schema": "oo-export-1",
+            "kind": "keyword-diagnostics-archive",
+            "app_version": summary_doc.get("app_version"),
+            "generated_at": summary_doc.get("generated_at"),
+            "corpus": corpus,
+            "languages": sorted(langs_meta, key=lambda m: -m["keywords"]),
+            "keywords_in_archive": total_kw,
+            "keywords_omitted_to_fit": sum(omitted.values()),
+            "max_bytes": max_bytes,
+            "note": (
+                "Per-language split of the keyword diagnostics log, zipped to keep the "
+                "shared file small (the single-file log had grown to ~20 MB). Read "
+                "summary.json for the corpus-wide aggregates (families, super-groups, "
+                "per-source concentration) and keywords/<lang>.json for each language's "
+                "keywords (same per-keyword fields as the single-file log). "
+                "scripts/analyze_keyword_log.py reads this .zip directly. "
+                "keywords_omitted_to_fit > 0 means the lowest-mention keywords per "
+                "language were dropped to fit max_bytes — never silently; see the "
+                "per-language counts."
+            ),
+        }
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+            for lang in sorted(by_lang):
+                ents = by_lang[lang]
+                z.writestr(
+                    f"keywords/{_safe_lang_filename(lang)}.json",
+                    json.dumps(
+                        {"language": lang, "count": len(ents), "keywords": ents},
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                )
+            z.writestr(
+                "summary.json",
+                json.dumps(summary_doc, ensure_ascii=False, separators=(",", ":")),
+            )
+            z.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        return buf.getvalue()
+
+    omitted: dict[str, int] = {}
+    data = _build(entries_by_lang, omitted)
+    guard = 0
+    while len(data) > max_bytes and guard < 8:
+        guard += 1
+        ratio = max_bytes / len(data) * 0.9
+        for lang, ents in list(entries_by_lang.items()):
+            keep = max(1, int(len(ents) * ratio))
+            if keep < len(ents):
+                omitted[lang] = omitted.get(lang, 0) + (len(ents) - keep)
+                entries_by_lang[lang] = ents[:keep]
+        data = _build(entries_by_lang, omitted)
+
+    fname = f"oo-keyword-log-{datetime.now().strftime('%Y%m%d')}.zip"
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
 
 def _export_deadline_seconds() -> float:
     """Deadline for THIS on-demand, streamed, full-corpus diagnostic export.
@@ -98,7 +251,17 @@ def keyword_log(
             "(full) stream is byte-for-byte unchanged."
         ),
     ),
-) -> StreamingResponse:
+    fmt: str = Query(
+        "json",
+        alias="format",
+        description=(
+            "'json' (default — the full single-file stream, byte-for-byte unchanged) "
+            "or 'zip' — a per-language split archive kept under ~20 MB (summary.json "
+            "+ keywords/<lang>.json + manifest.json). The recommended share format: "
+            "every keyword, no ~20 MB single blob."
+        ),
+    ),
+) -> Response:
     """The keyword diagnostics log: every gathered keyword (bounded, mentions-desc)
     with its counts, plus the computed families, the user's merge/split overrides
     and the super-groups — exactly the structures the grouping logic works on.
@@ -431,6 +594,21 @@ def keyword_log(
             separators=(",", ":"),
         )
         yield "}}"
+
+    if fmt == "zip":
+        return _keyword_zip(
+            corpus=corpus,
+            method=method,
+            families=families,
+            overrides=overrides,
+            supergroups=supergroups,
+            per_source_concentration=per_source_concentration,
+            suspects_total=suspects_total,
+            suspects_capped=suspects_capped,
+            entries_by_lang=_group_entries_by_language(
+                survivors, _entry, dom_lang, stored_lang
+            ),
+        )
 
     kind_tag = "digest" if digest else "log"
     fname = f"oo-keyword-{kind_tag}-{datetime.now().strftime('%Y%m%d')}.json"
