@@ -23,6 +23,7 @@ from src.database.writer import (
     WriterGate,
     _on_after_transaction_end,
     _on_before_flush,
+    _on_orm_execute,
     write_gate,
 )
 
@@ -135,6 +136,7 @@ def _wired_sessionmaker(tmp_path):
     _Base.metadata.create_all(engine)
     Maker = sessionmaker(bind=engine, autoflush=False, future=True)
     event.listen(Maker, "before_flush", _on_before_flush)
+    event.listen(Maker, "do_orm_execute", _on_orm_execute)
     event.listen(Maker, "after_transaction_end", _on_after_transaction_end)
     return engine, Maker
 
@@ -174,6 +176,83 @@ def test_concurrent_writers_never_locked_and_are_serialised(tmp_path):
     # (That writers actually QUEUE under contention is proven deterministically
     # by test_cross_thread_mutual_exclusion_and_stats; asserting contended>0 here
     # is overwhelmingly likely but scheduler-dependent, so we don't gate on it.)
+    engine.dispose()
+
+
+def test_bulk_dml_delete_takes_the_gate(tmp_path):
+    """Regression (field log 2026-06-17): a bulk ``Query.delete()`` does NOT fire
+    before_flush — it executes immediately. WITHOUT the do_orm_execute hook it
+    would grab the SQLite write lock OUTSIDE the gate (this is what produced the
+    149+ 'database is locked' failures in index_article's idempotent re-index).
+    Here we prove the bulk delete takes the gate (unlike a read)."""
+    engine, Maker = _wired_sessionmaker(tmp_path)
+    with Maker() as seed:
+        seed.add(_Row(writer=7))
+        seed.commit()
+
+    s = Maker()
+    try:
+        s.query(_Row).filter_by(writer=7).delete()  # bulk DML — no before_flush
+        assert s.info.get("_oo_write_gate_held"), "bulk delete must take the gate"
+        assert write_gate.held_by_current_thread()
+        s.commit()  # ends the transaction -> releases
+        assert not write_gate.held_by_current_thread()
+        assert not s.info.get("_oo_write_gate_held")
+    finally:
+        s.close()
+    engine.dispose()
+
+
+def test_bulk_dml_never_locked_against_a_long_held_writer(tmp_path):
+    """The headline field scenario: a writer holds the window long past the
+    busy_timeout (the 213s gate-holder in the log) while another thread issues a
+    bulk ``Query.delete()``. WITHOUT the do_orm_execute gate the delete hits
+    SQLite directly and fails 'database is locked'; WITH it the delete queues on
+    the gate and succeeds."""
+    engine, Maker = _wired_sessionmaker(tmp_path)  # busy_timeout=200ms
+    with Maker() as seed:
+        seed.add_all([_Row(writer=1), _Row(writer=2)])
+        seed.commit()
+
+    errors: list[Exception] = []
+    holder_in = threading.Event()
+    deleter_done = threading.Event()
+
+    def holder():
+        s = Maker()
+        try:
+            s.add(_Row(writer=3))
+            s.flush()  # takes the gate AND the SQLite write lock
+            holder_in.set()
+            # Hold well past busy_timeout (200ms) so an UNGATED delete would fail.
+            deleter_done.wait(2)
+            s.commit()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+        finally:
+            s.close()
+
+    def deleter():
+        holder_in.wait(2)
+        s = Maker()
+        try:
+            s.query(_Row).filter_by(writer=1).delete()
+            s.commit()
+        except Exception as exc:  # noqa: BLE001 - the bug would land here
+            errors.append(exc)
+        finally:
+            s.close()
+            deleter_done.set()
+
+    th, td = threading.Thread(target=holder), threading.Thread(target=deleter)
+    th.start()
+    td.start()
+    th.join(5)
+    td.join(5)
+
+    assert errors == [], f"a gated bulk delete must never lock: {errors!r}"
+    with Maker() as s:
+        assert s.query(_Row).filter_by(writer=1).count() == 0  # the delete landed
     engine.dispose()
 
 
