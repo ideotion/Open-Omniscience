@@ -255,6 +255,37 @@ ruling, a contingency, or a deliberate-omission note.
    custody OTS warning adopt the same variable. Label/title re-keyed ×12. Enforced
    in test_ui_invariants (#23): the caveat must render in `.card-caveat` and must NOT
    appear inside the `hidden` `.mc` block.
+30. **ALTERNATIVE-INTERFACES "GUIs" GALLERY (ruled 2026-06-17; BUILT 2026-06-17 on
+   branch `claude/exciting-lovelace-1gyszi`, draft PR, BROWSER-UNVERIFIED):** a SANDBOX
+   gallery of EIGHT opt-in alternative interfaces in Settings → GUIs (subtab
+   `data-tab="guis"` / `#set-guis`, host `#guis-gallery`), switchable LIVE (persist
+   `oo.ui.gui` + reload). Maintainer decisions (AskUserQuestion 2026-06-17): (a)
+   SHARED-CORE SHELLS — each interface is a scoped skin `html[data-ui="<id>"]` (+ thin JS
+   for the 2 Alpine ones) reusing the ONE `app.js` id-targeted render logic, so NO
+   functionality is lost and the default `index.html`/`app.js`/`app.css` stay the GUARDED
+   reference + default (additive hooks ONLY: a `<head>` boot `<script>`, the Settings
+   subtab button+panel, a `showSetCat` case, the gallery `<script>`); (b) SANDBOX latitude
+   — structural invariants relaxed for the gallery, BUT the ETHICAL non-negotiables are
+   preserved BY CONSTRUCTION (same DOM): caveats visible, the ONE network-consent popup,
+   no scores, deduced/never-confirmed labels; (c) TECH = 6 vanilla CSS skins + 2 Alpine
+   (Command, Canvas), Alpine v3.14.1 VENDORED locally (`src/static/guis/vendor/`, MIT,
+   sha256-pinned, ZERO network — never a CDN; extracted from the npm tarball since CDNs
+   were 403 here). THE 8: Aurora (calm/progressive-disclosure) · Atlas (top-nav
+   dashboard) · Command (keyboard launcher) · Field (mobile bottom-bar stream) · Focus
+   (zen reader, hover-expand rail) · Terminal (mono density) · Canvas (pan/zoom node
+   board) · Editorial (serif magazine). Skins INHERIT the active theme palette (17 themes
+   × 8 skins all work). +20 i18n keys ×12 (chrome/buttons/9 taglines/honesty-note/lead
+   translated; the long per-UI "why" essays are English in-app, full critical rationale in
+   `docs/product/GUI_ALTERNATIVES.md`; non-en AI-drafted, flagged for native review; i18n
+   --min 100 green). Enforced in test_ui_invariants (#30 = the additive wiring) +
+   `tests/test_gui_alternatives.py` (registry=8, assets exist, NO skin hides a
+   caveat/consent surface, no outbound URL in gallery files, Alpine checksum pinned +
+   local-only, EVERY skin rule scoped to its `data-ui`, gallery uses addEventListener not
+   inline onclick). VERIFIED here: node --check (all JS), i18n gate, the 2 test files +
+   test_ui_invariants (direct-run, py3.11). NOT runnable here: full pytest (repo requires
+   py3.13; container is 3.11) → CI covers it. REMAINING: human click-through across
+   themes/breakpoints (fork-3); optional real-screenshot thumbnails; translate the per-UI
+   "why" essays if promoted past experimental.
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First

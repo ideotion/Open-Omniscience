@@ -985,6 +985,8 @@
         v.style.display = (v.id === "set-" + cat) ? "" : "none");
       if (cat !== "collect") stopSchedRatePoll();   // stop the live download-rate poll when leaving Collect
       if (cat === "appearance") buildDrawer();      // (re)paint theme/accent/module state
+      if (cat === "guis" && window.OOGUIs && OOGUIs.renderGallery) OOGUIs.renderGallery();  // alternative-interfaces gallery
+
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow

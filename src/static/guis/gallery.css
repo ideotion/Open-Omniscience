@@ -1,0 +1,112 @@
+/* Open Omniscience — Settings -> GUIs gallery. GPL-3.0-or-later.
+   Renders inside the DEFAULT interface, so it uses the base design tokens
+   (--panel/--accent/--border/--caveat…) and adapts to every theme. */
+
+#guis-gallery .gui-intro { margin: 0 0 16px; }
+#guis-gallery .gui-lead { margin: 0 0 8px; color: var(--fg-soft); font-size: 13.5px; line-height: 1.55; max-width: 70ch; }
+/* The ethical-preservation note reuses .card-caveat (var(--caveat), WCAG-AA,
+   visible by default) — the same honesty surface the alternatives preserve. */
+#guis-gallery .gui-ethic { max-width: 70ch; }
+
+#guis-gallery .gui-grid {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+#guis-gallery .gui-card {
+  display: flex; flex-direction: column; gap: 0;
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: var(--radius, 12px); overflow: hidden;
+  transition: border-color .14s ease, transform .06s ease, box-shadow .14s ease;
+}
+#guis-gallery .gui-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+#guis-gallery .gui-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+#guis-gallery .gui-meta { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; }
+#guis-gallery .gui-head { display: flex; align-items: center; gap: 8px; }
+#guis-gallery .gui-name { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: .01em; }
+#guis-gallery .gui-badge {
+  margin-inline-start: auto; font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; white-space: nowrap;
+}
+#guis-gallery .gui-tag { margin: 0; font-size: 13px; color: var(--fg); font-weight: 600; }
+#guis-gallery .gui-why { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+#guis-gallery .gui-acts { margin-top: 6px; }
+#guis-gallery .gui-acts .gui-use { margin: 0; }
+#guis-gallery .gui-card.is-default .gui-use { background: var(--panel3); color: var(--fg); border: 1px solid var(--border); font-weight: 500; }
+#guis-gallery .gui-active {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--accent);
+}
+#guis-gallery .gui-active::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* ---- Mini layout mocks (decorative; evoke each interface's shape) -------- */
+#guis-gallery .gt {
+  position: relative; aspect-ratio: 16 / 10; background: var(--bg2); overflow: hidden;
+  border-bottom: 1px solid var(--border); display: flex; flex-direction: column; padding: 6px; gap: 5px;
+}
+#guis-gallery .gt-bar { height: 9px; border-radius: 4px; background: var(--panel3); flex: 0 0 auto; }
+#guis-gallery .gt-body { flex: 1; display: flex; gap: 5px; min-height: 0; }
+#guis-gallery .gt-side { flex: 0 0 22%; border-radius: 4px; background: var(--panel); }
+#guis-gallery .gt-main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; align-content: start; }
+#guis-gallery .gt-c { background: var(--panel); border-radius: 4px; min-height: 16px; border-left: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); }
+#guis-gallery .gt-foot { display: none; height: 8px; border-radius: 4px; background: var(--panel3); flex: 0 0 auto; }
+
+/* default — left sidebar + top bar + card grid (the original) */
+/* aurora — airy: lighter sidebar, two big roomy cards, soft accent */
+#guis-gallery .gt--aurora { background: color-mix(in srgb, var(--accent) 7%, var(--bg2)); padding: 9px; gap: 7px; }
+#guis-gallery .gt--aurora .gt-main { grid-template-columns: 1fr; gap: 7px; }
+#guis-gallery .gt--aurora .gt-c { min-height: 22px; border-left: 0; opacity: .9; }
+#guis-gallery .gt--aurora .gt-side { opacity: .5; }
+
+/* atlas — dashboard: prominent bar, dense tile grid, no big side */
+#guis-gallery .gt--atlas .gt-bar { height: 12px; background: color-mix(in srgb, var(--accent) 30%, var(--panel3)); }
+#guis-gallery .gt--atlas .gt-side { flex-basis: 0; display: none; }
+#guis-gallery .gt--atlas .gt-main { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+#guis-gallery .gt--atlas .gt-c:nth-child(1) { grid-column: span 2; }
+
+/* command — a centred "palette" rules; minimal chrome */
+#guis-gallery .gt--command .gt-side { display: none; }
+#guis-gallery .gt--command .gt-main { place-content: center; grid-template-columns: 1fr; }
+#guis-gallery .gt--command .gt-c { min-height: 0; }
+#guis-gallery .gt--command .gt-c:nth-child(1) { height: 11px; border: 1px solid var(--accent); border-left-width: 1px; background: var(--panel2); margin: 0 8%; }
+#guis-gallery .gt--command .gt-c:nth-child(n+2) { display: none; }
+
+/* field — mobile: no side, single column, prominent bottom bar */
+#guis-gallery .gt--field { padding: 6px 22% 6px; }
+#guis-gallery .gt--field .gt-side { display: none; }
+#guis-gallery .gt--field .gt-main { grid-template-columns: 1fr; gap: 4px; }
+#guis-gallery .gt--field .gt-foot { display: block; background: color-mix(in srgb, var(--accent) 30%, var(--panel3)); }
+
+/* focus — chrome recedes to a thin rail; one big content block */
+#guis-gallery .gt--focus .gt-bar { width: 28%; }
+#guis-gallery .gt--focus .gt-side { display: none; }
+#guis-gallery .gt--focus .gt-main { grid-template-columns: 1fr; }
+#guis-gallery .gt--focus .gt-c:nth-child(1) { min-height: 100%; }
+#guis-gallery .gt--focus .gt-c:nth-child(n+2) { display: none; }
+
+/* terminal — many tiny dense rows, monospace cockpit */
+#guis-gallery .gt--terminal { background: #04070a; gap: 3px; }
+#guis-gallery .gt--terminal .gt-bar { height: 6px; background: #13211d; }
+#guis-gallery .gt--terminal .gt-side { flex-basis: 16%; background: #0a1013; }
+#guis-gallery .gt--terminal .gt-main { grid-template-columns: 1fr; gap: 2px; }
+#guis-gallery .gt--terminal .gt-c { min-height: 5px; background: #0a1013; border-left-color: #36d97a; }
+
+/* canvas — a board: offset, scattered cards */
+#guis-gallery .gt--canvas .gt-side { display: none; }
+#guis-gallery .gt--canvas .gt-main { display: block; position: relative; }
+#guis-gallery .gt--canvas .gt-c { position: absolute; width: 40%; height: 34%; }
+#guis-gallery .gt--canvas .gt-c:nth-child(1) { left: 4%; top: 6%; }
+#guis-gallery .gt--canvas .gt-c:nth-child(2) { left: 52%; top: 18%; }
+#guis-gallery .gt--canvas .gt-c:nth-child(3) { left: 22%; top: 54%; }
+#guis-gallery .gt--canvas .gt-c:nth-child(4) { left: 60%; top: 60%; }
+
+/* editorial — a hero band over columns, serif feel */
+#guis-gallery .gt--editorial .gt-side { display: none; }
+#guis-gallery .gt--editorial .gt-bar { height: 7px; width: 40%; }
+#guis-gallery .gt--editorial .gt-main { grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+#guis-gallery .gt--editorial .gt-c:nth-child(1) { grid-column: span 3; min-height: 22px; border-left: 0; border-bottom: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); }
+
+@media (max-width: 520px) {
+  #guis-gallery .gui-grid { grid-template-columns: 1fr; }
+}

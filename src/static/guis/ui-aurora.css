@@ -1,0 +1,94 @@
+/* ================================================================= *
+ *  Aurora — calm, uncluttered, depth-on-demand.   GPL-3.0-or-later. *
+ *  Critical argument vs. the original: the default front-loads every *
+ *  method, hint and caveat at once — honest, but intimidating on     *
+ *  first contact (a real adoption risk). Aurora lowers the cognitive *
+ *  load: generous whitespace, a soft reading column, larger type,    *
+ *  one clear surface at a time — WHILE keeping every caveat visible  *
+ *  (informed consent is non-negotiable). Respects the active theme.  *
+ *  Scope: everything under html[data-ui="aurora"].                   *
+ * ================================================================= */
+html[data-ui="aurora"] {
+  --radius: 18px; --radius-sm: 12px; --space: 26px; --pad: 22px; --sidebar-w: 256px;
+  --shadow: 0 24px 60px -28px rgba(0,0,0,.5), 0 4px 14px -8px rgba(0,0,0,.32);
+}
+html[data-ui="aurora"] body {
+  font-size: 15.5px; line-height: 1.62;
+  /* A soft aurora wash built from the theme's own accent — never a fixed palette. */
+  background:
+    radial-gradient(1100px 540px at 12% -8%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+    radial-gradient(900px 520px at 108% 6%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 72%),
+    var(--bg);
+  background-attachment: fixed;
+}
+/* Sidebar: airy, borderless, translucent — recedes rather than walls off. */
+html[data-ui="aurora"] .sidebar {
+  background: color-mix(in srgb, var(--bg2) 70%, transparent);
+  border-right: 0; backdrop-filter: blur(10px);
+}
+html[data-ui="aurora"] .nav-groups { padding: 8px 14px 16px; }
+html[data-ui="aurora"] .nav-item { border-radius: 12px; padding: 11px 13px; margin: 3px 0; }
+html[data-ui="aurora"] .nav-item.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+html[data-ui="aurora"] .nav-item.active::before { display: none; }
+html[data-ui="aurora"] .brand { padding: 22px 18px 16px; }
+html[data-ui="aurora"] .brand .txt b { font-weight: 600; letter-spacing: .015em; }
+
+/* Top bar: clean, transparent, no hard rule. */
+html[data-ui="aurora"] .topbar {
+  background: transparent; backdrop-filter: none; border-bottom: 0; padding: 16px 24px;
+}
+html[data-ui="aurora"] .omni {
+  border-radius: 14px; padding: 11px 16px; background: color-mix(in srgb, var(--panel) 80%, transparent);
+  box-shadow: 0 2px 10px -6px rgba(0,0,0,.4);
+}
+
+/* A comfortable reading column — content is centred and not full-bleed. */
+html[data-ui="aurora"] main { padding: 8px 24px 48px; }
+html[data-ui="aurora"] main > * { max-width: 940px; }
+html[data-ui="aurora"] .tab-page.active { gap: 24px; }
+
+/* Panels: rounder, softer, more air; headers a touch larger and calmer. */
+html[data-ui="aurora"] .panel {
+  border-radius: var(--radius); padding: 26px 28px;
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+html[data-ui="aurora"] .panel h2 {
+  font-size: 12px; letter-spacing: .12em; color: color-mix(in srgb, var(--fg) 55%, var(--muted));
+}
+html[data-ui="aurora"] .panel > h2:first-child { margin-bottom: 16px; }
+
+/* Briefing cards: roomy, soft, scannable. The caveat is promoted to a gentle
+   inline callout so it is MORE present, not less (informed consent). */
+html[data-ui="aurora"] .cards { gap: 18px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+html[data-ui="aurora"] .card {
+  border-radius: 16px; padding: 20px; gap: 11px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border-color: color-mix(in srgb, var(--border) 65%, transparent);
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+html[data-ui="aurora"] .card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+html[data-ui="aurora"] .card h4 { font-size: 16px; line-height: 1.35; font-weight: 600; }
+html[data-ui="aurora"] .card-caveat {
+  background: color-mix(in srgb, var(--caveat) 12%, transparent);
+  border-radius: 10px; padding: 8px 11px; font-size: 12px;
+  border: 1px solid color-mix(in srgb, var(--caveat) 30%, transparent);
+}
+/* Resting calm: the verbose math table reads quieter until the user opens it,
+   but the plain "Why am I seeing this?" affordance stays a clear invitation. */
+html[data-ui="aurora"] .card .why summary { font-weight: 600; }
+
+/* Inputs & buttons: softer, friendlier. */
+html[data-ui="aurora"] input, html[data-ui="aurora"] select, html[data-ui="aurora"] textarea { border-radius: 12px; padding: 11px 14px; }
+html[data-ui="aurora"] button { border-radius: 12px; padding: 11px 18px; }
+html[data-ui="aurora"] .stat { border-radius: 14px; padding: 16px; }
+
+/* The at-a-glance strip becomes a soft hero band. */
+html[data-ui="aurora"] .home-glance {
+  border-radius: 16px; padding: 18px 22px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, var(--panel)), var(--panel));
+}
+
+@media (max-width: 760px) {
+  html[data-ui="aurora"] main { padding: 6px 14px 36px; }
+  html[data-ui="aurora"] .panel { padding: 18px; }
+}

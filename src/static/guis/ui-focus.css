@@ -1,0 +1,68 @@
+/* ================================================================= *
+ *  Focus — distraction-free reading & analysis.    GPL-3.0-or-later.*
+ *  Critical argument vs. the original: a persistent 250px rail, a    *
+ *  full status cluster and a busy top bar all compete with the       *
+ *  content during the long reading/analysis sessions this tool is    *
+ *  built for — visual fatigue that shortens sessions. Focus makes    *
+ *  the chrome RECEDE to a thin rail that expands on hover/focus, a   *
+ *  quiet top bar that wakes on demand, and a wide, typographic       *
+ *  reading column. Nothing is removed (no loss of function); it just *
+ *  gets out of the way. Respects the active theme.                  *
+ *  Scope: html[data-ui="focus"].                                    *
+ * ================================================================= */
+html[data-ui="focus"] { --space: 26px; --pad: 22px; --radius: 14px; }
+html[data-ui="focus"] body { font-size: 16px; line-height: 1.7; }
+html[data-ui="focus"] .app { display: block; }
+
+/* A thin icon rail, fixed at the edge, that expands to a labelled overlay on
+   hover or keyboard focus — so navigation is one gesture away but never present. */
+html[data-ui="focus"] .sidebar {
+  position: fixed; left: 0; top: 0; height: 100vh; width: 56px; z-index: 80;
+  overflow: hidden; border-right: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, var(--bg2) 80%, transparent); backdrop-filter: blur(10px);
+  transition: width .18s ease, box-shadow .18s ease;
+}
+html[data-ui="focus"] .sidebar:hover, html[data-ui="focus"] .sidebar:focus-within {
+  width: 244px; box-shadow: 0 18px 50px -18px rgba(0,0,0,.55);
+}
+html[data-ui="focus"] .brand .txt, html[data-ui="focus"] .nav-group > .gl,
+html[data-ui="focus"] .nav-item span, html[data-ui="focus"] .nav-item .badge,
+html[data-ui="focus"] .sb-foot .lbl { opacity: 0; transition: opacity .14s ease; white-space: nowrap; }
+html[data-ui="focus"] .sidebar:hover .brand .txt, html[data-ui="focus"] .sidebar:focus-within .brand .txt,
+html[data-ui="focus"] .sidebar:hover .nav-group > .gl, html[data-ui="focus"] .sidebar:focus-within .nav-group > .gl,
+html[data-ui="focus"] .sidebar:hover .nav-item span, html[data-ui="focus"] .sidebar:focus-within .nav-item span,
+html[data-ui="focus"] .sidebar:hover .sb-foot .lbl, html[data-ui="focus"] .sidebar:focus-within .sb-foot .lbl { opacity: 1; }
+html[data-ui="focus"] .nav-item { padding: 10px 17px; }
+html[data-ui="focus"] #sb-collapse, html[data-ui="focus"] #sb-expand { display: none; }
+
+/* Main column clears the rail; the top bar is quiet until you reach for it. */
+html[data-ui="focus"] .main-col { margin-inline-start: 56px; }
+html[data-ui="focus"] #hamburger { display: none; }
+html[data-ui="focus"] .topbar {
+  background: transparent; backdrop-filter: none; border-bottom: 0; padding: 14px 22px;
+  opacity: .42; transition: opacity .2s ease;
+}
+html[data-ui="focus"] .topbar:hover, html[data-ui="focus"] .topbar:focus-within { opacity: 1; }
+html[data-ui="focus"] .status-cluster { opacity: .8; }
+
+/* A generous, centred reading measure; typographic rhythm. */
+html[data-ui="focus"] main { padding: 18px 24px 64px; }
+html[data-ui="focus"] main > * { max-width: 780px; }
+html[data-ui="focus"] .tab-page.active { gap: 28px; }
+html[data-ui="focus"] .panel { border: 0; box-shadow: none; background: transparent; padding: 0; }
+html[data-ui="focus"] .panel + .panel { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); padding-top: 26px; }
+html[data-ui="focus"] .panel h2 { font-size: 11.5px; letter-spacing: .14em; }
+html[data-ui="focus"] .prose { max-width: 72ch; font-size: 17px; line-height: 1.78; }
+
+/* Cards become a calm reading list; the caveat is kept clearly visible. */
+html[data-ui="focus"] .cards { grid-template-columns: 1fr; gap: 16px; }
+html[data-ui="focus"] .card { background: color-mix(in srgb, var(--panel) 60%, transparent);
+  border-color: color-mix(in srgb, var(--border) 55%, transparent); padding: 18px 20px; }
+html[data-ui="focus"] .card h4 { font-size: 17px; }
+html[data-ui="focus"] .card-caveat { opacity: 1; }
+
+@media (max-width: 600px) {
+  html[data-ui="focus"] .sidebar { width: 48px; }
+  html[data-ui="focus"] .main-col { margin-inline-start: 48px; }
+  html[data-ui="focus"] main { padding: 14px 14px 48px; }
+}

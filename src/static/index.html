@@ -14,6 +14,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Open Omniscience</title>
   <link rel="stylesheet" href="/static/app.css">
+  <!-- Alternative-interfaces gallery (Settings -> GUIs, maintainer-ruled 2026-06-17):
+       apply the chosen skin BEFORE first paint so there is no flash of the default.
+       Additive, fail-safe and local-only; the default interface is untouched. -->
+  <script src="/static/guis/boot.js"></script>
 </head>
 <body>
   <a href="#main" class="skip-link">Skip to main content</a>
@@ -883,6 +887,7 @@
         machine. Pick a section — your choices stay local.</p>
       <nav class="tabs" id="set-subtabs" style="position:static;padding:0;border:0;margin-top:8px">
         <button class="active" data-tab="appearance">Appearance</button>
+        <button data-tab="guis">GUIs</button>
         <button data-tab="general">General</button>
         <button data-tab="models">Models</button>
         <button data-tab="collect">Collect</button>
@@ -913,6 +918,17 @@
       <div class="seg"><div class="sl">Tools shown in the sidebar</div>
         <div class="modlist" id="dr-modules"></div></div>
       <div class="seg"><button class="secondary" onclick="resetUi()">Reset appearance to defaults</button></div>
+    </section>
+    </div>
+
+    <!-- GUIs: the alternative-interfaces gallery (maintainer-ruled 2026-06-17).
+         Filled by /static/guis/gallery.js; switching reloads to apply the skin.
+         Every interface preserves the same data + the same honesty guarantees. -->
+    <div class="set-view" id="set-guis" style="display:none">
+    <section class="panel">
+      <div class="phead"><h2>Alternative interfaces</h2><span class="sp"></span>
+        <span class="pill warn">Experimental</span></div>
+      <div id="guis-gallery"><div class="muted">Loading…</div></div>
     </section>
     </div>
 
@@ -1805,5 +1821,7 @@
 
   <script src="/static/i18n.js"></script>
   <script src="/static/app.js"></script>
+  <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->
+  <script src="/static/guis/gallery.js"></script>
 </body>
 </html>

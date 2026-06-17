@@ -1,0 +1,77 @@
+/* ================================================================= *
+ *  Atlas — a mission-control dashboard.            GPL-3.0-or-later. *
+ *  Critical argument vs. the original: the default opens on a        *
+ *  text-first briefing with a left rail — no at-a-glance situational *
+ *  awareness, and the nav eats horizontal space the data wants.      *
+ *  Atlas lifts navigation to a full-width TOP bar and turns the body *
+ *  into a dense grid of tiles, so there is always something live to  *
+ *  see and one click to drill in (retention via "always-on signal"). *
+ *  Respects the active theme. Scope: html[data-ui="atlas"].         *
+ * ================================================================= */
+html[data-ui="atlas"] {
+  --radius: 12px; --radius-sm: 9px; --space: 16px; --pad: 15px;
+}
+html[data-ui="atlas"] body { font-size: 14.5px; }
+html[data-ui="atlas"] .app { display: block; min-height: 100vh; }
+
+/* Sidebar -> a sticky, full-width top navigation bar. The grouped vertical
+   nav flattens into one horizontal row via display:contents (no DOM change). */
+html[data-ui="atlas"] .sidebar {
+  position: sticky; top: 0; left: 0; width: 100%; height: auto; z-index: 60;
+  flex-direction: row; align-items: center; gap: 6px; overflow: visible;
+  background: color-mix(in srgb, var(--bg2) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-right: 0; border-bottom: 1px solid var(--border); padding: 6px 12px;
+}
+html[data-ui="atlas"] .brand { padding: 4px 10px 4px 4px; flex: 0 0 auto; }
+html[data-ui="atlas"] .brand .mark { width: 24px; height: 24px; flex-basis: 24px; }
+html[data-ui="atlas"] .brand .txt b { font-size: 14px; }
+html[data-ui="atlas"] .nav-groups { flex: 1; display: flex; flex-direction: row; align-items: center;
+  gap: 4px; padding: 0; overflow-x: auto; scrollbar-width: thin; }
+html[data-ui="atlas"] .nav-group { display: contents; }      /* flatten groups into the row */
+html[data-ui="atlas"] .nav-group > .gl { display: none; }    /* drop section labels in a horizontal bar */
+html[data-ui="atlas"] .nav-item { width: auto; flex: 0 0 auto; margin: 0; padding: 8px 12px; border-radius: 8px; white-space: nowrap; }
+html[data-ui="atlas"] .nav-item.active { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+html[data-ui="atlas"] .nav-item.active::before { left: 8px; right: 8px; top: auto; bottom: -6px; width: auto; height: 2px; border-radius: 2px; }
+html[data-ui="atlas"] .sb-foot { flex: 0 0 auto; border-top: 0; padding: 0 0 0 6px; gap: 4px; }
+html[data-ui="atlas"] .sb-foot button { flex: 0 0 auto; }
+html[data-ui="atlas"] #sb-collapse, html[data-ui="atlas"] #sb-expand { display: none; }
+
+/* The original top bar becomes a slim toolbar under the nav (search + status). */
+html[data-ui="atlas"] .main-col { width: 100%; }
+html[data-ui="atlas"] .topbar { top: 49px; padding: 8px 18px; }
+html[data-ui="atlas"] #hamburger { display: none; }
+
+/* Wide, full-bleed data canvas. */
+html[data-ui="atlas"] main { padding: 16px 20px 40px; }
+html[data-ui="atlas"] main > * { max-width: 1500px; }
+html[data-ui="atlas"] .tab-page.active { gap: 14px; }
+
+/* Tiles: compact, gridlined, with a crisp accent edge and a lift on hover. */
+html[data-ui="atlas"] .panel {
+  border-radius: 12px; padding: 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel3) 35%, var(--panel)), var(--panel));
+}
+html[data-ui="atlas"] .panel h2 { color: var(--accent); letter-spacing: .08em; }
+html[data-ui="atlas"] .home-glance {
+  position: sticky; top: 92px; z-index: 5;
+  background: color-mix(in srgb, var(--panel3) 50%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+html[data-ui="atlas"] .stat-strip .s b { font-size: 17px; color: var(--accent); }
+html[data-ui="atlas"] .stat { background: color-mix(in srgb, var(--panel3) 40%, var(--panel2)); }
+html[data-ui="atlas"] .stat .n { color: var(--accent); }
+
+/* Denser briefing tiles — 4+ across on a wide screen. */
+html[data-ui="atlas"] .cards { grid-template-columns: repeat(auto-fill, minmax(225px, 1fr)); gap: 12px; }
+html[data-ui="atlas"] .card { padding: 13px; border-radius: 10px; }
+html[data-ui="atlas"] .card h4 { font-size: 14px; }
+html[data-ui="atlas"] .card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+/* Numbers read as instruments. */
+html[data-ui="atlas"] .stat .n, html[data-ui="atlas"] td, html[data-ui="atlas"] .idx-num { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 600px) {
+  html[data-ui="atlas"] .topbar { top: 0; }
+  html[data-ui="atlas"] .home-glance { position: static; }
+  html[data-ui="atlas"] .nav-groups { -webkit-overflow-scrolling: touch; }
+}

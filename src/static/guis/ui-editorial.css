@@ -1,0 +1,72 @@
+/* ================================================================= *
+ *  Editorial — your briefing, typeset like a paper.GPL-3.0-or-later.*
+ *  Critical argument vs. the original: the default reads like a      *
+ *  database admin console — functional, but emotionally flat for the *
+ *  journalist the app is built for. Editorial reframes the OUTPUT as *
+ *  a newsroom front page: a serif display face, a masthead, a        *
+ *  featured lead per section, multi-column flow — and it turns the   *
+ *  honesty caveat into a proper figure CAPTION (more prominent, not  *
+ *  less). Same data, a work-product that feels like the work.        *
+ *  Respects the active theme. Scope: html[data-ui="editorial"].     *
+ * ================================================================= */
+html[data-ui="editorial"] {
+  --ff: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --radius: 6px; --radius-sm: 5px; --space: 26px; --pad: 22px; --sidebar-w: 232px;
+}
+html[data-ui="editorial"] body { font-size: 16px; line-height: 1.66; }
+
+/* Sidebar: a refined "Contents" rail. */
+html[data-ui="editorial"] .sidebar { background: var(--bg2); border-right: 1px solid var(--border); }
+html[data-ui="editorial"] .brand .txt b { font-family: var(--ff); font-weight: 700; font-size: 17px; letter-spacing: 0; }
+html[data-ui="editorial"] .nav-group > .gl { font-family: var(--ff); font-style: italic; text-transform: none;
+  letter-spacing: 0; font-size: 12px; color: var(--muted); }
+html[data-ui="editorial"] .nav-item { font-size: 14.5px; padding: 8px 11px; }
+
+/* A masthead-like top bar. */
+html[data-ui="editorial"] .topbar { border-bottom: 2px solid var(--fg); padding: 13px 22px; }
+html[data-ui="editorial"] .omni { font-family: var(--ff); }
+
+/* Content as a printed page: centred measure, page-like rhythm. */
+html[data-ui="editorial"] main { padding: 18px 26px 56px; }
+html[data-ui="editorial"] main > * { max-width: 980px; }
+html[data-ui="editorial"] .tab-page.active { gap: 26px; }
+
+/* Sections: a serif kicker with a top rule, like a department head. */
+html[data-ui="editorial"] .panel { border: 0; box-shadow: none; background: transparent; padding: 0; }
+html[data-ui="editorial"] .panel + .panel { margin-top: 8px; }
+html[data-ui="editorial"] .panel h2 {
+  font-family: var(--ff); font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--fg); padding-top: 14px; border-top: 2px solid var(--fg); margin-bottom: 14px;
+}
+/* The briefing masthead. */
+html[data-ui="editorial"] #briefing-feed { columns: 1; }
+html[data-ui="editorial"] .brief-bucket > h3 { font-family: var(--ff); font-size: 18px; font-weight: 700;
+  text-transform: none; letter-spacing: 0; color: var(--fg);
+  border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+
+/* Front-page card grid: the first card of each section is the LEAD (full width,
+   big headline); the rest flow as a multi-column package. */
+html[data-ui="editorial"] .cards { grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 22px 26px; }
+html[data-ui="editorial"] .card {
+  background: transparent; border: 0; border-top: 1px solid var(--border);
+  border-radius: 0; padding: 14px 0 4px; box-shadow: none;
+}
+html[data-ui="editorial"] .card .chip { font-family: var(--ff); font-style: italic; text-transform: none;
+  letter-spacing: 0; border: 0; padding: 0; color: var(--accent); }
+html[data-ui="editorial"] .card h4 { font-family: var(--ff); font-size: 21px; line-height: 1.22; font-weight: 700; letter-spacing: -.01em; }
+html[data-ui="editorial"] .card .sum { font-size: 15px; line-height: 1.55; color: var(--fg-soft); }
+html[data-ui="editorial"] .brief-bucket .cards .card:first-child { grid-column: 1 / -1; border-top: 3px double var(--fg); padding-top: 18px; }
+html[data-ui="editorial"] .brief-bucket .cards .card:first-child h4 { font-size: 32px; line-height: 1.1; }
+html[data-ui="editorial"] .brief-bucket .cards .card:first-child .sum { font-size: 17px; column-count: 2; column-gap: 28px; }
+@media (max-width: 640px) { html[data-ui="editorial"] .brief-bucket .cards .card:first-child .sum { column-count: 1; } }
+/* The caveat becomes an italic figure caption with a hairline rule — MORE
+   visible than the default, never hidden (informed consent). */
+html[data-ui="editorial"] .card-caveat {
+  font-family: var(--ff); font-style: italic; font-size: 13px;
+  border-inline-start: 2px solid var(--caveat); padding-inline-start: 10px;
+}
+
+/* Pull-quote styling for the briefing intro guidance. */
+html[data-ui="editorial"] .panel .hint b { font-family: var(--ff); font-style: normal; }
+html[data-ui="editorial"] button { font-family: var(--ff); border-radius: 5px; }
+html[data-ui="editorial"] .prose { font-size: 17px; line-height: 1.75; }
