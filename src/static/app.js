@@ -7846,6 +7846,7 @@
                    onclick="translateArticle(${a.id}, this)">Translate</button>
                  <div class="summary muted" style="font-size:12px;margin-top:4px"></div></td></tr>`
           ).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`);
+        annotateArticleDups(p, t);   // inline "1 voice" near-dup badges (non-blocking, reuses the helper)
       } catch (e) { toast("Search failed: " + e.message, "err"); }
     }
 

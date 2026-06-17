@@ -20,6 +20,7 @@ _JS = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_t
 def test_badge_helper_exists_and_is_wired_into_the_articles_list():
     assert "function annotateArticleDups(" in _JS, "the reusable inline-badge helper must exist"
     assert "annotateArticleDups(p, arts)" in _JS, "the Articles subtab must call the badge helper"
+    assert "annotateArticleDups(p, t)" in _JS, "the search-results list must reuse the badge helper"
     # non-blocking + best-effort + idempotent per row
     assert "a.dataset.dupBadged" in _JS, "rows must not be double-badged"
 
