@@ -1158,5 +1158,7 @@
   "Done.": "সম্পন্ন।",
   "Open an article to read its summary or translation.": "কোনো নিবন্ধের সারসংক্ষেপ বা অনুবাদ পড়তে সেটি খুলুন।",
   "Local model — click to re-check": "স্থানীয় মডেল — পুনরায় যাচাই করতে ক্লিক করুন",
-  "Saved.": "সংরক্ষিত হয়েছে।"
+  "Saved.": "সংরক্ষিত হয়েছে।",
+  "Open the source-integrity desk →": "উৎস-অখণ্ডতা ডেস্ক খুলুন →",
+  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "সমন্বয় এখন স্বয়ংক্রিয়ভাবে দেখানো হয় — সূত্র হিসেবে, বিশ্লেষণ উইন্ডোর সম্পর্কিত ভিউতে, এবং নিবন্ধ তালিকা ও রিডারে ইনলাইনে। একটি সমন্বিত নেটওয়ার্ককে একটিই কণ্ঠে নামিয়ে আনতে, কোনো উৎসের প্রোফাইল দেখতে, বা বিশ্বাস-জালের টীকা পরিচালনা করতে ম্যানুয়াল ডেস্ক খুলুন।"
 }

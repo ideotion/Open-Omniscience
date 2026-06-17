@@ -1158,5 +1158,7 @@
   "Done.": "Listo.",
   "Open an article to read its summary or translation.": "Abre un artículo para leer su resumen o traducción.",
   "Local model — click to re-check": "Modelo local: haz clic para volver a comprobar",
-  "Saved.": "Guardado."
+  "Saved.": "Guardado.",
+  "Open the source-integrity desk →": "Abrir el panel de integridad de fuentes →",
+  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "La coordinación ahora se muestra automáticamente: como pistas, en la vista Relacionados de la ventana de análisis y en línea en las listas de artículos y el lector. Abre el panel manual para reducir una red coordinada a una sola voz, consultar el perfil de una fuente o gestionar las anotaciones de la red de confianza."
 }

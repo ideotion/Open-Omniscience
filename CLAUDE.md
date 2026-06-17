@@ -2364,6 +2364,18 @@ ruling, a contingency, or a deliberate-omission note.
   list + the standalone READER (different render paths — search is the SPA results table, the reader
   is a server-rendered English-only page); shared-KEYWORD neighbours; multi-select branch; DISSOLVE
   the manual Source-integrity tab (absorption-test-gated).
+  **PR 3/4a/4b/5 ALL SHIPPED 2026-06-17 (merged #311 inline-badges, #313 reader, #315 multi-select;
+  PR 5 on branch claude/dissolve-integrity-tab):** (3) inline ≈N "1 voice" badges on the analysis
+  Articles + search-results lists (annotateArticleDups). (4a) the READER gained the near-dup badge
+  AND became UI-LANGUAGE-DEPENDENT — i18n.js is now included in the reader head, so it reads the
+  SPA's localStorage("oo.lang") and auto-translates the whole reader (the ≈N pill is a number, the
+  caption keyed). (4b) MULTI-SELECT branch in Related (checkbox per cluster/origin → union → one
+  corpus); "shared-keyword neighbours" judged ALREADY-SERVED by the Keywords-subtab branch chips,
+  not duplicated. (5) the manual Source-integrity tab is DISSOLVED FROM THE SIDEBAR + reachable from
+  Settings → Safety (showTab('integrity')); DESK-LESSON SAFE — the page + ALL its tools
+  (collapse-to-one-voice, source profile, web-of-trust annotations) preserved, nothing lost.
+  REMAINING (deeper, own PRs): web-of-trust ambient on source chips + collapse folded into Related
+  (then the page retires); the Evidence & custody tab dissolution; the models-in-backup build.
 - **Offline LLM kit** (RM-08 release artifact); DuckDuckGo discovery channel
   only after RM-03 gate UX proves out. **Translated docs:** infrastructure
   shipped (per-language docs served with honest machine-drafted banner; fr

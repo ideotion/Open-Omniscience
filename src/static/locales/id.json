@@ -1158,5 +1158,7 @@
   "Done.": "Selesai.",
   "Open an article to read its summary or translation.": "Buka sebuah artikel untuk membaca ringkasan atau terjemahannya.",
   "Local model — click to re-check": "Model lokal — klik untuk periksa ulang",
-  "Saved.": "Tersimpan."
+  "Saved.": "Tersimpan.",
+  "Open the source-integrity desk →": "Buka meja integritas sumber →",
+  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "Koordinasi kini ditampilkan otomatis — sebagai Petunjuk, di tampilan Terkait jendela analisis, dan inline pada daftar artikel serta pembaca. Buka meja manual untuk menggabungkan jaringan terkoordinasi menjadi satu suara, melihat profil sumber, atau mengelola anotasi web-of-trust."
 }
