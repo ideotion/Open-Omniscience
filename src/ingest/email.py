@@ -179,6 +179,18 @@ def parse_email(raw: bytes) -> ParsedEmail:
     )
 
 
+def _refuse_if_offline() -> None:
+    """Airplane gate for live mailbox fetches (ruling #11): no socket while offline.
+
+    Deferred import (``src.ingest`` is this module's own package) to avoid any
+    import-order coupling, matching the pattern used elsewhere.
+    """
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        raise RuntimeError("network refused: airplane mode is engaged")
+
+
 def fetch_imap(
     host: str,
     user: str,
@@ -187,29 +199,99 @@ def fetch_imap(
     folder: str = "INBOX",
     limit: int = 50,
     use_ssl: bool = True,
+    port: int = 0,
     conn=None,
 ) -> list[bytes]:
     """Fetch up to ``limit`` most recent raw messages from a folder.
 
     ``conn`` may be injected (an imaplib-like object) for testing; otherwise a real
-    SSL IMAP connection is opened.
+    SSL IMAP connection is opened. AIRPLANE-gated (ruling #11): refuses up front when
+    the kill switch is engaged, so an offline call opens NO socket (and even an injected
+    ``conn`` is not touched). The session is logged out in a ``finally`` so a fetch error
+    never leaks it. The recipient-safe anonymisation happens later, in ``ingest_emails``.
+    ``port`` 0 = the protocol default (993 SSL / 143 plain).
     """
-    if conn is None:  # pragma: no cover - exercised only against a live server
+    _refuse_if_offline()
+    own_conn = conn is None
+    if own_conn:  # pragma: no cover - exercised only against a live server
         import imaplib
 
-        conn = imaplib.IMAP4_SSL(host) if use_ssl else imaplib.IMAP4(host)
+        if use_ssl:
+            conn = imaplib.IMAP4_SSL(host, port or 993)
+        else:
+            conn = imaplib.IMAP4(host, port or 143)
         conn.login(user, password)
-    conn.select(folder)
-    typ, data = conn.search(None, "ALL")
-    if typ != "OK" or not data or not data[0]:
-        return []
-    ids = data[0].split()[-limit:]
-    raws: list[bytes] = []
-    for mid in ids:
-        typ, msg_data = conn.fetch(mid, "(RFC822)")
-        if typ == "OK" and msg_data and msg_data[0]:
-            raws.append(msg_data[0][1])
-    return raws
+    try:
+        conn.select(folder)
+        typ, data = conn.search(None, "ALL")
+        if typ != "OK" or not data or not data[0]:
+            return []
+        ids = data[0].split()[-max(1, int(limit)):]
+        raws: list[bytes] = []
+        for mid in ids:
+            typ, msg_data = conn.fetch(mid, "(RFC822)")
+            if typ == "OK" and msg_data and msg_data[0]:
+                raws.append(msg_data[0][1])
+        return raws
+    finally:
+        if own_conn:
+            try:
+                conn.logout()
+            except Exception:  # noqa: BLE001 - logout failure must not mask the result
+                pass
+
+
+def fetch_pop3(
+    host: str,
+    user: str,
+    password: str,
+    *,
+    limit: int = 50,
+    use_ssl: bool = True,
+    port: int = 0,
+    conn=None,
+) -> list[bytes]:
+    """Fetch up to ``limit`` most recent raw messages from a POP3 mailbox (ruling #11).
+
+    Same guardrails as :func:`fetch_imap`: AIRPLANE-gated (no socket offline), credentials
+    used transiently, quit in a ``finally``. POP3 has no folders; messages are numbered
+    1..N (oldest..newest), so the newest ``limit`` are the tail. ``conn`` is injectable.
+    ``port`` 0 = the protocol default (995 SSL / 110 plain).
+    """
+    _refuse_if_offline()
+    own_conn = conn is None
+    if own_conn:  # pragma: no cover - exercised only against a live server
+        import poplib
+
+        conn = poplib.POP3_SSL(host, port or 995) if use_ssl else poplib.POP3(host, port or 110)
+        conn.user(user)
+        conn.pass_(password)
+    try:
+        count = len(conn.list()[1])
+        start = max(1, count - max(1, int(limit)) + 1)
+        raws: list[bytes] = []
+        for i in range(start, count + 1):
+            resp, lines, octets = conn.retr(i)
+            raws.append(b"\r\n".join(lines))
+        return raws
+    finally:
+        if own_conn:
+            try:
+                conn.quit()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) -> list[bytes]:
+    """Dispatch to :func:`fetch_imap` / :func:`fetch_pop3` by ``protocol`` ("imap"|"pop3")."""
+    proto = (protocol or "").strip().lower()
+    if proto == "imap":
+        return fetch_imap(host, user, password, **kwargs)
+    if proto == "pop3":
+        kwargs.pop("folder", None)  # POP3 has no folders
+        return fetch_pop3(host, user, password, **kwargs)
+    raise ValueError(f"unknown mailbox protocol: {protocol!r} (use 'imap' or 'pop3')")
+
 
 
 def ingest_emails(session: Session, source: Source, raw_messages: list[bytes]) -> dict[str, int]:

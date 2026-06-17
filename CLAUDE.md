@@ -378,6 +378,19 @@ ruling, a contingency, or a deliberate-omission note.
   no raw-.eml retention, tracking-link detox, the ONE consent + a visible job, kill-switch).
   The no-recovery-of-personal-data contingency is consciously RE-OPENED and accepted by the
   maintainer for testing; keep the anonymize-at-ingest guarantees that resolved it for .eml.
+  **SHIPPED 2026-06-17 (backend VERIFIED py3.13):** found a PARTIAL pre-existing fetch_imap with
+  a real SECURITY GAP (no kill-switch gate) and closed it — src/ingest/email.py fetch_imap is now
+  AIRPLANE-gated (refuses up front → NO socket offline even with an injected conn) + logs out in a
+  finally; added fetch_pop3 (same guards) + fetch_mailbox(protocol) + port. Reuses ingest_emails
+  (recipient never stored, no raw retention, tracking-link detox, never-fetch). API: the existing
+  IMAP endpoint returns 409 under airplane; NEW POST /api/newsletters/mailbox (IMAP+POP3) stores
+  under a DEDICATED disabled filterable "mailbox.import.local" source (live-vs-file provenance
+  separable), 409 offline / 502 transport, returns the anonymise tally + honest disclosure (TLS to
+  provider, IP visible, NOT via Tor, creds not stored). imaplib/poplib stdlib → socket-importer
+  ratchet intact. Frontend: a "Pull from a mailbox" form in Settings → Newsletters (ensureOnline #14
+  + visible disclosure, browser-unverified). tests/test_mailbox_ingest.py (6, incl. airplane-opens-
+  no-socket + endpoint-stores-anonymised) + test_repo_invariants. REMAINING: a visible task-manager
+  job over a long pull; per-publisher source resolution; stored/encrypted credentials for repeat pulls.
   (12) **STATS FIGURES = keep user-initiated AND add SCHEDULED AUTO-REFRESH of vintages** (a
   periodic re-fetch of tracked figures, new vintage each time; consented/airplane-gated).
   (13) **DESIGN-ONLY VERTICALS = PROCEED with them** (elections/civic + the 9 manipulation-

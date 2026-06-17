@@ -1625,6 +1625,26 @@
       </div>
       <div id="nl-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
     </section>
+    <section class="panel">
+      <h2>Pull from a mailbox (IMAP/POP3)</h2>
+      <p class="hint">Pull newsletters live from a mailbox instead of exporting files one by one. Each message goes
+        through the same anonymise-at-ingest path as the file import — the recipient is never stored, no raw message
+        is retained, and tracking links are de-toxed and never followed.</p>
+      <p class="hint" style="margin-top:5px"><span class="warn">This is a network action.</span> It is refused under airplane
+        mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email
+        client) — it is <em>not</em> routed through Tor. Credentials are used for this one fetch and not stored.</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <label>Protocol<br><select id="mbox-proto"><option value="imap">IMAP</option><option value="pop3">POP3</option></select></label>
+        <label>Host<br><input id="mbox-host" placeholder="imap.example.com" size="18"></label>
+        <label>Port<br><input id="mbox-port" type="number" placeholder="auto" style="width:80px"></label>
+        <label>User<br><input id="mbox-user" placeholder="you@example.com" size="16"></label>
+        <label>Password<br><input id="mbox-pass" type="password" size="14"></label>
+        <label>Folder (IMAP)<br><input id="mbox-folder" value="INBOX" size="10"></label>
+        <label>Max messages<br><input id="mbox-limit" type="number" value="50" min="1" max="500" style="width:80px"></label>
+        <button class="secondary" id="mbox-btn" onclick="pullMailbox()">Pull newsletters</button>
+      </div>
+      <div id="mbox-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
+    </section>
     </div>
 
     <!-- =========================== LIBRARY =========================== -->
