@@ -169,6 +169,23 @@ _MDY_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\
 _YMD_NAME_RE = re.compile(rf"\b(\d{{4}})\.?\s+({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b", re.I)
 _MY_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{4}})\b", re.I)
 
+# CJK calendar dates (Chinese / Japanese): the 年 (year) 月 (month) 日 (day)
+# ideographs are unambiguous date markers, so these never collide with prose or
+# any Latin/Cyrillic vocabulary — no word boundary needed. Half-width and
+# full-width digits (０-９, common in formal CJK text) are both accepted and
+# normalised to ASCII before parsing. Era-name years (令和6年) are out of scope.
+_CJK_D = r"[0-9０-９]"
+_FW_DIGITS = {ord("０") + i: ord("0") + i for i in range(10)}
+_CJK_YMD_RE = re.compile(rf"({_CJK_D}{{4}})\s*年\s*({_CJK_D}{{1,2}})\s*月\s*({_CJK_D}{{1,2}})\s*日")
+_CJK_YM_RE = re.compile(rf"({_CJK_D}{{4}})\s*年\s*({_CJK_D}{{1,2}})\s*月")
+_CJK_MD_RE = re.compile(rf"({_CJK_D}{{1,2}})\s*月\s*({_CJK_D}{{1,2}})\s*日")  # no year -> anchored
+
+
+def _cjk_int(s: str) -> int:
+    """Parse a CJK date number tolerant of full-width digits (２０２４ -> 2024)."""
+    return int(s.translate(_FW_DIGITS))
+
+
 # Plausible window for a *mentioned* date: deep history up to a little ahead of "now".
 _MIN_YEAR, _MAX_AHEAD = 1000, 5
 
@@ -258,6 +275,10 @@ def extract_dates(
         d = _valid(int(m.group(1)), mon, int(m.group(3)), today) if mon else None
         if d and claim(*m.span()):
             add(d, "day", m)
+    for m in _CJK_YMD_RE.finditer(text):  # 2024年5月11日 (CJK day)
+        d = _valid(_cjk_int(m.group(1)), _cjk_int(m.group(2)), _cjk_int(m.group(3)), today)
+        if d and claim(*m.span()):
+            add(d, "day", m)
     # Numeric dates — language picks the order when ambiguous; never guessed.
     mdy_first = (language or "").lower().startswith("en")
     for m in _NUM_YMD_RE.finditer(text):
@@ -282,6 +303,10 @@ def extract_dates(
         d = _valid(int(m.group(2)), mon, 1, today) if mon else None
         if d and claim(*m.span()):
             add(d, "month", m)
+    for m in _CJK_YM_RE.finditer(text):  # 2024年5月 (CJK month precision; day match claims first)
+        d = _valid(_cjk_int(m.group(1)), _cjk_int(m.group(2)), 1, today)
+        if d and claim(*m.span()):
+            add(d, "month", m)
 
     # ---- anchored resolution (needs the article's publication date) -------- #
     if anchor is not None:
@@ -304,6 +329,10 @@ def extract_dates(
                 d = nearest_year(mon, int(m.group(gi_d)))
                 if d and claim(*m.span()):
                     add(d, "day", m)
+        for m in _CJK_MD_RE.finditer(text):  # 5月11日 with no year -> nearest to the anchor
+            d = nearest_year(_cjk_int(m.group(1)), _cjk_int(m.group(2)))
+            if d and claim(*m.span()):
+                add(d, "day", m)
         for m in _REL_RE.finditer(text):
             if claim(*m.span()):
                 add(anchor + timedelta(days=_REL_WORDS[m.group(1).lower()]), "day", m)
