@@ -1338,9 +1338,18 @@ ruling, a contingency, or a deliberate-omission note.
   listed), `GET /keyword-tags/keywords?axis=&tag=` (keywords carrying a tag with mention/article
   counts + source, ordered by article spread). Counts only, NO score; tags are labelled
   assertions, never rewritten. tests/test_keyword_tags_api.py (4, called directly over an
-  in-memory corpus — no TestClient/crypto import). REMAINING: S1b stoplists→data files (Q3);
-  S2 grow the baseline data; S3b the Settings → Keywords subtab FRONTEND (explore+hide/tag, Q4,
-  on these endpoints); S4 in-app analyzer-proposal review.
+  in-memory corpus — no TestClient/crypto import).
+  **ITEM AC S2 — BASELINE EXTENDED TO 7 LANGUAGES 2026-06-17 (draft PR onto 0.09):** added
+  curated `configs/keyword_baseline/{de,es,it,pt,nl}.yml` (en+fr already shipped in S1) — the
+  same clearly-typed core keywords (election/inflation/pandemic/drought/satellite…) in each
+  language, both axes where sensible, SINGLE-token only (a multi-word key with an internal
+  stopword never becomes a keyword, so it could never match). The type/topic tags are
+  language-independent; the words are confident common forms (AI-translatable, flagged for
+  native review). `tests/test_baseline_data.py` (3) GUARDS every baseline file in CI: parses,
+  axes ∈ {type,topic}, non-empty tags, the loader round-trips each language, and the 7 core
+  UI languages are present. REMAINING: S1b stoplists→data files (Q3); S3b the Settings →
+  Keywords subtab FRONTEND (explore+hide/tag, Q4, on the S3a endpoints); S4 in-app
+  analyzer-proposal review; grow the per-language sets further (analyzer-fed from real logs).
   **SINGULAR/PLURAL FAMILY MERGE — SHIPPED 2026-06-16 (maintainer "start with the plural-merge
   risk analysis"; conservative + guarded; draft PR onto 0.09):** RISK ANALYSIS first corrected
   the size — only **932** real pairs (the earlier ~2753 was an exploratory bug that stripped N

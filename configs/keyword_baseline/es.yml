@@ -1,0 +1,17 @@
+# Baseline de palabras clave — Español.
+# Véase src/analytics/baseline.py (BASELINE_AS_OF) + docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md.
+# Una etiqueta es una ASERCIÓN ETIQUETADA, nunca un hecho ni una puntuación.
+baseline_keywords:
+  elección:     {type: event, topic: politics}
+  referéndum:   {type: event, topic: politics}
+  sanciones:    {topic: politics}
+  inflación:    {topic: economy}
+  recesión:     {topic: economy}
+  desempleo:    {topic: economy}
+  pandemia:     {type: event, topic: health}
+  vacuna:       {type: technology, topic: health}
+  sequía:       {type: event, topic: climate}
+  inundación:   {type: event, topic: climate}
+  terremoto:    {type: event, topic: climate}
+  emisiones:    {topic: climate}
+  satélite:     {type: technology, topic: science}

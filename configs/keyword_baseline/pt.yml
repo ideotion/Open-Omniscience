@@ -1,0 +1,17 @@
+# Baseline de palavras-chave — Português.
+# Ver src/analytics/baseline.py (BASELINE_AS_OF) + docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md.
+# Uma tag é uma AFIRMAÇÃO ROTULADA, nunca um facto nem uma pontuação.
+baseline_keywords:
+  eleição:      {type: event, topic: politics}
+  referendo:    {type: event, topic: politics}
+  sanções:      {topic: politics}
+  inflação:     {topic: economy}
+  recessão:     {topic: economy}
+  desemprego:   {topic: economy}
+  pandemia:     {type: event, topic: health}
+  vacina:       {type: technology, topic: health}
+  seca:         {type: event, topic: climate}
+  inundação:    {type: event, topic: climate}
+  terramoto:    {type: event, topic: climate}
+  emissões:     {topic: climate}
+  satélite:     {type: technology, topic: science}

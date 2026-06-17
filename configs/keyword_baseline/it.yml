@@ -1,0 +1,17 @@
+# Baseline di parole chiave — Italiano.
+# Vedi src/analytics/baseline.py (BASELINE_AS_OF) + docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md.
+# Un tag è un'ASSERZIONE ETICHETTATA, mai un fatto né un punteggio.
+baseline_keywords:
+  elezione:      {type: event, topic: politics}
+  referendum:    {type: event, topic: politics}
+  sanzioni:      {topic: politics}
+  inflazione:    {topic: economy}
+  recessione:    {topic: economy}
+  disoccupazione: {topic: economy}
+  pandemia:      {type: event, topic: health}
+  vaccino:       {type: technology, topic: health}
+  siccità:       {type: event, topic: climate}
+  inondazione:   {type: event, topic: climate}
+  terremoto:     {type: event, topic: climate}
+  emissioni:     {topic: climate}
+  satellite:     {type: technology, topic: science}
