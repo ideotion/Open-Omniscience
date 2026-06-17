@@ -99,6 +99,15 @@ def clear_dismissed() -> None:
 
 def refresh_briefing(session) -> dict:
     """Recompute the briefing from all producers and write the cache. Returns it."""
+    # The convergence WATCH engine is ON by default (ruling #3): evaluate saved watches
+    # BEFORE producing cards, so a watch that just crossed its threshold surfaces in
+    # this very refresh. Local-only; a watch problem must never block the briefing.
+    try:
+        from src.analytics.watches import evaluate_watches
+
+        evaluate_watches(session)
+    except Exception:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
+        _LOG.warning("watch evaluation failed; briefing continues", exc_info=True)
     cards = [c.to_dict() for c in run_all(session)]
     payload = {
         "version": CACHE_VERSION,

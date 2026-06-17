@@ -62,6 +62,7 @@ def wire(app) -> None:
     from src.api.timemap import router as timemap_router
     from src.api.unlock import router as unlock_router
     from src.api.verification import router as verification_router
+    from src.api.watches import router as watches_router
     from src.api.weather import router as weather_router
     from src.api.wiki import router as wiki_router
 
@@ -93,6 +94,7 @@ def wire(app) -> None:
         events_router,
         geo_router,
         stats_router,
+        watches_router,
         weather_router,
         search_omni_router,
         personality_router,

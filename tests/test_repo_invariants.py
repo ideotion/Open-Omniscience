@@ -703,6 +703,25 @@ def test_ui_invariants():
     assert "/api/insights/convergences" in html and "openAnalysisForIds(" in html, (
         "the convergence view must read /api/insights/convergences and open the exact article set"
     )
+    # 21d. Convergence WATCH engine (ruling 2026-06-17 #3, ON by default): a Watches
+    #      Insights subtab to create/list/enable-disable/edit/delete saved local
+    #      conditions + browse firing history; a watch fires a "watch" Lead card. The
+    #      engine runs automatically (in refresh_briefing) — local-only, no consent
+    #      gate, no score. (Browser-unverified: this static guard pins the wiring.)
+    assert 'data-tab="watches"' in html and 'id="ins-watches"' in html, (
+        "the Watches subtab button + its panel must exist (watch engine #3)"
+    )
+    for fn in ("function loadWatches(", "function createWatch(", "function evaluateWatches("):
+        assert fn in html, f"the Watches view needs {fn}"
+    assert 'cat === "watches"' in html, "loadWatches() must be lazy-loaded from showInsightCat()"
+    assert "/api/watches" in html and "/api/watches/evaluate" in html, (
+        "the Watches view must read the watch CRUD + evaluate endpoints"
+    )
+    # A fired watch opens its EXACT article set (the history rows seed the analysis window).
+    watches_js = html.split("function loadWatches(", 1)[1].split("function createWatch(", 1)[0]
+    assert "openAnalysisForIds(" in watches_js, (
+        "a watch's history must open its exact article set via openAnalysisForIds"
+    )
     # 22. The analysis window (Group F, keystone #4): a full-screen #analyze tab
     #     driven by the universal subtab component, fed by the article-SET keyword
     #     endpoint, opened from the Search tab's Analyze button. Counts, no verdict.
