@@ -1282,7 +1282,10 @@ ruling, a contingency, or a deliberate-omission note.
   equivalence" entry — DONE, wired 2026-06-16); fix sentence-initial-capital false entities
   (DONE — see ENTITY-DETECTION ruling below); singular/plural family merge (DONE 2026-06-16
   — see below); the Item AC pre-tagged per-language baseline + keyword-management Settings
-  subtab (endorsed; DESIGN KICKED OFF 2026-06-16, maintainer-asked, doc unbuilt yet).
+  subtab (endorsed; DESIGN DOC SHIPPED 2026-06-16, maintainer-asked — full architecture +
+  6 open questions + 4 build slices in `docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md`;
+  AWAITS maintainer answers on baseline sourcing [curated/Wikidata-P31/lexicon] + tag
+  taxonomy [type vs topic] before S1 builds).
   **SINGULAR/PLURAL FAMILY MERGE — SHIPPED 2026-06-16 (maintainer "start with the plural-merge
   risk analysis"; conservative + guarded; draft PR onto 0.09):** RISK ANALYSIS first corrected
   the size — only **932** real pairs (the earlier ~2753 was an exploratory bug that stripped N
