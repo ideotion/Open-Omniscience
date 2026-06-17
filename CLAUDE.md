@@ -1279,10 +1279,38 @@ ruling, a contingency, or a deliberate-omission note.
   langs). tests/test_keyword_log_analyzer.py (10) covers the analyzer + a regression
   guard that the batch words ARE filtered and the collisions are NOT. REMAINING (queued,
   bigger): wire keyword_equivalents.yml into LIVE analytics (the "Trans-language
-  equivalence" entry — verified NOT wired); fix sentence-initial-capital false entities
-  (~1041 common words tagged kind=entity); singular/plural family merge (~2753 pairs,
+  equivalence" entry — DONE, wired 2026-06-16); fix sentence-initial-capital false entities
+  (DONE — see ENTITY-DETECTION ruling below); singular/plural family merge (~2753 pairs,
   display-layer, risk of over-merge — guarded); the Item AC pre-tagged per-language
   baseline + keyword-management Settings subtab (endorsed, unbuilt).
+  **ENTITY DETECTION — TITLE-CASE DROPPED, ACRONYMS KEPT (maintainer RULED 2026-06-16
+  "proceed with your recommendation" after a data review; SHIPPED draft PR onto 0.09):**
+  the baseline `kind=entity` flag was PURE capitalization — and the keyword-diagnostics
+  log proved it broken for the multilingual corpus: only `entity`/`term` ever assigned
+  (NO person/org/location semantics), ~60–75% of per-language "entities" were common
+  words (German capitalises EVERY noun — 711 German "entities" were nouns like
+  Behauptung/Medien/Menschen; Romance sentence-initial/day/month caps leak; Arabic/CJK
+  have no case). KEY de-risking facts from the log: (a) the When×Where×Who flagship is
+  INDEPENDENT (it reads ArticleEntity/ArticleMentionedPlace from the timemap extractors,
+  NOT Keyword.is_entity), so this change does NOT touch Who/Where; (b) the WHO-vs-who
+  acronym-homograph cost of casefolding is TINY (only US→us, S.I→si collide; "who" isn't
+  even a stoplisted word). RULING IMPLEMENTED in `BaselineExtractor._entities`: Title-Case
+  is no longer an entity signal; entities are now ONLY stand-alone ALL-CAPS **acronyms**
+  (context-aware — an all-caps token ADJACENT to another all-caps word is a headline/shout
+  run, skipped; a small `_ACRONYM_STOP` excludes ok/vs/ceo/…; digit/hyphen acronyms G7/
+  COVID-19 allowed), with the normalized form kept **UPPERCASE** so an acronym stays
+  distinct from a lowercase homograph (`WHO`≠`who`, `US`≠`us`) and survives the stopword
+  filter — the principled answer to the WHO/Who question. Real person/org/place kinds come
+  from the gazetteer / spaCy (language-aware), promoted in `extract()` (a term whose
+  normalized form is in the gazetteer gets its kind). Multi-word Title-Case names survive
+  as topical TERM n-grams (never lost). Dead Title-Case machinery removed
+  (`_at_sentence_start`/`_SENT_END`/`_CONNECTORS`). tests/test_analytics_extract.py updated
+  (multiword Title-Case→term; +WHO≠who, +US-survives, +German-nouns-are-terms,
+  +headline-not-acronym). DELIBERATE acceptance (testing phase): residual emphasis-acronym
+  noise is iterated away via the diagnostics logs (the maintainer's loop). NEXT: a dedicated
+  ANALYTICS-TOOLS PR (green-lit 2026-06-16 "implement better analytics tools autonomously")
+  — a log-DIFF mode for scripts/analyze_keyword_log.py to MEASURE each optimization's impact
+  between sessions, + acronym-aware mistagged-entity detection.
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,
