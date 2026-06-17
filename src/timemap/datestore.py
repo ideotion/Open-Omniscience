@@ -50,8 +50,17 @@ def store_for_article(db: Session, article: Article, *, today: date | None = Non
         .filter(ArticleMentionedDate.article_id == article.id)
         .all()
     }
+    # Feed the extractor the article's OWN date + language so it can resolve the
+    # commonest news forms it otherwise skips: day+month with no year ("11
+    # September"), relative words ("yesterday"), bare weekdays ("on Tuesday"), and
+    # language-ambiguous numeric dates (11/06 is DMY in fr, MDY in en). Both
+    # signals live on the article; passing them is what makes ingest-time
+    # extraction complete rather than explicit-dates-only (the reader and temporal
+    # map already passed them — this aligns the source-of-truth store with them).
+    observed = article.published_at or article.created_at
+    anchor = observed.date() if observed else None
     added = 0
-    for c in extract_dates(article.content, today=today):
+    for c in extract_dates(article.content, today=today, anchor=anchor, language=article.language):
         key = (c["date"], c["precision"])
         if key in existing:
             continue

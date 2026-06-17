@@ -72,6 +72,45 @@ def test_store_extract_and_idempotent(tmp_path):
         assert datestore.store_for_article(db, db.get(Article, 2), today=TODAY) == 0
 
 
+def test_store_uses_article_anchor_and_language(tmp_path):
+    """Ingest-time storage must feed the extractor the article's OWN date + language.
+
+    Relative ("hier"/yesterday), no-year ("15 septembre") and language-ambiguous
+    numeric ("11/06/2026" = DMY in fr) dates resolve ONLY when the anchor +
+    language are passed (test_dateextract proves they are otherwise skipped, never
+    guessed). This is the regression guard for the ingest wiring: a refactor that
+    drops the anchor would silently regress date capture to explicit-only.
+    """
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'anchor.db'}", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    with Sess() as db:
+        db.add(Source(name="Wire", domain="wire.test"))
+        db.commit()
+        db.add(
+            Article(
+                url="https://wire.test/x",
+                canonical_url="https://wire.test/x",
+                source_id=1,
+                title="Anchored forms",
+                hash="hx",
+                language="fr",
+                content="La réunion était hier. Le sommet ouvre le 15 septembre. Vote le 11/06/2026.",
+                published_at=datetime(2024, 6, 10, tzinfo=UTC),  # the anchor
+                created_at=datetime.now(UTC),
+            )
+        )
+        db.commit()
+        added = datestore.store_for_article(db, db.get(Article, 1), today=TODAY)
+        dates = {t["date"] for t in datestore.for_article(db, 1)}
+        assert "2024-06-09" in dates  # "hier" resolved against the publication date
+        assert "2024-09-15" in dates  # "15 septembre" — year filled from the anchor
+        assert "2026-06-11" in dates  # "11/06/2026" read as DMY because language=fr
+        assert added >= 3
+
+
 def test_confirm_reject_preserved_on_reindex(tmp_path):
     Sess = _session(tmp_path)
     with Sess() as db:

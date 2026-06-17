@@ -20,10 +20,11 @@ from src.timemap import datestore
 router = APIRouter(prefix="/api/article-dates", tags=["article-dates"])
 
 _CAVEAT = (
-    "Dates mentioned in the article's text, extracted high-precision (explicit "
-    "dates only — no bare years or relative phrases). Each is a candidate with its "
-    "matched snippet; you confirm or reject. The date is when the story refers to, "
-    "not when it was published."
+    "Dates mentioned in the article's text, extracted high-precision: explicit "
+    "dates plus relative ones (yesterday, weekdays, a day and month with no year) "
+    "resolved against the publication date — never bare years. Each is a candidate "
+    "with its matched snippet; you confirm or reject. The date is when the story "
+    "refers to, not when it was published."
 )
 
 

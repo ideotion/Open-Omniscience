@@ -99,9 +99,9 @@ def promises_due(session) -> list[Card]:
                     "tag_status": tag.status,
                 },
                 method=(
-                    "date tags extracted from article text (explicit dates only), kept where "
-                    "the date was later than the article's publication date and falls in the "
-                    "last 7 days"
+                    "date tags extracted from article text (explicit and publication-anchored "
+                    "dates), kept where the date was later than the article's publication date "
+                    "and falls in the last 7 days"
                 ),
                 caveat=(
                     "A mentioned future date is not always a promise (it may be a citation or "

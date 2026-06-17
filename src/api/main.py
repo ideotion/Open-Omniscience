@@ -979,9 +979,10 @@ async def view_article(request: Request, article_id: int, db: Session = Depends(
     dates_section = (
         "<section class='cites'><h2>Dates mentioned in this text</h2>"
         "<p class='muted' style='font:13px/1.5 system-ui,sans-serif;margin:0 0 8px'>"
-        "Explicit dates the article refers to (extracted, high-precision — no bare years or "
-        "relative phrases). Each is a candidate; confirm or reject. The date is <em>when the "
-        "story refers to</em>, not when it was published.</p>"
+        "Dates the article refers to (extracted high-precision: explicit dates plus relative "
+        "ones — yesterday, weekdays, a day and month with no year — resolved against the "
+        "publication date; never bare years). Each is a candidate; confirm or reject. The "
+        "date is <em>when the story refers to</em>, not when it was published.</p>"
         + _amd_list
         + "<div style='margin-top:8px'><button id='amd-extract' "
         "style='font:12px system-ui,sans-serif;padding:3px 11px;cursor:pointer'>"

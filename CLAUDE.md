@@ -1454,6 +1454,26 @@ ruling, a contingency, or a deliberate-omission note.
   EXACT article set via `openAnalysisForIds` (agRow branch). +4 i18n ×12; test #13b.
   REMAINING: deduced events as FIRST-CLASS agenda events with ⊞ keyword links (parity with
   the moon/season glyph treatment); recurrence/world-calendars/astronomy slices.
+  **DATE-EXTRACTOR ANCHOR/LANGUAGE WIRING FIXED 2026-06-16 (maintainer-flagged: date
+  extraction should be automatic at ingest):** date extraction WAS already automatic at
+  ingest (index_article → datestore.store_for_article → dateextract), but the store called
+  `extract_dates(content, today=today)` WITHOUT `anchor`/`language` — so at ingest the
+  extractor silently ran explicit-dates-only, skipping the commonest news forms it fully
+  supports: no-year day+month ("11 September"), relative words ("yesterday"/"hier"), bare
+  weekdays ("on Tuesday"/"mardi"), and language-ambiguous numeric dates (11/06 = DMY in fr,
+  MDY in en, else skipped never guessed). The capability was built ("Optimized 2026-06-11
+  maintainer: far too few dates") and the reader-fallback (main.py) + temporal-map collect
+  ALREADY passed anchor+language — only the SOURCE-OF-TRUTH store didn't. FIX:
+  `store_for_article` now derives `anchor = article.published_at or created_at` (the
+  established observed-date convention) + passes `article.language`, so EVERY path through
+  the chokepoint (ingest, reader stored-rows, index_recent, agenda deduced) gets the full
+  set. Additive + idempotent (all stay human-confirmable `candidate`s with snippet
+  provenance); a re-index/backfill enriches existing articles (no migration). Three now-false
+  "no relative phrases / explicit dates only" caveats corrected for honesty (article_dates
+  _CAVEAT, the reader date section in main.py, the recipes.py lead-days method). Regression
+  guard: tests/test_article_dates.py::test_store_uses_article_anchor_and_language. END-TO-END
+  verified: ingesting "La réunion était hier. … le 15 septembre. … le 11/06/2026." (fr,
+  pub 2024-06-10) now stores 2024-06-09 + 2024-09-15 + 2026-06-11 (zero before).
 - **Convergence + watch rules (the 0.0.9 flagship, parked from PR #51) —
   SLICE 1 SHIPPED (PR #212, 2026-06-15; unblocked now that When×Where×Who
   persists):** READ-ONLY space-time co-occurrence in src/analytics/convergence.py
