@@ -16,8 +16,8 @@ from sqlalchemy.orm import sessionmaker
 
 from src.analytics.baseline import BASELINE_AS_OF, baseline_tags
 from src.analytics.extract import ExtractedTerm
-from src.analytics.store import _get_or_create_keyword, tags_for_keyword
-from src.database.models import Base, KeywordTag
+from src.analytics.store import _get_or_create_keyword, backfill_baseline_tags, tags_for_keyword
+from src.database.models import Base, Keyword, KeywordTag
 
 
 def _sess():
@@ -78,3 +78,17 @@ def test_non_baseline_keyword_gets_no_tags():
     s.flush()
     assert s.query(KeywordTag).filter_by(keyword_id=kw.id).count() == 0
     assert tags_for_keyword(s, "widget") == {}
+
+
+def test_backfill_tags_existing_keywords_idempotently():
+    # Forward-only tagging skips pre-existing keywords; the backfill applies the
+    # baseline to them retroactively (idempotent).
+    s = _sess()
+    for term in ("election", "widget"):  # election matches the baseline; widget does not
+        s.add(Keyword(term=term, normalized_term=term, language="en", frequency=0, is_entity=False))
+    s.commit()
+    r = backfill_baseline_tags(s)
+    assert r["tagged_keywords"] == 1 and r["tags_added"] == 2  # election -> type + topic
+    assert tags_for_keyword(s, "election") == {"type": ["event"], "topic": ["politics"]}
+    assert tags_for_keyword(s, "widget") == {}
+    assert backfill_baseline_tags(s)["tags_added"] == 0  # idempotent on a second pass

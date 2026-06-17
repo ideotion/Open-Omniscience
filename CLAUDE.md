@@ -1357,9 +1357,18 @@ ruling, a contingency, or a deliberate-omission note.
   3). The analyzer PROPOSES candidates only; a human picks the type/topic (no semantic source, no
   invention). Verified live on the 2026-06-14 log (en baseline=22 → surfaces team/public/national…
   as next candidates; also exposes residual stopword junk as a bonus). tests/test_keyword_log_analyzer.py
-  (+2: stdlib key parse incl. quoted key/comment; untagged-terms-only gate). REMAINING: S1b
-  stoplists→data files (Q3); S3b the Settings → Keywords subtab FRONTEND (explore+hide/tag, Q4, on
-  the S3a endpoints); S4 in-app analyzer-proposal review.
+  (+2: stdlib key parse incl. quoted key/comment; untagged-terms-only gate).
+  **ITEM AC — RETROACTIVE TAG BACKFILL SHIPPED 2026-06-17 (draft PR onto 0.09):** tagging at
+  ingest is FORWARD-ONLY (Q5), so a pre-existing corpus has no baseline tags until a backfill
+  runs. `store.backfill_baseline_tags(session, limit=)` does the one-pass retroactive tag —
+  reads the same bundled baseline, skips keywords it already tagged (idempotent), and the
+  existing-rows query runs ONLY for keywords that actually match the baseline (cheap). Exposed as
+  `POST /api/insights/keyword-tags/backfill?limit=` (limit 0 = all). Counts only {scanned,
+  tagged_keywords, tags_added}, never invents a tag. tests/test_keyword_tags.py +1 (tags election
+  not widget; idempotent second pass = 0 added). This makes the tag feature non-empty on existing
+  corpora (so S3b won't show a blank subtab). REMAINING: S1b stoplists→data files (Q3); S3b the
+  Settings → Keywords subtab FRONTEND (explore+hide/tag, Q4, on the S3a endpoints; can offer a
+  one-click 'apply baseline tags' = this backfill); S4 in-app analyzer-proposal review.
   **SINGULAR/PLURAL FAMILY MERGE — SHIPPED 2026-06-16 (maintainer "start with the plural-merge
   risk analysis"; conservative + guarded; draft PR onto 0.09):** RISK ANALYSIS first corrected
   the size — only **932** real pairs (the earlier ~2753 was an exploratory bug that stripped N
