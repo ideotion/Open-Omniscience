@@ -23,7 +23,16 @@ def test_index_catalog_wellformed_and_disjoint_from_commodities():
     idx = load_index_feeds()
     assert len(idx) >= 6
     assert all(f.key and f.symbol and f.url.startswith("http") for f in idx)
-    assert all(f.category == "index" and f.unit == "pts" for f in idx)
+    # All are indices; the unit is "pts" for the NAMED indices (S&P/Nikkei/VIX…) and
+    # "idx" for the OECD per-country share-price proxies (the 2026-06-17 all-continent
+    # expansion — DAX/FTSE/Hang Seng have no free robots-permitting daily feed, so the
+    # OECD share-price index is the ethically-fetchable per-country proxy, labelled idx).
+    assert all(f.category == "index" for f in idx)
+    assert all(f.unit in ("pts", "idx") for f in idx)
+    # The OECD proxies carry the "share-price" tag and use the idx unit; the named ones use pts.
+    for f in idx:
+        if "share-price" in (f.tags or []):
+            assert f.unit == "idx", f"OECD share-price index {f.key} must be unit=idx"
     # Keys are unique and do not collide with the commodity catalog.
     idx_keys = {f.key for f in idx}
     assert len(idx_keys) == len(idx)

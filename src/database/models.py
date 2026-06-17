@@ -1797,6 +1797,59 @@ class MergedRow(Base):
         return f"<MergedRow(b{self.batch_id} {self.table_name}#{self.row_id})>"
 
 
+class StatFigure(Base):
+    """One observed value from an official statistical producer, with its full trail.
+
+    Group N (official-statistics ingestion). A figure is a single (agency, series,
+    area, period) observation fetched from a documented machine endpoint (World Bank
+    API / SDMX-JSON) and parsed by ``src.stats.sdmx``. It carries NO score and NO
+    verdict -- only the published value and the provenance needed to compare it
+    honestly. The Python-level value object is ``src.stats.sdmx.StatFigure``; this is
+    its durable form.
+
+    VINTAGES are first-class (the law/wiki versioning model applied to statistics): a
+    re-fetch at a later ``extracted_at`` is a NEW ROW, never an overwrite, so a
+    revision is preserved as evidence. The unique key therefore includes
+    ``extracted_at``. A published gap is stored with ``value=None`` (degrade loudly,
+    never a fabricated 0); comparability fields (``unit`` / ``adjustment`` SA-NSA /
+    ``base_year``) are stored only when the response stated them, else NULL -- so a
+    later side-by-side triangulation can flag incomparable denominators instead of
+    silently averaging across them. Producers are NEVER averaged.
+    """
+
+    __tablename__ = "stat_figures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agency: Mapped[str] = mapped_column(String(40), nullable=False)  # "worldbank" | "eurostat" | ...
+    series_id: Mapped[str] = mapped_column(String(120), nullable=False)  # indicator/dataset series id
+    ref_area: Mapped[str] = mapped_column(String(24), nullable=False)  # producing/subject area as published
+    time_period: Mapped[str] = mapped_column(String(24), nullable=False)  # period label as published
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)  # None = published gap (loud)
+    unit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    methodology_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    adjustment: Mapped[str | None] = mapped_column(String(16), nullable=True)  # "SA"/"NSA"/raw, else None
+    base_year: Mapped[str | None] = mapped_column(String(24), nullable=True)  # index base period, else None
+    extracted_at: Mapped[str] = mapped_column(String(40), nullable=False)  # ISO-8601 vintage marker
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        # A new vintage (extracted_at) is a new row; the same vintage of the same
+        # observation is idempotent. NO score column exists, by design.
+        UniqueConstraint(
+            "agency", "series_id", "ref_area", "time_period", "extracted_at",
+            name="uq_stat_figure_vintage",
+        ),
+        Index("ix_stat_figures_series", "series_id", "ref_area", "time_period"),
+        Index("ix_stat_figures_agency", "agency"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<StatFigure({self.agency}:{self.series_id} {self.ref_area} "
+            f"{self.time_period}={self.value} @{self.extracted_at})>"
+        )
+
+
 # Example usage
 if __name__ == "__main__":
     # Test database connection and table creation

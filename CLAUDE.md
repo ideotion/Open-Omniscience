@@ -400,9 +400,19 @@ ruling, a contingency, or a deliberate-omission note.
   downgraded; per-URL circuit isolation), REFUSE up front while airplane mode is engaged, and
   DELEGATE all parsing to sdmx.py (no robots here — documented API endpoints follow their own
   etiquette). Injectable getter → network-free tests incl. a kill-switch test proving NO socket
-  is attempted offline (tests/test_stats_fetch.py, 11). see BACKLOG Group N. REMAINING: a
-  CONSENTED API endpoint + a visible task-manager job over fetch.py; figure-level provenance/
-  vintages DB schema; comparability/triangulation; a filterable registered-sources view]. THE FOUR FORKS
+  is attempted offline (tests/test_stats_fetch.py, 11). see BACKLOG Group N. FIGURE LAYER
+  SHIPPED 2026-06-17 (backend, fully tested py3.13): StatFigure DB model + migration
+  f5a6b7c8d9e0 (VINTAGED — a re-fetch at a later extracted_at is a NEW row never an overwrite;
+  gaps stored NULL; NO score column) + src/stats/store.py (store_figures idempotent-per-vintage
+  + gap tally, list_figures filterable latest-or-history, vintages_for the revision trail,
+  triangulate producers SIDE BY SIDE never averaged + flags incomparable unit/SA-NSA/base-year;
+  cross-agency series equivalence NOT inferred) + API (POST /api/stats/figures/fetch = the ONE
+  networked stats action: refuses up front under airplane mode 409, guarded factory, transport
+  never downgraded, single-writer gate, degrades loudly; GET /figures, /figures/vintages,
+  /triangulate, /sources). tests/test_stats_store.py (6) + tests/test_stats_figures_api.py (5:
+  kill-switch refusal proven with NO socket). REMAINING: a visible task-manager job over a LONG
+  fetch (the synchronous endpoint suffices for bounded indicator pulls); the Statistics-figures
+  FRONTEND; periodic re-fetch vintage scheduling]. THE FOUR FORKS
   (ruled 2026-06-16): (1) the offline READER stays STANDALONE (not folded into #an);
   (2) the convergence WATCH engine = the FULL 'Watches view + history' UX (saved local
   conditions → a Lead card on match + a dedicated Watches panel: history +
@@ -2299,10 +2309,15 @@ ruling, a contingency, or a deliberate-omission note.
   (`rings_merged`+`caveat`); `OO_KEYWORD_EQUIV=0` disables; missing/empty file = no-op
   (never invents). Reusable `group_rows` primitive so each view aggregates its OWN fields
   (mentions / cooccur+pmi / recent+prior). tests/test_keyword_equivalence.py (8: pure +
-  in-memory integration incl. the signature fallback + polysemy + split). REMAINING:
-  cross-country recognition (split a ring's trend per source country); the map view;
-  surfacing `language_breakdown` in the frontend; the local LLM PROPOSING candidate rings
-  (the analyzer from PR #279 already emits ring candidates from the diagnostics logs).
+  in-memory integration incl. the signature fallback + polysemy + split).
+  CROSS-COUNTRY SPLIT SHIPPED 2026-06-17 (backend): `queries.ring_country_split` +
+  `GET /api/insights/ring-countries` group a ring's mentions across ALL its languages by
+  the producing Source.country (the de-US-centring multi-perspective lens — counts only,
+  no score, language-qualified membership via `ring_of` so never a fabricated merge,
+  unlocated sources bucketed null never dropped); tests/test_ring_country_split.py (3).
+  REMAINING: the frontend view of the split; the map view; surfacing `language_breakdown`
+  in the frontend; the local LLM PROPOSING candidate rings (the analyzer from PR #279
+  already emits ring candidates from the diagnostics logs).
 - **TRUST TABS → DISSOLVE + SPREAD (RULED 2026-06-15; supersedes the old "Custody tab UX"
   note; full design = field-test LEDGER Item N):** the "Trust" sidebar group (Evidence &
   custody + Source integrity) is DISSOLVED (invariant #8 content-first; absorption-test-gated,

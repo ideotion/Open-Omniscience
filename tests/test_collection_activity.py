@@ -83,7 +83,10 @@ def test_plan_preview_targets_and_estimate(monkeypatch, tmp_path):
     settings = SchedulerSettings(mode="rss", max_sources_per_run=10)
     plan = plan_preview(s, settings, last_result={"sources_processed": 3, "pages_fetched": 6})
     assert plan["planned_total"] == 3
-    assert plan["next_targets"] == ["s0.test", "s1.test", "s2.test"]  # domains, no URLs
+    # next_targets reflects the SAME stratified, TRUE-RANDOM per-pass order the run uses
+    # (maintainer 2026-06-17: "scrape with TRUE RANDOMNESS by language AND source tags"),
+    # so the order varies pass to pass — assert the SET of domains, not a fixed order.
+    assert sorted(plan["next_targets"]) == ["s0.test", "s1.test", "s2.test"]  # domains, no URLs
     assert all("/" not in t for t in plan["next_targets"])
     # 3 sources x 2.0s median delay x 2 fetches each (6/3 from the last run) = 12s
     assert plan["estimated_seconds"] == 12

@@ -1197,6 +1197,33 @@
       <div id="stat-ingest-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
       <div style="overflow:auto;margin-top:10px" id="stat-agencies"><div class="muted">Loading…</div></div>
     </section>
+    <section class="panel">
+      <h2>Official figures</h2>
+      <p class="muted" style="margin-top:0">Fetch a published figure from a documented official machine
+        endpoint (the World Bank API, or a Eurostat / SDMX-JSON dataset). Each value is stored with its full
+        provenance trail and a first-class <b>vintage</b> — a re-fetch later is a new row, never an overwrite, so
+        revisions are preserved as evidence. Producers are compared <b>side by side, never averaged</b>, and a
+        cell mixing different units / seasonal adjustment / base years is flagged, not reconciled. No score is
+        ever computed. <span class="warn">This is the one networked action here: the fetch egresses over your
+        configured transport and is refused while airplane mode is on.</span></p>
+      <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <label>Source<br><select id="statfig-source">
+          <option value="worldbank">World Bank</option>
+          <option value="eurostat">Eurostat (SDMX-JSON)</option>
+        </select></label>
+        <label>Indicator / dataset id<br><input id="statfig-series" placeholder="NY.GDP.MKTP.CD" size="22"></label>
+        <label>Country (World Bank)<br><input id="statfig-country" placeholder="FR or all" size="10"></label>
+        <button class="secondary" id="statfig-fetch" onclick="fetchStatFigure()">Fetch figures</button>
+      </div>
+      <div id="statfig-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
+      <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
+        <label>View stored figures — series id<br><input id="statfig-view-series" placeholder="NY.GDP.MKTP.CD" size="22"></label>
+        <button class="secondary" onclick="loadStatFigures()">Show stored</button>
+        <button class="secondary" onclick="triangulateStatSeries()">Triangulate producers</button>
+      </div>
+      <div style="overflow:auto;margin-top:10px" id="statfig-table"></div>
+      <div style="overflow:auto;margin-top:10px" id="statfig-tri"></div>
+    </section>
     </div>
 
     <div class="set-view" id="set-offlinemap" style="display:none">

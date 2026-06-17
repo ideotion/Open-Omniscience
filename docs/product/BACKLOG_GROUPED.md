@@ -473,10 +473,22 @@ makes the rest fall out cheaply:
   downgraded, per-URL circuit isolation), REFUSE up front under airplane mode, and DELEGATE
   parsing to `sdmx.py` (no robots — documented API endpoints follow their own etiquette).
   Injectable getter → network-free tests incl. a kill-switch test proving no socket is
-  attempted offline (`tests/test_stats_fetch.py`, 11). REMAINING follow-up slices: a
-  CONSENTED API endpoint + a visible task-manager job over `fetch.py`; the figure-level
-  provenance/vintages **DB schema**; comparability-guarded **side-by-side triangulation**
-  (never averaged); the filterable **registered-sources view**.
+  attempted offline (`tests/test_stats_fetch.py`, 11).
+  FIGURE LAYER SHIPPED 2026-06-17 (backend, fully tested py3.13): the `StatFigure` DB
+  model + migration `f5a6b7c8d9e0` (vintaged — a re-fetch at a later `extracted_at` is a
+  NEW row, never an overwrite; gaps stored as NULL; NO score column) + `src/stats/store.py`
+  (`store_figures` idempotent-per-vintage + gap tally, `list_figures` filterable/latest-or-
+  history, `vintages_for` the revision trail, `triangulate` producers SIDE BY SIDE never
+  averaged, flagging incomparable unit/SA-NSA/base-year cells; cross-agency series
+  equivalence NOT inferred) + the API (`POST /api/stats/figures/fetch` — the ONE networked
+  stats action, refuses up front under airplane mode (409), guarded factory, transport
+  never downgraded, single-writer gate, degrades loudly; `GET /figures`, `/figures/vintages`,
+  `/triangulate`, `/sources` the registered-source directory). tests/test_stats_store.py (6)
+  + tests/test_stats_figures_api.py (5: kill-switch refusal proven with no socket, gaps
+  preserved, side-by-side-never-averaged). REMAINING: a visible TASK-MANAGER job over a
+  long fetch (the synchronous endpoint suffices for bounded indicator pulls); a Settings
+  Statistics-figures FRONTEND (the directory subtab already exists); periodic re-fetch
+  scheduling for vintages.
 
 ---
 

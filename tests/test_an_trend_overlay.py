@@ -63,9 +63,15 @@ def test_indexed_mode_overlays_commodity_prices_and_reuses_dual_axis():
 
 
 def test_trend_caveats_are_visible_and_honest():
-    # No magnitude conflation is disclosed; co-occurrence is never causation; the
-    # indexed view states it is relative, not absolute. All in visible .card-caveat.
-    assert "Co-occurrence in your corpus, never causation." in _JS, "the non-causation caveat must be present"
+    # No magnitude conflation is disclosed; the indexed view states it is relative,
+    # not absolute. All in visible .card-caveat. The on-graph "co-occurrence …
+    # never causation" caveat was REMOVED app-wide (maintainer ruling 2026-06-17 —
+    # it cluttered every graph); the non-causation PRINCIPLE still governs the
+    # design, just not as repeated on-graph text. This guards against re-adding it
+    # (mirrors test_repo_invariants' inverted assertion).
+    assert 't("co-occurrence in your corpus, never causation")' not in _JS, (
+        "the graph causation caveat was removed everywhere (maintainer 2026-06-17)"
+    )
     assert "relative movement, not absolute levels" in _JS, "indexed mode must disclose it is relative"
     assert "card-caveat" in _JS, "the Trend caveats must render in the visible .card-caveat surface"
     # No fabricated score anywhere in the new surface.

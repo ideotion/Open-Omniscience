@@ -864,6 +864,23 @@ def test_ui_invariants():
         "the agencies render must use extLink() for home_url (invariant #6/#6e — "
         "outbound links open the local preview, never a bare external <a href>)"
     )
+    # 29b. Official-statistics FIGURES UI (Group N figure layer): the Statistics subtab
+    #      also carries a consented fetch + the stored-figures table + triangulation. The
+    #      fetch is a network action -> it MUST pass ensureOnline (invariant #14); it reads
+    #      the figure endpoints; triangulation is shown side by side. (Browser-unverified:
+    #      this static guard pins the wiring so it cannot silently regress — fork-3.)
+    for fn in ("function fetchStatFigure(", "function loadStatFigures(", "function triangulateStatSeries("):
+        assert fn in html, f"the figures UI needs {fn}"
+    assert 'id="set-stats"' in html and 'id="statfig-fetch"' in html and 'id="statfig-table"' in html, (
+        "the figures panel (fetch button + table) must exist in the Statistics subtab"
+    )
+    assert "/api/stats/figures/fetch" in html and "/api/stats/triangulate" in html, (
+        "the figures UI must call the fetch + triangulate endpoints"
+    )
+    fetchfig = html.split("function fetchStatFigure(", 1)[1].split("function loadStatFigures(", 1)[0]
+    assert "ensureOnline(" in fetchfig, (
+        "fetching official figures is a network action -> must pass ensureOnline (invariant #14)"
+    )
 
     # --- 30. Alternative-interfaces gallery (Settings -> GUIs, maintainer-ruled
     #     2026-06-17): a SANDBOX gallery of eight opt-in interfaces, each a
@@ -1120,6 +1137,7 @@ def test_dropdown_option_labels_are_translatable():
         "dump-lang",       # dynamic placeholder, replaced by edition data
         "dumpread-wiki",   # dynamic placeholder ("—")
         "osm-region",      # dynamic placeholder, replaced by /api/geo/regions data
+        "statfig-source",  # producer proper names (World Bank / Eurostat) — data, not chrome
     }
 
     unkeyed: list[str] = []

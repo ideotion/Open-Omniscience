@@ -87,6 +87,46 @@ _RING_CAVEAT = (
     "(language_breakdown); the user can split any ring."
 )
 
+# Languages without word-segmentation: keyword extraction is whitespace-based and does
+# NOT segment these, so keyword analytics over articles in them are incomplete. The
+# diagnostics engine_report flags the same set; this surfaces it to the user, by ruling
+# (audit-07 B1 disclosure sweep: the app ships zh/ja locales, so the honesty gap must be
+# stated where the user actually reads keywords, not only in a diagnostics export).
+_UNSEGMENTED_LANGS = frozenset({"zh", "ja"})
+
+
+def unsegmented_note(session, article_ids: list[int]) -> dict | None:
+    """An honest disclosure when the matched set contains unsegmented-language articles.
+
+    Returns ``{languages, n_articles, note}`` when any article in the set is in a
+    language the keyword extractor cannot segment (zh/ja), else ``None``. One cheap
+    indexed COUNT grouped by language — no extraction, no score. Surfaced so a user
+    looking at sparse/empty keyword analytics for a Chinese/Japanese corpus learns WHY
+    instead of mistaking it for "no keywords".
+    """
+    if not article_ids:
+        return None
+    rows = (
+        session.query(Article.language, func.count(Article.id))
+        .filter(Article.id.in_(article_ids))
+        .filter(func.lower(Article.language).in_(sorted(_UNSEGMENTED_LANGS)))
+        .group_by(Article.language)
+        .all()
+    )
+    if not rows:
+        return None
+    langs = sorted({(lang or "").lower() for lang, _ in rows})
+    n = int(sum(c for _, c in rows))
+    return {
+        "languages": langs,
+        "n_articles": n,
+        "note": (
+            f"Keyword extraction does not segment {', '.join(langs)} (no word "
+            f"boundaries), so keyword analytics for {n} article(s) in those languages "
+            "are incomplete — this is a known limit, not an empty result."
+        ),
+    }
+
 
 def resolve_keyword(session, term: str) -> Keyword | None:
     """Map a user term to a stored keyword: exact normalized match, else best LIKE."""
@@ -309,7 +349,11 @@ def corpus_keywords(
         )
         if len(terms) >= limit:
             break
-    return {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
+    out = {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
+    note = unsegmented_note(session, article_ids)
+    if note:
+        out["unsegmented"] = note  # honest "why so few keywords" disclosure (B1)
+    return out
 
 
 def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> dict:
@@ -331,11 +375,17 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
         "from the most-mentioned term (deterministic, always outward)."
     )
     if not terms:
-        return {
+        empty = {
             "level": "article", "nodes": [], "edges": [], "n_articles": n_articles,
             "method": method,
             "caveat": "Too few keywords indexed for this selection to draw a map yet.",
         }
+        # If the emptiness is because the set is in an unsegmented language, say so
+        # (the honest "why", not a bare empty map).
+        if kw.get("unsegmented"):
+            empty["unsegmented"] = kw["unsegmented"]
+            empty["caveat"] = kw["unsegmented"]["note"]
+        return empty
     center = terms[0]
     nodes = [{
         "id": center["term"], "label": center["term"], "kind": "keyword",
@@ -353,11 +403,91 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
             "mentions": tdat["mentions"], "articles": tdat["articles"],
         })
         edges.append({"a": center["term"], "b": tdat["term"], "weight": tdat["mentions"]})
-    return {
+    graph = {
         "level": "article", "term": center["term"],
         "nodes": nodes, "edges": edges, "n_articles": n_articles,
         "method": method,
         "caveat": "A concept map of the keywords present, not a co-occurrence network; not causation.",
+    }
+    if kw.get("unsegmented"):  # a mixed-language set: keep the map but disclose the gap
+        graph["unsegmented"] = kw["unsegmented"]
+    return graph
+
+
+def ring_country_split(session, *, ring_id: str, days: int | None = None, limit: int = 40) -> dict:
+    """Split a cross-language equivalence RING's coverage by the SOURCE country.
+
+    The trans-language layer already merges (fr:élection + en:election + de:wahl) into
+    ONE concept; this asks the multi-perspective question the de-US-centring ethic cares
+    about: WHO covers that concept, by the producing source's country? It aggregates the
+    ring's keyword mentions across ALL its languages and groups them by Source.country —
+    so a user sees, e.g., "the 'inflation' concept: 120 mentions / 30 articles from US
+    sources, 45 / 12 from FR, 8 / 3 from BR…".
+
+    Honest by construction: counts ONLY (mentions + distinct-article spread), NO score,
+    NO ranking verdict — presence is coverage, not credibility. Membership reuses the
+    established language-qualified resolver (``equivalence.ring_of``), so a keyword joins
+    only when its stored language matches a ring member (never a fabricated merge); a
+    keyword with no stored language is left out (stated in the method). Sources with no
+    country are bucketed honestly as ``null`` (unlocated), never dropped or guessed.
+    """
+    from src.analytics import equivalence
+
+    ring = equivalence.ring_meta(ring_id)
+    if ring is None:
+        return {"ring_id": ring_id, "found": False, "countries": [],
+                "caveat": "No such equivalence ring."}
+    member_terms = {term for _lang, term in ring.members}
+    # Pre-filter in SQL to this ring's member terms, then confirm the language-qualified
+    # ring membership in Python (so a term shared across rings/languages is attributed
+    # correctly, never fabricated).
+    cand = (
+        session.query(Keyword.id, Keyword.language, Keyword.normalized_term)
+        .filter(Keyword.normalized_term.in_(member_terms))
+        .all()
+    )
+    kw_ids = [kid for kid, lang, norm in cand if equivalence.ring_of(lang, norm) == ring_id]
+    languages = sorted({lang for _kid, lang, norm in cand
+                        if equivalence.ring_of(lang, norm) == ring_id and lang})
+    if not kw_ids:
+        return {"ring_id": ring_id, "found": True, "countries": [], "n_keywords": 0,
+                "languages": languages,
+                "caveat": "No indexed keywords in this ring yet for your corpus."}
+    q = (
+        session.query(
+            Source.country,
+            func.sum(KeywordMention.count).label("m"),
+            func.count(func.distinct(KeywordMention.article_id)).label("arts"),
+        )
+        .join(Article, Article.id == KeywordMention.article_id)
+        .join(Source, Source.id == Article.source_id)
+        .filter(KeywordMention.keyword_id.in_(kw_ids))
+    )
+    if days and days > 0:
+        cutoff = date.today() - timedelta(days=days)
+        q = q.filter(Article.published_at >= cutoff)
+    rows = q.group_by(Source.country).order_by(func.count(func.distinct(KeywordMention.article_id)).desc()).all()
+    countries = [
+        {"country": (c or None), "mentions": int(m or 0), "articles": int(a or 0)}
+        for c, m, a in rows[:limit]
+    ]
+    return {
+        "ring_id": ring_id,
+        "found": True,
+        "label": ring.label,
+        "n_keywords": len(kw_ids),
+        "languages": languages,
+        "countries": countries,
+        "method": (
+            "Mentions of every language member of the ring, grouped by the source's "
+            "country. Keywords with no stored language are excluded (conservative). "
+            "Counts only."
+        ),
+        "caveat": (
+            "Coverage by producing-source country, never a credibility ranking or score. "
+            "Unlocated sources are bucketed as null, not dropped. Co-occurrence in your "
+            "corpus, never a claim about the country."
+        ),
     }
 
 
