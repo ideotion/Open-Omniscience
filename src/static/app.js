@@ -4188,6 +4188,9 @@
             <div class="idx-chg ${cls}">${chgTxt}</div></div>
         </div>
         ${idxSpark(c.spark, chg)}
+        ${has && c.spark && c.spark.length >= 2
+          ? `<div class="idx-range hint muted"><span>${esc(c.spark[0][0])}</span><span>${esc(c.spark[c.spark.length - 1][0])}</span></div>`
+          : ""}
         <div class="idx-foot muted" onclick="event.stopPropagation()">${has ? `as of ${esc(c.latest.observed_on)}` : "no data yet — click Load"}
           · ${esc(c.currency || "")} · ${extLink(c.url, "source")}
           · <button class="tiny secondary" type="button"
@@ -4378,7 +4381,8 @@
         + `<tbody>${body}${more}</tbody></table>`;
     }
 
-    function dashChartSvg(points, unit) {
+    function dashChartSvg(points, unit, opts) {
+      opts = opts || {};
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!points.length) {
         return `<div class="muted" style="padding:18px 0;font-size:12px">${esc(t9("not enough points in this window"))}</div>`;
@@ -4386,7 +4390,23 @@
       const w = 300, h = 120, padL = 44, padR = 8, padT = 8, padB = 18;
       const n = points.length, lineMode = n >= _SPARSE_BAR_MAX;
       const ys = points.map(p => p.price), minY = Math.min(...ys), maxY = Math.max(...ys), span = (maxY - minY) || 1;
-      const X = i => padL + (w - padL - padR) * (n < 2 ? 0.5 : i/(n-1));
+      const plotW = w - padL - padR;
+      // Shared time axis (Slice 4 — maintainer "graph timescales should be coherent
+      // between all sources"): when opts.t0/t1 (ISO dates) are given, every point is
+      // placed at its TRUE calendar position on that ONE window, so a March point
+      // sits at the same x on EVERY card of the board (coherent timescales, honest
+      // gaps). Without it, the index-based mapping is byte-for-byte identical to
+      // before (Home sparklines, trend windows — additive, no regression).
+      const _ms = (d) => Date.parse(String(d).length <= 7 ? String(d) + "-01T00:00:00Z" : String(d) + "T00:00:00Z");
+      const sa = opts.t0 ? _ms(opts.t0) : NaN, sb = opts.t1 ? _ms(opts.t1) : NaN;
+      const shared = isFinite(sa) && isFinite(sb) && sb > sa;
+      const X = i => padL + plotW * (n < 2 ? 0.5 : i/(n-1));
+      const Xp = (p, i) => {
+        if (!shared) return X(i);
+        const m = _ms(p.observed_on);
+        if (!isFinite(m)) return X(i);
+        return Math.max(padL, Math.min(w - padR, padL + plotW * ((m - sa) / (sb - sa))));
+      };
       const Y = v => padT + (h - padT - padB) * (1 - (v - minY)/span);
       const up = points[n-1].price >= points[0].price;
       const col = up ? 'var(--ok)' : 'var(--err)';
@@ -4396,10 +4416,17 @@
            stroke="var(--border)" stroke-dasharray="2 4" stroke-width="0.6"></line>
          <text x="${padL-4}" y="${(Y(v)+3).toFixed(1)}" text-anchor="end" font-size="8.5"
            fill="var(--muted)">${fmtNum(v)}</text>`).join("");
-      // X ticks: first / middle / last dates (YYYY-MM), de-duplicated for short series.
-      const xticks = [...new Set([0, Math.floor((n-1)/2), n-1])].map(i =>
-        `<text x="${X(i).toFixed(1)}" y="${h-5}" text-anchor="${i===0?'start':i===n-1?'end':'middle'}"
-           font-size="8.5" fill="var(--muted)">${esc(points[i].observed_on.slice(0,7))}</text>`).join("");
+      // X ticks: in SHARED mode the ticks are the WINDOW endpoints (start/mid/end of
+      // the plot at fixed positions) so every card reads the SAME coherent time
+      // legend; otherwise first / middle / last point dates (YYYY-MM, de-duplicated).
+      const xticks = shared
+        ? [[padL, "start", opts.t0], [padL + plotW / 2, "middle", new Date((sa + sb) / 2).toISOString()],
+           [w - padR, "end", opts.t1]].map(([x, anc, lab]) =>
+            `<text x="${x.toFixed(1)}" y="${h-5}" text-anchor="${anc}"
+               font-size="8.5" fill="var(--muted)">${esc(String(lab).slice(0,7))}</text>`).join("")
+        : [...new Set([0, Math.floor((n-1)/2), n-1])].map(i =>
+            `<text x="${X(i).toFixed(1)}" y="${h-5}" text-anchor="${i===0?'start':i===n-1?'end':'middle'}"
+               font-size="8.5" fill="var(--muted)">${esc(points[i].observed_on.slice(0,7))}</text>`).join("");
       // The series itself: a line when dense (n>=10), otherwise honest BARS (Item Y).
       // Bars anchor to the window-MIN — which the gridlines above already LABEL — so a
       // price-LEVEL difference stays visible and honest (NEVER a fabricated zero
@@ -4410,10 +4437,10 @@
       const bw = Math.max(3, Math.min(slot * 0.62, 22));
       const body = lineMode
         ? `<polyline fill="none" stroke="${col}" stroke-width="1.6" points="${
-            points.map((p, i) => `${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(" ")}"></polyline>
-           <circle cx="${X(n-1).toFixed(1)}" cy="${Y(points[n-1].price).toFixed(1)}" r="2.4" fill="${col}"></circle>`
+            points.map((p, i) => `${Xp(p, i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(" ")}"></polyline>
+           <circle cx="${Xp(points[n-1], n-1).toFixed(1)}" cy="${Y(points[n-1].price).toFixed(1)}" r="2.4" fill="${col}"></circle>`
         : points.map((p, i) => {
-            const cx = X(i), by = Y(p.price);
+            const cx = Xp(p, i), by = Y(p.price);
             const x0 = Math.max(padL, cx - bw / 2), x1 = Math.min(w - padR, cx + bw / 2);
             const bwc = Math.max(1, x1 - x0).toFixed(1);
             return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${Math.max(0, baseY - by).toFixed(1)}" fill="${col}" opacity="0.72"></rect>`
@@ -4423,7 +4450,10 @@
       // app-wide; only the datapoint count is kept.
       const caveat = lineMode ? "" :
         `<div class="hint muted" style="margin-top:1px">n=${n}</div>`;
-      const range = n >= 2 ? `${points[0].observed_on} → ${points[n-1].observed_on}` : points[0].observed_on;
+      // The legend reads the SHARED window when coherent (so every card states the
+      // same span), else this series' own first→last dates.
+      const range = shared ? `${opts.t0} → ${opts.t1}`
+        : (n >= 2 ? `${points[0].observed_on} → ${points[n-1].observed_on}` : points[0].observed_on);
       // a11y: a translated summary + a visually-hidden data table (audit PR G).
       const aria = _chartAria(unit || "", n, points[0].observed_on.slice(0, 7),
         points[n - 1].observed_on.slice(0, 7), fmtNum(minY), fmtNum(maxY));
@@ -4474,6 +4504,12 @@
       // Window by ABSOLUTE dates [from,to] from the ooTimeScope control (no
       // longer a trailing `days` count).
       const from = _mktScope.from, to = _mktScope.to;
+      // SHARED time axis (Slice 4): every card on the board is drawn against the
+      // SAME [t0,t1] window so the timescales are coherent across all sources (a
+      // monthly World-Bank series and a daily FRED series align on one calendar
+      // axis). Falls back to the full data span when no window is set.
+      const _span = mktDataSpan();
+      const axT0 = from || _span.min, axT1 = to || _span.max;
       // Indices are NOT commodities (maintainer-ruled): they live in the
       // Indices tab; the board shows everything else, grouped by category.
       // The category comes straight from the series data (s.category), not a
@@ -4538,7 +4574,7 @@
                 style="background:none;border:none;padding:0;margin:0;font:inherit;font-weight:700;color:var(--accent);cursor:pointer;text-decoration:none"
                 onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(s.symbol)} ⊞</button> ${change}</div>
             <div class="muted" style="font-size:12px;margin:2px 0 6px">${lv}</div>
-            ${dashChartSvg(pts, last ? `${last.currency}/${last.unit}` : "")}
+            ${dashChartSvg(pts, last ? `${last.currency}/${last.unit}` : "", {t0: axT0, t1: axT1})}
             <div style="margin-top:4px"><button class="tiny secondary" type="button"
                 title="${esc(t("Open this in the analysis window — its corpus coverage"))}"
                 onclick="event.stopPropagation(); openAnalysisFor(${esc(JSON.stringify(q))}, ${cOpts})">${esc(t("Analyse"))} ↗</button></div></div>`;
