@@ -46,9 +46,15 @@ Usage:
     python scripts/analyze_keyword_log.py LOG.json --top 30
     python scripts/analyze_keyword_log.py LOG.json --json proposals.json
     python scripts/analyze_keyword_log.py NEW.json --baseline OLD.json   # measure impact
+    python scripts/analyze_keyword_log.py LOG.json --tag-gaps            # baseline-growth worklist
     python scripts/analyze_keyword_log.py LOG.json \
         --stoplist src/analytics/extract.py src/services/stopwords.py \
         --rings configs/keyword_equivalents.yml
+
+``--tag-gaps`` operationalises the 'analyzer-grown baseline' (Item AC): it lists,
+per language, the top-frequency TERM keywords that have NO entry in
+configs/keyword_baseline/<lang>.yml yet — the worklist of what to tag next (a human
+picks the type/topic; the analyzer cannot invent semantics).
 
 Dependency-free (stdlib only) on purpose: it runs against an exported log on any
 machine, including one without the app's runtime installed.
@@ -168,6 +174,78 @@ def parse_ring_members(path: Path) -> set[str]:
     for m in re.findall(r'"([a-z?]{1,3}:[^"]+)"', txt):
         members.add(m.casefold())
     return members
+
+
+def load_baseline_keys(baseline_dir: Path) -> dict[str, set[str]]:
+    """``{language: {casefolded keys already in configs/keyword_baseline/<lang>.yml}}``.
+
+    Tiny stdlib line parser (no yaml): the indented ``key: {…}`` entries. The inline
+    flow value sits on the SAME line, so no value line is mistaken for a key, and the
+    top-level ``baseline_keywords:`` (column 0) is skipped as un-indented."""
+    out: dict[str, set[str]] = {}
+    if not baseline_dir.exists():
+        return out
+    for f in sorted(baseline_dir.glob("*.yml")):
+        keys: set[str] = set()
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if not line[:1].isspace():  # only indented entries (skips baseline_keywords:)
+                continue
+            s = line.strip()
+            if not s or s.startswith("#") or ":" not in s:
+                continue
+            key = s.split(":", 1)[0].strip().strip('"').strip("'").casefold()
+            if key:
+                keys.add(key)
+        out[f.stem] = keys
+    return out
+
+
+def baseline_gaps(
+    keywords: list[dict], baseline: dict[str, set[str]], top: int, min_articles: int = 3
+) -> dict[str, list[dict]]:
+    """Per language, the top-frequency TERM keywords with NO baseline tag yet.
+
+    These are tagging CANDIDATES to add to configs/keyword_baseline/<lang>.yml — the
+    analyzer cannot choose the type/topic (no semantic source; a human supplies it), it
+    only surfaces the worklist. Entities are excluded (not baseline-tag material); a
+    keyword already in that language's baseline is skipped. This operationalises the
+    'analyzer-grown baseline' (Item AC Q1): send a log, see what to tag next."""
+    by_lang: dict[str, list[dict]] = defaultdict(list)
+    for k in keywords:
+        if k.get("kind") != "term":
+            continue
+        lang = _lang(k)
+        norm = (k.get("normalized") or "").casefold()
+        if not norm or norm in baseline.get(lang, set()):
+            continue
+        arts = int(k.get("articles", 0) or 0)
+        if arts < min_articles:
+            continue
+        by_lang[lang].append(
+            {
+                "term": k.get("term"),
+                "normalized": norm,
+                "articles": arts,
+                "mentions": int(k.get("mentions", 0) or 0),
+            }
+        )
+    out: dict[str, list[dict]] = {}
+    for lang, items in by_lang.items():
+        items.sort(key=lambda x: (-x["articles"], -x["mentions"], x["normalized"]))
+        out[lang] = items[: top or len(items)]
+    return out
+
+
+def print_tag_gaps(gaps: dict[str, list[dict]], baseline: dict[str, set[str]], top: int) -> None:
+    print("=" * 78)
+    print("BASELINE TAG GAPS — top untagged TERM keywords per language")
+    print("(candidates for configs/keyword_baseline/<lang>.yml; a human picks type/topic)")
+    print("=" * 78)
+    for lang in sorted(gaps, key=lambda lg: -sum(x["articles"] for x in gaps[lg])):
+        print(f"\n## {lang}   (baseline already has {len(baseline.get(lang, set()))} entries)")
+        for it in gaps[lang][:top]:
+            print(f"   {it['articles']:4}a {it['mentions']:6}m  {it['term']}")
+    print()
 
 
 # --------------------------------------------------------------------------- #
@@ -689,6 +767,20 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="an OLDER keyword log; with it, DIFF baseline->log to measure an optimization's impact",
     )
+    ap.add_argument(
+        "--tag-gaps",
+        action="store_true",
+        help="propose top UNTAGGED term keywords per language (the baseline-growth worklist)",
+    )
+    ap.add_argument(
+        "--baseline-dir",
+        type=Path,
+        default=Path("configs/keyword_baseline"),
+        help="curated baseline dir cross-referenced by --tag-gaps",
+    )
+    ap.add_argument(
+        "--gap-min-articles", type=int, default=3, help="min articles for a --tag-gaps candidate"
+    )
     args = ap.parse_args(argv)
 
     doc = load_log(args.log)
@@ -699,6 +791,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             args.json.write_text(json.dumps(diff, ensure_ascii=False, indent=1), encoding="utf-8")
             print(f"[wrote machine-readable diff -> {args.json}]")
+        return 0
+
+    if args.tag_gaps:  # baseline-growth worklist: which keywords to tag next
+        baseline = load_baseline_keys(args.baseline_dir)
+        kws = (doc.get("data", doc)).get("keywords", [])
+        gaps = baseline_gaps(kws, baseline, args.top, args.gap_min_articles)
+        print_tag_gaps(gaps, baseline, args.top)
+        if args.json:
+            args.json.write_text(json.dumps(gaps, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"[wrote tag-gap worklist -> {args.json}]")
         return 0
 
     existing = parse_stoplist(args.stoplist)
