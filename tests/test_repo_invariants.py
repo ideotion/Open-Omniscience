@@ -1579,6 +1579,39 @@ def test_indices_category_subtabs():
     )
 
 
+def test_indices_multiseries_compare():
+    """The Indices board lets the user AGGREGATE several curves onto one graph
+    with Absolute/Indexed/Log scale controls (maintainer 2026-06-17 markets revamp
+    Slice 3: "aggregate several curves onto the same graph … change the graph
+    scales"). The overlay reuses the ONE ooChart toolkit (invariant #16) — no
+    fabricated data (each curve is the symbol's real stored series)."""
+    html = _ui_source()
+    # the compare bar lives above the board; the selection is multi-symbol state
+    assert 'id="idx-compare-bar"' in html, "the compare bar must exist"
+    assert "const _idxCompare" in html, "the multi-select compare state must exist"
+    assert "function toggleIdxCompare" in html and "function openIdxComparison" in html, (
+        "the compare toggle + overlay opener must exist"
+    )
+    assert "function renderIdxCompareBar" in html, "the compare bar renderer must exist"
+    # the overlay reuses chartEnlarge with the scale-control row (NOT a new modal)
+    assert "{scales: true}" in html, "the comparison overlay must request the scale controls"
+    assert "function chartEnlarge(title, seriesList, caveat, opts)" in html, (
+        "chartEnlarge must accept the optional scale opts (back-compatible 4th arg)"
+    )
+    # Absolute / Indexed / Log are the three honest scale modes
+    for mode in ('"absolute"', '"indexed"', '"log"'):
+        assert mode in html, f"the scale toggle must offer {mode}"
+    # ooChart gained an ADDITIVE log-Y mode: identity when off, so every existing
+    # chart is byte-for-byte unchanged (the same contract as opts.indexed)
+    assert "opts.logY" in html, "ooChart must support the additive opts.logY scale"
+    assert "Math.log10(Math.max(v, LOGEPS))" in html, (
+        "log-Y must map log10(value) (clamped) — never crash on a zero/negative"
+    )
+    assert "opts.logY ? Math.pow(10, d) : d" in html, (
+        "log-Y must back-transform gridline labels to the REAL value (identity when off)"
+    )
+
+
 def test_commodity_card_opens_analysis():
     """Each commodity card's TITLE opens the universal analysis window seeded
     with that commodity's keyword query (maintainer-ruled COMMODITIES TAB REWORK
