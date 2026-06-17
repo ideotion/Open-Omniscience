@@ -1123,5 +1123,11 @@
   "Read": "Чтение",
   "Show the copies": "Показать копии",
   "Related in your corpus": "Связанные в вашем корпусе",
-  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "Почти идентичные копии в вашем корпусе — фактически один голос, а не независимое подтверждение. См. «Связанные»."
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "Почти идентичные копии в вашем корпусе — фактически один голос, а не независимое подтверждение. См. «Связанные».",
+  "Branch selected into a new corpus →": "Ответвить выбранное в новый корпус →",
+  "{n} selected": "выбрано: {n}",
+  "Select for branching": "Выбрать для ответвления",
+  "Select one or more rows to branch.": "Выберите одну или несколько строк для ответвления.",
+  "No articles in the selected rows.": "В выбранных строках нет статей.",
+  "Selected related": "Выбранные связанные"
 }

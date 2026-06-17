@@ -1123,5 +1123,11 @@
   "Read": "本文",
   "Show the copies": "コピーを表示",
   "Related in your corpus": "あなたのコーパスの関連記事",
-  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "あなたのコーパスにあるほぼ同一のコピー——実質的に一つの声であり、独立した裏付けではありません。「関連」を参照。"
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "あなたのコーパスにあるほぼ同一のコピー——実質的に一つの声であり、独立した裏付けではありません。「関連」を参照。",
+  "Branch selected into a new corpus →": "選択項目を新しいコーパスに分岐 →",
+  "{n} selected": "{n} 件選択",
+  "Select for branching": "分岐するために選択",
+  "Select one or more rows to branch.": "分岐する行を1つ以上選択してください。",
+  "No articles in the selected rows.": "選択した行に記事がありません。",
+  "Selected related": "選択した関連項目"
 }

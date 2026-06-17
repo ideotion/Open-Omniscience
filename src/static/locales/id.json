@@ -1123,5 +1123,11 @@
   "Read": "Baca",
   "Show the copies": "Tampilkan salinannya",
   "Related in your corpus": "Terkait dalam korpus Anda",
-  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "Salinan nyaris identik dalam korpus Anda — sebenarnya satu suara, bukan konfirmasi independen. Lihat Terkait."
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "Salinan nyaris identik dalam korpus Anda — sebenarnya satu suara, bukan konfirmasi independen. Lihat Terkait.",
+  "Branch selected into a new corpus →": "Cabangkan pilihan ke korpus baru →",
+  "{n} selected": "{n} dipilih",
+  "Select for branching": "Pilih untuk dicabangkan",
+  "Select one or more rows to branch.": "Pilih satu baris atau lebih untuk dicabangkan.",
+  "No articles in the selected rows.": "Tidak ada artikel di baris terpilih.",
+  "Selected related": "Terkait terpilih"
 }

@@ -1123,5 +1123,11 @@
   "Read": "阅读",
   "Show the copies": "显示这些副本",
   "Related in your corpus": "你语料库中的相关内容",
-  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "你语料库中近乎相同的副本——实际上是同一种声音，并非独立佐证。见“相关”。"
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "你语料库中近乎相同的副本——实际上是同一种声音，并非独立佐证。见“相关”。",
+  "Branch selected into a new corpus →": "将所选分支为新语料库 →",
+  "{n} selected": "已选 {n} 项",
+  "Select for branching": "选择以分支",
+  "Select one or more rows to branch.": "选择一行或多行以分支。",
+  "No articles in the selected rows.": "所选行中没有文章。",
+  "Selected related": "所选相关项"
 }
