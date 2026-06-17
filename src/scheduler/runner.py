@@ -20,6 +20,7 @@ is exactly as robots-respecting and rate-limited as a manual ingest.
 from __future__ import annotations
 
 import logging
+import os
 import random
 import threading
 from datetime import UTC, datetime, timedelta
@@ -222,6 +223,13 @@ def current_progress() -> dict | None:
         return dict(_PROGRESS) if _PROGRESS else None
 
 
+# How many sources the activity-panel preview materialises for its 8 sample
+# domains + representative politeness delay. Bounds the per-poll cost: the total
+# is a cheap COUNT, only this many rows are decrypted/built into ORM objects.
+# Small enough to be fast, large enough that the sampled median delay is stable.
+_PLAN_PREVIEW_SAMPLE = int(os.getenv("OO_PLAN_PREVIEW_SAMPLE", "256"))
+
+
 def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | None) -> dict:
     """What the NEXT pass would do, with an honest duration estimate.
 
@@ -232,10 +240,18 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     targets: list[str] = []
     total = 0
     if settings.mode in ("rss", "crawl"):
-        rows = capped(select_sources(session, settings), settings.max_sources_per_run).all()
-        total = len(rows)
-        # Preview the same stratified (language + tag, true-random) order the pass
-        # will use, so "next targets" honestly reflects what runs first (not priority).
+        base = select_sources(session, settings)
+        # Field perf 2026-06-17: /api/scheduler/activity was the #1 endpoint by
+        # server time (4244 polls × ~119 ms), because this preview materialised
+        # the WHOLE enabled-source set (3000+ rows decrypted through the SQLCipher
+        # codec) on every poll. We only need an honest total + 8 preview domains +
+        # a representative politeness delay, so: a cheap COUNT for the total, then
+        # a BOUNDED sample (never more than the pass will actually run) for the
+        # rest. total still drives the estimate, so it stays the true count.
+        total = capped(base, settings.max_sources_per_run).count()
+        sample_n = min(total, _PLAN_PREVIEW_SAMPLE)
+        rows = base.limit(sample_n).all() if sample_n else []
+        # Same stratified (language + tag, true-random) ordering the pass uses.
         rows = stratified_interleave(rows)
         targets = [r.domain for r in rows[:8]]
         delays = [max((r.rate_limit_ms or 1000) / 1000.0, 1.0) for r in rows] or [1.0]
